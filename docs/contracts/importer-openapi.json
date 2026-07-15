@@ -320,6 +320,70 @@
         ],
         "type": "object"
       },
+      "ScoutImportEntityCountDto": {
+        "properties": {
+          "committed": {
+            "description": "Entities actually committed (proof, not an estimate).",
+            "minimum": 0,
+            "type": "number"
+          },
+          "entity_type": {
+            "description": "Entity family.",
+            "example": "clients",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "committed"
+        ],
+        "type": "object"
+      },
+      "ScoutImportStatusResult": {
+        "properties": {
+          "completed_at": {
+            "description": "Settled at (ISO-8601); null while running.",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "entity_counts": {
+            "description": "Committed counts per entity.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutImportEntityCountDto"
+            },
+            "type": "array"
+          },
+          "intent_id": {
+            "description": "The intent id that was read.",
+            "type": "string"
+          },
+          "started_at": {
+            "description": "Earliest evidence timestamp (ISO-8601): first committed entity, else lifecycle start, else latest progress snapshot. Null when none timestamped. For a settled run with zero committed entities and no snapshot this degenerates to the settle-time lifecycle start, so it may equal completed_at.",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "description": "Proven lifecycle state.",
+            "enum": [
+              "running",
+              "success",
+              "partial",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "status",
+          "entity_counts",
+          "started_at",
+          "completed_at"
+        ],
+        "type": "object"
+      },
       "ScoutIngestDto": {
         "properties": {
           "entities": {
@@ -449,7 +513,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -840,6 +904,95 @@
         "summary": "Poll a pairing code status",
         "tags": [
           "extension-pair"
+        ]
+      }
+    },
+    "/api/scout/import/status": {
+      "get": {
+        "operationId": "ScoutController_getImportStatus",
+        "parameters": [
+          {
+            "description": "Crawl session id to read.",
+            "in": "query",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutImportStatusResult"
+                }
+              }
+            },
+            "description": "Import status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid query string (global ValidationPipe: whitelist + forbidNonWhitelisted). Raised when `intent_id` is missing, empty, over 128 chars, or an unknown query param is supplied. Standard HttpExceptionFilter envelope; `message` is a string ARRAY of per-field constraint violations when present."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found. Returned identically whether FEATURE_SCOUT_INGEST is off (R-DARK-1 dark route, decided before any guard runs) OR the run has no server-side evidence for the calling coach (unknown intent, cross-tenant intent, or a run with no committed entity, persisted progress snapshot, or settle row yet). The two cases are deliberately indistinguishable — no existence oracle."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read one import run's server-authoritative status (committed counts, not estimates)",
+        "tags": [
+          "scout"
         ]
       }
     },

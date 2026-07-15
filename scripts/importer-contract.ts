@@ -6,7 +6,7 @@
 // source of truth; the checked-in artifact is derived, never hand-edited).
 import type { OpenAPIObject } from '@nestjs/swagger';
 
-// The seven importer surfaces, keyed by their BARE path as recorded in the
+// The importer surfaces, keyed by their BARE path as recorded in the
 // OpenAPI document. setGlobalPrefix('api') is applied at runtime only, so the
 // document itself records paths without the /api prefix — the extractor re-adds
 // it below so the artifact matches the real HTTP routes clients call.
@@ -25,6 +25,7 @@ export const IMPORTER_BARE_PATHS = [
   '/scout/ingest',
   '/scout/progress',
   '/scout/ingest/complete',
+  '/scout/import/status',
 ] as const;
 
 // Applied to every selected path so the artifact presents the real,
@@ -36,7 +37,7 @@ export const API_PREFIX = '/api';
 // change the artifact bytes (that would fail the drift test with no importer
 // change and no regeneration in the release flow). Bump this by hand only when
 // the importer surface itself changes in a client-visible way.
-export const CONTRACT_VERSION = '1.0.0';
+export const CONTRACT_VERSION = '1.1.0';
 
 /** Recursively sort object keys so JSON.stringify is byte-stable across runs. */
 export function stableSort<T>(value: T): T {
@@ -99,7 +100,7 @@ function collectSecuritySchemeNames(node: unknown, acc: Set<string>): void {
 
 /**
  * Slice the importer-only contract out of the full OpenAPI document:
- *   - keep only the seven importer paths, re-prefixed with /api
+ *   - keep only the importer paths, re-prefixed with /api
  *   - keep only the component schemas those paths reference (transitively)
  *   - keep only the security schemes those paths actually reference (so an
  *     unrelated global scheme cannot force a false-positive importer drift)

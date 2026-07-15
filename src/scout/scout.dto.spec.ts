@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { ArgumentMetadata, BadRequestException, ValidationPipe } from '@nestjs/common';
-import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
+import { ScoutCompleteDto, ScoutImportStatusQueryDto, ScoutProgressDto } from './scout.dto';
 
 // Drive the DTOs through the SAME ValidationPipe config the app installs
 // globally (src/main.ts): whitelist + forbidNonWhitelisted + transform. This
@@ -267,6 +267,52 @@ describe('ScoutCompleteDto validation', () => {
           error_summary: 'x'.repeat(2001),
         },
         meta(ScoutCompleteDto),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ScoutImportStatusQueryDto validation', () => {
+  const query = (metatype: ArgumentMetadata['metatype']): ArgumentMetadata => ({
+    type: 'query',
+    metatype,
+  });
+
+  it('accepts a well-formed intent_id', async () => {
+    const out = await pipe.transform({ intent_id: 'intent-1' }, query(ScoutImportStatusQueryDto));
+    expect(out).toBeInstanceOf(ScoutImportStatusQueryDto);
+    expect(out.intent_id).toBe('intent-1');
+  });
+
+  it('rejects a missing intent_id', async () => {
+    await expect(pipe.transform({}, query(ScoutImportStatusQueryDto))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects an empty intent_id (Length min 1)', async () => {
+    await expect(
+      pipe.transform({ intent_id: '' }, query(ScoutImportStatusQueryDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a non-string intent_id', async () => {
+    await expect(
+      pipe.transform({ intent_id: 123 }, query(ScoutImportStatusQueryDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an over-long intent_id (Length max 128)', async () => {
+    await expect(
+      pipe.transform({ intent_id: 'x'.repeat(129) }, query(ScoutImportStatusQueryDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an unknown extra field (forbidNonWhitelisted)', async () => {
+    await expect(
+      pipe.transform(
+        { intent_id: 'intent-1', coach_id: 'attacker-supplied' },
+        query(ScoutImportStatusQueryDto),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

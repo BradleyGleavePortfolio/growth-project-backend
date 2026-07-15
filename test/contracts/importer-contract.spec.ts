@@ -71,7 +71,7 @@ describe('importer contract (R80 freeze)', () => {
   });
 
   describe('surface completeness', () => {
-    it('exposes exactly the seven importer routes, /api-prefixed', () => {
+    it('exposes exactly the importer routes, /api-prefixed', () => {
       const expected = IMPORTER_BARE_PATHS.map((p) => `${API_PREFIX}${p}`).sort();
       expect(Object.keys(rec(contract.paths)).sort()).toEqual(expected);
     });
@@ -135,6 +135,81 @@ describe('importer contract (R80 freeze)', () => {
       expect(rl.required).toEqual(
         expect.arrayContaining(['statusCode', 'error', 'message', 'retryAfter']),
       );
+    });
+  });
+
+  describe('read: GET /api/scout/import/status', () => {
+    const path = '/api/scout/import/status';
+    // Sorted own-property names of a named component schema.
+    const props = (name: string): string[] =>
+      Object.keys(rec(dig(contract, 'components', 'schemas', name, 'properties'))).sort();
+
+    it('requires the intent_id query parameter with a 1..128 bounded string schema', () => {
+      const params = dig(contract, 'paths', path, 'get', 'parameters') as unknown[];
+      const intent = rec(params.map(rec).find((p) => p.name === 'intent_id'));
+      expect(intent).toMatchObject({ in: 'query', required: true });
+      // minLength must be emitted (not just maxLength) so a client generator
+      // rejects an empty intent_id the way the server's @Length(1,128) does.
+      expect(rec(intent.schema)).toMatchObject({
+        type: 'string',
+        minLength: 1,
+        maxLength: 128,
+      });
+    });
+
+    it('documents 400 and 404 without an existence oracle (flag-off ≡ not-found)', () => {
+      const g = dig(contract, 'paths', path, 'get', 'responses');
+      // The bodyless GET rejects a bad QUERY, never a "Malformed body".
+      expect(rec(dig(g, '400')).description as string).toMatch(/query/i);
+      expect(rec(dig(g, '400')).description as string).not.toMatch(/malformed body/i);
+      // Flag-off and no-evidence must be a single indistinguishable 404.
+      const notFound = rec(dig(g, '404')).description as string;
+      expect(notFound).toMatch(/FEATURE_SCOUT_INGEST/);
+      expect(notFound).toMatch(/no existence oracle/i);
+    });
+
+    it('returns the ScoutImportStatusResult projection on 200 with exactly its five fields', () => {
+      const res = dig(contract, 'paths', path, 'get', 'responses', '200', 'content');
+      expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
+        '#/components/schemas/ScoutImportStatusResult',
+      );
+      expect(props('ScoutImportStatusResult')).toEqual([
+        'completed_at',
+        'entity_counts',
+        'intent_id',
+        'started_at',
+        'status',
+      ]);
+    });
+
+    it('pins status to the four provable states only — no pending/cancelled', () => {
+      const en = dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties');
+      expect((rec(rec(en).status).enum as string[]).sort()).toEqual([
+        'failed',
+        'partial',
+        'running',
+        'success',
+      ]);
+    });
+
+    it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {
+      expect(props('ScoutImportEntityCountDto')).toEqual(['committed', 'entity_type']);
+    });
+
+    it('pins started_at and completed_at as nullable date-time strings (not object)', () => {
+      const p = rec(
+        dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties'),
+      );
+      for (const field of ['started_at', 'completed_at']) {
+        expect(rec(p[field])).toMatchObject({
+          type: 'string',
+          format: 'date-time',
+          nullable: true,
+        });
+        // Guards the reflector regression where a `string | null` union emitted
+        // `type: object`, which degrades client codegen to `any`/`object`.
+        expect(rec(p[field]).type).not.toBe('object');
+      }
     });
   });
 

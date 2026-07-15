@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { NotFoundException } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -16,13 +17,17 @@ interface PrismaDoubles {
   upsert: jest.Mock;
   create: jest.Mock;
   importUpsert: jest.Mock;
+  importFindUnique: jest.Mock;
+  ingestGroupBy: jest.Mock;
+  snapshotFindFirst: jest.Mock;
 }
 
 function makePrisma(doubles: PrismaDoubles): PrismaService {
   return Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
-    scoutProgressSnapshot: { upsert: doubles.upsert },
+    scoutProgressSnapshot: { upsert: doubles.upsert, findFirst: doubles.snapshotFindFirst },
     scoutImportCompletion: { create: doubles.create },
-    scoutImport: { upsert: doubles.importUpsert },
+    scoutImport: { upsert: doubles.importUpsert, findUnique: doubles.importFindUnique },
+    scoutIngestEntity: { groupBy: doubles.ingestGroupBy },
     // Batch $transaction([...]) resolves iff every op resolves; a rejected op
     // (e.g. the ledger's P2002) rejects the whole transaction, mirroring the
     // real client's all-or-nothing settle so the state upsert never lands alone.
@@ -66,6 +71,9 @@ describe('ScoutService', () => {
   let upsert: jest.Mock;
   let create: jest.Mock;
   let importUpsert: jest.Mock;
+  let importFindUnique: jest.Mock;
+  let ingestGroupBy: jest.Mock;
+  let snapshotFindFirst: jest.Mock;
   let pushToUser: jest.Mock;
   let capture: jest.Mock;
   let prisma: PrismaService;
@@ -77,9 +85,19 @@ describe('ScoutService', () => {
     upsert = jest.fn().mockResolvedValue({});
     create = jest.fn().mockResolvedValue({});
     importUpsert = jest.fn().mockResolvedValue({});
+    importFindUnique = jest.fn().mockResolvedValue(null);
+    ingestGroupBy = jest.fn().mockResolvedValue([]);
+    snapshotFindFirst = jest.fn().mockResolvedValue(null);
     pushToUser = jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' });
     capture = jest.fn();
-    prisma = makePrisma({ upsert, create, importUpsert });
+    prisma = makePrisma({
+      upsert,
+      create,
+      importUpsert,
+      importFindUnique,
+      ingestGroupBy,
+      snapshotFindFirst,
+    });
     notifications = makeNotifications(pushToUser);
     analytics = makeAnalytics(capture);
     service = new ScoutService(prisma, notifications, analytics);
@@ -461,6 +479,357 @@ describe('ScoutService', () => {
           error_summary: undefined,
         },
       });
+    });
+  });
+
+  describe('complete pre-settle flush is best-effort (P3: no settle-wedge)', () => {
+    it('still settles and notifies when the pre-settle snapshot flush fails', async () => {
+      // A poison/unpersistable snapshot must NOT block completion: settle owns the
+      // terminal state and counts come from ScoutIngestEntity, not the snapshot.
+      upsert.mockRejectedValue(new Error('poison payload'));
+      service.recordProgress('coach-1', PROGRESS);
+
+      const res = await service.complete('coach-1', COMPLETE_OK);
+
+      expect(res).toEqual({ acknowledged: true, intent_id: 'intent-1' });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(importUpsert).toHaveBeenCalledTimes(1);
+      expect(pushToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the failed snapshot pending and retryable after settling', async () => {
+      upsert.mockRejectedValueOnce(new Error('db blip'));
+      service.recordProgress('coach-1', PROGRESS);
+      await service.complete('coach-1', COMPLETE_OK);
+      expect(upsert).toHaveBeenCalledTimes(1); // attempted once during settle, failed
+
+      upsert.mockResolvedValue({});
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(2); // retried on a later drain and persisted
+    });
+
+    it('read still fails closed (5xx, not 404) while the bad snapshot remains pending', async () => {
+      upsert.mockRejectedValue(new Error('poison payload'));
+      service.recordProgress('coach-1', PROGRESS);
+      await service.complete('coach-1', COMPLETE_OK); // settles despite the flush failure
+
+      const err = await service
+        .getImportStatus('coach-1', 'intent-1')
+        .then(() => null)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('does not flush an unrelated tenant/run when settling', async () => {
+      service.recordProgress('coach-2', { ...PROGRESS, intent_id: 'intent-2' });
+      await service.complete('coach-1', COMPLETE_OK);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('does not raise an unhandled rejection when the pre-settle flush fails', async () => {
+      const unhandled: unknown[] = [];
+      const onUnhandled = (e: unknown): void => {
+        unhandled.push(e);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        upsert.mockRejectedValue(new Error('poison payload'));
+        service.recordProgress('coach-1', PROGRESS);
+        await service.complete('coach-1', COMPLETE_OK);
+        await new Promise((r) => setImmediate(r));
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+      expect(unhandled).toEqual([]);
+    });
+  });
+
+  describe('getImportStatus (read surface)', () => {
+    const STARTED = new Date('2026-07-09T10:00:00.000Z');
+    const DONE = new Date('2026-07-09T10:30:00.000Z');
+    const SEEN = new Date('2026-07-09T10:05:00.000Z');
+
+    const importRow = (terminal_status: string | null, completed_at: Date | null = DONE) => ({
+      started_at: STARTED,
+      completed_at,
+      terminal_status,
+    });
+    // Mirrors the real groupBy return once `_min: { created_at }` is requested;
+    // the earliest _min.created_at across families is the canonical first commit
+    // (clients @ STARTED here, before workouts @ DONE).
+    const groups = () => [
+      { entity_type: 'workouts', _count: { _all: 4 }, _min: { created_at: DONE } },
+      { entity_type: 'clients', _count: { _all: 12 }, _min: { created_at: STARTED } },
+    ];
+
+    it('throws 404 when no evidence of the intent exists anywhere', async () => {
+      await expect(service.getImportStatus('coach-1', 'ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('does not emit analytics for an unknown intent', async () => {
+      await expect(service.getImportStatus('coach-1', 'ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('drains in-flight progress before reading so a just-accepted run is not falsely 404d', async () => {
+      // A snapshot the extension has already POSTed but that has not yet hit its
+      // flush tick lives only in the in-process cache. The read must persist it
+      // first (the same drain complete() runs) so a genuinely running import is
+      // recognised instead of 404'd on the accepted-but-unflushed window.
+      service.recordProgress('coach-1', PROGRESS);
+      // Model the drain landing the row so the subsequent snapshot read sees it.
+      upsert.mockImplementation(async () => {
+        snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+        return {};
+      });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe('running');
+    });
+
+    it('reports running when committed entities exist but no terminal row does', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.completed_at).toBeNull();
+    });
+
+    it('never exposes completed_at while running, even if the row carries a stray one', async () => {
+      // An in-progress lifecycle row (terminal_status null) must project running
+      // and suppress completed_at regardless of any value the row happens to hold.
+      importFindUnique.mockResolvedValue(importRow(null, DONE));
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.completed_at).toBeNull();
+    });
+
+    it('reports running from a progress snapshot alone (no entities, no settle)', async () => {
+      snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.started_at).toBe(SEEN.toISOString());
+    });
+
+    it('reflects a settled success verbatim, preferring its started_at over the snapshot', async () => {
+      importFindUnique.mockResolvedValue(importRow('success'));
+      snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('success');
+      expect(res.started_at).toBe(STARTED.toISOString());
+      expect(res.completed_at).toBe(DONE.toISOString());
+    });
+
+    it.each(['partial', 'failed'] as const)('reflects a settled %s verbatim', async (s) => {
+      importFindUnique.mockResolvedValue(importRow(s));
+      expect((await service.getImportStatus('coach-1', 'intent-1')).status).toBe(s);
+    });
+
+    it('fails closed to failed (not running) on an unrecognised stored terminal_status', async () => {
+      importFindUnique.mockResolvedValue(importRow('exploded'));
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      // A settled-but-corrupt row must never be reported as still running.
+      expect(res.status).toBe('failed');
+      // It is genuinely settled, so completed_at reflects the real settle time.
+      expect(res.completed_at).toBe(DONE.toISOString());
+    });
+
+    it('emits an observable RED corruption signal (no offending value) when failing closed', async () => {
+      importFindUnique.mockResolvedValue(importRow('exploded'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).toHaveBeenCalledWith('coach-1', Events.SCOUT_IMPORT_STATUS_INVALID, {
+        intent_id: 'intent-1',
+      });
+      const invalidCall = capture.mock.calls.find(
+        (c) => c[1] === Events.SCOUT_IMPORT_STATUS_INVALID,
+      );
+      // Only intent_id — never the corrupt status string, tokens, or PII.
+      expect(Object.keys(invalidCall![2])).toEqual(['intent_id']);
+    });
+
+    it('does not raise the corruption signal for a recognised terminal state', async () => {
+      importFindUnique.mockResolvedValue(importRow('partial'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).not.toHaveBeenCalledWith(
+        'coach-1',
+        Events.SCOUT_IMPORT_STATUS_INVALID,
+        expect.anything(),
+      );
+    });
+
+    it('derives started_at from the earliest committed entity (stable first observation)', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      // Earliest _min.created_at across families (STARTED < DONE), NOT the
+      // latest snapshot and NOT the settle-time import row.
+      expect(res.started_at).toBe(STARTED.toISOString());
+    });
+
+    it('prefers the first committed entity over the import row start on a settled run', async () => {
+      const laterStart = new Date('2026-07-09T11:00:00.000Z');
+      importFindUnique.mockResolvedValue({
+        started_at: laterStart,
+        completed_at: DONE,
+        terminal_status: 'success',
+      });
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      // The committed-entity timestamp (STARTED) is earlier and canonical, so it
+      // wins over the import row's created-at-settle started_at.
+      expect(res.started_at).toBe(STARTED.toISOString());
+    });
+
+    it('exposes committed counts (proof), sorted, and never an estimate field', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.entity_counts).toEqual([
+        { entity_type: 'clients', committed: 12 },
+        { entity_type: 'workouts', committed: 4 },
+      ]);
+      const keys = new Set(res.entity_counts.flatMap((c) => Object.keys(c)));
+      expect(keys).toEqual(new Set(['entity_type', 'committed']));
+    });
+
+    it('scopes every read by the caller coach id (IDOR / tenant ownership)', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      await service.getImportStatus('coach-9', 'intent-1');
+      expect(importFindUnique.mock.calls[0][0].where).toEqual({
+        coach_id_intent_id: { coach_id: 'coach-9', intent_id: 'intent-1' },
+      });
+      expect(ingestGroupBy.mock.calls[0][0].where).toEqual({
+        coach_id: 'coach-9',
+        intent_id: 'intent-1',
+      });
+      expect(snapshotFindFirst.mock.calls[0][0].where).toEqual({
+        coach_id: 'coach-9',
+        intent_id: 'intent-1',
+      });
+    });
+
+    it('emits a RED-signal event carrying only intent_id + status (no PII)', async () => {
+      importFindUnique.mockResolvedValue(importRow('success'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).toHaveBeenCalledWith('coach-1', Events.SCOUT_IMPORT_STATUS_READ, {
+        intent_id: 'intent-1',
+        status: 'success',
+      });
+      expect(Object.keys(capture.mock.calls[0][2]).sort()).toEqual(['intent_id', 'status']);
+    });
+
+    it('returns only the declared safe shape — no tokens, payloads, or free-text error', async () => {
+      importFindUnique.mockResolvedValue(importRow('failed'));
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(Object.keys(res).sort()).toEqual([
+        'completed_at',
+        'entity_counts',
+        'intent_id',
+        'started_at',
+        'status',
+      ]);
+    });
+  });
+
+  describe('getImportStatus concurrency + tenant isolation (key-scoped flush)', () => {
+    // Deferred so two reads can be launched while a requested-key write is in
+    // flight; resolve() lets the pending upsert(s) complete.
+    function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+      let resolve!: (v: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it('does not touch an unrelated tenant/run backlog on a read (no global drain)', async () => {
+      // coach-2/intent-2 progress is cached but must NOT be persisted by a read
+      // of coach-1/intent-1 — the read drains only its own run's key(s).
+      service.recordProgress('coach-2', { ...PROGRESS, intent_id: 'intent-2' });
+
+      await expect(service.getImportStatus('coach-1', 'intent-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(upsert).not.toHaveBeenCalled();
+
+      // The unrelated backlog survives and drains normally on the next tick.
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(upsert.mock.calls[0][0].where.coach_id_intent_id_device_id).toEqual({
+        coach_id: 'coach-2',
+        intent_id: 'intent-2',
+        device_id: 'device-a',
+      });
+    });
+
+    it('coalesces two concurrent reads onto one in-flight write (no double write, no false 404)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      const gate = deferred<Record<string, never>>();
+      let calls = 0;
+      upsert.mockImplementation(async () => {
+        calls += 1;
+        await gate.promise;
+        // The just-persisted snapshot becomes readable, so both reads see running.
+        snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+        return {};
+      });
+
+      const first = service.getImportStatus('coach-1', 'intent-1');
+      const second = service.getImportStatus('coach-1', 'intent-1');
+      gate.resolve({} as Record<string, never>);
+      const [a, b] = await Promise.all([first, second]);
+
+      expect(calls).toBe(1); // single-flight: exactly one upsert for the key
+      expect(a.status).toBe('running');
+      expect(b.status).toBe('running');
+    });
+
+    it('fails closed (propagates, not a 404) when the requested-key persist fails', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      upsert.mockRejectedValueOnce(new Error('db down'));
+
+      const err = await service
+        .getImportStatus('coach-1', 'intent-1')
+        .then(() => null)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(NotFoundException);
+      expect((err as Error).message).toBe('db down');
+      // The main projection reads never ran — we failed before them.
+      expect(importFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('recovers on retry after a requested-key persist failure (snapshot stays pending)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      upsert.mockRejectedValueOnce(new Error('db blip'));
+
+      await expect(service.getImportStatus('coach-1', 'intent-1')).rejects.toThrow('db blip');
+
+      // Second read: the write now succeeds and lands a snapshot → running.
+      upsert.mockImplementation(async () => {
+        snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+        return {};
+      });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(2);
+      expect(res.status).toBe('running');
+    });
+
+    it('drops the run from the pending index once its key persists (no repeat write)', async () => {
+      service.recordProgress('coach-1', PROGRESS);
+      snapshotFindFirst.mockResolvedValue({ updated_at: new Date('2026-07-09T10:05:00.000Z') });
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
+
+      // A second read finds nothing pending for the run → no further write.
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(upsert).toHaveBeenCalledTimes(1);
     });
   });
 });

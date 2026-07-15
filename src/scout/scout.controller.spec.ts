@@ -31,6 +31,7 @@ const COMPLETE: ScoutCompleteDto = {
 describe('ScoutController', () => {
   let recordProgress: jest.Mock;
   let complete: jest.Mock;
+  let getImportStatus: jest.Mock;
   let service: ScoutService;
   let controller: ScoutController;
 
@@ -40,9 +41,17 @@ describe('ScoutController', () => {
       acknowledged: true,
       intent_id: 'intent-1',
     });
+    getImportStatus = jest.fn().mockResolvedValue({
+      intent_id: 'intent-1',
+      status: 'running',
+      entity_counts: [],
+      started_at: null,
+      completed_at: null,
+    });
     service = Object.assign(Object.create(ScoutService.prototype) as ScoutService, {
       recordProgress,
       complete,
+      getImportStatus,
     });
     controller = new ScoutController(service);
   });
@@ -120,6 +129,41 @@ describe('ScoutController', () => {
       const progressLimit = Reflect.getMetadata(THROTTLE_LIMIT_DEFAULT_KEY, progress);
       expect(completeLimit).toBeDefined();
       expect(progressLimit).toBeDefined();
+    });
+  });
+
+  describe('GET /api/scout/import/status', () => {
+    it('delegates to the service keyed by the TOKEN identity, not a query field', async () => {
+      await controller.getImportStatus(makeReq('coach-42'), { intent_id: 'intent-1' });
+      expect(getImportStatus).toHaveBeenCalledWith('coach-42', 'intent-1');
+    });
+
+    it('passes only the intent_id from the query — no account field is read', async () => {
+      await controller.getImportStatus(makeReq('coach-token'), { intent_id: 'intent-9' });
+      expect(getImportStatus.mock.calls[0][0]).toBe('coach-token');
+      expect(getImportStatus.mock.calls[0][1]).toBe('intent-9');
+    });
+
+    it('returns the service projection verbatim', async () => {
+      const res = await controller.getImportStatus(makeReq('coach-42'), { intent_id: 'intent-1' });
+      expect(res).toMatchObject({ intent_id: 'intent-1', status: 'running' });
+    });
+
+    it('is registered as a GET on the `import/status` sub-path', () => {
+      const handler = ScoutController.prototype.getImportStatus;
+      expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe('import/status');
+      expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(RequestMethod.GET);
+    });
+
+    it('is gated to coach/owner roles', () => {
+      const handler = ScoutController.prototype.getImportStatus;
+      expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual(['coach', 'owner']);
+    });
+
+    it('carries a per-caller throttle budget', () => {
+      const handler = ScoutController.prototype.getImportStatus;
+      expect(Reflect.getMetadata(THROTTLE_LIMIT_DEFAULT_KEY, handler)).toBeDefined();
+      expect(Reflect.getMetadata(THROTTLE_TTL_DEFAULT_KEY, handler)).toBeDefined();
     });
   });
 

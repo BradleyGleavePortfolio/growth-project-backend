@@ -151,6 +151,70 @@ export class ScoutCompleteDto {
   error_summary?: string;
 }
 
+// States the READ surface can prove: `running` is derived from present evidence
+// when no terminal row exists yet; the other three are the settled
+// terminal_status reflected verbatim. `pending`/`cancelled` are deliberately
+// absent (not representable). See docs/decisions/2026-07-15-importer-import-status-read.md.
+export const SCOUT_READ_STATUSES = ['running', ...SCOUT_TERMINAL_STATUSES] as const;
+export type ScoutReadStatus = (typeof SCOUT_READ_STATUSES)[number];
+
+/** GET /api/scout/import/status query — one run, identified by its intent id. */
+export class ScoutImportStatusQueryDto {
+  @ApiProperty({
+    description: 'Crawl session id of the run to read.',
+    minLength: 1,
+    maxLength: 128,
+  })
+  @IsString()
+  @Length(1, 128)
+  intent_id!: string;
+}
+
+/** One server-authoritative committed count per entity family. */
+export class ScoutImportEntityCountDto {
+  @ApiProperty({ description: 'Entity family.', example: 'clients' })
+  entity_type!: string;
+
+  @ApiProperty({ description: 'Entities actually committed (proof, not an estimate).', minimum: 0 })
+  committed!: number;
+}
+
+// 200 body for GET /api/scout/import/status. Evidence-only: `entity_counts` are
+// persisted-row counts, never the extension's `total_estimated`. The `status`
+// itself conveys the terminal class (partial/failed) — no free-text error text.
+export class ScoutImportStatusResult {
+  @ApiProperty({ description: 'The intent id that was read.' })
+  intent_id!: string;
+
+  @ApiProperty({ description: 'Proven lifecycle state.', enum: SCOUT_READ_STATUSES })
+  status!: ScoutReadStatus;
+
+  @ApiProperty({ type: [ScoutImportEntityCountDto], description: 'Committed counts per entity.' })
+  entity_counts!: ScoutImportEntityCountDto[];
+
+  // type/format explicit: the reflector cannot infer them from `string | null`
+  // and would emit `type: object`, degrading a Date field in client codegen.
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Earliest evidence timestamp (ISO-8601): first committed entity, else ' +
+      'lifecycle start, else latest progress snapshot. Null when none timestamped. ' +
+      'For a settled run with zero committed entities and no snapshot this ' +
+      'degenerates to the settle-time lifecycle start, so it may equal completed_at.',
+  })
+  started_at!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Settled at (ISO-8601); null while running.',
+  })
+  completed_at!: string | null;
+}
+
 /** 200 body: the settle call is acknowledged and echoes the intent id. */
 export class ScoutCompleteResult {
   @ApiProperty({ description: 'Always true on a successful (idempotent) settle.', example: true })

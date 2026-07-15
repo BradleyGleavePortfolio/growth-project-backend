@@ -109,6 +109,17 @@ export const Events = {
    * retry. Properties: { intent_id, terminal_status }. No PII.
    */
   SCOUT_INGEST_COMPLETED: 'scout.ingest.completed',
+  /**
+   * IMPORTER — GET /api/scout/import/status read one run's status. RED signal;
+   * properties { intent_id, status }. No tokens, payloads, or PII.
+   */
+  SCOUT_IMPORT_STATUS_READ: 'scout.import.status.read',
+  /**
+   * IMPORTER — a settled ScoutImport carried an unrecognised terminal_status;
+   * the read fails closed to `failed`. RED signal, { intent_id } only — the
+   * offending value is never emitted (no tokens, payloads, or PII).
+   */
+  SCOUT_IMPORT_STATUS_INVALID: 'scout.import.status.invalid',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

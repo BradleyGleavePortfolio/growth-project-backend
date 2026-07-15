@@ -1,9 +1,15 @@
-import { Body, Controller, HttpCode, Post, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Post, Query, Request } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ScoutCompleteDto, ScoutCompleteResult, ScoutProgressDto } from './scout.dto';
+import {
+  ScoutCompleteDto,
+  ScoutCompleteResult,
+  ScoutImportStatusQueryDto,
+  ScoutImportStatusResult,
+  ScoutProgressDto,
+} from './scout.dto';
 import { ScoutService } from './scout.service';
 import { errorEnvelopeSchema, rateLimitSchema } from '../common/errors/importer-error-responses';
 
@@ -90,5 +96,40 @@ export class ScoutController {
     @Body() body: ScoutCompleteDto,
   ): Promise<{ acknowledged: true; intent_id: string }> {
     return this.scout.complete(req.user.id, body);
+  }
+
+  @ApiOperation({
+    summary: "Read one import run's server-authoritative status (committed counts, not estimates)",
+  })
+  @ApiQuery({ name: 'intent_id', required: true, description: 'Crawl session id to read.' })
+  @ApiResponse({ status: 200, description: 'Import status.', type: ScoutImportStatusResult })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid query string (global ValidationPipe: whitelist + forbidNonWhitelisted). ' +
+      'Raised when `intent_id` is missing, empty, over 128 chars, or an unknown ' +
+      'query param is supplied. Standard HttpExceptionFilter envelope; `message` is ' +
+      'a string ARRAY of per-field constraint violations when present.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Uniform not-found. Returned identically whether FEATURE_SCOUT_INGEST is off ' +
+      '(R-DARK-1 dark route, decided before any guard runs) OR the run has no ' +
+      'server-side evidence for the calling coach (unknown intent, cross-tenant ' +
+      'intent, or a run with no committed entity, persisted progress snapshot, or ' +
+      'settle row yet). The two cases are deliberately indistinguishable — no ' +
+      'existence oracle.',
+    schema: errorEnvelopeSchema(),
+  })
+  @Get('import/status')
+  @Roles('coach', 'owner')
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
+  getImportStatus(
+    @Request() req: AuthedRequest,
+    @Query() query: ScoutImportStatusQueryDto,
+  ): Promise<ScoutImportStatusResult> {
+    return this.scout.getImportStatus(req.user.id, query.intent_id);
   }
 }
