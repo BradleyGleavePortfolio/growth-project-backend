@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -6,7 +6,13 @@ import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
-import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
+import {
+  ScoutCompleteDto,
+  ScoutImportStatusResult,
+  ScoutProgressDto,
+  SCOUT_TERMINAL_STATUSES,
+  ScoutTerminalStatus,
+} from './scout.dto';
 
 /** How often the in-process progress cache is flushed to Postgres (ms). */
 export const SCOUT_PROGRESS_FLUSH_MS = 5_000;
@@ -204,6 +210,50 @@ export class ScoutService implements OnModuleDestroy {
     }
 
     return { acknowledged: true, intent_id: dto.intent_id };
+  }
+
+  /** Evidence-only read for GET /api/scout/import/status: settled state verbatim
+   * or `running` derived from present evidence; counts are persisted rows, not
+   * estimates. Scoped by `coachId` so unknown OR cross-tenant intents both 404. */
+  async getImportStatus(coachId: string, intentId: string): Promise<ScoutImportStatusResult> {
+    const [importRow, grouped, snapshot] = await Promise.all([
+      this.prisma.scoutImport.findUnique({
+        where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
+      }),
+      this.prisma.scoutIngestEntity.groupBy({
+        by: ['entity_type'],
+        where: { coach_id: coachId, intent_id: intentId },
+        _count: { _all: true },
+      }),
+      this.prisma.scoutProgressSnapshot.findFirst({
+        where: { coach_id: coachId, intent_id: intentId },
+        orderBy: { updated_at: 'desc' },
+      }),
+    ]);
+    if (!importRow && grouped.length === 0 && !snapshot) throw new NotFoundException();
+
+    const terminal =
+      importRow && ScoutService.isTerminalStatus(importRow.terminal_status)
+        ? importRow.terminal_status
+        : null;
+    const status = terminal ?? 'running';
+    this.analytics.capture(coachId, Events.SCOUT_IMPORT_STATUS_READ, {
+      intent_id: intentId,
+      status,
+    });
+    return {
+      intent_id: intentId,
+      status,
+      entity_counts: grouped
+        .map((g) => ({ entity_type: g.entity_type, committed: g._count._all }))
+        .sort((a, b) => a.entity_type.localeCompare(b.entity_type)),
+      started_at: importRow?.started_at.toISOString() ?? snapshot?.updated_at.toISOString() ?? null,
+      completed_at: terminal ? (importRow?.completed_at?.toISOString() ?? null) : null,
+    };
+  }
+
+  private static isTerminalStatus(value: string | null): value is ScoutTerminalStatus {
+    return value !== null && (SCOUT_TERMINAL_STATUSES as readonly string[]).includes(value);
   }
 
   /** Fire the mobile `import.complete` push. Best-effort — never throws. */

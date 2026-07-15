@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { NotFoundException } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -16,13 +17,17 @@ interface PrismaDoubles {
   upsert: jest.Mock;
   create: jest.Mock;
   importUpsert: jest.Mock;
+  importFindUnique: jest.Mock;
+  ingestGroupBy: jest.Mock;
+  snapshotFindFirst: jest.Mock;
 }
 
 function makePrisma(doubles: PrismaDoubles): PrismaService {
   return Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
-    scoutProgressSnapshot: { upsert: doubles.upsert },
+    scoutProgressSnapshot: { upsert: doubles.upsert, findFirst: doubles.snapshotFindFirst },
     scoutImportCompletion: { create: doubles.create },
-    scoutImport: { upsert: doubles.importUpsert },
+    scoutImport: { upsert: doubles.importUpsert, findUnique: doubles.importFindUnique },
+    scoutIngestEntity: { groupBy: doubles.ingestGroupBy },
     // Batch $transaction([...]) resolves iff every op resolves; a rejected op
     // (e.g. the ledger's P2002) rejects the whole transaction, mirroring the
     // real client's all-or-nothing settle so the state upsert never lands alone.
@@ -66,6 +71,9 @@ describe('ScoutService', () => {
   let upsert: jest.Mock;
   let create: jest.Mock;
   let importUpsert: jest.Mock;
+  let importFindUnique: jest.Mock;
+  let ingestGroupBy: jest.Mock;
+  let snapshotFindFirst: jest.Mock;
   let pushToUser: jest.Mock;
   let capture: jest.Mock;
   let prisma: PrismaService;
@@ -77,9 +85,19 @@ describe('ScoutService', () => {
     upsert = jest.fn().mockResolvedValue({});
     create = jest.fn().mockResolvedValue({});
     importUpsert = jest.fn().mockResolvedValue({});
+    importFindUnique = jest.fn().mockResolvedValue(null);
+    ingestGroupBy = jest.fn().mockResolvedValue([]);
+    snapshotFindFirst = jest.fn().mockResolvedValue(null);
     pushToUser = jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' });
     capture = jest.fn();
-    prisma = makePrisma({ upsert, create, importUpsert });
+    prisma = makePrisma({
+      upsert,
+      create,
+      importUpsert,
+      importFindUnique,
+      ingestGroupBy,
+      snapshotFindFirst,
+    });
     notifications = makeNotifications(pushToUser);
     analytics = makeAnalytics(capture);
     service = new ScoutService(prisma, notifications, analytics);
@@ -461,6 +479,120 @@ describe('ScoutService', () => {
           error_summary: undefined,
         },
       });
+    });
+  });
+
+  describe('getImportStatus (read surface)', () => {
+    const STARTED = new Date('2026-07-09T10:00:00.000Z');
+    const DONE = new Date('2026-07-09T10:30:00.000Z');
+    const SEEN = new Date('2026-07-09T10:05:00.000Z');
+
+    const importRow = (terminal_status: string | null, completed_at: Date | null = DONE) => ({
+      started_at: STARTED,
+      completed_at,
+      terminal_status,
+    });
+    const groups = () => [
+      { entity_type: 'workouts', _count: { _all: 4 } },
+      { entity_type: 'clients', _count: { _all: 12 } },
+    ];
+
+    it('throws 404 when no evidence of the intent exists anywhere', async () => {
+      await expect(service.getImportStatus('coach-1', 'ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('does not emit analytics for an unknown intent', async () => {
+      await expect(service.getImportStatus('coach-1', 'ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('reports running when committed entities exist but no terminal row does', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.completed_at).toBeNull();
+    });
+
+    it('reports running from a progress snapshot alone (no entities, no settle)', async () => {
+      snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.started_at).toBe(SEEN.toISOString());
+    });
+
+    it('reflects a settled success verbatim, preferring its started_at over the snapshot', async () => {
+      importFindUnique.mockResolvedValue(importRow('success'));
+      snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('success');
+      expect(res.started_at).toBe(STARTED.toISOString());
+      expect(res.completed_at).toBe(DONE.toISOString());
+    });
+
+    it.each(['partial', 'failed'] as const)('reflects a settled %s verbatim', async (s) => {
+      importFindUnique.mockResolvedValue(importRow(s));
+      expect((await service.getImportStatus('coach-1', 'intent-1')).status).toBe(s);
+    });
+
+    it('degrades an unrecognised stored terminal_status to running (defensive guard)', async () => {
+      importFindUnique.mockResolvedValue(importRow('exploded'));
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.completed_at).toBeNull();
+    });
+
+    it('exposes committed counts (proof), sorted, and never an estimate field', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.entity_counts).toEqual([
+        { entity_type: 'clients', committed: 12 },
+        { entity_type: 'workouts', committed: 4 },
+      ]);
+      const keys = new Set(res.entity_counts.flatMap((c) => Object.keys(c)));
+      expect(keys).toEqual(new Set(['entity_type', 'committed']));
+    });
+
+    it('scopes every read by the caller coach id (IDOR / tenant ownership)', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      await service.getImportStatus('coach-9', 'intent-1');
+      expect(importFindUnique.mock.calls[0][0].where).toEqual({
+        coach_id_intent_id: { coach_id: 'coach-9', intent_id: 'intent-1' },
+      });
+      expect(ingestGroupBy.mock.calls[0][0].where).toEqual({
+        coach_id: 'coach-9',
+        intent_id: 'intent-1',
+      });
+      expect(snapshotFindFirst.mock.calls[0][0].where).toEqual({
+        coach_id: 'coach-9',
+        intent_id: 'intent-1',
+      });
+    });
+
+    it('emits a RED-signal event carrying only intent_id + status (no PII)', async () => {
+      importFindUnique.mockResolvedValue(importRow('success'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).toHaveBeenCalledWith('coach-1', Events.SCOUT_IMPORT_STATUS_READ, {
+        intent_id: 'intent-1',
+        status: 'success',
+      });
+      expect(Object.keys(capture.mock.calls[0][2]).sort()).toEqual(['intent_id', 'status']);
+    });
+
+    it('returns only the declared safe shape — no tokens, payloads, or free-text error', async () => {
+      importFindUnique.mockResolvedValue(importRow('failed'));
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(Object.keys(res).sort()).toEqual([
+        'completed_at',
+        'entity_counts',
+        'intent_id',
+        'started_at',
+        'status',
+      ]);
     });
   });
 });

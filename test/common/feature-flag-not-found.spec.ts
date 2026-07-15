@@ -142,6 +142,18 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('returns 404 for GET /api/scout/import/status when the flag is off (read surface darked)', () => {
+    delete process.env.FEATURE_SCOUT_INGEST;
+    const { res, status, json } = makeRes();
+    const next = jest.fn();
+
+    featureFlagNotFoundMiddleware(makeReq('/api/scout/import/status', 'GET'), res, next);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith(FILTER_404_BODY('GET', '/api/scout/import/status'));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('runs before the guard chain — short-circuits a gated subpath without invoking next()', () => {
     process.env.FEATURE_SCOUT_INGEST = 'false';
     const { res, status } = makeRes();

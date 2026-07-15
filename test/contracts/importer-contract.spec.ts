@@ -71,7 +71,7 @@ describe('importer contract (R80 freeze)', () => {
   });
 
   describe('surface completeness', () => {
-    it('exposes exactly the seven importer routes, /api-prefixed', () => {
+    it('exposes exactly the importer routes, /api-prefixed', () => {
       const expected = IMPORTER_BARE_PATHS.map((p) => `${API_PREFIX}${p}`).sort();
       expect(Object.keys(rec(contract.paths)).sort()).toEqual(expected);
     });
@@ -135,6 +135,49 @@ describe('importer contract (R80 freeze)', () => {
       expect(rl.required).toEqual(
         expect.arrayContaining(['statusCode', 'error', 'message', 'retryAfter']),
       );
+    });
+  });
+
+  describe('read: GET /api/scout/import/status', () => {
+    const path = '/api/scout/import/status';
+    // Sorted own-property names of a named component schema.
+    const props = (name: string): string[] =>
+      Object.keys(rec(dig(contract, 'components', 'schemas', name, 'properties'))).sort();
+
+    it('requires the intent_id query parameter', () => {
+      const params = dig(contract, 'paths', path, 'get', 'parameters') as unknown[];
+      expect(params.map(rec).find((p) => p.name === 'intent_id')).toMatchObject({
+        in: 'query',
+        required: true,
+      });
+    });
+
+    it('returns the ScoutImportStatusResult projection on 200 with exactly its five fields', () => {
+      const res = dig(contract, 'paths', path, 'get', 'responses', '200', 'content');
+      expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
+        '#/components/schemas/ScoutImportStatusResult',
+      );
+      expect(props('ScoutImportStatusResult')).toEqual([
+        'completed_at',
+        'entity_counts',
+        'intent_id',
+        'started_at',
+        'status',
+      ]);
+    });
+
+    it('pins status to the four provable states only — no pending/cancelled', () => {
+      const en = dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties');
+      expect((rec(rec(en).status).enum as string[]).sort()).toEqual([
+        'failed',
+        'partial',
+        'running',
+        'success',
+      ]);
+    });
+
+    it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {
+      expect(props('ScoutImportEntityCountDto')).toEqual(['committed', 'entity_type']);
     });
   });
 
