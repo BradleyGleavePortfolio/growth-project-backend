@@ -520,6 +520,16 @@ describe('ScoutService', () => {
       expect(res.completed_at).toBeNull();
     });
 
+    it('never exposes completed_at while running, even if the row carries a stray one', async () => {
+      // An in-progress lifecycle row (terminal_status null) must project running
+      // and suppress completed_at regardless of any value the row happens to hold.
+      importFindUnique.mockResolvedValue(importRow(null, DONE));
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      expect(res.status).toBe('running');
+      expect(res.completed_at).toBeNull();
+    });
+
     it('reports running from a progress snapshot alone (no entities, no settle)', async () => {
       snapshotFindFirst.mockResolvedValue({ updated_at: SEEN });
       const res = await service.getImportStatus('coach-1', 'intent-1');
