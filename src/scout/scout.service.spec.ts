@@ -482,6 +482,70 @@ describe('ScoutService', () => {
     });
   });
 
+  describe('complete pre-settle flush is best-effort (P3: no settle-wedge)', () => {
+    it('still settles and notifies when the pre-settle snapshot flush fails', async () => {
+      // A poison/unpersistable snapshot must NOT block completion: settle owns the
+      // terminal state and counts come from ScoutIngestEntity, not the snapshot.
+      upsert.mockRejectedValue(new Error('poison payload'));
+      service.recordProgress('coach-1', PROGRESS);
+
+      const res = await service.complete('coach-1', COMPLETE_OK);
+
+      expect(res).toEqual({ acknowledged: true, intent_id: 'intent-1' });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(importUpsert).toHaveBeenCalledTimes(1);
+      expect(pushToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the failed snapshot pending and retryable after settling', async () => {
+      upsert.mockRejectedValueOnce(new Error('db blip'));
+      service.recordProgress('coach-1', PROGRESS);
+      await service.complete('coach-1', COMPLETE_OK);
+      expect(upsert).toHaveBeenCalledTimes(1); // attempted once during settle, failed
+
+      upsert.mockResolvedValue({});
+      await service.flush();
+      expect(upsert).toHaveBeenCalledTimes(2); // retried on a later drain and persisted
+    });
+
+    it('read still fails closed (5xx, not 404) while the bad snapshot remains pending', async () => {
+      upsert.mockRejectedValue(new Error('poison payload'));
+      service.recordProgress('coach-1', PROGRESS);
+      await service.complete('coach-1', COMPLETE_OK); // settles despite the flush failure
+
+      const err = await service
+        .getImportStatus('coach-1', 'intent-1')
+        .then(() => null)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('does not flush an unrelated tenant/run when settling', async () => {
+      service.recordProgress('coach-2', { ...PROGRESS, intent_id: 'intent-2' });
+      await service.complete('coach-1', COMPLETE_OK);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('does not raise an unhandled rejection when the pre-settle flush fails', async () => {
+      const unhandled: unknown[] = [];
+      const onUnhandled = (e: unknown): void => {
+        unhandled.push(e);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        upsert.mockRejectedValue(new Error('poison payload'));
+        service.recordProgress('coach-1', PROGRESS);
+        await service.complete('coach-1', COMPLETE_OK);
+        await new Promise((r) => setImmediate(r));
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+      expect(unhandled).toEqual([]);
+    });
+  });
+
   describe('getImportStatus (read surface)', () => {
     const STARTED = new Date('2026-07-09T10:00:00.000Z');
     const DONE = new Date('2026-07-09T10:30:00.000Z');

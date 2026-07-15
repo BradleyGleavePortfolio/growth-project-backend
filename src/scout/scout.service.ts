@@ -241,10 +241,22 @@ export class ScoutService implements OnModuleDestroy {
     coachId: string,
     dto: ScoutCompleteDto,
   ): Promise<{ acknowledged: true; intent_id: string }> {
-    // Flush only THIS run's in-flight progress first so the persisted snapshot
-    // reflects the final committed counts before we settle — without draining
-    // (or blocking on) other tenants' backlog.
-    await this.flushRun(coachId, dto.intent_id);
+    // Best-effort pre-settle flush of THIS run's cached progress snapshot so the
+    // persisted snapshot is fresh before we settle — without draining (or
+    // blocking on) other tenants' backlog. Settle does NOT depend on it: the
+    // terminal state comes from the transaction below and the counts from
+    // ScoutIngestEntity, so a snapshot that cannot persist (e.g. a poison
+    // extension payload the jsonb column rejects) must NOT wedge completion.
+    // We therefore SWALLOW the failure here (leaving the item pending for retry
+    // and for the read path to fail closed on), unlike the read path which
+    // reuses the same propagating flushRun to fail closed.
+    await this.flushRun(coachId, dto.intent_id).catch((err) =>
+      this.logger.warn(
+        `scout settle pre-flush failed for run ${coachId}:${dto.intent_id}: ${
+          err instanceof Error ? err.name : 'unknown'
+        }`,
+      ),
+    );
 
     const now = new Date();
     let firstTime: boolean;

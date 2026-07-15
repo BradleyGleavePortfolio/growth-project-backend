@@ -200,7 +200,9 @@ export class ScoutImportStatusResult {
     nullable: true,
     description:
       'Earliest evidence timestamp (ISO-8601): first committed entity, else ' +
-      'lifecycle start, else latest progress snapshot. Null when none timestamped.',
+      'lifecycle start, else latest progress snapshot. Null when none timestamped. ' +
+      'For a settled run with zero committed entities and no snapshot this ' +
+      'degenerates to the settle-time lifecycle start, so it may equal completed_at.',
   })
   started_at!: string | null;
 
