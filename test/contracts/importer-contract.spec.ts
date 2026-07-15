@@ -179,6 +179,22 @@ describe('importer contract (R80 freeze)', () => {
     it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {
       expect(props('ScoutImportEntityCountDto')).toEqual(['committed', 'entity_type']);
     });
+
+    it('pins started_at and completed_at as nullable date-time strings (not object)', () => {
+      const p = rec(
+        dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties'),
+      );
+      for (const field of ['started_at', 'completed_at']) {
+        expect(rec(p[field])).toMatchObject({
+          type: 'string',
+          format: 'date-time',
+          nullable: true,
+        });
+        // Guards the reflector regression where a `string | null` union emitted
+        // `type: object`, which degrades client codegen to `any`/`object`.
+        expect(rec(p[field]).type).not.toBe('object');
+      }
+    });
   });
 
   describe('auth: POST /api/auth/extension/refresh', () => {

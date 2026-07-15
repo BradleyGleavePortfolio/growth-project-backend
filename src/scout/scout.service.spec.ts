@@ -492,9 +492,12 @@ describe('ScoutService', () => {
       completed_at,
       terminal_status,
     });
+    // Mirrors the real groupBy return once `_min: { created_at }` is requested;
+    // the earliest _min.created_at across families is the canonical first commit
+    // (clients @ STARTED here, before workouts @ DONE).
     const groups = () => [
-      { entity_type: 'workouts', _count: { _all: 4 } },
-      { entity_type: 'clients', _count: { _all: 12 } },
+      { entity_type: 'workouts', _count: { _all: 4 }, _min: { created_at: DONE } },
+      { entity_type: 'clients', _count: { _all: 12 }, _min: { created_at: STARTED } },
     ];
 
     it('throws 404 when no evidence of the intent exists anywhere', async () => {
@@ -538,11 +541,58 @@ describe('ScoutService', () => {
       expect((await service.getImportStatus('coach-1', 'intent-1')).status).toBe(s);
     });
 
-    it('degrades an unrecognised stored terminal_status to running (defensive guard)', async () => {
+    it('fails closed to failed (not running) on an unrecognised stored terminal_status', async () => {
       importFindUnique.mockResolvedValue(importRow('exploded'));
       const res = await service.getImportStatus('coach-1', 'intent-1');
-      expect(res.status).toBe('running');
-      expect(res.completed_at).toBeNull();
+      // A settled-but-corrupt row must never be reported as still running.
+      expect(res.status).toBe('failed');
+      // It is genuinely settled, so completed_at reflects the real settle time.
+      expect(res.completed_at).toBe(DONE.toISOString());
+    });
+
+    it('emits an observable RED corruption signal (no offending value) when failing closed', async () => {
+      importFindUnique.mockResolvedValue(importRow('exploded'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).toHaveBeenCalledWith('coach-1', Events.SCOUT_IMPORT_STATUS_INVALID, {
+        intent_id: 'intent-1',
+      });
+      const invalidCall = capture.mock.calls.find(
+        (c) => c[1] === Events.SCOUT_IMPORT_STATUS_INVALID,
+      );
+      // Only intent_id — never the corrupt status string, tokens, or PII.
+      expect(Object.keys(invalidCall![2])).toEqual(['intent_id']);
+    });
+
+    it('does not raise the corruption signal for a recognised terminal state', async () => {
+      importFindUnique.mockResolvedValue(importRow('partial'));
+      await service.getImportStatus('coach-1', 'intent-1');
+      expect(capture).not.toHaveBeenCalledWith(
+        'coach-1',
+        Events.SCOUT_IMPORT_STATUS_INVALID,
+        expect.anything(),
+      );
+    });
+
+    it('derives started_at from the earliest committed entity (stable first observation)', async () => {
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      // Earliest _min.created_at across families (STARTED < DONE), NOT the
+      // latest snapshot and NOT the settle-time import row.
+      expect(res.started_at).toBe(STARTED.toISOString());
+    });
+
+    it('prefers the first committed entity over the import row start on a settled run', async () => {
+      const laterStart = new Date('2026-07-09T11:00:00.000Z');
+      importFindUnique.mockResolvedValue({
+        started_at: laterStart,
+        completed_at: DONE,
+        terminal_status: 'success',
+      });
+      ingestGroupBy.mockResolvedValue(groups());
+      const res = await service.getImportStatus('coach-1', 'intent-1');
+      // The committed-entity timestamp (STARTED) is earlier and canonical, so it
+      // wins over the import row's created-at-settle started_at.
+      expect(res.started_at).toBe(STARTED.toISOString());
     });
 
     it('exposes committed counts (proof), sorted, and never an estimate field', async () => {

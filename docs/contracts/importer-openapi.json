@@ -343,8 +343,9 @@
         "properties": {
           "completed_at": {
             "description": "Settled at (ISO-8601); null while running.",
+            "format": "date-time",
             "nullable": true,
-            "type": "object"
+            "type": "string"
           },
           "entity_counts": {
             "description": "Committed counts per entity.",
@@ -358,9 +359,10 @@
             "type": "string"
           },
           "started_at": {
-            "description": "First observed (ISO-8601), if known.",
+            "description": "Earliest evidence timestamp the backend holds for this run (ISO-8601): the first committed entity when any exist, else the run lifecycle start, else the most recent progress snapshot. Null when no evidence is timestamped.",
+            "format": "date-time",
             "nullable": true,
-            "type": "object"
+            "type": "string"
           },
           "status": {
             "description": "Proven lifecycle state.",

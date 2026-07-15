@@ -114,6 +114,14 @@ export const Events = {
    * properties { intent_id, status }. No tokens, payloads, or PII.
    */
   SCOUT_IMPORT_STATUS_READ: 'scout.import.status.read',
+  /**
+   * IMPORTER — GET /api/scout/import/status found a settled ScoutImport whose
+   * persisted terminal_status is NOT a recognised terminal state (data
+   * corruption). RED fail-closed signal: the read projects `failed` rather than
+   * silently reporting the run as still running. Properties: { intent_id }. The
+   * offending value is never emitted — no tokens, payloads, or PII.
+   */
+  SCOUT_IMPORT_STATUS_INVALID: 'scout.import.status.invalid',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

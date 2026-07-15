@@ -10,6 +10,7 @@ import {
   ScoutCompleteDto,
   ScoutImportStatusResult,
   ScoutProgressDto,
+  ScoutReadStatus,
   SCOUT_TERMINAL_STATUSES,
   ScoutTerminalStatus,
 } from './scout.dto';
@@ -220,10 +221,13 @@ export class ScoutService implements OnModuleDestroy {
       this.prisma.scoutImport.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
       }),
+      // _min.created_at rides the SAME grouped read (no extra query) and gives
+      // the canonical, immutable first-commit timestamp per entity family.
       this.prisma.scoutIngestEntity.groupBy({
         by: ['entity_type'],
         where: { coach_id: coachId, intent_id: intentId },
         _count: { _all: true },
+        _min: { created_at: true },
       }),
       this.prisma.scoutProgressSnapshot.findFirst({
         where: { coach_id: coachId, intent_id: intentId },
@@ -232,11 +236,17 @@ export class ScoutService implements OnModuleDestroy {
     ]);
     if (!importRow && grouped.length === 0 && !snapshot) throw new NotFoundException();
 
-    const terminal =
-      importRow && ScoutService.isTerminalStatus(importRow.terminal_status)
-        ? importRow.terminal_status
-        : null;
-    const status = terminal ?? 'running';
+    const status = this.projectReadStatus(coachId, intentId, importRow?.terminal_status ?? null);
+    const settled = status !== 'running';
+
+    // Earliest evidence the backend actually holds: the first committed entity
+    // is the stable first observation; the lifecycle row's start and the latest
+    // progress snapshot are ordered fallbacks only when no entity exists yet.
+    const firstCommittedAt = grouped.reduce<Date | null>((earliest, g) => {
+      const at = g._min.created_at;
+      return at && (!earliest || at < earliest) ? at : earliest;
+    }, null);
+
     this.analytics.capture(coachId, Events.SCOUT_IMPORT_STATUS_READ, {
       intent_id: intentId,
       status,
@@ -247,9 +257,39 @@ export class ScoutService implements OnModuleDestroy {
       entity_counts: grouped
         .map((g) => ({ entity_type: g.entity_type, committed: g._count._all }))
         .sort((a, b) => a.entity_type.localeCompare(b.entity_type)),
-      started_at: importRow?.started_at.toISOString() ?? snapshot?.updated_at.toISOString() ?? null,
-      completed_at: terminal ? (importRow?.completed_at?.toISOString() ?? null) : null,
+      started_at:
+        firstCommittedAt?.toISOString() ??
+        importRow?.started_at.toISOString() ??
+        snapshot?.updated_at.toISOString() ??
+        null,
+      completed_at: settled ? (importRow?.completed_at?.toISOString() ?? null) : null,
     };
+  }
+
+  /**
+   * Exhaustive lifecycle projection for the read surface. `running` when no
+   * settled row exists yet (or the row carries no terminal_status); the settled
+   * terminal_status reflected verbatim when recognised; and a fail-closed
+   * `failed` projection for a settled row whose persisted terminal_status is NOT
+   * one of the known terminal states. That last branch is a corruption guard: a
+   * settled-but-unrecognised run must never be reported as still `running`
+   * (which would misreport progress forever). The offending value is never
+   * returned to the caller — it is recorded server-side as a RED signal so the
+   * corruption is observable without leaking internals or PII.
+   */
+  private projectReadStatus(
+    coachId: string,
+    intentId: string,
+    terminalStatus: string | null,
+  ): ScoutReadStatus {
+    if (terminalStatus === null) return 'running';
+    if (ScoutService.isTerminalStatus(terminalStatus)) return terminalStatus;
+    this.logger.error(
+      `scout import ${intentId} has an unrecognised persisted terminal_status; ` +
+        "failing closed to 'failed'",
+    );
+    this.analytics.capture(coachId, Events.SCOUT_IMPORT_STATUS_INVALID, { intent_id: intentId });
+    return 'failed';
   }
 
   private static isTerminalStatus(value: string | null): value is ScoutTerminalStatus {
