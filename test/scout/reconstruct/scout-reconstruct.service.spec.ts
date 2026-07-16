@@ -1,9 +1,14 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { Events } from '../../../src/analytics/events';
 import { PrismaService } from '../../../src/prisma.service';
 import { ScoutReconstructService } from '../../../src/scout/scout-reconstruct.service';
-import { RECONSTRUCT_STATUS } from '../../../src/scout/scout-reconstruct.dto';
+import {
+  RECONSTRUCT_MAX_ROWS,
+  RECONSTRUCT_PAGE_SIZE,
+  RECONSTRUCT_STATUS,
+} from '../../../src/scout/scout-reconstruct.dto';
 
 /**
  * ScoutReconstructService unit tests.
@@ -34,8 +39,22 @@ class FakePrisma {
   terminalStatus: string | null | undefined = 'success';
   hasImport = true;
   staged: StagedRow[] = [];
+  /**
+   * Overrides the pre-flight staged count without allocating the rows, so the
+   * over-ceiling fail-closed path can be exercised deterministically.
+   */
+  stagedCountOverride: number | null = null;
   /** source_ids whose person.upsert should throw, to simulate poison rows. */
   poison = new Set<string>();
+  /**
+   * source_person_ids for which the FIRST person.upsert simulates losing a
+   * concurrent insert race: it materializes the row (as the winning writer
+   * would) and then throws a Prisma P2002 unique violation exactly once. The
+   * service's retry-once path must then converge to `reconstructed`.
+   */
+  p2002Once = new Set<string>();
+  /** Records skip/take pairs passed to findMany, to prove deterministic paging. */
+  readonly pages: Array<{ skip: number; take: number }> = [];
 
   readonly persons = new Map<string, { id: string; display_name: string | null }>();
   readonly ledger = new Map<string, LedgerRow>();
@@ -58,7 +77,15 @@ class FakePrisma {
   };
 
   scoutIngestEntity = {
-    findMany: async (_args: unknown) => this.staged,
+    count: async (_args: unknown) => this.stagedCountOverride ?? this.staged.length,
+    findMany: async (args: { take?: number; skip?: number }) => {
+      const skip = args.skip ?? 0;
+      const take = args.take ?? this.staged.length;
+      this.pages.push({ skip, take });
+      // Deterministic order by source_id, mirroring the service's orderBy.
+      const ordered = [...this.staged].sort((a, b) => a.source_id.localeCompare(b.source_id));
+      return ordered.slice(skip, skip + take);
+    },
   };
 
   person = {
@@ -76,6 +103,21 @@ class FakePrisma {
       const w = args.where.coach_id_source_platform_source_person_id;
       if (this.poison.has(w.source_person_id)) throw new Error('poison person upsert');
       const key = this.personKey(w.coach_id, w.source_platform, w.source_person_id);
+      if (this.p2002Once.has(w.source_person_id)) {
+        // Simulate the concurrent winner: materialize the row as the racing
+        // writer would, then surface the unique violation exactly once.
+        this.p2002Once.delete(w.source_person_id);
+        if (!this.persons.has(key)) {
+          this.persons.set(key, {
+            id: `person-${this.persons.size + 1}`,
+            display_name: args.create.display_name,
+          });
+        }
+        throw new Prisma.PrismaClientKnownRequestError('unique violation', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      }
       const existing = this.persons.get(key);
       if (existing) {
         existing.display_name = args.update.display_name;
@@ -486,5 +528,169 @@ describe('ScoutReconstructService', () => {
     // staged (result) === ledger rows === reconstructed + skipped + failed.
     expect(prisma.ledger.size).toBe(result.staged);
     expect(result.staged).toBe(3);
+  });
+
+  describe('P3-1 bounded fan-out (fail-closed ceiling + deterministic paging)', () => {
+    it('rejects an over-ceiling intent BEFORE any read, mint, ledger write, or event', async () => {
+      const { service, prisma, capture } = build((p) => {
+        p.stagedCountOverride = RECONSTRUCT_MAX_ROWS + 1;
+      });
+      const findMany = jest.spyOn(prisma.scoutIngestEntity, 'findMany');
+      await expect(service.reconstruct('coach-1', 'intent-huge')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(findMany).not.toHaveBeenCalled();
+      expect(prisma.persons.size).toBe(0);
+      expect(prisma.ledger.size).toBe(0);
+      expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('accepts an intent exactly at the ceiling (boundary is inclusive)', async () => {
+      const { service } = build((p) => {
+        p.stagedCountOverride = RECONSTRUCT_MAX_ROWS;
+        p.staged = [stagedClient('1')];
+      });
+      // count is overridden to the ceiling, so the guard must NOT reject; the
+      // actual staged array is small so the pass completes.
+      const result = await service.reconstruct('coach-1', 'intent-1');
+      expect(result.staged).toBe(RECONSTRUCT_MAX_ROWS);
+      expect(result.reconstructed).toBe(1);
+    });
+
+    it('paginates a multi-page intent deterministically and reconstructs every row', async () => {
+      const total = RECONSTRUCT_PAGE_SIZE * 2 + 1; // forces exactly 3 pages
+      const { service, prisma } = build((p) => {
+        p.staged = Array.from({ length: total }, (_v, i) =>
+          stagedClient(String(i).padStart(5, '0')),
+        );
+      });
+      const result = await service.reconstruct('coach-1', 'intent-big');
+      expect(result).toEqual({
+        intent_id: 'intent-big',
+        staged: total,
+        reconstructed: total,
+        skipped: 0,
+        failed: 0,
+      });
+      expect(prisma.persons.size).toBe(total);
+      // Three deterministic pages with monotonically increasing skip offsets.
+      expect(prisma.pages).toEqual([
+        { skip: 0, take: RECONSTRUCT_PAGE_SIZE },
+        { skip: RECONSTRUCT_PAGE_SIZE, take: RECONSTRUCT_PAGE_SIZE },
+        { skip: RECONSTRUCT_PAGE_SIZE * 2, take: RECONSTRUCT_PAGE_SIZE },
+      ]);
+    });
+  });
+
+  describe('P3-2 same-intent concurrency (P2002 retry converges, no double-count)', () => {
+    it('retries once on a lost insert race and converges to reconstructed', async () => {
+      const { service, prisma } = build((p) => {
+        p.staged = [stagedClient('1')];
+        p.p2002Once.add('1'); // first person.upsert throws P2002, retry succeeds
+      });
+      const result = await service.reconstruct('coach-1', 'intent-1');
+      expect(result).toEqual({
+        intent_id: 'intent-1',
+        staged: 1,
+        reconstructed: 1,
+        skipped: 0,
+        failed: 0,
+      });
+      // Exactly one Person and one ledger row — the race did not double-count.
+      expect(prisma.persons.size).toBe(1);
+      expect(prisma.ledger.size).toBe(1);
+      const row = [...prisma.ledger.values()][0];
+      expect(row.status).toBe(RECONSTRUCT_STATUS.reconstructed);
+      expect(row.reason).toBeNull();
+    });
+
+    it('records failed (not a 500) when the retry also loses', async () => {
+      const { service, prisma } = build((p) => {
+        p.staged = [stagedClient('1')];
+        p.p2002Once.add('1'); // first attempt loses the race...
+        p.poison.add('1'); // ...and the retry throws too
+      });
+      // Must not propagate — the row is isolated as failed with a non-PII reason.
+      const result = await service.reconstruct('coach-1', 'intent-1');
+      expect(result.failed).toBe(1);
+      expect(result.reconstructed).toBe(0);
+      const row = [...prisma.ledger.values()][0];
+      expect(row.status).toBe(RECONSTRUCT_STATUS.failed);
+      expect(row.reason).toBe('error:Error');
+    });
+
+    it('a serial replay after a race is a clean idempotent no-op', async () => {
+      const prisma = new FakePrisma();
+      prisma.staged = [stagedClient('1'), stagedClient('2')];
+      prisma.p2002Once.add('2');
+      const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+      const first = await service.reconstruct('coach-1', 'intent-1');
+      const second = await service.reconstruct('coach-1', 'intent-1');
+      expect(second).toEqual(first);
+      expect(prisma.persons.size).toBe(2);
+      expect(prisma.ledger.size).toBe(2);
+    });
+  });
+
+  describe('P3-3 PII-safe failure observability', () => {
+    it('logs a warn (counts + correlation ids only) when a row fails, never payload', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const { service } = build((p) => {
+          p.staged = [stagedClient('1', 'Secret Name'), stagedClient('2', 'Also Secret')];
+          p.poison.add('2');
+        });
+        await service.reconstruct('coach-1', 'intent-1');
+        expect(warn).toHaveBeenCalledTimes(1);
+        const msg = String(warn.mock.calls[0][0]);
+        expect(msg).toContain('coach-1');
+        expect(msg).toContain('intent-1');
+        expect(msg).toContain('"failed":1');
+        expect(msg).not.toContain('Secret Name');
+        expect(msg).not.toContain('Also Secret');
+        expect(msg).not.toContain('@x.io');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('logs at info (not warn) on a fully clean pass', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      try {
+        const { service } = build((p) => {
+          p.staged = [stagedClient('1')];
+        });
+        await service.reconstruct('coach-1', 'intent-1');
+        expect(warn).not.toHaveBeenCalled();
+        expect(log).toHaveBeenCalledTimes(1);
+        const msg = String(log.mock.calls[0][0]);
+        expect(msg).toContain('"failed":0');
+        expect(msg).not.toContain('@x.io');
+      } finally {
+        warn.mockRestore();
+        log.mockRestore();
+      }
+    });
+  });
+
+  describe('P3-5 object-level tenant scoping (coach_id on every DB access)', () => {
+    it('scopes count, findMany, and tally.groupBy by the token coach_id', async () => {
+      const prisma = new FakePrisma();
+      prisma.staged = [stagedClient('1')];
+      const count = jest.spyOn(prisma.scoutIngestEntity, 'count');
+      const findMany = jest.spyOn(prisma.scoutIngestEntity, 'findMany');
+      const groupBy = jest.spyOn(prisma.scoutReconstructionLedger, 'groupBy');
+      const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+
+      await service.reconstruct('coach-7', 'intent-1');
+
+      for (const spy of [count, findMany, groupBy]) {
+        const arg = spy.mock.calls[0][0] as { where: { coach_id: string } };
+        expect(arg.where.coach_id).toBe('coach-7');
+      }
+      // The minted Person key embeds the tenant, so no cross-tenant collision.
+      expect([...prisma.persons.keys()][0]).toContain('coach-7');
+    });
   });
 });

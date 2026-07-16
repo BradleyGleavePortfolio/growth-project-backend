@@ -53,6 +53,25 @@ export const FEATURE_SCOUT_RECONSTRUCT = 'FEATURE_SCOUT_RECONSTRUCT';
 /** The only entity family this first proving pass reconstructs. */
 export const RECONSTRUCT_ENTITY_TYPE = 'clients';
 
+/**
+ * Staged rows are read and reconstructed one deterministic page at a time
+ * (ordered by source_id) so a large intent never loads its whole roster into
+ * memory or issues an unbounded burst of queries. Mirrors the ingest side's
+ * per-batch discipline (SCOUT_INGEST_MAX_ENTITIES = 500).
+ */
+export const RECONSTRUCT_PAGE_SIZE = 500;
+
+/**
+ * Hard ceiling on staged rows per reconstruction pass. A settled intent with
+ * more staged `clients` than this is pathological (abuse or a runaway crawl),
+ * so the pass fails closed — BEFORE any Person is minted or ledger row written —
+ * rather than silently truncating or leaving a partial, ambiguous roster. The
+ * bound is deterministic and enforced from a pre-flight count, so the honest
+ * accounting invariant (staged === reconstructed + skipped + failed) is never
+ * put at risk by an over-ceiling intent.
+ */
+export const RECONSTRUCT_MAX_ROWS = 10_000;
+
 /** Ledger outcome vocabulary. */
 export const RECONSTRUCT_STATUS = {
   reconstructed: 'reconstructed',

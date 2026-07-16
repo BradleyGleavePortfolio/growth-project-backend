@@ -19,6 +19,12 @@
 -- identical posture to ScoutIngestEntity (20261222000000). Reconstruction runs
 -- server-side as service_role; no client principal reads or writes these tables
 -- directly, so a client can never learn another tenant's roster (no oracle).
+--
+-- ORDERING: dated AFTER 20261223000100_scout_import_state so a fresh apply
+-- creates the ScoutImport lifecycle table (which reconstruct's post-settle gate
+-- reads) before this migration. This migration is additive and self-contained —
+-- it declares no FK to ScoutImport — so ordering is for deploy clarity, not a
+-- structural dependency; a fresh migrate applies both cleanly in sequence.
 -- =====================================================================
 
 BEGIN;

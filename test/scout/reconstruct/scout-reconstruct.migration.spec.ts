@@ -24,8 +24,9 @@ const MIGRATION_DIR = join(
   REPO_ROOT,
   'prisma',
   'migrations',
-  '20261223000000_scout_reconstruction',
+  '20261223000200_scout_reconstruction',
 );
+const IMPORT_STATE_MIGRATION = '20261223000100_scout_import_state';
 const MIGRATION_PATH = join(MIGRATION_DIR, 'migration.sql');
 const DOWN_PATH = join(MIGRATION_DIR, 'down.sql');
 
@@ -129,6 +130,35 @@ describe('IMPORTER-F schema + migration structural guard', () => {
         }
       });
     }
+  });
+
+  describe('migration ordering (P3-4: applies AFTER scout_import_state)', () => {
+    it('sorts lexicographically after the scout_import_state migration', () => {
+      const reconstructDir = '20261223000200_scout_reconstruction';
+      // Prisma applies pending migrations in lexicographic directory order, so a
+      // fresh `migrate deploy` must create ScoutImport (read by reconstruct's
+      // post-settle gate at runtime) before, or independently of, this one.
+      expect(reconstructDir > IMPORT_STATE_MIGRATION).toBe(true);
+    });
+
+    it('both migration directories exist on disk (fresh-apply sequence is intact)', () => {
+      const importStateSql = join(
+        REPO_ROOT,
+        'prisma',
+        'migrations',
+        IMPORT_STATE_MIGRATION,
+        'migration.sql',
+      );
+      expect(readFileSync(importStateSql, 'utf8').length).toBeGreaterThan(0);
+      expect(readFileSync(MIGRATION_PATH, 'utf8').length).toBeGreaterThan(0);
+    });
+
+    it('declares NO foreign key to ScoutImport (ordering is deploy-clarity, not structural)', () => {
+      // Additive + self-contained: reconstruction reads ScoutImport at runtime
+      // via the service, never via a DDL FK, so the two migrations apply cleanly
+      // in either order on a fresh database.
+      expect(migration).not.toMatch(/REFERENCES\s+"ScoutImport"/i);
+    });
   });
 
   describe('reversibility (R82/R106)', () => {
