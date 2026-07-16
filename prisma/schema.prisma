@@ -6871,3 +6871,57 @@ model ScoutIngestEntity {
   @@unique([coach_id, intent_id, source_id])
   @@index([coach_id, entity_type])
 }
+
+// ============================================================
+// IMPORTER-F — scout reconstruction (D2: invite-pending roster)
+// ============================================================
+
+// D2 (DECIDED, Op 59): the canonical target for an imported client is an
+// invite-pending, NON-LOGIN, tenant-owned roster record — NOT an auth User or
+// any credential. A Person is linked to an AuthPrincipal only later, via an
+// explicit credential-verified claim (out of scope here). Email is unverified
+// imported data and is deliberately NOT stored as a column and NEVER used as a
+// canonical id or linking key. Identity is the opaque server-issued `id`
+// (person_id); dedup/idempotency is the tenant-scoped external_ref
+// (coach_id, source_platform, source_person_id).
+enum PersonState {
+  InvitePending
+  Invited
+  Claimed
+  Suspended
+  Deleted
+}
+
+model Person {
+  id               String      @id @default(uuid())
+  coach_id         String
+  source_platform  String
+  source_person_id String
+  display_name     String?
+  state            PersonState @default(InvitePending)
+  created_at       DateTime    @default(now())
+  updated_at       DateTime    @default(now()) @updatedAt
+
+  // external_ref idempotency key — a source entity maps to exactly one roster
+  // Person per tenant, so reconstruction replays are no-ops.
+  @@unique([coach_id, source_platform, source_person_id])
+  @@index([coach_id])
+}
+
+// Per-entity reconciliation ledger: honest accounting for one reconstruction
+// pass. staged = reconstructed + skipped + failed; non-reconstructed outcomes
+// carry a reason. Keyed for idempotent replay.
+model ScoutReconstructionLedger {
+  id          String   @id @default(uuid())
+  coach_id    String
+  intent_id   String
+  entity_type String
+  source_id   String
+  status      String
+  target_id   String?
+  reason      String?
+  created_at  DateTime @default(now())
+
+  @@unique([coach_id, intent_id, entity_type, source_id])
+  @@index([coach_id, intent_id])
+}
