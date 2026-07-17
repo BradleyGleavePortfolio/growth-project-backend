@@ -551,6 +551,158 @@
           "failed"
         ],
         "type": "object"
+      },
+      "ScoutRosterAccountingDto": {
+        "properties": {
+          "failed": {
+            "description": "Entities that errored during reconstruction.",
+            "example": 1,
+            "type": "number"
+          },
+          "reconstructed": {
+            "description": "Entities mapped to a roster Person.",
+            "example": 3,
+            "type": "number"
+          },
+          "skipped": {
+            "description": "Entities intentionally not reconstructed.",
+            "example": 1,
+            "type": "number"
+          },
+          "staged": {
+            "description": "Staged client entities considered for this intent.",
+            "example": 5,
+            "type": "number"
+          }
+        },
+        "required": [
+          "staged",
+          "reconstructed",
+          "skipped",
+          "failed"
+        ],
+        "type": "object"
+      },
+      "ScoutRosterPageDto": {
+        "properties": {
+          "has_more": {
+            "description": "True when another page follows.",
+            "example": false,
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Page size applied to this response.",
+            "example": 50,
+            "type": "number"
+          },
+          "next_cursor": {
+            "description": "Opaque cursor for the next page, or null when this is the last page.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "limit",
+          "next_cursor",
+          "has_more"
+        ],
+        "type": "object"
+      },
+      "ScoutRosterPersonDto": {
+        "properties": {
+          "created_at": {
+            "description": "When the record was minted.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Display name for the roster row, if the source provided one.",
+            "example": "Jordan Ellis",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Opaque server-issued roster person id.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_person_id": {
+            "description": "Source platform's own record id (provenance, not a canonical key).",
+            "example": "tc_client_9f831",
+            "type": "string"
+          },
+          "source_platform": {
+            "description": "Source platform slug (provenance).",
+            "example": "truecoach",
+            "type": "string"
+          },
+          "state": {
+            "description": "Lifecycle state of the roster record.",
+            "enum": [
+              "InvitePending",
+              "Invited",
+              "Claimed",
+              "Suspended",
+              "Deleted"
+            ],
+            "example": "InvitePending",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the record last changed.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "source_platform",
+          "source_person_id",
+          "display_name",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ScoutRosterResult": {
+        "properties": {
+          "accounting": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScoutRosterAccountingDto"
+              }
+            ],
+            "description": "Ledger-derived honest accounting."
+          },
+          "intent_id": {
+            "description": "The intent that was read.",
+            "example": "intent_2026_07_09_abc123",
+            "type": "string"
+          },
+          "page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScoutRosterPageDto"
+              }
+            ],
+            "description": "Pagination envelope."
+          },
+          "persons": {
+            "description": "Reconstructed invite-pending roster rows for this page (deterministic order).",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRosterPersonDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "accounting",
+          "persons",
+          "page"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -565,7 +717,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1398,6 +1550,120 @@
           }
         ],
         "summary": "Reconstruct a settled intent’s staged clients into roster records",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/reconstruct/roster": {
+      "get": {
+        "description": "Returns the invite-pending roster Person records reconstructed from one settled crawl intent, joined to the reconstruction ledger, with honest accounting { staged, reconstructed, skipped, failed } and deterministic, bounded cursor pagination. Excludes deleted and cross-tenant rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "operationId": "ScoutRosterController_getRoster",
+        "parameters": [
+          {
+            "description": "The settled crawl intent whose reconstructed roster to read.",
+            "in": "query",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "example": "intent_2026_07_09_abc123",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. A malformed cursor is a 400 (fail closed).",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size (1..200). Defaults to 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "example": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutRosterResult"
+                }
+              }
+            },
+            "description": "Reconstructed roster page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid query (missing/oversized intent_id, out-of-range limit, or malformed cursor). Standard HttpExceptionFilter envelope."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: the flags are off (R-DARK-1) OR the intent has no ScoutImport evidence for the calling coach (unknown or cross-tenant). The two are deliberately indistinguishable — no existence oracle."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read a settled intent's reconstructed invite-pending roster",
         "tags": [
           "scout"
         ]
