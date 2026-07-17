@@ -120,6 +120,14 @@ export const Events = {
    * offending value is never emitted (no tokens, payloads, or PII).
    */
   SCOUT_IMPORT_STATUS_INVALID: 'scout.import.status.invalid',
+  /**
+   * IMPORTER-F — a settled crawl intent's staged `clients` were reconstructed
+   * into invite-pending roster Person records via POST /api/scout/reconstruct.
+   * Emitted once per reconstruction pass; a replay re-emits with identical
+   * ledger-derived counts. Properties: { intent_id, entity_type, staged,
+   * reconstructed, skipped, failed }. No tokens, payloads, or PII.
+   */
+  SCOUT_RECONSTRUCT_COMPLETED: 'scout.reconstruct.completed',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

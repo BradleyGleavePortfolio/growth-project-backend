@@ -8,6 +8,8 @@ import { ScoutController } from './scout.controller';
 import { ScoutService } from './scout.service';
 import { ScoutIngestController } from './scout-ingest.controller';
 import { ScoutIngestService } from './scout-ingest.service';
+import { ScoutReconstructController } from './scout-reconstruct.controller';
+import { ScoutReconstructService } from './scout-reconstruct.service';
 
 // IMPORTER-E + IMPORTER-B — unified scout module (DESIGN.md v0.3 §10 + §2).
 //
@@ -24,10 +26,11 @@ import { ScoutIngestService } from './scout-ingest.service';
 // flush tick is picked up without importing it here.
 @Module({
   imports: [NotificationsModule],
-  controllers: [ScoutController, ScoutIngestController],
+  controllers: [ScoutController, ScoutIngestController, ScoutReconstructController],
   providers: [
     ScoutService,
     ScoutIngestService,
+    ScoutReconstructService,
     PrismaService,
     JwtAuthGuard,
     RolesGuard,

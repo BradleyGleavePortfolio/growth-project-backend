@@ -20,6 +20,12 @@ export interface FeatureGatedRoute {
 export const FEATURE_GATED_ROUTES: readonly FeatureGatedRoute[] = [
   // Scout ingest, progress, ingest/complete — one flag, all routes under /api/scout
   { pattern: '/api/scout', envVar: 'FEATURE_SCOUT_INGEST' },
+  // IMPORTER-F reconstruct — a second, more-specific gate layered under
+  // /api/scout. Because the registry is evaluated for EVERY matching pattern,
+  // POST /api/scout/reconstruct is dark unless BOTH FEATURE_SCOUT_INGEST and
+  // FEATURE_SCOUT_RECONSTRUCT are literally 'true'. Reconstruction is a strict
+  // downstream of ingest, so this coupling is intentional.
+  { pattern: '/api/scout/reconstruct', envVar: 'FEATURE_SCOUT_RECONSTRUCT' },
   // Extension pair — init/status/redeem
   { pattern: '/api/extension/pair', envVar: 'FEATURE_EXTENSION_PAIRING' },
 ];
