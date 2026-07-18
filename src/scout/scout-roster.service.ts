@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PersonState } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PersonState, Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
@@ -10,6 +10,9 @@ import {
   ScoutRosterPersonDto,
   ScoutRosterResult,
 } from './scout-roster.dto';
+
+/** Prisma transaction client — the interactive-transaction handle passed to $transaction. */
+type Tx = Prisma.TransactionClient;
 
 /**
  * IMPORTER-G — authoritative read bridge for the reconstructed invite-pending
@@ -34,8 +37,6 @@ import {
  */
 @Injectable()
 export class ScoutRosterService {
-  private readonly logger = new Logger(ScoutRosterService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
@@ -56,51 +57,66 @@ export class ScoutRosterService {
     }
     const after = decodeCursor(cursor);
 
-    // Existence + ownership gate: a ScoutImport row for THIS coach proves the
-    // intent belongs to the caller. A missing row (unknown OR another tenant's
-    // intent) is a uniform 404 — no existence oracle.
-    const importRow = await this.prisma.scoutImport.findUnique({
-      where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
-      select: { id: true },
-    });
-    if (!importRow) throw new NotFoundException();
-
     const where = {
       coach_id: coachId,
       intent_id: intentId,
       entity_type: RECONSTRUCT_ENTITY_TYPE,
     };
 
-    // staged: authoritative source count. reconstructed/skipped/failed: ledger.
-    const [staged, grouped, ledgerPage] = await Promise.all([
-      this.prisma.scoutIngestEntity.count({ where }),
-      this.prisma.scoutReconstructionLedger.groupBy({
-        by: ['status'],
-        where,
-        _count: { _all: true },
-      }),
-      // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
-      // second count query. Ordered by source_id (asc) — the same deterministic
-      // order the reconstruction write pages in — so the cursor is stable.
-      this.prisma.scoutReconstructionLedger.findMany({
-        where: {
-          ...where,
-          status: RECONSTRUCT_STATUS.reconstructed,
-          ...(after !== null ? { source_id: { gt: after } } : {}),
-        },
-        select: { source_id: true, target_id: true },
-        orderBy: { source_id: 'asc' },
-        take: limit + 1,
-      }),
-    ]);
+    // Read the gate, the counts, and the roster page in ONE RepeatableRead
+    // snapshot. All reads therefore see a single consistent moment, so the
+    // accounting (staged / reconstructed / skipped / failed) can never disagree
+    // with the roster rows returned for the same page even under a concurrent
+    // reconstruction write. Read-only: no write conflict, no retry needed.
+    const snapshot = await this.prisma.$transaction(
+      async (tx) => {
+        // Settled + existence + ownership gate. A ScoutImport row for THIS coach
+        // whose terminal_status is non-null proves the intent belongs to the
+        // caller AND has settled (post-settle reads only — a still-arriving crawl
+        // would race the ingest and expose a partial roster). Unknown, another
+        // tenant's intent, and not-yet-settled all collapse to a uniform 404 —
+        // no existence oracle, no settle-progress oracle.
+        const importRow = await tx.scoutImport.findUnique({
+          where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
+          select: { terminal_status: true },
+        });
+        if (!importRow || importRow.terminal_status === null) {
+          throw new NotFoundException();
+        }
 
+        // staged: authoritative source count. reconstructed/skipped/failed: ledger.
+        const staged = await tx.scoutIngestEntity.count({ where });
+        const grouped = await tx.scoutReconstructionLedger.groupBy({
+          by: ['status'],
+          where,
+          _count: { _all: true },
+        });
+        // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
+        // second count query. Ordered by source_id (asc) — the same deterministic
+        // order the reconstruction write pages in — so the cursor is stable.
+        const ledgerPage = await tx.scoutReconstructionLedger.findMany({
+          where: {
+            ...where,
+            status: RECONSTRUCT_STATUS.reconstructed,
+            ...(after !== null ? { source_id: { gt: after } } : {}),
+          },
+          select: { source_id: true, target_id: true },
+          orderBy: { source_id: 'asc' },
+          take: limit + 1,
+        });
+
+        const hasMore = ledgerPage.length > limit;
+        const pageRows = hasMore ? ledgerPage.slice(0, limit) : ledgerPage;
+        const persons = await this.materialize(tx, coachId, pageRows);
+
+        return { staged, grouped, hasMore, pageRows, persons };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+
+    const { staged, grouped, hasMore, pageRows, persons } = snapshot;
     const count = (status: string): number =>
       grouped.find((g) => g.status === status)?._count._all ?? 0;
-
-    const hasMore = ledgerPage.length > limit;
-    const pageRows = hasMore ? ledgerPage.slice(0, limit) : ledgerPage;
-
-    const persons = await this.materialize(coachId, pageRows);
 
     // next_cursor is anchored to the LEDGER source_id (not a filtered Person), so
     // paging advances deterministically even when a Deleted person is skipped
@@ -131,16 +147,18 @@ export class ScoutRosterService {
   /**
    * Join reconstructed ledger rows to their Person, preserving ledger order and
    * dropping any Deleted or missing target (erasure preserved). The Person read
-   * re-asserts coach_id so a stale/forged target_id can never cross tenants.
+   * re-asserts coach_id so a stale/forged target_id can never cross tenants. Runs
+   * on the caller's transaction client so it shares the one consistent snapshot.
    */
   private async materialize(
+    tx: Tx,
     coachId: string,
     rows: Array<{ source_id: string; target_id: string | null }>,
   ): Promise<ScoutRosterPersonDto[]> {
     const targetIds = rows.map((r) => r.target_id).filter((id): id is string => id !== null);
     if (targetIds.length === 0) return [];
 
-    const persons = await this.prisma.person.findMany({
+    const persons = await tx.person.findMany({
       where: {
         id: { in: targetIds },
         coach_id: coachId,

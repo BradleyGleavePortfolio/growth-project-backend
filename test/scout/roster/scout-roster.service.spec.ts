@@ -61,28 +61,63 @@ interface Where {
 }
 
 class FakePrisma {
-  imports: Array<{ coach_id: string; intent_id: string; id: string }> = [];
+  imports: Array<{
+    coach_id: string;
+    intent_id: string;
+    id: string;
+    terminal_status: string | null;
+  }> = [];
   ingest: IngestRow[] = [];
   ledgerRows: LedgerRow[] = [];
   persons: PersonRow[] = [];
+
+  // Observability for the snapshot test: how many interactive transactions ran,
+  // with what isolation level, and whether every read happened inside one.
+  transactionCalls: Array<{ isolationLevel?: string }> = [];
+  private txDepth = 0;
+  readsOutsideTx = 0;
+
+  // Interactive $transaction: records the isolation option and runs the callback
+  // against this same fake as the tx client, so the real service's reads (count,
+  // groupBy, findMany, person.findMany) all execute inside the one snapshot.
+  $transaction = async <T>(
+    fn: (tx: FakePrisma) => Promise<T>,
+    opts?: { isolationLevel?: string },
+  ): Promise<T> => {
+    this.transactionCalls.push({ isolationLevel: opts?.isolationLevel });
+    this.txDepth += 1;
+    try {
+      return await fn(this);
+    } finally {
+      this.txDepth -= 1;
+    }
+  };
+
+  private noteRead(): void {
+    if (this.txDepth === 0) this.readsOutsideTx += 1;
+  }
 
   scoutImport = {
     findUnique: async (args: {
       where: { coach_id_intent_id: { coach_id: string; intent_id: string } };
     }) => {
+      this.noteRead();
       const { coach_id, intent_id } = args.where.coach_id_intent_id;
       const row = this.imports.find((i) => i.coach_id === coach_id && i.intent_id === intent_id);
-      return row ? { id: row.id } : null;
+      return row ? { terminal_status: row.terminal_status } : null;
     },
   };
 
   scoutIngestEntity = {
-    count: async (args: { where: Where }) =>
-      this.ingest.filter((r) => matchBase(r, args.where)).length,
+    count: async (args: { where: Where }) => {
+      this.noteRead();
+      return this.ingest.filter((r) => matchBase(r, args.where)).length;
+    },
   };
 
   scoutReconstructionLedger = {
     groupBy: async (args: { where: Where }) => {
+      this.noteRead();
       const rows = this.ledgerRows.filter((r) => matchBase(r, args.where));
       const byStatus = new Map<string, number>();
       for (const r of rows) byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1);
@@ -92,6 +127,7 @@ class FakePrisma {
       }));
     },
     findMany: async (args: { where: Where; take?: number }) => {
+      this.noteRead();
       let rows = this.ledgerRows.filter(
         (r) =>
           matchBase(r, args.where) &&
@@ -106,6 +142,7 @@ class FakePrisma {
 
   person = {
     findMany: async (args: { where: Where }) => {
+      this.noteRead();
       const ids = new Set(args.where.id?.in ?? []);
       return this.persons
         .filter(
@@ -158,11 +195,18 @@ function seed(
     skipped?: number;
     failed?: number;
     stagedExtra?: number;
+    terminalStatus?: string | null;
   },
 ): void {
   const coach = opts.coach ?? COACH;
   const intent = opts.intent ?? INTENT;
-  fake.imports.push({ coach_id: coach, intent_id: intent, id: `imp-${coach}-${intent}` });
+  fake.imports.push({
+    coach_id: coach,
+    intent_id: intent,
+    id: `imp-${coach}-${intent}`,
+    // Settled by default; a test may pass terminalStatus: null for an unsettled intent.
+    terminal_status: opts.terminalStatus === undefined ? 'succeeded' : opts.terminalStatus,
+  });
 
   const recN = opts.reconstructed ?? 0;
   const skipN = opts.skipped ?? 0;
@@ -263,7 +307,12 @@ describe('ScoutRosterService.getRoster', () => {
 
   it('returns an empty roster + zero accounting for a settled-but-unreconstructed intent', async () => {
     const fake = new FakePrisma();
-    fake.imports.push({ coach_id: COACH, intent_id: INTENT, id: 'imp-1' });
+    fake.imports.push({
+      coach_id: COACH,
+      intent_id: INTENT,
+      id: 'imp-1',
+      terminal_status: 'succeeded',
+    });
     const { service } = makeService(fake);
     const res = await service.getRoster(COACH, INTENT, undefined, undefined);
     expect(res.persons).toEqual([]);
@@ -426,5 +475,78 @@ describe('ScoutRosterService.getRoster', () => {
     expect(res.accounting.reconstructed).toBe(ROSTER_DEFAULT_PAGE_SIZE * 100);
     expect(res.persons).toHaveLength(ROSTER_MAX_PAGE_SIZE);
     expect(res.page.has_more).toBe(true);
+  });
+
+  describe('settled-intent gate (terminal_status must be non-null)', () => {
+    it('404s for an intent that exists for the coach but has NOT settled', async () => {
+      const fake = new FakePrisma();
+      // A ScoutImport row owned by the caller, reconstructed rows present, but the
+      // crawl has not settled (terminal_status === null): reading it now would
+      // expose a partial, still-arriving roster.
+      seed(fake, { reconstructed: 3, terminalStatus: null });
+      const { service } = makeService(fake);
+      await expect(service.getRoster(COACH, INTENT, undefined, undefined)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('is indistinguishable from an unknown intent — same uniform 404, no settle oracle', async () => {
+      const unsettled = new FakePrisma();
+      seed(unsettled, { reconstructed: 2, terminalStatus: null });
+      const unknown = new FakePrisma();
+      const svcUnsettled = makeService(unsettled).service;
+      const svcUnknown = makeService(unknown).service;
+
+      const errUnsettled = await svcUnsettled
+        .getRoster(COACH, INTENT, undefined, undefined)
+        .catch((e: unknown) => e);
+      const errUnknown = await svcUnknown
+        .getRoster(COACH, INTENT, undefined, undefined)
+        .catch((e: unknown) => e);
+
+      expect(errUnsettled).toBeInstanceOf(NotFoundException);
+      expect(errUnknown).toBeInstanceOf(NotFoundException);
+      // Same status AND same message: the response cannot betray whether the
+      // intent exists-but-unsettled versus does-not-exist.
+      expect((errUnsettled as NotFoundException).getResponse()).toEqual(
+        (errUnknown as NotFoundException).getResponse(),
+      );
+    });
+
+    it('reads a settled intent (non-null terminal_status) normally', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 2, terminalStatus: 'failed' }); // any non-null terminal is settled
+      const { service } = makeService(fake);
+      const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+      expect(res.persons).toHaveLength(2);
+    });
+  });
+
+  describe('single consistent snapshot (one RepeatableRead transaction)', () => {
+    it('runs every read inside ONE RepeatableRead $transaction', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3, skipped: 1, failed: 1 });
+      const { service } = makeService(fake);
+
+      await service.getRoster(COACH, INTENT, undefined, undefined);
+
+      // Exactly one interactive transaction, opened at RepeatableRead.
+      expect(fake.transactionCalls).toEqual([{ isolationLevel: 'RepeatableRead' }]);
+      // The gate, the count, the groupBy, the ledger page, AND the person
+      // materialize all executed inside that transaction — nothing leaked out
+      // into a separate database moment.
+      expect(fake.readsOutsideTx).toBe(0);
+    });
+
+    it('reads the gate inside the snapshot too (unsettled 404 still opens exactly one txn)', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 1, terminalStatus: null });
+      const { service } = makeService(fake);
+      await expect(service.getRoster(COACH, INTENT, undefined, undefined)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(fake.transactionCalls).toHaveLength(1);
+      expect(fake.readsOutsideTx).toBe(0);
+    });
   });
 });
