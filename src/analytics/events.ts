@@ -128,6 +128,13 @@ export const Events = {
    * reconstructed, skipped, failed }. No tokens, payloads, or PII.
    */
   SCOUT_RECONSTRUCT_COMPLETED: 'scout.reconstruct.completed',
+  /**
+   * IMPORTER-G — a coach read one settled intent's reconstructed invite-pending
+   * roster via GET /api/scout/reconstruct/roster. RED signal, emitted once per
+   * page read. Properties: { intent_id, entity_type, returned, has_more }. No
+   * tokens, payloads, display names, or PII.
+   */
+  SCOUT_RECONSTRUCT_ROSTER_READ: 'scout.reconstruct.roster.read',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];
