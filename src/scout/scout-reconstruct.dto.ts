@@ -1,14 +1,31 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 /**
- * Request to reconstruct the staged `clients` entities of one settled crawl
- * intent into invite-pending roster records. coach_id is taken from the bearer
- * identity (never the body); the only input is which settled intent to replay.
+ * The entity families the reconstruction engine can reconstruct (IMPORTER-H).
+ * `clients` targets the invite-pending roster `Person`; `workouts` and
+ * `client_history` target the generic canonical `ScoutReconstructedEntity`
+ * table. Billing/messaging are deliberately absent — an unlisted family is a
+ * 400 at validation and can never be reconstructed.
+ */
+export const RECONSTRUCT_FAMILY = {
+  clients: 'clients',
+  workouts: 'workouts',
+  client_history: 'client_history',
+} as const;
+
+/** The closed allow-list of reconstructable families (fail-closed). */
+export const RECONSTRUCT_ENTITY_TYPES = Object.values(RECONSTRUCT_FAMILY);
+
+/**
+ * Request to reconstruct one settled crawl intent's staged entities of a given
+ * family into canonical records. coach_id is taken from the bearer identity
+ * (never the body); the inputs are which settled intent to replay and which
+ * family to reconstruct (defaults to `clients` for backward compatibility).
  */
 export class ScoutReconstructDto {
   @ApiProperty({
-    description: 'The settled crawl session whose staged clients to reconstruct.',
+    description: 'The settled crawl session whose staged entities to reconstruct.',
     minLength: 1,
     maxLength: 256,
     example: 'intent_2026_07_09_abc123',
@@ -17,6 +34,18 @@ export class ScoutReconstructDto {
   @MinLength(1)
   @MaxLength(256)
   intent_id!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The staged entity family to reconstruct. Defaults to `clients`. An ' +
+      'unsupported family (e.g. billing/messaging) is a 400 (fail closed).',
+    enum: RECONSTRUCT_ENTITY_TYPES,
+    default: RECONSTRUCT_FAMILY.clients,
+    example: RECONSTRUCT_FAMILY.clients,
+  })
+  @IsOptional()
+  @IsIn(RECONSTRUCT_ENTITY_TYPES)
+  entity_type?: string;
 }
 
 /**
@@ -50,8 +79,13 @@ export class ScoutReconstructResult {
 /** Env gate for the reconstruct endpoint. Off unless literally 'true'. */
 export const FEATURE_SCOUT_RECONSTRUCT = 'FEATURE_SCOUT_RECONSTRUCT';
 
-/** The only entity family this first proving pass reconstructs. */
-export const RECONSTRUCT_ENTITY_TYPE = 'clients';
+/**
+ * The default reconstruction family and the one the roster read (IMPORTER-G)
+ * projects. IMPORTER-H parametrizes the engine over {@link RECONSTRUCT_FAMILY};
+ * this constant stays the backward-compatible default for callers that omit
+ * `entity_type` and the fixed family the clients-only roster contract reads.
+ */
+export const RECONSTRUCT_ENTITY_TYPE = RECONSTRUCT_FAMILY.clients;
 
 /**
  * Staged rows are read and reconstructed one deterministic page at a time

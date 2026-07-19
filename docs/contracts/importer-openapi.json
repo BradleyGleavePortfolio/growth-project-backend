@@ -502,8 +502,19 @@
       },
       "ScoutReconstructDto": {
         "properties": {
+          "entity_type": {
+            "default": "clients",
+            "description": "The staged entity family to reconstruct. Defaults to `clients`. An unsupported family (e.g. billing/messaging) is a 400 (fail closed).",
+            "enum": [
+              "clients",
+              "workouts",
+              "client_history"
+            ],
+            "example": "clients",
+            "type": "string"
+          },
           "intent_id": {
-            "description": "The settled crawl session whose staged clients to reconstruct.",
+            "description": "The settled crawl session whose staged entities to reconstruct.",
             "example": "intent_2026_07_09_abc123",
             "maxLength": 256,
             "minLength": 1,
@@ -1459,7 +1470,7 @@
     },
     "/api/scout/reconstruct": {
       "post": {
-        "description": "Reconstructs the staged `clients` of one settled crawl intent into invite-pending roster Person records. Idempotent on (coach_id, intent_id, entity_type, source_id). Returns 200 { staged, reconstructed, skipped, failed }. Returns 409 when the intent has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.",
+        "description": "Reconstructs the staged entities of one settled crawl intent for the given `entity_type` family (defaults to `clients`, which mints invite-pending roster Person records; `workouts`/`client_history` mint canonical reconstructed-entity records). Idempotent on (coach_id, intent_id, entity_type, source_id). Returns 200 { staged, reconstructed, skipped, failed }. Returns 400 for an unsupported family, 409 when the intent has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.",
         "operationId": "ScoutReconstructController_run",
         "parameters": [],
         "requestBody": {
@@ -1549,7 +1560,7 @@
             "bearer": []
           }
         ],
-        "summary": "Reconstruct a settled intent’s staged clients into roster records",
+        "summary": "Reconstruct a settled intent’s staged entities into canonical records",
         "tags": [
           "scout"
         ]
