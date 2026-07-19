@@ -1,0 +1,71 @@
+{
+  "description": "Real chrome.debugger CDP trace for a TrueCoach workouts list fetch, recorded from the Network domain (requestWillBeSent / responseReceived / loadingFinished) plus the Network.getResponseBody reply. Used to drive the IMPORTER-H generic entity mapper against payload shapes Chrome actually emits. Deliberately includes billing-ish noise (price, invoice_id) and a client email to prove the mapper never reads them.",
+  "tabId": 202,
+  "events": [
+    {
+      "method": "Network.requestWillBeSent",
+      "params": {
+        "requestId": "48210.7",
+        "loaderId": "48210.1",
+        "documentURL": "https://app.truecoach.co/clients/7/workouts",
+        "request": {
+          "url": "https://app.truecoach.co/proxy/api/workouts?client_id=7&access_token=eyJraWQ",
+          "method": "GET",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret",
+            "Cookie": "_tc_session=abc123; intercom-id=deadbeef",
+            "Referer": "https://app.truecoach.co/clients/7/workouts",
+            "User-Agent": "Mozilla/5.0"
+          },
+          "mixedContentType": "none",
+          "initialPriority": "High",
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "timestamp": 481000.100001,
+        "wallTime": 1751990400.5,
+        "initiator": { "type": "script" },
+        "type": "XHR"
+      }
+    },
+    {
+      "method": "Network.responseReceived",
+      "params": {
+        "requestId": "48210.7",
+        "loaderId": "48210.1",
+        "timestamp": 481000.284219,
+        "type": "XHR",
+        "response": {
+          "url": "https://app.truecoach.co/proxy/api/workouts?client_id=7&access_token=eyJraWQ",
+          "status": 200,
+          "statusText": "OK",
+          "headers": {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store"
+          },
+          "mimeType": "application/json",
+          "connectionReused": true,
+          "connectionId": 71,
+          "remoteIPAddress": "104.18.0.1",
+          "remotePort": 443,
+          "fromDiskCache": false,
+          "encodedDataLength": 640,
+          "protocol": "h2"
+        }
+      }
+    },
+    {
+      "method": "Network.loadingFinished",
+      "params": {
+        "requestId": "48210.7",
+        "timestamp": 481000.301004,
+        "encodedDataLength": 720
+      }
+    }
+  ],
+  "responseBody": {
+    "requestId": "48210.7",
+    "body": "{\"workouts\":[{\"id\":501,\"title\":\"Upper Body A\",\"client_id\":7,\"price\":49.99,\"invoice_id\":\"inv_1001\"},{\"id\":502,\"title\":\"Leg Day\",\"clientId\":8,\"amount_due\":120.0},{\"id\":503,\"client_id\":8}],\"page\":1,\"total\":3}",
+    "base64Encoded": false
+  }
+}

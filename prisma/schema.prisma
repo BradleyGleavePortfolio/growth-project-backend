@@ -6925,3 +6925,39 @@ model ScoutReconstructionLedger {
   @@unique([coach_id, intent_id, entity_type, source_id])
   @@index([coach_id, intent_id])
 }
+
+// ============================================================
+// IMPORTER-H — multi-family reconstruction (canonical non-person entities)
+// ============================================================
+//
+// D2, site-agnostic. IMPORTER-F reconstructs the `clients` family into `Person`
+// (a renderable roster identity). Families that are NOT people — `workouts`,
+// `client_history` — reconstruct into ONE generic, tenant-owned canonical table
+// instead of a per-family clone. This is the "one parameterized mechanism": the
+// reconstruction engine is keyed on entity_type via a family registry, and every
+// non-person family shares this table.
+//
+// Identity/idempotency is the tenant-scoped external_ref
+// (coach_id, source_platform, entity_type, source_id) — the source platform's
+// own opaque record id, never email and never a billing key. `client_source_id`
+// is a SOFT provenance link to the owning Person's external_ref
+// (coach_id, source_platform, client_source_id) — no FK, mirroring the no-FK
+// posture of the other scout tables. `label` is a best-effort, PII-minimal
+// display string (a title/name), never email, never any billing/price field.
+//
+// RLS: same fail-closed posture as Person / ScoutReconstructionLedger —
+// service_role PERMISSIVE bypass, anon + authenticated RESTRICTIVE deny-all.
+model ScoutReconstructedEntity {
+  id               String   @id @default(uuid())
+  coach_id         String
+  source_platform  String
+  entity_type      String
+  source_id        String
+  client_source_id String?
+  label            String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
+
+  @@unique([coach_id, source_platform, entity_type, source_id])
+  @@index([coach_id, entity_type])
+}

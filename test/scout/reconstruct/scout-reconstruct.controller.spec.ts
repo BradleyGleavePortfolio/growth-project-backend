@@ -71,6 +71,22 @@ describe('ScoutReconstructDto validation', () => {
   it('accepts an intent_id at exactly the length ceiling', async () => {
     expect(await validationErrors({ intent_id: 'x'.repeat(256) })).toEqual([]);
   });
+
+  it('accepts an omitted entity_type (defaults to clients downstream)', async () => {
+    expect(await validationErrors(validBody)).toEqual([]);
+  });
+
+  it('accepts each supported entity_type family', async () => {
+    for (const entity_type of ['clients', 'workouts', 'client_history']) {
+      expect(await validationErrors({ ...validBody, entity_type })).toEqual([]);
+    }
+  });
+
+  it('rejects an unsupported entity_type family (fail closed at validation)', async () => {
+    expect(await validationErrors({ ...validBody, entity_type: 'billing' })).toContain(
+      'entity_type',
+    );
+  });
 });
 
 describe('role gate on the reconstruct surface', () => {
@@ -111,8 +127,27 @@ describe('ScoutReconstructController', () => {
 
     const result = await controller.run(makeReq('coach-77'), dto);
 
-    expect(reconstruct).toHaveBeenCalledWith('coach-77', 'intent_2026_07_16_abc');
+    expect(reconstruct).toHaveBeenCalledWith('coach-77', 'intent_2026_07_16_abc', undefined);
     expect(result.reconstructed).toBe(2);
+  });
+
+  it('forwards an explicit entity_type family to the service', async () => {
+    const reconstruct = jest.fn(async () => ({
+      intent_id: 'intent_2026_07_16_abc',
+      staged: 1,
+      reconstructed: 1,
+      skipped: 0,
+      failed: 0,
+    }));
+    const controller = new ScoutReconstructController(makeService(reconstruct));
+    const dto = plainToInstance(ScoutReconstructDto, {
+      intent_id: 'intent_2026_07_16_abc',
+      entity_type: 'workouts',
+    });
+
+    await controller.run(makeReq('coach-77'), dto);
+
+    expect(reconstruct).toHaveBeenCalledWith('coach-77', 'intent_2026_07_16_abc', 'workouts');
   });
 
   it('returns the service reconciliation unchanged to the caller', async () => {

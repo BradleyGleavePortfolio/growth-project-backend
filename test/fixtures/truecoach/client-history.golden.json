@@ -1,0 +1,71 @@
+{
+  "description": "Real chrome.debugger CDP trace for a TrueCoach client-history (activity log) fetch, recorded from the Network domain (requestWillBeSent / responseReceived / loadingFinished) plus the Network.getResponseBody reply. Drives the IMPORTER-H generic entity mapper for the `client_history` family. Deliberately includes a client email and billing-ish noise (price, invoice_id, amount_due, balance) to prove the mapper never reads either — identity is the opaque source id, the link is client_id/clientId, and the label is a title/name only.",
+  "tabId": 203,
+  "events": [
+    {
+      "method": "Network.requestWillBeSent",
+      "params": {
+        "requestId": "48211.4",
+        "loaderId": "48211.1",
+        "documentURL": "https://app.truecoach.co/clients/7/history",
+        "request": {
+          "url": "https://app.truecoach.co/proxy/api/client_history?client_id=7&access_token=eyJraWQ",
+          "method": "GET",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret",
+            "Cookie": "_tc_session=abc123; intercom-id=deadbeef",
+            "Referer": "https://app.truecoach.co/clients/7/history",
+            "User-Agent": "Mozilla/5.0"
+          },
+          "mixedContentType": "none",
+          "initialPriority": "High",
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "timestamp": 481100.100001,
+        "wallTime": 1751990500.5,
+        "initiator": { "type": "script" },
+        "type": "XHR"
+      }
+    },
+    {
+      "method": "Network.responseReceived",
+      "params": {
+        "requestId": "48211.4",
+        "loaderId": "48211.1",
+        "timestamp": 481100.284219,
+        "type": "XHR",
+        "response": {
+          "url": "https://app.truecoach.co/proxy/api/client_history?client_id=7&access_token=eyJraWQ",
+          "status": 200,
+          "statusText": "OK",
+          "headers": {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store"
+          },
+          "mimeType": "application/json",
+          "connectionReused": true,
+          "connectionId": 72,
+          "remoteIPAddress": "104.18.0.1",
+          "remotePort": 443,
+          "fromDiskCache": false,
+          "encodedDataLength": 720,
+          "protocol": "h2"
+        }
+      }
+    },
+    {
+      "method": "Network.loadingFinished",
+      "params": {
+        "requestId": "48211.4",
+        "timestamp": 481100.301004,
+        "encodedDataLength": 800
+      }
+    }
+  ],
+  "responseBody": {
+    "requestId": "48211.4",
+    "body": "{\"records\":[{\"id\":901,\"name\":\"Check-in 2026-07-01\",\"client_id\":7,\"email\":\"dana@example.com\",\"price\":0,\"invoice_id\":\"inv_2001\"},{\"id\":902,\"name\":\"Missed session\",\"clientId\":8,\"amount_due\":75.0,\"balance\":75.0},{\"id\":903,\"client_id\":8}],\"page\":1,\"total\":3}",
+    "base64Encoded": false
+  }
+}

@@ -34,12 +34,14 @@ export class ScoutReconstructController {
    * where staged === reconstructed + skipped + failed.
    */
   @ApiOperation({
-    summary: 'Reconstruct a settled intent’s staged clients into roster records',
+    summary: 'Reconstruct a settled intent’s staged entities into canonical records',
     description:
-      'Reconstructs the staged `clients` of one settled crawl intent into invite-pending ' +
-      'roster Person records. Idempotent on (coach_id, intent_id, entity_type, source_id). ' +
-      'Returns 200 { staged, reconstructed, skipped, failed }. Returns 409 when the intent ' +
-      'has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.',
+      'Reconstructs the staged entities of one settled crawl intent for the given `entity_type` ' +
+      'family (defaults to `clients`, which mints invite-pending roster Person records; ' +
+      '`workouts`/`client_history` mint canonical reconstructed-entity records). Idempotent on ' +
+      '(coach_id, intent_id, entity_type, source_id). Returns 200 { staged, reconstructed, ' +
+      'skipped, failed }. Returns 400 for an unsupported family, 409 when the intent has not ' +
+      'settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.',
   })
   @ApiResponse({
     status: 200,
@@ -88,6 +90,6 @@ export class ScoutReconstructController {
     @Req() req: AuthedRequest,
     @Body() dto: ScoutReconstructDto,
   ): Promise<ScoutReconstructResult> {
-    return this.reconstruct.reconstruct(req.user.id, dto.intent_id);
+    return this.reconstruct.reconstruct(req.user.id, dto.intent_id, dto.entity_type);
   }
 }
