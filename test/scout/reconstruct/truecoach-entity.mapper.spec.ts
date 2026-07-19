@@ -10,9 +10,10 @@ import {
  * Unit tests for the pure, total TrueCoach generic-entity mapper (IMPORTER-H).
  *
  * This mapper is the D2 guardrail for the NON-person families (`workouts`,
- * `client_history`): identity is the opaque platform record id (source_id), the
- * client link is the opaque client_id/clientId, and the label is a best-effort
- * title/name. Email and every billing/price field are deliberately never read.
+ * `client_history`): the client link is the opaque client_id/clientId and the
+ * label is a best-effort title/name. Identity is the opaque source_id, which the
+ * engine carries directly as the external_ref key — the mapper never re-derives
+ * it. Email and every billing/price field are deliberately never read.
  * The tests drive it against the SAME real recorded payload shapes the extension
  * captures (test/fixtures/truecoach/{workouts,client-history}.golden.json), so
  * the mapping is proven against bytes Chrome actually emitted — the golden
@@ -48,7 +49,6 @@ describe('mapTrueCoachEntity', () => {
       const result = mapTrueCoachEntity(row({ source_id: String(workout.id), payload: workout }));
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.entity.sourceEntityId).toBe(String(workout.id));
         expect(result.entity.sourcePlatform).toBe('truecoach');
       }
     }
@@ -59,7 +59,6 @@ describe('mapTrueCoachEntity', () => {
       const result = mapTrueCoachEntity(row({ source_id: String(record.id), payload: record }));
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.entity.sourceEntityId).toBe(String(record.id));
         expect(result.entity.sourcePlatform).toBe('truecoach');
       }
     }
@@ -91,7 +90,7 @@ describe('mapTrueCoachEntity', () => {
     }
   });
 
-  it('uses source_id as the identity key, never any payload id/email', () => {
+  it('never surfaces a payload id or email — identity stays the opaque source_id', () => {
     const result = mapTrueCoachEntity(
       row({
         source_id: 'opaque-77',
@@ -99,13 +98,17 @@ describe('mapTrueCoachEntity', () => {
       }),
     );
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.entity.sourceEntityId).toBe('opaque-77');
+    if (result.ok) {
+      const serialized = JSON.stringify(result.entity);
+      expect(serialized).not.toContain('501');
+      expect(serialized).not.toContain('decoy@x.io');
+      expect(serialized).not.toContain('email');
+    }
   });
 
-  it('trims surrounding whitespace on the identity key', () => {
+  it('accepts a whitespace-padded but non-empty source_id (not skipped)', () => {
     const result = mapTrueCoachEntity(row({ source_id: '  902  ' }));
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.entity.sourceEntityId).toBe('902');
   });
 
   it('reads the client link from client_id (numeric coerced to string)', () => {

@@ -3,14 +3,14 @@ import { Prisma } from '@prisma/client';
 /**
  * A staged non-person entity (a `workouts` or `client_history` row) mapped to the
  * PII-minimal fields needed to reconstruct a canonical `ScoutReconstructedEntity`.
- * Identity is the source platform's opaque record id (`sourceEntityId`), never
- * email and never a billing key. `clientSourceId` is a soft provenance link to
- * the owning client's source id (the Person external_ref), and `label` is a
- * best-effort display title — D2 forbids email/billing as canonical or linking
- * keys, so this mapper never reads them.
+ * Identity is the source platform's opaque record id — carried by the engine as
+ * the tenant-scoped external_ref key, never email and never a billing key.
+ * `clientSourceId` is a soft provenance link to the owning client's source id
+ * (the Person external_ref), and `label` is a best-effort display title — D2
+ * forbids email/billing as canonical or linking keys, so this mapper never reads
+ * them.
  */
 export interface MappedEntity {
-  readonly sourceEntityId: string;
   readonly sourcePlatform: string;
   readonly clientSourceId: string | null;
   readonly label: string | null;
@@ -40,14 +40,12 @@ export function mapTrueCoachEntity(row: StagedEntityRow): MapEntityResult {
   if (row.source_platform !== 'truecoach') {
     return { ok: false, reason: `unsupported_platform:${row.source_platform}` };
   }
-  const sourceEntityId = row.source_id.trim();
-  if (sourceEntityId.length === 0) {
+  if (row.source_id.trim().length === 0) {
     return { ok: false, reason: 'missing_source_id' };
   }
   return {
     ok: true,
     entity: {
-      sourceEntityId,
       sourcePlatform: row.source_platform,
       clientSourceId: extractClientSourceId(row.payload),
       label: extractLabel(row.payload),
