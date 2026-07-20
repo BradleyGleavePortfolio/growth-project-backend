@@ -12,6 +12,8 @@ import { ScoutReconstructController } from './scout-reconstruct.controller';
 import { ScoutReconstructService } from './scout-reconstruct.service';
 import { ScoutRosterController } from './scout-roster.controller';
 import { ScoutRosterService } from './scout-roster.service';
+import { ScoutEntitiesController } from './scout-entities.controller';
+import { ScoutEntitiesService } from './scout-entities.service';
 
 // IMPORTER-E + IMPORTER-B — unified scout module (DESIGN.md v0.3 §10 + §2).
 //
@@ -33,12 +35,14 @@ import { ScoutRosterService } from './scout-roster.service';
     ScoutIngestController,
     ScoutReconstructController,
     ScoutRosterController,
+    ScoutEntitiesController,
   ],
   providers: [
     ScoutService,
     ScoutIngestService,
     ScoutReconstructService,
     ScoutRosterService,
+    ScoutEntitiesService,
     PrismaService,
     JwtAuthGuard,
     RolesGuard,

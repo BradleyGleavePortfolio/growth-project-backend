@@ -213,6 +213,101 @@ describe('importer contract (R80 freeze)', () => {
     });
   });
 
+  describe('read: GET /api/scout/reconstruct/entities (IMPORTER-I)', () => {
+    const path = '/api/scout/reconstruct/entities';
+    const props = (name: string): string[] =>
+      Object.keys(rec(dig(contract, 'components', 'schemas', name, 'properties'))).sort();
+
+    it('requires a bounded intent_id and a non-person family query param', () => {
+      const params = dig(contract, 'paths', path, 'get', 'parameters') as unknown[];
+      const intent = rec(params.map(rec).find((p) => p.name === 'intent_id'));
+      expect(intent).toMatchObject({ in: 'query', required: true });
+      expect(rec(intent.schema)).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 });
+      const family = rec(params.map(rec).find((p) => p.name === 'family'));
+      expect(family).toMatchObject({ in: 'query', required: true });
+      // The family allow-list is the non-person canonical families; `clients`
+      // (the roster Person read) must never be selectable here.
+      const familyEnum = dig(family.schema, 'enum') as string[];
+      expect(familyEnum).not.toContain('clients');
+      expect(familyEnum.length).toBeGreaterThan(0);
+    });
+
+    it('returns the ScoutEntitiesResult page projection on 200', () => {
+      const res = dig(contract, 'paths', path, 'get', 'responses', '200', 'content');
+      expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
+        '#/components/schemas/ScoutEntitiesResult',
+      );
+      // page metadata only — deliberately NOT a full-collection total.
+      expect(props('ScoutEntitiesResult')).toEqual([
+        'entities',
+        'family',
+        'intent_id',
+        'next_cursor',
+        'page_count',
+      ]);
+    });
+
+    it('advertises a PII-minimal ReconstructedEntityDto row (no email/billing/coach_id)', () => {
+      const row = props('ReconstructedEntityDto');
+      expect(row).toEqual([
+        'client_source_id',
+        'created_at',
+        'entity_type',
+        'id',
+        'label',
+        'source_id',
+        'source_platform',
+        'updated_at',
+      ]);
+      for (const banned of ['email', 'price', 'billing', 'coach_id', 'payload']) {
+        expect(row).not.toContain(banned);
+      }
+    });
+
+    it('documents 400 (bad query) and a no-oracle 404 (flag-off ≡ no-evidence)', () => {
+      const g = dig(contract, 'paths', path, 'get', 'responses');
+      expect(rec(dig(g, '400')).description as string).toMatch(/query/i);
+      const notFound = rec(dig(g, '404')).description as string;
+      expect(notFound).toMatch(/no existence oracle/i);
+      expect(
+        dig(g, '400', 'content', 'application/json', 'schema') ?? dig(g, '400', 'schema'),
+      ).toBeDefined();
+    });
+
+    it('models the reachable 401/403/404 as the shared envelope and 429 as the rate-limit body', () => {
+      for (const status of ['401', '403', '404']) {
+        expect(
+          dig(
+            contract,
+            'paths',
+            path,
+            'get',
+            'responses',
+            status,
+            'content',
+            'application/json',
+            'schema',
+            '$ref',
+          ),
+        ).toBe('#/components/schemas/ErrorEnvelope');
+      }
+      expect(
+        dig(
+          contract,
+          'paths',
+          path,
+          'get',
+          'responses',
+          '429',
+          'content',
+          'application/json',
+          'schema',
+          '$ref',
+        ),
+      ).toBe('#/components/schemas/RateLimitError');
+    });
+  });
+
   describe('auth: POST /api/auth/extension/refresh', () => {
     const path = '/api/auth/extension/refresh';
 

@@ -230,6 +230,63 @@
         ],
         "type": "object"
       },
+      "ReconstructedEntityDto": {
+        "properties": {
+          "client_source_id": {
+            "description": "Soft provenance link to the owning client's source record id, if any.",
+            "example": "tc_client_9f831",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the record was minted.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "entity_type": {
+            "description": "The entity family this row belongs to.",
+            "example": "workouts",
+            "type": "string"
+          },
+          "id": {
+            "description": "Opaque server-issued canonical entity id.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "description": "Best-effort PII-minimal display label (a title/name), if the source provided one.",
+            "example": "Upper Body — Week 3",
+            "nullable": true,
+            "type": "string"
+          },
+          "source_id": {
+            "description": "Source platform's own record id (provenance, not a canonical key).",
+            "example": "tc_workout_5c22a",
+            "type": "string"
+          },
+          "source_platform": {
+            "description": "Source platform slug (provenance).",
+            "example": "truecoach",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the record last changed.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_platform",
+          "entity_type",
+          "source_id",
+          "client_source_id",
+          "label",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "ScoutCompleteDto": {
         "properties": {
           "error_summary": {
@@ -281,6 +338,45 @@
         "required": [
           "acknowledged",
           "intent_id"
+        ],
+        "type": "object"
+      },
+      "ScoutEntitiesResult": {
+        "properties": {
+          "entities": {
+            "description": "Reconstructed canonical entity rows for this page (deterministic order).",
+            "items": {
+              "$ref": "#/components/schemas/ReconstructedEntityDto"
+            },
+            "type": "array"
+          },
+          "family": {
+            "description": "The family that was read.",
+            "example": "workouts",
+            "type": "string"
+          },
+          "intent_id": {
+            "description": "The intent that was read.",
+            "example": "intent_2026_07_09_abc123",
+            "type": "string"
+          },
+          "next_cursor": {
+            "description": "Opaque cursor for the next page, or null when this is the last page.",
+            "nullable": true,
+            "type": "string"
+          },
+          "page_count": {
+            "description": "Number of rows returned in THIS page (entities.length). Deliberately NOT a full-collection total — this endpoint issues no unbounded count scan.",
+            "example": 50,
+            "type": "number"
+          }
+        },
+        "required": [
+          "intent_id",
+          "family",
+          "entities",
+          "page_count",
+          "next_cursor"
         ],
         "type": "object"
       },
@@ -728,7 +824,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "1.3.0"
+    "version": "1.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1561,6 +1657,134 @@
           }
         ],
         "summary": "Reconstruct a settled intent’s staged entities into canonical records",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/reconstruct/entities": {
+      "get": {
+        "description": "Returns the reconstructed non-person canonical rows (workouts / client_history) for one settled crawl intent and family, joined to the reconstruction ledger, with honest per-page metadata (page_count + an opaque forward-only cursor) and deterministic bounded pagination. Issues no full-collection total scan and is not a second progress system. Excludes cross-tenant rows and cascade-erased rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "operationId": "ScoutEntitiesController_getEntities",
+        "parameters": [
+          {
+            "description": "The settled crawl intent whose reconstructed entities to read.",
+            "in": "query",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "example": "intent_2026_07_09_abc123",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The reconstructed entity family to review. One of the non-person canonical families. `clients` is served by the roster read, not this endpoint; any unsupported family is a 400 (fail closed).",
+            "in": "query",
+            "name": "family",
+            "required": true,
+            "schema": {
+              "enum": [
+                "workouts",
+                "client_history"
+              ],
+              "example": "workouts",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Omit for the first page. A malformed or mismatched cursor is a 400 (fail closed).",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size (1..200). Defaults to 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "example": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutEntitiesResult"
+                }
+              }
+            },
+            "description": "Reconstructed entity page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid query (missing/oversized intent_id, unsupported family, out-of-range limit, or malformed/mismatched cursor). Standard HttpExceptionFilter envelope."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: the flags are off (R-DARK-1) OR the intent has no ScoutImport evidence for the calling coach (unknown, cross-tenant, or not-yet-settled). The cases are deliberately indistinguishable — no existence oracle."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read a settled intent's reconstructed canonical entities for a family",
         "tags": [
           "scout"
         ]

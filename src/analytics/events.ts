@@ -135,6 +135,14 @@ export const Events = {
    * tokens, payloads, display names, or PII.
    */
   SCOUT_RECONSTRUCT_ROSTER_READ: 'scout.reconstruct.roster.read',
+  /**
+   * IMPORTER-I — a coach read one settled intent's reconstructed non-person
+   * canonical entities (workouts / client_history) via GET
+   * /api/scout/reconstruct/entities. RED signal, emitted once per page read.
+   * Properties: { intent_id, entity_type, returned, has_more }. No tokens,
+   * payloads, labels, or PII.
+   */
+  SCOUT_RECONSTRUCT_ENTITIES_READ: 'scout.reconstruct.entities.read',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

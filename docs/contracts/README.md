@@ -4,15 +4,19 @@
 Chrome extension and the mobile pairing surface. It is an OpenAPI 3.1 slice
 covering exactly these routes:
 
-| Method + path                      | Purpose                                      |
-| ---------------------------------- | -------------------------------------------- |
-| `POST /api/auth/extension/refresh` | Rotate the extension's Supabase session      |
-| `POST /api/extension/pair/init`    | Mint a 6-digit pairing code (mobile)         |
-| `POST /api/extension/pair/status`  | Poll a pairing code's status (mobile)        |
-| `POST /api/extension/pair/redeem`  | Exchange a code for a token pair (extension) |
-| `POST /api/scout/ingest`           | Ingest a batch of crawled entities           |
-| `POST /api/scout/progress`         | Mirror a crawl progress snapshot             |
-| `POST /api/scout/ingest/complete`  | Settle an import to its terminal state       |
+| Method + path                         | Purpose                                                                          |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| `POST /api/auth/extension/refresh`    | Rotate the extension's Supabase session                                          |
+| `POST /api/extension/pair/init`       | Mint a 6-digit pairing code (mobile)                                             |
+| `POST /api/extension/pair/status`     | Poll a pairing code's status (mobile)                                            |
+| `POST /api/extension/pair/redeem`     | Exchange a code for a token pair (extension)                                     |
+| `POST /api/scout/ingest`              | Ingest a batch of crawled entities                                               |
+| `POST /api/scout/progress`            | Mirror a crawl progress snapshot                                                 |
+| `POST /api/scout/ingest/complete`     | Settle an import to its terminal state                                           |
+| `GET /api/scout/import/status`        | Read a crawl import's settlement status                                          |
+| `GET /api/scout/reconstruct`          | Read reconstruction progress for an intent                                       |
+| `GET /api/scout/reconstruct/entities` | Read a settled intent's reconstructed non-person canonical entities (IMPORTER-I) |
+| `GET /api/scout/reconstruct/roster`   | Read a settled intent's reconstructed invite-pending client roster (IMPORTER-G)  |
 
 ### Scope — what is intentionally NOT in the contract
 
@@ -41,8 +45,8 @@ and emits. The single definition of "what the contract is" lives in
 npm run contract:importer
 ```
 
-This boots the Nest application factory (no network socket), extracts the seven
-routes plus every schema they reference, re-adds the `/api` global prefix, deep
+This boots the Nest application factory (no network socket), extracts the
+importer routes plus every schema they reference, re-adds the `/api` global prefix, deep
 key-sorts the result for byte-stability, and writes this file.
 
 ## Drift protection
