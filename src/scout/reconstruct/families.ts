@@ -1,7 +1,8 @@
 import { Prisma } from '@prisma/client';
-import { mapTrueCoachClient, type MappedClient } from '../mappers/truecoach-clients.mapper';
-import { mapTrueCoachEntity, type MappedEntity } from '../mappers/truecoach-entity.mapper';
+import { type MappedClient } from '../mappers/truecoach-clients.mapper';
+import { type MappedEntity } from '../mappers/truecoach-entity.mapper';
 import { RECONSTRUCT_FAMILY } from '../scout-reconstruct.dto';
+import { buildSourceMapperRegistry } from './source-mapper-registry';
 
 /** Prisma transaction client — the interactive-transaction handle. */
 export type Tx = Prisma.TransactionClient;
@@ -38,6 +39,20 @@ export interface FamilyReconstructor<M = unknown> {
 }
 
 /**
+ * The `source_platform` → mapper seam. A family no longer hard-wires a single
+ * source's mapper; it looks the mapper up by the row's `source_platform` and
+ * fails closed with the exact `unsupported_platform:<token>` skip reason when no
+ * source is registered — byte-identical to the reason each mapper still returns
+ * from its own internal guard. Built once at module load; the map is read-only.
+ */
+const sourceMapperRegistry = buildSourceMapperRegistry();
+
+/** The skip reason for a row whose `source_platform` has no registered mapper. */
+function unsupportedPlatform(row: StagedRow): { readonly ok: false; readonly reason: string } {
+  return { ok: false, reason: `unsupported_platform:${row.source_platform}` };
+}
+
+/**
  * `clients` — byte-identical to IMPORTER-F: reconstruct into an invite-pending,
  * non-login, tenant-owned roster `Person`. Identity/idempotency is the
  * tenant-scoped external_ref (coach_id, source_platform, source_person_id).
@@ -45,7 +60,9 @@ export interface FamilyReconstructor<M = unknown> {
 const clientsFamily: FamilyReconstructor<MappedClient> = {
   entityType: RECONSTRUCT_FAMILY.clients,
   map(row) {
-    const result = mapTrueCoachClient(row);
+    const mapper = sourceMapperRegistry.get(row.source_platform);
+    if (mapper === undefined) return unsupportedPlatform(row);
+    const result = mapper.mapClient(row);
     return result.ok ? { ok: true, mapped: result.client } : result;
   },
   async persist(tx, coachId, _sourceId, client) {
@@ -81,7 +98,9 @@ function genericEntityFamily(entityType: string): FamilyReconstructor<MappedEnti
   return {
     entityType,
     map(row) {
-      const result = mapTrueCoachEntity(row);
+      const mapper = sourceMapperRegistry.get(row.source_platform);
+      if (mapper === undefined) return unsupportedPlatform(row);
+      const result = mapper.mapEntity(row);
       return result.ok ? { ok: true, mapped: result.entity } : result;
     },
     async persist(tx, coachId, sourceId, entity) {
