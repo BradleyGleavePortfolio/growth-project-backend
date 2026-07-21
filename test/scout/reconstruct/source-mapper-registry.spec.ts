@@ -25,13 +25,13 @@ function row(source_platform: string, source_id: string, payload: Prisma.JsonVal
 describe('buildSourceMapperRegistry — source_platform dispatch', () => {
   const registry = buildSourceMapperRegistry();
 
-  it('registers exactly one production source: truecoach', () => {
-    expect([...registry.keys()]).toEqual(['truecoach']);
+  it('registers truecoach plus the non-production conformance_alpha adapter', () => {
+    expect([...registry.keys()]).toEqual(['truecoach', 'conformance_alpha']);
   });
 
   it('returns undefined for any unregistered platform (fail-closed at the seam)', () => {
     expect(registry.get('trainerize')).toBeUndefined();
-    expect(registry.get('conformance_alpha')).toBeUndefined();
+    expect(registry.get('some_unregistered_source')).toBeUndefined();
     expect(registry.get('')).toBeUndefined();
   });
 

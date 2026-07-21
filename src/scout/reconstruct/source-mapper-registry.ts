@@ -8,6 +8,10 @@ import {
   type MapEntityResult,
   type StagedEntityRow,
 } from '../mappers/truecoach-entity.mapper';
+import {
+  mapConformanceAlphaClient,
+  mapConformanceAlphaEntity,
+} from '../mappers/conformance-alpha.mapper';
 
 /**
  * One source adapter: the per-platform pair of pure/total mappers the family
@@ -33,13 +37,31 @@ const trueCoachSourceMapper: SourceMapper = {
 };
 
 /**
- * Build the `source_platform` → mapper registry. Only production sources are
- * registered here; an unregistered platform is NOT found and the family layer
- * fails it closed with the exact `unsupported_platform:<token>` skip reason —
- * byte-identical to the guard each mapper still carries internally. Registering
- * a second source is a single element added to this array.
+ * conformance_alpha (adapter #2) — a synthetic, non-production source registered
+ * to exercise the SAME production-neutral dispatch path for deterministic
+ * conformance/E2E coverage. No public connector or coach-selectable flow creates
+ * `conformance_alpha` sessions today, so it is not reached in normal operation.
+ * Registration itself is NOT an authorization boundary: if such a row were staged
+ * within a tenant, reconstruction would map it within that tenant, exactly like
+ * any registered source. Ordinary tenant/RLS scoping and the existing (default-
+ * off) scout flags remain the boundaries.
+ */
+const conformanceAlphaSourceMapper: SourceMapper = {
+  sourcePlatform: 'conformance_alpha',
+  mapClient: mapConformanceAlphaClient,
+  mapEntity: mapConformanceAlphaEntity,
+};
+
+/**
+ * Build the `source_platform` → mapper registry: the production TrueCoach source
+ * plus the synthetic `conformance_alpha` source (see above). An unregistered
+ * platform is NOT found and the family layer fails it closed with the exact
+ * `unsupported_platform:<token>` skip reason — byte-identical to the guard each
+ * mapper still carries internally. Registration is a dispatch entry, not an
+ * authorization boundary. Registering a source is a single element added to this
+ * array.
  */
 export function buildSourceMapperRegistry(): ReadonlyMap<string, SourceMapper> {
-  const sources: SourceMapper[] = [trueCoachSourceMapper];
+  const sources: SourceMapper[] = [trueCoachSourceMapper, conformanceAlphaSourceMapper];
   return new Map(sources.map((source) => [source.sourcePlatform, source]));
 }
