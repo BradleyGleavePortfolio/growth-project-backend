@@ -9,3 +9,6 @@ CHANGELOG.md
 # Generated, deterministically-serialized contract artifact (JSON.stringify,2);
 # byte-identity is enforced by the R80 drift test, so prettier must not reflow it.
 docs/contracts/importer-openapi.json
+# Operator-authored env/switch registry; semantic + schema validity is enforced by
+# the prod-readiness parser tests (js-yaml round-trip), so prettier must not reflow it.
+prod-switches.yml
