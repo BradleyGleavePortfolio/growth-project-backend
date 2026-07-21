@@ -24,9 +24,12 @@ import { type StagedRow } from '../../../src/scout/reconstruct/families';
  *   merged main   : 95be0222df3d47d787566743c8781005d8fbec69
  *   source path   : test/fixtures/conformance/conformance-alpha.json
  *   source blob   : c3b8af8eacf944f3db43b0c45c49a9b6a7197392 (git blob sha1)
- * The file at test/fixtures/conformance/conformance-alpha.json is a byte-for-byte
- * copy; `git hash-object` on it reproduces the source blob sha1 above. The bytes
- * are pinned below with sha256 so any silent drift fails loudly at CI time.
+ * The file at test/fixtures/conformance/conformance-alpha.json.raw is a byte-for-
+ * byte copy; `git hash-object` on it reproduces the source blob sha1 above. The
+ * `.json.raw` suffix keeps the pinned bytes opaque to Prettier (its pre-commit
+ * glob only matches `.json`), so byte-identity is preserved without a root-config
+ * ignore entry. The bytes are pinned below with sha256 so any silent drift fails
+ * loudly at CI time.
  *
  * `expect_records` is the extension's INDEPENDENTLY hand-authored staging golden
  * (what its site-agnostic crawl core emits to /api/scout/ingest). Here it is the
@@ -65,7 +68,7 @@ const FIXTURE_PATH = join(
   '..',
   'fixtures',
   'conformance',
-  'conformance-alpha.json',
+  'conformance-alpha.json.raw',
 );
 const EXPECTED_SHA256 = '144c3c9f56cad1ae9cc875fe0c42862fef0d28603272693da7d20770d174cf4c';
 const EXPECTED_BYTE_LENGTH = 4280;
