@@ -9,3 +9,7 @@ CHANGELOG.md
 # Generated, deterministically-serialized contract artifact (JSON.stringify,2);
 # byte-identity is enforced by the R80 drift test, so prettier must not reflow it.
 docs/contracts/importer-openapi.json
+# Byte-for-byte copy of the extension conformance fixture (tgp-importer-extension
+# main 95be0222, blob c3b8af8e); its sha256 is pinned by the PR-3 e2e spec, so
+# prettier must not reflow it (same rationale as the contract artifact above).
+test/fixtures/conformance/conformance-alpha.json
