@@ -1337,6 +1337,24 @@ describe('R100 deploy-readiness orchestrator', () => {
     });
   });
 
+  describe('Scout / importer readiness slice (R-SCOUT-READINESS-1)', () => {
+    it('registers the three Scout/importer flags in prod-switches.yml as default-OFF', async () => {
+      const registry = await loadRegistry(path.join(REPO_ROOT, REGISTRY_PATH));
+      const byName = new Map(registry.switches.map((r) => [r.name, r]));
+      for (const name of [
+        'FEATURE_SCOUT_INGEST',
+        'FEATURE_SCOUT_RECONSTRUCT',
+        'FEATURE_EXTENSION_PAIRING',
+      ]) {
+        const row = byName.get(name);
+        expect(row).toBeDefined();
+        expect(row?.tier).toBe('feature');
+        expect(row?.prod_default).toBe('OFF');
+        expect(row?.auto_flip_on_in_prod).toBe(false);
+      }
+    });
+  });
+
   describe('prod-switch section renders + gates every registry row (R100 #2)', () => {
     /** Build a registry of `extra` rows padded to clear the MIN_SWITCHES floor. */
     function buildRegistry(extra: RegistryRow[]): Registry {

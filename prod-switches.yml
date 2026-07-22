@@ -1371,3 +1371,27 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
+
+  # ── Scout / tgp-importer readiness slice (R-SCOUT-READINESS-1, 2026-07-22):
+  # register the three existing importer feature flags in the prod-readiness
+  # registry as explicit default-OFF. Config + test only; no runtime change and
+  # no flag activation. All three are tier: feature, prod_default: OFF,
+  # auto_flip_on_in_prod: false so they can never auto-enable on a prod deploy. ──
+  - name: FEATURE_SCOUT_INGEST
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Scout ingest feature flag (IMPORTER). Read via process.env[FEATURE_SCOUT_INGEST]; default OFF until rollout."
+  - name: FEATURE_SCOUT_RECONSTRUCT
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Scout reconstruct feature flag (IMPORTER-F). Read via process.env[FEATURE_SCOUT_RECONSTRUCT]; default OFF until rollout."
+  - name: FEATURE_EXTENSION_PAIRING
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Extension pairing feature flag (IMPORTER). Read via process.env[FEATURE_EXTENSION_PAIRING]; default OFF until rollout."
