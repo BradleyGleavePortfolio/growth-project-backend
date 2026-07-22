@@ -476,8 +476,10 @@ export function runStubSection(findings: readonly StubFinding[]): SectionResult 
   const lines: string[] = [];
   lines.push(`BLOCK_SHIP=${block.length}  WARN=${warn.length}  INFO=${info.length}`);
   for (const f of block) lines.push(`[BLOCK] ${f.file}:${f.line}  ${f.pattern}`);
-  for (const f of warn.slice(0, 10)) lines.push(`[warn] ${f.file}:${f.line}  ${f.pattern} (tracked debt or low-signal)`);
-  if (block.length === 0) lines.push('no blocking stub/placeholder tokens in production-bound src/');
+  for (const f of warn.slice(0, 10))
+    lines.push(`[warn] ${f.file}:${f.line}  ${f.pattern} (tracked debt or low-signal)`);
+  if (block.length === 0)
+    lines.push('no blocking stub/placeholder tokens in production-bound src/');
   return { section: reg.section, label: reg.label, red: block.length, gating: true, lines };
 }
 
@@ -586,10 +588,14 @@ export function runProdSwitchesSection(
   // #2). Wrong rows first (they gate), then a capped sample of warn rows, then a
   // capped sample of OK rows so the board stays readable on a 200+ row registry.
   for (const s of wrongRows) {
-    lines.push(`[${WRONG_MARK} WRONG] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
+    lines.push(
+      `[${WRONG_MARK} WRONG] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`,
+    );
   }
   for (const s of warnRows.slice(0, 25)) {
-    lines.push(`[${WARN_MARK} WARN] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
+    lines.push(
+      `[${WARN_MARK} WARN] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`,
+    );
   }
   for (const s of statuses.filter((x) => x.status === 'OK').slice(0, 10)) {
     lines.push(`[${OK_MARK} OK] ${s.name}: actual=${s.actual} expected=${s.expected} ${s.marker}`);
@@ -609,7 +615,9 @@ export function runWiringSection(reports: readonly ProviderReport[]): SectionRes
   const wired = reports.filter((r) => r.status === 'WIRED');
   const unused = reports.filter((r) => r.status === 'NOT_USED');
   const lines: string[] = [];
-  lines.push(`providers: WIRED=${wired.length}  STUB=${blockers.length}  NOT_USED=${unused.length}`);
+  lines.push(
+    `providers: WIRED=${wired.length}  STUB=${blockers.length}  NOT_USED=${unused.length}`,
+  );
   for (const p of blockers) {
     const missing = p.env_vars_missing.join(',') || '-';
     const ph = p.env_vars_placeholder.join(',') || '-';
@@ -628,9 +636,12 @@ export function runEnvDiscoverySection(
   const report = crossReference(discovery, registry);
   const undeclared = findUndeclared(report).map((f) => f.name);
   const lines: string[] = [];
-  lines.push(`env vars discovered: ${discovery.envVars.size}   registry size: ${report.registrySize}`);
+  lines.push(
+    `env vars discovered: ${discovery.envVars.size}   registry size: ${report.registrySize}`,
+  );
   lines.push(`unregistered in code (R108): ${undeclared.length}`);
-  for (const name of undeclared) lines.push(`[GAP] ${name} referenced in src/ but absent from prod-switches.yml`);
+  for (const name of undeclared)
+    lines.push(`[GAP] ${name} referenced in src/ but absent from prod-switches.yml`);
   if (undeclared.length === 0) lines.push('every discovered env var is registered');
   return {
     result: { section: reg.section, label: reg.label, red: undeclared.length, gating: true, lines },
@@ -645,9 +656,13 @@ export function runEnvDiscoverySection(
 export function runAutoFlipperSection(flipPlan: FlipPlan): SectionResult {
   const reg = registrationFor('AUTO_FLIPPER');
   const lines: string[] = [];
-  lines.push(`would auto-flip: ${flipPlan.to_set.length}   already current: ${flipPlan.already_set.length}   skipped: ${flipPlan.to_skip.length}`);
-  for (const p of flipPlan.to_set) lines.push(`+ ${p.row.name} \u2190 ${p.target}   (was ${p.was ?? 'unset'})`);
-  if (flipPlan.to_set.length === 0) lines.push('no switches would be auto-flipped on a prod-bound deploy');
+  lines.push(
+    `would auto-flip: ${flipPlan.to_set.length}   already current: ${flipPlan.already_set.length}   skipped: ${flipPlan.to_skip.length}`,
+  );
+  for (const p of flipPlan.to_set)
+    lines.push(`+ ${p.row.name} \u2190 ${p.target}   (was ${p.was ?? 'unset'})`);
+  if (flipPlan.to_set.length === 0)
+    lines.push('no switches would be auto-flipped on a prod-bound deploy');
   return { section: reg.section, label: reg.label, red: 0, gating: false, lines };
 }
 
@@ -691,10 +706,13 @@ export function runOperatorKeysSection(
   lines.push(`operator keys outstanding: ${keyGaps}`);
   lines.push(`  MUST_SET switches unset: ${switchEntries.length}`);
   lines.push(`  provider credentials missing/placeholder: ${providerKeyGaps}`);
-  for (const s of switchEntries) lines.push(`[KEY] fly secrets set ${s.name}=<value>   (${s.owner})`);
+  for (const s of switchEntries)
+    lines.push(`[KEY] fly secrets set ${s.name}=<value>   (${s.owner})`);
   for (const p of providerEntries) {
-    for (const v of p.env_vars_missing) lines.push(`[KEY] fly secrets set ${v}=<value>   (${p.label})`);
-    for (const v of p.env_vars_placeholder) lines.push(`[KEY] ${v} is a placeholder for ${p.label}`);
+    for (const v of p.env_vars_missing)
+      lines.push(`[KEY] fly secrets set ${v}=<value>   (${p.label})`);
+    for (const v of p.env_vars_placeholder)
+      lines.push(`[KEY] ${v} is a placeholder for ${p.label}`);
   }
   if (keyGaps === 0) lines.push('every operator-facing key is provided');
   // Sanity: the generator must have produced the heading; guards against an
@@ -836,10 +854,50 @@ describe('R100 deploy-readiness orchestrator', () => {
     });
 
     it.each([
-      [{ stub: 1, prodSwitchesWrong: 0, prodSwitchesWarn: 0, wiringGaps: 0, envGaps: 0, keyGaps: 0 }, 1],
-      [{ stub: 0, prodSwitchesWrong: 0, prodSwitchesWarn: 0, wiringGaps: 0, envGaps: 0, keyGaps: 7 }, 7],
-      [{ stub: 0, prodSwitchesWrong: 0, prodSwitchesWarn: 4, wiringGaps: 0, envGaps: 0, keyGaps: 0 }, 4],
-      [{ stub: 3, prodSwitchesWrong: 3, prodSwitchesWarn: 3, wiringGaps: 3, envGaps: 3, keyGaps: 3 }, 18],
+      [
+        {
+          stub: 1,
+          prodSwitchesWrong: 0,
+          prodSwitchesWarn: 0,
+          wiringGaps: 0,
+          envGaps: 0,
+          keyGaps: 0,
+        },
+        1,
+      ],
+      [
+        {
+          stub: 0,
+          prodSwitchesWrong: 0,
+          prodSwitchesWarn: 0,
+          wiringGaps: 0,
+          envGaps: 0,
+          keyGaps: 7,
+        },
+        7,
+      ],
+      [
+        {
+          stub: 0,
+          prodSwitchesWrong: 0,
+          prodSwitchesWarn: 4,
+          wiringGaps: 0,
+          envGaps: 0,
+          keyGaps: 0,
+        },
+        4,
+      ],
+      [
+        {
+          stub: 3,
+          prodSwitchesWrong: 3,
+          prodSwitchesWarn: 3,
+          wiringGaps: 3,
+          envGaps: 3,
+          keyGaps: 3,
+        },
+        18,
+      ],
     ])('sums buckets %j to %i', (counts, expected) => {
       expect(sumCounts(counts as ExitCounts)).toBe(expected);
     });
@@ -946,9 +1004,33 @@ describe('R100 deploy-readiness orchestrator', () => {
   describe('section runners map sub-scanner output to typed red counts', () => {
     it('stub section counts only BLOCK_SHIP findings as red', () => {
       const findings: StubFinding[] = [
-        { pattern: 'STUB', kind: 'STUB', file: 'src/a.ts', line: 1, excerpt: '', severity: 'BLOCK_SHIP', fingerprint: 'a' },
-        { pattern: 'MOCK', kind: 'MOCK', file: 'src/b.ts', line: 2, excerpt: '', severity: 'WARN', fingerprint: 'b' },
-        { pattern: 'STUB', kind: 'STUB', file: 'test/c.spec.ts', line: 3, excerpt: '', severity: 'INFO', fingerprint: 'c' },
+        {
+          pattern: 'STUB',
+          kind: 'STUB',
+          file: 'src/a.ts',
+          line: 1,
+          excerpt: '',
+          severity: 'BLOCK_SHIP',
+          fingerprint: 'a',
+        },
+        {
+          pattern: 'MOCK',
+          kind: 'MOCK',
+          file: 'src/b.ts',
+          line: 2,
+          excerpt: '',
+          severity: 'WARN',
+          fingerprint: 'b',
+        },
+        {
+          pattern: 'STUB',
+          kind: 'STUB',
+          file: 'test/c.spec.ts',
+          line: 3,
+          excerpt: '',
+          severity: 'INFO',
+          fingerprint: 'c',
+        },
       ];
       const r = runStubSection(findings);
       expect(r.red).toBe(1);
@@ -969,7 +1051,14 @@ describe('R100 deploy-readiness orchestrator', () => {
 
     it('operator-keys section counts unset switches plus provider credential gaps', () => {
       const unset: RegistryRow[] = [
-        { name: 'STRIPE_LIVE_MODE', tier: 'prod', prod_default: 'MUST_SET', auto_flip_on_in_prod: false, owner: 'billing', description: 'live mode' },
+        {
+          name: 'STRIPE_LIVE_MODE',
+          tier: 'prod',
+          prod_default: 'MUST_SET',
+          auto_flip_on_in_prod: false,
+          owner: 'billing',
+          description: 'live mode',
+        },
       ];
       const stubbed: ProviderReport[] = [
         mkProvider('mux', 'Mux', 'STUB', ['MUX_TOKEN_ID'], ['MUX_TOKEN_SECRET']),
@@ -982,7 +1071,14 @@ describe('R100 deploy-readiness orchestrator', () => {
     });
 
     it('auto-flipper section is informational and never gates', () => {
-      const onRow: RegistryRow = { name: 'RATE_LIMIT_ENABLED', tier: 'prod', prod_default: 'ON', auto_flip_on_in_prod: true, owner: 'platform', description: 'rate limit' };
+      const onRow: RegistryRow = {
+        name: 'RATE_LIMIT_ENABLED',
+        tier: 'prod',
+        prod_default: 'ON',
+        auto_flip_on_in_prod: true,
+        owner: 'platform',
+        description: 'rate limit',
+      };
       const flip = planFlips({ registry: [onRow], current: {} });
       const r = runAutoFlipperSection(flip);
       expect(r.gating).toBe(false);
@@ -1109,8 +1205,24 @@ describe('R100 deploy-readiness orchestrator', () => {
   describe('learning-ledger tracked-debt downgrade', () => {
     it('downgrades BLOCK_SHIP findings whose fingerprint is tracked debt to WARN', () => {
       const findings: StubFinding[] = [
-        { pattern: 'STUB', kind: 'STUB', file: 'src/a.ts', line: 1, excerpt: '', severity: 'BLOCK_SHIP', fingerprint: 'debt-1' },
-        { pattern: 'STUB', kind: 'STUB', file: 'src/b.ts', line: 2, excerpt: '', severity: 'BLOCK_SHIP', fingerprint: 'live-1' },
+        {
+          pattern: 'STUB',
+          kind: 'STUB',
+          file: 'src/a.ts',
+          line: 1,
+          excerpt: '',
+          severity: 'BLOCK_SHIP',
+          fingerprint: 'debt-1',
+        },
+        {
+          pattern: 'STUB',
+          kind: 'STUB',
+          file: 'src/b.ts',
+          line: 2,
+          excerpt: '',
+          severity: 'BLOCK_SHIP',
+          fingerprint: 'live-1',
+        },
       ];
       const debt = new Set<string>(['debt-1']);
       const out = applyTrackedDebt(findings, debt);
@@ -1144,9 +1256,7 @@ describe('R100 deploy-readiness orchestrator', () => {
     let STUB_FIXTURE_ROOT = '';
 
     beforeAll(() => {
-      STUB_FIXTURE_ROOT = fs.mkdtempSync(
-        path.join(os.tmpdir(), 'h4h-stub-roots-'),
-      );
+      STUB_FIXTURE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'h4h-stub-roots-'));
       const write = (rel: string, body: string): void => {
         const abs = path.join(STUB_FIXTURE_ROOT, rel);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -1244,9 +1354,23 @@ describe('R100 deploy-readiness orchestrator', () => {
     it('puts a wrongly-set switch in the red bucket and a correct one in OK', () => {
       const rows: RegistryRow[] = [
         // Correctly set: OFF-expected, env leaves it unset (reads OFF) -> OK.
-        { name: 'CORRECT_FLAG', tier: 'prod', prod_default: 'OFF', auto_flip_on_in_prod: false, owner: 'platform', description: 'correct flag' },
+        {
+          name: 'CORRECT_FLAG',
+          tier: 'prod',
+          prod_default: 'OFF',
+          auto_flip_on_in_prod: false,
+          owner: 'platform',
+          description: 'correct flag',
+        },
         // Wrongly set: OFF-expected but the env turns it ON -> WRONG (red).
-        { name: 'WRONG_FLAG', tier: 'prod', prod_default: 'OFF', auto_flip_on_in_prod: false, owner: 'platform', description: 'wrong flag' },
+        {
+          name: 'WRONG_FLAG',
+          tier: 'prod',
+          prod_default: 'OFF',
+          auto_flip_on_in_prod: false,
+          owner: 'platform',
+          description: 'wrong flag',
+        },
       ];
       const registry = buildRegistry(rows);
       const env: NodeJS.ProcessEnv = { WRONG_FLAG: 'true' };
@@ -1261,22 +1385,40 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(classifySwitch(rows[0], env).status).toBe('OK');
       expect(classifySwitch(rows[1], env).status).toBe('WRONG');
       // A wrongly-set switch is value-coherent, so it gates even on a PR run.
-      const board = aggregateBoard([result], {
-        stub: 0,
-        prodSwitchesWrong: result.red,
-        prodSwitchesWarn: warn,
-        wiringGaps: 0,
-        envGaps: 0,
-        keyGaps: 0,
-      }, false);
+      const board = aggregateBoard(
+        [result],
+        {
+          stub: 0,
+          prodSwitchesWrong: result.red,
+          prodSwitchesWarn: warn,
+          wiringGaps: 0,
+          envGaps: 0,
+          keyGaps: 0,
+        },
+        false,
+      );
       expect(board.totalRed).toBeGreaterThan(0);
       expect(board.exitLine).toMatch(EXIT_DO_NOT_DEPLOY_RE);
     });
 
     it('classifies unset MUST_SET / ON switches as WARN (strict-only gating)', () => {
       const rows: RegistryRow[] = [
-        { name: 'NEEDS_SECRET', tier: 'prod', prod_default: 'MUST_SET', auto_flip_on_in_prod: false, owner: 'billing', description: 'needs secret' },
-        { name: 'SHOULD_BE_ON', tier: 'prod', prod_default: 'ON', auto_flip_on_in_prod: true, owner: 'platform', description: 'should be on' },
+        {
+          name: 'NEEDS_SECRET',
+          tier: 'prod',
+          prod_default: 'MUST_SET',
+          auto_flip_on_in_prod: false,
+          owner: 'billing',
+          description: 'needs secret',
+        },
+        {
+          name: 'SHOULD_BE_ON',
+          tier: 'prod',
+          prod_default: 'ON',
+          auto_flip_on_in_prod: true,
+          owner: 'platform',
+          description: 'should be on',
+        },
       ];
       const registry = buildRegistry(rows);
       const { warn, wrong } = runProdSwitchesSection(registry, {});
