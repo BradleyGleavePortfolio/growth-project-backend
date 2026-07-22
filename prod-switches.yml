@@ -1371,3 +1371,27 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
+
+  # ── Scout / tgp-importer readiness slice (R-SCOUT-READINESS-1, 2026-07-22):
+  # register the three existing importer feature flags in the prod-readiness
+  # registry as explicit default-OFF. Config + test only; no runtime change and
+  # no flag activation. All three are tier: feature, prod_default: OFF,
+  # auto_flip_on_in_prod: false so they can never auto-enable on a prod deploy. ──
+  - name: FEATURE_SCOUT_INGEST
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Scout Ingest feature flag (IMPORTER). Default OFF everywhere. When 'true', the POST /api/scout/ingest receiver for the tgp-importer extension crawl envelope becomes live; any other value leaves the surface 404. Read via process.env.FEATURE_SCOUT_INGEST."
+  - name: FEATURE_SCOUT_RECONSTRUCT
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Scout Reconstruct feature flag (IMPORTER-F). Default OFF everywhere. When 'true' AND FEATURE_SCOUT_INGEST=true, POST /api/scout/reconstruct rebuilds a settled crawl intent's staged clients into invite-pending, non-login roster Person records; any other value leaves the surface 404."
+  - name: FEATURE_EXTENSION_PAIRING
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Extension Pairing feature flag (IMPORTER). Default OFF everywhere. Gates the tgp-importer browser-extension pairing handshake; when unset or not 'true' the pairing surface stays inert. Registered default-OFF for prod readiness."
