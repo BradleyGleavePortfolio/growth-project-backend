@@ -39,9 +39,14 @@
 #                          un-credentialed or incoherent production build.
 #
 # Job names are intentionally exactly test-deploy-readiness and
-# deploy-readiness-gate (R102) so the operator can add them to branch protection
-# required checks via scripts/setup-branch-protection.sh after merge. This
-# workflow does not modify branch protection.
+# deploy-readiness-gate (R102). Only test-deploy-readiness is a branch-protection
+# candidate: it runs on every pull_request (no paths filter), so the operator can
+# add it to the required-check list in scripts/setup-branch-protection.sh after
+# merge. deploy-readiness-gate does NOT run on pull requests (workflow_dispatch +
+# push to release/* only), so it can never be a required PR check -- a required
+# check that never reports on a PR would permanently block merges. It enforces
+# itself by hard-failing on its own trigger surfaces and needs no branch-protection
+# wiring. This workflow does not modify branch protection.
 
 name: H4 deploy readiness
 

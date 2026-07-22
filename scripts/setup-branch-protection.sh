@@ -81,6 +81,17 @@ fi
 #   danger.yml          (pull_request: branches:[main], no paths): danger
 #   r100-quality-gate.yml (pull_request: branches:[main], no paths):
 #                        Banned cast tokens, LOC budget, Test density
+#   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
+#                        (the PR-mode deploy-readiness board; PR-eligible)
+#
+# NOT PR-ELIGIBLE — intentionally EXCLUDED from required checks:
+#   h4-readiness.yml    deploy-readiness-gate — runs ONLY on workflow_dispatch
+#                        and push to release/*, never on pull_request. A required
+#                        check that never reports on a PR stays permanently
+#                        pending and blocks every merge, so it must NOT be listed
+#                        here. That strict gate enforces itself by hard-failing on
+#                        its own trigger surfaces; it needs no branch-protection
+#                        wiring.
 #
 # PATH-FILTERED — intentionally EXCLUDED from required checks:
 #   infra-lint.yml      (paths: .github/workflows/**, scripts/**, dangerfile.js):
@@ -111,6 +122,9 @@ REQUIRED_CHECKS=(
   "Banned cast tokens (R75 / R100.A2)"
   "LOC budget (R100.A3)"
   "Test density (R100.A1)"
+  # h4-readiness.yml — runs on every PR (no paths filter). PR-eligible; the
+  # non-PR strict gate (deploy-readiness-gate) is deliberately NOT listed here.
+  "test-deploy-readiness"
 )
 
 CHECKS_JSON=$(printf '%s\n' "${REQUIRED_CHECKS[@]}" | jq -R . | jq -s 'map({context: ., app_id: -1})')

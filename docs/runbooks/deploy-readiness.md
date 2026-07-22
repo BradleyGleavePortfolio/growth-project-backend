@@ -89,11 +89,16 @@ After any fix, re-run the board until the exit line reads ALL CLEAR.
 
 ## Operator setup after this lands
 
-Two one-time actions are yours to do once this is merged. Neither is done automatically and neither is part of the pull request that introduces the board.
+First, understand which of the two jobs a branch-protection required check can even apply to. A branch-protection required status check gates **pull requests into `main`**, so only a job that runs on `pull_request` is eligible. Of the two gating jobs:
 
-1. Add `deploy-readiness-gate` to the production-deploy required status checks by re-running `scripts/setup-branch-protection.sh`. This is what makes the hard block actually enforced on production deploys.
+- `test-deploy-readiness` **runs on every pull request** (no `paths:` filter), so it is PR-eligible and can be a required check.
+- `deploy-readiness-gate` **does not run on pull requests**. It only runs on `workflow_dispatch` and on push to `release/*`, and it enforces itself by exiting non-zero (hard-blocking, no `continue-on-error`) on those surfaces. It needs no branch-protection wiring, and it must **never** be added to the required-check list: a required check that never reports on a pull request stays permanently pending and blocks every merge to `main`.
 
-2. Once the pull-request board has been stable for a while, promote `test-deploy-readiness` from informational to a required check so it blocks merges too.
+With that in mind, the operator actions after this merges:
+
+1. `deploy-readiness-gate` is already enforced by its own workflow trigger — there is nothing to add to branch protection for it. Do **not** add it to `scripts/setup-branch-protection.sh`; doing so would permanently block every pull request. The strict prod-deploy block is live the moment the workflow is on `main`.
+
+2. `test-deploy-readiness` is the PR-eligible check and is already listed in the canonical required-check list in `scripts/setup-branch-protection.sh`. Running that script makes it a required check that blocks merges. If you want to keep it informational for longer during the pre-launch burn-down, comment its line out of `REQUIRED_CHECKS` before running the script, and re-add it once the board has been stable for a while.
 
 ---
 
