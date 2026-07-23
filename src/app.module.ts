@@ -55,6 +55,7 @@ import { AssignableAssetResolversModule } from './packages/asset-resolvers/asset
 import { CheckoutModule } from './checkout/checkout.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
+import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard';
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
 import { PtmModule } from './ptm/ptm.module';
@@ -429,6 +430,34 @@ import { WearablesModule } from './wearables/wearables.module';
     // enforced unconditionally — and the meta-test (test/roles-enforced.spec.ts)
     // can now ASSERT this registration rather than just check metadata.
     { provide: APP_GUARD, useClass: RolesGuard },
+
+    // B3 Smart Dunning v2 — Day-10 hard-lockout enforcement. Registered LAST in
+    // the global chain so it runs AFTER JwtAuthGuard has attached `req.user`
+    // (APP_GUARD execution follows provider registration order, the same
+    // guarantee the JwtAuthGuard-before-UserThrottlerGuard ordering above
+    // relies on). Without a populated identity the guard cannot resolve the
+    // caller's DunningState, so ordering after authentication is load-bearing:
+    // the guard defensively no-ops on an absent `req.user` (returns true),
+    // which would silently disable enforcement if it ran before auth.
+    //
+    // Posture is unchanged from the guard's self-gating design: it is a HARD
+    // no-op while FEATURE_DUNNING_V2 is OFF (returns true before reading any
+    // state), fails OPEN on lookup errors, and bypasses billing / auth / health
+    // / Roman-chat (/roman/*) routes via its internal allow-list — so mounting
+    // it globally ahead of the operator flip cannot brick public/health/auth
+    // traffic or the recovery surface.
+    //
+    // The guard's @Optional() VoicePolicyService DOES resolve here: VoiceModule
+    // is @Global (and imported by DunningV2Module + NotificationsModule), so its
+    // export is visible app-wide. When FEATURE_DUNNING_V2 is ON the guard
+    // therefore computes `lockout_copy` and attaches it to the 403 body.
+    // HOWEVER the global HttpExceptionFilter (main.ts) rebuilds every error
+    // through buildErrorEnvelope, which emits ONLY statusCode/code/message/
+    // error/timestamp/path/request_id — so `lockout_copy` is dropped before the
+    // client sees it. The client-visible 403 contract is exactly `code` +
+    // `message` (stable). Delivering `lockout_copy` in THIS 403 would require an
+    // envelope change and is tracked as a separate pre-flip gap, not done here.
+    { provide: APP_GUARD, useClass: DunningLockoutGuard },
   ],
 })
 export class AppModule {}
