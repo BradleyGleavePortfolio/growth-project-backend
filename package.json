@@ -13,6 +13,8 @@
     "test:rls-mwb2-concurrency": "jest --config jest.rls.config.js test/rls-mwb2-clone-concurrency.spec.ts --runInBand --testTimeout=120000",
     "env:check": "ts-node -e \"require('./src/common/env-validation').assertEnv()\"",
     "prod-readiness:registry": "ts-node test/prod-readiness/registry-loader.ts --validate",
+    "readiness:keys": "ts-node scripts/gen-operator-keys.ts",
+    "readiness:keys:check": "ts-node scripts/gen-operator-keys.ts --check",
     "secrets:print": "ts-node scripts/print-required-secrets.ts",
     "secrets:print:fly": "FORMAT=fly ts-node scripts/print-required-secrets.ts",
     "secrets:missing": "FORMAT=missing ts-node scripts/print-required-secrets.ts",

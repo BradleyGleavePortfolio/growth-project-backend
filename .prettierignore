@@ -12,3 +12,7 @@ docs/contracts/importer-openapi.json
 # Operator-authored env/switch registry; semantic + schema validity is enforced by
 # the prod-readiness parser tests (js-yaml round-trip), so prettier must not reflow it.
 prod-switches.yml
+# Generated operator-keys artifact; byte-identity (minus the timestamp line) is
+# enforced by the operator-keys drift test, so prettier must not reflow it —
+# reflowing the tables would make the committed file drift from generator output.
+OPERATOR_KEYS_NEEDED.md
