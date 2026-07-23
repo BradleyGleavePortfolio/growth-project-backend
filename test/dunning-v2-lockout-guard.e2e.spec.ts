@@ -31,6 +31,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DunningLockoutGuard } from '../src/checkout/dunning-v2/dunning-lockout.guard';
 import { LOCKED_DUNNING_CODE } from '../src/checkout/dunning-v2/dunning-v2.cadence';
 import { PrismaService } from '../src/prisma.service';
+import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
+import { VoicePolicyService } from '../src/roman/voice/voice-policy.service';
 
 // ── Dummy controllers standing in for the real protected + carve-out surfaces.
 @Controller('community')
@@ -62,6 +64,26 @@ class HealthController {
   @Get()
   health() {
     return { ok: true, surface: 'health' };
+  }
+}
+
+// Stand-in for AiController (@Controller('ai')): the entitlement-gated student
+// AI assistant, a paid VALUE surface that MUST stay locked.
+@Controller('ai')
+class AiController {
+  @Get('chat')
+  chat() {
+    return { ok: true, surface: 'ai' };
+  }
+}
+
+// Stand-in for RomanController (@Controller('roman')): the dedicated Roman chat
+// surface the locked client MAY reach so Roman can explain the lockout.
+@Controller('roman')
+class RomanController {
+  @Get('sessions')
+  sessions() {
+    return { ok: true, surface: 'roman' };
   }
 }
 
@@ -112,9 +134,22 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [ProtectedController, BillingController, AuthController, HealthController],
+      controllers: [
+        ProtectedController,
+        BillingController,
+        AuthController,
+        HealthController,
+        AiController,
+        RomanController,
+      ],
       providers: [
         { provide: PrismaService, useValue: prismaStub },
+        // Real VoicePolicyService: it has no constructor deps and resolves in
+        // production via the @Global VoiceModule. Providing the real one lets
+        // the guard compute `lockout_copy` exactly as production would, so the
+        // envelope-contract test proves the copy is DROPPED by the filter (not
+        // merely absent because the service failed to resolve).
+        VoicePolicyService,
         // Production chain: auth guard first (attaches identity), lockout guard
         // second — APP_GUARD execution follows provider registration order.
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard() },
@@ -123,6 +158,10 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    // Mirror production: every error is rebuilt through the global
+    // HttpExceptionFilter, whose envelope emits only code/message/etc. — so the
+    // client-visible 403 contract can be asserted truthfully over the wire.
+    app.useGlobalFilters(new HttpExceptionFilter());
     // Mirror production: every route is served under the /api prefix, which the
     // guard's normalizePath() strips before the allow-list check.
     app.setGlobalPrefix('api');
@@ -229,6 +268,40 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ surface: 'health' });
       expect(findFirst).not.toHaveBeenCalled();
+    });
+
+    it('keeps the student AI assistant (/ai/chat) LOCKED — it is NOT the Roman carve-out', async () => {
+      lockedRow = { id: 'd1' };
+      const res = await call('/api/ai/chat', asUser('locked-user'));
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: LOCKED_DUNNING_CODE });
+    });
+
+    it('ALLOWS the dedicated Roman chat surface (/roman/sessions) while locked', async () => {
+      lockedRow = { id: 'd1' };
+      const res = await call('/api/roman/sessions', asUser('locked-user'));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ surface: 'roman' });
+      // Allow-list short-circuits before any DunningState read.
+      expect(findFirst).not.toHaveBeenCalled();
+    });
+
+    it('403 envelope is truthful — carries code + message, NOT lockout_copy (filter drops it)', async () => {
+      // FEATURE_ROMAN_COPY_V2 ON makes the guard compute a real lockout_copy;
+      // the global HttpExceptionFilter still strips it from the wire envelope.
+      const prevCopy = process.env['FEATURE_ROMAN_COPY_V2'];
+      process.env['FEATURE_ROMAN_COPY_V2'] = 'true';
+      try {
+        lockedRow = { id: 'd1' };
+        const res = await call('/api/community/feed', asUser('locked-user'));
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: LOCKED_DUNNING_CODE });
+        expect(typeof res.body.message).toBe('string');
+        expect(res.body).not.toHaveProperty('lockout_copy');
+      } finally {
+        if (prevCopy === undefined) delete process.env['FEATURE_ROMAN_COPY_V2'];
+        else process.env['FEATURE_ROMAN_COPY_V2'] = prevCopy;
+      }
     });
   });
 });

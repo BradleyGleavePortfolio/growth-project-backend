@@ -26,10 +26,13 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *   - /billing/*  and /checkout/* and /payment-recovery/* (update the card)
  *   - /auth/*     (logout / token refresh / me — recovery must never be locked)
  *   - health checks (health, healthz, readyz)
- *   - Roman-only chat: /ai/* assistant routes that ONLY talk to Roman so the
- *     assistant can explain the lockout. (Coach AI execution/draft routes are
- *     coach-facing, not the locked client's Roman chat, so they are NOT in the
- *     client lockout allow-list — but a locked CLIENT never hits those.)
+ *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
+ *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
+ *     carve-out. The entitlement-gated student AI assistant (/ai/*, AiController)
+ *     is a paid VALUE surface and stays LOCKED; the internal /ai/gateway
+ *     provider-routing surface is never a client explanation route. (Roman chat
+ *     is itself dark behind FEATURE_ROMAN_CHAT_ENABLED — a 404 while OFF — so
+ *     allow-listing it is only meaningful once that flag is also ON.)
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -51,11 +54,13 @@ const ALLOWED_PREFIXES: readonly string[] = [
 ] as const;
 
 /**
- * Roman-only chat routes the locked client may reach so the assistant can
- * explain the lockout. The base client AI surface only; coach-AI controllers
- * are excluded by being more-specific prefixes the client never calls.
+ * The dedicated Roman chat surface (`/roman/*`, RomanController) the locked
+ * client may reach so the Roman assistant can explain the lockout. Deliberately
+ * NOT `/ai/*`: that is the entitlement-gated student AI assistant (AiController),
+ * a paid value surface that must stay locked, and `/ai/gateway` is internal
+ * provider routing, never a client explanation route.
  */
-const ROMAN_CHAT_PREFIXES: readonly string[] = ['ai/gateway', 'ai'] as const;
+const ROMAN_CHAT_PREFIXES: readonly string[] = ['roman'] as const;
 
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
@@ -74,11 +79,13 @@ export class DunningLockoutGuard implements CanActivate {
     // Flag OFF → guard is invisible. v1 unaffected.
     if (!isDunningV2Enabled()) return true;
 
-    const req = context.switchToHttp().getRequest<AuthedRequest & {
-      path?: string;
-      originalUrl?: string;
-      url?: string;
-    }>();
+    const req = context.switchToHttp().getRequest<
+      AuthedRequest & {
+        path?: string;
+        originalUrl?: string;
+        url?: string;
+      }
+    >();
 
     const path = normalizePath(req.path ?? req.originalUrl ?? req.url ?? '');
     if (isAllowedWhileLocked(path)) return true;
@@ -103,9 +110,7 @@ export class DunningLockoutGuard implements CanActivate {
     // (flag-independent). The Day-10 lockout SCREEN copy + avatar crop the
     // client reads is supplied by the Voice Policy (FEATURE_ROMAN_COPY_V2-
     // gated): legacy household-ledger text while OFF, Roman Option-3 while ON.
-    const lockoutCopy = this.voice
-      ? this.voice.copyFor('lockout_day10')
-      : undefined;
+    const lockoutCopy = this.voice ? this.voice.copyFor('lockout_day10') : undefined;
     throw new ForbiddenException({
       code: LOCKED_DUNNING_CODE,
       message:
@@ -151,15 +156,14 @@ export function isAllowedWhileLocked(path: string): boolean {
   if (segments.length === 0) return true; // root / health redirect
 
   const head = segments[0];
-  // Coach/billing variants ("coach/billing", "admin/payments") — any path
-  // whose head OR second segment is billing/checkout/payment is allowed.
-  if (
-    ALLOWED_PREFIXES.includes(head) ||
-    (segments[1] && ALLOWED_PREFIXES.includes(segments[1]))
-  ) {
+  // Coach-scoped billing variants (e.g. "coach/billing", "coach/checkout") —
+  // any path whose head OR second segment is an ALLOWED_PREFIXES entry is
+  // allowed. (Only the listed prefixes qualify: e.g. "admin/payments" is NOT
+  // allowed because "payments" is not in ALLOWED_PREFIXES.)
+  if (ALLOWED_PREFIXES.includes(head) || (segments[1] && ALLOWED_PREFIXES.includes(segments[1]))) {
     return true;
   }
-  // Roman-only chat: allow the base client AI surface so Roman can explain.
+  // Dedicated Roman chat surface (/roman/*) so Roman can explain the lockout.
   for (const chat of ROMAN_CHAT_PREFIXES) {
     if (path === chat || path.startsWith(`${chat}/`)) return true;
   }

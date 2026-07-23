@@ -443,11 +443,20 @@ import { WearablesModule } from './wearables/wearables.module';
     // Posture is unchanged from the guard's self-gating design: it is a HARD
     // no-op while FEATURE_DUNNING_V2 is OFF (returns true before reading any
     // state), fails OPEN on lookup errors, and bypasses billing / auth / health
-    // / Roman-chat routes via its internal allow-list — so mounting it globally
-    // ahead of the operator flip cannot brick public/health/auth traffic or the
-    // recovery surface. VoicePolicyService is @Optional and out of AppModule
-    // scope here, so the additive `lockout_copy` screen text is simply omitted;
-    // the stable `code`/`message` 403 contract is unaffected.
+    // / Roman-chat (/roman/*) routes via its internal allow-list — so mounting
+    // it globally ahead of the operator flip cannot brick public/health/auth
+    // traffic or the recovery surface.
+    //
+    // The guard's @Optional() VoicePolicyService DOES resolve here: VoiceModule
+    // is @Global (and imported by DunningV2Module + NotificationsModule), so its
+    // export is visible app-wide. When FEATURE_DUNNING_V2 is ON the guard
+    // therefore computes `lockout_copy` and attaches it to the 403 body.
+    // HOWEVER the global HttpExceptionFilter (main.ts) rebuilds every error
+    // through buildErrorEnvelope, which emits ONLY statusCode/code/message/
+    // error/timestamp/path/request_id — so `lockout_copy` is dropped before the
+    // client sees it. The client-visible 403 contract is exactly `code` +
+    // `message` (stable). Delivering `lockout_copy` in THIS 403 would require an
+    // envelope change and is tracked as a separate pre-flip gap, not done here.
     { provide: APP_GUARD, useClass: DunningLockoutGuard },
   ],
 })
