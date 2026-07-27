@@ -47,20 +47,31 @@ export class ScoutIngestService {
   /**
    * Persist a crawl batch for `coachId`, idempotently.
    *
-   * Idempotency is enforced by the (coach_id, intent_id, source_id) unique
-   * index + `skipDuplicates`, which compiles to INSERT ... ON CONFLICT DO
-   * NOTHING. A replayed batch (extension retry/recovery) inserts zero rows and
-   * is reported as fully deduped. In-batch duplicate source_ids collapse the
-   * same way, so `received` counts the envelope while `deduped` counts every
-   * entity that did not produce a new row.
+   * Idempotency is enforced by the (coach_id, intent_id, entity_type,
+   * source_id) unique index + `skipDuplicates`, which compiles to INSERT ...
+   * ON CONFLICT DO NOTHING. A replayed batch (extension retry/recovery) inserts
+   * zero rows and is reported as fully deduped. In-batch duplicate source_ids
+   * within one envelope collapse the same way, so `received` counts the
+   * envelope while `deduped` counts every entity that did not produce a new row.
    *
-   * R-IDEMP-1 (2026-07-08): capturedAt is a value, not a key. The idempotency
-   * key is (coach_id, intent_id, source_id) — "the coach saw entity X during
-   * crawl session Y." A coach's crawl re-observes the same source entity over
-   * time; each re-observation within an intent must be a no-op replay, not a
-   * new row. Putting capturedAt in the key would break this: an extension retry
-   * carrying a fresh timestamp would insert a duplicate, defeating replay
-   * safety. Different intent_id = a new observation series, correctly inserts.
+   * R-IDEMP-1 (2026-07-08), RESTATED by 20261224000100. The original invariant
+   * was right about capturedAt and incomplete about entity_type:
+   *
+   *   capturedAt is a VALUE, not a key column. A coach's crawl re-observes the
+   *   same source entity over time; each re-observation within an intent must
+   *   be a no-op replay, not a new row. Putting capturedAt in the key would let
+   *   an extension retry carrying a fresh timestamp insert a duplicate and
+   *   defeat replay-safety.
+   *
+   *   entity_type IS a key column. The unit of identity is "the coach saw
+   *   entity X OF TYPE T during crawl session Y". source_id is namespaced by
+   *   type at the source — a TrueCoach client and a TrueCoach workout can both
+   *   be "1042" — so the key must be namespaced by type too. Before the
+   *   widening, the second envelope of a crawl session collided with the first
+   *   and was DROPPED SILENTLY (ON CONFLICT DO NOTHING never raises), then
+   *   miscounted as a replay by `deduped`.
+   *
+   * Different intent_id = a new observation series, correctly inserts.
    */
   async ingest(coachId: string, dto: ScoutIngestDto): Promise<ScoutIngestResult> {
     const received = dto.entities.length;

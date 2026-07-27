@@ -23,6 +23,12 @@ The backend already owns two provable facts per `(coach_id, intent_id)`:
 1. `ScoutIngestEntity` — one row per entity the crawl actually committed
    (idempotent on `(coach_id, intent_id, source_id)`). A `groupBy(entity_type)`
    count is **server-authoritative committed volume**.
+   > **Superseded (2026-07-27, migration `20261224000100`).** The key is now
+   > `(coach_id, intent_id, entity_type, source_id)`. The original 3-column key
+   > silently dropped every entity_type after the first in a crawl session,
+   > which made this "server-authoritative committed volume" undercount. The
+   > original wording is retained as record (R5); the widened key is the one in
+   > force, and the `groupBy(entity_type)` read above is correct under it.
 2. `ScoutImport` — the parent lifecycle row, created only at settle by
    `complete()`, carrying the verbatim `terminal_status`
    (`success | partial | failed`) and `completed_at` (R-STATE-1).
