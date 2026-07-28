@@ -80,6 +80,9 @@ import { VideoModule } from './video/video.module';
 // endpoints can inject CoachMediaService without importing the module.
 import { CoachMediaModule } from './coach-media/coach-media.module';
 import { ExerciseCatalogModule } from './exercise-catalog/exercise-catalog.module';
+// FEATURE_CUSTOM_EXERCISE (default OFF) — coach-owned custom exercise library +
+// media presign. Backend half of the mobile custom-exercise authoring stack.
+import { CoachExerciseModule } from './coach-exercise/coach-exercise.module';
 import { WorkoutBuilderModule } from './workout-builder/workout-builder.module';
 import { RegimesModule } from './regimes/regimes.module';
 import { MacrosModule } from './macros/macros.module';
@@ -330,6 +333,10 @@ import { WearablesModule } from './wearables/wearables.module';
     // signed-URL minting from anywhere.
     CoachMediaModule,
     ExerciseCatalogModule,
+    // FEATURE_CUSTOM_EXERCISE (default OFF) — coach-owned custom exercise
+    // library + Supabase media presign. Grouped with the coach toolset modules;
+    // the surface stays dark (503 coach_exercise.disabled) until the flag flips.
+    CoachExerciseModule,
     WorkoutBuilderModule,
     RegimesModule,
     MacrosModule,
