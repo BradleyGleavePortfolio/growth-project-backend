@@ -51,7 +51,7 @@
     "helmet": "^8.2.0",
     "ioredis": "^5.11.1",
     "jose": "^6.2.3",
-    "js-yaml": "4.2.0",
+    "js-yaml": "5.1.0",
     "openai": "^6.39.0",
     "pdfkit": "^0.15.2",
     "posthog-node": "^5.36.8",
