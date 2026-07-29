@@ -6,61 +6,36 @@ import {
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
 
-// P0-AUDIT (backend 5076a07a) Lens B P1-2 test-shape requirement:
+// P0-AUDIT (backend 5076a07a) Lens B P1-2: the allow-list was asserted only
+// against hand-picked example paths, never the mounted route table, so an
+// accidentally-matching route was unobservable. This spec enumerates every route
+// mounted by a @Controller in src/ and pins the EXACT set DunningLockoutGuard
+// admits while a client is locked out.
 //
-//   "the tests assert the allow-list against hand-picked example paths, never
-//    against the mounted route table, so an accidentally-matching route was
-//    unobservable."
+// The inventory comes from the TypeScript AST, one @Controller CLASS at a time,
+// pairing each prefix with only its OWN method decorators. An earlier revision
+// scanned each FILE with one non-global regex and attributed every method
+// decorator to that file's FIRST prefix — the same blind spot one level up.
+// Eight files declare multiple controllers, so their later routes were filed
+// under the WRONG prefix: CoachPurchasesController (`v1/coach/purchases`) shares
+// checkout.controller.ts with CheckoutController (`v1/checkout`), so its route
+// landed in the allow-listed `checkout` subtree and `coach/purchases` never
+// appeared in the scanned surface. See the counter-example at the bottom.
 //
-// This spec closes that gap. It enumerates every route actually mounted by a
-// @Controller in src/ and asserts the EXACT set that DunningLockoutGuard lets
-// through while a client is locked out. A new controller cannot silently
-// inherit an exemption: it either appears in EXPECTED_REACHABLE_WHILE_LOCKED
-// as a deliberate, reviewed decision, or this test goes red.
-//
-// The inventory is built from the TypeScript AST, one @Controller CLASS at a
-// time, pairing each class's prefix with only its OWN method decorators. An
-// earlier revision of this spec scanned each FILE with a single non-global
-// regex: it took the first @Controller prefix in the file and attributed every
-// HTTP-method decorator in that file to it. That reproduced the very blind spot
-// Lens B P1-2 describes, one level up — 8 files in src/ declare more than one
-// controller class, so their second and third controllers' routes were recorded
-// under the WRONG prefix. Concretely, `CoachPurchasesController`
-// (`v1/coach/purchases`) shares checkout.controller.ts with `CheckoutController`
-// (`v1/checkout`), so its route was recorded inside the allow-listed `checkout`
-// subtree and `coach/purchases` never appeared in the scanned surface at all.
-// A controller appended to a file whose first controller is allow-listed was
-// therefore invisible to this test. See the mutation block at the bottom.
-//
-// If you are here because this test failed: do NOT paste the new path into the
-// list to make it green. First answer "can a locked-out, non-paying client be
-// allowed to call this?" The only yes-answers are payment recovery, auth,
-// liveness probes, and the Roman surface that explains the lockout.
+// If this test failed: do NOT paste the new path in to make it green. Answer
+// "may a locked-out, non-paying client call this?" The only yes-answers are
+// payment recovery, auth, liveness probes, and the Roman lockout explanation.
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
-
-const CONTROLLER_DECORATOR_NAMES: ReadonlySet<string> = new Set(['Controller']);
-const HTTP_METHOD_DECORATOR_NAMES: ReadonlySet<string> = new Set([
-  'Get',
-  'Post',
-  'Put',
-  'Patch',
-  'Delete',
-  'Head',
-  'Options',
-  'All',
-]);
+const HTTP_METHODS = 'Get|Post|Put|Patch|Delete|Head|Options|All';
+const CONTROLLER_NAMES: ReadonlySet<string> = new Set(['Controller']);
+const HTTP_METHOD_NAMES: ReadonlySet<string> = new Set(HTTP_METHODS.split('|'));
 
 interface MountedRoute {
-  /** Path as the router mounts it, e.g. `v1/coach/me/billing`. */
-  readonly mounted: string;
-  /** Same path after the guard's normalizePath, e.g. `coach/me/billing`. */
-  readonly normalized: string;
-  /** Declaring @Controller class, e.g. `CoachBillingController`. */
-  readonly controller: string;
-  /** Repo-relative source file. */
-  readonly file: string;
+  readonly normalized: string; // path after the guard's normalizePath
+  readonly controller: string; // declaring @Controller class
+  readonly file: string; // repo-relative source
 }
 
 interface ParsedController {
@@ -70,7 +45,7 @@ interface ParsedController {
   readonly routes: readonly MountedRoute[];
 }
 
-/** The `@Foo(...)` call expression on `node`, if its name is in `names`. */
+/** The `@Foo(...)` call on `node`, if its name is in `names`. */
 function decoratorCallNamed(
   node: ts.Node,
   names: ReadonlySet<string>,
@@ -92,10 +67,9 @@ function firstStringArgument(call: ts.CallExpression): string {
 }
 
 /**
- * Parse one controller source into its @Controller CLASSES, pairing each class
- * prefix with only the HTTP-method decorators on that class's own members.
- * Takes source text rather than a path so the appended-controller mutation
- * below can drive the exact same parser this spec uses on the real tree.
+ * Parse one source into its @Controller CLASSES, pairing each prefix with only
+ * its own members' method decorators. Takes source text so the mutation fixture
+ * below drives this exact parser.
  */
 export function parseControllerSource(sourceText: string, fileName: string): ParsedController[] {
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
@@ -103,24 +77,20 @@ export function parseControllerSource(sourceText: string, fileName: string): Par
 
   const visit = (node: ts.Node): void => {
     if (ts.isClassDeclaration(node)) {
-      const controller = decoratorCallNamed(node, CONTROLLER_DECORATOR_NAMES);
+      const controller = decoratorCallNamed(node, CONTROLLER_NAMES);
       if (controller) {
         const prefix = firstStringArgument(controller);
         const className = node.name?.text ?? '(anonymous)';
         const routes: MountedRoute[] = [];
         for (const member of node.members) {
           if (!ts.isMethodDeclaration(member)) continue;
-          const httpMethod = decoratorCallNamed(member, HTTP_METHOD_DECORATOR_NAMES);
+          const httpMethod = decoratorCallNamed(member, HTTP_METHOD_NAMES);
           if (!httpMethod) continue;
           const mounted = [prefix, firstStringArgument(httpMethod)].filter(Boolean).join('/');
-          routes.push({
-            mounted,
-            // The global prefix is `/api` (src/main.ts:148 setGlobalPrefix),
-            // which is what the guard sees on a live request.
-            normalized: normalizePath(`/api/${mounted}`),
-            controller: className,
-            file: fileName,
-          });
+          // The global prefix is `/api` (src/main.ts:148 setGlobalPrefix), which
+          // is what the guard sees on a live request.
+          const normalized = normalizePath(`/api/${mounted}`);
+          routes.push({ normalized, controller: className, file: fileName });
         }
         parsed.push({ className, prefix, file: fileName, routes });
       }
@@ -141,46 +111,26 @@ function controllerFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-interface RouteTable {
-  readonly files: readonly string[];
-  readonly controllers: readonly ParsedController[];
-  readonly routes: readonly MountedRoute[];
-  /** Raw `@Controller(` occurrences in the same sources — a soundness cross-check. */
-  readonly textualControllerDecorators: number;
-  /** Raw HTTP-method decorator occurrences in the same sources. */
-  readonly textualHttpDecorators: number;
-}
-
-function scanRouteTable(): RouteTable {
+/** `textual*` are raw decorator counts in the same sources — AST cross-checks. */
+function scanRouteTable() {
   const files = controllerFiles(SRC_ROOT);
   const controllers: ParsedController[] = [];
-  let textualControllerDecorators = 0;
-  let textualHttpDecorators = 0;
+  let textualControllers = 0;
+  let textualHttp = 0;
 
   for (const file of files) {
-    const sourceText = fs.readFileSync(file, 'utf8');
-    const relative = path.relative(REPO_ROOT, file);
-    controllers.push(...parseControllerSource(sourceText, relative));
-    textualControllerDecorators += (sourceText.match(/@Controller\(/g) ?? []).length;
-    textualHttpDecorators += (
-      sourceText.match(/@(?:Get|Post|Put|Patch|Delete|Head|Options|All)\(/g) ?? []
-    ).length;
+    const src = fs.readFileSync(file, 'utf8');
+    controllers.push(...parseControllerSource(src, path.relative(REPO_ROOT, file)));
+    textualControllers += (src.match(/@Controller\(/g) ?? []).length;
+    textualHttp += (src.match(new RegExp(`@(?:${HTTP_METHODS})\\(`, 'g')) ?? []).length;
   }
 
-  return {
-    files,
-    controllers,
-    routes: controllers.flatMap((c) => c.routes),
-    textualControllerDecorators,
-    textualHttpDecorators,
-  };
+  const routes: readonly MountedRoute[] = controllers.flatMap((c) => c.routes);
+  return { files, controllers, routes, textualControllers, textualHttp };
 }
 
-/**
- * Every normalized path the guard admits while the client is LOCKED OUT.
- * Reviewed one by one; each is payment recovery, authentication, a liveness
- * probe, or the Roman surface that explains the lockout.
- */
+// Every normalized path the guard admits while LOCKED OUT. Reviewed one by one;
+// each is payment recovery, auth, a liveness probe, or the Roman explanation.
 const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   '', // public landing root (LandingPagePublicController, @Controller() + @Get())
   'auth/apple',
@@ -222,13 +172,12 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'roman/sessions/:id/messages',
 ];
 
-/**
- * Files in src/ that declare MORE THAN ONE @Controller class, pinned with the
- * classes they declare in source order. This is the assertion a file-level
- * regex scan cannot satisfy: it can only ever see the first entry of each row.
- */
+// Files declaring MORE THAN ONE @Controller class, pinned in source order — the
+// assertion a file-level scan cannot satisfy: it sees only each row's first entry.
 const MULTI_CONTROLLER_FILES: ReadonlyArray<readonly [string, readonly string[]]> = [
   ['src/checkout/checkout.controller.ts', ['CheckoutController', 'CoachPurchasesController']],
+  ['src/macros/macros.controller.ts', ['CoachMacrosController', 'ClientMacrosController']],
+  ['src/packages/packages.controller.ts', ['CoachPackagesController', 'ClientPackagesController']],
   [
     'src/checkout/payment-ops.controller.ts',
     ['AdminPaymentOpsController', 'CoachPaymentOpsController'],
@@ -237,12 +186,10 @@ const MULTI_CONTROLLER_FILES: ReadonlyArray<readonly [string, readonly string[]]
     'src/exercise-catalog/exercise-catalog.controller.ts',
     ['ExerciseCatalogController', 'AdminExerciseCatalogController'],
   ],
-  ['src/macros/macros.controller.ts', ['CoachMacrosController', 'ClientMacrosController']],
   [
     'src/meal-plans/client-meal-plans.controller.ts',
     ['ClientMealPlansController', 'ClientMealPlanAliasController'],
   ],
-  ['src/packages/packages.controller.ts', ['CoachPackagesController', 'ClientPackagesController']],
   [
     'src/real-meal-plans/real-meal-plans.controller.ts',
     ['CoachMealTemplatesController', 'CoachDailyMealPlansController', 'ClientMealPlanController'],
@@ -256,23 +203,21 @@ const MULTI_CONTROLLER_FILES: ReadonlyArray<readonly [string, readonly string[]]
 describe('DunningLockoutGuard allow-list vs the real mounted route table', () => {
   const table = scanRouteTable();
 
-  // Counts are asserted as derived cross-checks rather than hard-coded totals,
-  // so adding an unrelated controller does not turn this suite red for the
-  // wrong reason. The security property is pinned by the exact reachable set
-  // below, which DOES go red the moment a new route becomes reachable.
+  // Counts are asserted as derived cross-checks rather than hard-coded totals, so
+  // an unrelated new controller does not turn this suite red for the wrong
+  // reason. The security property is pinned by the exact reachable set below,
+  // which DOES go red the moment a new route becomes reachable.
   it('parses every controller class and route the sources declare (no silent drops)', () => {
-    expect(table.controllers).toHaveLength(table.textualControllerDecorators);
-    expect(table.routes).toHaveLength(table.textualHttpDecorators);
+    expect(table.controllers).toHaveLength(table.textualControllers);
+    expect(table.routes).toHaveLength(table.textualHttp);
     expect(table.controllers.every((c) => c.file.endsWith('.controller.ts'))).toBe(true);
     expect(table.routes.every((r) => r.controller.length > 0)).toBe(true);
   });
 
   it('scans the controller surface at a plausible scale (guards a silently empty scan)', () => {
     expect(table.files.length).toBeGreaterThan(100);
-    expect(table.controllers.length).toBeGreaterThan(100);
     expect(table.routes.length).toBeGreaterThan(500);
-    // More classes than files — the parser really is class-aware and did not
-    // collapse each file to a single controller.
+    // More classes than files — the parser really is class-aware.
     expect(table.controllers.length).toBeGreaterThan(table.files.length);
   });
 
@@ -305,8 +250,8 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     },
   );
 
-  // Lens A P2-1 — the v1 coach billing surface is how a locked coach reaches
-  // the Stripe portal to cure the delinquency. It must not be locked.
+  // Lens A P2-1 — the v1 coach billing surface is how a locked coach reaches the
+  // Stripe portal to cure the delinquency. It must not be locked.
   it.each(['coach/me/billing', 'coach/me/billing/portal-session'])(
     'ALLOWS the v1 coach billing route %s (Lens A P2-1)',
     (p) => {
@@ -315,9 +260,9 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     },
   );
 
-  // The route the previous file-level regex scan could not see at all: it lives
-  // in checkout.controller.ts behind CheckoutController, so its single route
-  // was recorded under the allow-listed `checkout` prefix instead of its own.
+  // The route the previous file-level scan could not see at all: it lives in
+  // checkout.controller.ts behind CheckoutController, so its single route was
+  // recorded under the allow-listed `checkout` prefix instead of its own.
   it('sees coach/purchases under its own controller, and locks it', () => {
     const route = table.routes.find((r) => r.normalized === 'coach/purchases');
     expect(route).toBeDefined();
@@ -338,8 +283,8 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     expect(isAllowedWhileLocked(p)).toBe(false);
   });
 
-  // Both coach billing surfaces route to the same BillingService capability;
-  // they must not disagree about lockout.
+  // Both coach billing surfaces reach the same BillingService capability; they
+  // must not disagree about lockout.
   it('gives both coach billing surfaces the same lockout verdict', () => {
     const verdicts = [
       'coach/billing/status',
@@ -351,45 +296,34 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
   });
 });
 
-// ── The appended-controller mutation ───────────────────────────────────────
-//
-// A controller appended to a file whose FIRST controller is allow-listed. This
-// is the mutation the previous file-level regex scan could not observe, and the
-// reason this spec parses classes rather than files.
-
+// A controller appended to a file whose FIRST controller is allow-listed — the
+// mutation the previous file-level scan could not observe, and the reason this
+// spec parses classes rather than files.
 const APPENDED_CONTROLLER_MUTATION = `
 import { Controller, Get } from '@nestjs/common';
-
 @Controller('v1/checkout')
 export class CheckoutController {
   @Get('sessions')
-  createSession() {
-    return null;
-  }
+  createSession() { return null; }
 }
-
-// Appended by an unrelated feature PR: a paid community surface that has
-// nothing to do with payment recovery.
+// Appended by an unrelated feature PR: a paid community surface with nothing to
+// do with payment recovery.
 @Controller('v1/community')
 export class CommunityFeedController {
   @Get('feed')
-  feed() {
-    return null;
-  }
+  feed() { return null; }
 }
 `;
 
-/**
- * The scan this spec used to perform: one non-global @Controller match per
- * FILE, then every HTTP-method decorator in the file attributed to it. Kept
- * only as an executable counter-example.
- */
+/** The scan this spec replaced: one @Controller per FILE, all methods under it. */
 function legacyFileLevelScan(sourceText: string): string[] {
   const controller = /@Controller\(\s*(?:'([^']*)'|"([^"]*)")?\s*\)/.exec(sourceText);
   if (!controller) return [];
   const prefix = controller[1] ?? controller[2] ?? '';
-  const methodDecorator =
-    /@(?:Get|Post|Put|Patch|Delete|Head|Options|All)\(\s*(?:'([^']*)'|"([^"]*)")?\s*\)/g;
+  const methodDecorator = new RegExp(
+    `@(?:${HTTP_METHODS})\\(\\s*(?:'([^']*)'|"([^"]*)")?\\s*\\)`,
+    'g',
+  );
   const found: string[] = [];
   for (let m = methodDecorator.exec(sourceText); m; m = methodDecorator.exec(sourceText)) {
     const sub = m[1] ?? m[2] ?? '';
@@ -401,11 +335,9 @@ function legacyFileLevelScan(sourceText: string): string[] {
 describe('appended-controller mutation', () => {
   const parsed = parseControllerSource(APPENDED_CONTROLLER_MUTATION, 'mutation.controller.ts');
 
-  it('attributes the appended class to its OWN prefix, not the first controller in the file', () => {
-    expect(parsed.map((c) => c.className)).toEqual([
-      'CheckoutController',
-      'CommunityFeedController',
-    ]);
+  it('attributes the appended class to its OWN prefix, not the first in the file', () => {
+    const names = parsed.map((c) => c.className);
+    expect(names).toEqual(['CheckoutController', 'CommunityFeedController']);
     expect(parsed.map((c) => c.prefix)).toEqual(['v1/checkout', 'v1/community']);
     expect(parsed.flatMap((c) => c.routes.map((r) => r.normalized))).toEqual([
       'checkout/sessions',
