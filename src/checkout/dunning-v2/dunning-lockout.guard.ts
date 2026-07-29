@@ -26,7 +26,9 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *   - /billing/*  and /checkout/* and /payment-recovery/* (update the card)
  *   - the two coach-scoped billing surfaces, /coach/billing/* (mobile) and
  *     /v1/coach/me/billing* (v1) — both open the same Stripe portal
- *   - /auth/*     (logout / token refresh / me — recovery must never be locked)
+ *   - /auth/*     (sign-in, /auth/me, /auth/extension/refresh, password reset —
+ *     recovery must never be locked). Note there is no mounted /auth/logout or
+ *     /auth/refresh; the mounted refresh route is /auth/extension/refresh.
  *   - health checks (health, healthz, readyz)
  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
