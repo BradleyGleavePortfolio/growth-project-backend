@@ -29,7 +29,11 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'health',
     'healthz',
     'readyz',
-    'coach/billing', // second-segment billing variant
+    'coach/billing', // mobile coach billing surface
+    'coach/billing/status',
+    'coach/billing/portal-session',
+    'coach/me/billing', // v1 coach billing surface — same Stripe portal
+    'coach/me/billing/portal-session',
     'roman', // dedicated Roman chat base (explains the lockout)
     'roman/sessions',
     'roman/sessions/abc/messages',
@@ -53,6 +57,13 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'ai/context',
     'ai/gateway', // internal provider routing, never a client explanation route
     'ai/gateway/stream',
+    // An allow-list token off the head grants nothing: these are paid or
+    // privileged surfaces, not payment recovery.
+    'scheduling/auth/google/initiate',
+    'scheduling/auth/google/callback',
+    'admin/auth/impersonate',
+    'coach/me', // only the coach BILLING subtree is carved out
+    'coach/me/clients',
   ])('BLOCKS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(false);
   });

@@ -24,7 +24,11 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  * Allowed while LOCKED (brief §3, confirmed against the spec's "Roman explains
  * the lockout" carve-out):
  *   - /billing/*  and /checkout/* and /payment-recovery/* (update the card)
- *   - /auth/*     (logout / token refresh / me — recovery must never be locked)
+ *   - the two coach-scoped billing surfaces, /coach/billing/* (mobile) and
+ *     /v1/coach/me/billing* (v1) — both open the same Stripe portal
+ *   - /auth/*     (sign-in, /auth/me, /auth/extension/refresh, password reset —
+ *     recovery must never be locked). Note there is no mounted /auth/logout or
+ *     /auth/refresh; the mounted refresh route is /auth/extension/refresh.
  *   - health checks (health, healthz, readyz)
  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
@@ -41,7 +45,7 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  * explicit `locked_out_at` row.
  */
 
-/** Path fragments (post-/api prefix) always reachable while locked. */
+/** First-segment heads (post-/api prefix) always reachable while locked. */
 const ALLOWED_PREFIXES: readonly string[] = [
   'billing',
   'checkout',
@@ -51,6 +55,23 @@ const ALLOWED_PREFIXES: readonly string[] = [
   'health',
   'healthz',
   'readyz',
+] as const;
+
+/**
+ * Coach-scoped billing surfaces, matched as FULL normalized route prefixes
+ * rather than by segment position. Both entries reach the same
+ * `BillingService.createCoachPortalSession` capability — the Stripe portal a
+ * locked coach needs in order to cure the delinquency — so both must stay
+ * reachable while locked.
+ *
+ * Positional matching is deliberately not used here: matching an allow-list
+ * token in any segment admitted `scheduling/auth/google/*` (a paid Google
+ * Calendar integration surface) purely because its second segment was `auth`,
+ * and would have admitted every future controller with a colliding segment.
+ */
+const ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+  'coach/billing', // MobileCoachBillingController — status, portal-session
+  'coach/me/billing', // CoachBillingController (v1) — billing, billing/portal-session
 ] as const;
 
 /**
@@ -150,22 +171,23 @@ export function normalizePath(raw: string): string {
   return p;
 }
 
+/** True if `path` is exactly `prefix` or sits underneath it. */
+function matchesRoutePrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
 /** True if `path` (normalized) is reachable while the client is locked out. */
 export function isAllowedWhileLocked(path: string): boolean {
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0) return true; // root / health redirect
 
-  const head = segments[0];
-  // Coach-scoped billing variants (e.g. "coach/billing", "coach/checkout") —
-  // any path whose head OR second segment is an ALLOWED_PREFIXES entry is
-  // allowed. (Only the listed prefixes qualify: e.g. "admin/payments" is NOT
-  // allowed because "payments" is not in ALLOWED_PREFIXES.)
-  if (ALLOWED_PREFIXES.includes(head) || (segments[1] && ALLOWED_PREFIXES.includes(segments[1]))) {
-    return true;
+  if (ALLOWED_PREFIXES.includes(segments[0])) return true;
+  for (const prefix of ALLOWED_ROUTE_PREFIXES) {
+    if (matchesRoutePrefix(path, prefix)) return true;
   }
   // Dedicated Roman chat surface (/roman/*) so Roman can explain the lockout.
   for (const chat of ROMAN_CHAT_PREFIXES) {
-    if (path === chat || path.startsWith(`${chat}/`)) return true;
+    if (matchesRoutePrefix(path, chat)) return true;
   }
   return false;
 }
