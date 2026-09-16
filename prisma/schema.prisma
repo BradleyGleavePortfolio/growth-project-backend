@@ -6850,9 +6850,15 @@ model ScoutImport {
 // entity; only intent_id/entity_type on the outer envelope stay snake_case.
 //
 // coach_id comes from the extension bearer-token identity (never a body field);
-// the (coach_id, intent_id, source_id) unique key makes the endpoint idempotent
-// so the extension can safely replay a batch during retry/recovery without
-// duplicating rows.
+// the (coach_id, intent_id, entity_type, source_id) unique key makes the
+// endpoint idempotent so the extension can safely replay a batch during
+// retry/recovery without duplicating rows.
+//
+// entity_type is IN the key (widened by 20261224000100). source_id is only
+// unique within a type at the source, so the pre-widening 3-column key made the
+// second envelope of a crawl session collide with the first and silently
+// vanish through ON CONFLICT DO NOTHING. captured_at stays OUT of the key — see
+// the R-IDEMP-1 restatement on ScoutIngestService.ingest.
 //
 // RLS: RESTRICTIVE deny-all to anon + authenticated — written/read only via
 // service_role (the ingest endpoint runs server-side). Mirrors
@@ -6868,7 +6874,7 @@ model ScoutIngestEntity {
   payload         Json
   created_at      DateTime  @default(now())
 
-  @@unique([coach_id, intent_id, source_id])
+  @@unique([coach_id, intent_id, entity_type, source_id])
   @@index([coach_id, entity_type])
 }
 
