@@ -87,10 +87,16 @@ describe('IMPORTER-F schema + migration structural guard', () => {
   });
 
   describe('ScoutReconstructionLedger (idempotent reconciliation)', () => {
-    it('keys the ledger on (coach_id, intent_id, entity_type, source_id)', () => {
-      const unique = ledger.match(/@@unique\(\[([^\]]+)\]\)/) as RegExpMatchArray;
+    it('keys the ledger on (coach_id, intent_id, entity_type, source_platform, source_id)', () => {
+      const unique = ledger.match(/@@unique\(\[([^\]]+)\]/) as RegExpMatchArray;
       const cols = unique[1].split(',').map((c) => c.trim());
-      expect(cols).toEqual(['coach_id', 'intent_id', 'entity_type', 'source_id']);
+      expect(cols).toEqual([
+        'coach_id',
+        'intent_id',
+        'entity_type',
+        'source_platform',
+        'source_id',
+      ]);
     });
 
     it('carries an optional target_id and reason for non-reconstructed outcomes', () => {

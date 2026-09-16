@@ -1,11 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
+import {
+  SCOUT_PLATFORM_PATTERN,
+  SCOUT_TIMESTAMP_PATTERN,
+  supportedTimestamp,
+} from './scout-ingest.validation';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsISO8601,
+  Matches,
+  ValidateBy,
   IsNotEmpty,
   IsObject,
   IsString,
@@ -41,7 +47,9 @@ export class ScoutEntityDto {
   sourceId!: string;
 
   @ApiProperty({
-    description: 'Slug of the platform the record was captured from (camelCase, top-level).',
+    description:
+      'Canonical lowercase ASCII platform namespace (including auto:host); aliases are rejected.',
+    pattern: SCOUT_PLATFORM_PATTERN.source,
     minLength: 1,
     maxLength: 256,
     example: 'truecoach',
@@ -49,6 +57,7 @@ export class ScoutEntityDto {
   @IsString()
   @MinLength(1)
   @MaxLength(256)
+  @Matches(SCOUT_PLATFORM_PATTERN)
   sourcePlatform!: string;
 
   // Strict ISO8601 with a mandatory "T" date/time separator. The extension's
@@ -58,12 +67,19 @@ export class ScoutEntityDto {
   // null-degrade path (R-IDEMP-1 keeps captured_at a value, never a key).
   @ApiProperty({
     description:
-      'Strict ISO-8601 timestamp with a mandatory "T" separator (new Date().toISOString()).',
+      'Supported finite RFC3339 timestamp: full date, T, seconds, optional 1-3 fractional digits, mandatory Z or numeric offset.',
     format: 'date-time',
+    pattern: SCOUT_TIMESTAMP_PATTERN.source,
     example: '2026-07-09T18:30:00.000Z',
   })
   @IsNotEmpty()
-  @IsISO8601({ strict: true, strictSeparator: true })
+  @ValidateBy({
+    name: 'supportedTimestamp',
+    validator: {
+      validate: supportedTimestamp,
+      defaultMessage: () => 'capturedAt must be a supported finite timestamp',
+    },
+  })
   capturedAt!: string;
 
   // The crawled record itself, kept as an opaque JSON object rather than a

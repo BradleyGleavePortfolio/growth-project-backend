@@ -1,3 +1,4 @@
+import { ingestDate } from './scout-ingest.validation';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -25,16 +26,26 @@ const REDACTED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   'auth',
   'cookie',
   'session',
-  'api_key',
   'apikey',
-  'access_token',
-  'refresh_token',
+  'accesstoken',
+  'refreshtoken',
   'bearer',
   'ssn',
-  'credit_card',
+  'creditcard',
   'cardnumber',
   'cvv',
-  'private_key',
+  'privatekey',
+  'clientsecret',
+  'sessionid',
+  'paymenttoken',
+  'pan',
+  'fullcardnumber',
+  'creditcardnumber',
+  'paymentcredentials',
+  'sessionsecret',
+  'idtoken',
+  'cookies',
+  'cvc',
 ]);
 
 @Injectable()
@@ -47,20 +58,21 @@ export class ScoutIngestService {
   /**
    * Persist a crawl batch for `coachId`, idempotently.
    *
-   * Idempotency is enforced by the (coach_id, intent_id, source_id) unique
-   * index + `skipDuplicates`, which compiles to INSERT ... ON CONFLICT DO
-   * NOTHING. A replayed batch (extension retry/recovery) inserts zero rows and
-   * is reported as fully deduped. In-batch duplicate source_ids collapse the
-   * same way, so `received` counts the envelope while `deduped` counts every
-   * entity that did not produce a new row.
+   * Idempotency is enforced by the (coach_id, intent_id, entity_type, source_platform, source_id)
+   * unique index + `skipDuplicates`, which compiles to INSERT ... ON CONFLICT DO
+   * NOTHING. A replayed batch (extension retry/recovery) inserts zero rows and is
+   * reported as fully deduped; in-batch duplicates of the same 5-tuple collapse
+   * the same way, so `received` counts the envelope while `deduped` counts every
+   * entity that did not produce a new row. A different intent_id is a new
+   * observation series and inserts.
    *
-   * R-IDEMP-1 (2026-07-08): capturedAt is a value, not a key. The idempotency
-   * key is (coach_id, intent_id, source_id) — "the coach saw entity X during
-   * crawl session Y." A coach's crawl re-observes the same source entity over
-   * time; each re-observation within an intent must be a no-op replay, not a
-   * new row. Putting capturedAt in the key would break this: an extension retry
-   * carrying a fresh timestamp would insert a duplicate, defeating replay
-   * safety. Different intent_id = a new observation series, correctly inserts.
+   * R-IDEMP-1 (2026-07-08), RESTATED by migration 20261224000100: capturedAt is a
+   * VALUE (each re-observation within an intent must stay a no-op replay, so a
+   * retry carrying a fresh timestamp must not insert), and entity_type IS a key
+   * column — source_id is namespaced by type at the source (a TrueCoach client
+   * and workout can both be "1042"), so before the widening the second envelope
+   * of a crawl session was dropped SILENTLY (ON CONFLICT DO NOTHING never raises)
+   * and miscounted as deduped.
    */
   async ingest(coachId: string, dto: ScoutIngestDto): Promise<ScoutIngestResult> {
     const received = dto.entities.length;
@@ -71,9 +83,8 @@ export class ScoutIngestService {
       entity_type: dto.entity_type,
       source_id: entity.sourceId,
       source_platform: entity.sourcePlatform,
-      // capturedAt is a strict-ISO8601-validated DTO field (see ScoutEntityDto),
-      // so it always parses — no null-degrade path.
-      captured_at: new Date(entity.capturedAt),
+      // Direct callers share the same finite parsing boundary as HTTP.
+      captured_at: ingestDate(entity.sourcePlatform, entity.capturedAt),
       payload: redactPayload(entity.payload),
     }));
 
@@ -111,7 +122,7 @@ const PROTOTYPE_POLLUTION_KEYS: ReadonlySet<string> = new Set([
 /**
  * Recursively strip denylisted keys from a client-supplied payload before it is
  * persisted as JSONB. Structure is otherwise preserved verbatim. Nested objects
- * and array elements are walked; matching happens on the lowercased key.
+ * and array elements are walked; matching normalizes case and non-alphanumeric separators.
  */
 function redactPayload(
   payload: Prisma.InputJsonObject,
@@ -122,7 +133,7 @@ function redactPayload(
   const clean = new Map<string, Prisma.InputJsonValue | null>();
   for (const [key, value] of Object.entries(payload)) {
     if (PROTOTYPE_POLLUTION_KEYS.has(key)) continue;
-    if (REDACTED_PAYLOAD_KEYS.has(key.toLowerCase())) continue;
+    if (REDACTED_PAYLOAD_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) continue;
     if (value === undefined) continue;
     clean.set(key, redactValue(value));
   }

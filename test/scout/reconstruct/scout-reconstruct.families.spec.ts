@@ -26,6 +26,7 @@ interface StagedRow {
   payload: unknown;
 }
 interface LedgerRow {
+  source_platform: string;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -63,9 +64,10 @@ class FakePrisma {
     coach_id: string;
     intent_id: string;
     entity_type: string;
+    source_platform: string;
     source_id: string;
   }): string {
-    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_id}`;
+    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_platform}|${r.source_id}`;
   }
 
   scoutImport = {
@@ -122,11 +124,13 @@ class FakePrisma {
 
   scoutReconstructionLedger = {
     upsert: async (args: {
-      where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerRow };
       create: LedgerRow;
       update: Partial<LedgerRow>;
     }) => {
-      const key = this.ledgerKey(args.where.coach_id_intent_id_entity_type_source_id);
+      const key = this.ledgerKey(
+        args.where.coach_id_intent_id_entity_type_source_platform_source_id,
+      );
       const existing = this.ledger.get(key);
       if (existing) {
         Object.assign(existing, args.update);

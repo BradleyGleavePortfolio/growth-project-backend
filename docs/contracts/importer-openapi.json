@@ -383,9 +383,10 @@
       "ScoutEntityDto": {
         "properties": {
           "capturedAt": {
-            "description": "Strict ISO-8601 timestamp with a mandatory \"T\" separator (new Date().toISOString()).",
+            "description": "Supported finite RFC3339 timestamp: full date, T, seconds, optional 1-3 fractional digits, mandatory Z or numeric offset.",
             "example": "2026-07-09T18:30:00.000Z",
             "format": "date-time",
+            "pattern": "^(?!0000)\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$",
             "type": "string"
           },
           "payload": {
@@ -401,10 +402,11 @@
             "type": "string"
           },
           "sourcePlatform": {
-            "description": "Slug of the platform the record was captured from (camelCase, top-level).",
+            "description": "Canonical lowercase ASCII platform namespace (including auto:host); aliases are rejected.",
             "example": "truecoach",
             "maxLength": 256,
             "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
             "type": "string"
           }
         },
@@ -824,7 +826,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "1.4.0"
+    "version": "2.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1309,7 +1311,7 @@
     },
     "/api/scout/ingest": {
       "post": {
-        "description": "Receives the extension crawl envelope { intent_id, entity_type, entities[] }. Idempotent on (coach_id, intent_id, sourceId). Returns 202 { received, deduped }. Returns 404 when FEATURE_SCOUT_INGEST is off.",
+        "description": "Receives the extension crawl envelope { intent_id, entity_type, entities[] }. Idempotent on (coach_id, intent_id, entity_type, sourcePlatform, sourceId). Returns 202 { received, deduped }. Returns 404 when FEATURE_SCOUT_INGEST is off.",
         "operationId": "ScoutIngestController_ingest",
         "parameters": [],
         "requestBody": {

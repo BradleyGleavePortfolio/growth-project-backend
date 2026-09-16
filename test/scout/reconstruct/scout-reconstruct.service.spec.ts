@@ -26,6 +26,7 @@ interface StagedRow {
   payload: unknown;
 }
 interface LedgerRow {
+  source_platform: string;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -66,9 +67,10 @@ class FakePrisma {
     coach_id: string;
     intent_id: string;
     entity_type: string;
+    source_platform: string;
     source_id: string;
   }): string {
-    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_id}`;
+    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_platform}|${r.source_id}`;
   }
 
   scoutImport = {
@@ -134,11 +136,13 @@ class FakePrisma {
 
   scoutReconstructionLedger = {
     upsert: async (args: {
-      where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerRow };
       create: LedgerRow;
       update: Partial<LedgerRow>;
     }) => {
-      const key = this.ledgerKey(args.where.coach_id_intent_id_entity_type_source_id);
+      const key = this.ledgerKey(
+        args.where.coach_id_intent_id_entity_type_source_platform_source_id,
+      );
       const existing = this.ledger.get(key);
       if (existing) {
         Object.assign(existing, args.update);
@@ -692,5 +696,28 @@ describe('ScoutReconstructService', () => {
       // The minted Person key embeds the tenant, so no cross-tenant collision.
       expect([...prisma.persons.keys()][0]).toContain('coach-7');
     });
+  });
+  it('keeps overlapping source IDs from distinct platforms in distinct ledger outcomes', async () => {
+    const { service, prisma } = build((p) => {
+      p.staged = [
+        stagedClient('1042'),
+        { source_id: '1042', source_platform: 'conformance_alpha', payload: { name: 'Synthetic' } },
+      ];
+    });
+    const first = await service.reconstruct('coach-1', 'intent-1');
+    expect(first).toMatchObject({ staged: 2, reconstructed: 2, skipped: 0, failed: 0 });
+    expect(prisma.persons.size).toBe(2);
+    expect(prisma.ledger.size).toBe(2);
+    expect(await service.reconstruct('coach-1', 'intent-1')).toEqual(first);
+  });
+  it('orders pages by platform then source ID so same-ID records have a total order', async () => {
+    const { service, prisma } = build((p) => {
+      p.staged = [stagedClient('1042')];
+    });
+    const read = jest.spyOn(prisma.scoutIngestEntity, 'findMany');
+    await service.reconstruct('coach-1', 'intent-1');
+    expect(read).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ source_platform: 'asc' }, { source_id: 'asc' }] }),
+    );
   });
 });

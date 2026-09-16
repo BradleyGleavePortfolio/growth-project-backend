@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import * as Sentry from '@sentry/node';
+import { safeDiagnostic } from '../observability/orm-diagnostics';
 import { buildErrorEnvelope } from './not-found-envelope';
 
 // Structured error shape: { statusCode, message, error, timestamp, path }.
@@ -20,6 +21,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
+    const diagnostic = safeDiagnostic(exception);
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
@@ -45,11 +47,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error = body.error ?? exception.name.replace(/Exception$/, '');
         if (typeof body.code === 'string') code = body.code;
       }
-    } else if (exception instanceof Error) {
+    } else if (diagnostic instanceof Error) {
       // Log unexpected errors; do NOT leak internal details to clients.
       this.logger.error(
-        `Unhandled error at ${request.method} ${request.url}: ${exception.message}`,
-        exception.stack,
+        `Unhandled error at ${request.method} ${request.url}: ${diagnostic.message}`,
+        diagnostic.stack,
       );
     }
 
@@ -63,7 +65,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         scope.setTag('http.path', request.url);
         scope.setExtra('responseStatus', status);
         if (sentryReq.requestId) scope.setTag('request_id', sentryReq.requestId);
-        Sentry.captureException(exception);
+        Sentry.captureException(diagnostic);
       });
     }
 

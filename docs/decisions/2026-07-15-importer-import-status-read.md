@@ -23,6 +23,12 @@ The backend already owns two provable facts per `(coach_id, intent_id)`:
 1. `ScoutIngestEntity` — one row per entity the crawl actually committed
    (idempotent on `(coach_id, intent_id, source_id)`). A `groupBy(entity_type)`
    count is **server-authoritative committed volume**.
+   > **Superseded (2026-07-27, migration `20261224000100`).** The key is now
+   > `(coach_id, intent_id, entity_type, source_id)`. The original 3-column key
+   > silently dropped later entities whose source IDs overlapped an earlier family,
+   > which made this "server-authoritative committed volume" undercount. The
+   > original wording is retained as record (R5); the widened key is the one in
+   > force, and the `groupBy(entity_type)` read above is correct under it.
 2. `ScoutImport` — the parent lifecycle row, created only at settle by
    `complete()`, carrying the verbatim `terminal_status`
    (`success | partial | failed`) and `completed_at` (R-STATE-1).
@@ -192,3 +198,7 @@ analytics event, extend `IMPORTER_BARE_PATHS` and bump `CONTRACT_VERSION` to
 - **No `pending`.** Nothing exists before the first ingest/progress, so there is
   no evidence to report; omitted rather than faked.
 - **No change to `POST /api/scout/progress`** or any existing write route.
+
+## Integrity correction (2026-09-16)
+
+The current staging and ledger key also includes `source_platform`: `(coach_id, intent_id, entity_type, source_platform, source_id)`. The historical three- and four-column descriptions above are superseded; both retain the same coach/intent prefix for status aggregation. See [the coordinated integrity decision](2026-09-16-scout-ingest-integrity.md) for replay, canonical namespace, privacy, migration rerun/rollback, and approval requirements.

@@ -134,6 +134,7 @@ interface StagedRecord {
   readonly payload: Prisma.JsonValue;
 }
 interface LedgerRow {
+  source_platform: string;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -233,7 +234,7 @@ class FakePrisma {
       update: { label: string | null };
     }) => {
       const w = args.where.coach_id_source_platform_entity_type_source_id;
-      const key = `${w.coach_id}|${w.source_platform}|${w.entity_type}|${w.source_id}`;
+      const key = `${w.coach_id}|${w.source_platform}|${w.entity_type}|${w.source_platform}|${w.source_id}`;
       const existing = this.entities.get(key);
       if (existing) {
         existing.label = args.update.label;
@@ -247,12 +248,12 @@ class FakePrisma {
 
   scoutReconstructionLedger = {
     upsert: async (args: {
-      where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerRow };
       create: LedgerRow;
       update: Partial<LedgerRow>;
     }) => {
-      const w = args.where.coach_id_intent_id_entity_type_source_id;
-      const key = `${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_id}`;
+      const w = args.where.coach_id_intent_id_entity_type_source_platform_source_id;
+      const key = `${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_platform}|${w.source_id}`;
       const existing = this.ledger.get(key);
       if (existing) {
         Object.assign(existing, args.update);

@@ -240,6 +240,11 @@ jobs:
       # never had the GUC set, so app.is_owner() intermittently sees NULL role
       # and returns false. One connection makes the session state stable.
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?connection_limit=1
+      # IMPORTER I1a: a SEPARATE throwaway database on this same ephemeral
+      # container — the scout suite DROPs and recreates its table, so it shares
+      # neither the lane above's DB nor the app DATABASE_URL. Dies with the runner.
+      SCOUT_INGEST_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scout_ingest_throwaway
+      SCOUT_INGEST_TEST_CONFIRM: scout_ingest_throwaway
     steps:
       - uses: actions/checkout@v6
 
@@ -293,6 +298,20 @@ jobs:
         run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Create the IMPORTER I1a throwaway database
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE scout_ingest_throwaway'
+
+      - name: Run IMPORTER I1a live uniqueness proof
+        # Was green-by-skip: the path filter above never selected it. The spec
+        # applies the shim and both real migrations via psql, so an empty DB does.
+        run: npx jest --config jest.rls.config.js test/rls-scout-ingest-uniqueness.spec.ts --runInBand --testTimeout=60000 --json --outputFile=scout-ingest-live.json
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      # A green skip is what let the P0 ship, so assert the suite actually ran.
+      - name: Fail if the IMPORTER I1a proof skipped instead of running
+        run: node -e 'const r=require("./scout-ingest-live.json"); if (r.numTotalTestSuites!==1||r.numPendingTests>0||r.numPassedTests<21) { console.error("I1a live proof did not execute",r.numPassedTests,r.numPendingTests); process.exit(1); } console.log("I1a live proof executed",r.numPassedTests,"tests");'
 
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on

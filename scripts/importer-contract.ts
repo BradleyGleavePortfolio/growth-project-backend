@@ -40,7 +40,7 @@ export const API_PREFIX = '/api';
 // change the artifact bytes (that would fail the drift test with no importer
 // change and no regeneration in the release flow). Bump this by hand only when
 // the importer surface itself changes in a client-visible way.
-export const CONTRACT_VERSION = '1.4.0';
+export const CONTRACT_VERSION = '2.0.0';
 
 /** Recursively sort object keys so JSON.stringify is byte-stable across runs. */
 export function stableSort<T>(value: T): T {

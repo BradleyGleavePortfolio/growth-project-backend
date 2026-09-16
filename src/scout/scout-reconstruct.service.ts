@@ -32,7 +32,7 @@ import {
  *    rejected fail-closed, and the rest are read one deterministic page at a
  *    time — never the whole roster at once and never an unbounded query burst.
  *  - Idempotent: the canonical target is keyed on the tenant-scoped external_ref
- *    and the ledger on (coach_id, intent_id, entity_type, source_id), both
+ *    and the ledger on (coach_id, intent_id, entity_type, source_platform, source_id), both
  *    upserted, so a replay mints no new rows and returns identical counts. A
  *    concurrent replay that loses the insert race (unique violation) is retried
  *    once and converges, never a spurious `failed`.
@@ -76,7 +76,7 @@ export class ScoutReconstructService {
     const staged = await this.prisma.scoutIngestEntity.count({ where });
     this.assertWithinBound(coachId, intentId, staged);
 
-    // Deterministic paged read (ordered by source_id): bounded memory + a
+    // Deterministic paged read (ordered by platform and source_id): bounded memory + a
     // bounded number of queries regardless of roster size. Each row is
     // reconstructed idempotently, so a re-run picks up exactly where a prior
     // pass left off without minting duplicates.
@@ -84,7 +84,7 @@ export class ScoutReconstructService {
       const page = await this.prisma.scoutIngestEntity.findMany({
         where,
         select: { source_id: true, source_platform: true, payload: true },
-        orderBy: { source_id: 'asc' },
+        orderBy: [{ source_platform: 'asc' }, { source_id: 'asc' }],
         take: RECONSTRUCT_PAGE_SIZE,
         skip,
       });
@@ -186,7 +186,7 @@ export class ScoutReconstructService {
         family.entityType,
         coachId,
         intentId,
-        row.source_id,
+        row,
         RECONSTRUCT_STATUS.skipped,
         null,
         mapped.reason,
@@ -195,7 +195,7 @@ export class ScoutReconstructService {
     }
 
     try {
-      await this.persistReconstructed(family, coachId, intentId, row.source_id, mapped.mapped);
+      await this.persistReconstructed(family, coachId, intentId, row, mapped.mapped);
     } catch (err) {
       if (isUniqueViolation(err)) {
         // A concurrent reconstruction of the same (coach, intent, source) won
@@ -203,14 +203,14 @@ export class ScoutReconstructService {
         // finds the sibling's row and converges to `reconstructed` — never a
         // spurious `failed` or a duplicate.
         try {
-          await this.persistReconstructed(family, coachId, intentId, row.source_id, mapped.mapped);
+          await this.persistReconstructed(family, coachId, intentId, row, mapped.mapped);
           return;
         } catch (retryErr) {
           await this.writeLedger(
             family.entityType,
             coachId,
             intentId,
-            row.source_id,
+            row,
             RECONSTRUCT_STATUS.failed,
             null,
             summarizeError(retryErr),
@@ -222,7 +222,7 @@ export class ScoutReconstructService {
         family.entityType,
         coachId,
         intentId,
-        row.source_id,
+        row,
         RECONSTRUCT_STATUS.failed,
         null,
         summarizeError(err),
@@ -240,26 +240,28 @@ export class ScoutReconstructService {
     family: FamilyReconstructor,
     coachId: string,
     intentId: string,
-    sourceId: string,
+    row: StagedRow,
     mapped: unknown,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const targetId = await family.persist(tx, coachId, sourceId, mapped);
+      const targetId = await family.persist(tx, coachId, row.source_id, mapped);
 
       await tx.scoutReconstructionLedger.upsert({
         where: {
-          coach_id_intent_id_entity_type_source_id: {
+          coach_id_intent_id_entity_type_source_platform_source_id: {
             coach_id: coachId,
             intent_id: intentId,
             entity_type: family.entityType,
-            source_id: sourceId,
+            source_id: row.source_id,
+            source_platform: row.source_platform,
           },
         },
         create: {
           coach_id: coachId,
           intent_id: intentId,
           entity_type: family.entityType,
-          source_id: sourceId,
+          source_id: row.source_id,
+          source_platform: row.source_platform,
           status: RECONSTRUCT_STATUS.reconstructed,
           target_id: targetId,
           reason: null,
@@ -273,25 +275,27 @@ export class ScoutReconstructService {
     entityType: string,
     coachId: string,
     intentId: string,
-    sourceId: string,
+    row: StagedRow,
     status: string,
     targetId: string | null,
     reason: string | null,
   ): Promise<void> {
     await this.prisma.scoutReconstructionLedger.upsert({
       where: {
-        coach_id_intent_id_entity_type_source_id: {
+        coach_id_intent_id_entity_type_source_platform_source_id: {
           coach_id: coachId,
           intent_id: intentId,
           entity_type: entityType,
-          source_id: sourceId,
+          source_id: row.source_id,
+          source_platform: row.source_platform,
         },
       },
       create: {
         coach_id: coachId,
         intent_id: intentId,
         entity_type: entityType,
-        source_id: sourceId,
+        source_id: row.source_id,
+        source_platform: row.source_platform,
         status,
         target_id: targetId,
         reason,
