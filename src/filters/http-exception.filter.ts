@@ -25,6 +25,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const diagnosticPath = diagnostic === exception ? request.url : request.url.split('?')[0];
 
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
@@ -50,7 +51,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     } else if (diagnostic instanceof Error) {
       // Log unexpected errors; do NOT leak internal details to clients.
       this.logger.error(
-        `Unhandled error at ${request.method} ${request.url}: ${diagnostic.message}`,
+        `Unhandled error at ${request.method} ${diagnosticPath}: ${diagnostic.message}`,
         diagnostic.stack,
       );
     }
@@ -62,7 +63,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const sentryReq = request as Request & { requestId?: string };
       Sentry.withScope((scope) => {
         scope.setTag('http.method', request.method);
-        scope.setTag('http.path', request.url);
+        scope.setTag('http.path', diagnosticPath);
         scope.setExtra('responseStatus', status);
         if (sentryReq.requestId) scope.setTag('request_id', sentryReq.requestId);
         Sentry.captureException(diagnostic);

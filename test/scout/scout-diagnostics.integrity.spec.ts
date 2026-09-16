@@ -23,10 +23,10 @@ const errors = [
     cause: new Prisma.PrismaClientValidationError(marker, { clientVersion: 'test' }),
   }),
 ];
-function runFilter(error: Error) {
+function runFilter(error: Error, url = '/api/scout/ingest') {
   const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
   const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-  const request = { method: 'POST', url: '/api/scout/ingest', requestId: 'correlation-1' };
+  const request = { method: 'POST', url, requestId: 'correlation-1' };
   new HttpExceptionFilter().catch(error, new ExecutionContextHost([request, response]));
   return { log, response };
 }
@@ -76,5 +76,10 @@ describe('ORM diagnostics before every sink', () => {
     const result = await hook(event, {});
     expect(JSON.stringify(result)).not.toContain(marker);
     expect(result?.tags?.request_id).toBe('correlation-1');
+  });
+  it('does not log URL query payloads alongside a sanitized ORM exception', () => {
+    const { log } = runFilter(errors[0], `/api/scout/ingest?note=${marker}`);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(marker);
+    expect(JSON.stringify(log.mock.calls)).toContain('/api/scout/ingest');
   });
 });
