@@ -2,50 +2,27 @@
  * IMPORTER I1a — LIVE-DB proof of the ScoutIngestEntity idempotency key.
  *
  * The structural guard (test/scout/scout-ingest.idempotency.spec.ts) proves the
- * key is *declared* correctly. It cannot prove the thing that actually matters,
- * because the defect it replaces was invisible at the type level: Prisma's
- * `createMany({ skipDuplicates: true })` compiles to INSERT ... ON CONFLICT DO
- * NOTHING, which never raises P2002. A colliding row does not error — it simply
- * never lands, and `deduped = received - count` then reports the lost row as a
- * successful replay. Only a real Postgres can distinguish "deduped a replay"
- * from "silently discarded a distinct entity".
+ * key is *declared* right; only a real Postgres proves behaviour, because
+ * `createMany({ skipDuplicates: true })` is INSERT ... ON CONFLICT DO NOTHING and
+ * never raises P2002 — a silently discarded entity and a deduped replay are
+ * indistinguishable to the caller (`deduped = received - count`). So this suite
+ * applies the REAL migration SQL (the 20261222000000 create, then the
+ * 20261224000100 widening) through psql, as CI and an operator deploy it, and
+ * drives the generated client against it.
  *
- * This suite applies the REAL migration SQL verbatim (the 20261222000000 create
- * followed by the 20261224000100 widening) rather than a Prisma schema diff, so
- * it asserts against the migration output an operator will actually deploy, and
- * then exercises the real `createMany` path through the generated client.
- *
- * What it proves:
- *   1. Two entity_types sharing a source_id within one intent BOTH persist
- *      (the P0 fix; this returned count 1 and lost a row before the widening).
- *   2. A true 4-tuple replay is still a no-op — replay-safety is not traded away.
- *   3. captured_at is still OUT of the key: a re-observation with a fresh
- *      timestamp is a replay, not a new row (original R-IDEMP-1, preserved).
- *   4. A different intent_id starts a new observation series and inserts.
- *   5. R106 down-migration dry-run, both directions, including the DOCUMENTED
- *      asymmetry: the reverse NARROWS the key and therefore correctly REFUSES
- *      when rows exist that only the widened key permits, rather than deleting
- *      a coach's crawl data to satisfy a constraint.
- *   6. The RLS posture survives the index swap (ENABLE + FORCE + deny-all
- *      RESTRICTIVE policies for anon and authenticated).
- *
- * Live-DB gating (repo pattern, R66/R69): matched by `jest.rls.config.js`
- * (test/rls-*.spec.ts). Connects when `SCOUT_INGEST_TEST_DATABASE_URL` is set;
- * otherwise `describe.skip` with a logged reason — never a silent pass. A
- * DEDICATED env var, never the app `DATABASE_URL`: beforeAll DROPs and recreates
- * the table, which would destroy a real database.
- *
- * To run locally:
- *   1. docker run -e POSTGRES_PASSWORD=pw -p 55433:5432 -d postgres:16
- *   2. SCOUT_INGEST_TEST_DATABASE_URL=postgresql://postgres:pw@localhost:55433/postgres \
- *        npx jest --config jest.rls.config.js test/rls-scout-ingest-uniqueness --runInBand
+ * DESTRUCTIVE, DISPOSABLE DB ONLY: beforeAll DROPs and recreates the table, so it
+ * runs only when SCOUT_INGEST_TEST_DATABASE_URL — a dedicated var, never the app
+ * `DATABASE_URL` — points at a throwaway database. Unset means a loud skip (R69);
+ * the CI job running it fails if it skips. Requires `psql` on PATH.
  */
 
-import { readFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 const RAW_TEST_DB_URL = process.env.SCOUT_INGEST_TEST_DATABASE_URL || '';
+// psql rejects Prisma-only params (connection_limit, schema, pgbouncer).
+const PSQL_URL = RAW_TEST_DB_URL.split('?')[0];
 
 const REPO_ROOT = join(__dirname, '..');
 const MIGRATIONS = join(REPO_ROOT, 'prisma', 'migrations');
@@ -57,6 +34,7 @@ const COACH = 'coach-i1a';
 const INTENT = 'intent-i1a';
 
 type Row = Prisma.ScoutIngestEntityCreateManyInput;
+type RlsFlags = { relrowsecurity: boolean; relforcerowsecurity: boolean };
 
 function row(overrides: Partial<Row> & Pick<Row, 'id' | 'entity_type' | 'source_id'>): Row {
   return {
@@ -74,30 +52,48 @@ const describeOrSkip = RAW_TEST_DB_URL ? describe : describe.skip;
 if (!RAW_TEST_DB_URL) {
   // Loud, not silent (R69): an unset URL means UNPROVEN, not PASSED.
   // eslint-disable-next-line no-console
-  console.warn(
-    '[rls-scout-ingest-uniqueness] SKIPPED — set SCOUT_INGEST_TEST_DATABASE_URL to a throwaway Postgres to run the live proof.',
-  );
+  console.warn('[rls-scout-ingest-uniqueness] SKIPPED — SCOUT_INGEST_TEST_DATABASE_URL unset.');
 }
 
 describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', () => {
   let prisma: PrismaClient;
 
-  /** Apply a .sql file as a single batch. Throws on any error. */
-  async function applySqlFile(client: PrismaClient, file: string): Promise<void> {
-    await client.$executeRawUnsafe(readFileSync(file, 'utf8'));
+  /** Apply a migration file as CI and an operator do: psql, ON_ERROR_STOP, the
+   *  file's own BEGIN/COMMIT. Prisma's raw API cannot — it sends one prepared
+   *  statement per call, so a multi-statement file always dies with `42601 cannot
+   *  insert multiple commands into a prepared statement`, which would make the
+   *  rollback-refusal assertion below pass vacuously. Non-zero psql exit throws,
+   *  so a genuine refusal stays observable. */
+  function applySqlFile(file: string): void {
+    execFileSync('psql', [PSQL_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-f', file], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  }
+
+  /** The production write path; `count` becomes the service's `received - deduped`. */
+  function insertBatch(...data: Row[]): Promise<{ count: number }> {
+    return prisma.scoutIngestEntity.createMany({ data, skipDuplicates: true });
+  }
+
+  /** Index names on the table, from the live catalog. */
+  async function indexNames(): Promise<string[]> {
+    const rows = await prisma.$queryRawUnsafe<{ indexname: string }[]>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'ScoutIngestEntity'`,
+    );
+    return rows.map((i) => i.indexname);
   }
 
   /** Drop and rebuild the table at the CURRENT (widened) key. */
   async function resetToWidened(): Promise<void> {
     await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "ScoutIngestEntity" CASCADE');
-    await applySqlFile(prisma, CREATE_SQL);
-    await applySqlFile(prisma, join(WIDEN_DIR, 'migration.sql'));
+    applySqlFile(CREATE_SQL);
+    applySqlFile(join(WIDEN_DIR, 'migration.sql'));
   }
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: RAW_TEST_DB_URL } } });
     await prisma.$connect();
-    await applySqlFile(prisma, SHIM_SQL);
+    applySqlFile(SHIM_SQL);
     await resetToWidened();
   }, 120_000);
 
@@ -111,13 +107,10 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
 
   describe('the P0 fix — entity_type is part of the identity', () => {
     it('persists two entity_types that share a source_id within one intent', async () => {
-      const { count } = await prisma.scoutIngestEntity.createMany({
-        data: [
-          row({ id: 'a', entity_type: 'client', source_id: '1042' }),
-          row({ id: 'b', entity_type: 'workout', source_id: '1042' }),
-        ],
-        skipDuplicates: true,
-      });
+      const { count } = await insertBatch(
+        row({ id: 'a', entity_type: 'client', source_id: '1042' }),
+        row({ id: 'b', entity_type: 'workout', source_id: '1042' }),
+      );
 
       // Before the widening this was 1, and the caller reported deduped = 1 —
       // a lost entity indistinguishable from a replay.
@@ -133,14 +126,11 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
 
     it('reports deduped = 0 when every entity in the batch is distinct', async () => {
       const received = 3;
-      const { count } = await prisma.scoutIngestEntity.createMany({
-        data: [
-          row({ id: 'a', entity_type: 'client', source_id: '1' }),
-          row({ id: 'b', entity_type: 'workout', source_id: '1' }),
-          row({ id: 'c', entity_type: 'exercise', source_id: '1' }),
-        ],
-        skipDuplicates: true,
-      });
+      const { count } = await insertBatch(
+        row({ id: 'a', entity_type: 'client', source_id: '1' }),
+        row({ id: 'b', entity_type: 'workout', source_id: '1' }),
+        row({ id: 'c', entity_type: 'exercise', source_id: '1' }),
+      );
       expect(received - count).toBe(0);
     });
   });
@@ -148,12 +138,9 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
   describe('replay-safety is preserved, not traded away', () => {
     it('treats a full 4-tuple replay as a no-op', async () => {
       const original = row({ id: 'a', entity_type: 'client', source_id: '1042' });
-      await prisma.scoutIngestEntity.createMany({ data: [original], skipDuplicates: true });
+      await insertBatch(original);
 
-      const replay = await prisma.scoutIngestEntity.createMany({
-        data: [{ ...original, id: 'a-retry' }],
-        skipDuplicates: true,
-      });
+      const replay = await insertBatch({ ...original, id: 'a-retry' });
 
       expect(replay.count).toBe(0);
       expect(await prisma.scoutIngestEntity.count()).toBe(1);
@@ -166,11 +153,12 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
         source_id: '1042',
         captured_at: new Date('2026-07-27T00:00:00.000Z'),
       });
-      await prisma.scoutIngestEntity.createMany({ data: [first], skipDuplicates: true });
+      await insertBatch(first);
 
-      const laterObservation = await prisma.scoutIngestEntity.createMany({
-        data: [{ ...first, id: 'b', captured_at: new Date('2026-07-28T00:00:00.000Z') }],
-        skipDuplicates: true,
+      const laterObservation = await insertBatch({
+        ...first,
+        id: 'b',
+        captured_at: new Date('2026-07-28T00:00:00.000Z'),
       });
 
       expect(laterObservation.count).toBe(0);
@@ -178,24 +166,18 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
     });
 
     it('collapses in-batch duplicates of the same 4-tuple', async () => {
-      const { count } = await prisma.scoutIngestEntity.createMany({
-        data: [
-          row({ id: 'a', entity_type: 'client', source_id: '1042' }),
-          row({ id: 'b', entity_type: 'client', source_id: '1042' }),
-        ],
-        skipDuplicates: true,
-      });
+      const { count } = await insertBatch(
+        row({ id: 'a', entity_type: 'client', source_id: '1042' }),
+        row({ id: 'b', entity_type: 'client', source_id: '1042' }),
+      );
       expect(count).toBe(1);
     });
 
     it('starts a new observation series for a different intent_id', async () => {
       const base = row({ id: 'a', entity_type: 'client', source_id: '1042' });
-      await prisma.scoutIngestEntity.createMany({ data: [base], skipDuplicates: true });
+      await insertBatch(base);
 
-      const nextSession = await prisma.scoutIngestEntity.createMany({
-        data: [{ ...base, id: 'b', intent_id: 'intent-2' }],
-        skipDuplicates: true,
-      });
+      const nextSession = await insertBatch({ ...base, id: 'b', intent_id: 'intent-2' });
 
       expect(nextSession.count).toBe(1);
       expect(await prisma.scoutIngestEntity.count()).toBe(2);
@@ -203,12 +185,9 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
 
     it('scopes the key per coach — another coach is never deduped against this one', async () => {
       const base = row({ id: 'a', entity_type: 'client', source_id: '1042' });
-      await prisma.scoutIngestEntity.createMany({ data: [base], skipDuplicates: true });
+      await insertBatch(base);
 
-      const otherCoach = await prisma.scoutIngestEntity.createMany({
-        data: [{ ...base, id: 'b', coach_id: 'coach-other' }],
-        skipDuplicates: true,
-      });
+      const otherCoach = await insertBatch({ ...base, id: 'b', coach_id: 'coach-other' });
 
       expect(otherCoach.count).toBe(1);
     });
@@ -216,12 +195,9 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
 
   describe('R106 — down-migration dry-run, both directions', () => {
     it('reverses cleanly when no row depends on the widened key', async () => {
-      await applySqlFile(prisma, join(WIDEN_DIR, 'down.sql'));
+      applySqlFile(join(WIDEN_DIR, 'down.sql'));
 
-      const indexes = await prisma.$queryRawUnsafe<{ indexname: string }[]>(
-        `SELECT indexname FROM pg_indexes WHERE tablename = 'ScoutIngestEntity'`,
-      );
-      const names = indexes.map((i) => i.indexname);
+      const names = await indexNames();
       expect(names).toContain('ScoutIngestEntity_coach_id_intent_id_source_id_key');
       expect(names).not.toContain('ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key');
 
@@ -229,23 +205,16 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
     });
 
     it('REFUSES to reverse — rather than delete data — when rows only the widened key permits exist', async () => {
-      await prisma.scoutIngestEntity.createMany({
-        data: [
-          row({ id: 'a', entity_type: 'client', source_id: '1042' }),
-          row({ id: 'b', entity_type: 'workout', source_id: '1042' }),
-        ],
-        skipDuplicates: true,
-      });
-
-      // The narrow index cannot be built over these two rows. The documented
-      // contract is that down.sql aborts and leaves the data intact.
-      await expect(applySqlFile(prisma, join(WIDEN_DIR, 'down.sql'))).rejects.toThrow();
-      expect(await prisma.scoutIngestEntity.count()).toBe(2);
-
-      const indexes = await prisma.$queryRawUnsafe<{ indexname: string }[]>(
-        `SELECT indexname FROM pg_indexes WHERE tablename = 'ScoutIngestEntity'`,
+      await insertBatch(
+        row({ id: 'a', entity_type: 'client', source_id: '1042' }),
+        row({ id: 'b', entity_type: 'workout', source_id: '1042' }),
       );
-      expect(indexes.map((i) => i.indexname)).toContain(
+
+      // The narrow index cannot be built over these two rows, so down.sql must
+      // abort with a duplicate-key error and leave every row in place.
+      expect(() => applySqlFile(join(WIDEN_DIR, 'down.sql'))).toThrow(/duplicat/i);
+      expect(await prisma.scoutIngestEntity.count()).toBe(2);
+      expect(await indexNames()).toContain(
         'ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key',
       );
     });
@@ -253,9 +222,7 @@ describeOrSkip('IMPORTER I1a — ScoutIngestEntity uniqueness (live Postgres)', 
 
   describe('RLS posture survives the index swap', () => {
     it('keeps ENABLE + FORCE row level security on the table', async () => {
-      const [rls] = await prisma.$queryRawUnsafe<
-        { relrowsecurity: boolean; relforcerowsecurity: boolean }[]
-      >(
+      const [rls] = await prisma.$queryRawUnsafe<RlsFlags[]>(
         `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'ScoutIngestEntity'`,
       );
       expect(rls.relrowsecurity).toBe(true);

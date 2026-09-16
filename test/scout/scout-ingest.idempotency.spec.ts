@@ -4,56 +4,31 @@ import { join } from 'path';
 /**
  * R-IDEMP-1 structural idempotency guard, RESTATED by 20261224000100.
  *
- * The idempotency contract for scout ingest is: the UNIQUE key
- * (coach_id, intent_id, entity_type, source_id) makes "the coach saw entity X
- * OF TYPE T during crawl session Y" a single row.
+ * UNIQUE (coach_id, intent_id, entity_type, source_id) makes "the coach saw
+ * entity X OF TYPE T during crawl session Y" a single row. This file pins BOTH
+ * invariants so neither regresses into the other: captured_at EXCLUDED (each
+ * re-observation within an intent must collapse to a no-op replay, ON CONFLICT DO
+ * NOTHING — the original R-IDEMP-1 of 2026-07-08) and entity_type INCLUDED
+ * (source_id is only unique within a type at the source, so omitting it made the
+ * second envelope of a crawl session collide and disappear silently: the P0).
  *
- * Two independent invariants, and this file pins BOTH so neither can regress
- * into the other:
- *
- *   captured_at is EXCLUDED. A coach re-observes the same source entity over
- *   time and each re-observation within an intent must collapse to a no-op
- *   replay (ON CONFLICT DO NOTHING), never a new row per timestamp. This was
- *   the original R-IDEMP-1 (2026-07-08) and it still holds.
- *
- *   entity_type is INCLUDED. source_id is only unique within a type at the
- *   source, so omitting entity_type made the second envelope of a crawl session
- *   collide with the first and disappear silently. That was the P0 this
- *   migration fixes; this file is what stops it coming back.
- *
- * This is a MECHANICAL guard: it parses the two sources of truth (the Prisma
- * model and the raw migration DDL) and asserts the key columns and their order.
- * The behavioural proof against real Postgres — that two entity_types sharing a
- * source_id both persist and that a true 4-tuple replay is a no-op — lives in
- * test/rls-scout-ingest-uniqueness.spec.ts, which needs a live DB.
+ * MECHANICAL guard over both sources of truth (Prisma model, migration DDL); the
+ * behavioural proof is test/rls-scout-ingest-uniqueness.spec.ts.
  */
 
 const REPO_ROOT = join(__dirname, '..', '..');
 const SCHEMA_PATH = join(REPO_ROOT, 'prisma', 'schema.prisma');
 
-/**
- * The ORIGINAL create migration. Shipped and therefore never edited
- * (ENGINEERING_RULES §2, append-only) — it still declares the narrow 3-column
- * key, and that is correct as historical record.
- */
-const CREATE_MIGRATION_PATH = join(
-  REPO_ROOT,
-  'prisma',
-  'migrations',
-  '20261222000000_scout_ingest_entity',
-  'migration.sql',
-);
-
-/** The correction. This is the migration that defines the key in force. */
-const WIDEN_MIGRATION_DIR = join(
-  REPO_ROOT,
-  'prisma',
-  'migrations',
-  '20261224000100_scout_ingest_entity_type_uniqueness',
-);
+const MIGRATIONS = join(REPO_ROOT, 'prisma', 'migrations');
+// The shipped create migration is never edited (ENGINEERING_RULES §2), so it
+// still declares the narrow key; the widening below is the key in force.
+const CREATE_DIR = join(MIGRATIONS, '20261222000000_scout_ingest_entity');
+const WIDEN_DIR = join(MIGRATIONS, '20261224000100_scout_ingest_entity_type_uniqueness');
 
 const EXPECTED_KEY_COLUMNS = ['coach_id', 'intent_id', 'entity_type', 'source_id'];
 const SUPERSEDED_KEY_COLUMNS = ['coach_id', 'intent_id', 'source_id'];
+const WIDE_KEY = 'ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key';
+const NARROW_KEY = 'ScoutIngestEntity_coach_id_intent_id_source_id_key';
 
 function scoutModelBlock(schema: string): string {
   const match = schema.match(/model ScoutIngestEntity \{[\s\S]*?\n\}/);
@@ -71,25 +46,23 @@ function uniqueIndexColumns(ddl: string, indexName: string): string[] {
 describe('R-IDEMP-1 — idempotency key is (coach_id, intent_id, entity_type, source_id)', () => {
   const schema = readFileSync(SCHEMA_PATH, 'utf8');
   const model = scoutModelBlock(schema);
-  const widenUp = readFileSync(join(WIDEN_MIGRATION_DIR, 'migration.sql'), 'utf8');
-  const widenDown = readFileSync(join(WIDEN_MIGRATION_DIR, 'down.sql'), 'utf8');
+  const uniqueCols = (model.match(/@@unique\(\[([^\]]+)\]\)/) as RegExpMatchArray | null)?.[1]
+    .split(',')
+    .map((c) => c.trim());
+  const widenUp = readFileSync(join(WIDEN_DIR, 'migration.sql'), 'utf8');
+  const widenDown = readFileSync(join(WIDEN_DIR, 'down.sql'), 'utf8');
 
   describe('Prisma model', () => {
     it('declares the composite @@unique on exactly the four key columns in order', () => {
-      const unique = model.match(/@@unique\(\[([^\]]+)\]\)/);
-      expect(unique).not.toBeNull();
-      const cols = (unique as RegExpMatchArray)[1].split(',').map((c) => c.trim());
-      expect(cols).toEqual(EXPECTED_KEY_COLUMNS);
+      expect(uniqueCols).toEqual(EXPECTED_KEY_COLUMNS);
     });
 
     it('includes entity_type in the key — this is the P0 silent-loss fix', () => {
-      const unique = model.match(/@@unique\(\[([^\]]+)\]\)/) as RegExpMatchArray;
-      expect(unique[1]).toContain('entity_type');
+      expect(uniqueCols).toContain('entity_type');
     });
 
     it('does NOT include captured_at in the key (captured_at is a value)', () => {
-      const unique = model.match(/@@unique\(\[([^\]]+)\]\)/) as RegExpMatchArray;
-      expect(unique[1]).not.toContain('captured_at');
+      expect(uniqueCols).not.toContain('captured_at');
     });
 
     it('keeps captured_at nullable and outside the key', () => {
@@ -99,17 +72,11 @@ describe('R-IDEMP-1 — idempotency key is (coach_id, intent_id, entity_type, so
 
   describe('migration DDL (the widening — 20261224000100)', () => {
     it('creates the four-column UNIQUE INDEX in key order', () => {
-      const cols = uniqueIndexColumns(
-        widenUp,
-        'ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key',
-      );
-      expect(cols).toEqual(EXPECTED_KEY_COLUMNS);
+      expect(uniqueIndexColumns(widenUp, WIDE_KEY)).toEqual(EXPECTED_KEY_COLUMNS);
     });
 
     it('drops the superseded three-column index', () => {
-      expect(widenUp).toMatch(
-        /DROP INDEX IF EXISTS "ScoutIngestEntity_coach_id_intent_id_source_id_key"/,
-      );
+      expect(widenUp).toContain(`DROP INDEX IF EXISTS "${NARROW_KEY}"`);
     });
 
     it('creates the widened index BEFORE dropping the narrow one', () => {
@@ -142,17 +109,11 @@ describe('R-IDEMP-1 — idempotency key is (coach_id, intent_id, entity_type, so
 
   describe('down.sql (R82/R106 reversibility)', () => {
     it('restores the superseded three-column key', () => {
-      const cols = uniqueIndexColumns(
-        widenDown,
-        'ScoutIngestEntity_coach_id_intent_id_source_id_key',
-      );
-      expect(cols).toEqual(SUPERSEDED_KEY_COLUMNS);
+      expect(uniqueIndexColumns(widenDown, NARROW_KEY)).toEqual(SUPERSEDED_KEY_COLUMNS);
     });
 
     it('drops the widened index so the reverse is complete, not additive', () => {
-      expect(widenDown).toMatch(
-        /DROP INDEX IF EXISTS "ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key"/,
-      );
+      expect(widenDown).toContain(`DROP INDEX IF EXISTS "${WIDE_KEY}"`);
     });
 
     it('never deletes rows to satisfy the narrowed constraint', () => {
@@ -169,20 +130,14 @@ describe('R-IDEMP-1 — idempotency key is (coach_id, intent_id, entity_type, so
   });
 
   describe('the shipped create migration is untouched (ENGINEERING_RULES §2)', () => {
-    const createMigration = readFileSync(CREATE_MIGRATION_PATH, 'utf8');
+    const createMigration = readFileSync(join(CREATE_DIR, 'migration.sql'), 'utf8');
 
     it('still declares its original three-column key as historical record', () => {
-      const cols = uniqueIndexColumns(
-        createMigration,
-        'ScoutIngestEntity_coach_id_intent_id_source_id_key',
-      );
-      expect(cols).toEqual(SUPERSEDED_KEY_COLUMNS);
+      expect(uniqueIndexColumns(createMigration, NARROW_KEY)).toEqual(SUPERSEDED_KEY_COLUMNS);
     });
 
     it('does not contain the widened index — the correction is append-only', () => {
-      expect(createMigration).not.toContain(
-        'ScoutIngestEntity_coach_id_intent_id_entity_type_source_id_key',
-      );
+      expect(createMigration).not.toContain(WIDE_KEY);
     });
   });
 });
