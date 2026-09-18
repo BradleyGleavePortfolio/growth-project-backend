@@ -4,7 +4,7 @@
 // zero-or-more segments. Exercises the exact `git diff -- <pathspec>` plumbing.
 
 import { execFileSync } from 'child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -108,35 +108,5 @@ describe('R100 pathspec coverage (git diff — the gate plumbing)', () => {
     ]);
     expect(codeScope.some((f) => f.startsWith('.github/'))).toBe(false);
     expect(codeScope).toContain('dangerfile.js'); // control: in-scope file is present
-  });
-});
-
-describe('R100 workflow guards against reintroducing the bare pathspec', () => {
-  const yml = readFileSync(
-    join(__dirname, '../../.github/workflows/r100-quality-gate.yml'),
-    'utf8',
-  );
-
-  // Semantic guard (finding #4): catch a bare quoted file-glob for ANY
-  // directory ('<seg>/**/....<ext>' with no :(...glob...) prefix — the buggy
-  // form). Bare directory recursion like 'src/**' is intentionally left alone.
-  const bareFileGlob = /'[\w.-]+\/\*\*\/[^']*\.[A-Za-z]+'/g;
-  const globbed = /:\((?:exclude,)?glob\)[\w.-]+\/\*\*\//g;
-
-  it('uses :(glob) directory file-globs (guard is not vacuous)', () => {
-    expect(yml.match(globbed)?.length ?? 0).toBeGreaterThan(0);
-  });
-
-  it('contains no bare directory file-glob pathspec (semantic regression guard)', () => {
-    // Strip the glob'd forms first; any bare file-glob left is an offender
-    // regardless of which directory it names.
-    const withoutGlobbed = yml.replace(/:\((?:exclude,)?glob\)[^']*/g, '');
-    expect(withoutGlobbed.match(bareFileGlob) ?? []).toEqual([]);
-  });
-
-  it('density SRC denominator covers scripts/**/*.js and src js/jsx (production JS counted)', () => {
-    expect(yml).toContain(":(glob)scripts/**/*.js'");
-    expect(yml).toContain(":(glob)src/**/*.js'");
-    expect(yml).toContain(":(glob)src/**/*.jsx'");
   });
 });

@@ -1,11 +1,7 @@
 name: Infra Lint
 
-# Validates the infrastructure files that the R100 test-density gate cannot
-# unit-test (shell scripts, workflow YAML, dangerfile.js). This is the
-# validation mechanism cited by the [TEST-EXEMPT:] marker on infra-only PRs:
-# instead of unit tests, infra code is checked by shellcheck + actionlint +
-# a Danger dry-run. Without this job, infra PRs would carry zero automated
-# validation.
+# Validates infrastructure with shellcheck, actionlint and a Danger dry-run.
+# These checks complement behavioral tests; no volume exemption is required.
 #
 # Triggers only when infra files change, so feature PRs are unaffected.
 
