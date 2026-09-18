@@ -1,4 +1,4 @@
-import { Controller, Get, HttpStatus, Logger, Res } from '@nestjs/common';
+import { Controller, Get, Header, HttpStatus, Logger, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -51,6 +51,7 @@ export class HealthController {
   }
 
   @Get('readyz')
+  @Header('Cache-Control', 'no-store')
   async readiness(@Res({ passthrough: true }) res: Response) {
     try {
       // Minimal round-trip; `$queryRaw` opens a real connection and exercises

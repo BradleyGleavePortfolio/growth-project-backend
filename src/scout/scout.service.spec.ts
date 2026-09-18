@@ -372,11 +372,14 @@ describe('ScoutService', () => {
       });
     });
 
-    it('uses a success-flavoured push title/body for a successful import', async () => {
+    it('describes successful transport as staging rather than verified migration', async () => {
       await service.complete('coach-1', COMPLETE_OK);
       const [, title, body] = pushToUser.mock.calls[0];
-      expect(title).toMatch(/complete/i);
-      expect(body).toMatch(/finished importing/i);
+      expect(title).toBe('Import transfer staged');
+      expect(body).toBe(
+        'Records were staged in TGP. Migration is not verified. Check the importer status.',
+      );
+      expect(title).not.toMatch(/complete/i);
     });
 
     it('uses a degraded push title/body for a partial import', async () => {
@@ -386,8 +389,10 @@ describe('ScoutService', () => {
         error_summary: 'library skipped',
       });
       const [, title, body] = pushToUser.mock.calls[0];
-      expect(title).toMatch(/issues/i);
-      expect(body).toMatch(/some items/i);
+      expect(title).toBe('Import transfer needs attention');
+      expect(body).toContain('Some records may be staged.');
+      expect(body).toContain('Migration is not complete.');
+      expect(body).toContain('before retrying');
     });
 
     it('uses a degraded push for a failed import', async () => {
@@ -396,8 +401,10 @@ describe('ScoutService', () => {
         terminal_status: 'failed',
         error_summary: 'auth expired mid-crawl',
       });
-      const [, title] = pushToUser.mock.calls[0];
-      expect(title).toMatch(/issues/i);
+      const [, title, body] = pushToUser.mock.calls[0];
+      expect(title).toBe('Import transfer needs attention');
+      expect(body).toContain('Some records may be staged.');
+      expect(body).toContain('Migration is not complete.');
     });
   });
 

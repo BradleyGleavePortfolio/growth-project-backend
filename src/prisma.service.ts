@@ -22,8 +22,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // Fire-and-forget — don't block app startup on DB connection
     this.$connect()
       .then(() => this.logger.log('Database connected successfully'))
-      .catch((err) =>
-        this.logger.error('Database connection failed on startup:', err.message),
+      .catch(() =>
+        this.logger.error({
+          event: 'database_startup_connection_failed',
+          operation: 'database.connect',
+        }),
       );
   }
 

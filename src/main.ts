@@ -5,7 +5,6 @@ import 'reflect-metadata';
 import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
-import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ThrottlerExceptionFilter } from './filters/throttler-exception.filter';
@@ -18,6 +17,7 @@ import { MetricsService } from './observability/metrics.service';
 import { promHttpMiddleware } from './observability/prom-metrics';
 import { LANDING_PUBLIC_PREFIX_EXCLUDE } from './landing-pages/public-route-prefix';
 import { featureFlagNotFoundMiddleware } from './common/feature-flag/feature-flag-not-found.middleware';
+import { reportProcessError } from './observability/process-errors';
 
 async function bootstrap() {
   // Fail fast at boot if required env vars are missing. See
@@ -126,12 +126,10 @@ async function bootstrap() {
   // these, async errors that escape Nest's filter chain (e.g. setTimeout
   // callbacks) would be silently swallowed in production.
   process.on('unhandledRejection', (reason) => {
-    Sentry.captureException(reason);
-    new Logger('UnhandledRejection').error(reason);
+    reportProcessError('UnhandledRejection', reason);
   });
   process.on('uncaughtException', (err) => {
-    Sentry.captureException(err);
-    new Logger('UncaughtException').error(err);
+    reportProcessError('UncaughtException', err);
   });
 
   // API prefix — exclude /health so Fly.io liveness probes hit /health,

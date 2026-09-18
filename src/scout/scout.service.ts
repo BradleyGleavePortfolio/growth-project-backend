@@ -400,14 +400,14 @@ export class ScoutService implements OnModuleDestroy {
     return value !== null && (SCOUT_TERMINAL_STATUSES as readonly string[]).includes(value);
   }
 
-  /** Fire the mobile `import.complete` push. Best-effort — never throws. */
+  /** Legacy event name is retained; transport settlement is not native completion. */
   private async notifyComplete(coachId: string, dto: ScoutCompleteDto): Promise<void> {
     const title =
-      dto.terminal_status === 'success' ? 'Import complete' : 'Import finished with issues';
+      dto.terminal_status === 'success' ? 'Import transfer staged' : 'Import transfer needs attention';
     const body =
       dto.terminal_status === 'success'
-        ? 'Your data has finished importing into The Growth Project.'
-        : 'Your import finished, but some items could not be transferred.';
+        ? 'Records were staged in TGP. Migration is not verified. Check the importer status.'
+        : 'The transfer reported issues. Some records may be staged. Migration is not complete. Check the importer status before retrying.';
     try {
       await this.notifications.pushToUser(coachId, title, body, {
         kind: 'import.complete',

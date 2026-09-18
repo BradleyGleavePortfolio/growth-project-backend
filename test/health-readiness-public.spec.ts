@@ -72,21 +72,24 @@ describe('public readiness HTTP boundary', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain(SENTINEL);
   });
 
-  it('retains the successful readiness response and tagged database round trip', async () => {
-    const response = await fetch(new URL('/readyz', baseUrl));
-    const body: unknown = await response.json();
+  it.each(['/readyz', '/READYZ', '/ReadyZ/', '/readyz?probe=1'])(
+    'keeps successful readiness non-cacheable at %s',
+    async (path) => {
+      const response = await fetch(new URL(path, baseUrl));
+      const body: unknown = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(body).toEqual({
-      ok: true,
-      db: 'up',
-      timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-    });
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(query).toHaveBeenCalledWith(['SELECT 1']);
-    expect(logged).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(body).toEqual({
+        ok: true,
+        db: 'up',
+        timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      });
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(['SELECT 1']);
+      expect(logged).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['/health', '/healthz'])('keeps %s independent of database health', async (path) => {
     query.mockRejectedValue(new Error(SENTINEL));
