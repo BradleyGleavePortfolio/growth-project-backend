@@ -50,7 +50,12 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '20.20.1'
       - name: Diff banned tokens
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -71,11 +76,15 @@ jobs:
             echo "FAIL — pull_request event carried no base SHA; refusing to certify R75." >&2
             exit 1
           fi
+          if [ -z "${HEAD_SHA:-}" ]; then
+            echo "FAIL — pull_request event carried no head SHA; refusing to certify R75." >&2
+            exit 1
+          fi
           node --version
           # Single committed implementation, shared verbatim with the pre-commit
           # hook. Real Git range semantics (base...head, i.e. merge base) and
           # per-token net counting live in the checker, not in this YAML.
-          node scripts/check-r75.js --mode=range --base="$BASE_SHA" --head="${HEAD_SHA:-HEAD}"
+          node scripts/check-r75.js --mode=range --base="$BASE_SHA" --head="$HEAD_SHA"
 
   loc-budget:
     name: LOC budget (R100.A3)
