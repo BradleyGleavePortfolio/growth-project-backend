@@ -4,6 +4,8 @@
 // their per-class difference is the net change, including multiline matches.
 // Raw NUL-delimited Git records avoid filename quoting and hunk-parser bugs.
 const { spawnSync } = require('child_process');
+const { readFileSync } = require('fs');
+const { createHash } = require('crypto');
 const POLICY_PATH = '.github/r75-policy.json';
 const print = (line) => process.stdout.write(`${line}\n`);
 
@@ -11,17 +13,25 @@ function fail(message) {
   throw new Error(message);
 }
 
-function git(args) {
+function git(args, allowMissing = false) {
   const result = spawnSync('git', args, {
     encoding: 'utf8',
     timeout: 30000,
     maxBuffer: 32 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  if (result.error || result.status !== 0) {
+  if (result.error || (result.status !== 0 && !(allowMissing && result.status === 1))) {
     fail(`git failed: ${result.error?.message || result.signal || result.status}`);
   }
   return result.stdout;
+}
+
+function indexState() {
+  // Observe, never lock or update, the user's index. HEAD is separate because
+  // committing the same index changes the base without changing staged bytes.
+  const head = git(['rev-parse', '--verify', '--quiet', 'HEAD'], true).trim();
+  const index = git(['rev-parse', '--git-path', 'index']).replace(/\n$/, '');
+  return createHash('sha256').update(readFileSync(index)).update(head).digest('hex');
 }
 
 function argumentsOf(argv) {
@@ -151,7 +161,11 @@ function measure(scope, policy) {
 
 try {
   const scope = argumentsOf(process.argv.slice(2));
+  const beforeIndex = scope.diff[0] === '--cached' ? indexState() : null;
   const totals = measure(scope, readPolicy(scope.policy));
+  if (beforeIndex !== null && beforeIndex !== indexState()) {
+    fail('index or HEAD changed during the scan; retry with stable staged inputs');
+  }
   print(`R75 ${scope.diff.join(' ')}; policy=${scope.policy}`);
   print('Counts are whole-file after (+) and before (-); net is the per-class change.');
   for (const { token, before, after, files } of totals) {
