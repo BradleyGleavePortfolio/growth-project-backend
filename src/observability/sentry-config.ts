@@ -1,3 +1,4 @@
+import { ORM_ERROR_NAME, safeDiagnostic } from './orm-diagnostics';
 import * as Sentry from '@sentry/node';
 
 /**
@@ -68,7 +69,27 @@ export function buildSentryOptions(
         ...(release ? { release } : {}),
       },
     },
-    beforeSend(event) {
+    beforeSend(event, hint) {
+      const original = hint.originalException;
+      if (
+        safeDiagnostic(original) !== original ||
+        event.exception?.values?.some((item) => ORM_ERROR_NAME.test(item.type ?? ''))
+      ) {
+        // Allowlist the diagnostic envelope; never forward request bodies,
+        // breadcrumbs, frame locals, contexts or extras from an ORM failure.
+        return {
+          type: undefined,
+          event_id: event.event_id,
+          timestamp: event.timestamp,
+          environment: event.environment,
+          release: event.release,
+          level: event.level,
+          tags: { request_id: event.tags?.request_id },
+          exception: {
+            values: [{ type: 'DatabaseRequestError', value: 'Database request failed' }],
+          },
+        };
+      }
       return stripSensitiveHeaders(event);
     },
   };
