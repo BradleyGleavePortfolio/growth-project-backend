@@ -38,12 +38,12 @@ function argumentsOf(argv) {
     return { diff: ['--cached'], policy: `:${POLICY_PATH}` };
   }
   if (args.mode !== 'range' || !args.base?.trim()) fail('range mode requires a nonempty base');
+  if (Object.hasOwn(args, 'head') && !args.head.trim()) fail('range mode requires a nonempty head');
   const resolve = (ref) =>
     git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
   const base = resolve(args.base.trim());
   const head = resolve(args.head?.trim() || 'HEAD');
   const ancestor = git(['merge-base', base, head]).trim();
-  if (!ancestor) fail('no merge base');
   return { diff: [ancestor, head], policy: `${head}:${POLICY_PATH}` };
 }
 
@@ -64,7 +64,11 @@ function readPolicy(source) {
   const tokens = policy.tokens.map(({ name, pattern }) => {
     if (typeof name !== 'string' || !name || typeof pattern !== 'string' || !pattern)
       fail('invalid token name or pattern');
-    const regex = new RegExp(pattern, 'g');
+    // Policy gap slots allow lexical trivia, without deleting comment tokens
+    // from the source being scanned or turning adjacent keywords into one word.
+    const trivia =
+      '(?:\\s|/\\*[\\s\\S]*?\\*/|//[^\\r\\n\\u2028\\u2029]*(?:[\\r\\n\\u2028\\u2029]|$))*';
+    const regex = new RegExp(pattern.replaceAll('{{gap}}', trivia), 'g');
     if (regex.test('')) fail('pattern matches empty input');
     return { name, regex };
   });
@@ -93,8 +97,10 @@ function count(text, token, suppressed) {
   let total = 0;
   for (const match of text.matchAll(token.regex)) {
     if (!match[0].length) fail(`zero-width policy match: ${token.name}`);
-    const restOfLine = text.slice(match.index + match[0].length).split(/\r?\n/, 1)[0];
-    const reason = restOfLine.replace(/\*\/\s*$/, '').trim();
+    const reason = text
+      .slice(match.index + match[0].length)
+      .split(/[\r\n\u2028\u2029]|\*\//, 1)[0]
+      .trim();
     if (!suppressed.has(token.name) || !reason) total += 1;
   }
   return total;
@@ -115,13 +121,23 @@ function measure(scope, policy) {
   if (records.length % 2) fail('incomplete Git path records');
   const totals = policy.tokens.map((token) => ({ token, before: 0, after: 0, files: [] }));
   for (let index = 0; index < records.length; index += 2) {
-    const header = /^:\d{6} \d{6} ([a-f0-9]{40,64}) ([a-f0-9]{40,64}) [AMDT]$/.exec(records[index]);
+    const header = /^:(\d{6}) (\d{6}) ([a-f0-9]{40,64}) ([a-f0-9]{40,64}) [AMDT]$/.exec(
+      records[index],
+    );
     const path = records[index + 1];
     if (!header || !path) fail('unsupported Git change record, possibly an unresolved conflict');
+    const authored =
+      policy.scan.includeRoots.some((root) => path.startsWith(root)) ||
+      policy.scan.includeFiles.includes(path);
+    if (authored && !['000000', '100644', '100755'].includes(header[2])) {
+      fail(`unsupported source mode ${header[2]}: ${path}`);
+    }
     if (!inScope(path, policy.scan)) continue;
     const contents = header
-      .slice(1)
-      .map((sha) => (/^0+$/.test(sha) ? '' : git(['cat-file', 'blob', sha])));
+      .slice(3)
+      .map((sha, side) =>
+        !['100644', '100755'].includes(header[side + 1]) ? '' : git(['cat-file', 'blob', sha]),
+      );
     for (const total of totals) {
       const before = count(contents[0], total.token, policy.suppressed);
       const after = count(contents[1], total.token, policy.suppressed);

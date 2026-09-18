@@ -250,7 +250,7 @@
       "why": "50-failures #36. The old detectors matched neither '.catch(() => null)' nor '.catch(() => {})' — the forms Prettier produces — so the canonical literals were undetectable in formatted source. Patterns normalize formatting; the return value still separates classes."
     },
     {
-      "name": "declaration files, vendored trees and generated bundles stay excluded",
+      "name": "authored declarations are scanned while outside-root output stays excluded",
       "mode": "range",
       "base": {},
       "head": {
@@ -260,9 +260,12 @@
         "dist/bundle.js": ["const z = q as any;"],
         "docs/notes.md": ["const z = q as any;"]
       },
-      "expectExit": 0,
+      "expectExit": 1,
+      "expectNet": { "as any": 1 },
+      "expectEvidenceFiles": ["src/types/global.d.ts"],
       "legacyExit": 0,
-      "why": "Exclusions must stay narrow: declarations, vendored and generated output, non-executable extensions."
+      "control": "verdict",
+      "why": "A declaration suffix proves no generated provenance. The same retained input must expose the authored declaration while top-level dependencies, build output and documentation remain outside the positive roots."
     },
     {
       "name": "clean pass on a real change with no banned tokens",
