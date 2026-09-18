@@ -248,7 +248,338 @@
       "control": "undercount",
       "controlToken": "empty-catch-null",
       "why": "50-failures #36. The old detectors matched neither '.catch(() => null)' nor '.catch(() => {})' — the forms Prettier produces — so the canonical literals were undetectable in formatted source. Patterns normalize formatting; the return value still separates classes."
+    },
+    {
+      "name": "declaration files, vendored trees and generated bundles stay excluded",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/ok.ts": ["export const ok = 1;"],
+        "src/types/global.d.ts": ["declare const loose: unknown; // as any"],
+        "node_modules/pkg/index.ts": ["const z = q as any;"],
+        "dist/bundle.js": ["const z = q as any;"],
+        "docs/notes.md": ["const z = q as any;"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "Exclusions must stay narrow: declarations, vendored and generated output, non-executable extensions."
+    },
+    {
+      "name": "clean pass on a real change with no banned tokens",
+      "mode": "range",
+      "base": {
+        "src/a.ts": ["export const a = 1;"]
+      },
+      "head": {
+        "src/a.ts": ["export const a = 1;", "export const b = 2;"],
+        "test/ci/a.spec.ts": ["it('works', () => expect(1).toBe(1));"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "The gate must not fire on compliant work."
+    },
+    {
+      "name": "rename within scope is net zero",
+      "mode": "range",
+      "base": {
+        "src/old.ts": ["const a = x as any;"]
+      },
+      "renameTo": {
+        "src/old.ts": "src/new.ts"
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "as any": 0
+      },
+      "legacyExit": 0,
+      "why": "A moved pre-existing violation is not a new introduction. Under --no-renames the same occurrence is counted once added and once removed, so it nets to zero."
+    },
+    {
+      "name": "rename from an unscanned path INTO scope surfaces the newly-scoped violation",
+      "mode": "range",
+      "base": {
+        "docs/snippet.md": ["const a = x as any;"]
+      },
+      "renameTo": {
+        "docs/snippet.md": "src/snippet.ts"
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "expectEvidenceFiles": ["src/snippet.ts"],
+      "why": "Content that was never scanned becomes scanned. --find-renames reported a pure rename with no hunks at all, so the gate saw nothing and passed — a false green."
+    },
+    {
+      "name": "rename out of scope is net negative, not a violation",
+      "mode": "range",
+      "base": {
+        "src/snippet.ts": ["const a = x as any;"]
+      },
+      "renameTo": {
+        "src/snippet.ts": "docs/snippet.md"
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "as any": -1
+      },
+      "why": "Removing scanned content must never be penalised."
+    },
+    {
+      "name": "deleting a path that carried banned tokens is net negative",
+      "mode": "range",
+      "base": {
+        "src/gone.ts": ["const d = y as never;"],
+        "src/keep.ts": ["export const k = 1;"]
+      },
+      "deletePaths": ["src/gone.ts"],
+      "expectExit": 0,
+      "expectNet": {
+        "as never": -1
+      },
+      "legacyExit": 0,
+      "why": "Removing violations must never be penalised."
+    },
+    {
+      "name": "a path with a space and a tab in its name is scanned, not skipped",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/od d\tname.ts": ["const a = x as any;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "expectEvidenceFiles": ["src/od d\tname.ts"],
+      "why": "Git quotes such names in +++ headers, so the old header parser produced a mangled path that failed the scope test and silently skipped the file."
+    },
+    {
+      "name": "a path with a newline in its name is scanned, not skipped",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/od\nd.ts": ["const a = x as any;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "why": "Same defect class, worst case: a newline in a quoted header path desynchronises a line-oriented parser entirely. -z name output is immune."
+    },
+    {
+      "name": "a content line that itself begins with +++ is counted",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": ["+++ b/src/fake.ts as any"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "The old parser skipped any diff line starting with +++, so source lines beginning with +++ were dropped and could be used to hide following content from the header state machine."
+    },
+    {
+      "name": "multiline catches and casts are measured across complete blob contents",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/multiline.ts": [
+          "one.catch(",
+          "  () =>",
+          "    null",
+          ");",
+          "two.catch(",
+          "  async (error) =>",
+          "    undefined",
+          ");",
+          "three.catch(",
+          "  () => {",
+          "  }",
+          ");",
+          "const cast = value as",
+          "  any;"
+        ]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "empty-catch-null": 1,
+        "empty-catch-undefined": 1,
+        "empty-catch-block": 1,
+        "as any": 1
+      },
+      "why": "Per-line scans cannot detect tokens spanning newline boundaries; no formatting-only bypass is allowed."
+    },
+    {
+      "name": "deleting the body creates an empty catch even without adding a token line",
+      "mode": "range",
+      "base": {
+        "src/multiline.ts": ["work.catch(", "  () => {", "    report();", "  }", ");"]
+      },
+      "head": {
+        "src/multiline.ts": ["work.catch(", "  () => {", "  }", ");"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "empty-catch-block": 1
+      },
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "A removed implementation line changes the complete construct into a prohibited empty catch. Counting changed lines alone cannot measure this transition."
+    },
+    {
+      "name": "a reason on a later line does not authorize an undocumented directive",
+      "mode": "staged",
+      "staged": {
+        "test/suppression.spec.ts": ["// @ts-expect-error", "// explained on the wrong line"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "@ts-expect-error": 1
+      },
+      "why": "Whole-file matching must retain the canonical same-line reason boundary."
+    },
+    {
+      "name": "staged mode measures the index, not unstaged working bytes",
+      "mode": "staged",
+      "staged": {
+        "src/a.ts": ["const clean = 1;"]
+      },
+      "unstaged": {
+        "src/a.ts": ["const clean = 1;", "const dirty = x as any;"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "The hook gates what is about to be committed; a violation still only in the working tree is not yet a commit."
+    },
+    {
+      "name": "staged mode fails once the violation is staged",
+      "mode": "staged",
+      "staged": {
+        "src/a.ts": ["const clean = 1;", "const dirty = x as any;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "legacyExit": 1,
+      "why": "Hook and CI must agree on the same content."
+    },
+    {
+      "name": "staged mode applies the INDEX policy, not a weakened working-tree policy",
+      "mode": "staged",
+      "staged": {
+        "src/a.ts": ["const dirty = x as any;"]
+      },
+      "weakenWorkingTreePolicy": true,
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "why": "Otherwise a commit could disarm the gate by editing the policy without staging it. The rules that gate a commit are the rules committed with it."
     }
   ],
-  "operationalCases": []
+  "operationalCases": [
+    {
+      "name": "unresolvable base fails loudly instead of scanning an empty diff",
+      "args": ["--mode=range", "--base=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"],
+      "expectExit": 2
+    },
+    {
+      "name": "missing base is not an empty diff",
+      "args": ["--mode=range"],
+      "expectExit": 2
+    },
+    {
+      "name": "empty base string is not an empty diff",
+      "args": ["--mode=range", "--base="],
+      "expectExit": 2
+    },
+    {
+      "name": "unsupported mode fails",
+      "args": ["--mode=bogus"],
+      "expectExit": 2
+    },
+    {
+      "name": "absent mode fails",
+      "args": [],
+      "expectExit": 2
+    },
+    {
+      "name": "valueless mode fails",
+      "args": ["--mode"],
+      "expectExit": 2
+    },
+    {
+      "name": "unknown option is rejected, not ignored",
+      "args": ["--mode=staged", "--wat"],
+      "expectExit": 2
+    },
+    {
+      "name": "unknown option with a value is rejected",
+      "args": ["--mode=staged", "--strict=true"],
+      "expectExit": 2
+    },
+    {
+      "name": "a repeated option is rejected rather than last-wins",
+      "args": ["--mode=staged", "--mode=range"],
+      "expectExit": 2
+    },
+    {
+      "name": "non-option argument is rejected",
+      "args": ["--mode=staged", "extra"],
+      "expectExit": 2
+    },
+    {
+      "name": "malformed policy JSON fails",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{nope"
+    },
+    {
+      "name": "policy with no scan section fails",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+    },
+    {
+      "name": "policy with no positive selector cannot return green",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+    },
+    {
+      "name": "policy with an empty excludeSegments selector cannot silently exclude everything",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[\"\"]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+    },
+    {
+      "name": "policy with no tokens cannot return green",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]}}"
+    },
+    {
+      "name": "policy with an empty-matching pattern is rejected",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"a*\"}]}"
+    },
+    {
+      "name": "policy with an invalid regex is rejected",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"([\"}]}"
+    },
+    {
+      "name": "policy naming a suppression for an unknown token is rejected",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"suppressions\":[{\"token\":\"@ts-nope\"}],\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+    }
+  ]
 }
