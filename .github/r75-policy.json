@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "rule": "R75 / R100.A2 — banned-cast substitution gate",
+  "doc": "Declarative policy for scripts/check-r75.js. Every banned literal lives here as DATA, never assembled in executable source, so the checker's own source cannot evade its own scan (AGENT_RULES R109 exception-class discipline). This file is .json and therefore outside scan.includeExtensions, so the policy is not self-matched.",
+  "scan": {
+    "includeExtensions": [".ts", ".tsx", ".js", ".jsx", ".cjs", ".mjs", ".sh"],
+    "includeRoots": ["src/", "test/", "__tests__/", "scripts/"],
+    "includeFiles": ["dangerfile.js"],
+    "excludeSuffixes": [".d.ts", ".min.js"],
+    "excludeSegments": [
+      "node_modules/",
+      "dist/",
+      "build/",
+      "coverage/",
+      "vendor/",
+      ".yarn/",
+      "generated/"
+    ],
+    "note": "Application AND test sources are in scope, top-level and nested, including co-located *.spec.* / *.test.* files: R131 records that reading R75 as src-only was a misreading. There is no spec/test exclusion. Declaration files, minified bundles, vendored and generated trees are the only narrow exclusions. Fixture DATA is out of scope solely because .json is not an executable extension; executable tests are always scanned."
+  },
+  "literalTokens": [
+    { "name": "@ts-ignore", "literal": "@ts-ignore" },
+    { "name": "@ts-expect-error", "literal": "@ts-expect-error" },
+    { "name": "Coming soon", "literal": "Coming soon" },
+    { "name": "lorem ipsum", "literal": "lorem ipsum" },
+    { "name": "foo@bar", "literal": "foo@bar" },
+    { "name": "John Doe", "literal": "John Doe" }
+  ],
+  "patternTokens": [
+    {
+      "name": "as any",
+      "pattern": "\\bas\\s+any\\b",
+      "why": "Word-bounded so 'has anything' cannot false-positive and multi-space casts cannot evade; matches the pre-existing lefthook regex semantics."
+    },
+    { "name": "as unknown as", "pattern": "\\bas\\s+unknown\\s+as\\b" },
+    { "name": "as never", "pattern": "\\bas\\s+never\\b" },
+    {
+      "name": "empty-catch",
+      "pattern": "\\.catch\\(\\s*(?:async\\s+)?(?:\\(\\s*\\)|\\(\\s*[A-Za-z_$][A-Za-z0-9_$]*(?:\\s*:[^)]*)?\\s*\\)|[A-Za-z_$][A-Za-z0-9_$]*)\\s*=>\\s*(?:undefined|null|\\{\\s*\\})\\s*\\)",
+      "why": "One detector for every spelling of the swallowed-error catch (50-failures #36): zero-arg and parametrized, with or without spaces, typed or async. The previous split of three no-space literals plus a parametrized regex matched NEITHER '.catch(() => null)' NOR '.catch(() => {})' — the exact forms Prettier produces — so the canonical R75 literals were undetectable in formatted source."
+    }
+  ],
+  "suppressions": [
+    {
+      "token": "@ts-expect-error",
+      "reasonMinChars": 3,
+      "why": "R75 permits '@ts-expect-error <reason>' with a single-line non-empty reason. No issue-number requirement exists in canon and none is invented here. The exception discounts ONLY that directive occurrence; every other banned token on the same line is still counted."
+    }
+  ]
+}

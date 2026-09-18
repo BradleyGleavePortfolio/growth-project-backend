@@ -2,14 +2,14 @@ pre-commit:
   parallel: true
   commands:
     banned-cast-tokens:
-      run: |
-        # R75: fail if any net additions introduce banned cast tokens.
-        # Tokens: @ts-ignore, as any, as unknown as, as never,
-        # .catch(()=>undefined), .catch(()=>null), .catch(()=>{}), "Coming soon"
-        if git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' | grep -E '^\+[^+]' | grep -E '(@ts-ignore|\bas\s+any\b|\bas\s+unknown\s+as\b|\bas\s+never\b|\.catch\(\s*\(\s*\)\s*=>\s*(undefined|null|\{\s*\})\)|Coming soon)' ; then
-          echo "❌ R75 violation: banned cast tokens in staged diff. Build it right, not bare minimum."
-          exit 1
-        fi
+      # R75 / R100.A2. Runs the SAME committed checker the CI banned-casts job
+      # runs (scripts/check-r75.js + .github/r75-policy.json), in staged mode so
+      # it measures the index that is about to be committed, not unstaged working
+      # bytes. The previous inline grep was a second, divergent implementation:
+      # it used a different token set, different scan scope, and counted lines
+      # rather than occurrences, so the hook and CI disagreed on the same commit.
+      # Exit 1 = R75 violation; exit 2 = operational failure (never a silent pass).
+      run: node scripts/check-r75.js --mode=staged
     tsc:
       run: npx tsc --noEmit
     eslint:

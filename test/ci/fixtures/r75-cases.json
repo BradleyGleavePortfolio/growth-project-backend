@@ -1,0 +1,344 @@
+{
+  "note": "Hostile vectors for the R75 / R100.A2 gate. Every banned literal lives HERE, as JSON data, because .json is not an executable extension in .github/r75-policy.json scan.includeExtensions — so the regression suite can exercise real banned tokens without the suite itself becoming an R75 violation. This is a fixture-DATA exclusion only: the executable spec that reads this file (test/ci/r75-gate.spec.ts) IS scanned, as is every other test source.",
+  "legacyAlgorithm": {
+    "note": "The deleted pre-repair CI shell implementation, reproduced so each regression case can prove it is sensitive to the exact defect being repaired (negative control). literalTokens are counted with grep -cF semantics (matching LINES, not occurrences); counts are summed across ALL tokens into one aggregate net; any line matching exemptLinePattern is discarded whole; excludeSuffixes drop test and spec sources entirely.",
+    "literalTokens": [
+      "@ts-ignore",
+      "@ts-expect-error",
+      "as any",
+      "as unknown as",
+      "as never",
+      ".catch(()=>undefined)",
+      ".catch(()=>null)",
+      ".catch(()=>{})",
+      "Coming soon",
+      "lorem ipsum",
+      "foo@bar",
+      "John Doe"
+    ],
+    "emptyCatchLiterals": [".catch(()=>undefined)", ".catch(()=>null)", ".catch(()=>{})"],
+    "emptyCatchPattern": "\\.catch\\(\\s*[^)]*\\s*=>\\s*(undefined|null|\\{\\s*\\})\\s*\\)",
+    "exemptLinePattern": "@ts-expect-error.*#[0-9]{4,}",
+    "excludeSuffixes": [".spec.ts", ".spec.js", ".test.ts", ".test.js", ".d.ts"],
+    "includeRoots": ["src/", "scripts/", "test/"]
+  },
+  "cases": [
+    {
+      "name": "same-token net-zero: an existing banned cast is only relocated",
+      "mode": "range",
+      "base": {
+        "src/a.ts": ["const a = x as any;", "const b = 2;"]
+      },
+      "head": {
+        "src/a.ts": ["const b = 2;", "const a = x as any;"]
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "as any": 0
+      },
+      "legacyExit": 0,
+      "why": "R75 bans net ADDITIONS. A pure move of the same token is net zero and must pass, or the gate blocks harmless refactors."
+    },
+    {
+      "name": "cross-token substitution: delete one banned token, introduce a different one",
+      "mode": "range",
+      "base": {
+        "src/a.ts": ["const a = x as any;"]
+      },
+      "head": {
+        "src/a.ts": ["const a = x as never;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": -1,
+        "as never": 1
+      },
+      "expectOffenders": ["as never"],
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "The exact loophole R75 exists to close (as never +119%, as unknown as +68%). Aggregate cross-token netting let a deletion pay for an introduction."
+    },
+    {
+      "name": "multiple occurrences on a single line",
+      "mode": "range",
+      "base": {
+        "src/a.ts": ["const b = 0;"]
+      },
+      "head": {
+        "src/a.ts": ["const b = (y as any) + (z as any) + (w as any);"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 3
+      },
+      "legacyExit": 1,
+      "control": "undercount",
+      "controlToken": "as any",
+      "why": "grep -c counts matching LINES. Three introduced casts were reported as one, so two of them were free."
+    },
+    {
+      "name": "changed test and co-located spec sources are scanned",
+      "mode": "range",
+      "base": {
+        "src/keep.ts": ["export const keep = 1;"]
+      },
+      "head": {
+        "src/keep.ts": ["export const keep = 1;"],
+        "test/ci/thing.spec.ts": ["const t = v as unknown as string;"],
+        "src/top.spec.ts": ["const s = v as unknown as string;"],
+        "src/nested/deep.test.ts": ["const d = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 3
+      },
+      "expectEvidenceFiles": [
+        "test/ci/thing.spec.ts",
+        "src/top.spec.ts",
+        "src/nested/deep.test.ts"
+      ],
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "R131 records R75 being misread as src-only. The old spec/test excludes left every changed test file unscanned, and R75 bans these tokens in test/ as well as src/."
+    },
+    {
+      "name": "top-level source file is scanned",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/main.ts": ["const m = q as any;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "expectEvidenceFiles": ["src/main.ts"],
+      "legacyExit": 1,
+      "why": "Top-level files must not fall through the scan the way a bare src/**/*.ts pathspec drops them."
+    },
+    {
+      "name": "documented suppression sharing a line with another banned token",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": [
+          "// @ts-expect-error upstream typings are wrong (see ticket #4821) -- const q = r as any;"
+        ]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1,
+        "@ts-expect-error": 0
+      },
+      "expectOffenders": ["as any"],
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "The suppression exception must affect only that directive. Discarding the whole line hid every other violation on it."
+    },
+    {
+      "name": "suppression with a non-empty reason and nothing else is permitted",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": ["// @ts-expect-error legacy SDK returns a loose shape here"]
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "@ts-expect-error": 0
+      },
+      "legacyExit": 1,
+      "control": "verdict",
+      "why": "R75 permits @ts-expect-error <reason> with a non-empty same-line reason. No issue-number requirement exists in canon; the old EXEMPT_RE invented one and failed every compliant suppression."
+    },
+    {
+      "name": "suppression with no reason is a violation",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": ["// @ts-expect-error", "const q = 1;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "@ts-expect-error": 1
+      },
+      "expectOffenders": ["@ts-expect-error"],
+      "legacyExit": 1,
+      "why": "A bare suppression is the @ts-ignore loophole under a different name."
+    },
+    {
+      "name": "suppression whose reason is only punctuation is a violation",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": ["// @ts-expect-error --"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "@ts-expect-error": 1
+      },
+      "legacyExit": 1,
+      "why": "Bounded reason validation: non-empty means substance, not a dash. It is deliberately not an issue-tracker lookup or a language classifier."
+    },
+    {
+      "name": "every spelling of the swallowed-error catch is detected",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/a.ts": [
+          "p.catch(()=>null);",
+          "p.catch(() => null);",
+          "p.catch(() => {});",
+          "p.catch(e => null);",
+          "p.catch((err) => undefined);",
+          "p.catch(async () => {});",
+          "p.catch((e: Error) => null);"
+        ]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "empty-catch": 7
+      },
+      "legacyExit": 1,
+      "control": "undercount",
+      "controlToken": "empty-catch",
+      "why": "50-failures #36. The old split of three no-space literals plus a parametrized regex matched NEITHER '.catch(() => null)' NOR '.catch(() => {})' — the forms Prettier actually produces — so the canonical R75 literals were undetectable in formatted source."
+    },
+    {
+      "name": "declaration files, vendored trees and generated bundles stay excluded",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/ok.ts": ["export const ok = 1;"],
+        "src/types/global.d.ts": ["declare const loose: unknown; // as any"],
+        "node_modules/pkg/index.ts": ["const z = q as any;"],
+        "dist/bundle.js": ["const z = q as any;"],
+        "docs/notes.md": ["const z = q as any;"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "Exclusions must stay narrow: declarations, vendored and generated output, and non-executable extensions only."
+    },
+    {
+      "name": "clean pass on a real change with no banned tokens",
+      "mode": "range",
+      "base": {
+        "src/a.ts": ["export const a = 1;"]
+      },
+      "head": {
+        "src/a.ts": ["export const a = 1;", "export const b = 2;"],
+        "test/ci/a.spec.ts": ["it('works', () => expect(1).toBe(1));"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "The gate must not fire on compliant work."
+    },
+    {
+      "name": "renamed path carrying an existing banned token is net zero",
+      "mode": "range",
+      "base": {
+        "src/old.ts": ["const a = x as any;"]
+      },
+      "renameTo": {
+        "src/old.ts": "src/new.ts"
+      },
+      "head": {},
+      "expectExit": 0,
+      "expectNet": {
+        "as any": 0
+      },
+      "legacyExit": 0,
+      "why": "Rename detection must not read a moved pre-existing violation as a new introduction."
+    },
+    {
+      "name": "deleting a path that carried banned tokens is net negative",
+      "mode": "range",
+      "base": {
+        "src/gone.ts": ["const d = y as never;"],
+        "src/keep.ts": ["export const k = 1;"]
+      },
+      "deletePaths": ["src/gone.ts"],
+      "head": {},
+      "expectExit": 0,
+      "expectNet": {
+        "as never": -1
+      },
+      "legacyExit": 0,
+      "why": "Removing violations must never be penalised."
+    },
+    {
+      "name": "staged mode measures the index, not unstaged working bytes",
+      "mode": "staged",
+      "staged": {
+        "src/a.ts": ["const clean = 1;"]
+      },
+      "unstaged": {
+        "src/a.ts": ["const clean = 1;", "const dirty = x as any;"]
+      },
+      "expectExit": 0,
+      "legacyExit": 0,
+      "why": "The hook gates what is about to be committed. A violation still in the working tree is not yet a commit."
+    },
+    {
+      "name": "staged mode fails once the violation is staged",
+      "mode": "staged",
+      "staged": {
+        "src/a.ts": ["const clean = 1;", "const dirty = x as any;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as any": 1
+      },
+      "legacyExit": 1,
+      "why": "Hook and CI must agree on the same content."
+    }
+  ],
+  "operationalCases": [
+    {
+      "name": "unresolvable base fails loudly instead of scanning an empty diff",
+      "args": ["--mode=range", "--base=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"],
+      "expectExit": 2
+    },
+    {
+      "name": "missing base is not an empty diff",
+      "args": ["--mode=range"],
+      "expectExit": 2
+    },
+    {
+      "name": "empty base string is not an empty diff",
+      "args": ["--mode=range", "--base="],
+      "expectExit": 2
+    },
+    {
+      "name": "unsupported mode fails",
+      "args": ["--mode=bogus"],
+      "expectExit": 2
+    },
+    {
+      "name": "absent mode fails",
+      "args": [],
+      "expectExit": 2
+    },
+    {
+      "name": "unrecognised argument fails",
+      "args": ["--mode=staged", "--wat"],
+      "expectExit": 2
+    },
+    {
+      "name": "unusable policy fails",
+      "args": ["--mode=staged", "--policy=__UNUSABLE_POLICY__"],
+      "expectExit": 2,
+      "writePolicy": "{\"scan\":{}}"
+    },
+    {
+      "name": "malformed policy JSON fails",
+      "args": ["--mode=staged", "--policy=__UNUSABLE_POLICY__"],
+      "expectExit": 2,
+      "writePolicy": "{nope"
+    },
+    {
+      "name": "missing policy file fails",
+      "args": ["--mode=staged", "--policy=/nonexistent/r75-policy.json"],
+      "expectExit": 2
+    }
+  ]
+}
