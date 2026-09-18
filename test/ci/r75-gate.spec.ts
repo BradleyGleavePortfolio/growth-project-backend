@@ -1,6 +1,6 @@
 // Executable regression tests for the R75 / R100.A2 banned-token gate.
 //
-// These run the COMMITTED checker (scripts/check-r75.js) as a real child process
+// These run the repository checker (scripts/check-r75.js) as a real child process
 // against real temporary Git repositories and a real index. Nothing here
 // re-implements the gate: a test reasoning about its own copy of the algorithm
 // would pass while the shipped gate stayed broken, which is how the pre-repair
@@ -130,13 +130,15 @@ function runChecker(repo: string, args: string[]): CheckerResult {
   const res = spawnSync(process.execPath, [CHECKER, ...args], {
     cwd: repo,
     encoding: 'utf8',
+    timeout: 10000,
+    maxBuffer: 1024 * 1024,
     env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' },
   });
   if (res.error) throw res.error;
   return { status: res.status ?? -1, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
 }
 
-// Parse the checker's per-token report line: "  <token>  +A -R net N".
+// Before/after totals may include unchanged matches; only their net is the delta.
 function reportedNet(stdout: string, token: string): number | undefined {
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
@@ -242,7 +244,7 @@ afterAll(() => {
 });
 
 describe('R75 gate — policy data', () => {
-  it('the checker and its policy are committed', () => {
+  it('the checker and its policy files exist', () => {
     expect(existsSync(CHECKER)).toBe(true);
     expect(existsSync(POLICY)).toBe(true);
   });
@@ -273,7 +275,7 @@ describe('R75 gate — policy data', () => {
   });
 });
 
-describe('R75 gate — committed checker against real Git repositories', () => {
+describe('R75 gate — repository checker against real Git repositories', () => {
   it.each(FIXTURES.cases.map((c) => [c.name, c] as [string, GateCase]))(
     'case: %s',
     (_name, testCase) => {

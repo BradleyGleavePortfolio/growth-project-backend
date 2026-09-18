@@ -372,13 +372,75 @@
       "mode": "range",
       "base": {},
       "head": {
-        "src/a.ts": ["const marker = '+++ b/src/fake.ts';", "const a = x as any;"]
+        "src/a.ts": ["+++ b/src/fake.ts as any"]
       },
       "expectExit": 1,
       "expectNet": {
         "as any": 1
       },
+      "legacyExit": 0,
+      "control": "verdict",
       "why": "The old parser skipped any diff line starting with +++, so source lines beginning with +++ were dropped and could be used to hide following content from the header state machine."
+    },
+    {
+      "name": "multiline catches and casts are measured across complete blob contents",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/multiline.ts": [
+          "one.catch(",
+          "  () =>",
+          "    null",
+          ");",
+          "two.catch(",
+          "  async (error) =>",
+          "    undefined",
+          ");",
+          "three.catch(",
+          "  () => {",
+          "  }",
+          ");",
+          "const cast = value as",
+          "  any;"
+        ]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "empty-catch-null": 1,
+        "empty-catch-undefined": 1,
+        "empty-catch-block": 1,
+        "as any": 1
+      },
+      "why": "Per-line scans cannot detect tokens spanning newline boundaries; no formatting-only bypass is allowed."
+    },
+    {
+      "name": "deleting the body creates an empty catch even without adding a token line",
+      "mode": "range",
+      "base": {
+        "src/multiline.ts": ["work.catch(", "  () => {", "    report();", "  }", ");"]
+      },
+      "head": {
+        "src/multiline.ts": ["work.catch(", "  () => {", "  }", ");"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "empty-catch-block": 1
+      },
+      "legacyExit": 0,
+      "control": "verdict",
+      "why": "A removed implementation line changes the complete construct into a prohibited empty catch. Counting changed lines alone cannot measure this transition."
+    },
+    {
+      "name": "a reason on a later line does not authorize an undocumented directive",
+      "mode": "staged",
+      "staged": {
+        "test/suppression.spec.ts": ["// @ts-expect-error", "// explained on the wrong line"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "@ts-expect-error": 1
+      },
+      "why": "Whole-file matching must retain the canonical same-line reason boundary."
     },
     {
       "name": "staged mode measures the index, not unstaged working bytes",
