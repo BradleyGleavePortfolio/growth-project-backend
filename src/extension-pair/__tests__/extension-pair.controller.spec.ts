@@ -27,7 +27,7 @@ describe('ExtensionPairController', () => {
   describe('init', () => {
     it('binds the code to the authenticated coach id, not a body field', async () => {
       const result = await controller.init(reqAs('coach-1'), { chosen_platform: 'truecoach' });
-      expect(service.init).toHaveBeenCalledWith('coach-1', 'truecoach');
+      expect(service.init).toHaveBeenCalledWith('coach-1', 'truecoach', undefined);
       expect(result).toEqual({ pairing_code: '142856', expires_at: 'ISO' });
     });
   });

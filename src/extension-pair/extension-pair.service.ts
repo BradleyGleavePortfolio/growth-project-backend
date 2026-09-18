@@ -1,9 +1,13 @@
 import * as crypto from 'crypto';
-import { BadRequestException, GoneException, Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import {
+  BadRequestException, ConflictException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../auth/auth.service';
 import type {
   PairInitResult,
+  PairSessionResult,
   PairRedeemErrorCode,
   PairRedeemResult,
   PairStatus,
@@ -46,6 +50,10 @@ function timingSafeStrEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+const ACTIVE_COACH = {
+  role: { in: ['coach', 'owner'] }, deleted_at: null,
+} satisfies Prisma.UserWhereInput;
+
 @Injectable()
 export class ExtensionPairService {
   private readonly logger = new Logger(ExtensionPairService.name);
@@ -56,44 +64,63 @@ export class ExtensionPairService {
   ) {}
 
   // POST /api/extension/pair/init — mobile-authenticated coach mints a code.
-  async init(coachId: string, chosenPlatform: string): Promise<PairInitResult> {
-    const ttlSeconds = resolveTtlSeconds();
-    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
-
+  async init(coachId: string, chosenPlatform: string, nonce?: string): Promise<PairInitResult> {
     for (let attempt = 0; attempt < CODE_MINT_MAX_ATTEMPTS; attempt++) {
-      const code = mintSixDigitCode();
       try {
-        await this.prisma.extensionPairCode.create({
-          data: {
-            code,
-            coach_id: coachId,
+        return await this.prisma.$transaction(async (tx) => {
+          await this.lockOwner(tx, coachId);
+          const existing = nonce ? await tx.importIntent.findUnique({
+            where: { coach_id_setup_nonce: { coach_id: coachId, setup_nonce: nonce } },
+            include: { challenge: true },
+          }) : null;
+          if (existing) {
+            if (existing.chosen_platform !== chosenPlatform) {
+              throw new ConflictException({
+                code: 'setup_nonce_conflict', message: 'Setup nonce already used for another platform.',
+              });
+            }
+            const challenge = existing.challenge;
+            if (existing.superseded_at || !challenge || challenge.used_at ||
+                challenge.expires_at.getTime() <= Date.now() ||
+                challenge.failed_attempts >= REDEEM_MAX_FAILED_ATTEMPTS) {
+              // The shared error envelope intentionally has no arbitrary fields.
+              // current {setup_nonce} recovers this exact ID, even after supersession.
+              throw new GoneException({
+                code: 'setup_challenge_unavailable',
+                message: 'Read setup with the saved nonce; a new pairing attempt needs a new nonce.',
+              });
+            }
+            return {
+              pairing_code: challenge.code, expires_at: challenge.expires_at.toISOString(),
+              import_intent_id: existing.id,
+            };
+          }
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + resolveTtlSeconds() * 1000);
+          const importIntentId = crypto.randomUUID();
+          const code = mintSixDigitCode();
+          await tx.importIntent.updateMany({
+            where: { coach_id: coachId, superseded_at: null }, data: { superseded_at: now },
+          });
+          await tx.importIntent.create({ data: {
+            id: importIntentId, coach_id: coachId, setup_nonce: nonce,
             chosen_platform: chosenPlatform,
-            expires_at: expiresAt,
-          },
-        });
-        // Single-active-code invariant (round-2 audit, accepted): a fresh mint
-        // supersedes every prior still-live code for this coach, so two valid
-        // codes can never coexist. Runs AFTER the successful create — a failed
-        // mint must not nuke a coach's existing valid code — and excludes the
-        // row just created (code is unique, so the exclusion is exact).
-        await this.prisma.extensionPairCode.updateMany({
-          where: {
-            coach_id: coachId,
-            code: { not: code },
-            used_at: null,
-            expires_at: { gt: new Date() },
-          },
-          data: { expires_at: new Date() },
-        });
-        return { pairing_code: code, expires_at: expiresAt.toISOString() };
+          } });
+          await tx.extensionPairCode.create({ data: {
+            code, import_intent_id: importIntentId, coach_id: coachId,
+            chosen_platform: chosenPlatform, expires_at: expiresAt,
+          } });
+          await tx.extensionPairCode.updateMany({
+            where: { coach_id: coachId, code: { not: code }, used_at: null, expires_at: { gt: now } },
+            data: { expires_at: now },
+          });
+          return {
+            pairing_code: code, expires_at: expiresAt.toISOString(), import_intent_id: importIntentId,
+          };
+        }, { maxWait: 5000, timeout: 5000 });
       } catch (err) {
-        // P2002 = unique-constraint violation on `code`. Extremely unlikely in
-        // a 10^6 space; retry with a fresh code (falling through to the
-        // exhaustion path below on the final attempt). Any other error
-        // propagates immediately.
-        if (isUniqueViolation(err)) {
-          continue;
-        }
+        // Retry only the human-code constraint, outside the aborted transaction.
+        if (isCodeCollision(err)) continue;
         throw err;
       }
     }
@@ -105,17 +132,55 @@ export class ExtensionPairService {
     });
   }
 
-  // GET /api/extension/pair/status — coach polls their OWN code only. An unknown
+  // POST /api/extension/pair/status — coach polls their OWN code only. An unknown
   // code (or another coach's) reads as `expired`, never confirming existence to
   // a caller who did not mint it.
   async status(coachId: string, code: string): Promise<PairStatusResult> {
     const row = await this.prisma.extensionPairCode.findUnique({
-      where: { code },
+      where: { code, coach_id: coachId, coach: ACTIVE_COACH },
     });
     if (!row || row.coach_id !== coachId) {
       return { status: 'expired' };
     }
-    return { status: deriveStatus(row.used_at, row.expires_at) };
+    return { status: deriveStatus(row.used_at, row.expires_at), ...intentEcho(row.import_intent_id) };
+  }
+
+  async session(coachId: string, importIntentId: string): Promise<PairSessionResult> {
+    return this.readSetup(coachId, { id: importIntentId });
+  }
+
+  async current(coachId: string, nonce?: string): Promise<PairSessionResult> {
+    return this.readSetup(coachId, nonce ? { setup_nonce: nonce } : { superseded_at: null });
+  }
+
+  private async readSetup(coachId: string, filter: Prisma.ImportIntentWhereInput): Promise<PairSessionResult> {
+    const row = await this.prisma.importIntent.findFirst({
+      where: { ...filter, coach_id: coachId, coach: ACTIVE_COACH },
+      include: { challenge: { select: { expires_at: true, failed_attempts: true } } },
+    });
+    if (!row) {
+      throw new NotFoundException('Pairing session not found. Create a new pairing code.');
+    }
+    return {
+      status: row.paired_at ? 'paired' :
+        !row.superseded_at && row.challenge &&
+        row.challenge.failed_attempts < REDEEM_MAX_FAILED_ATTEMPTS &&
+        row.challenge.expires_at.getTime() > Date.now() ? 'pending' : 'expired',
+      import_intent_id: row.id,
+      chosen_platform: row.chosen_platform,
+    };
+  }
+
+  private async lockOwner(tx: Prisma.TransactionClient, coachId: string): Promise<void> {
+    // Bound PostgreSQL work itself as well as the Prisma transaction lifetime.
+    await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
+    await tx.$executeRaw`SET LOCAL statement_timeout = '4s'`;
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User" WHERE "id" = ${coachId}
+        AND "role" IN ('coach', 'owner') AND "deleted_at" IS NULL FOR UPDATE`;
+    if (!rows.length) {
+      throw new ForbiddenException('Active coach access required. Sign in with a coach account.');
+    }
   }
 
   // POST /api/extension/pair/redeem — UNAUTHENTICATED. The extension exchanges
@@ -163,15 +228,33 @@ export class ExtensionPairService {
     // (while still unexpired, and while under the lockout ceiling) wins. A lost
     // race means another redeem already consumed the code — surface it as
     // already_used.
-    const claim = await this.prisma.extensionPairCode.updateMany({
-      where: {
-        id: row.id,
-        used_at: null,
-        expires_at: { gt: new Date() },
-        failed_attempts: { lt: REDEEM_MAX_FAILED_ATTEMPTS },
-      },
-      data: { used_at: new Date() },
-    });
+    const claim = await this.prisma.$transaction(async (tx) => {
+      // Auth has already checked eligibility. Recheck under the same owner lock
+      // used by init; demotion/deletion/supersession during mint cannot win.
+      try {
+        await this.lockOwner(tx, row.coach_id);
+      } catch (err) {
+        if (!(err instanceof ForbiddenException)) throw err;
+        throw new BadRequestException({ code: 'invalid', message: 'Invalid pairing code.' });
+      }
+      const now = new Date();
+      const claimed = await tx.extensionPairCode.updateMany({
+        where: {
+          id: row.id,
+          used_at: null,
+          expires_at: { gt: now },
+          failed_attempts: { lt: REDEEM_MAX_FAILED_ATTEMPTS },
+        },
+        data: { used_at: now },
+      });
+      if (claimed.count === 1 && row.import_intent_id) {
+        await tx.importIntent.update({
+          where: { id: row.import_intent_id, coach_id: row.coach_id },
+          data: { paired_at: now },
+        });
+      }
+      return claimed;
+    }, { maxWait: 5000, timeout: 5000 });
     if (claim.count !== 1) {
       throw new GoneException({ code: 'already_used', message: 'Pairing code already used.' });
     }
@@ -180,6 +263,7 @@ export class ExtensionPairService {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
       chosen_platform: row.chosen_platform,
+      ...intentEcho(row.import_intent_id),
     };
   }
 
@@ -237,9 +321,16 @@ function deriveStatus(usedAt: Date | null, expiresAt: Date): PairStatus {
 // Narrows via a real `in` guard rather than a type assertion (R75): once
 // `'code' in err` holds, TS exposes `err.code` as `unknown`, which compares
 // safely against the literal.
-function isUniqueViolation(err: unknown): boolean {
+function isCodeCollision(err: unknown): boolean {
   if (typeof err !== 'object' || err === null || !('code' in err)) {
     return false;
   }
-  return err.code === 'P2002';
+  if (err.code !== 'P2002' || !('meta' in err) || !err.meta || typeof err.meta !== 'object' ||
+      !('target' in err.meta)) return false;
+  const target = err.meta.target;
+  return Array.isArray(target) && target.length === 1 && target[0] === 'code';
+}
+
+function intentEcho(id: string | null): { import_intent_id?: string } {
+  return id ? { import_intent_id: id } : {};
 }

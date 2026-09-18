@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Header, HttpCode, HttpStatus, Post, Request, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
@@ -17,6 +17,9 @@ import {
   PairRedeemResult,
   PairStatusDto,
   PairStatusResult,
+  PairSessionDto,
+  PairSessionResult,
+  PairCurrentDto,
 } from './extension-pair.dto';
 import {
   envelopeWithCode,
@@ -51,10 +54,19 @@ export class ExtensionPairController {
     summary: 'Mint a pairing code (mobile app → extension bridge)',
     description:
       'Mobile-authenticated coach mints a 6-digit code bound to their account ' +
-      '+ chosen source platform. Returns { pairing_code, expires_at }. ' +
+      '+ chosen source platform. Optional setup_nonce gives account-scoped retry recovery ' +
+      'without extending challenge expiry. Returns pairing_code, expires_at and server import_intent_id. ' +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
   @ApiResponse({ status: 201, description: 'Pairing code minted.', type: PairInitResult })
+  @ApiResponse({
+    status: 409, description: 'Same nonce used for another platform; no mutation.',
+    schema: envelopeWithCode(['setup_nonce_conflict']),
+  })
+  @ApiResponse({
+    status: 410, description: 'Challenge unavailable. Read current with saved setup_nonce to recover the owned intent.',
+    schema: envelopeWithCode(['setup_challenge_unavailable']),
+  })
   @ApiResponse({
     status: 400,
     description:
@@ -90,10 +102,11 @@ export class ExtensionPairController {
     schema: rateLimitSchema(),
   })
   @Post('init')
+  @Header('Cache-Control', 'no-store')
   @Roles('coach', 'owner')
   @UseGuards(CoachGuard)
   async init(@Request() req: AuthedRequest, @Body() body: PairInitDto): Promise<PairInitResult> {
-    return this.pair.init(req.user.id, body.chosen_platform);
+    return this.pair.init(req.user.id, body.chosen_platform, body.setup_nonce);
   }
 
   @ApiBearerAuth('bearer')
@@ -102,7 +115,8 @@ export class ExtensionPairController {
     description:
       'Mobile-authenticated coach polls their OWN code. The code travels in the ' +
       'POST body (never a query string, which would leak into logs/history/APM). ' +
-      'Returns { status: pending | paired | expired }. A code the caller did not ' +
+      'Returns setup status and stored import_intent_id when bound (absent on legacy rows). ' +
+      'A code the caller did not ' +
       "mint reads as `expired` (never confirms another coach's code). " +
       'Returns 404 when FEATURE_EXTENSION_PAIRING is off.',
   })
@@ -149,11 +163,73 @@ export class ExtensionPairController {
     return this.pair.status(req.user.id, body.code);
   }
 
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Retrieve owned durable pairing setup by server intent',
+    description:
+      'Body-only lookup; durable setup survives challenge expiry and retirement. ' +
+      'Setup only, never accepted Start or import completion. ' +
+      'Global authenticated user throttle applies. No codes or tokens returned.',
+  })
+  @ApiResponse({ status: 200, description: 'Owned pairing setup.', type: PairSessionResult })
+  @ApiResponse({
+    status: 400, description: 'Invalid UUID or extra body fields.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 401, description: 'Bearer authentication required.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 403, description: 'Coach or owner role required.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 404, description: 'Unknown, foreign, inactive owner, legacy unbound, or feature disabled.',
+    schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 429, description: 'Global authenticated per-user limit exceeded.',
+    schema: rateLimitSchema(),
+  })
+  @Post('session')
+  @Roles('coach', 'owner')
+  @UseGuards(CoachGuard)
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async session(
+    @Request() req: AuthedRequest, @Body() body: PairSessionDto,
+  ): Promise<PairSessionResult> {
+    return this.pair.session(req.user.id, body.import_intent_id);
+  }
+
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Recover owned setup without knowing its server ID',
+    description: 'Empty body reads current setup; saved setup_nonce reads that exact owned attempt. ' +
+      'Never creates a setup, issues tokens, or authorizes Start. Setup only; no-store.',
+  })
+  @ApiResponse({ status: 200, description: 'Owned setup.', type: PairSessionResult })
+  @ApiResponse({ status: 400, description: 'Invalid nonce or extra body fields.', schema: errorEnvelopeSchema() })
+  @ApiResponse({ status: 401, description: 'Bearer authentication required.', schema: errorEnvelopeSchema() })
+  @ApiResponse({ status: 403, description: 'Coach/owner role required.', schema: errorEnvelopeSchema() })
+  @ApiResponse({ status: 404, description: 'No owned setup or feature disabled.', schema: errorEnvelopeSchema() })
+  @ApiResponse({ status: 429, description: 'Authenticated user throttle.', schema: rateLimitSchema() })
+  @Post('current')
+  @Roles('coach', 'owner')
+  @UseGuards(CoachGuard)
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async current(@Request() req: AuthedRequest, @Body() body: PairCurrentDto): Promise<PairSessionResult> {
+    return this.pair.current(req.user.id, body.setup_nonce);
+  }
+
   @ApiOperation({
     summary: 'Redeem a pairing code (extension bootstrap)',
     description:
       'UNAUTHENTICATED. The extension exchanges a 6-digit code for a ' +
-      'coach-bound Supabase token pair + chosen_platform. Single-use: a ' +
+      'coach-bound Supabase token pair + chosen_platform, with stored import_intent_id ' +
+      'for new pairings (legacy rows omit it). Single-use: a ' +
       'second redeem of the same code returns 410 already_used. Expired → 410 ' +
       'expired; unknown/malformed → 400 invalid. After too many failed attempts ' +
       'a code is hard-locked → 410 locked. Rate-limited per IP. ' +
@@ -190,12 +266,13 @@ export class ExtensionPairController {
   @ApiResponse({
     status: 500,
     description:
-      'Session mint failed after a successful code claim (upstream auth error). ' +
+      'Session mint failed before code claim (upstream auth error); retry the unexpired code. ' +
       'Standard HttpExceptionFilter envelope; no domain `code` is guaranteed.',
     schema: errorEnvelopeSchema(),
   })
   @Public()
   @Post('redeem')
+  @Header('Cache-Control', 'no-store')
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: PAIR_REDEEM_PER_MIN } })
   @HttpCode(HttpStatus.OK)
   async redeem(@Body() body: PairRedeemDto): Promise<PairRedeemResult> {

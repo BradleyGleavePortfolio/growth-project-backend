@@ -7,7 +7,7 @@
 // conditional claim — but the loser still gets a 410 and never sees a token.)
 import { BadRequestException, GoneException, HttpException } from '@nestjs/common';
 import { ExtensionPairService } from '../extension-pair.service';
-import { asAuthDouble, asPrismaDouble } from './test-doubles.test';
+import { asAuthDouble, asPrismaDouble, withSetupTransaction } from './test-doubles.test';
 
 interface Row {
   id: string;
@@ -35,7 +35,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
 }
 
 function makePrisma() {
-  return {
+  return withSetupTransaction({
     extensionPairCode: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -44,7 +44,7 @@ function makePrisma() {
       // so the underlying failure code (e.g. `expired`) is what surfaces.
       update: jest.fn().mockResolvedValue({ failed_attempts: 1 }),
     },
-  };
+  });
 }
 
 function makeAuth() {
