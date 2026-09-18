@@ -36,10 +36,10 @@ const environment = {
   GIT_CONFIG_GLOBAL: '/dev/null',
 };
 
-function processResult(repo: string, binary: string, args: string[]) {
+function processResult(repo: string, binary: string, args: string[], env = environment) {
   const result = spawnSync(binary, args, {
     cwd: repo,
-    env: environment,
+    env,
     encoding: 'utf8',
     timeout: 10000,
     maxBuffer: 1024 * 1024,
@@ -74,9 +74,9 @@ function repository(): string {
   return repo;
 }
 
-function run(repo: string, mode: Mode, extra: string[] = []) {
+function run(repo: string, mode: Mode, extra: string[] = [], env = environment) {
   const args = mode === 'range' ? ['--mode=range', '--base=HEAD~1'] : ['--mode=staged'];
-  return processResult(repo, process.execPath, [checker, ...args, ...extra]);
+  return processResult(repo, process.execPath, [checker, ...args, ...extra], env);
 }
 
 function stage(repo: string, mode: Mode): void {
@@ -169,5 +169,60 @@ describe('R75 explicit committed-head contract', () => {
     const names = JSON.parse(policy).tokens.map((token: { name: string }) => token.name);
     expect(names.sort()).toEqual(vectors.tokens.map((token) => token.name).sort());
     expect(new Set(names).size).toBe(12);
+  });
+});
+
+describe('R75 coherent index observation', () => {
+  it.each(['index', 'head'])('rejects synchronized %s drift after policy output', (mutation) => {
+    const repo = repository();
+    const realGit = processResult(repo, 'which', ['git']).stdout.trim();
+    expect(realGit.startsWith('/')).toBe(true);
+    if (mutation === 'index') {
+      const weaker = JSON.parse(policy);
+      weaker.scan.includeRoots = ['nowhere/'];
+      write(repo, policyPath, JSON.stringify(weaker));
+      stage(repo, 'staged');
+      write(repo, policyPath, policy);
+      write(repo, 'src/example.ts', vectors.tokens[0].input);
+    } else {
+      write(repo, 'src/clean.ts', 'export const clean = 1;');
+      stage(repo, 'staged');
+    }
+    const bin = join(repo, 'shim');
+    mkdirSync(bin);
+    const action =
+      mutation === 'index' ? 'add -A -f' : '-c core.hooksPath=/dev/null commit -qm interleaved';
+    writeFileSync(
+      join(bin, 'git'),
+      [
+        '#!/bin/bash',
+        `"${realGit}" "$@"`,
+        'result=$?',
+        `if [[ "$1" == show && "$2" == ":${policyPath}" ]]; then`,
+        `  "${realGit}" ${action} || exit 99`,
+        'fi',
+        'exit "$result"',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const before = git(repo, 'rev-parse', 'HEAD');
+    const result = run(repo, 'staged', [], { ...environment, PATH: `${bin}:${environment.PATH}` });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('index or HEAD changed');
+    expect(result.stdout).not.toContain('OK');
+    if (mutation === 'head') expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(before);
+    else expect(git(repo, 'diff', '--cached', '--name-only')).toContain('src/example.ts');
+  });
+
+  it('ignores unstaged working-tree changes without changing the index', () => {
+    const repo = repository();
+    write(repo, 'src/clean.ts', 'export const clean = 1;');
+    stage(repo, 'staged');
+    write(repo, 'src/clean.ts', vectors.tokens[0].input);
+    const result = run(repo, 'staged');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('OK');
+    expect(result.stderr).toBe('');
   });
 });
