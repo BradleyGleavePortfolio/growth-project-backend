@@ -268,7 +268,15 @@ function ormEvent(exceptionType: string): Sentry.ErrorEvent {
       headers: { Authorization: 'Bearer secret', cookie: `sid=${MARKER}` },
     },
     user: { id: MARKER, email: 'athlete@example.invalid' },
-    contexts: { trace: { description: MARKER } },
+    // TraceContext requires both ids; synthetic W3C-shaped values keep the
+    // fixture a real Sentry event while the description carries the payload.
+    contexts: {
+      trace: {
+        trace_id: '0af7651916cd43dd8448eb211c80319c',
+        span_id: 'b7ad6b7169203331',
+        description: MARKER,
+      },
+    },
     extra: { arguments: MARKER },
     breadcrumbs: [{ message: MARKER }],
     tags: { request_id: 'correlation-1', 'http.path': '/api/scout/ingest' },
@@ -281,12 +289,15 @@ function beforeSendHook() {
   return hook;
 }
 
+/** name, serialized exception type on the event, whether the ORM error arrives via the hint. */
+const detectionCases: Array<[string, string, boolean]> = [
+  ['the original exception hint', 'SomeWrapperError', true],
+  ['the serialized exception type', 'PrismaClientKnownRequestError', false],
+  ['a serialized DatabaseRequestError type', 'DatabaseRequestError', false],
+];
+
 describe('Sentry beforeSend allowlists the ORM envelope', () => {
-  it.each([
-    ['the original exception hint', 'SomeWrapperError', true],
-    ['the serialized exception type', 'PrismaClientKnownRequestError', false],
-    ['a serialized DatabaseRequestError type', 'DatabaseRequestError', false],
-  ])('detects an ORM failure via %s', async (_name, exceptionType, viaHint) => {
+  it.each(detectionCases)('detects an ORM failure via %s', async (_n, serializedType, viaHint) => {
     const hint = viaHint
       ? {
           originalException: new Prisma.PrismaClientValidationError(MARKER, {
@@ -294,7 +305,7 @@ describe('Sentry beforeSend allowlists the ORM envelope', () => {
           }),
         }
       : {};
-    const result = await beforeSendHook()(ormEvent(exceptionType), hint);
+    const result = await beforeSendHook()(ormEvent(serializedType), hint);
     expect(result).not.toBeNull();
     expect(JSON.stringify(result)).not.toContain(MARKER);
     expect(Object.keys(result ?? {}).filter((key) => !PERMITTED_SENTRY_KEYS.includes(key))).toEqual(
