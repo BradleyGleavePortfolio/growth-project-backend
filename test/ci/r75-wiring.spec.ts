@@ -106,15 +106,26 @@ function rangeRun(script: string, violation: boolean, values: Record<string, str
   });
 }
 
-function wiringContract(script: string, mode: 'range' | 'staged') {
+function wiringContract(script: string, mode: 'range' | 'staged', diagnose = false) {
   return [false, true].every((violation) => {
     const { repo } = mode === 'staged' ? repository(violation) : { repo: '' };
     const result = mode === 'range' ? rangeRun(script, violation) : shell(repo, script);
-    return (
+    const matches =
       result.status === (violation ? 1 : 0) &&
       result.stdout.includes(violation ? 'FAIL: positive per-class' : 'OK') &&
-      result.stderr === ''
-    );
+      result.stderr === '';
+    if (!matches && diagnose) {
+      throw new Error(
+        `R75 wiring subprocess failed: ${JSON.stringify({
+          mode,
+          violation,
+          status: result.status,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        })}`,
+      );
+    }
+    return matches;
   });
 }
 
@@ -132,8 +143,21 @@ afterAll(() => {
 
 describe('R75 executable wiring contracts', () => {
   it.each(['range', 'staged'] as const)('the actual %s body passes the contract', (mode) => {
-    expect(wiringContract(mode === 'range' ? body : hook, mode)).toBe(true);
+    expect(wiringContract(mode === 'range' ? body : hook, mode, true)).toBe(true);
   });
+
+  it.each(['range', 'staged'] as const)(
+    'reports the failed %s subprocess without relaxing the contract',
+    (mode) => {
+      const script = removeInvocation(mode === 'range' ? body : hook, false);
+      expect(() => wiringContract(script, mode, true)).toThrow(
+        new RegExp(
+          `"mode":"${mode}","violation":false,"status":0,"stdout":.*checker intentionally removed.*"stderr":""`,
+        ),
+      );
+      expect(wiringContract(script, mode)).toBe(false);
+    },
+  );
 
   it.each([
     ['range', false],
