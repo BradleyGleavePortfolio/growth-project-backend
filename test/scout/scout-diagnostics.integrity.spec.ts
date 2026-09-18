@@ -26,7 +26,12 @@ const errors = [
 function runFilter(error: Error, url = '/api/scout/ingest') {
   const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
   const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-  const request = { method: 'POST', url, requestId: 'correlation-1' };
+  const request = {
+    method: 'POST',
+    url,
+    route: { path: '/api/scout/ingest' },
+    requestId: 'correlation-1',
+  };
   new HttpExceptionFilter().catch(error, new ExecutionContextHost([request, response]));
   return { log, response };
 }

@@ -28,7 +28,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // `safeDiagnostic` returns a NEW sanitized error only when it classifies an
     // ORM failure anywhere in the cause chain, so this is that classification.
     const ormBoundary = diagnostic !== exception;
-    const diagnosticPath = ormBoundary ? request.url.split('?')[0] : request.url;
+    // Diagnostic sinks must never retain caller URLs: path segments can contain
+    // invitation credentials just as query strings can. Keep the existing client
+    // envelope contract separate from logger/telemetry metadata.
+    const diagnosticPath = request.route?.path ?? '[unmatched]';
 
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;

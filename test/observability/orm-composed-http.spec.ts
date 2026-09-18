@@ -8,9 +8,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ThrottlerException } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
+import { ThrottlerExceptionFilter } from '../../src/filters/throttler-exception.filter';
 import { AppLoggerService } from '../../src/observability/app-logger.service';
 import { LoggingInterceptor } from '../../src/observability/logging.interceptor';
 import { MetricsService } from '../../src/observability/metrics.service';
@@ -63,7 +65,14 @@ describe('composed ORM diagnostics before every shared sink', () => {
     const logger = app.get(AppLoggerService);
     app.useLogger(logger);
     app.useGlobalInterceptors(new LoggingInterceptor(logger, app.get(MetricsService)));
-    app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalFilters(
+      new HttpExceptionFilter(),
+      new ThrottlerExceptionFilter(app.get(MetricsService)),
+    );
+    // Failure before routing must use a static diagnostic path, not a raw URL.
+    app.use('/unmatched-fixture', (_req: unknown, _res: unknown, next: (err?: unknown) => void) => {
+      next(failure);
+    });
     app.use((req: { requestId?: string }, _res: unknown, next: () => void) => {
       req.requestId = 'synthetic-correlation';
       next();
@@ -142,6 +151,35 @@ describe('composed ORM diagnostics before every shared sink', () => {
     expect(output).not.toContain('private-path-id');
     expect(envelopes).toHaveLength(0);
   });
+
+  it.each([
+    ['ORM', () => orm(), 500],
+    ['ordinary unexpected', () => new Error('Unexpected operation failure'), 500],
+    ['throttled', () => new ThrottlerException(), 429],
+  ] as const)(
+    'does not log path/query credentials on matched and unmatched %s failures',
+    async (_label, makeError, status) => {
+      for (const prefix of ['/diagnostic-fixture', '/unmatched-fixture']) {
+        failure = makeError();
+        const requestPath = `${prefix}/SYNTHETIC_INVITATION_TOKEN?token=SYNTHETIC_QUERY_SECRET`;
+        const response = await fetch(`${url}${requestPath}`);
+        const body = await response.json();
+        await Sentry.flush(2000);
+        expect(response.status).toBe(status);
+        const diagnostics = JSON.stringify([stdout.mock.calls, stderr.mock.calls, envelopes]);
+        expect(diagnostics).not.toContain('SYNTHETIC_INVITATION_TOKEN');
+        expect(diagnostics).not.toContain('SYNTHETIC_QUERY_SECRET');
+        expect(JSON.stringify(stdout.mock.calls)).toContain(
+          prefix === '/unmatched-fixture' ? '[unmatched]' : '/diagnostic-fixture/:id',
+        );
+        // Caller-owned URL remains in the existing client envelope deliberately.
+        // This compatibility contract must not be changed as a logging repair.
+        if (status !== 429 && prefix === '/diagnostic-fixture') {
+          expect(body.path).toBe(requestPath);
+        }
+      }
+    },
+  );
 
   it('preserves non-ORM caller validation and does not log its private message', async () => {
     failure = new BadRequestException('Invalid field');
