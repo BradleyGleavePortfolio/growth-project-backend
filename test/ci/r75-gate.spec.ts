@@ -89,6 +89,12 @@ const WEAK_POLICY = JSON.stringify({
 });
 
 const tempRoots: string[] = [];
+const GIT_ENV = {
+  PATH: process.env.PATH,
+  HOME: tmpdir(),
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+};
 
 function newRepo(): string {
   const repo = mkdtempSync(join(tmpdir(), 'r75-gate-'));
@@ -101,7 +107,14 @@ function newRepo(): string {
 }
 
 function git(repo: string, args: string[]): string {
-  return execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  return execFileSync('git', args, {
+    cwd: repo,
+    encoding: 'utf8',
+    env: GIT_ENV,
+    timeout: 10000,
+    maxBuffer: 1024 * 1024,
+    killSignal: 'SIGKILL',
+  }).trim();
 }
 
 function writeFiles(repo: string, files: FileMap): void {
@@ -132,10 +145,13 @@ function runChecker(repo: string, args: string[]): CheckerResult {
     encoding: 'utf8',
     timeout: 10000,
     maxBuffer: 1024 * 1024,
-    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' },
+    env: GIT_ENV,
+    killSignal: 'SIGKILL',
   });
-  if (res.error) throw res.error;
-  return { status: res.status ?? -1, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
+  if (res.error || res.signal || res.status === null) {
+    throw res.error ?? new Error(`harness process interrupted: ${res.signal}`);
+  }
+  return { status: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
 // Before/after totals may include unchanged matches; only their net is the delta.
@@ -377,7 +393,12 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
     expect(result.stdout).not.toContain('src/base.ts');
   });
 
-  it.each(FIXTURES.operationalCases.map((c) => [c.name, c] as [string, OperationalCase]))(
+  const operationalCases = FIXTURES.operationalCases.flatMap((c) =>
+    c.stagePolicy === undefined
+      ? [c]
+      : [c, { ...c, name: `${c.name} (range)`, args: ['--mode=range', '--base=HEAD'] }],
+  );
+  it.each(operationalCases.map((c) => [c.name, c] as [string, OperationalCase]))(
     'case: %s',
     (_name, testCase) => {
       const repo = newRepo();
@@ -387,6 +408,9 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
       if (testCase.stagePolicy !== undefined) {
         installPolicy(repo, testCase.stagePolicy);
         git(repo, ['add', '-A', '-f']);
+        if (testCase.args.includes('--mode=range')) {
+          git(repo, ['commit', '-q', '-m', 'unusable policy']);
+        }
       }
 
       const result = runChecker(repo, testCase.args);
@@ -397,19 +421,22 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
     },
   );
 
-  it('a Git failure surfaces on stderr rather than producing an empty diff', () => {
+  it.each(['staged', 'range'])('a Git failure surfaces in %s mode', (mode) => {
     const notARepo = mkdtempSync(join(tmpdir(), 'r75-nogit-'));
     tempRoots.push(notARepo);
-    const result = runChecker(notARepo, ['--mode=staged']);
+    const args = mode === 'range' ? ['--mode=range', '--base=HEAD'] : ['--mode=staged'];
+    const result = runChecker(notARepo, args);
     expect(result.status).toBe(2);
     expect(result.stdout).not.toContain('OK —');
   });
 
-  it('a repo with no committed policy fails instead of scanning with no rules', () => {
+  it.each(['staged', 'range'])('a missing policy fails in %s mode', (mode) => {
     const repo = newRepo();
     writeFiles(repo, { 'src/a.ts': ['const clean = 1;'] });
     git(repo, ['add', '-A', '-f']);
-    const result = runChecker(repo, ['--mode=staged']);
+    if (mode === 'range') git(repo, ['commit', '-q', '-m', 'no policy']);
+    const args = mode === 'range' ? ['--mode=range', '--base=HEAD'] : ['--mode=staged'];
+    const result = runChecker(repo, args);
     expect(result.status).toBe(2);
     expect(result.stdout).not.toContain('OK —');
   });
