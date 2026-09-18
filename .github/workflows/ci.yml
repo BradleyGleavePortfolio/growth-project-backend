@@ -10,7 +10,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Guard against committed dist/
         run: |
@@ -171,7 +171,7 @@ jobs:
     # exists and the table-count trends are surfaced in CI logs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install postgresql-client
         # Required by scripts/ci/check-relrowsecurity.sh. Once
@@ -241,7 +241,7 @@ jobs:
       # and returns false. One connection makes the session state stable.
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?connection_limit=1
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -338,7 +338,7 @@ jobs:
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
       MWB3_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
