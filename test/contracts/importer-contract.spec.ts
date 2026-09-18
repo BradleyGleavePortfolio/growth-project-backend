@@ -385,7 +385,7 @@ describe('importer contract (R80 freeze)', () => {
   });
 
   describe('pairing: POST /api/extension/pair/*', () => {
-    it('init returns { pairing_code, expires_at } on 201', () => {
+    it('init returns code, expiry and server intent on 201', () => {
       expect(
         dig(
           contract,
@@ -401,7 +401,54 @@ describe('importer contract (R80 freeze)', () => {
         ),
       ).toBe('#/components/schemas/PairInitResult');
       const props = rec(dig(contract, 'components', 'schemas', 'PairInitResult', 'properties'));
-      expect(Object.keys(props).sort()).toEqual(['expires_at', 'pairing_code']);
+      expect(Object.keys(props).sort()).toEqual(['expires_at', 'import_intent_id', 'pairing_code']);
+    });
+
+    it('durable session is bearer-only POST with validated UUID and credential-free response', () => {
+      const route = rec(dig(contract, 'paths', '/api/extension/pair/session', 'post'));
+      expect(route.security).toEqual([{ bearer: [] }]);
+      expect(dig(route, 'requestBody', 'content', 'application/json', 'schema', '$ref'))
+        .toBe('#/components/schemas/PairSessionDto');
+      const dto = rec(dig(contract, 'components', 'schemas', 'PairSessionDto'));
+      expect(dto.required).toEqual(['import_intent_id']);
+      expect(dig(dto, 'properties', 'import_intent_id', 'format')).toBe('uuid');
+      const result = rec(dig(contract, 'components', 'schemas', 'PairSessionResult'));
+      expect(Object.keys(rec(result.properties)).sort())
+        .toEqual(['chosen_platform', 'import_intent_id', 'status']);
+      expect(result.required).toContain('import_intent_id');
+      expect(Object.keys(rec(route.responses)).sort())
+        .toEqual(['200', '400', '401', '403', '404', '429']);
+    });
+
+    it('intent echoes remain optional for legacy redeem/status responses', () => {
+      for (const name of ['PairRedeemResult', 'PairStatusResult']) {
+        const schema = rec(dig(contract, 'components', 'schemas', name));
+        expect(dig(schema, 'properties', 'import_intent_id', 'format')).toBe('uuid');
+        expect(schema.required).not.toContain('import_intent_id');
+      }
+    });
+
+    it('setup recovery is an unfrozen 2.x prerelease, with optional nonce and current lookup', () => {
+      expect(contract.info.version).toBe('2.0.0-c1-s1.0');
+      const dto = rec(dig(contract, 'components', 'schemas', 'PairInitDto'));
+      expect(dto.required).toEqual(['chosen_platform']);
+      expect(dig(dto, 'properties', 'setup_nonce', 'format')).toBe('uuid');
+      const current = rec(dig(contract, 'paths', '/api/extension/pair/current', 'post'));
+      expect(current.security).toEqual([{ bearer: [] }]);
+      expect(dig(current, 'requestBody', 'content', 'application/json', 'schema', '$ref'))
+        .toBe('#/components/schemas/PairCurrentDto');
+      expect(dig(current, 'responses', '200', 'content', 'application/json', 'schema', '$ref'))
+        .toBe('#/components/schemas/PairSessionResult');
+      expect(Object.keys(rec(current.responses)).sort())
+        .toEqual(['200', '400', '401', '403', '404', '429']);
+      for (const [status, code] of [['409', 'setup_nonce_conflict'], ['410', 'setup_challenge_unavailable']]) {
+        expect(dig(contract, 'paths', '/api/extension/pair/init', 'post', 'responses',
+          status, 'content', 'application/json', 'schema'))
+          .toEqual({ allOf: [
+            { $ref: '#/components/schemas/ErrorEnvelope' },
+            { type: 'object', properties: { code: { type: 'string', enum: [code] } }, required: ['code'] },
+          ] });
+      }
     });
 
     it('init 400 is the shared envelope; code is OPTIONAL and pinned to `code_mint_failed` when present', () => {
@@ -520,7 +567,7 @@ describe('importer contract (R80 freeze)', () => {
       ).toBe('#/components/schemas/PairRedeemResult');
       const props = rec(dig(contract, 'components', 'schemas', 'PairRedeemResult', 'properties'));
       expect(Object.keys(props).sort()).toEqual(
-        ['access_token', 'chosen_platform', 'refresh_token'].sort(),
+        ['access_token', 'chosen_platform', 'import_intent_id', 'refresh_token'].sort(),
       );
     });
 
@@ -603,7 +650,7 @@ describe('importer contract (R80 freeze)', () => {
     });
   });
 
-  it('redeem advertises 500 for post-claim session mint failure', () => {
+  it('redeem advertises 500 for pre-claim session mint failure', () => {
     expect(
       dig(contract, 'paths', '/api/extension/pair/redeem', 'post', 'responses', '500'),
     ).toBeDefined();

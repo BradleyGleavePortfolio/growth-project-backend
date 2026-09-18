@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsUUID, Matches, MaxLength, ValidateIf } from 'class-validator';
 
 // A lowercase slug rather than an enum: the supported platform list is driven
 // by the extension ROADMAP and grows one at a time, so a pattern avoids a
@@ -10,7 +10,17 @@ const PLATFORM_SLUG = /^[a-z0-9_-]+$/;
 // DB lookup.
 const SIX_DIGIT = /^[0-9]{6}$/;
 
-export class PairInitDto {
+export class PairCurrentDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Optional saved setup nonce: recover this owned attempt instead of the current setup.',
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsUUID('4')
+  setup_nonce?: string;
+}
+
+export class PairInitDto extends PairCurrentDto {
   @ApiProperty({
     example: 'truecoach',
     description:
@@ -57,7 +67,25 @@ export type PairStatus = (typeof PAIR_STATUSES)[number];
 // can emit their schemas into the frozen importer contract (R80). Structural
 // typing keeps the service layer, which returns plain object literals,
 // compatible without change.
-export class PairInitResult {
+export class PairIntentResult {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Server-issued setup correlation, not authorization or accepted Start. ' +
+      'Absent on legacy unbound rows.',
+  })
+  import_intent_id?: string;
+}
+
+export class PairSessionDto {
+  @ApiProperty({
+    format: 'uuid', description: 'Server-issued import_intent_id saved from pairing init.',
+  })
+  @IsUUID('4')
+  import_intent_id!: string;
+}
+
+export class PairInitResult extends PairIntentResult {
   @ApiProperty({
     description: '6-digit numeric pairing code the coach reads out to the extension.',
     example: '142856',
@@ -72,7 +100,7 @@ export class PairInitResult {
   expires_at!: string;
 }
 
-export class PairStatusResult {
+export class PairStatusResult extends PairIntentResult {
   @ApiProperty({
     description: 'Lifecycle state of the polled code.',
     enum: PAIR_STATUSES,
@@ -81,7 +109,17 @@ export class PairStatusResult {
   status!: PairStatus;
 }
 
-export class PairRedeemResult {
+export class PairSessionResult extends PairStatusResult {
+  @ApiProperty({
+    format: 'uuid', required: true, description: 'Persisted server-issued setup correlation.',
+  })
+  import_intent_id!: string;
+
+  @ApiProperty({ description: 'Source platform selected at pairing, not proof of any imported data.' })
+  chosen_platform!: string;
+}
+
+export class PairRedeemResult extends PairIntentResult {
   @ApiProperty({ description: 'Coach-bound Supabase access token.' })
   access_token!: string;
 

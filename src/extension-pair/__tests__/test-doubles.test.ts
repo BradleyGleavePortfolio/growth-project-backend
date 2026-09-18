@@ -24,6 +24,23 @@ export function asPrismaDouble<T extends object>(mock: T): PrismaService {
   return mock;
 }
 
+// Hermetic transaction plumbing only; rollback/locking proof uses real PG.
+export function withSetupTransaction<T extends object>(mock: T) {
+  const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'coach-1' }]),
+    importIntent: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    ...mock,
+  };
+  return { ...tx, $transaction: jest.fn(async (callback: (value: typeof tx) => unknown) => callback(tx)) };
+}
+
 export function asAuthDouble<T extends object>(mock: T): AuthService {
   // @ts-expect-error partial structural mock — specs stub only the AuthService
   // methods the service under test calls.
