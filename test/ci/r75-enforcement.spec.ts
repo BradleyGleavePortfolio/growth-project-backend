@@ -1,5 +1,6 @@
 // Real ESLint configuration and parsed CI contracts, not remote-run evidence.
-import { ESLint } from 'eslint';
+import type { ESLint } from 'eslint';
+import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { load } from 'js-yaml';
@@ -23,7 +24,6 @@ interface Workflow {
 }
 const root = join(__dirname, '../..');
 const checker = 'scripts/check-r75.js';
-const checkerText = readFileSync(join(root, checker), 'utf8');
 const auditText = readFileSync(join(root, '.github/workflows/dependency-audit.yml'), 'utf8');
 const ci = load(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')) as Workflow;
 const audit = load(auditText) as Workflow;
@@ -37,25 +37,58 @@ const controlPaths = [
   'test/ci/dependency-audit.spec.ts',
 ];
 const expectedCommand = `npx --no-install eslint --max-warnings 0 ${controlPaths.join(' ')}`;
-const eslint = new ESLint({ cwd: root });
 
 describe('R75 conformance: standing lint', () => {
-  it('does not ignore the shipped checker', async () => {
-    expect(await eslint.isPathIgnored(join(root, checker))).toBe(false);
+  let probe: { ignored: boolean; original: ESLint.LintResult[]; mutated: ESLint.LintResult[] };
+  beforeAll(() => {
+    // ESLint dynamically imports its flat config. Use native Node rather than
+    // changing Jest's VM-module flags or bypassing real config discovery.
+    const script = `
+      const { ESLint } = require('eslint');
+      const { readFileSync } = require('fs');
+      const checker = process.argv[1];
+      const eslint = new ESLint({ cwd: process.cwd() });
+      async function inspect() {
+        const text = readFileSync(checker, 'utf8');
+        const result = {
+          ignored: await eslint.isPathIgnored(checker),
+          original: await eslint.lintFiles([checker]),
+          mutated: await eslint.lintText(text + '\\nconst unreferencedProbe = 1;\\n', {
+            filePath: checker,
+          }),
+        };
+        process.stdout.write(JSON.stringify(result));
+      }
+      inspect().catch((error) => { console.error(error); process.exitCode = 2; });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script, join(root, checker)], {
+      cwd: root,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME },
+      encoding: 'utf8',
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+      killSignal: 'SIGKILL',
+    });
+    if (result.error || result.signal || result.status !== 0) {
+      throw result.error ?? new Error(`lint harness failed: ${result.status} ${result.stderr}`);
+    }
+    probe = JSON.parse(result.stdout);
   });
 
-  it('actually lints the unmodified checker with no ignored-file warning', async () => {
-    const results = await eslint.lintFiles([join(root, checker)]);
+  it('does not ignore the shipped checker', () => {
+    expect(probe.ignored).toBe(false);
+  });
+
+  it('actually lints the unmodified checker with no ignored-file warning', () => {
+    const results = probe.original;
     expect(results).toHaveLength(1);
     expect(results[0].errorCount).toBe(0);
     expect(results[0].warningCount).toBe(0);
     expect(results[0].messages).toEqual([]);
   });
 
-  it('reports an unused-variable mutation through the real configured rule', async () => {
-    const results = await eslint.lintText(`${checkerText}\nconst unreferencedProbe = 1;\n`, {
-      filePath: join(root, checker),
-    });
+  it('reports an unused-variable mutation through the real configured rule', () => {
+    const results = probe.mutated;
     expect(results).toHaveLength(1);
     expect(results[0].messages).toEqual(
       expect.arrayContaining([
