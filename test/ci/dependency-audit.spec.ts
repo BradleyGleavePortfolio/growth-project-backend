@@ -267,8 +267,8 @@ describe('dependency-audit shell body against controlled fake npm processes', ()
 
 describe('mutation detection (the tests must reject a softened gate)', () => {
   const mutate = (find: string, replace: string): string => {
-    const mutant = AUDIT_SHELL.replace(find, replace);
-    if (mutant === AUDIT_SHELL) throw new Error(`mutation did not apply: ${find}`);
+    const mutant = AUDIT_COMMANDS.replace(find, replace);
+    if (mutant === AUDIT_COMMANDS) throw new Error(`mutation did not apply: ${find}`);
     return mutant;
   };
   it('accepts the real shell body as fail-closed', () => {
@@ -284,11 +284,11 @@ describe('mutation detection (the tests must reject a softened gate)', () => {
   it('rejects a narrowing mutant via the shared graph-contract check', () => {
     // --include overrides --omit, so a meaningful narrowing mutant must delete
     // the explicit includes first; only then does --omit=dev take effect.
-    const mutant = AUDIT_SHELL.replace(/ --include=\w+/g, '').replace(
+    const mutant = AUDIT_COMMANDS.replace(/ --include=\w+/g, '').replace(
       '--audit-level=high',
       '--omit=dev --audit-level=high',
     );
-    expect(mutant).not.toBe(AUDIT_SHELL);
+    expect(mutant).not.toBe(AUDIT_COMMANDS);
     expect(satisfiesGraphContract(mutant)).toBe(false);
     expect(satisfiesGraphContract(AUDIT_SHELL)).toBe(true);
   });
