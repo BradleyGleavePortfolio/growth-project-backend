@@ -1,0 +1,62 @@
+name: Dependency Audit
+
+# WHY: the repo had no recurring dependency-vulnerability gate — only a
+# historical manual snapshot, which is not a gate (R33/R113/R94; 50-failures
+# #10). WHAT: the npm CLI's native audit exit contract over the committed
+# lockfile, fail closed on vulnerability AND on infrastructure failure.
+#
+# Bounded decision: any high/critical advisory blocks immediately. That is
+# STRICTER than R113's seven-day grace; advisory age is NOT measured and no
+# suppression/exception mechanism exists or is read here. Rationale, limits and
+# unverified states are recorded in the private lane checkpoint.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    # Reported check name for branch protection (this repo lists job names as
+    # required contexts). Remote wiring is out of scope here.
+    name: npm audit (high+critical, whole graph)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pins reused from already-reviewed workflows in this repo
+      # (r100-quality-gate.yml, danger.yml): immutable SHAs, never tags.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # The audit needs no token; do not leave one in the runner's git config.
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+        with:
+          # Confirmed runtime, pinned to the patch for reproducibility (R114/R124).
+          node-version: '20.20.1'
+      - name: Record Node and npm versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -v
+          npm -v
+      - name: Audit whole locked dependency graph (fail closed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Whole graph, stated explicitly: --include beats any ambient --omit /
+          # NODE_ENV=production config, and --package-lock-only audits the
+          # committed lockfile without needing node_modules — so nothing
+          # installs and no dependency lifecycle script runs just to audit it.
+          # No fallback: any nonzero exit fails the job.
+          # Flags per npm v10 docs: https://docs.npmjs.com/cli/v10/commands/npm-audit/
+          timeout 300 npm audit --package-lock-only \
+            --include=prod --include=dev --include=optional --include=peer \
+            --audit-level=high
