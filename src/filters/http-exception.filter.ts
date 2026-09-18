@@ -25,7 +25,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-    const diagnosticPath = diagnostic === exception ? request.url : request.url.split('?')[0];
+    // `safeDiagnostic` returns a NEW sanitized error only when it classifies an
+    // ORM failure anywhere in the cause chain, so this is that classification.
+    const ormBoundary = diagnostic !== exception;
+    const diagnosticPath = ormBoundary ? request.url.split('?')[0] : request.url;
 
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
@@ -37,7 +40,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // additive so existing clients that only read `message` are unaffected.
     let code: string | undefined;
 
-    if (exception instanceof HttpException) {
+    // An HttpException whose cause is an ORM failure normally carries a body
+    // derived from that failure, so its original response must not reach the
+    // client once the ORM boundary is classified: fall through to the generic
+    // envelope instead. Status, correlation, the sanitized log/Sentry capture
+    // and every non-ORM HttpException body are unchanged.
+    if (exception instanceof HttpException && !ormBoundary) {
       const res = exception.getResponse();
       if (typeof res === 'string') {
         message = res;
