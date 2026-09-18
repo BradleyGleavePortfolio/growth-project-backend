@@ -31,6 +31,12 @@ function argumentsOf(argv) {
     if (!match || Object.hasOwn(args, match[1])) fail(`invalid or duplicate argument: ${argument}`);
     args[match[1]] = match[2];
   }
+  if (args.mode === 'staged') {
+    if (Object.hasOwn(args, 'base') || Object.hasOwn(args, 'head')) {
+      fail('staged mode does not accept range references');
+    }
+    return { diff: ['--cached'], policy: `:${POLICY_PATH}` };
+  }
   if (args.mode !== 'range' || !args.base?.trim()) fail('range mode requires a nonempty base');
   const resolve = (ref) =>
     git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
