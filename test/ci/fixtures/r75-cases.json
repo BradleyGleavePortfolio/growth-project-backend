@@ -142,7 +142,7 @@
       "mode": "range",
       "base": {},
       "head": {
-        "src/a.ts": ["// @ts-expect-error upstream typings are wrong -- const q = r as any;"]
+        "src/a.ts": ["// @ts-expect-error #1234 upstream typings are wrong -- const q = r as any;"]
       },
       "expectExit": 1,
       "expectNet": {
