@@ -309,10 +309,55 @@ describe('C1-S1 real PostgreSQL authority and recovery', () => {
 
   it('refuses destructive down after issuance and preserves owner erasure cascade', async () => {
     const setup = await svc().init('a', 'truecoach', nonce());
-    expect(() => sql(migration(stage, 'down.sql'))).toThrow();
+    expect(() => sql(migration(stage, 'down.sql'))).toThrow(/Issued import intents exist/);
     expect((await svc().current('a')).import_intent_id).toBe(setup.import_intent_id);
     sql(`DELETE FROM "User" WHERE id='a'`);
     expect(await prisma.importIntent.count()).toBe(0);
     expect(await prisma.extensionPairCode.count()).toBe(0);
+  });
+
+  it('fails closed when forced RLS hides retained intents from a non-bypass table owner', () => {
+    const suffix = nonce().replace(/-/g, '');
+    const owner = `c1_down_owner_${suffix}`;
+    const schema = `c1_down_${suffix}`;
+    const asOwner = `SET ROLE "${owner}"; SET search_path TO "${schema}";\n`;
+    const asAdmin = `SET search_path TO "${schema}";\n`;
+    const value = (text: string) => sql(text).split('\n').pop();
+    sql(`CREATE ROLE "${owner}" NOLOGIN NOSUPERUSER NOBYPASSRLS;
+      CREATE SCHEMA "${schema}" AUTHORIZATION "${owner}";`);
+    try {
+      sql(asOwner + 'CREATE TABLE "User" (id TEXT PRIMARY KEY);' +
+        migration('20261222000000_add_extension_pair_codes'));
+      sql(asOwner + migration(stage));
+      const id = nonce();
+      sql(asAdmin + `INSERT INTO "User" VALUES ('retained-owner');
+        INSERT INTO "ImportIntent" (id,coach_id,chosen_platform)
+          VALUES ('${id}','retained-owner','truecoach');
+        INSERT INTO "ExtensionPairCode" (id,code,coach_id,chosen_platform,expires_at,import_intent_id)
+          VALUES ('retained-challenge','123456','retained-owner','truecoach',
+            NOW()+interval '120 seconds','${id}');`);
+      expect(value(asOwner + `SELECT NOT rolsuper AND NOT rolbypassrls
+        FROM pg_roles WHERE rolname=current_user`)).toBe('t');
+      expect(value(asOwner + `SELECT relowner=current_user::regrole
+        FROM pg_class WHERE oid='"ImportIntent"'::regclass`)).toBe('t');
+      expect(value(asAdmin + 'SELECT count(*) FROM "ImportIntent"')).toBe('1');
+      expect(value(asOwner + 'SELECT count(*) FROM "ImportIntent"')).toBe('0');
+      // Ownership permits DROP but forced RLS hides the row: incomplete
+      // visibility must error, never certify that the table is empty.
+      expect(() => sql(asOwner + migration(stage, 'down.sql'))).toThrow(/row-level security/);
+      expect(value(asAdmin + `SELECT id FROM "ImportIntent"`)).toBe(id);
+      expect(value(asAdmin + `SELECT import_intent_id FROM "ExtensionPairCode"`)).toBe(id);
+      expect(value(asAdmin + `SELECT relrowsecurity AND relforcerowsecurity
+        FROM pg_class WHERE oid='"ImportIntent"'::regclass`)).toBe('t');
+      expect(value(asOwner + 'SELECT count(*) FROM "ImportIntent"')).toBe('0');
+      // A restricted owner may also refuse empty rollback; only a complete
+      // visibility proof can authorize the disposable/pre-use down.
+      sql(asAdmin + 'DELETE FROM "User"');
+      expect(value(asAdmin + 'SELECT count(*) FROM "ImportIntent"')).toBe('0');
+      expect(() => sql(asOwner + migration(stage, 'down.sql'))).toThrow(/row-level security/);
+      expect(value(asAdmin + `SELECT to_regclass('"ImportIntent"') IS NOT NULL`)).toBe('t');
+    } finally {
+      sql(`DROP SCHEMA "${schema}" CASCADE; DROP ROLE "${owner}";`);
+    }
   });
 });

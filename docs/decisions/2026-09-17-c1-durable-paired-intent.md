@@ -86,6 +86,10 @@ After issuing even one intent, retain schema and use compatible forward repair.
 The down migration locks the tables and refuses to erase issued IDs. Its successful
 use is limited to empty-intent disposable/pre-use proof. Application rollback
 does not authorize deletion or imply continued availability of new read routes.
+The emptiness query sets transaction-local `row_security = off`, which rejects
+an RLS-filtered query rather than disabling or bypassing RLS. A non-bypass owner
+therefore fails closed, including for an empty table; ownership alone is not
+proof of complete visibility. Enabled/forced RLS and role privileges are unchanged.
 
 ## Verification and release boundary
 
