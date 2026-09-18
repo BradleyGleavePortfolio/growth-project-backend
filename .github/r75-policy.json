@@ -26,19 +26,23 @@
     },
     {
       "name": "Coming soon",
-      "pattern": "Coming soon"
+      "pattern": "Coming soon",
+      "flags": "i"
     },
     {
       "name": "lorem ipsum",
-      "pattern": "lorem ipsum"
+      "pattern": "lorem ipsum",
+      "flags": "i"
     },
     {
       "name": "foo@bar",
-      "pattern": "foo@bar"
+      "pattern": "foo@bar",
+      "flags": "i"
     },
     {
       "name": "John Doe",
-      "pattern": "John Doe"
+      "pattern": "John Doe",
+      "flags": "i"
     },
     {
       "name": "as any",

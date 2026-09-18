@@ -4,6 +4,7 @@ name: Dependency Audit
 # historical manual snapshot, which is not a gate (R33/R113/R94; 50-failures
 # #10). WHAT: the npm CLI's native audit exit contract over the committed
 # lockfile, fail closed on vulnerability AND on infrastructure failure.
+# Weekly npm is partial R94 coverage, not Socket/Snyk, ownership or CVE-age triage.
 #
 # Bounded decision: any high/critical advisory blocks immediately. That is
 # STRICTER than R113's seven-day grace; advisory age is NOT measured and no
@@ -15,6 +16,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 9 * * 1' # Monday 09:17 UTC; active only on the default branch.
 
 permissions:
   contents: read
@@ -33,11 +36,11 @@ jobs:
     steps:
       # Pins reused from already-reviewed workflows in this repo
       # (r100-quality-gate.yml, danger.yml): immutable SHAs, never tags.
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           # The audit needs no token; do not leave one in the runner's git config.
           persist-credentials: false
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           # Confirmed runtime, pinned to the patch for reproducibility (R114/R124).
           node-version: '20.20.1'

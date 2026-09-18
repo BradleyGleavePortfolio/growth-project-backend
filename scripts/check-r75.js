@@ -71,14 +71,15 @@ function readPolicy(source) {
   if (!scan.includeExtensions.length || !(scan.includeRoots.length + scan.includeFiles.length)) {
     fail('policy needs extensions and a positive path selector');
   }
-  const tokens = policy.tokens.map(({ name, pattern }) => {
+  const tokens = policy.tokens.map(({ name, pattern, flags = '' }) => {
     if (typeof name !== 'string' || !name || typeof pattern !== 'string' || !pattern)
       fail('invalid token name or pattern');
+    if (flags !== '' && flags !== 'i') fail('unsupported token flags');
     // Policy gap slots allow lexical trivia, without deleting comment tokens
     // from the source being scanned or turning adjacent keywords into one word.
     const trivia =
       '(?:\\s|/\\*[\\s\\S]*?\\*/|//[^\\r\\n\\u2028\\u2029]*(?:[\\r\\n\\u2028\\u2029]|$))*';
-    const regex = new RegExp(pattern.replaceAll('{{gap}}', trivia), 'g');
+    const regex = new RegExp(pattern.replaceAll('{{gap}}', trivia), `g${flags}`);
     if (regex.test('')) fail('pattern matches empty input');
     return { name, regex };
   });
