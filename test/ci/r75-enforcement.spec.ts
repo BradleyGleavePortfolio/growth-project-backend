@@ -84,9 +84,9 @@ describe('R75 conformance: standing lint', () => {
 describe('R75 conformance: weekly dependency audit', () => {
   it('declares one weekly UTC schedule while retaining change triggers', () => {
     expect(audit.on.schedule).toEqual([{ cron: '17 9 * * 1' }]);
-    expect(Object.hasOwn(audit.on, 'pull_request')).toBe(true);
-    expect(Object.hasOwn(audit.on, 'push')).toBe(true);
-    expect(Object.hasOwn(audit.on, 'workflow_dispatch')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(audit.on, 'pull_request')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(audit.on, 'push')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(audit.on, 'workflow_dispatch')).toBe(true);
     expect(audit.jobs.audit.if).toBeUndefined();
   });
 

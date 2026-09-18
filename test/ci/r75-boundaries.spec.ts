@@ -251,17 +251,20 @@ describe.each<Mode>(['range', 'staged'])('R75 case policy: %s', (mode) => {
     expect(result.stderr).toBe('');
   });
 
-  it.each(vectors.invalidFlags)('fails closed on unsupported flags: %j', (flags) => {
-    const repo = repository();
-    const changed = JSON.parse(policy);
-    changed.tokens[0].flags = flags;
-    write(repo, policyPath, JSON.stringify(changed));
-    stage(repo, mode);
-    const result = run(repo, mode);
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('unsupported token flags');
-    expect(result.stdout).not.toContain('OK');
-  });
+  it.each(vectors.invalidFlags.map((flags) => ({ flags })))(
+    'fails closed on unsupported flags: %j',
+    ({ flags }) => {
+      const repo = repository();
+      const changed = JSON.parse(policy);
+      changed.tokens[0].flags = flags;
+      write(repo, policyPath, JSON.stringify(changed));
+      stage(repo, mode);
+      const result = run(repo, mode);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('unsupported token flags');
+      expect(result.stdout).not.toContain('OK');
+    },
+  );
 
   it('enables case folding for exactly the four placeholder classes', () => {
     const tokens: { name: string; flags?: string }[] = JSON.parse(policy).tokens;
