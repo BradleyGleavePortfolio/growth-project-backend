@@ -53,5 +53,17 @@
   ],
   "outsidePaths": ["node_modules/library/index.js", "docs/example.ts", "dist/main.js"],
   "linkPaths": ["src/module.ts", "src/imported", "test/linked"],
-  "emptyHeads": ["--head=", "--head=   "]
+  "emptyHeads": ["--head=", "--head=   "],
+  "placeholderCases": [
+    { "name": "Coming soon", "input": "const label = 'Coming Soon';" },
+    { "name": "Coming soon", "input": "const label = 'COMING SOON';" },
+    { "name": "lorem ipsum", "input": "const label = 'Lorem ipsum';" },
+    { "name": "lorem ipsum", "input": "const label = 'LOREM IPSUM';" },
+    { "name": "foo@bar", "input": "const label = 'Foo@Bar';" },
+    { "name": "foo@bar", "input": "const label = 'FOO@BAR';" },
+    { "name": "John Doe", "input": "const label = 'john doe';" },
+    { "name": "John Doe", "input": "const label = 'JOHN DOE';" }
+  ],
+  "caseControls": ["const label = 'AS ANY';", "const label = '@TS-IGNORE';"],
+  "invalidFlags": [null, 1, "g", "m", "ii", " i", ["i"]]
 }

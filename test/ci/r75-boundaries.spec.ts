@@ -17,6 +17,9 @@ interface BoundaryData {
   outsidePaths: string[];
   linkPaths: string[];
   emptyHeads: string[];
+  placeholderCases: TokenVector[];
+  caseControls: string[];
+  invalidFlags: unknown[];
 }
 type Mode = 'range' | 'staged';
 const root = join(__dirname, '../..');
@@ -224,5 +227,48 @@ describe('R75 coherent index observation', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('OK');
     expect(result.stderr).toBe('');
+  });
+});
+
+describe.each<Mode>(['range', 'staged'])('R75 case policy: %s', (mode) => {
+  it.each(vectors.placeholderCases)('counts capitalization of $name: $input', (vector) => {
+    const repo = repository();
+    write(repo, 'src/example.ts', vector.input);
+    stage(repo, mode);
+    const result = run(repo, mode);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`${vector.name}: +1 -0 net +1`);
+    expect(result.stderr).toBe('');
+  });
+
+  it.each(vectors.caseControls)('retains keyword/directive case sensitivity: %s', (input) => {
+    const repo = repository();
+    write(repo, 'src/example.ts', input);
+    stage(repo, mode);
+    const result = run(repo, mode);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('OK');
+    expect(result.stderr).toBe('');
+  });
+
+  it.each(vectors.invalidFlags)('fails closed on unsupported flags: %j', (flags) => {
+    const repo = repository();
+    const changed = JSON.parse(policy);
+    changed.tokens[0].flags = flags;
+    write(repo, policyPath, JSON.stringify(changed));
+    stage(repo, mode);
+    const result = run(repo, mode);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('unsupported token flags');
+    expect(result.stdout).not.toContain('OK');
+  });
+
+  it('enables case folding for exactly the four placeholder classes', () => {
+    const tokens: { name: string; flags?: string }[] = JSON.parse(policy).tokens;
+    const folded = tokens.filter((token) => token.flags === 'i').map((token) => token.name);
+    expect(folded.sort()).toEqual([...new Set(vectors.placeholderCases.map((v) => v.name))].sort());
+    expect(tokens.filter((token) => !folded.includes(token.name)).every((t) => !t.flags)).toBe(
+      true,
+    );
   });
 });
