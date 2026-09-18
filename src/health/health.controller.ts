@@ -1,4 +1,4 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Logger, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
@@ -23,6 +23,7 @@ import { PrismaService } from '../prisma.service';
 @Controller()
 export class HealthController {
   private readonly startedAt = Date.now();
+  private readonly logger = new Logger(HealthController.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -67,12 +68,18 @@ export class HealthController {
         db: 'up',
         timestamp: new Date().toISOString(),
       };
-    } catch (err) {
+    } catch {
+      // Driver errors may contain credentials or query text. Readiness needs
+      // only a stable signal, including when a rejection is not an Error.
+      this.logger.error({
+        event: 'readiness_database_unavailable',
+        operation: 'health.readiness',
+      });
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
       return {
         ok: false,
         db: 'down',
-        error: err instanceof Error ? err.message : String(err),
+        error: 'database_unavailable',
         timestamp: new Date().toISOString(),
       };
     }
