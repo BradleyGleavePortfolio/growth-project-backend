@@ -86,7 +86,8 @@ function repository(violation: boolean) {
 }
 
 function shell(repo: string, script: string, values: Record<string, string> = {}) {
-  return command(repo, 'bash', ['-eu', '-o', 'pipefail', '-c', script], {
+  // Node's socket-backed stdin can trigger Bash rc loading even without -i.
+  return command(repo, 'bash', ['--noprofile', '--norc', '-eu', '-o', 'pipefail', '-c', script], {
     ...cleanEnvironment,
     ...values,
   });
@@ -142,6 +143,34 @@ afterAll(() => {
 });
 
 describe('R75 executable wiring contracts', () => {
+  it('does not load ambient startup files into a wiring subprocess', () => {
+    const home = mkdtempSync(join(tmpdir(), 'r75-shell-home-'));
+    directories.push(home);
+    write(home, '.bashrc', 'printf "STARTUP_FILE_READ\\n" >&2\n[ -z "$PS1" ] && return\n');
+    write(home, '.bash_profile', 'printf "PROFILE_READ\\n" >&2\n');
+    const result = shell(home, 'printf "EXPECTED_OUTPUT\\n"', { HOME: home });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('EXPECTED_OUTPUT\n');
+    expect(result.stderr).toBe('');
+  });
+
+  it.each([
+    ['errexit', 'false; printf "MUST_NOT_RUN"', ''],
+    ['nounset', 'printf "%s" "$R75_UNSET_VALUE"', 'unbound variable'],
+    ['pipefail', 'false | true; printf "MUST_NOT_RUN"', ''],
+  ])('retains %s when startup files are disabled', (_name, script, diagnostic) => {
+    const result = shell(root, script);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(diagnostic);
+  });
+
+  it.each(['range', 'staged'] as const)('rejects unfiltered script stderr in %s', (mode) => {
+    const script = `printf "SCRIPT_STDERR\\n" >&2\n${mode === 'range' ? body : hook}`;
+    expect(wiringContract(script, mode)).toBe(false);
+    expect(() => wiringContract(script, mode, true)).toThrow(/SCRIPT_STDERR/);
+  });
+
   it.each(['range', 'staged'] as const)('the actual %s body passes the contract', (mode) => {
     expect(wiringContract(mode === 'range' ? body : hook, mode, true)).toBe(true);
   });
