@@ -1,5 +1,6 @@
 import { INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { CacheControlInterceptor } from '../src/common/cache-control.interceptor';
 import { HealthController } from '../src/health/health.controller';
 import { PrismaService } from '../src/prisma.service';
 
@@ -34,6 +35,7 @@ describe('public readiness HTTP boundary', () => {
       providers: [{ provide: PrismaService, useValue: { $queryRaw: query } }],
     }).compile();
     app = module.createNestApplication();
+    app.useGlobalInterceptors(new CacheControlInterceptor());
     await app.listen(0, '127.0.0.1');
     baseUrl = await app.getUrl();
   });
@@ -54,6 +56,7 @@ describe('public readiness HTTP boundary', () => {
     const body: unknown = await response.json();
 
     expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({
       ok: false,
       db: 'down',
@@ -74,6 +77,7 @@ describe('public readiness HTTP boundary', () => {
     const body: unknown = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({
       ok: true,
       db: 'up',
@@ -90,6 +94,7 @@ describe('public readiness HTTP boundary', () => {
     const body: unknown = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({
       ok: true,
       uptime: expect.any(Number),
