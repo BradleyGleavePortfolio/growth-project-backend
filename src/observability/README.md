@@ -143,8 +143,16 @@ it attaches to Node's `http` module before any request arrives).
 - **Sample rates**:
   - `tracesSampleRate`: defaults to `SENTRY_TRACES_SAMPLE_RATE` (env) or `0.1`.
   - Error capture rate: `1.0` (every unhandled exception is captured).
-- **PII stripping** (`beforeSend`): `Authorization` and `Cookie` headers are
-  deleted from the event before transmission.
+- **Error-event metadata boundary** (`beforeSend`): ORM failures use a static
+  diagnostic envelope. Other errors retain ordinary exception/message details,
+  event identifiers, release/environment, and allowlisted application tags
+  (including request correlation and the HTTP route template). Automatically
+  enriched request URLs, queries, headers, bodies, transaction names, breadcrumbs,
+  contexts, users and extras are not forwarded on these error events.
+  This boundary does not sanitize arbitrary exception/message text, source
+  context in stack frames, sampled transactions/spans, or attachments. It is
+  not a claim of universal telemetry privacy; those surfaces require separate
+  release evidence. Client-facing error-response paths are unchanged.
 
 ---
 

@@ -329,44 +329,90 @@ describe('Sentry beforeSend allowlists the ORM envelope', () => {
     expect(result?.environment).toBe('production');
   });
 
-  it('keeps ordinary events useful while stripping sensitive headers', async () => {
+  it('keeps ordinary diagnostics and safe tags without SDK-enriched request metadata', async () => {
     const event: Sentry.ErrorEvent = {
       type: undefined,
       event_id: 'event-2',
       exception: { values: [{ type: 'Error', value: 'queue unavailable' }] },
       request: {
-        data: { queue: 'scout-ingest' },
+        url: `https://example.invalid/invite/${MARKER}`,
+        query_string: `token=${MARKER}`,
+        data: { token: MARKER },
         headers: {
           Authorization: 'Bearer secret',
           authorization: 'Bearer secret',
           Cookie: 'sid=1',
           cookie: 'sid=1',
           'content-type': 'application/json',
+          referer: `https://example.invalid/invite/${MARKER}`,
         },
       },
-      extra: { attempt: 2 },
-      breadcrumbs: [{ message: 'enqueue attempted' }],
-      tags: { request_id: 'correlation-2' },
+      transaction: `/invite/${MARKER}`,
+      transaction_info: { source: 'url' },
+      extra: { url: MARKER },
+      contexts: { request: { url: MARKER } },
+      user: { email: MARKER },
+      breadcrumbs: [{ message: MARKER }],
+      tags: {
+        request_id: 'correlation-2',
+        'http.method': 'GET',
+        'http.path': '/invite/:token',
+        service: 'growth-project-backend',
+        runtime: 'node',
+        environment: 'test',
+        release: 'synthetic-release',
+        'http.url': MARKER,
+      },
     };
     const result = await beforeSendHook()(event, {
       originalException: new Error('queue unavailable'),
     });
-    expect(result?.request?.headers).toEqual({ 'content-type': 'application/json' });
-    expect(result?.request?.data).toEqual({ queue: 'scout-ingest' });
-    expect(result?.extra).toEqual({ attempt: 2 });
-    expect(result?.breadcrumbs).toEqual([{ message: 'enqueue attempted' }]);
+    expect(JSON.stringify(result)).not.toContain(MARKER);
+    expect(result?.request).toBeUndefined();
+    expect(result?.transaction).toBeUndefined();
+    expect(result?.transaction_info).toBeUndefined();
+    expect(result?.extra).toBeUndefined();
+    expect(result?.contexts).toBeUndefined();
+    expect(result?.user).toBeUndefined();
+    expect(result?.breadcrumbs).toBeUndefined();
     expect(result?.exception?.values?.[0]?.value).toBe('queue unavailable');
-    expect(result?.tags).toEqual({ request_id: 'correlation-2' });
+    expect(result?.tags).toEqual({
+      request_id: 'correlation-2',
+      'http.method': 'GET',
+      'http.path': '/invite/:token',
+      service: 'growth-project-backend',
+      runtime: 'node',
+      environment: 'test',
+      release: 'synthetic-release',
+    });
+    expect(event.request?.url).toContain(MARKER);
   });
 
-  it('passes through an ordinary event that carries no request data', async () => {
+  it('preserves ordinary exception diagnostics without mutating the input event', async () => {
     const event: Sentry.ErrorEvent = {
       type: undefined,
       event_id: 'event-3',
       exception: { values: [{ type: 'Error', value: 'timer drift' }] },
     };
     const result = await beforeSendHook()(event, {});
-    expect(result).toBe(event);
+    expect(result).not.toBe(event);
+    expect(result?.event_id).toBe('event-3');
     expect(result?.exception?.values?.[0]?.value).toBe('timer drift');
+  });
+
+  it('preserves ordinary message diagnostics and envelope identifiers', async () => {
+    const event: Sentry.ErrorEvent = {
+      type: undefined,
+      event_id: 'event-4',
+      timestamp: 123,
+      environment: 'test',
+      release: 'synthetic-release',
+      level: 'warning',
+      platform: 'node',
+      message: 'queue delayed',
+      logentry: { message: 'queue delayed' },
+    };
+    const result = await beforeSendHook()(event, {});
+    expect(result).toEqual({ ...event, tags: {} });
   });
 });

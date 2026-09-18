@@ -11,7 +11,7 @@
  *  7. resolveTracesSampleRate — parses + clamps + defaults
  *  8. stripSensitiveHeaders — removes Authorization/Cookie
  *  9. buildSentryOptions — wires release/environment/tags block
- * 10. buildSentryOptions — beforeSend strips headers
+ * 10. buildSentryOptions — registers the error-event metadata boundary
  * 11. initSentry — no-op when DSN unset
  * 12. initSentry — calls Sentry.init when DSN set
  */
@@ -114,11 +114,11 @@ describe('buildSentryOptions', () => {
     expect(tags.release).toBe('growth-project-backend@sha-staging');
   });
 
-  it('wires a beforeSend hook that delegates to the header stripper', () => {
+  it('wires the error-event metadata boundary', () => {
     const opts = buildSentryOptions('https://dsn@o.ingest/1', {} as NodeJS.ProcessEnv);
     expect(typeof opts.beforeSend).toBe('function');
-    // The stripping behaviour itself is asserted directly against
-    // stripSensitiveHeaders above; here we only verify the hook is registered.
+    // Full event and default-integration behavior is covered by the diagnostic
+    // boundary and separate-process incoming-request regressions.
   });
 });
 
