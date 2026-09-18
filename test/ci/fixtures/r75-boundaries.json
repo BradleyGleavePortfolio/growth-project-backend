@@ -1,0 +1,57 @@
+{
+  "tokens": [
+    { "name": "@ts-ignore", "input": "// @ts-ignore" },
+    { "name": "@ts-expect-error", "input": "// @ts-expect-error" },
+    { "name": "Coming soon", "input": "const label = 'Coming soon';" },
+    { "name": "lorem ipsum", "input": "const label = 'lorem ipsum';" },
+    { "name": "foo@bar", "input": "const label = 'foo@bar';" },
+    { "name": "John Doe", "input": "const label = 'John Doe';" },
+    { "name": "as any", "input": "value as any;" },
+    { "name": "as unknown as", "input": "value as unknown as Result;" },
+    { "name": "as never", "input": "value as never;" },
+    { "name": "empty-catch-null", "input": "promise.catch(() => null);" },
+    { "name": "empty-catch-undefined", "input": "promise.catch(() => undefined);" },
+    { "name": "empty-catch-block", "input": "promise.catch(() => {});" }
+  ],
+  "trivia": [
+    { "name": "empty-catch-null", "input": "promise . catch (\n() => null\n);" },
+    { "name": "empty-catch-undefined", "input": "promise.catch /* reason */ (\n() => undefined);" },
+    {
+      "name": "empty-catch-block",
+      "input": "promise . /* reason */ catch\n(() => { /* nothing */ });"
+    },
+    { "name": "as any", "input": "value as /* annotation */ any;" },
+    {
+      "name": "as unknown as",
+      "input": "value as // annotation\nunknown /* annotation */ as Result;"
+    },
+    { "name": "as never", "input": "value as\n/* annotation */ never;" }
+  ],
+  "reasons": [
+    { "input": "// @ts-expect-error\rconst next = 1;", "exit": 1 },
+    { "input": "// @ts-expect-error\u2028const next = 1;", "exit": 1 },
+    { "input": "// @ts-expect-error\u2029const next = 1;", "exit": 1 },
+    { "input": "// @ts-expect-error\r\nconst next = 1;", "exit": 1 },
+    { "input": "/* @ts-expect-error */ void 0;", "exit": 1 },
+    { "input": "/* @ts-expect-error */ // not a reason", "exit": 1 },
+    { "input": "// @ts-expect-error x", "exit": 0 },
+    { "input": "/* @ts-expect-error 理由 */ void 0;", "exit": 0 },
+    { "input": "// @ts-expect-error ✓\rconst next = 1;", "exit": 0 }
+  ],
+  "authoredPaths": [
+    "src/vendor/module.ts",
+    "test/generated/case.ts",
+    "src/build/module.ts",
+    "scripts/dist/tool.js",
+    "src/node_modules/authored.ts",
+    "src/coverage/module.ts",
+    "src/.yarn/module.ts",
+    "src/types.d.ts",
+    "src/module.mts",
+    "src/module.cts",
+    "src/module.min.js"
+  ],
+  "outsidePaths": ["node_modules/library/index.js", "docs/example.ts", "dist/main.js"],
+  "linkPaths": ["src/module.ts", "src/imported", "test/linked"],
+  "emptyHeads": ["--head=", "--head=   "]
+}
