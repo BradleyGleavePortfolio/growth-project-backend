@@ -1,21 +1,19 @@
-// Executable regression tests for the R75 / R100.A2 banned-cast gate.
+// Executable regression tests for the R75 / R100.A2 banned-token gate.
 //
-// These tests run the COMMITTED checker (scripts/check-r75.js) as a real child
-// process against real temporary Git repositories and, for hook parity, against
-// a real Git index. Nothing here re-implements the gate: a test that reasoned
-// about its own copy of the algorithm would pass while the shipped gate stayed
-// broken, which is how the pre-repair gate survived.
+// These run the COMMITTED checker (scripts/check-r75.js) as a real child process
+// against real temporary Git repositories and a real index. Nothing here
+// re-implements the gate: a test reasoning about its own copy of the algorithm
+// would pass while the shipped gate stayed broken, which is how the pre-repair
+// gate survived.
 //
 // Every banned literal used as input lives in fixtures/r75-cases.json, because
-// .json is not an executable extension in .github/r75-policy.json — so this
-// suite can exercise hostile tokens without itself becoming an R75 violation.
-// This file, being executable test source, IS in the gate's scan scope.
+// .json is not an executable extension in .github/r75-policy.json. This file,
+// being executable test source, IS in the gate's scan scope.
 //
-// Each case also carries a negative control: the deleted pre-repair shell
-// algorithm (aggregate cross-token netting, grep -c line counting, whole-line
-// suppression stripping, spec/test exclusion) is reproduced from fixture data
-// and asserted to DISAGREE with the checker on the defect it repaired. If the
-// checker silently regressed to the old semantics, the controls fail.
+// Each repaired defect also carries a negative control: the deleted pre-repair
+// shell algorithm is reproduced from fixture data and asserted to DISAGREE with
+// the checker on the defect it repaired, so a silent regression to the old
+// semantics fails the suite.
 
 import { execFileSync, spawnSync } from 'child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
@@ -24,7 +22,8 @@ import { dirname, join } from 'path';
 
 const REPO_ROOT = join(__dirname, '..', '..');
 const CHECKER = join(REPO_ROOT, 'scripts', 'check-r75.js');
-const POLICY = join(REPO_ROOT, '.github', 'r75-policy.json');
+const POLICY_IN_REPO = '.github/r75-policy.json';
+const POLICY = join(REPO_ROOT, POLICY_IN_REPO);
 const WORKFLOW = join(REPO_ROOT, '.github', 'workflows', 'r100-quality-gate.yml');
 const HOOKS = join(REPO_ROOT, 'lefthook.yml');
 
@@ -41,11 +40,12 @@ interface GateCase {
   unstaged?: FileMap;
   renameTo?: { [from: string]: string };
   deletePaths?: string[];
+  weakenWorkingTreePolicy?: boolean;
   expectExit: number;
   expectNet?: { [token: string]: number };
   expectOffenders?: string[];
   expectEvidenceFiles?: string[];
-  legacyExit: number;
+  legacyExit?: number;
   control?: 'verdict' | 'undercount';
   controlToken?: string;
   why: string;
@@ -55,7 +55,10 @@ interface OperationalCase {
   name: string;
   args: string[];
   expectExit: number;
-  writePolicy?: string;
+  // A policy body to stage at the real in-repo path. There is no filesystem
+  // override flag, so an unusable policy is exercised through the production
+  // path: staged bytes at .github/r75-policy.json.
+  stagePolicy?: string;
 }
 
 interface LegacyPolicy {
@@ -70,23 +73,30 @@ interface LegacyPolicy {
 const FIXTURES = JSON.parse(
   readFileSync(join(__dirname, 'fixtures', 'r75-cases.json'), 'utf8'),
 ) as {
+  policyExpectations: { suppressionToken: string; emptyCatchClasses: string[] };
   legacyAlgorithm: LegacyPolicy;
   cases: GateCase[];
   operationalCases: OperationalCase[];
 };
+
+const REAL_POLICY = readFileSync(POLICY, 'utf8');
+// A policy that parses and validates but detects nothing the cases care about.
+// Used only to prove the checker does not read it when the index carries the
+// real one.
+const WEAK_POLICY = JSON.stringify({
+  scan: { includeExtensions: ['.ts'], includeRoots: ['nowhere/'] },
+  literalTokens: [{ literal: 'zzz-not-a-real-token' }],
+});
 
 const tempRoots: string[] = [];
 
 function newRepo(): string {
   const repo = mkdtempSync(join(tmpdir(), 'r75-gate-'));
   tempRoots.push(repo);
-  const git = (args: string[]): void => {
-    execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
-  };
-  git(['init', '-q', '.']);
-  git(['config', 'user.email', 'test@invalid.local']);
-  git(['config', 'user.name', 'test']);
-  git(['config', 'commit.gpgsign', 'false']);
+  git(repo, ['init', '-q', '.']);
+  git(repo, ['config', 'user.email', 'test@invalid.local']);
+  git(repo, ['config', 'user.name', 'test']);
+  git(repo, ['config', 'commit.gpgsign', 'false']);
   return repo;
 }
 
@@ -100,6 +110,14 @@ function writeFiles(repo: string, files: FileMap): void {
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, `${lines.join('\n')}\n`);
   }
+}
+
+// The checker reads its policy from the Git content it is measuring, so every
+// temporary repo carries the real committed policy at the real path.
+function installPolicy(repo: string, body: string): void {
+  const abs = join(repo, POLICY_IN_REPO);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, body);
 }
 
 interface CheckerResult {
@@ -118,7 +136,7 @@ function runChecker(repo: string, args: string[]): CheckerResult {
   return { status: res.status ?? -1, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
 }
 
-// Parse the checker's per-token report line: "  <token>   +A -R net N".
+// Parse the checker's per-token report line: "  <token>  +A -R net N".
 function reportedNet(stdout: string, token: string): number | undefined {
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
@@ -131,17 +149,17 @@ function reportedNet(stdout: string, token: string): number | undefined {
 
 // ---------------------------------------------------------------------------
 // Negative control: the deleted pre-repair shell algorithm, reproduced from
-// fixture data so each case can prove it is sensitive to a real defect.
+// fixture data — aggregate cross-token netting, grep -c line counting,
+// whole-line suppression stripping, and spec/test exclusion.
 // ---------------------------------------------------------------------------
 
 interface LegacyResult {
   exit: number;
-  aggregateNet: number;
   perToken: { [token: string]: number };
 }
 
 function legacyScan(repo: string, range: string | null, legacy: LegacyPolicy): LegacyResult {
-  const args = ['-c', 'core.quotepath=false', 'diff', '--unified=0', '--no-color'];
+  const args = ['diff', '--unified=0', '--no-color'];
   const diff = range === null ? git(repo, [...args, '--cached']) : git(repo, [...args, range]);
 
   let currentNew: string | null = null;
@@ -157,27 +175,23 @@ function legacyScan(repo: string, range: string | null, legacy: LegacyPolicy): L
     if (raw.startsWith('--- ')) {
       const p = raw.slice(4);
       currentOld = p === '/dev/null' ? null : p.replace(/^[ab]\//, '');
-      continue;
-    }
-    if (raw.startsWith('+++ ')) {
+    } else if (raw.startsWith('+++ ')) {
       const p = raw.slice(4);
       currentNew = p === '/dev/null' ? null : p.replace(/^[ab]\//, '');
-      continue;
-    }
-    if (raw.startsWith('+') && !raw.startsWith('+++') && inLegacyScope(currentNew)) {
+    } else if (raw.startsWith('+') && !raw.startsWith('+++') && inLegacyScope(currentNew)) {
       added.push(raw.slice(1));
     } else if (raw.startsWith('-') && !raw.startsWith('---') && inLegacyScope(currentOld)) {
       removed.push(raw.slice(1));
     }
   }
 
-  // Defect 4: the whole line is discarded when it carries a documented suppression.
+  // Defect: the whole line is discarded when it carries a documented suppression.
   const exempt = new RegExp(legacy.exemptLinePattern);
   const keep = (lines: string[]): string[] => lines.filter((l) => !exempt.test(l));
   const addedScan = keep(added);
   const removedScan = keep(removed);
 
-  // Defect 2: grep -c counts matching LINES, never occurrences.
+  // Defect: grep -c counts matching LINES, never occurrences.
   const lineCount = (lines: string[], needle: string): number =>
     lines.filter((l) => l.includes(needle)).length;
   const reCount = (lines: string[], pattern: string): number => {
@@ -201,17 +215,15 @@ function legacyScan(repo: string, range: string | null, legacy: LegacyPolicy): L
   a += ea;
   r += er;
 
-  // Defect 1: one aggregate net across every token class.
-  const aggregateNet = a - r;
-  return { exit: aggregateNet > 0 ? 1 : 0, aggregateNet, perToken };
+  // Defect: one aggregate net across every token class.
+  return { exit: a - r > 0 ? 1 : 0, perToken };
 }
 
-// Map a checker token name onto the legacy counter that covered it, so the
-// undercount controls compare like with like.
+// Map a checker token class onto the legacy counter that covered it, so the
+// undercount controls compare like with like. The legacy gate had no separate
+// null/undefined/block classes at all, which is the point.
 function legacyCountFor(result: LegacyResult, token: string): number {
-  if (token === 'empty-catch') {
-    // The literal names come from fixture data: naming them in this executable
-    // source would make the suite an R75 violation against its own gate.
+  if (token.startsWith('empty-catch')) {
     return (
       result.perToken['empty-catch'] +
       FIXTURES.legacyAlgorithm.emptyCatchLiterals.reduce(
@@ -229,26 +241,53 @@ afterAll(() => {
   for (const dir of tempRoots) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('R75 gate — committed checker against real Git repositories', () => {
-  it('the checker and its policy are committed and executable', () => {
+describe('R75 gate — policy data', () => {
+  it('the checker and its policy are committed', () => {
     expect(existsSync(CHECKER)).toBe(true);
     expect(existsSync(POLICY)).toBe(true);
-    const policy = JSON.parse(readFileSync(POLICY, 'utf8'));
+  });
+
+  it('the policy declares scan scope and tokens as data', () => {
+    const policy = JSON.parse(REAL_POLICY);
     expect(policy.scan.includeExtensions.length).toBeGreaterThan(0);
+    expect(policy.scan.includeRoots).toContain('test/');
     expect(policy.literalTokens.length + policy.patternTokens.length).toBeGreaterThan(0);
   });
 
+  it('the swallowed-error returns are three distinct token classes', () => {
+    // Aggregating them would let a deleted null-returning catch pay for an
+    // introduced undefined-returning one.
+    const names = JSON.parse(REAL_POLICY).patternTokens.map((t: { name: string }) => t.name);
+    for (const cls of FIXTURES.policyExpectations.emptyCatchClasses) {
+      expect(names).toContain(cls);
+    }
+  });
+
+  it('the suppression rule states no length or character requirement', () => {
+    // The token name comes from fixture data: naming it in executable test
+    // source would make this suite an R75 violation against its own gate.
+    const suppressions = JSON.parse(REAL_POLICY).suppressions;
+    expect(suppressions).toHaveLength(1);
+    expect(suppressions[0].token).toBe(FIXTURES.policyExpectations.suppressionToken);
+    expect(Object.keys(suppressions[0])).not.toContain('reasonMinChars');
+  });
+});
+
+describe('R75 gate — committed checker against real Git repositories', () => {
   it.each(FIXTURES.cases.map((c) => [c.name, c] as [string, GateCase]))(
     'case: %s',
     (_name, testCase) => {
       const repo = newRepo();
       let range: string | null = null;
+      let base = '';
+
+      installPolicy(repo, REAL_POLICY);
 
       if (testCase.mode === 'range') {
         writeFiles(repo, testCase.base ?? {});
-        git(repo, ['add', '-A']);
-        git(repo, ['commit', '-q', '--allow-empty', '-m', 'base']);
-        const base = git(repo, ['rev-parse', 'HEAD']);
+        git(repo, ['add', '-A', '-f']);
+        git(repo, ['commit', '-q', '-m', 'base']);
+        base = git(repo, ['rev-parse', 'HEAD']);
         for (const [from, to] of Object.entries(testCase.renameTo ?? {})) {
           mkdirSync(dirname(join(repo, to)), { recursive: true });
           git(repo, ['mv', from, to]);
@@ -261,24 +300,23 @@ describe('R75 gate — committed checker against real Git repositories', () => {
         git(repo, ['commit', '-q', '--allow-empty', '-m', 'head']);
         range = `${base}...${git(repo, ['rev-parse', 'HEAD'])}`;
       } else {
-        git(repo, ['commit', '-q', '--allow-empty', '-m', 'base']);
         writeFiles(repo, testCase.staged ?? {});
         git(repo, ['add', '-A', '-f']);
         // Unstaged bytes are written AFTER staging so the index and the working
         // tree genuinely diverge.
         if (testCase.unstaged) writeFiles(repo, testCase.unstaged);
+        if (testCase.weakenWorkingTreePolicy) installPolicy(repo, WEAK_POLICY);
       }
 
       const args =
-        testCase.mode === 'range'
-          ? ['--mode=range', `--base=${(range as string).split('...')[0]}`]
-          : ['--mode=staged'];
+        testCase.mode === 'range' ? ['--mode=range', `--base=${base}`] : ['--mode=staged'];
       const result = runChecker(repo, args);
 
       expect(result.status).toBe(testCase.expectExit);
 
       for (const [token, net] of Object.entries(testCase.expectNet ?? {})) {
-        if (net === 0 && !result.stdout.includes(token)) continue; // no movement reported
+        // A class with no movement at all is not printed; net 0 is then implied.
+        if (net === 0 && reportedNet(result.stdout, token) === undefined) continue;
         expect(reportedNet(result.stdout, token)).toBe(net);
       }
       for (const offender of testCase.expectOffenders ?? []) {
@@ -289,20 +327,25 @@ describe('R75 gate — committed checker against real Git repositories', () => {
       }
       if (testCase.expectExit === 1) {
         // Diagnostics must survive: a bare non-zero exit is not actionable.
-        expect(result.stdout).toMatch(/FAIL/);
+        expect(result.stdout).toContain('FAIL');
         expect(result.stdout).toMatch(/net \+/);
       }
-
-      // Negative control.
-      const legacy = legacyScan(repo, range, FIXTURES.legacyAlgorithm);
-      expect(legacy.exit).toBe(testCase.legacyExit);
-      if (testCase.control === 'verdict') {
-        expect(legacy.exit).not.toBe(result.status);
+      if (testCase.expectExit === 0) {
+        expect(result.stdout).toContain('OK —');
       }
-      if (testCase.control === 'undercount') {
-        const token = testCase.controlToken as string;
-        const trueNet = reportedNet(result.stdout, token) as number;
-        expect(legacyCountFor(legacy, token)).toBeLessThan(trueNet);
+
+      if (testCase.legacyExit !== undefined) {
+        const legacy = legacyScan(repo, range, FIXTURES.legacyAlgorithm);
+        expect(legacy.exit).toBe(testCase.legacyExit);
+        if (testCase.control === 'verdict') {
+          expect(legacy.exit).not.toBe(result.status);
+        }
+        if (testCase.control === 'undercount') {
+          const token = testCase.controlToken as string;
+          expect(legacyCountFor(legacy, token)).toBeLessThan(
+            reportedNet(result.stdout, token) as number,
+          );
+        }
       }
     },
   );
@@ -313,17 +356,19 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
     'case: %s',
     (_name, testCase) => {
       const repo = newRepo();
-      git(repo, ['commit', '-q', '--allow-empty', '-m', 'base']);
-      let args = testCase.args;
-      if (testCase.writePolicy !== undefined) {
-        const badPolicy = join(repo, 'bad-policy.json');
-        writeFileSync(badPolicy, testCase.writePolicy);
-        args = args.map((a) => a.replace('__UNUSABLE_POLICY__', badPolicy));
+      installPolicy(repo, REAL_POLICY);
+      git(repo, ['add', '-A', '-f']);
+      git(repo, ['commit', '-q', '-m', 'base']);
+      if (testCase.stagePolicy !== undefined) {
+        installPolicy(repo, testCase.stagePolicy);
+        git(repo, ['add', '-A', '-f']);
       }
-      const result = runChecker(repo, args);
+
+      const result = runChecker(repo, testCase.args);
       expect(result.status).toBe(testCase.expectExit);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('operational failure');
+      expect(result.stdout).not.toContain('OK —');
     },
   );
 
@@ -331,6 +376,15 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
     const notARepo = mkdtempSync(join(tmpdir(), 'r75-nogit-'));
     tempRoots.push(notARepo);
     const result = runChecker(notARepo, ['--mode=staged']);
+    expect(result.status).toBe(2);
+    expect(result.stdout).not.toContain('OK —');
+  });
+
+  it('a repo with no committed policy fails instead of scanning with no rules', () => {
+    const repo = newRepo();
+    writeFiles(repo, { 'src/a.ts': ['const clean = 1;'] });
+    git(repo, ['add', '-A', '-f']);
+    const result = runChecker(repo, ['--mode=staged']);
     expect(result.status).toBe(2);
     expect(result.stdout).not.toContain('OK —');
   });
@@ -351,11 +405,8 @@ describe('R75 gate — CI and the pre-commit hook invoke the one committed check
   });
 
   it('neither surface keeps a second, divergent token implementation', () => {
-    // The repaired gate has exactly one implementation. A re-introduced inline
-    // grep over diff lines is the regression this guards.
     expect(workflow).not.toMatch(/grep\s+-c/);
     expect(hooks).not.toMatch(/grep\s+-c/);
-    expect(workflow.match(new RegExp(checkerRef, 'g'))?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('workflow_dispatch is explicitly non-certifying rather than fabricating a base', () => {

@@ -2,12 +2,11 @@ pre-commit:
   parallel: true
   commands:
     banned-cast-tokens:
-      # R75 / R100.A2. Runs the SAME committed checker the CI banned-casts job
-      # runs (scripts/check-r75.js + .github/r75-policy.json), in staged mode so
-      # it measures the index that is about to be committed, not unstaged working
-      # bytes. The previous inline grep was a second, divergent implementation:
-      # it used a different token set, different scan scope, and counted lines
-      # rather than occurrences, so the hook and CI disagreed on the same commit.
+      # R75 / R100.A2. Runs the SAME committed checker as the CI banned-casts job.
+      # Staged mode measures the index that is about to be committed — both the
+      # content and the policy — so unstaged edits cannot change the verdict or
+      # disarm the rules. The inline grep this replaced was a second, divergent
+      # implementation with a different token set, scope and counting method.
       # Exit 1 = R75 violation; exit 2 = operational failure (never a silent pass).
       run: node scripts/check-r75.js --mode=staged
     tsc:
