@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Observable, tap } from 'rxjs';
 
@@ -23,7 +18,8 @@ import { Observable, tap } from 'rxjs';
  *     /auth/*              login responses (access tokens)
  *     /messaging/*         realtime coach-client messaging
  *     /admin/*             owner-only console (per-request fanout)
- *     /health*             health/readiness probes
+ *     /health*             liveness probes
+ *     /readyz              current database readiness, never a cached success
  *     /.well-known/*       AASA + assetlinks (signed by deploy, not cacheable
  *                          long enough to matter; clients re-fetch on every
  *                          link tap)
@@ -40,6 +36,7 @@ const NO_STORE_PREFIXES: ReadonlyArray<string> = [
   '/messaging/',
   '/admin/',
   '/health',
+  '/readyz',
   '/.well-known/',
 ];
 

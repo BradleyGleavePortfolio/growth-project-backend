@@ -70,6 +70,6 @@ describe('HealthController', () => {
     expect(res.statusCode).toBe(HttpStatus.SERVICE_UNAVAILABLE);
     expect(body.ok).toBe(false);
     expect(body.db).toBe('down');
-    expect(body.error).toContain('connection refused');
+    expect(body.error).toBe('database_unavailable');
   });
 });

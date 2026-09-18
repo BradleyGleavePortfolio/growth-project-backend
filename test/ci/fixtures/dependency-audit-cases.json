@@ -1,0 +1,37 @@
+{
+  "_note": "SYNTHETIC fake-npm process outcomes used to prove the dependency-audit workflow's shell body fails closed. These strings are invented harness data, NOT evidence of any real advisory, CVE, or audit run against this repository's lockfile. The fake npm echoes stdout/stderr, so no trailing newline is stored here.",
+  "cases": [
+    {
+      "id": "native-success",
+      "description": "npm audit finds nothing at high or critical and exits 0",
+      "npmExitCode": 0,
+      "stdout": "found 0 vulnerabilities",
+      "stderr": "",
+      "expectShellExit": "zero"
+    },
+    {
+      "id": "simulated-vulnerable",
+      "description": "SYNTHETIC vulnerable graph: npm audit's documented exit 1 for advisories at or above the audit level",
+      "npmExitCode": 1,
+      "stdout": "2 high severity vulnerabilities (SYNTHETIC FIXTURE, not a real advisory)",
+      "stderr": "",
+      "expectShellExit": "nonzero"
+    },
+    {
+      "id": "infrastructure-failure",
+      "description": "Arbitrary non-vulnerability infrastructure failure (registry unreachable / npm internal error)",
+      "npmExitCode": 42,
+      "stdout": "",
+      "stderr": "npm error code ENETUNREACH (SYNTHETIC FIXTURE)",
+      "expectShellExit": "nonzero"
+    },
+    {
+      "id": "empty-output-nonzero",
+      "description": "Silent non-zero exit: no output at all must still fail, never be read as success",
+      "npmExitCode": 7,
+      "stdout": "",
+      "stderr": "",
+      "expectShellExit": "nonzero"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ module.exports = [
       // slice edits jest.config.js. Both files lint clean.
       '!jest.config.js',
       '!eslint.config.js',
+      '!scripts/check-r75.js',
     ],
   },
 
