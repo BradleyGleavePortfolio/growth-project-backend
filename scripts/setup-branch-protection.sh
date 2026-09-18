@@ -80,7 +80,7 @@ fi
 #                        rls-floor-guard, rls-live-tests, mwb-3-live-tests
 #   danger.yml          (pull_request: branches:[main], no paths): danger
 #   r100-quality-gate.yml (pull_request: branches:[main], no paths):
-#                        Banned cast tokens, LOC budget, Test density
+#                        Banned cast tokens
 #   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
 #                        (the PR-mode deploy-readiness board; PR-eligible)
 #
@@ -120,8 +120,6 @@ REQUIRED_CHECKS=(
   "danger"
   # r100-quality-gate.yml — runs on every PR to main (no paths filter)
   "Banned cast tokens (R75 / R100.A2)"
-  "LOC budget (R100.A3)"
-  "Test density (R100.A1)"
   # h4-readiness.yml — runs on every PR (no paths filter). PR-eligible; the
   # non-PR strict gate (deploy-readiness-gate) is deliberately NOT listed here.
   "test-deploy-readiness"

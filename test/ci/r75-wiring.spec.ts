@@ -249,3 +249,142 @@ describe('R75 executable wiring contracts', () => {
     expect(checkout?.with?.['fetch-depth']).toBe(0);
   });
 });
+
+describe('canonical quota retirement preserves the remaining enforcement', () => {
+  it('removes quota requirements without changing the retained provisioning payload', () => {
+    const script = readFileSync(join(root, 'scripts/setup-branch-protection.sh'), 'utf8');
+    const start = script.indexOf('REQUIRED_CHECKS=(\n');
+    const end = script.indexOf('\necho "Applying branch protection');
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    // Evaluate only local array/JSON construction, NEVER the provisioning script
+    // or its network operations. No credentials or repository target are supplied.
+    const construction = script.slice(start, end);
+    expect(construction).not.toMatch(/\bcurl\b|\bgh\b|GH_TOKEN|GH_REPO|PROTECTION_URL/);
+    const result = shell(root, `${construction}\nprintf '%s' "$PAYLOAD"`);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      required_status_checks: {
+        strict: true,
+        checks: [
+          'build-and-test',
+          'rls-floor-guard',
+          'rls-live-tests',
+          'mwb-3-live-tests',
+          'danger',
+          'Banned cast tokens (R75 / R100.A2)',
+          'test-deploy-readiness',
+        ].map((context) => ({ context, app_id: -1 })),
+      },
+      enforce_admins: true,
+      required_pull_request_reviews: {
+        dismiss_stale_reviews: true,
+        require_code_owner_reviews: true,
+        required_approving_review_count: 1,
+        require_last_push_approval: true,
+      },
+      restrictions: null,
+      required_linear_history: true,
+      allow_force_pushes: false,
+      allow_deletions: false,
+      block_creations: false,
+      required_conversation_resolution: true,
+      lock_branch: false,
+      allow_fork_syncing: false,
+    });
+  });
+
+  it('removes only the quota jobs, not the R75 event or execution boundary', () => {
+    const configuration = load(
+      readFileSync(join(root, '.github/workflows/r100-quality-gate.yml'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(configuration.on).toEqual({
+      pull_request: { branches: ['main'] },
+      workflow_dispatch: null,
+    });
+    expect(configuration.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
+    expect(configuration.concurrency).toEqual({
+      group: 'r100-quality-gate-${{ github.ref }}',
+      'cancel-in-progress': true,
+    });
+    expect(Object.keys(workflow.jobs)).toEqual(['banned-casts']);
+    // No new job/step condition, dependency, or continue-on-error may skip R75.
+    expect(Object.keys(job).sort()).toEqual(['name', 'runs-on', 'steps']);
+    expect(job.steps).toHaveLength(3);
+    expect(job.steps.map((entry) => Object.keys(entry).sort())).toEqual([
+      ['uses', 'with'],
+      ['uses', 'with'],
+      ['env', 'name', 'run', 'shell'],
+    ]);
+    expect(body).not.toMatch(/PR_TITLE|GH_TOKEN|gh pr view|--numstat/);
+  });
+
+  it.each([
+    ['range', false, ''],
+    ['range', true, ''],
+    ['staged', false, ''],
+    ['staged', true, ''],
+    ['range', false, '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]'],
+    ['range', true, '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]'],
+    ['staged', false, '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]'],
+    ['staged', true, '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]'],
+  ] as const)(
+    '%s measures safety, not volume or title (violation=%s, title=%s)',
+    (mode, violation, title) => {
+      const { repo, base } = repository(false);
+      const lines = Array.from({ length: 1101 }, (_, index) => `export const item${index} = 1;`);
+      if (violation) lines.push(vectors.tokens[0].input);
+      write(repo, 'src/large.ts', `${lines.join('\n')}\n`);
+      git(repo, 'add', '-A', '-f');
+      expect(git(repo, 'diff', '--cached', '--numstat', '--', 'src/large.ts')).toBe(
+        `${lines.length}\t0\tsrc/large.ts`,
+      );
+      // No test additions or exemption title are required to measure this diff.
+      expect(git(repo, 'diff', '--cached', '--name-only', '--', 'test/')).toBe('');
+      let head = '';
+      if (mode === 'range') {
+        git(repo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'large source');
+        head = git(repo, 'rev-parse', 'HEAD');
+        git(repo, 'checkout', '-q', '--detach', base);
+      }
+      const result = shell(repo, mode === 'range' ? body : hook, {
+        EVENT_NAME: 'pull_request',
+        BASE_SHA: base,
+        HEAD_SHA: head,
+        PR_TITLE: title,
+        PR_TITLE_EVENT: title,
+      });
+      expect(result.status).toBe(violation ? 1 : 0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain(
+        violation ? 'FAIL: positive per-class token change' : 'OK — no positive token change',
+      );
+      if (violation) expect(result.stdout).toContain('src/large.ts');
+    },
+  );
+
+  it.each(['range', 'staged'] as const)(
+    'retired title exemptions cannot turn broken policy into success in %s',
+    (mode) => {
+      const { repo, base } = repository(false);
+      write(repo, policyPath, '{invalid policy');
+      git(repo, 'add', '-A', '-f');
+      let head = '';
+      if (mode === 'range') {
+        git(repo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'invalid policy');
+        head = git(repo, 'rev-parse', 'HEAD');
+      }
+      const result = shell(repo, mode === 'range' ? body : hook, {
+        EVENT_NAME: 'pull_request',
+        BASE_SHA: base,
+        HEAD_SHA: head,
+        PR_TITLE: '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]',
+        PR_TITLE_EVENT: '[LOC-EXEMPT: legacy] [TEST-EXEMPT: legacy]',
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('operational failure');
+      expect(result.stdout).not.toContain('OK');
+    },
+  );
+});

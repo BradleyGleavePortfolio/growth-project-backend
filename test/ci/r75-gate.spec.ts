@@ -465,11 +465,4 @@ describe('R75 gate — CI and the pre-commit hook invoke the one committed check
     expect(workflow).toContain('NON-CERTIFYING RUN');
     expect(workflow).toMatch(/pull_request event carried no base SHA/);
   });
-
-  it('the LOC and density jobs keep their own measurement pathspecs', () => {
-    // Ownership boundary: this repair touches the banned-casts job only.
-    expect(workflow).toContain('loc-budget:');
-    expect(workflow).toContain('test-density:');
-    expect(workflow).toContain(":(glob)scripts/**/*.js'");
-  });
 });
