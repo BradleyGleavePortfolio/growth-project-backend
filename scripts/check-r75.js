@@ -5,6 +5,7 @@
 // Raw NUL-delimited Git records avoid filename quoting and hunk-parser bugs.
 const { spawnSync } = require('child_process');
 const POLICY_PATH = '.github/r75-policy.json';
+const print = (line) => process.stdout.write(`${line}\n`);
 
 function fail(message) {
   throw new Error(message);
@@ -161,18 +162,18 @@ function measure(scope, policy) {
 try {
   const scope = argumentsOf(process.argv.slice(2));
   const totals = measure(scope, readPolicy(scope.policy));
-  console.log(`R75 ${scope.label}; policy=${scope.policy}`);
-  console.log('Counts are whole-file after (+) and before (-); net is the per-class change.');
+  print(`R75 ${scope.label}; policy=${scope.policy}`);
+  print('Counts are whole-file after (+) and before (-); net is the per-class change.');
   for (const { token, before, after } of totals) {
-    if (before || after) console.log(`  ${token.name}  +${after} -${before} net ${after - before}`);
+    if (before || after) print(`  ${token.name}  +${after} -${before} net ${after - before}`);
   }
   const offenders = totals.filter((total) => total.after > total.before);
-  console.log(
+  print(
     offenders.length ? 'FAIL: positive per-class token change' : 'OK — no positive token change',
   );
   for (const { token, before, after, files } of offenders) {
-    console.log(`${token.name}: +${after} -${before} net +${after - before}`);
-    for (const path of files) console.log(`  ${path}`);
+    print(`${token.name}: +${after} -${before} net +${after - before}`);
+    for (const path of files) print(`  ${path}`);
   }
   process.exitCode = offenders.length ? 1 : 0;
 } catch (error) {
