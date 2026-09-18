@@ -84,8 +84,8 @@ const REAL_POLICY = readFileSync(POLICY, 'utf8');
 // Used only to prove the checker does not read it when the index carries the
 // real one.
 const WEAK_POLICY = JSON.stringify({
-  scan: { includeExtensions: ['.ts'], includeRoots: ['nowhere/'] },
-  literalTokens: [{ literal: 'zzz-not-a-real-token' }],
+  scan: { ...JSON.parse(REAL_POLICY).scan, includeRoots: ['nowhere/'] },
+  tokens: [{ name: 'zzz-not-a-real-token', pattern: 'zzz-not-a-real-token' }],
 });
 
 const tempRoots: string[] = [];
@@ -253,13 +253,13 @@ describe('R75 gate — policy data', () => {
     const policy = JSON.parse(REAL_POLICY);
     expect(policy.scan.includeExtensions.length).toBeGreaterThan(0);
     expect(policy.scan.includeRoots).toContain('test/');
-    expect(policy.literalTokens.length + policy.patternTokens.length).toBeGreaterThan(0);
+    expect(policy.tokens.length).toBeGreaterThan(0);
   });
 
   it('the swallowed-error returns are three distinct token classes', () => {
     // Aggregating them would let a deleted null-returning catch pay for an
     // introduced undefined-returning one.
-    const names = JSON.parse(REAL_POLICY).patternTokens.map((t: { name: string }) => t.name);
+    const names = JSON.parse(REAL_POLICY).tokens.map((t: { name: string }) => t.name);
     for (const cls of FIXTURES.policyExpectations.emptyCatchClasses) {
       expect(names).toContain(cls);
     }

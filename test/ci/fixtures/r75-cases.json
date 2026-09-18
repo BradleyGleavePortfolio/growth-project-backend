@@ -543,43 +543,43 @@
       "name": "policy with no scan section fails",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"literalTokens\":[{\"literal\":\"as any\"}]}"
+      "stagePolicy": "{\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     },
     {
       "name": "policy with no positive selector cannot return green",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[],\"includeFiles\":[]},\"literalTokens\":[{\"literal\":\"as any\"}]}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     },
     {
       "name": "policy with an empty excludeSegments selector cannot silently exclude everything",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"excludeSegments\":[\"\"]},\"literalTokens\":[{\"literal\":\"as any\"}]}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[\"\"]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     },
     {
       "name": "policy with no tokens cannot return green",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"]}}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]}}"
     },
     {
       "name": "policy with an empty-matching pattern is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"]},\"patternTokens\":[{\"name\":\"x\",\"pattern\":\"a*\"}]}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"a*\"}]}"
     },
     {
       "name": "policy with an invalid regex is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"]},\"patternTokens\":[{\"name\":\"x\",\"pattern\":\"([\"}]}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"([\"}]}"
     },
     {
       "name": "policy naming a suppression for an unknown token is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"]},\"literalTokens\":[{\"literal\":\"as any\"}],\"suppressions\":[{\"token\":\"@ts-nope\"}]}"
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"suppressions\":[{\"token\":\"@ts-nope\"}],\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     }
   ]
 }

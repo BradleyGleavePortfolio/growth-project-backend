@@ -35,7 +35,7 @@ function argumentsOf(argv) {
     if (Object.hasOwn(args, 'base') || Object.hasOwn(args, 'head')) {
       fail('staged mode does not accept range references');
     }
-    return { diff: ['--cached'], policy: `:${POLICY_PATH}`, label: 'staged index' };
+    return { diff: ['--cached'], policy: `:${POLICY_PATH}` };
   }
   if (args.mode !== 'range' || !args.base?.trim()) fail('range mode requires a nonempty base');
   const resolve = (ref) =>
@@ -44,61 +44,35 @@ function argumentsOf(argv) {
   const head = resolve(args.head?.trim() || 'HEAD');
   const ancestor = git(['merge-base', base, head]).trim();
   if (!ancestor) fail('no merge base');
-  return {
-    diff: [ancestor, head],
-    policy: `${head}:${POLICY_PATH}`,
-    label: `${ancestor}..${head}`,
-  };
+  return { diff: [ancestor, head], policy: `${head}:${POLICY_PATH}` };
 }
 
 function readPolicy(source) {
   const policy = JSON.parse(git(['show', source]));
   const scan = policy.scan;
-  if (!scan || typeof scan !== 'object') fail('policy has no scan section');
-  for (const key of [
-    'includeExtensions',
-    'includeRoots',
-    'includeFiles',
-    'excludeSuffixes',
-    'excludeSegments',
-  ]) {
-    scan[key] ??= [];
-    if (
-      !Array.isArray(scan[key]) ||
-      scan[key].some((value) => typeof value !== 'string' || !value)
-    ) {
-      fail(`unusable policy selector: ${key}`);
-    }
-  }
+  if (
+    Object.keys(scan).sort().join() !==
+    'excludeSegments,excludeSuffixes,includeExtensions,includeFiles,includeRoots'
+  )
+    fail('policy must provide the five selector arrays');
+  for (const values of Object.values(scan))
+    if (!Array.isArray(values) || values.some((value) => typeof value !== 'string' || !value))
+      fail('unusable policy selector');
   if (!scan.includeExtensions.length || !(scan.includeRoots.length + scan.includeFiles.length)) {
     fail('policy needs extensions and a positive path selector');
   }
-  const tokens = [];
-  for (const entry of policy.literalTokens || []) {
-    if (typeof entry.literal !== 'string' || !entry.literal) fail('invalid literal token');
-    tokens.push({
-      name: entry.name || entry.literal,
-      regex: new RegExp(entry.literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-    });
-  }
-  for (const entry of policy.patternTokens || []) {
-    if (typeof entry.pattern !== 'string' || !entry.pattern) fail('invalid pattern token');
-    const regex = new RegExp(entry.pattern, 'g');
+  const tokens = policy.tokens.map(({ name, pattern }) => {
+    if (typeof name !== 'string' || !name || typeof pattern !== 'string' || !pattern)
+      fail('invalid token name or pattern');
+    const regex = new RegExp(pattern, 'g');
     if (regex.test('')) fail('pattern matches empty input');
-    tokens.push({ name: entry.name, regex });
-  }
-  const names = tokens.map((token) => token.name);
-  if (
-    !names.length ||
-    names.some((name) => typeof name !== 'string' || !name) ||
-    new Set(names).size !== names.length
-  )
-    fail('missing, invalid or duplicate token names');
-  const suppressed = new Set();
-  for (const entry of policy.suppressions || []) {
-    if (!names.includes(entry.token)) fail('suppression names an unknown token');
-    suppressed.add(entry.token);
-  }
+    return { name, regex };
+  });
+  const names = new Set(tokens.map((token) => token.name));
+  if (!names.size || names.size !== tokens.length) fail('missing or duplicate token names');
+  const suppressed = new Set((policy.suppressions || []).map((entry) => entry.token));
+  if ([...suppressed].some((token) => !names.has(token)))
+    fail('suppression names an unknown token');
   return { scan, tokens, suppressed };
 }
 
@@ -162,20 +136,18 @@ function measure(scope, policy) {
 try {
   const scope = argumentsOf(process.argv.slice(2));
   const totals = measure(scope, readPolicy(scope.policy));
-  print(`R75 ${scope.label}; policy=${scope.policy}`);
+  print(`R75 ${scope.diff.join(' ')}; policy=${scope.policy}`);
   print('Counts are whole-file after (+) and before (-); net is the per-class change.');
-  for (const { token, before, after } of totals) {
-    if (before || after) print(`  ${token.name}  +${after} -${before} net ${after - before}`);
+  for (const { token, before, after, files } of totals) {
+    if (before || after)
+      print(
+        `${token.name}: +${after} -${before} net ${after > before ? '+' : ''}${after - before}`,
+      );
+    if (after > before) for (const path of files) print(`  ${path}`);
   }
-  const offenders = totals.filter((total) => total.after > total.before);
-  print(
-    offenders.length ? 'FAIL: positive per-class token change' : 'OK — no positive token change',
-  );
-  for (const { token, before, after, files } of offenders) {
-    print(`${token.name}: +${after} -${before} net +${after - before}`);
-    for (const path of files) print(`  ${path}`);
-  }
-  process.exitCode = offenders.length ? 1 : 0;
+  const failed = totals.some((total) => total.after > total.before);
+  print(failed ? 'FAIL: positive per-class token change' : 'OK — no positive token change');
+  process.exitCode = failed ? 1 : 0;
 } catch (error) {
   console.error(`R75 gate operational failure: ${error.message}`);
   process.exitCode = 2;

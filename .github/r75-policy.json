@@ -13,21 +13,53 @@
       "vendor/",
       ".yarn/",
       "generated/"
-    ],
-    "note": "Application AND test sources are in scope, top-level and nested, including co-located *.spec.* / *.test.* files; R131 records that reading R75 as src-only was a misreading. Fixture DATA is out of scope only because .json is not an executable extension."
+    ]
   },
-  "literalTokens": [
-    { "literal": "@ts-ignore" },
-    { "literal": "@ts-expect-error" },
-    { "literal": "Coming soon" },
-    { "literal": "lorem ipsum" },
-    { "literal": "foo@bar" },
-    { "literal": "John Doe" }
+  "patternNote": "The three swallowed-error forms are DISTINCT token classes on purpose. A single aggregated empty-catch class would let a deleted null-returning catch pay for an introduced undefined-returning one — the same substitution loophole R75 exists to close. Each pattern normalizes formatting only: optional async, empty or named or typed or parenthesised parameter, and arbitrary whitespace.",
+  "suppressions": [
+    {
+      "token": "@ts-expect-error",
+      "note": "R75 permits this directive when the same line carries a non-empty reason. Non-empty is the whole rule: no minimum length, no ASCII or alphanumeric requirement, no issue number. The exception applies to this directive occurrence only; other banned tokens on the same line still count."
+    }
   ],
-  "patternTokens": [
-    { "name": "as any", "pattern": "\\bas\\s+any\\b" },
-    { "name": "as unknown as", "pattern": "\\bas\\s+unknown\\s+as\\b" },
-    { "name": "as never", "pattern": "\\bas\\s+never\\b" },
+  "scopeNote": "Application AND test sources are in scope, top-level and nested, including co-located *.spec.* / *.test.* files; R131 records that reading R75 as src-only was a misreading. Fixture DATA is out of scope only because .json is not an executable extension.",
+  "tokens": [
+    {
+      "name": "@ts-ignore",
+      "pattern": "@ts-ignore"
+    },
+    {
+      "name": "@ts-expect-error",
+      "pattern": "@ts-expect-error"
+    },
+    {
+      "name": "Coming soon",
+      "pattern": "Coming soon"
+    },
+    {
+      "name": "lorem ipsum",
+      "pattern": "lorem ipsum"
+    },
+    {
+      "name": "foo@bar",
+      "pattern": "foo@bar"
+    },
+    {
+      "name": "John Doe",
+      "pattern": "John Doe"
+    },
+    {
+      "name": "as any",
+      "pattern": "\\bas\\s+any\\b"
+    },
+    {
+      "name": "as unknown as",
+      "pattern": "\\bas\\s+unknown\\s+as\\b"
+    },
+    {
+      "name": "as never",
+      "pattern": "\\bas\\s+never\\b"
+    },
     {
       "name": "empty-catch-null",
       "pattern": "\\.catch\\(\\s*(?:async\\s*)?(?:\\(\\s*[^()]*\\)|[A-Za-z_$][\\w$]*)\\s*=>\\s*null\\s*\\)"
@@ -39,13 +71,6 @@
     {
       "name": "empty-catch-block",
       "pattern": "\\.catch\\(\\s*(?:async\\s*)?(?:\\(\\s*[^()]*\\)|[A-Za-z_$][\\w$]*)\\s*=>\\s*\\{\\s*\\}\\s*\\)"
-    }
-  ],
-  "patternNote": "The three swallowed-error forms are DISTINCT token classes on purpose. A single aggregated empty-catch class would let a deleted null-returning catch pay for an introduced undefined-returning one — the same substitution loophole R75 exists to close. Each pattern normalizes formatting only: optional async, empty or named or typed or parenthesised parameter, and arbitrary whitespace.",
-  "suppressions": [
-    {
-      "token": "@ts-expect-error",
-      "note": "R75 permits this directive when the same line carries a non-empty reason. Non-empty is the whole rule: no minimum length, no ASCII or alphanumeric requirement, no issue number. The exception applies to this directive occurrence only; other banned tokens on the same line still count."
     }
   ]
 }
