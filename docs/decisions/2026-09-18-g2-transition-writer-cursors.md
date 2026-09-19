@@ -26,8 +26,8 @@ entire transaction, including changes to an already-existing target's fields.
 T success upgrades any previous outcome. T skip/failure cannot overwrite an
 already committed reconstructed status, target reference or reason, but MUST
 still validate/claim its provenance. Between non-success attempts, the last
-serialized T outcome wins; this is not scheduler-independent ordering. A claim
-may advance `updated_at` even when preserving the outcome.
+serialized T outcome wins; this is not scheduler-independent ordering. The ledger
+has no `updated_at` field; the claim changes only platform and preserves existing `created_at`.
 
 Each success or non-success ledger transaction retries at most once, and only
 for Prisma P2002 (unique insertion contention) or P2034 (write conflict/deadlock).
