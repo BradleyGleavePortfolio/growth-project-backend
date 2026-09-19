@@ -824,7 +824,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "1.4.0"
+    "version": "1.4.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1694,12 +1694,12 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Omit for the first page. A malformed or mismatched cursor is a 400 (fail closed).",
+            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits legacy. Omit for the first page. A malformed or mismatched cursor is a 400 (fail closed).",
             "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
-              "maxLength": 512,
+              "maxLength": 8192,
               "type": "string"
             }
           },
@@ -1808,12 +1808,12 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. A malformed cursor is a 400 (fail closed).",
+            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits legacy. A malformed cursor is a 400 (fail closed).",
             "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
-              "maxLength": 512,
+              "maxLength": 8192,
               "type": "string"
             }
           },
