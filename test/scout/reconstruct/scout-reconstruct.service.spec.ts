@@ -26,6 +26,7 @@ interface StagedRow {
   payload: unknown;
 }
 interface LedgerRow {
+  source_platform?: string | null;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -133,6 +134,18 @@ class FakePrisma {
   };
 
   scoutReconstructionLedger = {
+    updateMany: async (args: {
+      where: { coach_id: string; intent_id: string; entity_type: string; source_id: string;
+        OR?: Array<{ source_platform: string | null }>; status?: { not: string } };
+      data: Partial<LedgerRow>;
+    }) => {
+      const w = args.where;
+      const row = this.ledger.get(`${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_id}`);
+      if (!row || (w.OR && !w.OR.some((p) => p.source_platform === (row.source_platform ?? null))) ||
+          (w.status && row.status === w.status.not)) return { count: 0 };
+      Object.assign(row, args.data);
+      return { count: 1 };
+    },
     upsert: async (args: {
       where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
       create: LedgerRow;
@@ -191,6 +204,148 @@ function stagedClient(sourceId: string, name = `Name ${sourceId}`): StagedRow {
 }
 
 describe('ScoutReconstructService', () => {
+  afterEach(() => jest.restoreAllMocks());
+  it.each(['', 'TrueCoach', 'truecoach ', ' truecoach', '-bad', 'a'.repeat(257), 'a\n'])(
+    'rejects noncanonical provenance without any write: %j',
+    async (platform) => {
+      const { service, prisma } = build((p) => {
+        p.staged = [{ ...stagedClient('private-id'), source_platform: platform }];
+      });
+      await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toThrow(
+        'reconstruction provenance conflict',
+      );
+      expect(prisma.persons.size).toBe(0);
+      expect(prisma.ledger.size).toBe(0);
+    },
+  );
+
+  it.each(['reconstructed', 'skipped', 'failed'])(
+    'creates %s with actual staging provenance',
+    async (status) => {
+      const platform = status === 'skipped' ? 'unregistered.v1:token-2' : 'truecoach';
+      const { service, prisma } = build((p) => {
+        p.staged = [{ ...stagedClient('1'), source_platform: platform }];
+        if (status === 'failed') p.poison.add('1');
+      });
+      await service.reconstruct('coach-1', 'intent-1');
+      expect([...prisma.ledger.values()]).toEqual([
+        expect.objectContaining({ status, source_platform: platform }),
+      ]);
+    },
+  );
+
+  it.each(['skipped', 'failed'])(
+    'claims NULL but preserves a committed success on %s replay, including reason',
+    async (attempt) => {
+      const { service, prisma } = build((p) => { p.staged = [stagedClient('1')]; });
+      await service.reconstruct('coach-1', 'intent-1');
+      const row = [...prisma.ledger.values()][0];
+      row.source_platform = null;
+      row.reason = 'retained-success-reason';
+      const target = row.target_id;
+      if (attempt === 'skipped') jest.spyOn(service['families'].get('clients')!, 'map')
+        .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
+      else prisma.poison.add('1');
+      const result = await service.reconstruct('coach-1', 'intent-1');
+      expect(row).toMatchObject({
+        source_platform: 'truecoach', status: 'reconstructed',
+        reason: 'retained-success-reason', target_id: target,
+      });
+      expect(result).toMatchObject({ reconstructed: 1, failed: 0, skipped: 0 });
+    },
+  );
+
+  it.each(['reconstructed', 'skipped', 'failed'])(
+    'refuses contradictory provenance even if preserving an existing %s',
+    async (status) => {
+      const { service, prisma } = build((p) => { p.staged = [stagedClient('1')]; });
+      await service.reconstruct('coach-1', 'intent-1');
+      const row = [...prisma.ledger.values()][0];
+      row.source_platform = 'different';
+      row.status = status;
+      const before = { ...row };
+      jest.spyOn(service['families'].get('clients')!, 'map')
+        .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
+      await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toThrow(
+        'reconstruction provenance conflict',
+      );
+      expect(row).toEqual(before);
+    },
+  );
+
+  it('uses serialized last non-success attempt, then allows success to upgrade it', async () => {
+    const { service, prisma } = build((p) => {
+      p.staged = [stagedClient('1')];
+      p.poison.add('1');
+    });
+    await service.reconstruct('coach-1', 'intent-1');
+    const row = [...prisma.ledger.values()][0];
+    expect(row.status).toBe('failed');
+    jest.spyOn(service['families'].get('clients')!, 'map')
+      .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
+    await service.reconstruct('coach-1', 'intent-1');
+    expect(row.status).toBe('skipped');
+    prisma.poison.clear();
+    prisma.staged[0] = stagedClient('1');
+    await service.reconstruct('coach-1', 'intent-1');
+    expect(row).toMatchObject({ status: 'reconstructed', reason: null });
+    expect(row.target_id).not.toBeNull();
+  });
+
+  it('isolates a throwing mapper, sanitizes error names and continues siblings', async () => {
+    const { service, prisma } = build((p) => { p.staged = [stagedClient('1'), stagedClient('2')]; });
+    const family = service['families'].get('clients')!;
+    const original = family.map;
+    const mapper = jest.spyOn(family, 'map').mockImplementation((row) => {
+      if (row.source_id === '1') {
+        const error = new Error('private payload');
+        error.name = 'private database identifier';
+        throw error;
+      }
+      return original(row);
+    });
+    try {
+      expect(await service.reconstruct('coach-1', 'intent-1')).toMatchObject({
+        staged: 2, failed: 1, reconstructed: 1,
+      });
+      expect([...prisma.ledger.values()].find((row) => row.source_id === '1')).toMatchObject({
+        source_platform: 'truecoach', reason: 'error:Error',
+      });
+    } finally { mapper.mockRestore(); }
+  });
+
+  it.each(['P2002', 'P2034'])('retries %s once on skipped and failed ledger writes', async (code) => {
+    for (const outcome of ['skipped', 'failed']) {
+      const { service, prisma } = build((p) => {
+        p.staged = [stagedClient('1')];
+        if (outcome === 'skipped') p.staged[0].source_platform = 'auto:coachrx.example.com';
+        else p.poison.add('1');
+      });
+      const update = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert')
+        .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('private', {
+          code, clientVersion: 'test',
+        }));
+      await service.reconstruct('coach-1', 'intent-1');
+      expect(update).toHaveBeenCalledTimes(2);
+      expect([...prisma.ledger.values()][0]).toMatchObject({
+        status: outcome, source_platform: outcome === 'skipped' ? 'auto:coachrx.example.com' : 'truecoach',
+      });
+    }
+  });
+
+  it.each(['P2002', 'P2034', 'P2003'])('bounds exhausted/nonretryable %s ledger writes', async (code) => {
+    const { service, prisma } = build((p) => {
+      p.staged = [{ ...stagedClient('1'), source_platform: 'unsupported' }];
+    });
+    const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert')
+      .mockRejectedValue(new Prisma.PrismaClientKnownRequestError('private', {
+        code, clientVersion: 'test',
+      }));
+    await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toMatchObject({ code });
+    expect(upsert).toHaveBeenCalledTimes(code === 'P2003' ? 1 : 2);
+    expect(prisma.ledger.size).toBe(0);
+  });
+
   it('rejects an intent that has not settled (still running) with 409', async () => {
     const { service } = build((p) => {
       p.terminalStatus = null;

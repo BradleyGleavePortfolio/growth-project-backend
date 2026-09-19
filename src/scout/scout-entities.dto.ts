@@ -1,3 +1,4 @@
+import { SCOUT_CURSOR_MAX_LENGTH } from './scout-cursor';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
@@ -73,13 +74,14 @@ export class ScoutEntitiesQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `next_cursor` by a prior call ' +
-      'for the SAME intent + family. Omit for the first page. A malformed or ' +
+      'for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits legacy. ' +
+      'Omit for the first page. A malformed or ' +
       'mismatched cursor is a 400 (fail closed).',
-    maxLength: 512,
+    maxLength: SCOUT_CURSOR_MAX_LENGTH,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(512)
+  @MaxLength(SCOUT_CURSOR_MAX_LENGTH)
   cursor?: string;
 
   @ApiPropertyOptional({

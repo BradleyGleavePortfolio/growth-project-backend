@@ -1,3 +1,4 @@
+import { SCOUT_CURSOR_MAX_LENGTH } from './scout-cursor';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PersonState } from '@prisma/client';
 import { Type } from 'class-transformer';
@@ -43,12 +44,12 @@ export class ScoutRosterQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `page.next_cursor` by a prior ' +
-      'call. Omit for the first page. A malformed cursor is a 400 (fail closed).',
-    maxLength: 512,
+      'call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits legacy. A malformed cursor is a 400 (fail closed).',
+    maxLength: SCOUT_CURSOR_MAX_LENGTH,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(512)
+  @MaxLength(SCOUT_CURSOR_MAX_LENGTH)
   cursor?: string;
 
   @ApiPropertyOptional({
