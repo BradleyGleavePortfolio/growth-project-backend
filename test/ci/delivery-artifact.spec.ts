@@ -85,6 +85,11 @@ describe('codeql.yml — fail closed', () => {
 
 describe('sbom.yml — production closure, lifecycle-free install, proven artifact', () => {
   const yml = read('.github/workflows/sbom.yml');
+  it('runs on pull requests to main and on main pushes (requirable pre-merge, verifiable post-merge)', () => {
+    const on = yml.slice(yml.indexOf('\non:'), yml.indexOf('\npermissions:'));
+    expect(on).toMatch(/pull_request:\s*\n\s+branches: \[main\]/);
+    expect(on).toMatch(/push:\s*\n\s+branches: \[main\]/);
+  });
   it('installs with --omit=dev --ignore-scripts (the lefthook prepare hook killed the old job)', () => {
     expect(yml).toMatch(/npm ci --omit=dev --ignore-scripts/);
   });

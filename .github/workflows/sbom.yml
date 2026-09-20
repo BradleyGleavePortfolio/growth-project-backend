@@ -18,6 +18,8 @@ name: SBOM (CycloneDX)
 # scripts/ci/assert-prod-sbom.sh then proves no dev-only package is present.
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     tags: ['v*.*.*']
