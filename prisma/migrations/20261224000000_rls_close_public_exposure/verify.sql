@@ -1,7 +1,7 @@
 -- S1-DB-01 catalog verifier — the ONLY truthful post-deploy/post-restore check.
 --
 -- Prisma's `migrate status` answers from _prisma_migrations, not from the
--- catalog. If this migration's DDL is reversed out-of-band (rollback.sql,
+-- catalog. If this migration's DDL is reversed out-of-band (down.sql,
 -- manual psql, restore of an older dump) Prisma still prints "Database schema
 -- is up to date!" and `migrate resolve --rolled-back` refuses (row not failed).
 -- This script inspects pg_class / pg_policy / ACLs / pg_proc directly and
@@ -36,7 +36,7 @@ BEGIN
   WHERE i.inhparent = to_regclass('public.community_messages');
 
   IF to_regclass('public.community_messages') IS NULL THEN
-    problems := problems || 'parent public.community_messages missing';
+    problems := array_append(problems, 'parent public.community_messages missing'::text);
   END IF;
 
   FOREACH t IN ARRAY relations LOOP
@@ -96,6 +96,23 @@ BEGIN
     END LOOP;
   END LOOP;
 
+  -- 1b) allowed path is intact: service_role keeps all four table privileges on
+  --     every protected relation (deny-only proof is not enough), and every
+  --     partition is still attached to the parent (parent-path routing intact).
+  FOREACH t IN ARRAY relations LOOP
+    FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      IF NOT has_table_privilege('service_role', format('public.%I', t), priv) THEN
+        problems := problems || format('%s: service_role lost %s', t, priv);
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF (SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass('public.community_messages')) < 1 THEN
+    problems := array_append(problems, 'community_messages has no attached partitions'::text);
+  END IF;
+  IF NOT (SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    RAISE NOTICE 'S1-DB-01 VERIFY NOTE: current role % is not BYPASSRLS; RLS applies to this session', current_user;
+  END IF;
+
   -- 2) the four advisor-flagged functions carry a pinned search_path and the
   --    partition helpers are not executable by the API roles.
   FOR fn IN
@@ -127,7 +144,7 @@ BEGIN
         ('app', 'is_community_workspace_coach'),
         ('app', 'is_community_workspace_member'),
         ('app', 'shares_community_cohort'))) <> 5 THEN
-    problems := problems || 'one or more S1-DB-01 functions missing';
+    problems := array_append(problems, 'one or more S1-DB-01 functions missing'::text);
   END IF;
 
   IF array_length(problems, 1) > 0 THEN

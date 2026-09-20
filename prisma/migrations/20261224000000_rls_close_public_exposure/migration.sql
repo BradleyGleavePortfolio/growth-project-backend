@@ -42,16 +42,22 @@
 --   left alone: deny-by-default is the intended boundary there.
 --
 -- LOCK / TIMEOUT BOUNDS: ALTER TABLE ... ROW LEVEL SECURITY, REVOKE and
--- CREATE POLICY each take a brief ACCESS EXCLUSIVE lock. A long-running app
+-- CREATE POLICY each take an ACCESS EXCLUSIVE lock. A long-running app
 -- transaction would make this migration QUEUE and, while queued, block every
--- new query on that table. lock_timeout bounds that wait to 5 s per statement
--- and statement_timeout bounds any single statement to 60 s; on timeout the
--- statement errors, Prisma rolls the whole migration back (it runs each
--- migration.sql in one transaction on PostgreSQL), _prisma_migrations records
--- the failure, and `prisma migrate deploy` can simply be re-run after
--- `prisma migrate resolve --rolled-back 20261224000000_rls_close_public_exposure`.
--- Session-level SET (not SET LOCAL) so the bounds also hold if a future tool
--- runs this file outside a transaction; they die with the migration session.
+-- new query on that table. lock_timeout bounds each lock acquisition to 5 s
+-- and statement_timeout bounds any single statement (the 14-table DO block is
+-- ONE statement, so locks taken on earlier tables are held while waiting on
+-- later ones, worst case ~5 s x 14 + work, capped at 60 s) — schedule in a
+-- low-traffic window. On timeout the statement errors; PostgreSQL runs the
+-- multi-statement file Prisma sends as one implicit transaction, so the whole
+-- migration rolls back (OBSERVED, not assumed: test/db/s1-rls-close-public-exposure.sh
+-- holds a lock, asserts SQLSTATE 55P03 within the bound and asserts the
+-- pre-state is untouched). _prisma_migrations then records the failure and the
+-- Prisma recovery is `prisma migrate resolve --rolled-back 20261224000000_rls_close_public_exposure`
+-- followed by `prisma migrate deploy` (also exercised by the harness).
+-- The bounds are session-level SET so they also hold when an operator runs
+-- this file with `psql --single-transaction`; they are RESET at the end so
+-- they do NOT leak into later migrations applied on the same connection.
 --
 -- IDEMPOTENT: every statement is safe to re-run (IF EXISTS / OR REPLACE /
 -- idempotent ALTER/REVOKE), which is the documented recovery path when the
@@ -132,7 +138,8 @@ $s1$;
 -- partition gets RLS enabled + forced with NO permissive policy for the API
 -- roles (deny-by-default on direct access), an explicit service_role policy,
 -- and its API-role grants revoked. BYPASSRLS roles and the parent path are
--- unaffected — proven by test/db/s1-rls-close-public-exposure.spec.ts.
+-- unaffected. Exercised by test/db/s1-rls-close-public-exposure.sh (bash+psql
+-- harness against a disposable local PG 17 cluster; see its header).
 -- =====================================================================
 CREATE OR REPLACE FUNCTION public.community_messages_protect_partition(p_partition regclass)
 RETURNS void
@@ -141,10 +148,22 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public, pg_temp
 AS $fn$
 DECLARE
-  v_name text := (SELECT c.relname FROM pg_catalog.pg_class c WHERE c.oid = p_partition);
+  v_name text;
+  v_nsp  text;
 BEGIN
+  SELECT c.relname, n.nspname INTO v_name, v_nsp
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.oid = p_partition;
   IF v_name IS NULL THEN
     RAISE EXCEPTION 'community_messages_protect_partition: relation % does not exist', p_partition;
+  END IF;
+  -- Only ever act on a real partition of public.community_messages (guards
+  -- against a same-named relation in another schema or an unrelated table).
+  IF v_nsp <> 'public' OR NOT EXISTS (
+       SELECT 1 FROM pg_catalog.pg_inherits i
+        WHERE i.inhrelid = p_partition
+          AND i.inhparent = 'public.community_messages'::regclass) THEN
+    RAISE EXCEPTION 'community_messages_protect_partition: % is not a partition of public.community_messages', p_partition;
   END IF;
   EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_name);
   EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', v_name);
@@ -168,6 +187,9 @@ COMMENT ON FUNCTION public.community_messages_protect_partition(regclass) IS
   'S1-DB-01: enables+forces RLS, installs service_role/deny-all policies and revokes anon/authenticated grants on one community_messages partition. Idempotent. Called for every existing partition and by community_messages_create_month_partition().';
 
 REVOKE ALL ON FUNCTION public.community_messages_protect_partition(regclass) FROM PUBLIC, anon, authenticated;
+-- EXECUTE for service_role mirrors the repo convention; note ALTER TABLE /
+-- CREATE POLICY inside still require ownership of the partition, so in
+-- practice only the owner (postgres) or a superuser can run it successfully.
 GRANT EXECUTE ON FUNCTION public.community_messages_protect_partition(regclass) TO service_role;
 
 -- Re-create the month-partition helper so FUTURE partitions are protected at
@@ -278,9 +300,19 @@ COMMENT ON FUNCTION app.shares_community_cohort(uuid) IS
 -- INVARIANT (S1-DB-01, recorded from the prior recovery finding): once this
 -- migration row is marked applied, `prisma migrate status` / `migrate deploy`
 -- report "up to date" from _prisma_migrations ALONE. If the DDL above is later
--- reversed out-of-band (rollback.sql, manual psql, restore of an older dump),
--- Prisma keeps saying "up to date" and `prisma migrate resolve --rolled-back`
--- REFUSES because the row is not in a failed state. The only truthful check is
--- the catalog itself: run prisma/migrations/20261224000000_rls_close_public_exposure/verify.sql
--- (exit non-zero on any drift) after every deploy and after any restore.
+-- reversed out-of-band (down.sql, manual psql, restore of an older dump),
+-- Prisma keeps saying "up to date". `prisma migrate resolve --rolled-back` is
+-- NOT a recovery here: with a clean history it refuses (P3012, row not in a
+-- failed state) and if an earlier failed attempt exists it prints "marked as
+-- rolled back" while changing nothing about the applied row (both observed
+-- by the harness). Never edit _prisma_migrations to force a re-run. The only
+-- truthful check is the catalog itself: run
+--   psql -v ON_ERROR_STOP=1 -f prisma/migrations/20261224000000_rls_close_public_exposure/verify.sql
+-- (exit non-zero on any drift) after every deploy and after any restore, and
+-- if it fails re-apply this file with
+--   psql --single-transaction -v ON_ERROR_STOP=1 -f .../migration.sql
+-- (idempotent; same lock/timeout bounds) and run verify.sql again.
 -- =====================================================================
+
+RESET lock_timeout;
+RESET statement_timeout;
