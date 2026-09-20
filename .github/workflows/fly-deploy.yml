@@ -1,73 +1,143 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+# Fly Deploy — explicit, evidence-gated production release.
+#
+# Merge to main is NOT deployment. This workflow only runs when an operator
+# dispatches it from `main` and types the exact 40-hex commit they authorize.
+# Before flyctl is touched, the `evidence-gate` job re-derives, from the GitHub
+# API, that this exact commit has: a trusted (same-repo, main, non-PR) newest
+# CI run with every required job green, a CodeQL run AND an uploaded
+# code-scanning analysis, and a non-expired CycloneDX SBOM artifact. Any
+# missing / skipped / stale / in-progress / fork / newer-failed evidence fails
+# the gate (scripts/ci/release-evidence-gate.sh). After deploy, the machines are
+# checked to be running the image built for that commit
+# (scripts/ci/verify-fly-release.sh) and an evidence manifest with the image
+# digest is uploaded.
+#
+# Hosted controls this workflow relies on but cannot create (see
+# execution/s2-delivery/LANDING_PROPOSAL.md): branch protection on main,
+# required PR checks, required reviewers on the `production` environment, and
+# required review for changes under .github/workflows/** and scripts/ci/**.
 
 name: Fly Deploy
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 'Exact 40-hex commit on main to release (must equal the current main head)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "deploy" to confirm a production release'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-deploy-production
+  cancel-in-progress: false
+
 jobs:
+  evidence-gate:
+    name: Release evidence gate
+    runs-on: ubuntu-latest
+    # Refuse anything not dispatched from main itself: the gate definition and
+    # the deployed commit must be the same reviewed tree.
+    if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'deploy'
+    permissions:
+      contents: read
+      actions: read
+      security-events: read
+    outputs:
+      release_sha: ${{ steps.gate.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Verify evidence for the exact commit
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.event.inputs.release_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+          TRUSTED_BRANCH: main
+          OUT_DIR: release-evidence
+        run: |
+          bash scripts/ci/release-evidence-gate.sh
+          echo "release_sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload evidence manifest (pre-deploy)
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        with:
+          name: release-evidence-${{ github.event.inputs.release_sha }}
+          path: release-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
   deploy:
     name: Deploy app
+    needs: evidence-gate
+    # `needs` alone is not enough: a skipped gate would let this run. Require
+    # the gate to have concluded success and re-pin the sha it validated.
+    if: needs.evidence-gate.result == 'success' && needs.evidence-gate.outputs.release_sha == github.sha
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    environment:
+      name: production
+      url: https://backend-spring-lake-3890.fly.dev
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_SHA: ${{ needs.evidence-gate.outputs.release_sha }}
+      FLY_APP: backend-spring-lake-3890
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          ref: ${{ needs.evidence-gate.outputs.release_sha }}
+          persist-credentials: false
+
+      - name: Assert checked-out tree is the authorized commit
+        run: |
+          head=$(git rev-parse HEAD)
+          [ "$head" = "$RELEASE_SHA" ] || { echo "::error::checked out $head, expected $RELEASE_SHA"; exit 1; }
+
+      - name: Download evidence manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-evidence-${{ needs.evidence-gate.outputs.release_sha }}
+          path: release-evidence
 
       # Fail loudly when the Fly deploy environment is missing the API token.
-      # A green-but-skipped run looks identical to a real deploy in the GitHub
-      # UI, which is how production drifted stale on prior pushes. We'd rather
-      # the workflow turn red and force the operator to provision the secret
-      # than mask a missing-prod-deploy as success.
-      #
-      # Operator setup (one-time): see docs/deploy-runbook.md §8.
-      #   1. Create a Fly deploy token: `fly tokens create deploy -a <app>`
-      #   2. GitHub → Settings → Secrets and variables → Actions → New
-      #      repository secret. Name: FLY_API_TOKEN. Value: the token from (1).
-      #   3. Re-run this workflow (Actions → Fly Deploy → Run workflow) or push
-      #      a new commit to main to trigger deploy.
-      #
-      # We also reject obvious placeholder values (empty / "<...>" / "changeme"
-      # / "REPLACE_ME"). The shell never prints the token value itself.
+      # The shell never prints the token value itself.
       - name: Verify FLY_API_TOKEN is configured
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::error::FLY_API_TOKEN GitHub Actions secret is not set."
-            echo "Production deploy cannot proceed. See docs/deploy-runbook.md §8 for the provisioning steps."
+            echo "::error::FLY_API_TOKEN GitHub Actions secret is not set. See docs/deploy-runbook.md §8."
             exit 1
           fi
           case "${FLY_API_TOKEN}" in
             '<'*'>'|'changeme'|'REPLACE_ME'|'placeholder'|'TODO')
-              echo "::error::FLY_API_TOKEN looks like a placeholder value, not a real Fly deploy token."
-              echo "Generate a real token with: fly tokens create deploy -a <app>"
-              echo "See docs/deploy-runbook.md §8."
+              echo "::error::FLY_API_TOKEN looks like a placeholder value."
               exit 1
               ;;
           esac
-          # Length sanity check — real Fly deploy tokens are well over 20 chars.
-          # The token itself is never printed; only its length is logged.
           tok_len=${#FLY_API_TOKEN}
           if [ "${tok_len}" -lt 20 ]; then
-            echo "::error::FLY_API_TOKEN is suspiciously short (length=${tok_len}). Refusing to deploy."
+            echo "::error::FLY_API_TOKEN is suspiciously short (length=${tok_len})."
             exit 1
           fi
           echo "FLY_API_TOKEN present (length=${tok_len})."
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      # Deploy with Sentry sourcemap upload wired in. RELEASE_VERSION is the
-      # commit SHA — it lands as both a Docker build arg (so the build-time
-      # script tags the upload) and an ENV in the runtime image (so
-      # instrument.ts attaches the same release to captured events).
-      #
-      # SENTRY_AUTH_TOKEN is passed via `--build-secret` rather than
-      # `--build-arg` so the token is mounted only for the upload RUN
-      # and never persists in any image layer.
-      #
-      # If SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT are unset,
-      # scripts/sentry-upload-sourcemaps.sh no-ops gracefully and the build
-      # still succeeds. See README.md §Sentry sourcemaps for setup.
+      # RELEASE_VERSION / GIT_SHA are the authorized commit (build arg + runtime
+      # ENV so Sentry releases and logs name the same commit). --image-label
+      # names the pushed image after the commit so the post-deploy check can
+      # bind running machines to it. SENTRY_AUTH_TOKEN stays a build secret.
       - name: Deploy to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -76,9 +146,35 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: |
-          flyctl deploy --remote-only \
-            --build-arg RELEASE_VERSION="${GITHUB_SHA}" \
+          flyctl deploy --remote-only -a "${FLY_APP}" \
+            --image-label "sha-${RELEASE_SHA}" \
+            --build-arg RELEASE_VERSION="${RELEASE_SHA}" \
+            --build-arg GIT_SHA="${RELEASE_SHA}" \
             --build-arg SENTRY_DSN="${SENTRY_DSN}" \
             --build-arg SENTRY_ORG="${SENTRY_ORG}" \
             --build-arg SENTRY_PROJECT="${SENTRY_PROJECT}" \
             --build-secret sentry_auth_token="${SENTRY_AUTH_TOKEN}"
+
+      - name: Verify running machines bind to the authorized image
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl machines list -a "${FLY_APP}" --json > release-evidence/machines.json
+          MACHINES_JSON=release-evidence/machines.json \
+          IMAGE_LABEL="sha-${RELEASE_SHA}" \
+          MANIFEST="release-evidence/release-evidence-${RELEASE_SHA}.json" \
+            bash scripts/ci/verify-fly-release.sh
+
+      - name: Readiness probe
+        run: |
+          curl -fsS --max-time 20 "https://${FLY_APP}.fly.dev/readyz" | tee release-evidence/readyz.json
+          jq -e '.ok == true and .db == "up"' release-evidence/readyz.json >/dev/null
+
+      - name: Upload release manifest (post-deploy)
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        with:
+          name: release-manifest-${{ needs.evidence-gate.outputs.release_sha }}
+          path: release-evidence/
+          if-no-files-found: error
+          retention-days: 90

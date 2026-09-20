@@ -32,16 +32,17 @@
 # │ fold any settings you want to keep into PAYLOAD before running.         │
 # └───────────────────────────────────────────────────────────────────────┘
 #
-# Single-maintainer bypass note (F-B14):
+# Single-maintainer note (F-B14, revised 2026-09-20 per G05/G10):
 #   required_approving_review_count=1 with enforce_admins=true means the repo
-#   owner cannot self-approve and admins cannot bypass — so a solo maintainer
-#   can be locked out of merging their own PRs. Resolve with one of:
-#     (a) a dedicated bot/GitHub App that approves green PRs, OR
-#     (b) a second PAT acting as reviewer (`gh pr review --approve`), OR
-#     (c) temporarily setting required_approving_review_count=0 until a
-#         second human joins.
-#   Current decision: option (b) — owner reviews from a second PAT. Revisit
-#   when a second maintainer joins.
+#   owner cannot self-approve and admins cannot bypass. A second PAT owned by
+#   the same person is NOT a reviewer and must not be used to satisfy this
+#   rule (identity rules G05/G10: one real identity, no fictional second
+#   identity). The only compliant resolutions are (a) a second human
+#   maintainer with their own account, or (b) an explicitly recorded owner
+#   decision to run with required_approving_review_count=0 while keeping every
+#   status check required and the production environment gated. See
+#   execution/s2-delivery/LANDING_PROPOSAL.md for the current recommendation.
+#   Do not run this script until that decision is recorded.
 #
 # Required env:
 #   GH_TOKEN     — a PAT with `repo` scope (Settings → Developer settings).
@@ -80,7 +81,11 @@ fi
 #                        rls-floor-guard, rls-live-tests, mwb-3-live-tests
 #   danger.yml          (pull_request: branches:[main], no paths): danger
 #   r100-quality-gate.yml (pull_request: branches:[main], no paths):
-#                        Banned cast tokens, LOC budget, Test density
+#                        Banned cast tokens (LOC budget / Test density retired
+#                        2026-09-20; never list them again)
+#   codeql.yml          (pull_request: branches:[main], no paths):
+#                        "CodeQL JS/TS (javascript-typescript)" — fail-closed
+#                        since 2026-09-20 (no continue-on-error / GHAS fallback)
 #   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
 #                        (the PR-mode deploy-readiness board; PR-eligible)
 #
@@ -105,11 +110,6 @@ fi
 #   marked required, so a PR that does not touch those paths is not blocked by a
 #   check that will never report.
 #
-# NOT PRESENT IN THIS REPO — EXCLUDED:
-#   CodeQL — no CodeQL workflow exists on this branch's base. Marking a
-#   nonexistent check required would permanently block every PR. Add it back
-#   (as the exact reported name) once a CodeQL workflow actually ships and runs
-#   on every PR.
 REQUIRED_CHECKS=(
   # ci.yml — runs on every PR (no paths filter)
   "build-and-test"
@@ -120,8 +120,8 @@ REQUIRED_CHECKS=(
   "danger"
   # r100-quality-gate.yml — runs on every PR to main (no paths filter)
   "Banned cast tokens (R75 / R100.A2)"
-  "LOC budget (R100.A3)"
-  "Test density (R100.A1)"
+  # codeql.yml — runs on every PR to main; matrix job name as reported
+  "CodeQL JS/TS (javascript-typescript)"
   # h4-readiness.yml — runs on every PR (no paths filter). PR-eligible; the
   # non-PR strict gate (deploy-readiness-gate) is deliberately NOT listed here.
   "test-deploy-readiness"

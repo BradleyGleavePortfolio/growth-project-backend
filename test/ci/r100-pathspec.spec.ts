@@ -134,7 +134,7 @@ describe('R100 workflow guards against reintroducing the bare pathspec', () => {
     expect(withoutGlobbed.match(bareFileGlob) ?? []).toEqual([]);
   });
 
-  it('density SRC denominator covers scripts/**/*.js and src js/jsx (production JS counted)', () => {
+  it('banned-cast scan covers scripts/**/*.js and src js/jsx (production JS scanned)', () => {
     expect(yml).toContain(":(glob)scripts/**/*.js'");
     expect(yml).toContain(":(glob)src/**/*.js'");
     expect(yml).toContain(":(glob)src/**/*.jsx'");

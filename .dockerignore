@@ -1,4 +1,42 @@
+# Build context for Dockerfile. Everything not needed to `nest build`,
+# `prisma generate`, or run scripts/release.sh stays out of the image and out
+# of the remote builder upload.
 node_modules/
 dist/
+coverage/
 .env
+.env.*
+!.env.example
 *.log
+
+# VCS, CI and hooks — never part of the artifact
+.git/
+.github/
+.gitattributes
+.gitignore
+.gitignore.local
+lefthook.yml
+renovate.json
+.release-please-config.json
+.release-please-manifest.json
+.mcp.json
+.h1-status.txt
+
+# Tests, docs, editor and lint config
+test/
+docs/
+*.md
+.editorconfig
+.prettierrc.json
+.prettierignore
+eslint.config.js
+babel.config.js
+jest.config.js
+jest.rls.config.js
+dangerfile.js
+prod-switches.yml
+
+# Developer / operator scripts that are not part of the build or release path
+scripts/setup-branch-protection.sh
+scripts/patch-lock-dropbox-sign.py
+scripts/secrets/

@@ -1,9 +1,21 @@
 name: SBOM (CycloneDX)
 
-# Generates a CycloneDX SBOM on every push to main and on every release tag
-# and uploads it as a workflow artifact, kept for 90 days per CISA SBOM
-# guidance. Future: could submit to Dependency-Track via a DT_SERVER_URL
-# secret if one is configured — no such submission step exists today.
+# Generates a CycloneDX SBOM of the PRODUCTION dependency closure on every push
+# to main / release tag and uploads it as `sbom-cyclonedx-<sha>` (90 days).
+# The release gate (scripts/ci/release-evidence-gate.sh) requires this exact
+# artifact, from a successful run of this file on the same commit, before any
+# production deploy.
+#
+# Why `--ignore-scripts`: the previous `npm ci --omit=dev` executed the root
+# `prepare` hook (`lefthook install`), whose binary is a devDependency, and
+# exited 127 (main run 34404749261). No lifecycle script is needed to describe
+# the dependency tree.
+#
+# Why `npm sbom` from the installed tree instead of a lockfile-only scan: the
+# installed `--omit=dev` tree is what the runtime image contains (including the
+# dev-optional `prisma` CLI used by the Fly release_command); lockfile-only
+# generators either include devDependencies or drop dev-optional packages.
+# scripts/ci/assert-prod-sbom.sh then proves no dev-only package is present.
 
 on:
   push:
@@ -23,41 +35,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install production deps only
-        run: npm ci --omit=dev
+      - name: Install production deps only (no lifecycle scripts)
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-      - name: Install @cyclonedx/cdxgen
-        # Exact version pin (not @10) so SBOM output format stays reproducible
-        # across runs. --no-audit dropped so npm surfaces advisories on the
-        # generator's own dependency tree.
-        run: npm install --no-save --no-fund @cyclonedx/cdxgen@10.11.0
-
-      - name: Generate SBOM (CycloneDX JSON)
+      # `npm sbom` refuses (ESBOMPROBLEMS) while the root manifest still lists
+      # devDependencies that are intentionally not installed, so the manifest
+      # copy used for generation drops them; the installed tree is untouched.
+      # Verified locally 2026-09-20 on an `npm ci --omit=dev --ignore-scripts`
+      # tree: 357 components, prisma CLI present, no dev-only package.
+      - name: Generate SBOM (CycloneDX JSON) from the installed production tree
         run: |
-          npx cdxgen -o sbom.cdx.json -t nodejs -r .
-          ls -lh sbom.cdx.json
+          cp package.json package.json.orig
+          npm pkg delete devDependencies
+          npm sbom --sbom-format cyclonedx --sbom-type application > sbom.cdx.json
+          mv package.json.orig package.json
+          ls -l sbom.cdx.json
+
+      - name: Prove production-only dependency closure
+        id: prove
+        run: bash scripts/ci/assert-prod-sbom.sh sbom.cdx.json package-lock.json
 
       - name: Summarize SBOM
+        env:
+          COMPONENTS: ${{ steps.prove.outputs.components }}
+          SBOM_SHA256: ${{ steps.prove.outputs.sha256 }}
         run: |
-          COMPONENTS=$(jq '.components | length' sbom.cdx.json)
           {
             echo "## SBOM summary"
             echo ''
-            echo "Components: **$COMPONENTS**"
+            echo "Commit: \`${GITHUB_SHA}\`"
+            echo "Components: **${COMPONENTS}** (production closure, no dev-only packages)"
+            echo "sha256: \`${SBOM_SHA256}\`"
             echo ''
             echo "Top 10 by name (alpha):"
             jq -r '.components | sort_by(.name) | .[0:10] | .[] | "- \(.name)@\(.version // "?")"' sbom.cdx.json
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "${SBOM_SHA256}  sbom.cdx.json" > sbom.cdx.json.sha256
 
       - name: Upload SBOM artifact (90-day retention)
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
         with:
           name: sbom-cyclonedx-${{ github.sha }}
-          path: sbom.cdx.json
+          path: |
+            sbom.cdx.json
+            sbom.cdx.json.sha256
+          if-no-files-found: error
           retention-days: 90

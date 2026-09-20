@@ -1,29 +1,21 @@
 name: R100 Quality Gate
 
-# Enforces AGENT_RULES R75 (banned cast tokens), R24-R78 (R100 quality bar),
-# A1 (test:src density), A3 (LOC budget), and R104 (no weak casts).
-# Runs on every PR; required check for merge per R102/R107.
+# Enforces AGENT_RULES R75 / R104 (banned weak-cast tokens). Runs on every PR;
+# required check for merge.
 #
-# Hard rules (cause failure):
+# Hard rule (causes failure):
 #   - Banned cast tokens (R75 / R100.A2): net positive count in PR diff = P0.
-#   - LOC budget (R100.A3): net LOC > 400 = failure unless the PR title
-#     contains [LOC-EXEMPT: <reason>]. There is no warning band — 400 is the
-#     hard cap per R100.A3.
-#   - test:src ratio (R100.A1): added-test-lines / added-src-lines < 2.0
-#     = failure unless PR title contains [TEST-EXEMPT: <reason>].
+#     No exemptions.
 #
-# Measurement scope (LOC + src-side of test density):
-#   src/**, test/**, prisma/migrations/**, scripts/**, dangerfile.js,
-#   .github/workflows/**, and *.config.json. Infrastructure files (workflows,
-#   shell scripts, dangerfile, config) ARE counted toward the LOC cap so an
-#   infra-heavy PR cannot bypass the gate by reporting 0 LOC. Lock files and
-#   generated artifacts remain excluded.
+# Retired 2026-09-20 (G01/G08 — generic volume quotas are not quality
+# evidence): the former `loc-budget` (400 net-LOC cap, [LOC-EXEMPT:] waiver)
+# and `test-density` (2.0 test:src ratio, [TEST-EXEMPT:] waiver) jobs. Their
+# check names "LOC budget (R100.A3)" and "Test density (R100.A1)" must not be
+# listed as required checks; see scripts/setup-branch-protection.sh.
 #
-# Exemption markers (place in the PR title):
-#   [LOC-EXEMPT: <reason>]   waives the 400-LOC cap (operator sign-off needed).
-#   [TEST-EXEMPT: <reason>]  waives the 2.0 test:src ratio (e.g. workflows are
-#                            validated by actionlint/shellcheck, not unit tests).
-
+# Measurement scope for the banned-cast diff:
+#   src/**, scripts/**, test/** (ts/tsx/js/jsx/sh), excluding *.d.ts,
+#   node_modules, and *.test.* / *.spec.* files.
 on:
   pull_request:
     branches: [main]
@@ -133,114 +125,3 @@ jobs:
             exit 1
           fi
           echo "OK — no net banned-cast additions."
-
-  loc-budget:
-    name: LOC budget (R100.A3)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          fetch-depth: 0
-      - name: Compute net LOC
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          # Fallback only; the live title is fetched below. The event-payload
-          # title is captured when the pull_request event fires and goes STALE
-          # if the title is edited afterwards (e.g. an operator adds the
-          # [LOC-EXEMPT:] marker post-open) without a new push to refresh it.
-          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
-          # Read the LIVE PR title (honors the operator-signed [LOC-EXEMPT:]
-          # marker per R23/R76 exception protocol even when added after open).
-          # Fall back to the event-payload title if the API read fails.
-          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
-          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
-          echo "PR title (live): $PR_TITLE"
-          # Net added lines across code, tests, AND infrastructure (workflows,
-          # scripts, dangerfile, config). Lock files & generated artifacts are
-          # excluded. Infra files are counted so an infra-heavy PR cannot
-          # bypass the cap by reporting 0 LOC.
-          NET=$(git diff --numstat "$BASE_SHA"...HEAD -- \
-            'src/**' 'test/**' 'prisma/migrations/**' \
-            'scripts/**' 'dangerfile.js' '.github/workflows/**' '*.config.json' \
-            ':(exclude)package-lock.json' \
-            | awk '{ a += $1; r += $2 } END { print a - r }')
-          NET=${NET:-0}
-          echo "Net LOC: $NET"
-          if [ "$NET" -le 400 ]; then
-            echo "OK — under the 400 LOC cap."
-            exit 0
-          fi
-          if printf '%s' "$PR_TITLE" | grep -qE '\[LOC-EXEMPT:'; then
-            echo "OK — over 400 but exempted via [LOC-EXEMPT: <reason>] in PR title."
-            exit 0
-          fi
-          echo "FAIL — $NET LOC > 400 (hard cap, R100.A3) and no [LOC-EXEMPT: <reason>] in title."
-          echo "       Split the PR or add an operator-signed [LOC-EXEMPT: <reason>] marker."
-          exit 1
-
-  test-density:
-    name: Test density (R100.A1)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          fetch-depth: 0
-      - name: Compute test:src ratio
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          # Fallback only — see the LOC-budget job: the event-payload title goes
-          # STALE if the title is edited (e.g. adding [TEST-EXEMPT:]) after the
-          # event fires. Read the live title below per R23/R76 (R100.A1).
-          PR_TITLE_EVENT: ${{ github.event.pull_request.title }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ -z "$BASE_SHA" ]; then echo "Not a PR; skip."; exit 0; fi
-          # Read the LIVE PR title so a post-open [TEST-EXEMPT:] marker is
-          # honored. Fall back to the event-payload title on API failure.
-          PR_TITLE="$(gh pr view "$PR_NUMBER" --json title --jq .title 2>/dev/null || true)"
-          if [ -z "$PR_TITLE" ]; then PR_TITLE="$PR_TITLE_EVENT"; fi
-          echo "PR title (live): $PR_TITLE"
-          # src side covers every executable production extension the banned-cast
-          # scan covers — .ts/.tsx/.js/.jsx under src/, scripts/*.{ts,js}, and
-          # dangerfile.js. A scripts/*.ts-only denominator let a production .js
-          # module escape the ratio; :(glob) also counts top-level files. Non-TS/
-          # JS infra (YAML, shell) is validated by infra-lint; cover it with a
-          # [TEST-EXEMPT: <reason>] marker. Co-located specs are counted as TEST.
-          SRC=$(git diff --numstat "$BASE_SHA"...HEAD -- \
-            ':(glob)src/**/*.ts' ':(glob)src/**/*.tsx' ':(glob)src/**/*.js' ':(glob)src/**/*.jsx' \
-            ':(glob)scripts/**/*.ts' ':(glob)scripts/**/*.js' 'dangerfile.js' \
-            ':(exclude,glob)src/**/*.spec.*' ':(exclude,glob)src/**/*.test.*' \
-            ':(exclude,glob)scripts/**/*.spec.*' ':(exclude,glob)scripts/**/*.test.*' \
-            | awk '{ a += $1 } END { print a + 0 }')
-          TEST=$(git diff --numstat "$BASE_SHA"...HEAD -- \
-            ':(glob)test/**/*.ts' ':(glob)test/**/*.tsx' ':(glob)test/**/*.js' \
-            ':(glob)src/**/*.spec.*' ':(glob)src/**/*.test.*' \
-            ':(glob)scripts/**/*.spec.*' ':(glob)scripts/**/*.test.*' \
-            | awk '{ a += $1 } END { print a + 0 }')
-          echo "src lines added: $SRC"
-          echo "test lines added: $TEST"
-          if [ "$SRC" -eq 0 ]; then
-            echo "OK — no src additions; ratio not applicable."
-            exit 0
-          fi
-          # Compute ratio in integer math: ratio*100 = TEST*100/SRC
-          RATIO_X100=$(( TEST * 100 / SRC ))
-          printf "ratio test:src ≈ %d.%02d\n" $((RATIO_X100 / 100)) $((RATIO_X100 % 100))
-          if [ "$RATIO_X100" -ge 200 ]; then
-            echo "OK — ratio ≥ 2.0."
-            exit 0
-          fi
-          if printf '%s' "$PR_TITLE" | grep -qE '\[TEST-EXEMPT:'; then
-            echo "OK — exempted via [TEST-EXEMPT: <reason>] in PR title."
-            exit 0
-          fi
-          echo "FAIL — test:src ratio below 2.0 and no [TEST-EXEMPT: <reason>] in title."
-          echo "       Add tests, mark exempt with a reason, or split out src changes."
-          exit 1
