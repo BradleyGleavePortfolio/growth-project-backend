@@ -3,31 +3,48 @@
 #   prisma/migrations/20261224000000_rls_close_public_exposure
 #
 # Runs ONLY against a disposable local PostgreSQL 17.x cluster (never a Supabase
-# project). It rebuilds the observed production pre-state from source
-# (Prisma chain at the parent commit + the out-of-band rls_fitness_backend.sql),
-# proves the exposure exists, applies the candidate through the real
+# project). That boundary is ENFORCED, not assumed: test/db/_support/s1-target-guard.sh
+# validates the literal loopback URL / pinned port / disposable database
+# namespace / explicit destructive confirmation offline, then makes one
+# read-only preflight connection that must prove the server is the synthetic
+# cluster (bound address, port, superuser, PG 17.x, cluster_name marker, no
+# foreign databases, expected fixture role flags) BEFORE any DROP/CREATE.
+# Negative tests for the guard: test/db/s1-harness-guard.spec.sh (no DB needed).
+#
+# The harness rebuilds the observed production pre-state from source (Prisma
+# chain at the parent commit + the out-of-band rls_fitness_backend.sql), proves
+# the exposure exists, applies the candidate through the real
 # `prisma migrate deploy` path, and then checks behaviour role-by-role,
-# partition protection, lock bounding, recovery and the reversal invariant.
+# partition protection, lock bounding, late-stage failure atomicity, same-session
+# timeout reset, recovery, verifier failure classes and the reversal invariant.
 #
 # Usage:
 #   S1_PG_SUPER_URL='postgresql://<superuser>:<pw>@127.0.0.1:54321/postgres' \
-#   test/db/s1-rls-close-public-exposure.sh [dbname]
+#   S1_PG_PORT=54321 S1_PG_DISPOSABLE_CONFIRM='DESTROY-127.0.0.1:54321/s1_rls_proof,s1_rls_proof_lock' \
+#   test/db/s1-rls-close-public-exposure.sh [s1_rls_<name>]   # default name s1_rls_proof
+# The confirmation binds the endpoint AND both databases the harness DROPs
+# (<name> and the derived <name>_lock); the guard refuses anything else.
 #
-# Requirements: psql (>=17 client), node + node_modules (prisma CLI), the roles
+# Requirements: psql/pg_dump (>=17 client), node + the prisma CLI (either
+# node_modules/prisma or S1_PRISMA_CLI=/path/to/prisma/build/index.js). The roles
 # defined by test/db/_support/supabase-like-bootstrap.sql are created by this
-# script. Exit code 0 only if every check passed.
+# script inside the disposable cluster. Exit code 0 only if every check passed.
 set -u
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
-SUPER_URL=${S1_PG_SUPER_URL:?set S1_PG_SUPER_URL (superuser URL to the isolated cluster, db postgres)}
-DB=${1:-s1_rls_proof}
+SUPER_URL=${S1_PG_SUPER_URL-}
+DB=${1-s1_rls_proof}   # ${1-...}: an EXPLICIT empty argument is refused by the guard, not defaulted
+# ---------- 0. disposable-target guard: nothing below runs until both layers pass
+. test/db/_support/s1-target-guard.sh
+s1_guard_offline "$SUPER_URL" "$DB"
+s1_guard_preflight "$SUPER_URL" "$DB"
 MIG=20261224000000_rls_close_public_exposure
 MIG_DIR=prisma/migrations/$MIG
-HOST_PART=${SUPER_URL#*@}; HOST_PART=${HOST_PART%%/*}
+HOST_PART=$S1_GUARD_HOSTPORT
 PG_URL="postgresql://postgres:postgres_local_synthetic@${HOST_PART}/${DB}"
 AUTHN_URL="postgresql://authenticator:authenticator_local_synthetic@${HOST_PART}/${DB}"
 SUPER_DB_URL="${SUPER_URL%/*}/${DB}"
-PRISMA="node node_modules/prisma/build/index.js"
+PRISMA="node ${S1_PRISMA_CLI:-node_modules/prisma/build/index.js}"
 LOG=${S1_PROOF_LOG:-/tmp/s1-rls-proof.$$.log}
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "PASS  $1"; }
@@ -45,11 +62,34 @@ sqlstate(){ local url=$1; shift; local out
 # rc0: prints 0 if the command exit code is 0, else 1 (psql -f exits 3 on error)
 rc0(){ [ "$1" -eq 0 ] && echo 0 || echo 1; }
 verify_rc(){ psql "$1" -X -q -v ON_ERROR_STOP=1 -f $MIG_DIR/verify.sql >>"$LOG" 2>&1; rc0 $?; }
+# verify_msg <url>: the single VERIFY FAILED/OK line (for failure-class assertions)
+verify_msg(){ psql "$1" -X -q -v ON_ERROR_STOP=1 -f $MIG_DIR/verify.sql 2>&1 | grep -o 'S1-DB-01 VERIFY [A-Z]*.*' | head -1; }
+# prisma_verify_rc <url>: exit code of the S2 release-gate route (`prisma db execute`), 0 or 1
+prisma_verify_rc(){ $PRISMA db execute --url "$1" --file $MIG_DIR/verify.sql >>"$LOG" 2>&1; rc0 $?; }
+# same_session <url> <file>: ONE psql connection: control SET -> \i file -> read settings
+# in that same session. Prints "<control>|<after>" e.g. "5s|0|0". Fails closed on error.
+same_session(){ psql "$1" -X -qAt -v ON_ERROR_STOP=1 -v VERBOSITY=verbose 2>>"$LOG" <<EOSQL
+set lock_timeout = '5s';
+select 'CONTROL='||current_setting('lock_timeout');
+\set ON_ERROR_STOP 1
+\i $2
+select 'AFTER='||current_setting('lock_timeout')||'|'||current_setting('statement_timeout');
+EOSQL
+}
+# same_session_failed <url> <file>: ONE psql connection, explicit transaction, the file
+# fails inside (lock held); after ROLLBACK read settings in the same session.
+same_session_failed(){ psql "$1" -X -qAt -v ON_ERROR_STOP=0 -v VERBOSITY=verbose 2>&1 <<EOSQL
+begin;
+\i $2
+rollback;
+select 'AFTER='||current_setting('lock_timeout')||'|'||current_setting('statement_timeout');
+EOSQL
+}
 DOWN=$MIG_DIR/down.sql
 export PGOPTIONS='-c client_min_messages=warning'
 
 echo "== S1-DB-01 proof on $HOST_PART db=$DB  (log: $LOG)"
-psql "$SUPER_URL" -X -qAt -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS ${DB}_lock WITH (FORCE)" -c "CREATE DATABASE $DB" >/dev/null 2>>"$LOG" || { echo "cannot create db"; exit 1; }
+psql "$SUPER_URL" -X -qAt -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$DB\" WITH (FORCE)" -c "DROP DATABASE IF EXISTS \"${DB}_lock\" WITH (FORCE)" -c "CREATE DATABASE \"$DB\"" >/dev/null 2>>"$LOG" || { echo "cannot create db"; exit 1; }
 psql "$SUPER_DB_URL" -X -q -v ON_ERROR_STOP=1 -f test/db/_support/supabase-like-bootstrap.sql >/dev/null 2>>"$LOG" || { echo "bootstrap failed"; exit 1; }
 
 # ---------- 1. pre-state: parent chain (without candidate) + out-of-band legacy RLS file
@@ -93,36 +133,83 @@ SNAP_SQL="select c.relname||':'||c.relrowsecurity||c.relforcerowsecurity||':'||c
 PRE_SNAP=$(q "$PG_URL" "$SNAP_SQL" | md5sum)
 POL_PRE=$(q "$PG_URL" "select count(*) from pg_policy where polrelid='community_messages'::regclass")
 
-# ---------- 3. lock bounding + failed-deploy recovery on a SEPARATE database (keeps DB1 history clean)
+# ---------- 3. lock bounding, LATE-STAGE failure atomicity, same-session timeout reset and
+#              failed-deploy recovery on a SEPARATE database (keeps DB1 history clean)
 DB2=${DB}_lock; PG2_URL="postgresql://postgres:postgres_local_synthetic@${HOST_PART}/${DB2}"
-psql "$SUPER_URL" -X -qAt -c "DROP DATABASE IF EXISTS $DB2 WITH (FORCE)" -c "CREATE DATABASE $DB2" >/dev/null 2>>"$LOG"
+psql "$SUPER_URL" -X -qAt -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$DB2\" WITH (FORCE)" -c "CREATE DATABASE \"$DB2\"" >/dev/null 2>>"$LOG" || { echo "cannot create db2"; exit 1; }
 psql "${SUPER_URL%/*}/${DB2}" -X -q -v ON_ERROR_STOP=1 -f test/db/_support/supabase-like-bootstrap.sql >/dev/null 2>>"$LOG"
 ( export DATABASE_URL="$PG2_URL" DIRECT_URL="$PG2_URL"; $PRISMA migrate deploy --schema "$TMP/prisma/schema.prisma" >>"$LOG" 2>&1 ) \
   && psql "$PG2_URL" -X -q -v ON_ERROR_STOP=1 -f prisma/migrations/rls_fitness_backend.sql >>"$LOG" 2>&1
 check "DB2: parent chain + legacy RLS file replayed for the lock/recovery scenario" 0 $?
-psql "$PG2_URL" -X -qAt -c "begin; select 1 from \"DunningAttempt\" limit 1; select pg_sleep(25);" >/dev/null 2>&1 &
+# pre-state facts of the objects the migration changes AFTER the 14-table DO: these are the
+# discriminators between "first statement rolled back" and "whole file rolled back".
+HELPER_SQL="select coalesce((select 'protect=present' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='community_messages_protect_partition'),'protect=absent')
+  ||';create_sp='||coalesce((select array_to_string(p.proconfig,',') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='community_messages_create_month_partition'),'unpinned')
+  ||';app_sp='||(select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='app' and p.proname in ('is_community_workspace_coach','is_community_workspace_member','shares_community_cohort') and p.proconfig is not null)
+  ||';policies_2027_01='||(select count(*) from pg_policy where polrelid='public.community_messages_2027_01'::regclass)"
+HELPER_PRE=$(q "$PG2_URL" "$HELPER_SQL")
+check "DB2: pre-state helper catalog recorded (protect_partition absent, search_path unpinned, partition unprotected)" "protect=absent;create_sp=unpinned;app_sp=0;policies_2027_01=0" "$HELPER_PRE"
+check "DB2 (S2 gate route): prisma db execute --file verify.sql exits NON-ZERO on the exposed pre-state" 1 "$(prisma_verify_rc "$PG2_URL")"
+# LATE-STAGE blocker: community_messages_2027_01 is protected in the SECOND DO block, i.e. after the
+# 14-table DO and after the CREATE OR REPLACE FUNCTION statements have executed. Holding it makes the
+# failure occur mid-file, so a per-statement (non-transactional) client would leave the 14 tables
+# protected and the helpers replaced; a whole-file rollback leaves everything in pre-state.
+psql "$PG2_URL" -X -qAt -c "begin; select 1 from only community_messages_2027_01 limit 1; select pg_sleep(120);" >/dev/null 2>&1 &
 BLOCKER=$!; sleep 1
+check "DB2: blocker session holds a lock on community_messages_2027_01 (late-stage object)" 1 "$(q "$PG2_URL" "select count(*) from pg_locks l join pg_class c on c.oid=l.relation where c.relname='community_messages_2027_01' and l.granted")"
+# 3a. direct psql --single-transaction path (the documented operator path)
 T0=$(date +%s)
 st=$(sqlstate "$PG2_URL" "\\i $MIG_DIR/migration.sql"); T1=$(date +%s)
-check "DB2: migration.sql (psql --single-transaction) fails fast with lock_timeout SQLSTATE 55P03 while a lock is held" 55P03 "$st"
-[ $((T1-T0)) -le 12 ] && ok "DB2: lock wait bounded ($((T1-T0))s <= 12s)" || bad "DB2: lock wait not bounded ($((T1-T0))s)"
-check "DB2: failed direct attempt left the pre-state untouched (18 still exposed)" "$EXPECTED18" "$(q "$PG2_URL" "$EXPOSED_SQL")"
+check "DB2 direct: migration.sql (psql --single-transaction) fails with lock_timeout SQLSTATE 55P03 at the LATE-STAGE lock" 55P03 "$st"
+[ $((T1-T0)) -le 12 ] && ok "DB2 direct: lock wait bounded ($((T1-T0))s <= 12s)" || bad "DB2 direct: lock wait not bounded ($((T1-T0))s)"
+check "DB2 direct: failed attempt left the 14-table pre-state untouched (18 still exposed)" "$EXPECTED18" "$(q "$PG2_URL" "$EXPOSED_SQL")"
+check "DB2 direct: helper catalog unchanged after the late-stage failure (explicit single transaction)" "$HELPER_PRE" "$(q "$PG2_URL" "$HELPER_SQL")"
+# 3b. FAILURE-PATH same-session settings: one connection, BEGIN, file fails inside at the late lock,
+#     ROLLBACK, then read the settings in that same connection. SET is transactional, so the file's
+#     SET lock_timeout/statement_timeout must be gone even though its RESET lines never executed.
+kill -0 $BLOCKER 2>/dev/null && ok "DB2: blocker still alive before the failure-path same-session check" || bad "DB2: blocker died early; failure-path same-session check is INVALID"
+FS_OUT=$(same_session_failed "$PG2_URL" "$MIG_DIR/migration.sql"); printf '%s\n' "$FS_OUT" >>"$LOG"
+check "DB2 same-session FAILURE path: the aborted attempt raised 55P03 inside the session" 1 "$(printf '%s\n' "$FS_OUT" | grep -c 'ERROR:  55P03')"
+check "DB2 same-session FAILURE path: after ROLLBACK the SAME connection shows default timeouts (no leak from the aborted file)" "AFTER=0|0" "$(printf '%s\n' "$FS_OUT" | grep '^AFTER=' | tail -1)"
+# 3c. the real Prisma path against the same late-stage lock
+kill -0 $BLOCKER 2>/dev/null && ok "DB2: blocker still alive before the Prisma attempt" || bad "DB2: blocker died early; Prisma late-stage atomicity check is INVALID"
 T0=$(date +%s)
 ( export DATABASE_URL="$PG2_URL" DIRECT_URL="$PG2_URL"; $PRISMA migrate deploy >>"$LOG" 2>&1 ); rc=$?; T1=$(date +%s)
-check "DB2: prisma migrate deploy fails (non-zero) while the lock is held" 1 "$(rc0 $rc)"
-[ $((T1-T0)) -le 20 ] && ok "DB2: prisma deploy failure bounded ($((T1-T0))s <= 20s)" || bad "DB2: prisma deploy failure not bounded ($((T1-T0))s)"
-check "DB2: failed deploy recorded in _prisma_migrations (finished_at null, rolled_back_at null)" "1" \
+check "DB2 prisma: migrate deploy fails (non-zero) while the late-stage lock is held" 1 "$(rc0 $rc)"
+[ $((T1-T0)) -le 20 ] && ok "DB2 prisma: deploy failure bounded ($((T1-T0))s <= 20s)" || bad "DB2 prisma: deploy failure not bounded ($((T1-T0))s)"
+check "DB2 prisma: failed deploy recorded in _prisma_migrations (finished_at null, rolled_back_at null)" "1" \
   "$(q "$PG2_URL" "select count(*) from _prisma_migrations where migration_name='$MIG' and finished_at is null and rolled_back_at is null")"
-check "DB2: failed Prisma attempt is ATOMIC — pre-state untouched (no partially protected tables)" "$EXPECTED18" "$(q "$PG2_URL" "$EXPOSED_SQL")"
-check "DB2: verify.sql fails cleanly after the failed attempt" 1 "$(verify_rc "$PG2_URL")"
-check "DB2: session timeout settings did not leak (fresh connection shows defaults)" "0|0" "$(q "$PG2_URL" "select current_setting('lock_timeout')||'|'||current_setting('statement_timeout')")"
-wait $BLOCKER 2>/dev/null
+check "DB2 prisma: WHOLE-FILE rollback discriminated — 14-table DO (executed BEFORE the failing statement) is rolled back, 18 still exposed" "$EXPECTED18" "$(q "$PG2_URL" "$EXPOSED_SQL")"
+check "DB2 prisma: WHOLE-FILE rollback discriminated — CREATE OR REPLACE FUNCTION statements (executed BEFORE the failing statement) are rolled back" "$HELPER_PRE" "$(q "$PG2_URL" "$HELPER_SQL")"
+check "DB2 prisma: verify.sql fails cleanly after the failed attempt" 1 "$(verify_rc "$PG2_URL")"
+# release the blocker deterministically (do not wait out pg_sleep)
+kill $BLOCKER 2>/dev/null; wait $BLOCKER 2>/dev/null
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  [ "$(q "$PG2_URL" "select count(*) from pg_locks l join pg_class c on c.oid=l.relation where c.relname='community_messages_2027_01'")" = "0" ] && break; sleep 1; done
+check "DB2: blocker released (no lock left on community_messages_2027_01)" 0 "$(q "$PG2_URL" "select count(*) from pg_locks l join pg_class c on c.oid=l.relation where c.relname='community_messages_2027_01'")"
+# 3d. documented failed-attempt recovery
 ( export DATABASE_URL="$PG2_URL" DIRECT_URL="$PG2_URL"; $PRISMA migrate resolve --rolled-back $MIG >>"$LOG" 2>&1 )
 check "DB2: documented recovery step 1 — prisma migrate resolve --rolled-back succeeds after a REAL failure" 0 $?
 ( export DATABASE_URL="$PG2_URL" DIRECT_URL="$PG2_URL"; $PRISMA migrate deploy >>"$LOG" 2>&1 )
 check "DB2: documented recovery step 2 — prisma migrate deploy succeeds once the lock is gone" 0 $?
 check "DB2: verify.sql passes after recovery" 0 "$(verify_rc "$PG2_URL")"
-# reversal with a failed-attempt history: resolve --rolled-back is NOT a recovery (observed behaviour recorded)
+check "DB2 (S2 gate route): prisma db execute --file verify.sql exits ZERO on the protected state" 0 "$(prisma_verify_rc "$PG2_URL")"
+# 3e. verifier failure CLASSES (S1-R2B-03): an allowed-path precondition loss must be reported as
+#     ALLOWED-PATH, with zero EXPOSURE problems, and still fail the gate; then restored.
+q "$PG2_URL" "revoke select on table \"DunningAttempt\" from service_role" >/dev/null
+VM=$(verify_msg "$PG2_URL")
+check "DB2 verifier classes: service_role losing SELECT fails the gate (exit non-zero)" 1 "$(verify_rc "$PG2_URL")"
+check "DB2 verifier classes: reported as ALLOWED-PATH with 0 EXPOSURE problems" 1 "$(printf '%s\n' "$VM" | grep -c '0 exposure problem(s); 1 allowed-path problem(s)')"
+check "DB2 verifier classes: message names the lost privilege" 1 "$(printf '%s\n' "$VM" | grep -c 'ALLOWED-PATH: DunningAttempt: service_role lost SELECT')"
+check "DB2 (S2 gate route): prisma db execute also exits NON-ZERO on the allowed-path drift" 1 "$(prisma_verify_rc "$PG2_URL")"
+q "$PG2_URL" "grant select on table \"DunningAttempt\" to service_role" >/dev/null
+check "DB2 verifier classes: restored grant -> verify passes again" 0 "$(verify_rc "$PG2_URL")"
+q "$PG2_URL" "alter table \"DunningAttempt\" disable row level security" >/dev/null
+VM=$(verify_msg "$PG2_URL")
+check "DB2 verifier classes: RLS disabled on one table is reported as EXPOSURE (1 exposure problem(s); 0 allowed-path)" 1 "$(printf '%s\n' "$VM" | grep -c '1 exposure problem(s); 0 allowed-path problem(s)')"
+q "$PG2_URL" "alter table \"DunningAttempt\" enable row level security" >/dev/null
+check "DB2 verifier classes: restored RLS -> verify passes again" 0 "$(verify_rc "$PG2_URL")"
+# 3f. reversal with a failed-attempt history: resolve --rolled-back is NOT a recovery (observed behaviour recorded)
 psql "$PG2_URL" -X -1 -q -v ON_ERROR_STOP=1 -f $DOWN >>"$LOG" 2>&1
 check "DB2: down.sql runs (--single-transaction)" 0 $?
 ( export DATABASE_URL="$PG2_URL" DIRECT_URL="$PG2_URL"; $PRISMA migrate resolve --rolled-back $MIG >>"$LOG" 2>&1 ); rc=$?
@@ -130,6 +217,17 @@ echo "      DB2 observed: resolve --rolled-back after reversal WITH earlier fail
 check "DB2: applied row still marked applied after resolve (Prisma state unchanged by reversal)" "1" \
   "$(q "$PG2_URL" "select count(*) from _prisma_migrations where migration_name='$MIG' and finished_at is not null and rolled_back_at is null")"
 check "DB2: verify.sql FAILS after reversal regardless of Prisma output" 1 "$(verify_rc "$PG2_URL")"
+# 3g. SUCCESS-PATH same-session settings, direct operator path: one connection; a control SET first
+#     proves this check CAN observe a leaked session setting; then \i migration.sql; then read.
+SS_OUT=$(same_session "$PG2_URL" "$MIG_DIR/migration.sql"); printf '%s\n' "$SS_OUT" >>"$LOG"
+check "DB2 same-session SUCCESS path (control): a leaked SET IS observable in the same connection" "CONTROL=5s" "$(printf '%s\n' "$SS_OUT" | grep '^CONTROL=' | head -1)"
+check "DB2 same-session SUCCESS path: after migration.sql in the SAME connection timeouts are back to defaults (RESET effective)" "AFTER=0|0" "$(printf '%s\n' "$SS_OUT" | grep '^AFTER=' | tail -1)"
+check "DB2: direct re-apply restored protection (verify passes)" 0 "$(verify_rc "$PG2_URL")"
+SS_OUT=$(same_session "$PG2_URL" "$DOWN"); printf '%s\n' "$SS_OUT" >>"$LOG"
+check "DB2 same-session SUCCESS path: down.sql in one connection also leaves default timeouts (RESET effective)" "CONTROL=5s|AFTER=0|0" "$(printf '%s\n' "$SS_OUT" | grep -E '^(CONTROL|AFTER)=' | paste -sd'|')"
+# NOTE (not claimed): the settings state of the connection Prisma uses for `migrate deploy` is not
+# observable after the process exits; the Prisma-path claim rests on the file's RESET lines plus the
+# success-path evidence above, not on a Prisma-session observation.
 
 # ---------- 4. apply the candidate through the real path
 ( export DATABASE_URL="$PG_URL" DIRECT_URL="$PG_URL"; $PRISMA migrate deploy >>"$LOG" 2>&1 )

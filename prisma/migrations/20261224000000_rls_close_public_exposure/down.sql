@@ -22,8 +22,10 @@
 -- Consequences:
 --   * verify.sql is the only truthful signal (it FAILS after this script);
 --   * to re-apply, run migration.sql again directly with
---     psql --single-transaction -v ON_ERROR_STOP=1 (it is idempotent) — do
---     NOT delete or edit the _prisma_migrations row to make Prisma re-run it.
+--     psql --single-transaction -v ON_ERROR_STOP=1 (THIS migration is
+--     idempotent; that is a property of this file, not of migrations in
+--     general) — do NOT delete or edit the _prisma_migrations row to make
+--     Prisma re-run it.
 -- Same lock/timeout bounds as the forward migration (RESET at the end).
 
 SET lock_timeout = '5s';

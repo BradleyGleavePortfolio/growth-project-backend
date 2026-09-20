@@ -48,21 +48,39 @@
 -- and statement_timeout bounds any single statement (the 14-table DO block is
 -- ONE statement, so locks taken on earlier tables are held while waiting on
 -- later ones, worst case ~5 s x 14 + work, capped at 60 s) — schedule in a
--- low-traffic window. On timeout the statement errors; PostgreSQL runs the
--- multi-statement file Prisma sends as one implicit transaction, so the whole
--- migration rolls back (OBSERVED, not assumed: test/db/s1-rls-close-public-exposure.sh
--- holds a lock, asserts SQLSTATE 55P03 within the bound and asserts the
--- pre-state is untouched). _prisma_migrations then records the failure and the
--- Prisma recovery is `prisma migrate resolve --rolled-back 20261224000000_rls_close_public_exposure`
+-- low-traffic window. On timeout the statement errors. Prisma sends this file
+-- as ONE multi-statement simple-protocol query, which PostgreSQL runs in one
+-- implicit transaction, so the WHOLE file is expected to roll back — including
+-- statements that already succeeded before the failing one. That expectation is
+-- ASSERTED (not assumed) by test/db/s1-rls-close-public-exposure.sh §3: it
+-- holds a lock on an object touched only in the SECOND DO block, drives the real
+-- `prisma migrate deploy` into SQLSTATE 55P03 mid-file, and then checks that the
+-- 14-table DO block AND the CREATE OR REPLACE FUNCTION statements executed
+-- before the failure are all gone from the catalog. Read the harness log for the
+-- run that backs any given head; the comment itself is not evidence.
+-- _prisma_migrations then records the failure and the Prisma recovery is
+-- `prisma migrate resolve --rolled-back 20261224000000_rls_close_public_exposure`
 -- followed by `prisma migrate deploy` (also exercised by the harness).
 -- The bounds are session-level SET so they also hold when an operator runs
 -- this file with `psql --single-transaction`; they are RESET at the end so
--- they do NOT leak into later migrations applied on the same connection.
+-- they do NOT leak into later migrations applied on the same connection. On
+-- a failed attempt the SETs are undone by the transaction rollback (SET is
+-- transactional); the harness checks both paths in one session.
 --
--- IDEMPOTENT: every statement is safe to re-run (IF EXISTS / OR REPLACE /
--- idempotent ALTER/REVOKE), which is the documented recovery path when the
--- SQL has been reversed out-of-band but _prisma_migrations still says applied
--- (see the INVARIANT note at the bottom).
+-- IDEMPOTENT — FOR THIS MIGRATION ONLY: every statement here is safe to re-run
+-- (IF EXISTS / OR REPLACE / idempotent ALTER/REVOKE), so re-applying this file
+-- with `psql --single-transaction -f migration.sql` followed by verify.sql is
+-- the documented forward repair when the SQL has been reversed out-of-band but
+-- _prisma_migrations still says applied (see the INVARIANT note at the bottom).
+-- This property is NOT a general rule for the repository: other migrations
+-- (e.g. 20270118000000_scout_ledger_platform_expand deliberately REFUSES a
+-- re-run once its column exists) need their own state-specific recovery.
+--
+-- PRECONDITIONS relied on, not established (verified as ALLOWED-PATH by
+-- verify.sql): service_role already holds SELECT/INSERT/UPDATE/DELETE on every
+-- target relation (Supabase default privileges), and the executing role owns
+-- the relations. "Nothing is granted that was not already granted" below is
+-- exactly that statement — this file adds no table GRANT for service_role.
 
 SET lock_timeout = '5s';
 SET statement_timeout = '60s';
@@ -311,7 +329,9 @@ COMMENT ON FUNCTION app.shares_community_cohort(uuid) IS
 -- (exit non-zero on any drift) after every deploy and after any restore, and
 -- if it fails re-apply this file with
 --   psql --single-transaction -v ON_ERROR_STOP=1 -f .../migration.sql
--- (idempotent; same lock/timeout bounds) and run verify.sql again.
+-- (this file is idempotent; same lock/timeout bounds) and run verify.sql again.
+-- The re-apply advice is specific to this migration; it must not be copied to
+-- non-idempotent migrations.
 -- =====================================================================
 
 RESET lock_timeout;
