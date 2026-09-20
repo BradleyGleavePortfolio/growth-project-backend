@@ -126,6 +126,11 @@ describe('setup-branch-protection.sh — required check list matches current wor
     expect(list).toContain('"CodeQL JS/TS (javascript-typescript)"');
     expect(list).toContain('"Banned cast tokens (R75 / R100.A2)"');
   });
+  it('gate default REQUIRED_WORKFLOWS and the protection list both name the composed dependency-audit job (S2-B8)', () => {
+    const gate = read('scripts/ci/release-evidence-gate.sh');
+    expect(gate).toMatch(/REQUIRED_WORKFLOWS="\$\{REQUIRED_WORKFLOWS:-[^\n]*dependency-audit\.yml=npm audit \(high\+critical, whole graph\)\}"/);
+    expect(list).toContain('"npm audit (high+critical, whole graph)"');
+  });
   it('no longer recommends a second PAT as reviewer', () => {
     expect(sh).not.toMatch(/Current decision: option \(b\)/);
     expect(sh).toMatch(/NOT a reviewer/);
@@ -480,5 +485,27 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
   });
   it('release sha not a commit here → refused', () => {
     expect(run(c1, '0'.repeat(40), 'apply-migrations').out).toMatch(/is not a commit in this checkout/);
+  });
+});
+
+describe('release.sh — catalog verifiers run after migrate deploy (S1 integration requirement)', () => {
+  const s = read('scripts/release.sh');
+  it('runs every prisma/migrations/*/verify.sql via prisma db execute on DIRECT_URL, after deploy and before exit 0, fail-closed', () => {
+    const deploy = s.indexOf('npx prisma migrate deploy');
+    const verify = s.indexOf("-name verify.sql");
+    const exit0 = s.lastIndexOf('exit 0');
+    expect(deploy).toBeGreaterThan(-1);
+    expect(verify).toBeGreaterThan(deploy);
+    expect(verify).toBeLessThan(exit0);
+    expect(s).toMatch(/npx prisma db execute --url "\$\{DIRECT_URL\}" --file "\$\{verifier\}"/);
+    const block = s.slice(s.indexOf('STEP 4'), s.indexOf('verifiers_passed = '));
+    expect(block).not.toMatch(/\|\|\s*true/);
+    expect(block).toMatch(/exit 1/);
+  });
+  it('the runtime image ships prisma/ (so verify.sql files are present at release time)', () => {
+    const df = read('Dockerfile');
+    const runtime = df.slice(df.indexOf('AS runtime'));
+    expect(runtime).toMatch(/^COPY prisma \.\/prisma\/$/m);
+    expect(runtime).toMatch(/^COPY scripts\/release\.sh \.\/scripts\/release\.sh$/m);
   });
 });

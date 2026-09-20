@@ -8,7 +8,7 @@ it in `docs/deploy-runbook.md` is stale and should be fixed there.
 
 | Authorization | Mechanism | Who/what decides |
 | --- | --- | --- |
-| **Merge to `main`** | Branch protection / ruleset: required checks `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `danger`, `Banned cast tokens (R75 / R100.A2)`, `CodeQL JS/TS (javascript-typescript)`, `test-deploy-readiness`, `build-sbom`; strict up-to-date; linear history; conversation resolution. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
+| **Merge to `main`** | Branch protection / ruleset: required checks `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `danger`, `Banned cast tokens (R75 / R100.A2)`, `CodeQL JS/TS (javascript-typescript)`, `test-deploy-readiness`, `build-sbom`, `npm audit (high+critical, whole graph)`; strict up-to-date; linear history; conversation resolution. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
 | **Deploy to Fly** | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`. | A human dispatch **and** the environment's required reviewers (once configured). |
 
 A green merge is **not** a deploy authorization. Nothing deploys on `push`.
@@ -21,8 +21,9 @@ and refuses the release unless, for the **exact** `release_sha`:
 1. the sha is 40-hex, is a commit on `origin/main` (not a fork, not a
    branch tip), and equals the checked-out `github.sha`;
 2. every required workflow job (`REQUIRED_WORKFLOWS`, default
-   `ci.yml=build-and-test,rls-floor-guard,rls-live-tests,mwb-3-live-tests;
-   codeql.yml=CodeQL JS/TS (javascript-typescript); sbom.yml=build-sbom`)
+   `ci.yml=build-and-test|rls-floor-guard|rls-live-tests|mwb-3-live-tests;
+   codeql.yml=CodeQL JS/TS (javascript-typescript); sbom.yml=build-sbom;
+   dependency-audit.yml=npm audit (high+critical, whole graph)`)
    has a run **on that head sha** whose *newest* attempt is
    `completed/success`; a newer failed run beats an older success; a
    missing, skipped, cancelled, in-progress or duplicate-name-with-one-failure
@@ -123,6 +124,22 @@ recorded in `machines-before.json` of the last release manifest. The direct
 `docs/deploy-runbook.md` §3 is **ungated** and must be recorded as an
 emergency action.
 
+### 7.1 Database state after a rollback (S1 requirement, wired here)
+
+`scripts/release.sh` step 4 runs every `prisma/migrations/*/verify.sql`
+(catalog verifiers) after `prisma migrate deploy`; a failing verifier fails
+the release_command and Fly keeps the old machines. Prisma's "up to date"
+is not truth after an out-of-band reversal; only the verifier is. Do **not**
+use `prisma migrate resolve --rolled-back` after a *successful* migration
+was reversed out-of-band (it refuses with P3012, or silently no-ops if an
+earlier failed row exists). Recovery is a transactional manual forward
+(`psql --single-transaction -v ON_ERROR_STOP=1 -f migration.sql`) followed
+by `verify.sql`, under separate production authorization. Migration and
+verifier contents are S1-owned; this repo only wires their execution order.
+This candidate does **not** include the S1 migration itself (base
+c23b9d9f); on the integrated head the loop picks up whatever verifiers
+exist.
+
 ## 8. Known limits (not fixed here)
 
 - `flyctl` binary version is whatever `setup-flyctl` (pinned by commit)
@@ -135,6 +152,7 @@ emergency action.
   would fail the verifier, not pass it.
 - These workflows have **not yet executed on GitHub** as changed; the
   first real dispatch is the first runtime evidence.
-- Composition with the dependency-audit workflow (S3 lane) is pending; when
-  it lands on `main` with a stable job name, add it to `REQUIRED_WORKFLOWS`
-  and `REQUIRED_CHECKS`.
+- `dependency-audit.yml` (S3 lane) is already listed in `REQUIRED_WORKFLOWS`
+  and `REQUIRED_CHECKS`; until it lands on `main` with job name
+  `npm audit (high+critical, whole graph)` the release gate fails closed on
+  every release. That is the intended order: compose first, then release.

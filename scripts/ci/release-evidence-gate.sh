@@ -14,7 +14,8 @@
 #      dispatching workflow definition came from). Deploying anything other
 #      than the exact head the gate itself was read from is refused, so a push
 #      that lands between operator authorization and dispatch fails closed.
-#   2. For every required workflow (REQUIRED_WORKFLOWS, "path=job1,job2;..."):
+#   2. For every required workflow (REQUIRED_WORKFLOWS, "path=job1|job2;..."; jobs
+#      are |-separated because GitHub job names may contain commas):
 #      the NEWEST run whose head_sha == RELEASE_SHA, whose repository and
 #      head_repository are this repository (not a fork), whose event is
 #      push / workflow_dispatch / schedule (never pull_request), and whose
@@ -49,8 +50,12 @@ OUT_DIR="${OUT_DIR:-release-evidence}"
 SBOM_WORKFLOW_PATH="${SBOM_WORKFLOW_PATH:-.github/workflows/sbom.yml}"
 REQUIRED_ENVIRONMENT="${REQUIRED_ENVIRONMENT:-production}"
 # Default required set. Job names must match the `name:`/id emitted by each
-# workflow. Format: "<workflow path>=<job>,<job>;<workflow path>=<job>".
-REQUIRED_WORKFLOWS="${REQUIRED_WORKFLOWS:-.github/workflows/ci.yml=build-and-test,rls-floor-guard,rls-live-tests,mwb-3-live-tests;.github/workflows/codeql.yml=CodeQL JS/TS (javascript-typescript);.github/workflows/sbom.yml=build-sbom}"
+# workflow. Format: "<workflow path>=<job>|<job>;<workflow path>=<job>".
+REQUIRED_WORKFLOWS="${REQUIRED_WORKFLOWS:-.github/workflows/ci.yml=build-and-test|rls-floor-guard|rls-live-tests|mwb-3-live-tests;.github/workflows/codeql.yml=CodeQL JS/TS (javascript-typescript);.github/workflows/sbom.yml=build-sbom;.github/workflows/dependency-audit.yml=npm audit (high+critical, whole graph)}"
+# dependency-audit.yml is composed from the S3 lane (job name as of its head
+# 5c7b42b3). Until that workflow exists on main with this job name the gate
+# fails closed on every release — intentional; override REQUIRED_WORKFLOWS
+# only with an explicit operator decision.
 
 command -v gh >/dev/null 2>&1 || fail "gh CLI not available"
 command -v jq >/dev/null 2>&1 || fail "jq not available"
@@ -110,7 +115,7 @@ for entry in "${REQ_ENTRIES[@]}"; do
   [[ "$run_conclusion" == "success" ]] || fail "newest ${wf_path} run #${run_number} (id ${run_id}) concluded '${run_conclusion}', not success (an older success does not override the newest result)"
 
   JOBS_JSON=$(api "repos/${GH_REPO}/actions/runs/${run_id}/jobs?per_page=100")
-  IFS=',' read -r -a want_jobs <<<"$jobs_csv"
+  IFS='|' read -r -a want_jobs <<<"$jobs_csv"
   for job in "${want_jobs[@]}"; do
     # Every entry with this name must be completed/success (duplicate names, e.g.
     # re-run attempts listed together, are not resolved by taking the first one).
@@ -124,7 +129,7 @@ for entry in "${REQ_ENTRIES[@]}"; do
 
   echo "release-evidence-gate: OK ${wf_path} run #${run_number} (id ${run_id}) jobs: ${jobs_csv}"
   MANIFEST_RUNS=$(printf '%s' "$MANIFEST_RUNS" | jq -c --argjson r "$newest" --arg jobs "$jobs_csv" \
-    '. + [{path: $r.path, id: $r.id, run_number: $r.run_number, event: $r.event, conclusion: $r.conclusion, html_url: $r.html_url, required_jobs: ($jobs | split(","))}]')
+    '. + [{path: $r.path, id: $r.id, run_number: $r.run_number, event: $r.event, conclusion: $r.conclusion, html_url: $r.html_url, required_jobs: ($jobs | split("|"))}]')
   [[ "$wf_path" == "$SBOM_WORKFLOW_PATH" ]] && SBOM_RUN_ID=$run_id
 done
 

@@ -24,6 +24,8 @@ const SBOM = '.github/workflows/sbom.yml';
 const CI_JOBS = ['build-and-test', 'rls-floor-guard', 'rls-live-tests', 'mwb-3-live-tests'];
 const CODEQL_JOB = 'CodeQL JS/TS (javascript-typescript)';
 const SBOM_JOB = 'build-sbom';
+const DEP = '.github/workflows/dependency-audit.yml';
+const DEP_JOB = 'npm audit (high+critical, whole graph)';
 
 type Json = Record<string, unknown>;
 
@@ -99,11 +101,12 @@ class World {
   static passing(): World {
     const w = new World();
     w.api(`repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=100`, {
-      workflow_runs: [run({ id: 11, path: CI }), run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM })],
+      workflow_runs: [run({ id: 11, path: CI }), run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM }), run({ id: 14, path: DEP })],
     });
     w.api(`repos/${REPO}/actions/runs/11/jobs?per_page=100`, jobs(CI_JOBS));
     w.api(`repos/${REPO}/actions/runs/12/jobs?per_page=100`, jobs([CODEQL_JOB]));
     w.api(`repos/${REPO}/actions/runs/13/jobs?per_page=100`, jobs([SBOM_JOB]));
+    w.api(`repos/${REPO}/actions/runs/14/jobs?per_page=100`, jobs([DEP_JOB]));
     w.api(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`, [
       { id: 900, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, url: 'https://api.github.com/x', rules_count: 42, results_count: 0, error: '' },
     ]);
@@ -184,7 +187,7 @@ describe('release-evidence-gate.sh — passing world', () => {
     expect(r.code).toBe(0);
     const manifest = JSON.parse(readFileSync(join(w.out, `release-evidence-${SHA}.json`), 'utf8'));
     expect(manifest.release_sha).toBe(SHA);
-    expect(manifest.required_runs.map((x: Json) => x.path).sort()).toEqual([CI, CODEQL, SBOM].sort());
+    expect(manifest.required_runs.map((x: Json) => x.path).sort()).toEqual([CI, CODEQL, SBOM, DEP].sort());
     expect(manifest.codeql_analysis.commit_sha).toBe(SHA);
     expect(manifest.sbom.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.sbom.components).toBe(4);
@@ -199,7 +202,7 @@ describe('release-evidence-gate.sh — passing world', () => {
       run({ id: 10, runNumber: 10, path: CI, conclusion: 'failure' }),
       run({ id: 11, runNumber: 11, path: CI }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expect(w.exec().code).toBe(0);
   });
@@ -216,7 +219,7 @@ describe('release-evidence-gate.sh — exact head binding', () => {
 
 describe('release-evidence-gate.sh — required run negatives (one mutation each)', () => {
   it('missing CI run for the sha fails (absence is not success)', () => {
-    const w = World.passing().runsList([run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM })]);
+    const w = World.passing().runsList([run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM }), run({ id: 14, path: DEP })]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
 
@@ -224,7 +227,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     const w = World.passing().runsList([
       run({ id: 11, path: CI, headSha: OTHER_SHA }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
@@ -234,7 +237,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
       run({ id: 11, runNumber: 11, path: CI }),
       run({ id: 14, runNumber: 14, path: CI, conclusion: 'failure' }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /run #14 .* concluded 'failure'/);
   });
@@ -244,7 +247,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
       run({ id: 11, runNumber: 11, path: CI }),
       run({ id: 15, runNumber: 15, path: CI, status: 'in_progress', conclusion: null }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /is 'in_progress', not completed/);
   });
@@ -254,7 +257,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
       const w = World.passing().runsList([
         run({ id: 11, path: CI, conclusion }),
         run({ id: 12, path: CODEQL }),
-        run({ id: 13, path: SBOM }),
+        run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
       ]);
       expectFail(w.exec(), new RegExp(`concluded '${conclusion}'`));
     }
@@ -264,7 +267,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     const w = World.passing().runsList([
       run({ id: 11, path: CI, headRepo: FORK }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
@@ -273,7 +276,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     const w = World.passing().runsList([
       run({ id: 11, path: CI, event: 'pull_request' }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
@@ -282,7 +285,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     const w = World.passing().runsList([
       run({ id: 11, path: CI, branch: 'release/x' }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
@@ -291,7 +294,7 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     const w = World.passing().runsList([
       run({ id: 11, path: '.github/workflows/ci-copy.yml' }),
       run({ id: 12, path: CODEQL }),
-      run({ id: 13, path: SBOM }),
+      run({ id: 13, path: SBOM }), run({ id: 14, path: DEP }),
     ]);
     expectFail(w.exec(), /no trusted run of \.github\/workflows\/ci\.yml/);
   });
@@ -363,6 +366,17 @@ describe('release-evidence-gate.sh — deployment environment must already be pr
     const w = World.passing().api(`repos/${REPO}/environments/staging`, protectedEnv({ name: 'staging' }));
     expect(w.exec({ REQUIRED_ENVIRONMENT: 'staging' }).code).toBe(0);
     expectFail(World.passing().exec({ REQUIRED_ENVIRONMENT: 'staging' }), /environments\/staging/);
+  });
+});
+
+describe('release-evidence-gate.sh — composed dependency-audit is a required input (S2-B8)', () => {
+  it('fails when no dependency-audit run exists for the head sha', () => {
+    const w = World.passing().runsList([run({ id: 11, path: CI }), run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM })]);
+    expectFail(w.exec(), /dependency-audit\.yml/);
+  });
+  it('fails when the dependency-audit job concluded failure', () => {
+    const w = World.passing().api(`repos/${REPO}/actions/runs/14/jobs?per_page=100`, jobs([DEP_JOB], { [DEP_JOB]: { conclusion: 'failure' } }));
+    expectFail(w.exec(), /npm audit \(high\+critical, whole graph\)/);
   });
 });
 

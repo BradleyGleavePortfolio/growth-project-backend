@@ -203,10 +203,11 @@ jobs:
     # (not skips) if the DB is configured-but-unreachable, so a broken DB can
     # never read as green.
     #
-    # NOTE on schema setup: the full Prisma migration chain is NOT deployable
-    # from empty on this repo (a pre-existing, out-of-PR-scope defect —
-    # 20250724120000 ALTERs SubCoachInvite before 20260604000000 creates it).
-    # So instead of `prisma migrate deploy` over the whole history, we
+    # NOTE on schema setup: this job predates the S1 synthetic replay
+    # (2026-09-20, PG 17.6: the full chain replayed 165/165 from empty on a
+    # Supabase-like bootstrap, see execution/s1-database in the evidence
+    # archive). That replay measures the chain, NOT production history, so
+    # this job still does not `prisma migrate deploy` over the whole chain; we
     # materialize only the objects PR-RLS-01 touches (scripts/ci/*.sql) and
     # then apply THIS PR's migration verbatim, so the live suite asserts
     # against the real migration output. See scripts/ci/rls01-live-bootstrap.sql.

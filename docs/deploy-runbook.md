@@ -316,6 +316,17 @@ For every migration:
    production from a stale snapshot without first rotating Supabase
    service-role keys.
 
+5. **After any rollback or restore, run the catalog verifiers** —
+   `prisma migrate status` reads `_prisma_migrations`, not the catalog, and
+   will say "up to date" after an out-of-band `down.sql`. Truth is
+   `prisma/migrations/<m>/verify.sql` (run automatically by
+   `scripts/release.sh` step 4 on the next release). Do **not** run
+   `prisma migrate resolve --rolled-back` for a migration that *succeeded*
+   and was reversed by hand: it refuses (P3012) or no-ops if an older failed
+   row exists. Re-apply forward transactionally instead
+   (`psql "$DIRECT_URL" --single-transaction -v ON_ERROR_STOP=1 -f migration.sql`),
+   then the verifier. See `docs/delivery-controls.md` §7.1.
+
 ---
 
 ## 4. OWNER bootstrap & feature flag order

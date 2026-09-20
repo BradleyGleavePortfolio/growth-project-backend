@@ -172,6 +172,33 @@ if ! grep -qE "Database schema is up to date|No pending migrations" "${VERIFY_LO
   exit 1
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — Catalog verifiers. `migrate status` answers from _prisma_migrations,
+# not from the catalog: DDL reversed out-of-band (down.sql, manual psql, an
+# older restore) still reads "up to date". Any migration folder may ship a
+# verify.sql that inspects pg_catalog directly and RAISEs on drift; every one
+# present must pass before this release is green. Runs against DIRECT_URL
+# (same connection migrate deploy used). The runtime image has no psql, so
+# prisma db execute is the runner; a RAISE inside the script is a non-zero
+# exit. Zero verifiers is fine and is logged as such.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 4: running catalog verifiers (prisma/migrations/*/verify.sql)..."
+VERIFIER_COUNT=0
+VERIFIER_LOG=/tmp/prisma_verifier.log
+: >"${VERIFIER_LOG}"
+while IFS= read -r verifier; do
+  [[ -n "${verifier}" ]] || continue
+  VERIFIER_COUNT=$((VERIFIER_COUNT + 1))
+  echo "[release]   verifier: ${verifier}"
+  if ! npx prisma db execute --url "${DIRECT_URL}" --file "${verifier}" >>"${VERIFIER_LOG}" 2>&1; then
+    echo "[release] catalog verifier FAILED: ${verifier}"
+    sed 's/^/[release]   /' "${VERIFIER_LOG}" | tail -n 40
+    echo "[release] Refusing to mark this release green (schema drift or incomplete migration)."
+    exit 1
+  fi
+done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name verify.sql -type f | LC_ALL=C sort)
+echo "[release]   verifiers_passed = ${VERIFIER_COUNT}"
+
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
 #
@@ -203,6 +230,7 @@ echo "[release] ─────────────────────�
 echo "[release] ✔ release_command completed successfully"
 echo "[release]   ALL_APPLIED=${APPLIED_COUNT}"
 echo "[release]   pending_before=${PENDING_COUNT}"
+echo "[release]   verifiers_passed=${VERIFIER_COUNT}"
 echo "[release]   release_id=${RELEASE_ID}"
 echo "[release] ────────────────────────────────────────────────────────────"
 exit 0

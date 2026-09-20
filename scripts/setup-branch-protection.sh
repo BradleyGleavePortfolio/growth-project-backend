@@ -94,6 +94,7 @@ fi
 #                        "CodeQL JS/TS (javascript-typescript)" — fail-closed
 #                        since 2026-09-20 (no continue-on-error / GHAS fallback)
 #   sbom.yml            (pull_request: branches:[main], no paths): build-sbom
+#   dependency-audit.yml (pull_request, no paths): npm audit (high+critical, whole graph)
 #   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
 #                        (the PR-mode deploy-readiness board; PR-eligible)
 #
@@ -136,6 +137,10 @@ REQUIRED_CHECKS=(
   # sbom.yml — runs on every PR to main since 2026-09-20; proves the
   # production dependency closure before merge.
   "build-sbom"
+  # dependency-audit.yml — runs on every PR (no paths filter); composed from
+  # the S3 lane (job name as of its head 5c7b42b3). Required check names are
+  # bound to CHECKS_APP_ID, so a renamed job blocks merges until updated here.
+  "npm audit (high+critical, whole graph)"
 )
 
 : "${REQUIRED_APPROVING_REVIEW_COUNT:?set to 0 (recorded single-maintainer decision) or 1+ (second human maintainer); see header}"
