@@ -2,7 +2,7 @@
 # scripts/ci/assert-prod-sbom.sh
 #
 # Production-dependency proof for a CycloneDX SBOM (used by
-# .github/workflows/sbom.yml and test/ci/prod-sbom.spec.ts).
+# .github/workflows/sbom.yml, re-run by scripts/ci/release-evidence-gate.sh, tested in test/ci/delivery-artifact.spec.ts).
 #
 # Exits 0 only when SBOM_FILE:
 #   1. is a CycloneDX document with more than zero components;

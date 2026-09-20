@@ -286,12 +286,21 @@ For every migration:
 3. **If the deploy aborts**, Fly leaves the previous machines running.
    Investigate the release log and re-deploy a fix; no manual revert is
    needed for a failed release.
-4. **If the deploy succeeded but the new code is broken**, roll the
-   image back:
+4. **If the deploy succeeded but the new code is broken**, the gated
+   path is **forward-only**: revert the offending commit on `main` through
+   a reviewed PR, let CI / CodeQL / SBOM run on the new head, then dispatch
+   `Fly Deploy` again with that head as `release_sha` (see
+   `docs/delivery-controls.md`). The previous running image is recorded
+   in the release manifest (`machines-before.json`, `image_ref.tag`
+   `sha-<commit>`).
+
+   **Emergency, UNGATED route** (bypasses the evidence gate and
+   `verify-fly-release.sh`; record who ran it and why, and follow with a
+   gated release):
 
    ```sh
    fly releases -a <app>
-   fly deploy -a <app> --image registry.fly.io/<app>:<previous-tag>
+   fly deploy -a <app> --image registry.fly.io/<app>:sha-<previous-commit>
    ```
 
    The previous image still expects the new schema, so the rollback is
@@ -682,11 +691,12 @@ two-app dance.
 These are operator-only — the backend cannot do them on its own:
 
 - Provision the Fly app, region, and IPv4/IPv6 addresses.
-- **Add a `FLY_API_TOKEN` GitHub Actions repo secret.** Until this is set,
-  the `Fly Deploy` workflow now **fails red** on every push to `main` —
-  see §8.1 below. A red workflow is the intended signal that production
-  is not deploying; a stale production binary running while the workflow
-  silently green-skips is a release-blocker.
+- **Add a `FLY_API_TOKEN` GitHub Actions secret** (repository-level today;
+  the intended home is the `production` environment, see
+  `docs/delivery-controls.md`). Merging to `main` no longer deploys;
+  `Fly Deploy` runs only on explicit dispatch and **fails red** if the
+  token is missing — see §8.1 below. A red workflow is the intended
+  signal; a silently green-skipping workflow is a release-blocker.
 - Configure Supabase project (auth providers, JWT expiry, email templates).
 - Configure Stripe account (products, webhook endpoint, customer portal).
 - Configure Sentry / PostHog projects and copy DSN/key into Fly secrets.
@@ -729,11 +739,17 @@ store and in `fly tokens`.
    gh secret set FLY_API_TOKEN --app actions --body "$FLY_TOKEN_FROM_STEP_1"
    ```
 
-3. **Trigger a deploy.** Either:
-   - Push any commit to `main` (most common), or
-   - Re-run the latest failed `Fly Deploy` workflow:
-     `gh run list --workflow="Fly Deploy" --limit 1` then
-     `gh run rerun <run-id>`.
+3. **Trigger a deploy** — always an explicit dispatch from `main` with the
+   exact commit (pushing to `main` does not deploy):
+
+   ```sh
+   SHA=$(git rev-parse origin/main)
+   gh workflow run fly-deploy.yml --ref main -f release_sha="$SHA" -f confirm=deploy
+   # add -f migrations=apply-migrations ONLY when prisma/migrations or schema changed
+   ```
+
+   The `Release evidence gate` job must pass and the `production`
+   environment reviewer must approve before anything reaches Fly.
 
 4. **Watch the run go green.** The `Verify FLY_API_TOKEN is configured`
    step prints the token *length* (not the value) and the deploy

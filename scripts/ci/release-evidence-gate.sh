@@ -112,9 +112,14 @@ for entry in "${REQ_ENTRIES[@]}"; do
   JOBS_JSON=$(api "repos/${GH_REPO}/actions/runs/${run_id}/jobs?per_page=100")
   IFS=',' read -r -a want_jobs <<<"$jobs_csv"
   for job in "${want_jobs[@]}"; do
+    # Every entry with this name must be completed/success (duplicate names, e.g.
+    # re-run attempts listed together, are not resolved by taking the first one).
     job_state=$(printf '%s' "$JOBS_JSON" | jq -r --arg n "$job" '
-      [ .jobs[] | select(.name == $n) ] | if length == 0 then "missing" else (.[0] | "\(.status)/\(.conclusion // "null")") end')
-    [[ "$job_state" == "completed/success" ]] || fail "job '${job}' in ${wf_path} run ${run_id} is '${job_state}', required completed/success (skipped/neutral/missing are not success)"
+      [ .jobs[] | select(.name == $n) ]
+      | if length == 0 then "missing"
+        elif all(.[]; .status == "completed" and .conclusion == "success") then "completed/success"
+        else (map("\(.status)/\(.conclusion // "null")") | join("|")) end')
+    [[ "$job_state" == "completed/success" ]] || fail "job '${job}' in ${wf_path} run ${run_id} is '${job_state}', required completed/success for every entry (skipped/neutral/missing/duplicate-failed are not success)"
   done
 
   echo "release-evidence-gate: OK ${wf_path} run #${run_number} (id ${run_id}) jobs: ${jobs_csv}"
@@ -129,7 +134,14 @@ analysis=$(printf '%s' "$ANALYSES_JSON" | jq -c --arg sha "$RELEASE_SHA" '
   [ .[] | select(.commit_sha == $sha) | select(.tool.name == "CodeQL") ] | sort_by(.created_at) | reverse | .[0] // empty')
 [[ -n "$analysis" ]] || fail "no CodeQL code-scanning analysis recorded for ${RELEASE_SHA}; a green job without an uploaded analysis is not evidence"
 analysis_id=$(printf '%s' "$analysis" | jq -r '.id')
-echo "release-evidence-gate: OK CodeQL analysis ${analysis_id} for ${RELEASE_SHA}"
+# An upload that analysed nothing (extraction error, zero rules evaluated) is
+# not a scan. results_count may legitimately be 0; rules_count may not.
+analysis_problem=$(printf '%s' "$analysis" | jq -r '
+  if ((.error // "") != "") then "error=\(.error)"
+  elif ((.rules_count // 0) <= 0) then "rules_count=\(.rules_count // "null")"
+  else "" end')
+[[ -z "$analysis_problem" ]] || fail "CodeQL analysis ${analysis_id} for ${RELEASE_SHA} analysed nothing (${analysis_problem}); empty or errored scans are not success"
+echo "release-evidence-gate: OK CodeQL analysis ${analysis_id} for ${RELEASE_SHA} (rules_count $(printf '%s' "$analysis" | jq -r '.rules_count'), results_count $(printf '%s' "$analysis" | jq -r '.results_count // "null"'))"
 
 # --- 4. SBOM artifact bound to this sha -------------------------------------
 [[ -n "$SBOM_RUN_ID" ]] || fail "SBOM workflow ${SBOM_WORKFLOW_PATH} is not in REQUIRED_WORKFLOWS; artifact proof impossible"
@@ -144,14 +156,21 @@ SBOM_ZIP="$OUT_DIR/${sbom_name}.zip"
 if ! gh api "repos/${GH_REPO}/actions/artifacts/${artifact_id}/zip" >"$SBOM_ZIP" 2>"$OUT_DIR/.api-err"; then
   fail "could not download SBOM artifact ${artifact_id}: $(tr '\n' ' ' <"$OUT_DIR/.api-err" | cut -c1-300)"
 fi
-rm -f "$OUT_DIR/sbom.cdx.json"
-unzip -o -q "$SBOM_ZIP" sbom.cdx.json -d "$OUT_DIR" || fail "SBOM artifact zip does not contain sbom.cdx.json"
+rm -f "$OUT_DIR/sbom.cdx.json" "$OUT_DIR/sbom.cdx.json.sha256"
+unzip -o -q "$SBOM_ZIP" sbom.cdx.json sbom.cdx.json.sha256 -d "$OUT_DIR" || fail "SBOM artifact zip does not contain sbom.cdx.json and sbom.cdx.json.sha256"
 SBOM_FILE="$OUT_DIR/sbom.cdx.json"
-jq -e '.bomFormat == "CycloneDX" and ((.components | length) > 0)' "$SBOM_FILE" >/dev/null \
-  || fail "downloaded SBOM is not a CycloneDX document with >0 components (empty scans are not success)"
 sbom_sha256=$(sha256sum "$SBOM_FILE" | awk '{print $1}')
+sidecar_sha256=$(awk '{print $1}' "$OUT_DIR/sbom.cdx.json.sha256" | head -1)
+[[ "$sidecar_sha256" == "$sbom_sha256" ]] || fail "SBOM sha256 sidecar (${sidecar_sha256:-empty}) does not match downloaded sbom.cdx.json (${sbom_sha256})"
+# Re-run the full production-closure proof against the lockfile of the release
+# commit (the gate job checks out RELEASE_SHA), not just the CycloneDX shape.
+SBOM_ASSERT="${SBOM_ASSERT:-scripts/ci/assert-prod-sbom.sh}"
+LOCKFILE="${LOCKFILE:-package-lock.json}"
+[[ -f "$SBOM_ASSERT" ]] || fail "SBOM assertion script ${SBOM_ASSERT} not found in the checked-out release commit"
+[[ -f "$LOCKFILE" ]] || fail "lockfile ${LOCKFILE} not found in the checked-out release commit"
+GITHUB_OUTPUT=/dev/null bash "$SBOM_ASSERT" "$SBOM_FILE" "$LOCKFILE" || fail "downloaded SBOM failed the production-closure proof against ${LOCKFILE}"
 sbom_components=$(jq '.components | length' "$SBOM_FILE")
-echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256})"
+echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256}, sidecar match, closure proof re-run)"
 
 # --- 5. deployment environment is actually protected -------------------------
 ENV_JSON=$(api "repos/${GH_REPO}/environments/${REQUIRED_ENVIRONMENT}")
@@ -175,8 +194,10 @@ jq -n \
     repository: $repo, release_sha: $sha, trusted_branch: $branch, generated_at: $generated_at,
     environment: $environment,
     required_runs: $runs,
-    codeql_analysis: {id: $analysis.id, commit_sha: $analysis.commit_sha, created_at: $analysis.created_at, url: $analysis.url},
-    sbom: {artifact_id: $artifact_id, name: ("sbom-cyclonedx-" + $sha), sha256: $sbom_sha256, components: $sbom_components},
+    codeql_analysis: {id: $analysis.id, commit_sha: $analysis.commit_sha, created_at: $analysis.created_at, url: $analysis.url,
+                      rules_count: $analysis.rules_count, results_count: $analysis.results_count},
+    sbom: {artifact_id: $artifact_id, name: ("sbom-cyclonedx-" + $sha), sha256: $sbom_sha256, components: $sbom_components,
+           scope: "npm production closure of the release commit (no OS packages, Node binary, Prisma engine binaries or build-stage tools)"},
     image: null
   }' >"$MANIFEST"
 echo "release-evidence-gate: PASS for ${RELEASE_SHA}; manifest ${MANIFEST}"

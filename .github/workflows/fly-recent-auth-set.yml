@@ -14,6 +14,9 @@ on:
 jobs:
   set-secrets:
     runs-on: ubuntu-latest
+    # Production-mutating: bound to the same `production` environment as Fly Deploy
+    # so required reviewers (once configured) gate this too, not only image deploys.
+    environment: production
     steps:
       - name: Guard
         run: |
@@ -22,7 +25,7 @@ jobs:
             exit 1
           fi
       - name: Install flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
       - name: Set recent-auth secrets on Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

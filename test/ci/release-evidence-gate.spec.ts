@@ -4,6 +4,7 @@
 // world, so a regression that loosens one rule is caught by one named test.
 
 import { execFileSync, spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -104,12 +105,12 @@ class World {
     w.api(`repos/${REPO}/actions/runs/12/jobs?per_page=100`, jobs([CODEQL_JOB]));
     w.api(`repos/${REPO}/actions/runs/13/jobs?per_page=100`, jobs([SBOM_JOB]));
     w.api(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`, [
-      { id: 900, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, url: 'https://api.github.com/x' },
+      { id: 900, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, url: 'https://api.github.com/x', rules_count: 42, results_count: 0, error: '' },
     ]);
     w.api(`repos/${REPO}/actions/runs/13/artifacts?per_page=100`, {
       artifacts: [{ id: 700, name: `sbom-cyclonedx-${SHA}`, expired: false }],
     });
-    w.api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip({ bomFormat: 'CycloneDX', components: [{ name: '@nestjs/core', version: '11.0.0' }] }));
+    w.api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(PROD_SBOM));
     w.api(ENV_PATH, protectedEnv());
     return w;
   }
@@ -135,6 +136,7 @@ class World {
         RELEASE_SHA: SHA,
         DISPATCH_SHA: SHA,
         OUT_DIR: this.out,
+        LOCKFILE,
         ...env,
       },
     });
@@ -142,10 +144,30 @@ class World {
   }
 }
 
-function sbomZip(doc: Json): Buffer {
+// Production closure consistent with fixtures/gate-lockfile.json.
+const PROD_SBOM: Json = {
+  bomFormat: 'CycloneDX',
+  components: [
+    { name: '@nestjs/core', version: '11.0.0' },
+    { name: '@prisma/client', version: '6.19.3' },
+    { name: 'prisma', version: '6.19.3' },
+    { name: 'source-map', version: '0.7.0' },
+  ],
+};
+const LOCKFILE = join(__dirname, 'fixtures', 'gate-lockfile.json');
+
+function sbomZip(doc: Json, opts: { sidecar?: 'match' | 'mismatch' | 'absent' } = {}): Buffer {
   const dir = mkdtempSync(join(tmpdir(), 'sbom-zip-'));
-  writeFileSync(join(dir, 'sbom.cdx.json'), JSON.stringify(doc));
-  execFileSync('zip', ['-q', 'sbom.zip', 'sbom.cdx.json'], { cwd: dir });
+  const body = JSON.stringify(doc);
+  writeFileSync(join(dir, 'sbom.cdx.json'), body);
+  const files = ['sbom.cdx.json'];
+  const mode = opts.sidecar ?? 'match';
+  if (mode !== 'absent') {
+    const sha = mode === 'match' ? createHash('sha256').update(body).digest('hex') : '0'.repeat(64);
+    writeFileSync(join(dir, 'sbom.cdx.json.sha256'), `${sha}  sbom.cdx.json\n`);
+    files.push('sbom.cdx.json.sha256');
+  }
+  execFileSync('zip', ['-q', 'sbom.zip', ...files], { cwd: dir });
   return readFileSync(join(dir, 'sbom.zip'));
 }
 
@@ -165,7 +187,9 @@ describe('release-evidence-gate.sh — passing world', () => {
     expect(manifest.required_runs.map((x: Json) => x.path).sort()).toEqual([CI, CODEQL, SBOM].sort());
     expect(manifest.codeql_analysis.commit_sha).toBe(SHA);
     expect(manifest.sbom.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(manifest.sbom.components).toBe(1);
+    expect(manifest.sbom.components).toBe(4);
+    expect(manifest.sbom.scope).toMatch(/npm production closure/);
+    expect(manifest.codeql_analysis.rules_count).toBe(42);
     expect(manifest.image).toBeNull();
     expect(manifest.environment).toBe('production');
   });
@@ -285,6 +309,20 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
     expectFail(w.exec(), /job 'mwb-3-live-tests' .* is 'missing'/);
   });
 
+  it('duplicate job names: a failed duplicate behind a green first entry fails (not resolved by .[0])', () => {
+    const dup = jobs(CI_JOBS);
+    (dup.jobs as Json[]).push({ name: 'rls-live-tests', status: 'completed', conclusion: 'failure' });
+    const w = World.passing().api(`repos/${REPO}/actions/runs/11/jobs?per_page=100`, dup);
+    expectFail(w.exec(), /job 'rls-live-tests' .* is 'completed\/success\|completed\/failure'/);
+  });
+
+  it('duplicate job names: all entries green passes', () => {
+    const dup = jobs(CI_JOBS);
+    (dup.jobs as Json[]).push({ name: 'rls-live-tests', status: 'completed', conclusion: 'success' });
+    const w = World.passing().api(`repos/${REPO}/actions/runs/11/jobs?per_page=100`, dup);
+    expect(w.exec().code).toBe(0);
+  });
+
   it('a candidate-weakened required list (SBOM dropped) is refused', () => {
     const w = World.passing();
     expectFail(w.exec({ REQUIRED_WORKFLOWS: `${CI}=build-and-test;${CODEQL}=${CODEQL_JOB}` }), /SBOM workflow .* is not in REQUIRED_WORKFLOWS/);
@@ -336,6 +374,27 @@ describe('release-evidence-gate.sh — CodeQL analysis and SBOM artifact negativ
     expectFail(w.exec(), /no CodeQL code-scanning analysis recorded/);
   });
 
+  it('analysis for the sha with rules_count 0 (analysed nothing) fails', () => {
+    const w = World.passing().api(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`, [
+      { id: 902, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, rules_count: 0, results_count: 0, error: '' },
+    ]);
+    expectFail(w.exec(), /analysed nothing \(rules_count=0\)/);
+  });
+
+  it('analysis for the sha carrying an error string fails', () => {
+    const w = World.passing().api(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`, [
+      { id: 903, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, rules_count: 42, results_count: 0, error: 'extraction failed' },
+    ]);
+    expectFail(w.exec(), /analysed nothing \(error=extraction failed\)/);
+  });
+
+  it('analysis object without rules_count at all fails (unknown is not success)', () => {
+    const w = World.passing().api(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`, [
+      { id: 904, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' } },
+    ]);
+    expectFail(w.exec(), /rules_count=null/);
+  });
+
   it('code-scanning API error (e.g. GHAS disabled → 403/404) fails instead of defaulting', () => {
     const w = World.passing().remove(`repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`);
     expectFail(w.exec(), /GitHub API read failed for repos\/.*code-scanning/);
@@ -362,7 +421,33 @@ describe('release-evidence-gate.sh — CodeQL analysis and SBOM artifact negativ
 
   it('SBOM with zero components fails', () => {
     const w = World.passing().api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip({ bomFormat: 'CycloneDX', components: [] }));
-    expectFail(w.exec(), /not a CycloneDX document with >0 components/);
+    expectFail(w.exec(), /failed the production-closure proof/);
+  });
+
+  it('SBOM whose closure proof fails (dev-only package present) fails at the gate, not only in sbom.yml', () => {
+    const leaky = { ...PROD_SBOM, components: [...(PROD_SBOM.components as Json[]), { name: 'jest', version: '30.0.0' }] };
+    const w = World.passing().api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(leaky));
+    expectFail(w.exec(), /failed the production-closure proof/);
+  });
+
+  it('SBOM missing a required runtime package (prisma CLI) fails at the gate', () => {
+    const noPrisma = { ...PROD_SBOM, components: (PROD_SBOM.components as Json[]).filter((c) => c.name !== 'prisma') };
+    const w = World.passing().api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(noPrisma));
+    expectFail(w.exec(), /failed the production-closure proof/);
+  });
+
+  it('sha256 sidecar mismatch fails', () => {
+    const w = World.passing().api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(PROD_SBOM, { sidecar: 'mismatch' }));
+    expectFail(w.exec(), /sidecar .* does not match/);
+  });
+
+  it('sha256 sidecar absent fails', () => {
+    const w = World.passing().api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(PROD_SBOM, { sidecar: 'absent' }));
+    expectFail(w.exec(), /does not contain sbom.cdx.json and sbom.cdx.json.sha256/);
+  });
+
+  it('lockfile of the release commit missing fails', () => {
+    expectFail(World.passing().exec({ LOCKFILE: '/nonexistent/package-lock.json' }), /lockfile .* not found/);
   });
 
   it('SBOM download failure fails', () => {

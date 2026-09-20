@@ -79,8 +79,10 @@ COPY scripts/release.sh ./scripts/release.sh
 # packages under --omit=dev, and the assertion below fails the build if that
 # ever stops being true. Lifecycle scripts still run here so @prisma/engines
 # fetches its engines and `postinstall` generates the client for this tree.
+# SCARF_ANALYTICS=false: @scarf/scarf (transitive) would otherwise phone home
+# from its postinstall during this install.
 RUN npm pkg delete scripts.prepare \
-    && npm ci --omit=dev --no-audit --no-fund
+    && SCARF_ANALYTICS=false npm ci --omit=dev --no-audit --no-fund
 
 COPY --from=build /app/dist ./dist
 
@@ -105,5 +107,10 @@ ENV RELEASE_VERSION=$RELEASE_VERSION
 ENV GIT_SHA=$GIT_SHA
 
 EXPOSE 3000
+
+# Runtime writes only under /tmp (scripts/release.sh, data-export, signed-pdf
+# store); /app stays root-owned and read-only for the process. `node` is the
+# unprivileged user shipped with the official image.
+USER node
 
 CMD ["node", "dist/main.js"]

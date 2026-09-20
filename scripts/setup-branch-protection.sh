@@ -41,12 +41,19 @@
 #   maintainer with their own account, or (b) an explicitly recorded owner
 #   decision to run with required_approving_review_count=0 while keeping every
 #   status check required and the production environment gated. See
-#   execution/s2-delivery/LANDING_PROPOSAL.md for the current recommendation.
-#   Do not run this script until that decision is recorded.
+#   docs/delivery-controls.md for the current recommendation. Do not run this
+#   script until that decision is recorded; the decision is passed explicitly
+#   as REQUIRED_APPROVING_REVIEW_COUNT (no default) so the script never
+#   encodes an identity assumption on its own.
 #
 # Required env:
 #   GH_TOKEN     — a PAT with `repo` scope (Settings → Developer settings).
 #   GH_REPO      — owner/repo, e.g. BradleyGleavePortfolio/growth-project-backend
+#   REQUIRED_APPROVING_REVIEW_COUNT — 0 (recorded single-maintainer decision)
+#                  or 1+ (a second real human maintainer exists).
+#   CHECKS_APP_ID — GitHub App id that must post the required checks
+#                  (GitHub Actions = 15368). Binding by app id is what makes a
+#                  check name trustworthy; -1 would accept any app.
 #
 # Usage:
 #   GH_TOKEN=ghp_xxx GH_REPO=BradleyGleavePortfolio/growth-project-backend \
@@ -86,6 +93,7 @@ fi
 #   codeql.yml          (pull_request: branches:[main], no paths):
 #                        "CodeQL JS/TS (javascript-typescript)" — fail-closed
 #                        since 2026-09-20 (no continue-on-error / GHAS fallback)
+#   sbom.yml            (pull_request: branches:[main], no paths): build-sbom
 #   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
 #                        (the PR-mode deploy-readiness board; PR-eligible)
 #
@@ -125,12 +133,25 @@ REQUIRED_CHECKS=(
   # h4-readiness.yml — runs on every PR (no paths filter). PR-eligible; the
   # non-PR strict gate (deploy-readiness-gate) is deliberately NOT listed here.
   "test-deploy-readiness"
+  # sbom.yml — runs on every PR to main since 2026-09-20; proves the
+  # production dependency closure before merge.
+  "build-sbom"
 )
 
-CHECKS_JSON=$(printf '%s\n' "${REQUIRED_CHECKS[@]}" | jq -R . | jq -s 'map({context: ., app_id: -1})')
+: "${REQUIRED_APPROVING_REVIEW_COUNT:?set to 0 (recorded single-maintainer decision) or 1+ (second human maintainer); see header}"
+: "${CHECKS_APP_ID:?set to the GitHub App id that posts the checks (GitHub Actions = 15368)}"
+printf '%s' "$REQUIRED_APPROVING_REVIEW_COUNT" | grep -qE '^[0-9]+$' || { echo "ERROR: REQUIRED_APPROVING_REVIEW_COUNT must be an integer" >&2; exit 1; }
+printf '%s' "$CHECKS_APP_ID" | grep -qE '^[0-9]+$' || { echo "ERROR: CHECKS_APP_ID must be a positive integer app id" >&2; exit 1; }
+CHECKS_JSON=$(printf '%s\n' "${REQUIRED_CHECKS[@]}" | jq -R . | jq -s --argjson app "$CHECKS_APP_ID" 'map({context: ., app_id: $app})')
+
+# Code-owner review only makes sense with a second human; with count 0 it
+# would demand an approval nobody can give.
+if [[ "$REQUIRED_APPROVING_REVIEW_COUNT" -ge 1 ]]; then CODEOWNER_REVIEW=true; else CODEOWNER_REVIEW=false; fi
 
 PAYLOAD=$(jq -n \
   --argjson checks "$CHECKS_JSON" \
+  --argjson count "$REQUIRED_APPROVING_REVIEW_COUNT" \
+  --argjson codeowner "$CODEOWNER_REVIEW" \
   '{
     required_status_checks: {
       strict: true,
@@ -139,9 +160,9 @@ PAYLOAD=$(jq -n \
     enforce_admins: true,
     required_pull_request_reviews: {
       dismiss_stale_reviews: true,
-      require_code_owner_reviews: true,
-      required_approving_review_count: 1,
-      require_last_push_approval: true
+      require_code_owner_reviews: $codeowner,
+      required_approving_review_count: $count,
+      require_last_push_approval: ($count >= 1)
     },
     restrictions: null,
     required_linear_history: true,

@@ -1,0 +1,13 @@
+{
+  "name": "growth-project-backend",
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "growth-project-backend", "version": "1.0.0" },
+    "node_modules/@nestjs/core": { "version": "11.0.0" },
+    "node_modules/@prisma/client": { "version": "6.19.3" },
+    "node_modules/prisma": { "version": "6.19.3", "devOptional": true },
+    "node_modules/jest": { "version": "30.0.0", "dev": true },
+    "node_modules/source-map": { "version": "0.7.0" },
+    "node_modules/jest/node_modules/source-map": { "version": "0.7.0", "dev": true }
+  }
+}

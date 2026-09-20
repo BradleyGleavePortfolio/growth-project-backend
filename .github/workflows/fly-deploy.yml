@@ -13,9 +13,16 @@
 # digest is uploaded.
 #
 # Hosted controls this workflow relies on but cannot create (see
-# execution/s2-delivery/LANDING_PROPOSAL.md): branch protection on main,
-# required PR checks, required reviewers on the `production` environment, and
-# required review for changes under .github/workflows/** and scripts/ci/**.
+# docs/delivery-controls.md): branch protection on main, required PR checks,
+# required reviewers on the `production` environment, and required review for
+# changes under .github/workflows/** and scripts/ci/**. The gate refuses to run
+# while the `production` environment lacks a required reviewer or allows admin
+# bypass; whether those settings exist is UNKNOWN until read back from GitHub.
+#
+# Recovery: this path is forward-only (release_sha must be the current main
+# head). Rolling back = revert on main, let CI/CodeQL/SBOM run, dispatch again.
+# The previous running image is recorded in the manifest (machines-before) so
+# the emergency, UNGATED route in docs/deploy-runbook.md §7 has an exact target.
 
 name: Fly Deploy
 on:
@@ -28,6 +35,11 @@ on:
       confirm:
         description: 'Type "deploy" to confirm a production release'
         required: true
+        type: string
+      migrations:
+        description: 'Type "apply-migrations" ONLY if this release may change prisma/migrations or schema (release_command applies them before rollout). Leave empty otherwise; the job fails if the delta is non-empty or unknown without it.'
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -100,6 +112,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           ref: ${{ needs.evidence-gate.outputs.release_sha }}
+          fetch-depth: 0   # migration delta needs the previously deployed commit
           persist-credentials: false
 
       - name: Assert checked-out tree is the authorized commit
@@ -108,7 +121,7 @@ jobs:
           [ "$head" = "$RELEASE_SHA" ] || { echo "::error::checked out $head, expected $RELEASE_SHA"; exit 1; }
 
       - name: Download evidence manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0 (same major as upload-artifact)
         with:
           name: release-evidence-${{ needs.evidence-gate.outputs.release_sha }}
           path: release-evidence
@@ -136,7 +149,30 @@ jobs:
           fi
           echo "FLY_API_TOKEN present (length=${tok_len})."
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # Pinned to a commit (resolved 2026-09-20 from refs/heads/master with
+      # `git ls-remote`). The action installs flyctl from fly.io's release
+      # channel; the binary itself is not pinned here — see docs/delivery-controls.md.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20
+
+      # Record what is running BEFORE the release (rollback target + migration
+      # baseline). Raw machine config stays in RUNNER_TEMP; only
+      # {id,name,region,state,image_ref,checks,process_group} is uploaded.
+      - name: Record currently running machines
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl machines list -a "${FLY_APP}" --json > "${RUNNER_TEMP}/machines-before.json"
+          bash scripts/ci/filter-machines.sh "${RUNNER_TEMP}/machines-before.json" > release-evidence/machines-before.json
+
+      # release_command applies pending Prisma migrations to production before
+      # any machine flips. Fail closed unless the delta from the running commit
+      # is empty or the operator explicitly acknowledged it.
+      - name: Migration delta from running commit
+        env:
+          MACHINES_JSON: ${{ runner.temp }}/machines-before.json
+          MIGRATIONS_ACK: ${{ github.event.inputs.migrations }}
+          MANIFEST: release-evidence/release-evidence-${{ needs.evidence-gate.outputs.release_sha }}.json
+        run: bash scripts/ci/migration-delta.sh
 
       # RELEASE_VERSION / GIT_SHA are the authorized commit (build arg + runtime
       # ENV so Sentry releases and logs name the same commit). --image-label
@@ -151,6 +187,7 @@ jobs:
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: |
           flyctl deploy --remote-only -a "${FLY_APP}" \
+            --wait-timeout 5m \
             --image-label "sha-${RELEASE_SHA}" \
             --build-arg RELEASE_VERSION="${RELEASE_SHA}" \
             --build-arg GIT_SHA="${RELEASE_SHA}" \
@@ -163,8 +200,9 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          flyctl machines list -a "${FLY_APP}" --json > release-evidence/machines.json
-          MACHINES_JSON=release-evidence/machines.json \
+          flyctl machines list -a "${FLY_APP}" --json > "${RUNNER_TEMP}/machines-after.json"
+          bash scripts/ci/filter-machines.sh "${RUNNER_TEMP}/machines-after.json" > release-evidence/machines-after.json
+          MACHINES_JSON="${RUNNER_TEMP}/machines-after.json" \
           IMAGE_LABEL="sha-${RELEASE_SHA}" \
           MANIFEST="release-evidence/release-evidence-${RELEASE_SHA}.json" \
             bash scripts/ci/verify-fly-release.sh
@@ -174,11 +212,26 @@ jobs:
           curl -fsS --max-time 20 "https://${FLY_APP}.fly.dev/readyz" | tee release-evidence/readyz.json
           jq -e '.ok == true and .db == "up"' release-evidence/readyz.json >/dev/null
 
+      # The manifest names the job result so a failed release is never mistaken
+      # for a successful one (artifact name and deploy_result field).
+      - name: Finalize manifest with deploy result
+        if: always()
+        env:
+          MANIFEST: release-evidence/release-evidence-${{ needs.evidence-gate.outputs.release_sha }}.json
+          DEPLOY_RESULT: ${{ job.status }}
+        run: |
+          if [ -f "$MANIFEST" ]; then
+            jq --arg r "$DEPLOY_RESULT" '.deploy_result = $r' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          else
+            mkdir -p release-evidence
+            jq -n --arg r "$DEPLOY_RESULT" --arg sha "$RELEASE_SHA" '{schema:"tgp.release-evidence.v1", release_sha:$sha, deploy_result:$r, note:"evidence manifest missing; deploy job failed before it was downloaded"}' > "$MANIFEST"
+          fi
+
       - name: Upload release manifest (post-deploy)
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
         with:
-          name: release-manifest-${{ needs.evidence-gate.outputs.release_sha }}
+          name: release-manifest-${{ needs.evidence-gate.outputs.release_sha }}-${{ job.status }}
           path: release-evidence/
           if-no-files-found: error
           retention-days: 90
