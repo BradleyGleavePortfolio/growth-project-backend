@@ -9,26 +9,33 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   allLedger, appliedMigrations, blocked, catalog, directory, down, encoded, expectedVersion, gitShow,
-  hasColumn, holdAdvisory, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prismaMigrateDeploy,
-  quote, records, refused, resetData, root, run, settle, sql, stage, stageMany, targets, up, v2, worker,
+  hasColumn, holdAdvisory, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
+  quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, targets, up, upFile, v2, worker,
 } from './utils/g2-pg17-harness';
 
 jest.setTimeout(180000);
 const E = '20270118000000_scout_ledger_platform_expand';
 const ledgerKey = '"ScoutReconstructionLedger_coach_id_intent_id_entity_type_source"';
 const ids = (rows: any[]) => rows.map((r) => r.id);
+const last = <T,>(items: T[]) => items[items.length - 1];
 const visible = (family: string, r: any) => (family === 'clients' ? r.persons : r.entities);
 const cursorOf = (family: string, r: any) => (family === 'clients' ? r.page.next_cursor : r.next_cursor);
 const actionOf = (family: string) => (family === 'clients' ? 'roster' : 'entities');
 const nextLegacy = (family: string, s: string) => (family === 'clients' ? encoded(s) : legacyEntityCursor(family, s));
 
 beforeAll(() => {
+  // data_directory is readable only by pg_read_all_settings/superuser: observed via the admin connection.
   const identity = json(`SELECT jsonb_build_object('database',current_database(),'address',inet_server_addr(),
-    'port',inet_server_port(),'directory',current_setting('data_directory'),
+    'port',inet_server_port(),'directory',${quote(sqlAdmin(`SELECT current_setting('data_directory')`))},
     'version',current_setting('server_version_num'),'user',current_user,'super',
-    (SELECT rolsuper FROM pg_roles WHERE rolname=current_user))`);
+    (SELECT rolsuper FROM pg_roles WHERE rolname=current_user),'bypassrls',
+    (SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user),'owner',
+    (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()))`);
+  // Every DDL/data statement of this proof runs as the NON-superuser, BYPASSRLS, owning
+  // `postgres` role (Supabase shape); the cluster superuser only observes lock waits.
   expect(identity).toMatchObject({ database: 'g2_s5_etq0_disposable', address: '127.0.0.1', port: 54325,
-    directory, user: 's5_super', super: true });
+    directory, user: 'postgres', super: false, bypassrls: true, owner: 'postgres' });
+  expect(sql(`SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner<>'postgres'`)).toBe('0');
   expect(Number(identity.version)).toBe(expectedVersion);
   expect(Number(identity.version)).toBeGreaterThanOrEqual(170000);
   expect(Number(identity.version)).toBeLessThan(180000);
@@ -46,13 +53,18 @@ beforeAll(() => {
   for (const file of ['scout-reconstruct.service.ts', 'scout-roster.service.ts', 'scout-entities.service.ts']) {
     expect(readFileSync(resolve(oldRoot!, 'src/scout', file), 'utf8')).toBe(gitShow(`${OLD_HEAD}:src/scout/${file}`));
   }
-  expect(sql(`SELECT rolbypassrls||':'||rolcanlogin FROM pg_roles WHERE rolname='service_role'`)).toBe('t:t');
+  expect(sql(`SELECT rolbypassrls||':'||rolcanlogin FROM pg_roles WHERE rolname='service_role'`)).toBe('true:true');
   expect(sql(`SELECT string_agg(rolsuper::text||':'||rolbypassrls::text,',' ORDER BY rolname)
     FROM pg_roles WHERE rolname IN ('anon','authenticated')`)).toBe('false:false,false:false');
-  // Table privileges are granted so that the RLS stage proves POLICY denial, not missing GRANTs.
+  // Table privileges are granted (owner statement) so that the RLS stage proves POLICY denial,
+  // not missing GRANTs; the fixture's Supabase-like default privileges are recorded, not relied on.
   sql(`GRANT USAGE ON SCHEMA public TO service_role,anon,authenticated;
     GRANT ALL ON public."ScoutIngestEntity",public."ScoutReconstructionLedger",
       public."Person",public."ScoutReconstructedEntity",public."ScoutImport" TO service_role,anon,authenticated;`);
+  console.warn('PG17_API_ROLE_TABLE_PRIVILEGES', sql(`SELECT string_agg(table_name||'='||privileges,' ' ORDER BY table_name) FROM (
+    SELECT table_name, string_agg(privilege_type,',' ORDER BY privilege_type) privileges
+    FROM information_schema.role_table_grants WHERE grantee='anon' AND table_schema='public'
+    AND table_name IN ('ScoutIngestEntity','ScoutReconstructionLedger','Person','ScoutReconstructedEntity') GROUP BY 1) g`));
   sql(`ALTER TABLE "Person" ADD CONSTRAINT g2p_target_refusal CHECK (display_name IS DISTINCT FROM 'FAIL');
     ALTER TABLE "ScoutReconstructedEntity" ADD CONSTRAINT g2p_entity_refusal CHECK (label IS DISTINCT FROM 'FAIL');`);
   resetData();
@@ -150,18 +162,18 @@ describe('stage 1: E on a populated narrow base with the actual O binary', () =>
     expect(await readAll('clients')).toEqual(oPages.clients);
     const workoutPages = await readAll('workouts');
     expect(workoutPages.flatMap((p) => ids(p.entities))).toHaveLength(30);
-    expect(workoutPages.at(-1)!.next_cursor).toBeNull();
+    expect(last(workoutPages).next_cursor).toBeNull();
   });
 
   it('retains forced RLS denial for anon/authenticated on every touched table, even with a hostile claim', () => {
     const claims = `SELECT set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000001","role":"service_role"}',false);`;
     for (const role of ['anon', 'authenticated']) {
       for (const table of ['ScoutReconstructionLedger', 'ScoutIngestEntity', 'Person', 'ScoutReconstructedEntity']) {
-        expect(sql(`SET ROLE ${role}; ${claims} SELECT count(*) FROM public."${table}"`).split('\n').at(-1)).toBe('0');
-        expect(sql(`SET ROLE ${role}; WITH changed AS (UPDATE public."${table}" SET coach_id='stolen' RETURNING id)
-          SELECT count(*) FROM changed`).split('\n').at(-1)).toBe('0');
-        expect(sql(`SET ROLE ${role}; WITH changed AS (DELETE FROM public."${table}" RETURNING id)
-          SELECT count(*) FROM changed`).split('\n').at(-1)).toBe('0');
+        expect(last(sql(`SET ROLE ${role}; ${claims} SELECT count(*) FROM public."${table}"`).split('\n'))).toBe('0');
+        expect(last(sql(`SET ROLE ${role}; WITH changed AS (UPDATE public."${table}" SET coach_id='stolen' RETURNING id)
+          SELECT count(*) FROM changed`).split('\n'))).toBe('0');
+        expect(last(sql(`SET ROLE ${role}; WITH changed AS (DELETE FROM public."${table}" RETURNING id)
+          SELECT count(*) FROM changed`).split('\n'))).toBe('0');
       }
       refused(`SET ROLE ${role}; INSERT INTO public."ScoutReconstructionLedger" (id,coach_id,intent_id,entity_type,source_id,source_platform,status)
         VALUES ('bad','coach','intent','clients','bad','truecoach','skipped')`, 'row-level security');
@@ -169,7 +181,64 @@ describe('stage 1: E on a populated narrow base with the actual O binary', () =>
         VALUES ('bad','coach','intent','clients','bad','truecoach','{}')`, 'row-level security');
     }
     expect(sql('SELECT count(*) FROM "ScoutReconstructionLedger"')).toBe('1230');
-    expect(sql(`SET ROLE service_role; SELECT count(*) FROM public."ScoutReconstructionLedger"`).split('\n').at(-1)).toBe('1230');
+    expect(last(sql(`SET ROLE service_role; SELECT count(*) FROM public."ScoutReconstructionLedger"`).split('\n'))).toBe('1230');
+  });
+
+  it.each(['up', 'down'])('refuses a wrong public index owner in %s on the populated base', (direction) => {
+    if (direction === 'up') { sql(down); expect(hasColumn()).toBe('0'); }
+    const before = catalog();
+    sql(`ALTER INDEX public."ScoutIngestEntity_coach_id_intent_id_source_id_key" RENAME TO g2p_saved_key;
+      CREATE TABLE public.g2p_decoy (id TEXT);
+      CREATE UNIQUE INDEX "ScoutIngestEntity_coach_id_intent_id_source_id_key" ON public.g2p_decoy(id)`);
+    try {
+      refused(direction === 'up' ? up : down, 'G2-E unexpected identity prerequisite');
+      expect(hasColumn()).toBe(direction === 'up' ? '0' : '1');
+      expect(sql('SELECT count(*) FROM public.g2p_decoy')).toBe('0');
+      expect(sql('SELECT count(*) FROM "ScoutReconstructionLedger"')).toBe('1230');
+    } finally {
+      sql(`DROP TABLE public.g2p_decoy;
+        ALTER INDEX public.g2p_saved_key RENAME TO "ScoutIngestEntity_coach_id_intent_id_source_id_key"`);
+      if (direction === 'up') sql(up);
+    }
+    expect(hasColumn()).toBe('1');
+    expect(catalog()).toBe(before);
+  });
+
+  it('schema-qualifies both directions despite search_path decoys, leaving 1230 populated rows intact', () => {
+    const rows = allLedger();
+    sql(`CREATE SCHEMA g2p_shadow;
+      CREATE TABLE g2p_shadow."ScoutReconstructionLedger" (source_platform TEXT);
+      INSERT INTO g2p_shadow."ScoutReconstructionLedger" VALUES ('untouched')`);
+    try {
+      sql(`SET search_path=g2p_shadow,public;\n${down}`);
+      expect(hasColumn()).toBe('0');
+      sql(`SET search_path=g2p_shadow,public;\n${up}`);
+      expect(hasColumn()).toBe('1');
+      expect(sql(`SELECT source_platform FROM g2p_shadow."ScoutReconstructionLedger"`)).toBe('untouched');
+      expect(allLedger()).toEqual(rows);
+    } finally {
+      sql('DROP SCHEMA g2p_shadow CASCADE');
+    }
+  });
+
+  it.each([true, false])('forced-RLS non-bypass owning role cannot drop hidden provenance (populated=%s)', (populated) => {
+    // down.sql relies on SET LOCAL row_security=off; a NOBYPASSRLS owner must be refused, not silently see 0 rows.
+    if (populated) sql(`UPDATE "ScoutReconstructionLedger" SET source_platform='truecoach' WHERE coach_id='c4' AND source_id='h00001' AND entity_type='clients'`);
+    sql(`CREATE ROLE g2p_ledger_owner NOLOGIN NOBYPASSRLS; GRANT g2p_ledger_owner TO postgres;
+      ALTER TABLE public."ScoutIngestEntity" OWNER TO g2p_ledger_owner;
+      ALTER TABLE public."ScoutReconstructionLedger" OWNER TO g2p_ledger_owner`);
+    try {
+      expect(sql(`SELECT rolsuper||':'||rolbypassrls FROM pg_roles WHERE rolname='g2p_ledger_owner'`)).toBe('false:false');
+      expect(sql(`SET ROLE g2p_ledger_owner; SELECT count(*) FROM public."ScoutReconstructionLedger"`)).toBe('SET\n0');
+      refused(`SET ROLE g2p_ledger_owner;\n${down}`, 'row-level security');
+      expect(hasColumn()).toBe('1');
+      expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform IS NOT NULL`)).toBe(populated ? '1' : '0');
+    } finally {
+      sql(`ALTER TABLE public."ScoutIngestEntity" OWNER TO postgres;
+        ALTER TABLE public."ScoutReconstructionLedger" OWNER TO postgres;
+        DROP ROLE g2p_ledger_owner;
+        UPDATE "ScoutReconstructionLedger" SET source_platform=NULL`);
+    }
   });
 
   it('rolls E back only while every provenance is NULL, preserving rows, then re-applies', () => {
@@ -330,10 +399,10 @@ describe('stage 3: T provenance, atomicity, accounting and collisions on Postgre
     expect((await run()).failure).toEqual({ status: 409, message: 'reconstruction provenance conflict' });
     expect(records()).toEqual([]);
     expect(targets()).toEqual({ persons: [], entities: [] });
-    expect(() => stage('a', 'workouts', 'other')).toThrow();
+    expect(() => stage('a', 'workouts', 'other')).toThrow(/ScoutIngestEntity_coach_id_intent_id_source_id_key/);
     sql(`UPDATE "ScoutIngestEntity" SET source_platform='truecoach'`);
     await run();
-    expect(() => legacy('skipped', 'other')).toThrow();
+    expect(() => legacy('skipped', 'other')).toThrow(/ScoutReconstructionLedger_coach_id_intent_id_entity_type_source/);
     for (const bad of ['truecoach\n', 'true coach', 'Truecoach', '_x', '']) {
       sql(`UPDATE "ScoutIngestEntity" SET source_platform=${quote(bad)}`);
       const previous = records();
@@ -366,10 +435,10 @@ describe('stage 3: T provenance, atomicity, accounting and collisions on Postgre
   it('characterizes the retained narrow ledger collision: one intent cannot carry two platforms for one source', async () => {
     // Staging's narrow key already refuses the second platform; the ledger key is equally narrow.
     stage('a', 'clients', 'truecoach');
-    expect(() => stage('a', 'clients', 'conformance_alpha')).toThrow();
+    expect(() => stage('a', 'clients', 'conformance_alpha')).toThrow(/ScoutIngestEntity_coach_id_intent_id_source_id_key/);
     await run();
     expect(() => sql(`INSERT INTO "ScoutReconstructionLedger" (id,coach_id,intent_id,entity_type,source_id,source_platform,status)
-      VALUES ('dup','coach','intent','clients','a','conformance_alpha','skipped')`)).toThrow();
+      VALUES ('dup','coach','intent','clients','a','conformance_alpha','skipped')`)).toThrow(/ScoutReconstructionLedger_coach_id_intent_id_entity_type_source/);
     // EXPLICIT LIMITATION carried to R/N/C: wide identities are not permitted on E/T.
     expect(sql(`SELECT pg_get_indexdef('public.${ledgerKey}'::regclass)`))
       .toBe(`CREATE UNIQUE INDEX ${ledgerKey.replace(/"/g, '')} ON public."ScoutReconstructionLedger" USING btree (coach_id, intent_id, entity_type, source_id)`);
@@ -673,11 +742,20 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
     sql(down);
     expect(hasColumn()).toBe('0');
     expect(allLedger()).toEqual(narrowRows);
-    // FINDING (for S1): down.sql leaves the E history row applied, so a later `migrate deploy`
-    // would NOT re-apply E; the operator must reconcile _prisma_migrations explicitly.
+    // FINDING (S1-owned): down.sql leaves the E history row applied, so the release mechanism
+    // reports a false "up to date" and would NOT re-apply E.
     expect(appliedMigrations()).toBe('165');
     expect(prismaMigrateDeploy(root)).toMatch(/No pending migrations/);
     expect(hasColumn()).toBe('0');
+    // S1's verified recovery semantics, re-proven here for E on the populated base: after a
+    // SUCCESSFUL out-of-band down there is no failed history row, so `migrate resolve --rolled-back`
+    // is refused (P3012) and history is untouched. It is NOT a recovery step for this state.
+    const resolveAttempt = prisma(root, ['migrate', 'resolve', '--rolled-back', E]);
+    console.warn('PG17_RESOLVE_ROLLED_BACK', JSON.stringify(resolveAttempt));
+    expect(resolveAttempt.ok).toBe(false);
+    expect(resolveAttempt.output).toMatch(/P3012/);
+    expect(appliedMigrations()).toBe('165');
+    expect(sql(`SELECT count(*) FROM "_prisma_migrations" WHERE rolled_back_at IS NOT NULL OR finished_at IS NULL`)).toBe('0');
     // O keeps working on the narrow schema; the T binary cannot run until E is restored.
     stage('c');
     expect((await run({}, true)).result).toEqual({ intent_id: 'intent', staged: 3, reconstructed: 3, skipped: 0, failed: 0 });
@@ -685,9 +763,11 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
     expect(tOnNarrow.failure).toMatchObject({ status: 500, message: 'Internal server error' });
     expect(tOnNarrow.result).toBeUndefined();
     expect(records()).toHaveLength(3);
-    // Forward repair: re-apply E and T reclaims every NULL row without minting new targets.
-    sql(up);
+    // Forward repair is the operator form (psql --single-transaction -f migration.sql), then the
+    // only truth is the catalog; T reclaims every NULL row without minting new targets.
+    sqlFile(upFile);
     expect(hasColumn()).toBe('1');
+    expect(prismaMigrateDeploy(root)).toMatch(/No pending migrations/);
     expect((await run()).result).toEqual({ intent_id: 'intent', staged: 3, reconstructed: 3, skipped: 0, failed: 0 });
     expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform='truecoach'`)).toBe('3');
     expect(targets().persons).toHaveLength(3);

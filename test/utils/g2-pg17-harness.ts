@@ -7,7 +7,7 @@
 import { execFileSync, fork, spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { g2Pg17TestTarget, withFixturePassword } from './g2-pg17-db';
+import { G2_PG17_ADMIN_ROLE, G2_PG17_MIGRATION_ROLE, G2_PG17_RUNTIME_ROLE, g2Pg17TestTarget, withFixturePassword } from './g2-pg17-db';
 
 export const root = resolve(__dirname, '..', '..');
 export const OLD_HEAD = '925780e0a1906593e5383c618311b6b17364b8dc';
@@ -25,17 +25,24 @@ if (!raw || !password || !psql || !oldRoot || !oldClient || !directory) {
 }
 export const target = g2Pg17TestTarget(raw, process.env.G2_PG17_CONFIRM);
 const psqlEnv = { PATH: process.env.PATH, LC_ALL: 'C', PGPASSWORD: password };
+/** psql URL for a fixture matrix role; the password travels only in PGPASSWORD. */
+const asRole = (role: string) => { const u = new URL(target.psqlUrl); u.username = role; return u.toString(); };
+/** Every harness DDL/data statement runs as the non-superuser BYPASSRLS owner `postgres`. */
+export const migrationUrl = asRole(G2_PG17_MIGRATION_ROLE);
+/** Cluster superuser: lock-wait observation in pg_stat_activity only. */
+const adminUrl = asRole(G2_PG17_ADMIN_ROLE);
 
-export const sql = (text: string): string => execFileSync(
-  psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', target.psqlUrl],
-  { input: text, encoding: 'utf8', timeout: 60000, env: psqlEnv, stdio: ['pipe', 'pipe', 'pipe'] },
+const psqlRun = (url: string, args: string[], input?: string) => execFileSync(
+  psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', ...args, url],
+  { input, encoding: 'utf8', timeout: 60000, env: psqlEnv, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] },
 ).trim();
-export const sqlFile = (file: string): string => execFileSync(
-  psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', '-f', file, target.psqlUrl],
-  { encoding: 'utf8', timeout: 60000, env: psqlEnv, stdio: ['ignore', 'pipe', 'pipe'] },
-).trim();
+export const sql = (text: string): string => psqlRun(migrationUrl, [], text);
+export const sqlAdmin = (text: string): string => psqlRun(adminUrl, [], text);
+/** Operator form from S1's verified recovery guidance: single transaction, stop on error. */
+export const sqlFile = (file: string): string => psqlRun(migrationUrl, ['--single-transaction', '-f', file]);
 export const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 export const json = (text: string) => JSON.parse(sql(text));
+export const jsonAdmin = (text: string) => JSON.parse(sqlAdmin(text));
 /** Fails when the statement succeeds; the PostgreSQL discriminator is in child stderr. */
 export function refused(statement: string, message: string): void {
   let error: unknown;
@@ -45,8 +52,10 @@ export function refused(statement: string, message: string): void {
 }
 
 export const stageSql = resolve(root, 'prisma/migrations', E_MIGRATION);
-export const up = readFileSync(resolve(stageSql, 'migration.sql'), 'utf8');
-export const down = readFileSync(resolve(stageSql, 'down.sql'), 'utf8');
+export const upFile = resolve(stageSql, 'migration.sql');
+export const downFile = resolve(stageSql, 'down.sql');
+export const up = readFileSync(upFile, 'utf8');
+export const down = readFileSync(downFile, 'utf8');
 export const hasColumn = () => sql(`SELECT count(*) FROM pg_attribute WHERE
   attrelid='public."ScoutReconstructionLedger"'::regclass AND attname='source_platform' AND NOT attisdropped`);
 export const appliedMigrations = () => sql(`SELECT count(*) FROM "_prisma_migrations"
@@ -79,8 +88,10 @@ export function settle(coach = 'coach', intent = 'intent') {
 }
 export function stage(source = 'a', family = 'clients', platform = 'truecoach', name = 'Synthetic A',
   coach = 'coach', intent = 'intent') {
+  // Primary key includes family AND platform so a same-source collision can only fire on the
+  // product's narrow staging key (coach_id, intent_id, source_id), never on the harness's own id.
   sql(`INSERT INTO "ScoutIngestEntity" (id,coach_id,intent_id,entity_type,source_id,source_platform,payload)
-    VALUES (${quote(`${coach}-${intent}-${source}`)},${quote(coach)},${quote(intent)},${quote(family)},
+    VALUES (${quote(`${coach}-${intent}-${family}-${platform}-${source}`)},${quote(coach)},${quote(intent)},${quote(family)},
     ${quote(source)},${quote(platform)},${quote(JSON.stringify({ name, client_id: 'client-new' }))})`);
 }
 /** Bulk synthetic staging through generate_series; names are synthetic, no customer data. */
@@ -111,7 +122,7 @@ export type Result = { result?: any; failure?: any; queries: string[]; events: a
 let sequence = 0;
 export function worker(options: Record<string, unknown> = {}, old = false) {
   const name = `g2p17_${++sequence}`;
-  const service = new URL(withFixturePassword(target.prismaUrl, password, 'service_role'));
+  const service = new URL(withFixturePassword(target.prismaUrl, password, G2_PG17_RUNTIME_ROLE));
   service.searchParams.set('application_name', name);
   const config = {
     root: old ? oldRoot : root,
@@ -156,7 +167,8 @@ export function worker(options: Record<string, unknown> = {}, old = false) {
 export const run = (options: Record<string, unknown> = {}, old = false) => worker(options, old).done;
 export async function blocked(name: string) {
   for (let n = 0; n < 400; n++) {
-    const rows = json(`SELECT COALESCE(jsonb_agg(jsonb_build_object('wait',wait_event,'type',wait_event_type)),'[]')
+    // Other roles' wait events are visible only to a superuser/pg_read_all_stats; observe as admin.
+    const rows = jsonAdmin(`SELECT COALESCE(jsonb_agg(jsonb_build_object('wait',wait_event,'type',wait_event_type)),'[]')
       FROM pg_stat_activity WHERE application_name=${quote(name)} AND wait_event_type='Lock'`);
     if (rows.length > 0) { console.warn('PG17_BLOCKED', JSON.stringify({ name, rows })); return; }
     await new Promise((r) => setTimeout(r, 25));
@@ -164,7 +176,7 @@ export async function blocked(name: string) {
   throw new Error('expected observed PostgreSQL lock wait');
 }
 export function holdAdvisory(key: number) {
-  const holder = spawn(psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', target.psqlUrl],
+  const holder = spawn(psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', migrationUrl],
     { stdio: ['pipe', 'pipe', 'pipe'], env: psqlEnv });
   const held = new Promise<void>((r) => holder.stdout.on('data', (b) => { if (String(b).includes('HELD')) r(); }));
   holder.stdin.write(`BEGIN; SELECT pg_advisory_xact_lock(${key}); SELECT 'HELD';\n`);
@@ -179,10 +191,21 @@ export const v2 = (family: string, source = 'a', platform = 'truecoach', coach =
     v: 2, c: coach, i: intent, f: family, o: 'source_id:asc,source_platform:asc', s: source, p: platform,
   }))}`;
 export const gitShow = (spec: string) => execFileSync('git', ['show', spec], { cwd: root, encoding: 'utf8' });
+/** Prisma CLI as the migration role (`postgres`), exactly like the release mechanism. */
+export function prisma(schemaRoot: string, args: string[]): { ok: boolean; output: string } {
+  const url = withFixturePassword(target.prismaUrl, password, G2_PG17_MIGRATION_ROLE);
+  try {
+    const output = execFileSync(resolve(root, 'node_modules/.bin/prisma'), [...args, '--schema', 'prisma/schema.prisma'], {
+      cwd: schemaRoot, encoding: 'utf8', timeout: 120000,
+      env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { ok: true, output };
+  } catch (e: any) {
+    return { ok: false, output: `${e.stdout ?? ''}\n${e.stderr ?? ''}` };
+  }
+}
 export function prismaMigrateDeploy(schemaRoot: string): string {
-  const url = withFixturePassword(target.prismaUrl, password);
-  return execFileSync(resolve(root, 'node_modules/.bin/prisma'), ['migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
-    cwd: schemaRoot, encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const result = prisma(schemaRoot, ['migrate', 'deploy']);
+  if (!result.ok) throw new Error(`prisma migrate deploy failed: ${result.output}`);
+  return result.output;
 }

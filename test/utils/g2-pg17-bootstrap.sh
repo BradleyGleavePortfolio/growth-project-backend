@@ -7,7 +7,8 @@
 # Required environment (all explicit; nothing is inferred from DATABASE_URL):
 #   G2_PG17_DATABASE_URL  postgresql://s5_super@127.0.0.1:<port>/g2_s5_etq0_disposable?schema=public&connection_limit=2
 #   G2_PG17_CONFIRM       g2_s5_etq0_disposable:<port>
-#   G2_PG17_PASSWORD      S1's disposable local fixture password (never written to a file or URL by this harness)
+#   G2_PG17_PASSWORD      disposable local fixture password shared by s5_super/postgres/service_role
+#                         (never written to a file by this harness; only into process env / in-memory URLs)
 #   G2_PG17_PSQL          absolute path of a psql binary compatible with the PG17 server
 #   G2_PG17_OLD_ROOT      checkout of the preserved O source 925780e0 (git worktree)
 #   G2_PG17_OLD_CLIENT    directory that receives the independently generated O Prisma client
@@ -34,7 +35,7 @@ eval "$(cd "$ROOT" && node -r ts-node/register/transpile-only -e '
   console.log("PRISMA_URL=" + q(t.prismaUrl)); console.log("PSQL_URL=" + q(t.psqlUrl));
   console.log("MAINT_URL=" + q(t.maintenanceUrl));
   const { withFixturePassword } = require("./test/utils/g2-pg17-db");
-  console.log("PRISMA_AUTH_URL=" + q(withFixturePassword(t.prismaUrl, process.env.G2_PG17_PASSWORD)));
+  console.log("MIGRATE_AUTH_URL=" + q(withFixturePassword(t.prismaUrl, process.env.G2_PG17_PASSWORD, "postgres")));
 ')"
 export PGPASSWORD="$G2_PG17_PASSWORD"
 
@@ -49,17 +50,52 @@ ADDRESS="$(psql_maint -c 'SELECT inet_server_addr()')"
 [[ "$(psql_maint -c 'SELECT rolsuper FROM pg_roles WHERE rolname=current_user')" == "t" ]] \
   || { echo "bootstrap role must be superuser on the disposable cluster" >&2; exit 3; }
 
-# 2. Dedicated database (create once; never drop anything).
-if [[ "$(psql_maint -c "SELECT count(*) FROM pg_database WHERE datname='g2_s5_etq0_disposable'")" == "0" ]]; then
-  psql_maint -c 'CREATE DATABASE g2_s5_etq0_disposable'
-fi
+# 2. Explicit fixture role matrix (cluster-level, disposable lane only; shape
+#    mirrors S1's Supabase-like fixture and the hosted role model):
+#      postgres      LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS  (owner + migrator)
+#      service_role  BYPASSRLS runtime role (+ harness-only LOGIN for worker processes)
+#      anon/authenticated  NOLOGIN API roles (RLS denial via SET ROLE)
+#    All fixture logins share the one synthetic password from the environment.
+psql_maint -v pw="$G2_PG17_PASSWORD" <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='postgres') THEN
+    CREATE ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN NOINHERIT; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN NOINHERIT; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; END IF;
+END $$;
+ALTER ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS PASSWORD :'pw';
+ALTER ROLE service_role LOGIN BYPASSRLS PASSWORD :'pw';
+GRANT anon, authenticated, service_role TO postgres WITH ADMIN OPTION;
+SQL
+for role in postgres service_role; do
+  [[ "$(psql_maint -c "SELECT rolsuper||':'||rolbypassrls||':'||rolcanlogin FROM pg_roles WHERE rolname='$role'")" == "false:true:true" ]] \
+    || { echo "fixture role $role is not NOSUPERUSER BYPASSRLS LOGIN" >&2; exit 3; }
+done
 
-# 3. CI-only Supabase shim (roles, auth schema/helpers) from the candidate root,
-#    plus harness-only LOGIN for service_role so worker processes can connect as
-#    the runtime role over loopback trust. Neither is ever applied to Supabase.
+# 3. Dedicated database owned by the migration role (create once; never drop anything).
+#    Single-shot: a database that already carries migration history must be reset explicitly
+#    by the operator (DROP DATABASE g2_s5_etq0_disposable as the cluster superuser) first.
+if [[ "$(psql_maint -c "SELECT count(*) FROM pg_database WHERE datname='g2_s5_etq0_disposable'")" == "0" ]]; then
+  psql_maint -c 'CREATE DATABASE g2_s5_etq0_disposable OWNER postgres'
+fi
+psql_maint -c 'ALTER DATABASE g2_s5_etq0_disposable OWNER TO postgres'
+[[ "$(psql_db -c "SELECT count(*) FROM pg_tables WHERE schemaname='public'")" == "0" ]] \
+  || { echo "g2_s5_etq0_disposable already has public tables; reset it explicitly before bootstrapping again" >&2; exit 3; }
+psql_db -c 'ALTER SCHEMA public OWNER TO postgres; GRANT USAGE, CREATE ON SCHEMA public TO postgres;'
+# Verbatim CI shim (roles already exist; adds auth schema/helpers and GRANT ... TO postgres).
 psql_db -f "$ROOT/scripts/ci/supabase-shim.sql" >/dev/null
-psql_db -c "GRANT anon, authenticated, service_role TO s5_super;"
-printf '%s\n' "ALTER ROLE service_role LOGIN PASSWORD :'pw';" | psql_db -v pw="$G2_PG17_PASSWORD"
+psql_db -c 'GRANT USAGE ON SCHEMA auth TO postgres, anon, authenticated, service_role;'
+# Supabase default privileges for objects postgres creates in public (same shape as S1's
+# fixture): API roles receive CRUD on every new table, so RLS policies are the only barrier.
+psql_db -c 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+  ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+  ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+  GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;'
+# Extensions the 164-migration chain needs (Supabase ships them pre-installed; migration
+# 20261221000000_enable_pg_stat_statements requires pg_stat_statements to pre-exist for a non-superuser); superuser-only step.
+psql_db -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS btree_gist; CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
 
 # 4. Preserved O source: exact head, shared dependency tree, 164 base migrations.
 [[ "$(git -C "$G2_PG17_OLD_ROOT" rev-parse HEAD)" == "$OLD_HEAD" ]] || { echo "old root is not $OLD_HEAD" >&2; exit 4; }
@@ -73,8 +109,12 @@ OLD_COUNT="$(find "$G2_PG17_OLD_ROOT/prisma/migrations" -mindepth 1 -maxdepth 1 
 [[ "$OLD_COUNT" == "164" ]] || { echo "old root has $OLD_COUNT migrations, expected 164" >&2; exit 4; }
 
 # 5. Full base history through the real release mechanism on the O schema.
-(cd "$G2_PG17_OLD_ROOT" && DATABASE_URL="$PRISMA_AUTH_URL" DIRECT_URL="$PRISMA_AUTH_URL" \
+#    Runs as the non-superuser BYPASSRLS `postgres` role (owner), never as the cluster superuser.
+(cd "$G2_PG17_OLD_ROOT" && DATABASE_URL="$MIGRATE_AUTH_URL" DIRECT_URL="$MIGRATE_AUTH_URL" \
   "$ROOT/node_modules/.bin/prisma" migrate deploy --schema prisma/schema.prisma)
+[[ "$(psql_db -c "SELECT count(DISTINCT tableowner) FROM pg_tables WHERE schemaname='public'")" == "1" ]] \
+  && [[ "$(psql_db -c "SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname='public'")" == "postgres" ]] \
+  || { echo "public tables are not all owned by postgres" >&2; exit 5; }
 APPLIED="$(psql_db -c "SELECT count(*) FROM \"_prisma_migrations\" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL")"
 [[ "$APPLIED" == "164" ]] || { echo "base history applied $APPLIED migrations, expected 164" >&2; exit 5; }
 [[ "$(psql_db -c "SELECT count(*) FROM pg_attribute WHERE attrelid='public.\"ScoutReconstructionLedger\"'::regclass AND attname='source_platform' AND NOT attisdropped")" == "0" ]] \

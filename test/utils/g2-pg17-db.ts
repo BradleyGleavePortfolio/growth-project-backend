@@ -10,7 +10,19 @@
  * Validation happens before any connection is opened.
  */
 export const G2_PG17_DATABASE = 'g2_s5_etq0_disposable';
+/**
+ * Explicit fixture role matrix (mirrors S1's Supabase-like PG17 fixture shape):
+ *  - admin      s5_super      cluster superuser: CREATE DATABASE/ROLE, lock observation only
+ *  - migration  postgres      LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS, owns objects,
+ *                             runs `prisma migrate deploy`, E up/down and all harness DDL/data
+ *  - runtime    service_role  BYPASSRLS runtime role used by the O/T writer and Q0 reader processes
+ *  - api        anon/authenticated  NOLOGIN, exercised only via SET ROLE for RLS denial
+ */
 export const G2_PG17_ROLE = 's5_super';
+export const G2_PG17_ADMIN_ROLE = G2_PG17_ROLE;
+export const G2_PG17_MIGRATION_ROLE = 'postgres';
+export const G2_PG17_RUNTIME_ROLE = 'service_role';
+export const G2_PG17_LOGIN_ROLES = new Set([G2_PG17_ADMIN_ROLE, G2_PG17_MIGRATION_ROLE, G2_PG17_RUNTIME_ROLE]);
 /** Fixture password is supplied only through this environment variable, never in a URL or file. */
 export const G2_PG17_PASSWORD_ENV = 'G2_PG17_PASSWORD';
 // 54321 is S1's own cluster; 55439 was the earlier Agent83 environment.
@@ -55,6 +67,7 @@ export function g2Pg17TestTarget(raw: string, confirmation?: string) {
 /** Attach the fixture password for a client that cannot read PGPASSWORD (Prisma). */
 export function withFixturePassword(url: string, password: string | undefined, username = G2_PG17_ROLE): string {
   if (!password || /[\s@/:?#]/.test(password)) throw new Error('S5 G2 proof requires a plain fixture password in the environment');
+  if (!G2_PG17_LOGIN_ROLES.has(username)) throw new Error('S5 G2 proof connects only as a fixture matrix login role');
   const parsed = new URL(url);
   parsed.username = username;
   parsed.password = password;

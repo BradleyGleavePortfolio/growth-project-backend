@@ -48,6 +48,11 @@ describe('S5 G2 PG17 disposable target guard', () => {
   it('attaches the fixture password only from the environment and only in plain form', () => {
     expect(withFixturePassword(base, 'local_fixture')).toBe('postgresql://s5_super:local_fixture@127.0.0.1:55417/g2_s5_etq0_disposable');
     expect(withFixturePassword(base, 'local_fixture', 'service_role')).toBe('postgresql://service_role:local_fixture@127.0.0.1:55417/g2_s5_etq0_disposable');
+    expect(withFixturePassword(base, 'local_fixture', 'postgres')).toBe('postgresql://postgres:local_fixture@127.0.0.1:55417/g2_s5_etq0_disposable');
+    // Only the explicit fixture matrix may log in; API roles and arbitrary names are refused.
+    for (const role of ['anon', 'authenticated', 'authenticator', 'user', 'g2_ledger_owner', '']) {
+      expect(() => withFixturePassword(base, 'local_fixture', role)).toThrow();
+    }
     expect(() => withFixturePassword(base, undefined)).toThrow();
     expect(() => withFixturePassword(base, '')).toThrow();
     expect(() => withFixturePassword(base, 'has space')).toThrow();
