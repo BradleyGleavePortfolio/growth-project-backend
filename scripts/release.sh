@@ -4,6 +4,8 @@
 #
 # CONTRACT
 # ────────
+#   • Refuse (before any database contact) unless the catalog-verifier
+#     contract is satisfied by this image (step 0).
 #   • Apply every pending Prisma migration to the production database before
 #     the new application image is rolled out.
 #   • Either succeed visibly (exit 0, "ALL_APPLIED=<n>" log line) or fail
@@ -65,8 +67,14 @@ on_error() {
   local exit_code=$?
   # Guard 1 (clean exit): the EXIT trap fires on ALL exits, including successful
   # ones. Skip the failure banner when the script completed normally.
-  # Non-zero exit (error, SIGTERM, SIGINT, OOM kill) falls through.
-  # (Finding 9 — MEDIUM, audit 2026-05-19)
+  # Non-zero exit (command error, `exit N`, or a child killed by a signal that
+  # bash reports as a non-zero status) falls through.
+  # Boundary: EXIT runs only if bash itself is still alive to run it. A SIGKILL
+  # (e.g. OOM killer) or Fly destroying the release machine ends this process
+  # without any trap; the release is then marked failed by Fly (release_command
+  # exit status unavailable / non-zero) rather than by this banner. Nothing
+  # here can make a killed process report — do not rely on the banner as proof
+  # that a failure was observed. (Finding 9 — MEDIUM, audit 2026-05-19)
   [[ ${exit_code} -eq 0 ]] && return 0
   # Guard 2 (single-fire): on an ordinary command error, ERR fires first and
   # calls on_error; that on_error then calls `exit ${exit_code}`, which triggers
@@ -83,12 +91,13 @@ on_error() {
     tail -n 60 /tmp/prisma_migrate.log || true
     echo "[release] ────────────────────────────────────────────────────────"
   fi
-  echo "[release] Deploy ABORTED. Existing machines on Fly are unaffected."
-  echo "[release] See docs/deploy-runbook.md §9 for recovery."
+  echo "[release] Deploy ABORTED by release_command. Fly does not roll out the new image."
+  echo "[release] Machines keep the previous image; if step 2 (migrate deploy) already ran,"
+  echo "[release] the DATABASE may have changed — see docs/deploy-runbook.md §11.4 (stage-specific recovery)."
   exit "${exit_code}"
 }
 trap 'on_error ${LINENO}' ERR
-trap 'on_error ${LINENO}' EXIT  # catches SIGTERM, SIGINT, OOM kills (Finding 9)
+trap 'on_error ${LINENO}' EXIT  # any exit bash can still process (not SIGKILL/OOM-kill; see boundary note above)
 
 # Sanity-check the env the migration tool needs. We fail fast and loudly
 # rather than letting Prisma emit a confusing P1001/P1012 error.
@@ -104,6 +113,82 @@ require_env DATABASE_URL
 # DIRECT_URL is what `prisma migrate deploy` actually uses (it bypasses the
 # connection pooler). Required if schema.prisma declares `directUrl`.
 require_env DIRECT_URL
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 0 — Catalog-verifier contract preflight. Runs BEFORE any database
+# connection so a missing or broken verifier set refuses the release while the
+# database is still untouched (S2-R2-A-03: discovery failure must never mean
+# "zero verifiers passed").
+#
+#   • prisma/migrations must be a directory.
+#   • Discovery is an explicitly checked pipeline into a list file — never a
+#     process-substitution loop over find, whose failure the loop ignores.
+#   • scripts/release-required-verifiers.txt (S2-owned runner contract; the
+#     verifier CONTENT and grant/role expectations inside verify.sql are S1's)
+#     must exist and name at least one migration directory. Each entry must be
+#     a bare directory name (no slashes, no `..`, no duplicates) and must
+#     resolve to a discovered prisma/migrations/<name>/verify.sql.
+#
+# This step proves only that the required verifier files are present in THIS
+# image before THIS release_command mutates anything. It says nothing about
+# production state, other machines, or whether earlier deploys changed the DB.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 0: verifier contract preflight (no database contact)..."
+MIGRATIONS_DIR="prisma/migrations"
+# Pinned path, deliberately NOT env-overridable: the environment must not be able to
+# select a different (weaker) expected-verifier set at release time.
+REQUIRED_VERIFIERS_FILE="scripts/release-required-verifiers.txt"
+DISCOVERED_LIST=/tmp/release_verifiers_discovered.txt
+if [[ ! -d "${MIGRATIONS_DIR}" ]]; then
+  echo "[release] ${MIGRATIONS_DIR} is not a directory in this image."
+  echo "[release] Refusing to release: verifier discovery impossible."
+  exit 1
+fi
+if ! find "${MIGRATIONS_DIR}" -mindepth 2 -maxdepth 2 -name verify.sql -type f | LC_ALL=C sort >"${DISCOVERED_LIST}"; then
+  echo "[release] catalog verifier DISCOVERY FAILED (find/sort returned non-zero)."
+  echo "[release] Refusing to release: cannot tell zero verifiers from a broken enumeration."
+  exit 1
+fi
+DISCOVERED_COUNT=$(grep -c . "${DISCOVERED_LIST}" || true)
+echo "[release]   verifiers_discovered = ${DISCOVERED_COUNT}"
+if [[ ! -f "${REQUIRED_VERIFIERS_FILE}" || ! -r "${REQUIRED_VERIFIERS_FILE}" ]]; then
+  echo "[release] required-verifier contract missing/unreadable: ${REQUIRED_VERIFIERS_FILE}"
+  echo "[release] Refusing to release: the expected verifier set is not established in this image."
+  exit 1
+fi
+REQUIRED_COUNT=0
+REQUIRED_SEEN=" "
+while IFS= read -r raw || [[ -n "${raw}" ]]; do
+  entry="${raw%%#*}"                       # strip comments
+  entry="${entry#"${entry%%[![:blank:]]*}"}" # ltrim spaces/tabs only (CR is NOT trimmed: CRLF is malformed)
+  entry="${entry%"${entry##*[![:blank:]]}"}" # rtrim
+  [[ -n "${entry}" ]] || continue
+  if [[ ! "${entry}" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+    echo "[release] required-verifier entry is not a bare migration directory name: '${entry}'"
+    echo "[release] Refusing to release (contract file malformed)."
+    exit 1
+  fi
+  if [[ "${REQUIRED_SEEN}" == *" ${entry} "* ]]; then
+    echo "[release] required-verifier entry listed twice: '${entry}'"
+    echo "[release] Refusing to release (contract file malformed)."
+    exit 1
+  fi
+  REQUIRED_SEEN="${REQUIRED_SEEN}${entry} "
+  REQUIRED_COUNT=$((REQUIRED_COUNT + 1))
+  expected_path="${MIGRATIONS_DIR}/${entry}/verify.sql"
+  if ! grep -qxF -- "${expected_path}" "${DISCOVERED_LIST}"; then
+    echo "[release] REQUIRED catalog verifier missing from this image: ${expected_path}"
+    echo "[release] Refusing to release: the integrated candidate is incomplete (S1 migration not composed)."
+    exit 1
+  fi
+  echo "[release]   required verifier present: ${expected_path}"
+done <"${REQUIRED_VERIFIERS_FILE}"
+if [[ "${REQUIRED_COUNT}" -lt 1 ]]; then
+  echo "[release] required-verifier contract lists no verifiers: ${REQUIRED_VERIFIERS_FILE}"
+  echo "[release] Refusing to release: an empty expected set is not an established contract."
+  exit 1
+fi
+echo "[release]   verifiers_required = ${REQUIRED_COUNT} (all present)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 1 — Count pending migrations BEFORE applying.
@@ -177,10 +262,12 @@ fi
 # not from the catalog: DDL reversed out-of-band (down.sql, manual psql, an
 # older restore) still reads "up to date". Any migration folder may ship a
 # verify.sql that inspects pg_catalog directly and RAISEs on drift; every one
-# present must pass before this release is green. Runs against DIRECT_URL
-# (same connection migrate deploy used). The runtime image has no psql, so
-# prisma db execute is the runner; a RAISE inside the script is a non-zero
-# exit. Zero verifiers is fine and is logged as such.
+# discovered in step 0 must pass before this release is green. Runs against
+# DIRECT_URL (same connection migrate deploy used). The runtime image has no
+# psql, so prisma db execute is the runner; a RAISE inside the script is a
+# non-zero exit. The list was captured and checked in step 0 — this loop
+# iterates that file, so an enumeration failure cannot be mistaken for an
+# empty set, and the run count is asserted against the discovered count.
 # ─────────────────────────────────────────────────────────────────────────────
 echo "[release] step 4: running catalog verifiers (prisma/migrations/*/verify.sql)..."
 VERIFIER_COUNT=0
@@ -194,10 +281,16 @@ while IFS= read -r verifier; do
     echo "[release] catalog verifier FAILED: ${verifier}"
     sed 's/^/[release]   /' "${VERIFIER_LOG}" | tail -n 40
     echo "[release] Refusing to mark this release green (schema drift or incomplete migration)."
+    echo "[release] NOTE: migrate deploy already ran; the database may now be ahead of the running code."
     exit 1
   fi
-done < <(find prisma/migrations -mindepth 2 -maxdepth 2 -name verify.sql -type f | LC_ALL=C sort)
-echo "[release]   verifiers_passed = ${VERIFIER_COUNT}"
+done <"${DISCOVERED_LIST}"
+if [[ "${VERIFIER_COUNT}" -ne "${DISCOVERED_COUNT}" || "${VERIFIER_COUNT}" -lt "${REQUIRED_COUNT}" || "${VERIFIER_COUNT}" -lt 1 ]]; then
+  echo "[release] verifier accounting mismatch: ran=${VERIFIER_COUNT} discovered=${DISCOVERED_COUNT} required=${REQUIRED_COUNT}"
+  echo "[release] Refusing to mark this release green."
+  exit 1
+fi
+echo "[release]   verifiers_passed = ${VERIFIER_COUNT} (discovered=${DISCOVERED_COUNT}, required=${REQUIRED_COUNT})"
 
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
@@ -230,7 +323,7 @@ echo "[release] ─────────────────────�
 echo "[release] ✔ release_command completed successfully"
 echo "[release]   ALL_APPLIED=${APPLIED_COUNT}"
 echo "[release]   pending_before=${PENDING_COUNT}"
-echo "[release]   verifiers_passed=${VERIFIER_COUNT}"
+echo "[release]   verifiers_passed=${VERIFIER_COUNT} verifiers_required=${REQUIRED_COUNT}"
 echo "[release]   release_id=${RELEASE_ID}"
 echo "[release] ────────────────────────────────────────────────────────────"
 exit 0

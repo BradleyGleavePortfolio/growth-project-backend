@@ -1,50 +1,109 @@
 name: Fly Recent Auth Secrets Set (operator)
 
+# Production-mutating operator workflow: pushes RECENT_AUTH_SECRET and
+# RECENT_AUTH_TTL_MS from GitHub Actions secrets to the Fly app.
+#
+# Input handling (S2-R2-A-01): dispatch inputs are DATA, never shell source.
+# Every `inputs.*` value enters a step only through `env:` and is used as a
+# quoted `${VAR}`; `run:` blocks contain no `${{ inputs.* }}` interpolation.
+# The app target is validated against the explicit allowlist below before any
+# flyctl call.
+
 on:
   workflow_dispatch:
     inputs:
       app:
-        description: "Fly app name"
+        description: Fly app name (production)
         required: true
-        default: "backend-spring-lake-3890"
+        default: backend-spring-lake-3890
       confirm:
-        description: "Type SET to confirm"
+        description: Type SET to confirm you intend to change production secrets
         required: true
+        default: ''
+
+permissions:
+  contents: read
 
 jobs:
   set-secrets:
+    name: Push recent-auth secrets to Fly
     runs-on: ubuntu-latest
     # Production-mutating: bound to the same `production` environment as Fly Deploy
     # so required reviewers (once configured) gate this too, not only image deploys.
     environment: production
+    concurrency: fly-secrets-${{ inputs.app }}
     steps:
-      - name: Guard
+      - name: Confirm operator intent
+        env:
+          CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "SET" ]; then
-            echo "Confirmation missing; aborting." >&2
+          if [ "${CONFIRM}" != "SET" ]; then
+            echo "::error::confirm input must be the literal string 'SET'. Aborting."
             exit 1
           fi
-      - name: Install flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+          echo "Operator confirmed."
+
+      - name: Validate Fly app target
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          case "${APP}" in
+            backend-spring-lake-3890) ;;
+            *)
+              echo "::error::app input is not an allowed Fly app target. Aborting."
+              exit 1
+              ;;
+          esac
+          echo "App target allowed."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot manage secrets."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+
       - name: Set recent-auth secrets on Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
           RECENT_AUTH_SECRET: ${{ secrets.RECENT_AUTH_SECRET }}
           RECENT_AUTH_TTL_MS: ${{ secrets.RECENT_AUTH_TTL_MS }}
         run: |
-          if [ -z "$RECENT_AUTH_SECRET" ] || [ -z "$RECENT_AUTH_TTL_MS" ]; then
-            echo "Repo secrets RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS not configured." >&2
+          # Disable command tracing so secret values cannot leak via `set -x`.
+          set +x
+          if [ -z "${RECENT_AUTH_SECRET}" ] || [ -z "${RECENT_AUTH_TTL_MS}" ]; then
+            echo "::error::Repo secrets RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS not configured."
             exit 1
           fi
-          flyctl secrets set \
-            RECENT_AUTH_SECRET="$RECENT_AUTH_SECRET" \
-            RECENT_AUTH_TTL_MS="$RECENT_AUTH_TTL_MS" \
-            --app "${{ inputs.app }}"
-      - name: Validate presence
+          flyctl secrets set --app "${APP}" \
+            RECENT_AUTH_SECRET="${RECENT_AUTH_SECRET}" \
+            RECENT_AUTH_TTL_MS="${RECENT_AUTH_TTL_MS}"
+
+      - name: Validate secret names exist on Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
         run: |
-          LIST=$(flyctl secrets list --app "${{ inputs.app }}")
-          echo "$LIST"
-          echo "$LIST" | grep -q "RECENT_AUTH_SECRET" || { echo "RECENT_AUTH_SECRET missing" >&2; exit 1; }
-          echo "$LIST" | grep -q "RECENT_AUTH_TTL_MS" || { echo "RECENT_AUTH_TTL_MS missing" >&2; exit 1; }
+          # `fly secrets list` prints NAME, DIGEST, CREATED AT — never values.
+          set +x
+          listing=$(flyctl secrets list --app "${APP}")
+          echo "${listing}"
+          names=$(echo "${listing}" | awk '{print $1}')
+          missing=""
+          for name in RECENT_AUTH_SECRET RECENT_AUTH_TTL_MS; do
+            if ! echo "${names}" | grep -qx "${name}"; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::Secrets did not appear on Fly after set:${missing}"
+            exit 1
+          fi
+          echo "Both recent-auth secret names are present on Fly."

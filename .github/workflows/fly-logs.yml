@@ -37,6 +37,20 @@ jobs:
     name: Fetch Fly logs
     runs-on: ubuntu-latest
     steps:
+      - name: Validate Fly app target
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          case "${APP}" in
+            backend-spring-lake-3890) ;;
+            *)
+              echo "::error::app input is not an allowed Fly app target. Aborting."
+              exit 1
+              ;;
+          esac
+          echo "App target allowed."
+
       - name: Check Fly token configuration
         id: flycheck
         env:

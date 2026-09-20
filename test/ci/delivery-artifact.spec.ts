@@ -5,7 +5,8 @@
 // remove; they do not build an image or call GitHub/Fly.
 
 import { spawnSync } from 'child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { load as parseYaml } from 'js-yaml';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -311,7 +312,6 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
     '.github/workflows/fly-recent-auth-set.yml',
     '.github/workflows/fly-secrets-set.yml',
     '.github/workflows/fly-logs.yml',
-    '.github/workflows/fly-logs-dump.yml',
     '.github/workflows/fly-secrets-list.yml',
   ];
   for (const f of files) {
@@ -488,24 +488,211 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
   });
 });
 
-describe('release.sh — catalog verifiers run after migrate deploy (S1 integration requirement)', () => {
+describe('release.sh — verifier contract preflight before DB contact, discovery fail-closed, verifiers after deploy (S2-R2-A-03 / S1 integration)', () => {
   const s = read('scripts/release.sh');
-  it('runs every prisma/migrations/*/verify.sql via prisma db execute on DIRECT_URL, after deploy and before exit 0, fail-closed', () => {
-    const deploy = s.indexOf('npx prisma migrate deploy');
-    const verify = s.indexOf("-name verify.sql");
-    const exit0 = s.lastIndexOf('exit 0');
-    expect(deploy).toBeGreaterThan(-1);
-    expect(verify).toBeGreaterThan(deploy);
-    expect(verify).toBeLessThan(exit0);
+  const step0 = s.indexOf('STEP 0');
+  const deploy = s.indexOf('\nnpx prisma migrate deploy 2>&1'); // the executable line, not the header comment
+  const step4 = s.indexOf('STEP 4');
+  const exit0 = s.lastIndexOf('exit 0');
+  it('step 0 discovers verify.sql files and checks the required-verifier contract BEFORE migrate deploy', () => {
+    expect(step0).toBeGreaterThan(-1);
+    expect(step0).toBeLessThan(deploy);
+    const preflight = s.slice(step0, s.indexOf('STEP 1'));
+    expect(s.indexOf('STEP 1')).toBeGreaterThan(step0);
+    expect(preflight).toMatch(/-name verify\.sql -type f \| LC_ALL=C sort >"\$\{DISCOVERED_LIST\}"/);
+    expect(preflight).toContain('REQUIRED_VERIFIERS_FILE="scripts/release-required-verifiers.txt"');
+    expect(s).not.toMatch(/RELEASE_REQUIRED_VERIFIERS_FILE/); // pinned: env cannot swap the contract
+    expect(preflight).toMatch(/REQUIRED_COUNT.*-lt 1/);
+    expect(preflight).toMatch(/\^\[A-Za-z0-9_\]\[A-Za-z0-9_-\]\*\$/); // bare directory names only
+    expect(preflight).toContain('listed twice');
+    expect(preflight).toMatch(/grep -qxF -- "\$\{expected_path\}" "\$\{DISCOVERED_LIST\}"/);
+    expect((preflight.match(/exit 1/g) ?? []).length).toBeGreaterThanOrEqual(7);
+    expect(preflight).not.toMatch(/\|\|\s*true\s*$/m);
+  });
+  it('uses no process substitution for discovery anywhere (a failing find must not read as an empty set)', () => {
+    expect(s).not.toMatch(/< <\(/);
+    expect(s).not.toMatch(/done < <\(find/);
+  });
+  it('step 4 runs every discovered verifier via prisma db execute on DIRECT_URL, after deploy, before exit 0, asserting counts, fail-closed', () => {
+    expect(step4).toBeGreaterThan(deploy);
+    expect(step4).toBeLessThan(exit0);
     expect(s).toMatch(/npx prisma db execute --url "\$\{DIRECT_URL\}" --file "\$\{verifier\}"/);
-    const block = s.slice(s.indexOf('STEP 4'), s.indexOf('verifiers_passed = '));
+    const block = s.slice(step4, s.indexOf('verifiers_passed = '));
+    expect(block).toMatch(/done <"\$\{DISCOVERED_LIST\}"/);
+    expect(block).toMatch(/VERIFIER_COUNT\}" -ne "\$\{DISCOVERED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt "\$\{REQUIRED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt 1/);
     expect(block).not.toMatch(/\|\|\s*true/);
     expect(block).toMatch(/exit 1/);
+    expect(s).not.toMatch(/Zero verifiers is fine/);
   });
-  it('the runtime image ships prisma/ (so verify.sql files are present at release time)', () => {
+  it('the required-verifier contract file exists, is non-empty, and every entry is a bare migration directory name', () => {
+    const entries = read('scripts/release-required-verifiers.txt')
+      .split('\n')
+      .map((l) => l.replace(/#.*/, '').trim())
+      .filter(Boolean);
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    for (const e of entries) expect(e).toMatch(/^[A-Za-z0-9_][A-Za-z0-9_-]*$/);
+    expect(new Set(entries).size).toBe(entries.length);
+  });
+  it('the runtime image ships prisma/, release.sh and the contract file, and asserts the contract file at build time', () => {
     const df = read('Dockerfile');
     const runtime = df.slice(df.indexOf('AS runtime'));
     expect(runtime).toMatch(/^COPY prisma \.\/prisma\/$/m);
     expect(runtime).toMatch(/^COPY scripts\/release\.sh \.\/scripts\/release\.sh$/m);
+    expect(runtime).toMatch(/^COPY scripts\/release-required-verifiers\.txt \.\/scripts\/release-required-verifiers\.txt$/m);
+    expect(runtime).toMatch(/test -f scripts\/release-required-verifiers\.txt/);
+  });
+});
+
+describe('release.sh — behaviour with a fake prisma runner (no database, no network)', () => {
+  // Fixture: a scratch tree with scripts/release.sh, a contract file and prisma/migrations; a fake
+  // `npx` on PATH that logs argv and emulates migrate status / migrate deploy / db execute.
+  const REQUIRED = '20261224000000_rls_close_public_exposure';
+  const fixture = (setup: (root: string) => void) => {
+    const root = mkdtempSync(join(tmpdir(), 'release-sh-'));
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'bin'), { recursive: true });
+    mkdirSync(join(root, 'prisma', 'migrations'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'release.sh'), read('scripts/release.sh'));
+    writeFileSync(join(root, 'scripts', 'release-required-verifiers.txt'), `${REQUIRED}\n`);
+    writeFileSync(join(root, 'bin', 'node'), '#!/usr/bin/env bash\necho v20.0.0\n');
+    writeFileSync(
+      join(root, 'bin', 'npx'),
+      [
+        '#!/usr/bin/env bash',
+        'echo "$*" >>"${FAKE_NPX_LOG}"',
+        'case "$*" in',
+        '  *"migrate status"*) echo "Database schema is up to date!"; exit 0;;',
+        '  *"migrate deploy"*) echo deploy-ran >>"${FAKE_NPX_LOG}"; exit 0;;',
+        '  *"db execute --stdin"*) echo " count"; echo " 1"; exit 0;;',
+        '  *"db execute --url"*) all="$*"; f="${all##*--file }"; grep -q RAISE_FAIL "$f" && { echo "P1010 VERIFY FAILED"; exit 1; }; exit 0;;',
+        '  *) exit 0;;',
+        'esac',
+        '',
+      ].join('\n'),
+    );
+    chmodSync(join(root, 'bin', 'npx'), 0o755);
+    chmodSync(join(root, 'bin', 'node'), 0o755);
+    setup(root);
+    const log = join(root, 'npx.log');
+    writeFileSync(log, '');
+    const r = spawnSync('bash', ['scripts/release.sh'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        PATH: `${join(root, 'bin')}:${process.env.PATH ?? ''}`,
+        HOME: root,
+        DATABASE_URL: 'postgres://fake',
+        DIRECT_URL: 'postgres://fake-direct',
+        FAKE_NPX_LOG: log,
+      },
+    });
+    const deployed = readFileSync(log, 'utf8').split('\n').includes('deploy-ran');
+    return { code: r.status, out: `${r.stdout}\n${r.stderr}`, deployed };
+  };
+  const verifier = (root: string, dir: string, body = '-- ok') => {
+    mkdirSync(join(root, 'prisma', 'migrations', dir), { recursive: true });
+    writeFileSync(join(root, 'prisma', 'migrations', dir, 'verify.sql'), body);
+  };
+  it('required verifier present → exit 0, deploy ran, counts reported', () => {
+    const r = fixture((root) => verifier(root, REQUIRED));
+    expect(r.code).toBe(0);
+    expect(r.deployed).toBe(true);
+    expect(r.out).toMatch(/verifiers_passed = 1 \(discovered=1, required=1\)/);
+  });
+  it('required verifier missing from the image → refused BEFORE migrate deploy', () => {
+    const r = fixture((root) => verifier(root, '20260101000000_other'));
+    expect(r.code).not.toBe(0);
+    expect(r.deployed).toBe(false);
+    expect(r.out).toContain('REQUIRED catalog verifier missing');
+  });
+  it('prisma/migrations absent (discovery impossible) → refused BEFORE migrate deploy, not "zero verifiers"', () => {
+    const r = fixture((root) => spawnSync('rm', ['-rf', join(root, 'prisma', 'migrations')]));
+    expect(r.code).not.toBe(0);
+    expect(r.deployed).toBe(false);
+    expect(r.out).toContain('verifier discovery impossible');
+  });
+  it('contract file missing or empty → refused BEFORE migrate deploy', () => {
+    const missing = fixture((root) => {
+      verifier(root, REQUIRED);
+      spawnSync('rm', [join(root, 'scripts', 'release-required-verifiers.txt')]);
+    });
+    expect(missing.code).not.toBe(0);
+    expect(missing.deployed).toBe(false);
+    const empty = fixture((root) => {
+      verifier(root, REQUIRED);
+      writeFileSync(join(root, 'scripts', 'release-required-verifiers.txt'), '# nothing\n');
+    });
+    expect(empty.code).not.toBe(0);
+    expect(empty.deployed).toBe(false);
+    expect(empty.out).toContain('lists no verifiers');
+  });
+  it('contract entries with path separators, traversal or duplicates → refused', () => {
+    for (const body of ['../etc\n', `${REQUIRED}/verify.sql\n`, `${REQUIRED}\n${REQUIRED}\n`, `${REQUIRED}\r\n`]) {
+      const r = fixture((root) => {
+        verifier(root, REQUIRED);
+        writeFileSync(join(root, 'scripts', 'release-required-verifiers.txt'), body);
+      });
+      expect(r.code).not.toBe(0);
+      expect(r.deployed).toBe(false);
+    }
+  });
+  it('a verifier that RAISEs → exit 1 after deploy (the migration is applied; release is not green)', () => {
+    const r = fixture((root) => verifier(root, REQUIRED, 'RAISE_FAIL'));
+    expect(r.code).toBe(1);
+    expect(r.deployed).toBe(true);
+    expect(r.out).toContain('catalog verifier FAILED');
+  });
+});
+
+describe('operator workflows — dispatch inputs are data, never shell source (S2-R2-A-01)', () => {
+  const OPERATOR = [
+    'fly-db-secrets-set',
+    'fly-feature-flags-set',
+    'fly-launch-env-set',
+    'fly-logs',
+    'fly-recent-auth-set',
+    'fly-secrets-list',
+    'fly-secrets-set',
+  ];
+  type Step = { name?: string; run?: string; env?: Record<string, string> };
+  type Doc = { name?: string; on?: Record<string, unknown>; jobs?: Record<string, { steps?: Step[] }> };
+  const load = (f: string) => parseYaml(read(`.github/workflows/${f}.yml`)) as Doc;
+  const steps = (d: Doc) => Object.values(d.jobs ?? {}).flatMap((j) => j.steps ?? []);
+  const INLINE = /\$\{\{\s*(github\.event\.)?inputs\./;
+  it('these are all the fly-* operator workflows (and fly-logs-dump.yml, the hidden machine-start, is gone)', () => {
+    for (const f of OPERATOR) expect(existsSync(join(ROOT, `.github/workflows/${f}.yml`))).toBe(true);
+    expect(existsSync(join(ROOT, '.github/workflows/fly-logs-dump.yml'))).toBe(false);
+  });
+  for (const f of OPERATOR) {
+    it(`${f}.yml: no run: block interpolates inputs; every input reaches shell only through step env:`, () => {
+      const d = load(f);
+      const all = steps(d);
+      expect(all.length).toBeGreaterThan(0);
+      for (const st of all) if (st.run) expect(st.run).not.toMatch(INLINE);
+      // every input that reaches a shell step does so through env:, and the app value is consumed quoted
+      for (const st of all) {
+        const appVar = Object.entries(st.env ?? {}).find(([, v]) => /inputs\.app\s*\}\}/.test(String(v)))?.[0];
+        if (!appVar || !st.run) continue;
+        expect(st.run).toMatch(new RegExp(`"\\$\\{${appVar}\\}"`));
+      }
+    });
+    it(`${f}.yml: validates the app target against the allowlist before any credentialed command`, () => {
+      const d = load(f);
+      const all = steps(d);
+      const guardIdx = all.findIndex((st) => st.name === 'Validate Fly app target');
+      expect(guardIdx).toBeGreaterThan(-1);
+      const guard = all[guardIdx];
+      expect(guard.env?.APP).toMatch(INLINE);
+      expect(guard.run).toMatch(/case "\$\{APP\}" in\s+backend-spring-lake-3890\) ;;\s+\*\)[\s\S]*exit 1/);
+      const firstFly = all.findIndex((st) => /flyctl|FLY_API_TOKEN/.test(st.run ?? '') || /FLY_API_TOKEN/.test(JSON.stringify(st.env ?? {})));
+      if (firstFly > -1) expect(guardIdx).toBeLessThan(firstFly);
+    });
+    it(`${f}.yml: has permissions: contents: read (no write scopes)`, () => {
+      expect(read(`.github/workflows/${f}.yml`)).toMatch(/^permissions:\n  contents: read$/m);
+    });
+  }
+  it('no operator workflow starts, stops, restarts, destroys, scales or deploys machines (S2-R2-A-02); only fly-deploy.yml deploys', () => {
+    const MUTATE = /flyctl\s+(machines?\s+(start|stop|restart|destroy|kill|update)|deploy|scale)\b/;
+    for (const f of OPERATOR) for (const st of steps(load(f))) if (st.run) expect(st.run).not.toMatch(MUTATE);
   });
 });

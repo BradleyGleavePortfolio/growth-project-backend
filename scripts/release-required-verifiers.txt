@@ -1,0 +1,18 @@
+# Required catalog verifiers — runner contract consumed by scripts/release.sh step 0.
+#
+# One Prisma migration directory name per line (bare name: no slashes, no `..`,
+# no duplicates; `#` starts a comment). For every entry,
+# prisma/migrations/<name>/verify.sql must exist in the release image, or the
+# release_command refuses BEFORE `prisma migrate deploy` runs. An empty list is
+# refused too: "no verifier required" is not an established contract.
+#
+# Ownership: this file (the runner contract) is S2's. The verifier CONTENT and
+# the role/grant postconditions it asserts are S1's (schema/migration owner).
+# Adding a migration that ships a verify.sql → add its directory name here in
+# the same change so the integrated candidate is proven, not assumed.
+#
+# Consequence today: a candidate that contains this file but not the S1
+# migration below cannot release (fails closed at step 0, no DB mutation).
+# That is the intended composition order: S1 + S2 land together or S1 first.
+
+20261224000000_rls_close_public_exposure

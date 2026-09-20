@@ -73,6 +73,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 COPY scripts/release.sh ./scripts/release.sh
+COPY scripts/release-required-verifiers.txt ./scripts/release-required-verifiers.txt
 
 # Production closure only. `prisma` (CLI) is a devDependency that is also an
 # optional peer of @prisma/client, i.e. dev-optional; npm keeps dev-optional
@@ -97,6 +98,7 @@ RUN node -e "['prisma/package.json','@prisma/client/package.json','@nestjs/core/
     && test -f prisma/schema.prisma \
     && test -f prisma/seed-diagnostic.json \
     && test -f scripts/release.sh \
+    && test -f scripts/release-required-verifiers.txt \
     && echo "artifact check OK"
 
 # RELEASE_VERSION / GIT_SHA: commit the image was built from, read by
