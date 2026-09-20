@@ -113,19 +113,23 @@ s1_guard_preflight() {
   local want_root=$S1_GUARD_DATA_ROOT
   local out rc
   # All facts in one statement so the check is a single round trip; the
-  # output is a fixed-width field list.
+  # output is a fixed-width field list. Booleans are formatted explicitly to
+  # psql's one-letter form (left(bool::text,1) -> t/f): concatenating a bare
+  # boolean with || casts it to 'true'/'false', which made the 7cbbb03 preflight
+  # refuse every real server with SERVER_ROLE (found on the PG 17.6 fixture,
+  # 2026-09-20; the offline stubs had modelled the bare-column t/f form).
   local sql
   sql="select
     'addr='||coalesce(host(inet_server_addr()),'NULL'),
     'port='||coalesce(inet_server_port()::text,'NULL'),
     'db='||current_database(),
-    'super='||(select rolsuper from pg_roles where rolname=current_user),
+    'super='||(select left(rolsuper::text,1) from pg_roles where rolname=current_user),
     'ver='||current_setting('server_version_num'),
     'cluster='||coalesce(nullif(current_setting('cluster_name'),''),'NULL'),
     'datadir='||current_setting('data_directory'),
     'foreign='||coalesce((select string_agg(datname, '+' order by datname) from pg_database
         where datname not in ('postgres','template0','template1') and datname !~ '^s1_rls_'),''),
-    'roles='||coalesce((select string_agg(rolname||'/'||rolsuper||rolbypassrls||rolcanlogin||rolinherit, '+' order by rolname)
+    'roles='||coalesce((select string_agg(rolname||'/'||left(rolsuper::text,1)||left(rolbypassrls::text,1)||left(rolcanlogin::text,1)||left(rolinherit::text,1), '+' order by rolname)
         from pg_roles where rolname in ('postgres','authenticator','anon','authenticated','service_role')),'');"
   # bounded connect; -X (no psqlrc); read-only single statement. The password
   # never appears in output: psql does not echo it and refusals redact the URL.
