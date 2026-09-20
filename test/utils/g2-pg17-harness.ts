@@ -147,14 +147,22 @@ export function worker(options: Record<string, unknown> = {}, old = false) {
       if (message.done) result = message;
     });
     child.on('error', reject);
-    child.on('exit', (code) => {
+    // 'exit' can precede delivery of the final IPC message; settle only after both the exit code
+    // and the IPC channel close ('disconnect') are known.
+    let exitCode: number | null | undefined;
+    let disconnected = false;
+    const settleWorker = () => {
+      if (exitCode === undefined || !(disconnected || result)) return;
+      const code = exitCode;
       clearTimeout(timer);
       if (code !== 0 || !result) { reject(new Error(`worker exited ${code}: ${output}`)); return; }
       // Query shapes, outcomes, fixture identifiers and process IDs only; never parameters.
       console.warn('PG17_PROCESS', JSON.stringify({ name, old, options: { ...options, cursor: options.cursor ? '<cursor>' : undefined },
         result: result.result, failure: result.failure, queries: result.queries.length, pid: result.pid }));
       resolveDone(result);
-    });
+    };
+    child.on('disconnect', () => { disconnected = true; settleWorker(); });
+    child.on('exit', (code) => { exitCode = code; settleWorker(); });
   });
   return {
     done,
@@ -175,13 +183,20 @@ export async function blocked(name: string) {
   }
   throw new Error('expected observed PostgreSQL lock wait');
 }
-export function holdAdvisory(key: number) {
-  const holder = spawn(psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', migrationUrl],
+/** A psql session (default: runtime role service_role) holding an open transaction until released. */
+export function holdTransaction(statements: string, role: string = G2_PG17_RUNTIME_ROLE) {
+  const holder = spawn(psql!, ['-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1', asRole(role)],
     { stdio: ['pipe', 'pipe', 'pipe'], env: psqlEnv });
-  const held = new Promise<void>((r) => holder.stdout.on('data', (b) => { if (String(b).includes('HELD')) r(); }));
-  holder.stdin.write(`BEGIN; SELECT pg_advisory_xact_lock(${key}); SELECT 'HELD';\n`);
+  let output = '';
+  holder.stderr.on('data', (b) => { output += String(b); });
+  const held = new Promise<void>((r, reject) => {
+    holder.stdout.on('data', (b) => { if (String(b).includes('HELD')) r(); });
+    holder.on('exit', (code) => { if (code !== 0) reject(new Error(`holder exited ${code}: ${output}`)); });
+  });
+  holder.stdin.write(`BEGIN; ${statements}; SELECT 'HELD';\n`);
   return { held, release: () => holder.stdin.end('COMMIT;\n'), kill: () => holder.kill() };
 }
+export const holdAdvisory = (key: number) => holdTransaction(`SELECT pg_advisory_xact_lock(${key})`, G2_PG17_MIGRATION_ROLE);
 export const encoded = (s: string) => Buffer.from(s).toString('base64url');
 export const legacyEntityCursor = (family: string, s: string) => encoded(JSON.stringify({
   c: 'coach', i: 'intent', f: family, o: 'source_id:asc', s,

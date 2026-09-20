@@ -98,6 +98,8 @@ function instrument(target) {
   } finally {
     await db.$disconnect();
   }
-  process.send({ done: true, result, failure, queries, events, pid: process.pid });
-  process.disconnect();
+  // process.send is asynchronous: disconnecting before the (possibly large) final message has been
+  // flushed loses it on the parent side (observed on PG17 runs with 600+ staged rows). Disconnect
+  // only from the send callback.
+  process.send({ done: true, result, failure, queries, events, pid: process.pid }, () => process.disconnect());
 })().catch((e) => { console.error(e); process.exit(1); });

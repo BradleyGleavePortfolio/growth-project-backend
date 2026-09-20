@@ -9,7 +9,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   allLedger, appliedMigrations, blocked, catalog, directory, down, encoded, expectedVersion, gitShow,
-  hasColumn, holdAdvisory, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
+  hasColumn, holdAdvisory, holdTransaction, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
   quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, targets, up, upFile, v2, worker,
 } from './utils/g2-pg17-harness';
 
@@ -114,7 +114,12 @@ describe('stage 1: E on a populated narrow base with the actual O binary', () =>
     stageMany(600, 'clients', 'truecoach', 'coach', 'intent', 50);
     const o = await run({}, true);
     expect(o.failure).toBeUndefined();
-    expect(o.result).toEqual({ intent_id: 'intent', staged: 600, reconstructed: 588, skipped: 0, failed: 12 });
+    // OBSERVED (PG17 populated base): the writer's summary is the ledger tally for the whole
+    // coach/intent/family (ScoutReconstructService.tally groupBy status), so it INCLUDES the 25
+    // pre-existing legacy rows (8 reconstructed / 8 skipped / 9 failed), not just this batch.
+    expect(o.result).toEqual({ intent_id: 'intent', staged: 600, reconstructed: 588 + 8, skipped: 8, failed: 12 + 9 });
+    expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE coach_id='coach' AND intent_id='intent'
+      AND entity_type='clients' AND source_id LIKE 's%' GROUP BY status ORDER BY status`)).toBe('12\n588');
     expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('588');
     expect(sql('SELECT count(*) FROM "ScoutReconstructionLedger"')).toBe('1200');
     oPages = { clients: await readAll('clients') };
@@ -152,14 +157,20 @@ describe('stage 1: E on a populated narrow base with the actual O binary', () =>
   it('keeps the actual O writer and readers working on E, creating NULL provenance', async () => {
     stageMany(30, 'workouts', 'truecoach', 'coach', 'intent', 0, 'w');
     const o = await run({ family: 'workouts' }, true);
-    expect(o.result).toEqual({ intent_id: 'intent', staged: 30, reconstructed: 30, skipped: 0, failed: 0 });
+    // Tally again includes the 25 legacy workouts rows for this coach/intent (8/8/9).
+    expect(o.result).toEqual({ intent_id: 'intent', staged: 30, reconstructed: 30 + 8, skipped: 8, failed: 9 });
     expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE entity_type='workouts'
       AND source_id LIKE 'w%' AND source_platform IS NULL`)).toBe('30');
     expect(o.queries.filter((q) => q.startsWith('INSERT INTO "public"."ScoutReconstructionLedger"'))
       .every((q) => !q.includes('source_platform'))).toBe(true);
     // O replay on E is still idempotent and its page enumeration is byte-identical to pre-E.
-    expect((await run({}, true)).result).toEqual({ intent_id: 'intent', staged: 600, reconstructed: 588, skipped: 0, failed: 12 });
-    expect(await readAll('clients')).toEqual(oPages.clients);
+    expect((await run({}, true)).result).toEqual({ intent_id: 'intent', staged: 600, reconstructed: 596, skipped: 8, failed: 21 });
+    // OBSERVED: the O replay re-persists every target and bumps Person.updated_at; ids, order,
+    // cursors and every other field of the enumeration are byte-identical to the pre-E pages.
+    const replayPages = await readAll('clients');
+    const stable = (pages: any[]) => pages.map((p) => ({ ...p, persons: p.persons.map(({ updated_at, ...rest }: any) => rest) }));
+    expect(stable(replayPages)).toEqual(stable(oPages.clients));
+    expect(replayPages.map((p) => p.page.next_cursor)).toEqual(oPages.clients.map((p: any) => p.page.next_cursor));
     const workoutPages = await readAll('workouts');
     expect(workoutPages.flatMap((p) => ids(p.entities))).toHaveLength(30);
     expect(last(workoutPages).next_cursor).toBeNull();
@@ -224,19 +235,25 @@ describe('stage 1: E on a populated narrow base with the actual O binary', () =>
   it.each([true, false])('forced-RLS non-bypass owning role cannot drop hidden provenance (populated=%s)', (populated) => {
     // down.sql relies on SET LOCAL row_security=off; a NOBYPASSRLS owner must be refused, not silently see 0 rows.
     if (populated) sql(`UPDATE "ScoutReconstructionLedger" SET source_platform='truecoach' WHERE coach_id='c4' AND source_id='h00001' AND entity_type='clients'`);
+    // ALTER TABLE ... OWNER TO requires the new owner to hold CREATE on the schema (PostgreSQL rule).
     sql(`CREATE ROLE g2p_ledger_owner NOLOGIN NOBYPASSRLS; GRANT g2p_ledger_owner TO postgres;
+      GRANT USAGE, CREATE ON SCHEMA public TO g2p_ledger_owner;
       ALTER TABLE public."ScoutIngestEntity" OWNER TO g2p_ledger_owner;
       ALTER TABLE public."ScoutReconstructionLedger" OWNER TO g2p_ledger_owner`);
+    // c4/h00001/clients exists once per intent (two intents), so a populated run hides 2 claims.
+    const claimed = sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform IS NOT NULL`);
+    expect(claimed).toBe(populated ? '2' : '0');
     try {
       expect(sql(`SELECT rolsuper||':'||rolbypassrls FROM pg_roles WHERE rolname='g2p_ledger_owner'`)).toBe('false:false');
-      expect(sql(`SET ROLE g2p_ledger_owner; SELECT count(*) FROM public."ScoutReconstructionLedger"`)).toBe('SET\n0');
+      // psql -q suppresses the SET tag; forced RLS hides every row from the non-bypass owner.
+      expect(sql(`SET ROLE g2p_ledger_owner; SELECT count(*) FROM public."ScoutReconstructionLedger"`)).toBe('0');
       refused(`SET ROLE g2p_ledger_owner;\n${down}`, 'row-level security');
       expect(hasColumn()).toBe('1');
-      expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform IS NOT NULL`)).toBe(populated ? '1' : '0');
+      expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform IS NOT NULL`)).toBe(claimed);
     } finally {
       sql(`ALTER TABLE public."ScoutIngestEntity" OWNER TO postgres;
         ALTER TABLE public."ScoutReconstructionLedger" OWNER TO postgres;
-        DROP ROLE g2p_ledger_owner;
+        DROP OWNED BY g2p_ledger_owner; DROP ROLE g2p_ledger_owner;
         UPDATE "ScoutReconstructionLedger" SET source_platform=NULL`);
     }
   });
@@ -423,7 +440,7 @@ describe('stage 3: T provenance, atomicity, accounting and collisions on Postgre
     expect(persons.map((p: any) => p.source_platform).sort()).toEqual(['conformance_alpha', 'truecoach']);
     expect(records('coach', 'intent')[0].target_id).toBe(records('coach', 'i2')[0].target_id);
     expect(records('coach', 'i3')[0].target_id).not.toBe(records('coach', 'intent')[0].target_id);
-    expect(allLedger().map((r: any) => r.source_platform)).toEqual(['truecoach', 'truecoach', 'conformance_alpha']);
+    expect(allLedger().map((r: any) => `${r.intent_id}:${r.source_platform}`)).toEqual(['i2:truecoach', 'i3:conformance_alpha', 'intent:truecoach']);
     // Another coach's identical source id never touches this coach's roster.
     settle('other', 'intent');
     stage('a', 'clients', 'truecoach', 'Synthetic', 'other', 'intent');
@@ -441,7 +458,7 @@ describe('stage 3: T provenance, atomicity, accounting and collisions on Postgre
       VALUES ('dup','coach','intent','clients','a','conformance_alpha','skipped')`)).toThrow(/ScoutReconstructionLedger_coach_id_intent_id_entity_type_source/);
     // EXPLICIT LIMITATION carried to R/N/C: wide identities are not permitted on E/T.
     expect(sql(`SELECT pg_get_indexdef('public.${ledgerKey}'::regclass)`))
-      .toBe(`CREATE UNIQUE INDEX ${ledgerKey.replace(/"/g, '')} ON public."ScoutReconstructionLedger" USING btree (coach_id, intent_id, entity_type, source_id)`);
+      .toBe(`CREATE UNIQUE INDEX ${ledgerKey} ON public."ScoutReconstructionLedger" USING btree (coach_id, intent_id, entity_type, source_id)`);
   });
 
   it('characterizes actual O after T: provenance stays but O can downgrade success', async () => {
@@ -776,23 +793,58 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
 
   it('E/down lock budgets fail atomically against a live writer transaction instead of queueing behind it', async () => {
     stage('lock');
+    await run();
+    expect(records()[0]).toMatchObject({ status: 'reconstructed', source_platform: 'truecoach' });
     const before = catalog();
-    // A T writer holds an open transaction with ledger row/table locks at the claim barrier.
-    const holder = worker({ pause: 'claimed' });
-    await holder.ready;
+    // Deterministic writer: a service_role transaction holding a ledger row lock (RowExclusiveLock
+    // on the table) for as long as the test wants, like an in-flight O/T claim without a client timeout.
+    const holder = holdTransaction(`UPDATE public."ScoutReconstructionLedger" SET reason='held' WHERE source_id='lock'`);
+    await holder.held;
     try {
       const t0 = Date.now();
-      refused(up, 'lock timeout');
       refused(down, 'lock timeout');
+      refused(up, 'lock timeout');
       const elapsed = Date.now() - t0;
       expect(elapsed).toBeGreaterThanOrEqual(5000);
       expect(elapsed).toBeLessThan(30000);
       expect(hasColumn()).toBe('1');
       expect(catalog()).toBe(before);
-      holder.release();
-      expect((await holder.done).result).toEqual({ intent_id: 'intent', staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
-    } finally { holder.stop(); }
-    expect(records()[0]).toMatchObject({ status: 'reconstructed', source_platform: 'truecoach' });
+    } finally { holder.release(); }
+    expect(records()[0]).toMatchObject({ status: 'reconstructed', source_platform: 'truecoach', reason: 'held' });
+    // Both directions fail before any prerequisite check, so history and provenance are untouched.
+    expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_platform='truecoach'`)).toBe('1');
+    expect(appliedMigrations()).toBe('165');
+  });
+
+  it('characterizes down against an actual T claim transaction paused inside its interactive transaction', async () => {
+    // Prisma interactive transactions have a 5 s default ceiling and E uses lock_timeout=5 s; which
+    // budget expires first is a race, so only the invariants are asserted and the branch is recorded.
+    stage('claimrace');
+    const paused = worker({ pause: 'claimed' });
+    await paused.ready;
+    let branch = 'down-refused';
+    let message = '';
+    try {
+      try { sql(down); branch = 'down-applied'; } catch (e) { message = String(e); }
+      console.warn('PG17_CLAIM_RACE', JSON.stringify({ branch, message: message.split('\n').find((l) => l.includes('ERROR')) ?? '' }));
+      if (branch === 'down-refused') {
+        // Either the lock budget fired or the claim was visible and refused; the column survives.
+        expect(message).toMatch(/lock timeout|refuses removal of assigned provenance/);
+        expect(hasColumn()).toBe('1');
+      } else {
+        // OBSERVED on PG17 (run 20260920T183610Z): Prisma's 5 s interactive-transaction ceiling
+        // expires before E's 5 s lock_timeout, the paused claim is rolled back, the drained down
+        // succeeds and the T worker fails closed (500, P2022) leaving no partial ledger row.
+        // down can only have succeeded on a drained ledger: the paused claim must have rolled back.
+        expect(hasColumn()).toBe('0');
+        expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_id='claimrace'`)).toBe('0');
+      }
+      paused.release();
+      const outcome = await paused.done;
+      console.warn('PG17_CLAIM_RACE_WORKER', JSON.stringify({ result: outcome.result, failure: outcome.failure }));
+    } finally { paused.stop(); }
+    if (branch === 'down-applied') { sqlFile(upFile); }
+    expect(hasColumn()).toBe('1');
     expect(appliedMigrations()).toBe('165');
   });
 });
