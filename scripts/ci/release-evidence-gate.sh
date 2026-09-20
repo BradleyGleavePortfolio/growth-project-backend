@@ -175,7 +175,7 @@ LOCKFILE="${LOCKFILE:-package-lock.json}"
 [[ -f "$LOCKFILE" ]] || fail "lockfile ${LOCKFILE} not found in the checked-out release commit"
 GITHUB_OUTPUT=/dev/null bash "$SBOM_ASSERT" "$SBOM_FILE" "$LOCKFILE" || fail "downloaded SBOM failed the production-closure proof against ${LOCKFILE}"
 sbom_components=$(jq '.components | length' "$SBOM_FILE")
-echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256}, sidecar match, closure proof re-run)"
+echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256}, sidecar match, denylist/sentinel check re-run)"
 
 # --- 5. deployment environment is actually protected -------------------------
 ENV_JSON=$(api "repos/${GH_REPO}/environments/${REQUIRED_ENVIRONMENT}")

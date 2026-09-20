@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/ci/assert-prod-sbom.sh
 #
-# Production-dependency proof for a CycloneDX SBOM (used by
+# Production-dependency denylist + sentinel check for a CycloneDX SBOM (used by
 # .github/workflows/sbom.yml, re-run by scripts/ci/release-evidence-gate.sh, tested in test/ci/delivery-artifact.spec.ts).
 #
 # Exits 0 only when SBOM_FILE:
@@ -15,6 +15,11 @@
 #      the production image.
 # Prints a summary and the sha256 of the SBOM so the artifact can be bound to
 # the commit in the release evidence manifest.
+#
+# Scope (S2-R2-A-04): this is NOT a closure proof. It shows the SBOM carries no
+# lockfile-dev packages and no denylisted tools, and that the sentinel runtime
+# packages are present. It does not prove the SBOM lists every production
+# package or matches the installed tree bit-for-bit.
 
 set -Eeuo pipefail
 fail() { echo "::error::assert-prod-sbom: $*" >&2; exit 1; }

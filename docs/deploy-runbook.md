@@ -283,16 +283,37 @@ For every migration:
 2. **Run the migration via the release command** (Fly auto-runs it; do
    not invoke `prisma migrate deploy` from your laptop against the
    prod DB).
-3. **If the deploy aborts**, Fly leaves the previous machines running.
-   Investigate the release log and re-deploy a fix; no manual revert is
-   needed for a failed release.
+3. **If the deploy aborts**, Fly leaves the previous machines running —
+   but *where* it aborted decides whether the database changed:
+   - **`release.sh` step 0 or 1** (verifier contract preflight, status
+     check), the evidence gate, or the image build: nothing was applied.
+     Fix forward and re-dispatch; no production action.
+   - **`release.sh` step 2 or later** (`prisma migrate deploy` ran, then a
+     status/verifier/accounting step refused): applied migrations **stay
+     applied** while machines keep the old image — the database may be
+     ahead of the running code. Follow §11.4 before re-dispatching. Never
+     "undo" this by deleting the migration directory (see step 4).
 4. **If the deploy succeeded but the new code is broken**, the gated
-   path is **forward-only**: revert the offending commit on `main` through
+   path is **forward-only**: revert the offending *code* on `main` through
    a reviewed PR, let CI / CodeQL / SBOM run on the new head, then dispatch
-   `Fly Deploy` again with that head as `release_sha` (see
-   `docs/delivery-controls.md`). The previous running image is recorded
-   in the release manifest (`machines-before.json`, `image_ref.tag`
-   `sha-<commit>`).
+   `Fly Deploy` with that head as `release_sha` (see
+   `docs/delivery-controls.md` §7). The gate accepts only the current
+   `main` head (`release_sha == github.sha`); **re-dispatching an older
+   sha is refused**, so "re-run the previous release" is not a recovery
+   route.
+
+   A revert commit must **never delete or edit an applied migration
+   directory**: `prisma migrate deploy` would then find a history mismatch
+   and refuse — that fails the *next* release closed, it does not roll the
+   schema back. Revert application code only; if schema must move, ship a
+   new forward migration (S1-owned content).
+
+   The previous running image is recorded in the release manifest
+   (`machines-before.json`, field `image_ref.tag`). Read the tag from there
+   — do not derive it from a commit. For the **first gated release** the
+   running production image (GH_SHA `5076a07a`, deployed 2026-09-18 outside
+   this workflow) carries a Fly `deployment-*` tag, not `sha-*`; only
+   images built by `Fly Deploy` are tagged `sha-<release_sha>`.
 
    **Emergency, UNGATED route** (bypasses the evidence gate and
    `verify-fly-release.sh`; record who ran it and why, and follow with a
@@ -300,7 +321,7 @@ For every migration:
 
    ```sh
    fly releases -a <app>
-   fly deploy -a <app> --image registry.fly.io/<app>:sha-<previous-commit>
+   fly deploy -a <app> --image registry.fly.io/<app>:<image_ref.tag from machines-before.json>
    ```
 
    The previous image still expects the new schema, so the rollback is
@@ -518,10 +539,12 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 
 | Symptom | Action |
 | --- | --- |
-| Deploy aborted on `release_command`. | No-op — Fly keeps the previous machines. Fix the migration, redeploy. |
+| Deploy aborted on `release_command` at step 0/1 (`FAIL at line` inside the preflight/status block; log shows no `step 2:`). | Nothing applied — Fly keeps the previous machines and the schema is unchanged. Fix forward (missing/invalid required-verifier contract, P3005 baseline, connectivity), re-dispatch. |
+| Deploy aborted on `release_command` at step 2 or later (log shows `step 2: applying pending migrations` before the failure). | Fly keeps the previous machines **but applied migrations stay applied**. Do not delete the migration directory. Follow §11.4: read `_prisma_migrations`, decide fix-forward vs. transactional manual reverse (S1 content, separate authorization), then re-dispatch. |
+| `release_command` refused at step 4 `catalog verifier FAILED`. | Schema drift or incomplete migration detected in `pg_catalog` after `migrate deploy`. The migration rows say applied; the catalog disagrees. Investigate the named `verify.sql`; §11.4 step 6. |
 | `release_command` failed with `./scripts/release.sh: 25: set: Illegal option -` (or any `set: Illegal option -<single-char>`). | CRLF in a shell script. `dash` (Debian's `/bin/sh`) rejects `set -e\r` because it treats the `\r` as a flag character. Fix: ensure `scripts/*.sh` are committed with LF endings (enforced by `.gitattributes`), and that `fly.toml`'s `release_command` invokes the script via `bash ./scripts/release.sh` rather than `sh ./scripts/release.sh`. To audit locally: `git ls-files -z 'scripts/*.sh' \| xargs -0 file \| grep CRLF` should return nothing. To repair an in-tree CRLF script: `dos2unix scripts/release.sh && git add scripts/release.sh && git commit -m 'fix: normalize release.sh to LF'`. |
 | App boots but env-validation throws. | Add the missing secret, redeploy. Boot logs identify the missing var. |
-| Health endpoint stays red after deploy. | `fly logs -a <app>` for the stack trace. If unrelated to schema, redeploy the previous image (§3). |
+| Health endpoint stays red after deploy. | `Fly Logs (operator)` workflow (read-only, `fly-logs.yml`) or `fly logs -a <app>` for the stack trace. If unrelated to schema, roll back the *code* via a revert PR through the gated path; the ungated image route in §3 is emergency-only and its target tag comes from `machines-before.json`. |
 | Stripe webhooks 400-ing in production. | Verify `STRIPE_WEBHOOK_SECRET` matches the live endpoint. Check Sentry for the rejection reason. |
 | Coach console hits CORS error. | Check `CORS_ORIGINS` for the exact origin (scheme + host + port). Wildcard is rejected. |
 | Invite landing page empty. | Verify `PUBLIC_INVITE_BASE_URL`, `APP_STORE_URL`, `PLAY_STORE_URL`, `PUBLIC_WEB_SIGNUP_URL`. Empty values fall through to placeholder defaults baked into `invite-landing.controller.ts`. |
@@ -945,8 +968,15 @@ If you ever need to "tolerate" a failure (e.g. `migrate status` returning 1
 when migrations are pending), guard the specific call with `|| true` and
 inspect the captured output. Never `set +e`.
 
-### 11.2. The three steps
+### 11.2. The steps
 
+0. **Verifier contract preflight** (no database contact) — enumerate
+   `prisma/migrations/*/verify.sql` through a checked pipeline and require
+   `scripts/release-required-verifiers.txt` to exist, list ≥1 bare
+   migration directory name (no `/`, no `..`, no duplicates, no CRLF), and
+   have every entry resolve to a discovered `verify.sql`. Any failure exits
+   non-zero **before** `migrate deploy`; a broken enumeration is never read
+   as "zero verifiers". The contract path is pinned (no env override).
 1. **Status check** — `prisma migrate status` enumerates pending migrations
    and (critically) surfaces a P3005 "not baselined" error before we touch
    anything. P3005 aborts the release with a runbook pointer to §9.2 of
@@ -957,6 +987,10 @@ inspect the captured output. Never `set +e`.
    `Database schema is up to date` or `No pending migrations`. This catches
    the (rare) class of failure where `migrate deploy` claims success but
    leaves a partially-applied migration row in `_prisma_migrations`.
+4. **Catalog verifiers** — run every `verify.sql` discovered in step 0 via
+   `prisma db execute --url "$DIRECT_URL" --file <verifier>`; a `RAISE`
+   is a non-zero exit and fails the release. Then assert
+   `ran == discovered ≥ required ≥ 1`. Verifier content is S1-owned.
 
 ### 11.3. Observing a release
 
@@ -970,19 +1004,49 @@ The structured banner at the top of each run prints `machine_id`, `git_sha`,
 grep-able final line:
 
 ```
-[release] ALL_APPLIED=<count> pending_before=<n> release_id=<machine-id>
+[release] ✔ release_command completed successfully
+[release]   ALL_APPLIED=<count>
+[release]   pending_before=<n>
+[release]   verifiers_passed=<ran> verifiers_required=<required>
+[release]   release_id=<machine-id>
 ```
+
+The `FAIL` banner is printed by an EXIT/ERR trap; a process killed
+outright (SIGKILL/OOM, release machine destroyed) prints nothing — in that
+case Fly's release status is the only signal.
 
 ### 11.4. Recovery — what to do if a release_command fails
 
 1. Read the `[release] ❌ FAIL` block in `fly logs`. It contains the failing
    line in `release.sh` and the last 60 lines of Prisma's output.
-2. The deploy is aborted by Fly. Existing app machines are not touched.
-3. If the failure is a transient DB connectivity issue (P1001), re-run the
-   workflow from GitHub Actions — no code change needed.
-4. If a migration is genuinely broken: revert the PR that introduced it
-   (or push a follow-up fix-forward migration), let the next deploy retry.
+2. The rollout is aborted by Fly: existing app machines keep the previous
+   image. **Determine the stage** before anything else:
+   - failure before `step 2: applying pending migrations` appears (step 0
+     contract preflight, step 1 status): the database is untouched;
+   - failure after it (step 2 migrate deploy, step 3 status, step 4
+     verifiers): migrations that `migrate deploy` applied remain applied.
+     The database may now be ahead of the running code. Read
+     `_prisma_migrations` (`DIRECT_URL`) to see exactly which.
+3. If the failure is a transient DB connectivity issue (P1001) at step 1/2,
+   re-run the workflow from GitHub Actions — no code change needed.
+4. If a migration is genuinely broken: **do not delete its directory** in
+   the revert (the next `migrate deploy` would refuse on history mismatch).
+   Ship a fix-forward migration, or — if the applied change must be
+   reversed — a transactional manual reverse under separate production
+   authorization (`psql "$DIRECT_URL" --single-transaction -v
+   ON_ERROR_STOP=1 -f <reverse.sql>`), then re-dispatch the current `main`.
+   Migration/verifier content is S1-owned.
 5. If `_prisma_migrations` is wedged with a `started_at`/`finished_at IS NULL`
    row, the operator must `prisma migrate resolve --applied <name>` or
    `--rolled-back <name>` manually using `DIRECT_URL`. This is a deliberate
    manual step — CI never resolves migrations.
+6. If step 4 reports `catalog verifier FAILED: prisma/migrations/<m>/verify.sql`:
+   the migration rows say applied but `pg_catalog` disagrees (out-of-band
+   reversal, partial DDL, missing grant/policy). Do **not** run
+   `prisma migrate resolve --rolled-back` for a migration that succeeded.
+   Re-apply forward transactionally and re-run the verifier by hand, then
+   re-dispatch. See `docs/delivery-controls.md` §7.1.
+7. If step 0 reports `REQUIRED catalog verifier missing` or a contract
+   error: the image is incomplete or `scripts/release-required-verifiers.txt`
+   is malformed. Nothing touched the database. Fix the candidate (compose
+   the S1 migration / correct the contract) and re-dispatch.
