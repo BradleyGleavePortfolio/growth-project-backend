@@ -147,7 +147,7 @@ run_case "preflight: data_directory with ../ escape" SERVER_DATADIR "$GOOD_URL" 
 run_case "preflight: data_directory under root but nonexistent" SERVER_DATADIR "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/datadir=$SPEC_DIR/datadir=$FIXED_ROOT\/does-not-exist-$$}"
 run_case "preflight: data_directory is a symlink escaping the root" SERVER_DATADIR "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/datadir=$SPEC_DIR/datadir=$SPEC_LINK}"
 run_case "preflight: foreign database present"   FOREIGN_DB  "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/foreign=/foreign=app_production+s5_tgp}"
-run_case "preflight: stale postgres role is superuser" ROLE_FLAGS "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/roles=/roles=anon\/ffff+postgres\/ttft}"
+run_case "preflight: stale postgres role is superuser" ROLE_FLAGS "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/roles=/roles=anon\/ffff+postgres\/tttt}"
 run_case "preflight: authenticator can BYPASSRLS" ROLE_FLAGS "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/roles=/roles=authenticator\/fttf}"
 run_case "preflight: connection failure"          PREFLIGHT_CONNECT "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "$GOOD_ID" 2
 run_case "preflight: garbage output"              PREFLIGHT_SHAPE "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "psql: warning: something unexpected"
@@ -155,7 +155,7 @@ run_case "preflight: garbage output"              PREFLIGHT_SHAPE "$GOOD_URL" "$
 # roles= empty is the truly fresh cluster (bootstrap not yet run); the second case is a
 # re-run against a cluster whose fixture roles already carry exactly the bootstrap flags.
 run_case "positive control: exact disposable identity (fresh cluster, no fixture roles)" ALLOW "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "$GOOD_ID"
-run_case "positive control with existing fixture roles (expected flags)" ALLOW "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/roles=/roles=anon\/ffff+authenticated\/ffff+authenticator\/fftf+postgres\/ftft+service_role\/ftff}"
+run_case "positive control with existing fixture roles (expected flags)" ALLOW "$GOOD_URL" "$GOOD_DB" "$GOOD_CONFIRM" 54321 "${GOOD_ID/roles=/roles=anon\/ffff+authenticated\/ffff+authenticator\/fftf+postgres\/fttt+service_role\/ftff}"
 
 echo "== $PASS passed, $FAIL failed (guard spec, offline, head $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet HEAD -- test/db 2>/dev/null || echo '+dirty'))"
 [ $FAIL -eq 0 ]

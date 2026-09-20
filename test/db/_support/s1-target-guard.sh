@@ -175,7 +175,7 @@ s1_guard_preflight() {
   for r in $roles; do
     name=${r%%/*}; flags=${r#*/}
     case "$name" in
-      postgres)      want=ftft ;;
+      postgres)      want=fttt ;;   # LOGIN NOSUPERUSER BYPASSRLS (inherit default) per supabase-like-bootstrap.sql
       authenticator) want=fftf ;;
       service_role)  want=ftff ;;
       anon|authenticated) want=ffff ;;
