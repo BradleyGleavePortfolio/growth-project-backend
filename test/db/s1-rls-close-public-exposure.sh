@@ -154,7 +154,11 @@ check "DB2 (S2 gate route): prisma db execute --file verify.sql exits NON-ZERO o
 # 14-table DO and after the CREATE OR REPLACE FUNCTION statements have executed. Holding it makes the
 # failure occur mid-file, so a per-statement (non-transactional) client would leave the 14 tables
 # protected and the helpers replaced; a whole-file rollback leaves everything in pre-state.
-psql "$PG2_URL" -X -qAt -c "begin; select 1 from only community_messages_2027_01 limit 1; select pg_sleep(120);" >/dev/null 2>&1 &
+# The blocker is tagged with application_name so it can be released SERVER-SIDE: killing only the
+# client psql does not end the backend's transaction while it sits in pg_sleep (the server checks
+# for a vanished client only when client_connection_check_interval > 0, default 0), so the lock
+# would survive ~120 s and cascade into every later step (observed on the PG 17.6 fixture, run 2).
+PGAPPNAME=s1_blocker psql "$PG2_URL" -X -qAt -c "begin; select 1 from only community_messages_2027_01 limit 1; select pg_sleep(120);" >/dev/null 2>&1 &
 BLOCKER=$!; sleep 1
 check "DB2: blocker session holds a lock on community_messages_2027_01 (late-stage object)" 1 "$(q "$PG2_URL" "select count(*) from pg_locks l join pg_class c on c.oid=l.relation where c.relname='community_messages_2027_01' and l.granted")"
 # 3a. direct psql --single-transaction path (the documented operator path)
@@ -182,7 +186,9 @@ check "DB2 prisma: failed deploy recorded in _prisma_migrations (finished_at nul
 check "DB2 prisma: WHOLE-FILE rollback discriminated — 14-table DO (executed BEFORE the failing statement) is rolled back, 18 still exposed" "$EXPECTED18" "$(q "$PG2_URL" "$EXPOSED_SQL")"
 check "DB2 prisma: WHOLE-FILE rollback discriminated — CREATE OR REPLACE FUNCTION statements (executed BEFORE the failing statement) are rolled back" "$HELPER_PRE" "$(q "$PG2_URL" "$HELPER_SQL")"
 check "DB2 prisma: verify.sql fails cleanly after the failed attempt" 1 "$(verify_rc "$PG2_URL")"
-# release the blocker deterministically (do not wait out pg_sleep)
+# release the blocker deterministically (do not wait out pg_sleep): terminate the server backend
+# (which ends its transaction and drops the lock), then reap the client.
+q "$PG2_URL" "select count(pg_terminate_backend(pid)) from pg_stat_activity where application_name='s1_blocker' and datname=current_database()" >/dev/null
 kill $BLOCKER 2>/dev/null; wait $BLOCKER 2>/dev/null
 for i in 1 2 3 4 5 6 7 8 9 10; do
   [ "$(q "$PG2_URL" "select count(*) from pg_locks l join pg_class c on c.oid=l.relation where c.relname='community_messages_2027_01'")" = "0" ] && break; sleep 1; done
