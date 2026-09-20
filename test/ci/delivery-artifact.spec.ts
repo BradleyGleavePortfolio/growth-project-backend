@@ -57,6 +57,16 @@ describe('fly-deploy.yml — merge is not deployment', () => {
   });
 });
 
+describe('fly-deploy.yml — gate checks the same environment the deploy job binds to', () => {
+  const yml = read('.github/workflows/fly-deploy.yml');
+  it('REQUIRED_ENVIRONMENT equals deploy environment.name', () => {
+    const gateEnv = /REQUIRED_ENVIRONMENT:\s*(\S+)/.exec(yml)?.[1];
+    const deployEnv = /environment:\s*\n\s+name:\s*(\S+)/.exec(yml)?.[1];
+    expect(gateEnv).toBe('production');
+    expect(deployEnv).toBe(gateEnv);
+  });
+});
+
 describe('codeql.yml — fail closed', () => {
   const yml = read('.github/workflows/codeql.yml');
   it('analyze step has no continue-on-error and no GHAS-state fallback step', () => {

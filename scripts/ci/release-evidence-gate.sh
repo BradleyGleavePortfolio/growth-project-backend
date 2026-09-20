@@ -26,6 +26,10 @@
 #   4. The SBOM run for RELEASE_SHA produced a non-expired artifact named
 #      "sbom-cyclonedx-<RELEASE_SHA>"; it is downloaded, must parse as
 #      CycloneDX with >0 components, and its sha256 is recorded.
+#   5. The deployment environment (REQUIRED_ENVIRONMENT, default "production")
+#      exists with a required_reviewers protection rule and no admin bypass,
+#      so the human authorization step cannot be skipped by dispatching before
+#      the hosted settings are in place (environments auto-create unprotected).
 #
 # Output: $OUT_DIR/release-evidence-<sha>.json (the evidence manifest the deploy
 # step attaches to the release) and the downloaded SBOM.
@@ -43,6 +47,7 @@ fail() { echo "::error::release-evidence-gate: $*" >&2; exit 1; }
 TRUSTED_BRANCH="${TRUSTED_BRANCH:-main}"
 OUT_DIR="${OUT_DIR:-release-evidence}"
 SBOM_WORKFLOW_PATH="${SBOM_WORKFLOW_PATH:-.github/workflows/sbom.yml}"
+REQUIRED_ENVIRONMENT="${REQUIRED_ENVIRONMENT:-production}"
 # Default required set. Job names must match the `name:`/id emitted by each
 # workflow. Format: "<workflow path>=<job>,<job>;<workflow path>=<job>".
 REQUIRED_WORKFLOWS="${REQUIRED_WORKFLOWS:-.github/workflows/ci.yml=build-and-test,rls-floor-guard,rls-live-tests,mwb-3-live-tests;.github/workflows/codeql.yml=CodeQL JS/TS (javascript-typescript);.github/workflows/sbom.yml=build-sbom}"
@@ -148,6 +153,15 @@ sbom_sha256=$(sha256sum "$SBOM_FILE" | awk '{print $1}')
 sbom_components=$(jq '.components | length' "$SBOM_FILE")
 echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256})"
 
+# --- 5. deployment environment is actually protected -------------------------
+ENV_JSON=$(api "repos/${GH_REPO}/environments/${REQUIRED_ENVIRONMENT}")
+env_ok=$(printf '%s' "$ENV_JSON" | jq -r '
+  ( [ .protection_rules[]? | select(.type == "required_reviewers") | (.reviewers // []) | length ] | add // 0 ) as $reviewers
+  | if ($reviewers > 0) and (.can_admins_bypass == false) then "ok"
+    else "reviewers=\($reviewers) can_admins_bypass=\(.can_admins_bypass)" end')
+[[ "$env_ok" == "ok" ]] || fail "environment '${REQUIRED_ENVIRONMENT}' is not protected (${env_ok}); a deploy without a required human reviewer and with admin bypass is refused"
+echo "release-evidence-gate: OK environment ${REQUIRED_ENVIRONMENT} has required reviewers and no admin bypass"
+
 # --- manifest ----------------------------------------------------------------
 MANIFEST="$OUT_DIR/release-evidence-${RELEASE_SHA}.json"
 jq -n \
@@ -155,9 +169,11 @@ jq -n \
   --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson runs "$MANIFEST_RUNS" --argjson analysis "$analysis" \
   --argjson artifact_id "$artifact_id" --arg sbom_sha256 "$sbom_sha256" --argjson sbom_components "$sbom_components" \
+  --arg environment "$REQUIRED_ENVIRONMENT" \
   '{
     schema: "tgp.release-evidence.v1",
     repository: $repo, release_sha: $sha, trusted_branch: $branch, generated_at: $generated_at,
+    environment: $environment,
     required_runs: $runs,
     codeql_analysis: {id: $analysis.id, commit_sha: $analysis.commit_sha, created_at: $analysis.created_at, url: $analysis.url},
     sbom: {artifact_id: $artifact_id, name: ("sbom-cyclonedx-" + $sha), sha256: $sbom_sha256, components: $sbom_components},

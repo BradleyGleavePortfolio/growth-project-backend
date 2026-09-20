@@ -62,6 +62,15 @@ const jobs = (names: string[], overrides: Record<string, Partial<{ status: strin
   })),
 });
 
+const ENV_PATH = `repos/${REPO}/environments/production`;
+const protectedEnv = (over: Json = {}): Json => ({
+  name: 'production',
+  can_admins_bypass: false,
+  protection_rules: [{ id: 1, type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { login: 'BradleyGleave' } }] }],
+  deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+  ...over,
+});
+
 const encode = (path: string): string =>
   path.replace(/\//g, '__').replace(/\?/g, '_Q_').replace(/&/g, '_A_').replace(/=/g, '_E_');
 
@@ -101,6 +110,7 @@ class World {
       artifacts: [{ id: 700, name: `sbom-cyclonedx-${SHA}`, expired: false }],
     });
     w.api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip({ bomFormat: 'CycloneDX', components: [{ name: '@nestjs/core', version: '11.0.0' }] }));
+    w.api(ENV_PATH, protectedEnv());
     return w;
   }
 
@@ -157,6 +167,7 @@ describe('release-evidence-gate.sh — passing world', () => {
     expect(manifest.sbom.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.sbom.components).toBe(1);
     expect(manifest.image).toBeNull();
+    expect(manifest.environment).toBe('production');
   });
 
   it('newest run wins: an older failure superseded by a newer success passes', () => {
@@ -281,6 +292,39 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
 
   it('an empty required list is refused', () => {
     expectFail(World.passing().exec({ REQUIRED_WORKFLOWS: ';' }), /REQUIRED_WORKFLOWS is empty|malformed|SBOM workflow/);
+  });
+});
+
+describe('release-evidence-gate.sh — deployment environment must already be protected', () => {
+  it('environment without a required_reviewers rule fails (auto-created unprotected env)', () => {
+    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [] }));
+    expectFail(w.exec(), /environment 'production' is not protected \(reviewers=0/);
+  });
+
+  it('required_reviewers rule with an empty reviewer list fails', () => {
+    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [{ id: 1, type: 'required_reviewers', reviewers: [] }] }));
+    expectFail(w.exec(), /reviewers=0/);
+  });
+
+  it('only a wait_timer rule is not a human authorization', () => {
+    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [{ id: 2, type: 'wait_timer', wait_timer: 30 }] }));
+    expectFail(w.exec(), /reviewers=0/);
+  });
+
+  it('admin bypass enabled fails even with reviewers', () => {
+    const w = World.passing().api(ENV_PATH, protectedEnv({ can_admins_bypass: true }));
+    expectFail(w.exec(), /can_admins_bypass=true/);
+  });
+
+  it('environment missing (404) fails', () => {
+    const w = World.passing().remove(ENV_PATH);
+    expectFail(w.exec(), /GitHub API read failed for repos\/.*environments\/production/);
+  });
+
+  it('REQUIRED_ENVIRONMENT selects which environment is checked', () => {
+    const w = World.passing().api(`repos/${REPO}/environments/staging`, protectedEnv({ name: 'staging' }));
+    expect(w.exec({ REQUIRED_ENVIRONMENT: 'staging' }).code).toBe(0);
+    expectFail(World.passing().exec({ REQUIRED_ENVIRONMENT: 'staging' }), /environments\/staging/);
   });
 });
 

@@ -63,6 +63,10 @@ jobs:
           RELEASE_SHA: ${{ github.event.inputs.release_sha }}
           DISPATCH_SHA: ${{ github.sha }}
           TRUSTED_BRANCH: main
+          # Must match the deploy job's `environment.name`; the gate refuses to
+          # proceed unless that environment already has required reviewers and
+          # no admin bypass (environments auto-create unprotected otherwise).
+          REQUIRED_ENVIRONMENT: production
           OUT_DIR: release-evidence
         run: |
           bash scripts/ci/release-evidence-gate.sh
