@@ -10,7 +10,9 @@
 #   G2_PG17_PASSWORD      disposable local fixture password shared by s5_super/postgres/service_role
 #                         (never written to a file by this harness; only into process env / in-memory URLs)
 #   G2_PG17_PSQL          absolute path of a psql binary compatible with the PG17 server
-#   G2_PG17_OLD_ROOT      checkout of the preserved O source 925780e0 (git worktree)
+#   G2_PG17_OLD_ROOT      DETACHED Git checkout of the preserved O source 925780e0; create/verify it
+#                         offline with test/utils/g2-pg17-old-root.sh (a `git archive` extraction is
+#                         not a repository and cannot pass step 4 below)
 #   G2_PG17_OLD_CLIENT    directory that receives the independently generated O Prisma client
 # Optional:
 #   G2_PG17_SERVER_VERSION  expected server_version_num (default 170006 = 17.6)

@@ -38,7 +38,10 @@ const psqlRun = (url: string, args: string[], input?: string) => execFileSync(
 ).trim();
 export const sql = (text: string): string => psqlRun(migrationUrl, [], text);
 export const sqlAdmin = (text: string): string => psqlRun(adminUrl, [], text);
-/** Operator form from S1's verified recovery guidance: single transaction, stop on error. */
+/** Operator form: `psql -v ON_ERROR_STOP=1 --single-transaction -f <file>`. E's files carry their own
+ *  BEGIN/COMMIT, so --single-transaction is redundant there (psql only emits nested-transaction
+ *  WARNINGs); it is kept so the harness runs the same command the recovery packet documents.
+ *  Recovery semantics themselves are S1-owned; this helper asserts nothing about them. */
 export const sqlFile = (file: string): string => psqlRun(migrationUrl, ['--single-transaction', '-f', file]);
 export const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 export const json = (text: string) => JSON.parse(sql(text));

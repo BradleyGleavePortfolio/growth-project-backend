@@ -10,7 +10,7 @@ import { resolve } from 'path';
 import {
   allLedger, appliedMigrations, blocked, catalog, directory, down, encoded, expectedVersion, gitShow,
   hasColumn, holdAdvisory, holdTransaction, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
-  quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, targets, up, upFile, v2, worker,
+  quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, target, targets, up, upFile, v2, worker,
 } from './utils/g2-pg17-harness';
 
 jest.setTimeout(180000);
@@ -33,7 +33,8 @@ beforeAll(() => {
     (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()))`);
   // Every DDL/data statement of this proof runs as the NON-superuser, BYPASSRLS, owning
   // `postgres` role (Supabase shape); the cluster superuser only observes lock waits.
-  expect(identity).toMatchObject({ database: 'g2_s5_etq0_disposable', address: '127.0.0.1', port: 54325,
+  // The port is whatever the operator double-confirmed through the guarded target (S1 chooses it).
+  expect(identity).toMatchObject({ database: 'g2_s5_etq0_disposable', address: '127.0.0.1', port: target.port,
     directory, user: 'postgres', super: false, bypassrls: true, owner: 'postgres' });
   expect(sql(`SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner<>'postgres'`)).toBe('0');
   expect(Number(identity.version)).toBe(expectedVersion);
@@ -780,8 +781,10 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
     expect(tOnNarrow.failure).toMatchObject({ status: 500, message: 'Internal server error' });
     expect(tOnNarrow.result).toBeUndefined();
     expect(records()).toHaveLength(3);
-    // Forward repair is the operator form (psql --single-transaction -f migration.sql), then the
-    // only truth is the catalog; T reclaims every NULL row without minting new targets.
+    // Forward repair is the operator form (psql -f migration.sql); it applies only while the column is
+    // absent and is NOT idempotent: a rerun on applied E fails closed ('G2-E platform column already
+    // exists', proven above). The only truth signal is the catalog, not Prisma history; afterwards T
+    // reclaims every NULL row without minting new targets.
     sqlFile(upFile);
     expect(hasColumn()).toBe('1');
     expect(prismaMigrateDeploy(root)).toMatch(/No pending migrations/);
@@ -818,12 +821,18 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
 
   it('characterizes down against an actual T claim transaction paused inside its interactive transaction', async () => {
     // Prisma interactive transactions have a 5 s default ceiling and E uses lock_timeout=5 s; which
-    // budget expires first is a race, so only the invariants are asserted and the branch is recorded.
+    // budget expires first is a race. The branch is recorded, and EACH branch's terminal contract is
+    // asserted after the worker has exited: worker result/failure, completion event, ledger rows,
+    // target rows, catalog and history. Neither ordering is asserted to always win.
     stage('claimrace');
+    const before = { ledger: records(), targets: targets(), catalog: catalog() };
+    expect(before.ledger).toEqual([]);
+    expect(before.targets).toEqual({ persons: [], entities: [] });
     const paused = worker({ pause: 'claimed' });
     await paused.ready;
     let branch = 'down-refused';
     let message = '';
+    let outcome!: Result; // assigned inside try; the finally only stops the child
     try {
       try { sql(down); branch = 'down-applied'; } catch (e) { message = String(e); }
       console.warn('PG17_CLAIM_RACE', JSON.stringify({ branch, message: message.split('\n').find((l) => l.includes('ERROR')) ?? '' }));
@@ -831,20 +840,116 @@ describe('stage 5: rollout recovery boundaries after T has claimed provenance', 
         // Either the lock budget fired or the claim was visible and refused; the column survives.
         expect(message).toMatch(/lock timeout|refuses removal of assigned provenance/);
         expect(hasColumn()).toBe('1');
+        expect(catalog()).toBe(before.catalog);
       } else {
-        // OBSERVED on PG17 (run 20260920T183610Z): Prisma's 5 s interactive-transaction ceiling
-        // expires before E's 5 s lock_timeout, the paused claim is rolled back, the drained down
-        // succeeds and the T worker fails closed (500, P2022) leaving no partial ledger row.
         // down can only have succeeded on a drained ledger: the paused claim must have rolled back.
         expect(hasColumn()).toBe('0');
         expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_id='claimrace'`)).toBe('0');
       }
       paused.release();
-      const outcome = await paused.done;
-      console.warn('PG17_CLAIM_RACE_WORKER', JSON.stringify({ result: outcome.result, failure: outcome.failure }));
+      outcome = await paused.done;
     } finally { paused.stop(); }
-    if (branch === 'down-applied') { sqlFile(upFile); }
+    console.warn('PG17_CLAIM_RACE_WORKER', JSON.stringify({ branch, result: outcome.result, failure: outcome.failure, events: outcome.events.length }));
+    const ledger = records();
+    const after = targets();
+    if (branch === 'down-applied') {
+      // OBSERVED on PG17 (runs 20260920T183610Z/184713Z/185210Z): Prisma's 5 s ceiling expires before
+      // E's 5 s lock_timeout, the paused claim (Person + ledger row + claim) is rolled back, the drained
+      // down succeeds, and the released T worker fails closed: its success transaction is already
+      // closed, and the follow-up durable `failed` write hits the now-absent column (P2022) and
+      // propagates instead of minting a row. This CHARACTERIZES a mixed E-down/T-live state that a
+      // real rollout must never enter (T is drained by process control before any down); a 500 to the
+      // caller is not acceptable production behaviour and is not endorsed by this assertion.
+      expect(outcome.result).toBeUndefined();
+      expect(outcome.failure).toEqual({ status: 500, message: 'Internal server error', code: 'P2022' });
+      expect(outcome.events).toEqual([]);
+      // Terminal state: no partial or durable ledger row, no orphan target, column absent, history untouched.
+      expect(ledger).toEqual([]);
+      expect(after).toEqual({ persons: [], entities: [] });
+      expect(hasColumn()).toBe('0');
+      expect(appliedMigrations()).toBe('165');
+      // Forward repair (catalog is the only truth signal) restores the identical E catalog.
+      sqlFile(upFile);
+      expect(catalog()).toBe(before.catalog);
+    } else {
+      // down was refused, so E stayed. Two legal terminal outcomes for the released claim, each with
+      // its own coupled ledger/target invariant:
+      //  (a) the interactive transaction was still open: claim + target + `reconstructed` commit together;
+      //  (b) the client ceiling had expired meanwhile: the success transaction rolled back (no target)
+      //      and the worker recorded ONE durable `failed` row with reason error:Prisma.P2028.
+      expect(outcome.failure).toBeUndefined();
+      expect(hasColumn()).toBe('1');
+      expect(catalog()).toBe(before.catalog);
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ source_id: 'claimrace', source_platform: 'truecoach' });
+      if (ledger[0].status === 'reconstructed') {
+        expect(outcome.result).toEqual({ intent_id: 'intent', staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
+        expect(outcome.events).toHaveLength(1);
+        expect(after.entities).toEqual([]);
+        expect(after.persons.map((p: any) => p.id)).toEqual([ledger[0].target_id]);
+      } else {
+        expect(ledger[0]).toMatchObject({ status: 'failed', target_id: null, reason: 'error:Prisma.P2028' });
+        expect(outcome.result).toEqual({ intent_id: 'intent', staged: 1, reconstructed: 0, skipped: 0, failed: 1 });
+        expect(outcome.events).toHaveLength(1);
+        expect(after).toEqual({ persons: [], entities: [] });
+      }
+    }
+    // Both branches converge: E applied, history unchanged, and a T replay reclaims the staged row into
+    // exactly one reconstructed ledger row bound to exactly one Person, minting nothing else.
     expect(hasColumn()).toBe('1');
     expect(appliedMigrations()).toBe('165');
+    expect((await run()).result).toEqual({ intent_id: 'intent', staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
+    const converged = records();
+    expect(converged.map((r: any) => [r.source_id, r.status, r.source_platform])).toEqual([['claimrace', 'reconstructed', 'truecoach']]);
+    expect(targets().persons.map((p: any) => p.id)).toEqual([converged[0].target_id]);
+    expect(targets().entities).toEqual([]);
+  });
+
+  it('refuses down with a lock timeout while an actual T claim transaction outlives E\'s lock budget, and the released claim then commits intact', async () => {
+    // Deterministic form of the refused branch above. Only the FIXTURE widens this one worker's
+    // Prisma interactive-transaction ceiling (`txTimeout`, test/utils/g2-tq0-worker.cjs), so the
+    // paused claim keeps its table/row locks past E's 5 s lock_timeout. Production T runs with
+    // Prisma's default ceiling: this proves E/down's fail-closed lock budget and the integrity of a
+    // claim that survives a refused down; it is NOT a production guarantee that in-flight T
+    // transactions protect the ledger against a down (they do not; drain is a process boundary).
+    stage('claimrace2');
+    const before = catalog();
+    expect(records()).toEqual([]);
+    const paused = worker({ pause: 'claimed', txTimeout: 30000 });
+    await paused.ready;
+    let outcome!: Result; // assigned inside try; the finally only stops the child
+    try {
+      const t0 = Date.now();
+      refused(down, 'lock timeout');
+      const elapsed = Date.now() - t0;
+      expect(elapsed).toBeGreaterThanOrEqual(5000);
+      expect(elapsed).toBeLessThan(30000);
+      // Refused before any prerequisite check: column, catalog and history untouched; the paused
+      // claim is still uncommitted and invisible to other sessions.
+      expect(hasColumn()).toBe('1');
+      expect(catalog()).toBe(before);
+      expect(appliedMigrations()).toBe('165');
+      expect(sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE source_id='claimrace2'`)).toBe('0');
+      expect(targets()).toEqual({ persons: [], entities: [] });
+      paused.release();
+      outcome = await paused.done;
+    } finally { paused.stop(); }
+    console.warn('PG17_CLAIM_REFUSED_WORKER', JSON.stringify({ result: outcome.result, failure: outcome.failure, events: outcome.events.length }));
+    // Terminal contract: the claim commits whole (claim + target + reconstructed), one completion event,
+    // and nothing about E changed.
+    expect(outcome.failure).toBeUndefined();
+    expect(outcome.result).toEqual({ intent_id: 'intent', staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
+    expect(outcome.events).toEqual([['coach', 'scout.reconstruct.completed',
+      { intent_id: 'intent', entity_type: 'clients', staged: 1, reconstructed: 1, skipped: 0, failed: 0 }]]);
+    const rows = records();
+    expect(rows.map((r: any) => [r.source_id, r.status, r.source_platform, r.reason])).toEqual([['claimrace2', 'reconstructed', 'truecoach', null]]);
+    expect(targets().persons.map((p: any) => p.id)).toEqual([rows[0].target_id]);
+    expect(targets().entities).toEqual([]);
+    expect(hasColumn()).toBe('1');
+    expect(catalog()).toBe(before);
+    expect(appliedMigrations()).toBe('165');
+    // With the claim now committed, down is refused for the data reason, not the lock budget.
+    refused(down, 'G2-E refuses removal of assigned provenance');
+    expect(hasColumn()).toBe('1');
   });
 });

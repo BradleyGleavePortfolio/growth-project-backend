@@ -33,8 +33,14 @@ async function barrier(phase) {
 function instrument(target) {
   return new Proxy(target, {
     get(object, key) {
+      // FIXTURE-ONLY `txTimeout` (ms): widens this process's Prisma interactive-transaction ceiling
+      // (default 5000) so a paused claim can be held past E's lock_timeout deterministically. The
+      // service passes no options itself; the option is added only when it passes none. This is a
+      // test knob, not a production setting, and proves nothing about production T timing.
       if (key === '$transaction') return (fn, ...options) => object.$transaction(
-        (tx) => fn(instrument(tx)), ...options,
+        (tx) => fn(instrument(tx)),
+        ...(options.length === 0 && Number.isInteger(input.txTimeout) && input.txTimeout > 0
+          ? [{ timeout: input.txTimeout }] : options),
       );
       if (key === 'scoutIngestEntity') return new Proxy(object[key], {
         get(delegate, method) {
