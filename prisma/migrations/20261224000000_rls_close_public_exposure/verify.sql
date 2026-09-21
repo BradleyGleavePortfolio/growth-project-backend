@@ -22,8 +22,18 @@
 --   EXPOSURE      an API role (anon/authenticated/PUBLIC) can reach a server-only
 --                 relation or helper, or an S1-DB-01 hardening invariant is gone
 --                 (RLS not enabled/forced, deny-all policy missing, permissive
---                 policy reachable, table privilege held, helper EXECUTE held,
+--                 policy reachable, table privilege held - SELECT/INSERT/UPDATE/
+--                 DELETE and, since S1-R3-A-01, TRUNCATE - helper EXECUTE held,
 --                 search_path unpinned). This is the security regression class.
+--                 TRUNCATE is checked because PostgreSQL applies row security to
+--                 SELECT/INSERT/UPDATE/DELETE only; a role holding TRUNCATE empties
+--                 a FORCE-RLS table with deny-all policies in place, so RLS is not a
+--                 compensating control for that privilege and the gate must see it.
+--                 Privileges are evaluated with has_table_privilege, i.e. EFFECTIVE
+--                 rights including grants to PUBLIC and inherited memberships, so a
+--                 PUBLIC-only TRUNCATE grant is also reported (as one line per API
+--                 role). Not checked (out of this gate's scope, not claimed):
+--                 REFERENCES and TRIGGER.
 --   ALLOWED-PATH  the backend path is broken or a PRECONDITION this migration
 --                 relies on but does NOT establish is missing: service_role has
 --                 lost a table privilege or its bypass policy, a partition is
@@ -131,8 +141,10 @@ BEGIN
         exposure := exposure || format('%I: unexpected PERMISSIVE policy reachable by %s', t, api_role);
       END IF;
 
-      -- effective table privileges (includes grants inherited via PUBLIC or role membership)
-      FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      -- effective table privileges (includes grants inherited via PUBLIC or role membership).
+      -- TRUNCATE is included (S1-R3-A-01): it is a separate table privilege that RLS
+      -- does not govern, so a TRUNCATE-only regrant/drift would otherwise pass this gate.
+      FOREACH priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
         IF has_table_privilege(api_role, format('public.%I', t), priv) THEN
           exposure := exposure || format('%I: %s still holds %s', t, api_role, priv);
         END IF;

@@ -16,7 +16,9 @@
 # the exposure exists, applies the candidate through the real
 # `prisma migrate deploy` path, and then checks behaviour role-by-role,
 # partition protection, lock bounding, late-stage failure atomicity, same-session
-# timeout reset, recovery, verifier failure classes and the reversal invariant.
+# timeout reset, recovery, verifier failure classes, the S1-R3-A-01 effective-
+# TRUNCATE controls (§4b, predecessor-passes/current-fails discriminator) and the
+# reversal invariant.
 #
 # Usage:
 #   S1_PG_SUPER_URL='postgresql://<superuser>:<pw>@127.0.0.1:54321/postgres' \
@@ -247,6 +249,23 @@ check "no other table's RLS flags or ACLs changed (catalog snapshot identical)" 
 check "community_messages parent policies untouched" "$POL_PRE" "$(q "$PG_URL" "select count(*) from pg_policy where polrelid='community_messages'::regclass")"
 check "idempotent re-run of migration.sql succeeds" 00000 "$(sqlstate "$PG_URL" "\\i $MIG_DIR/migration.sql")"
 check "verify.sql still passes after re-run" 0 "$(verify_rc "$PG_URL")"
+
+# ---------- 4b. S1-R3-A-01 (R4): effective TRUNCATE is an EXPOSURE the CRUD-only predecessor verifier
+#               could not see. Shared controls (test/db/_support/s1-truncate-controls.sh) on the seeded
+#               standalone "MuxProcessedEvent": direct anon / direct authenticated / PUBLIC-only grants,
+#               each through both verifier routes, predecessor-passes vs current-fails discriminator,
+#               rollback-only behavioural corroboration, restore + positive control after every step.
+#               The predecessor verifier is the frozen b7d7fe59 file taken from THIS repository's history
+#               and pinned by sha256; if it cannot be produced the controls FAIL (never silently skipped).
+S1_PRED_HEAD=b7d7fe5964680050ab441c195055ea946282a9c3
+S1_PRED_VERIFY_SHA256=2bbce0d7ca2e2761f6a6b3d5cebe2df752ac47767f9936d0b77357a46996323e
+PRED_VERIFY="$TMP/verify-predecessor-b7d7fe59.sql"
+git show "$S1_PRED_HEAD:$MIG_DIR/verify.sql" >"$PRED_VERIFY" 2>>"$LOG" || : >"$PRED_VERIFY"
+check "R4 predecessor control: frozen b7d7fe59 verify.sql extracted from history matches its pinned sha256" "$S1_PRED_VERIFY_SHA256" "$(sha256sum "$PRED_VERIFY" | cut -c1-64)"
+check "R4 current verifier differs from the predecessor (this run exercises a changed verifier)" differs "$(cmp -s "$PRED_VERIFY" $MIG_DIR/verify.sql && echo same || echo differs)"
+. test/db/_support/s1-truncate-controls.sh
+s1_truncate_controls "$PG_URL" "$AUTHN_URL" "$PRED_VERIFY"
+check "R4 TRUNCATE controls: catalog snapshot of the OTHER relations still identical afterwards" "$PRE_SNAP" "$(q "$PG_URL" "$SNAP_SQL" | md5sum)"
 
 # ---------- 5. behaviour by role (authenticator -> SET ROLE, the PostgREST shape)
 for role in anon authenticated; do
