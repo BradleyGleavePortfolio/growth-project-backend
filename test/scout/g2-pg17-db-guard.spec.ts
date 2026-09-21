@@ -1,4 +1,6 @@
-import { g2Pg17TestTarget, withFixturePassword } from '../utils/g2-pg17-db';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { G2_PG17_CLUSTER_MARKER, G2_PG17_DATABASE_MARKER, g2Pg17TestTarget, withFixturePassword } from '../utils/g2-pg17-db';
 
 const base = 'postgresql://s5_super@127.0.0.1:55417/g2_s5_etq0_disposable';
 const ack = 'g2_s5_etq0_disposable:55417';
@@ -44,6 +46,20 @@ describe('S5 G2 PG17 disposable target guard', () => {
     expect(() => g2Pg17TestTarget(base, 'g2_s5_etq0_disposable')).toThrow();
     expect(() => g2Pg17TestTarget(base, 'g2_s5_etq0_disposable:55418')).toThrow();
     expect(() => g2Pg17TestTarget(base, 'g2_tq0_disposable:55417')).toThrow();
+  });
+  it('pins distinctive, non-blank fixture markers that bootstrap carries verbatim', () => {
+    // Both markers are literals: nothing in process.env can change them, so a blank or foreign
+    // cluster_name / database comment is refused before DROP or bootstrap touches a server.
+    expect(G2_PG17_CLUSTER_MARKER).toBe('s5-disposable-pg17');
+    expect(G2_PG17_DATABASE_MARKER).toBe('s5-g2-etq0-synthetic-disposable-fixture-safe-to-drop');
+    for (const marker of [G2_PG17_CLUSTER_MARKER, G2_PG17_DATABASE_MARKER]) {
+      expect(marker).toMatch(/^s5-[a-z0-9-]{8,}$/);
+      expect(marker).toContain('disposable');
+    }
+    const bootstrap = readFileSync(resolve(__dirname, '../utils/g2-pg17-bootstrap.sh'), 'utf8');
+    expect(bootstrap).toContain(`CLUSTER_MARKER=${G2_PG17_CLUSTER_MARKER}\n`);
+    expect(bootstrap).toContain(`DB_MARKER=${G2_PG17_DATABASE_MARKER}\n`);
+    expect(bootstrap).not.toMatch(/CLUSTER_MARKER=\$\{|DB_MARKER=\$\{/);
   });
   it('attaches the fixture password only from the environment and only in plain form', () => {
     expect(withFixturePassword(base, 'local_fixture')).toBe('postgresql://s5_super:local_fixture@127.0.0.1:55417/g2_s5_etq0_disposable');

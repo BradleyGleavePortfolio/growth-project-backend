@@ -12,6 +12,7 @@ import {
   hasColumn, holdAdvisory, holdTransaction, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
   quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, target, targets, up, upFile, v2, worker,
 } from './utils/g2-pg17-harness';
+import { G2_PG17_CLUSTER_MARKER, G2_PG17_DATABASE_MARKER } from './utils/g2-pg17-db';
 
 jest.setTimeout(180000);
 const E = '20270118000000_scout_ledger_platform_expand';
@@ -41,6 +42,11 @@ beforeAll(() => {
   expect(Number(identity.version)).toBeGreaterThanOrEqual(170000);
   expect(Number(identity.version)).toBeLessThan(180000);
   expect(directory).toMatch(/\/pg17\/clusters\/s5$/);
+  // Distinctive S5 fixture markers (pinned literals, not environment): the lane's cluster_name and
+  // the disposable database's comment stamped by bootstrap. Proves the run used the marked fixture.
+  expect(sql(`SELECT current_setting('cluster_name')`)).toBe(G2_PG17_CLUSTER_MARKER);
+  expect(sql(`SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()`))
+    .toBe(G2_PG17_DATABASE_MARKER);
   console.warn('PG17_DATABASE', JSON.stringify(identity));
   // Bootstrap leaves the full 164-migration O history and NO E column/history.
   expect(appliedMigrations()).toBe('164');

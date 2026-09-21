@@ -22,6 +22,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OLD_HEAD=925780e0a1906593e5383c618311b6b17364b8dc
 E_MIGRATION=20270118000000_scout_ledger_platform_expand
 EXPECTED_VERSION="${G2_PG17_SERVER_VERSION:-170006}"
+# Distinctive S5 fixture markers: pinned literals, never read from the environment (see
+# test/utils/g2-pg17-db.ts G2_PG17_CLUSTER_MARKER / G2_PG17_DATABASE_MARKER, kept identical by
+# test/scout/g2-pg17-db-guard.spec.ts). The lane's postgresql.conf must set
+# cluster_name = 's5-disposable-pg17'; the disposable database carries DB_MARKER as its comment.
+CLUSTER_MARKER=s5-disposable-pg17
+DB_MARKER=s5-g2-etq0-synthetic-disposable-fixture-safe-to-drop
 
 for name in G2_PG17_DATABASE_URL G2_PG17_CONFIRM G2_PG17_PASSWORD G2_PG17_PSQL G2_PG17_OLD_ROOT G2_PG17_OLD_CLIENT; do
   [[ -n "${!name:-}" ]] || { echo "missing $name" >&2; exit 2; }
@@ -51,6 +57,12 @@ ADDRESS="$(psql_maint -c 'SELECT inet_server_addr()')"
 [[ "$ADDRESS" == "127.0.0.1" ]] || { echo "server address $ADDRESS is not loopback" >&2; exit 3; }
 [[ "$(psql_maint -c 'SELECT rolsuper FROM pg_roles WHERE rolname=current_user')" == "t" ]] \
   || { echo "bootstrap role must be superuser on the disposable cluster" >&2; exit 3; }
+# 1b. Disposable identity marker BEFORE any write: a blank or foreign cluster_name means this is
+#     not the S5 lane initialised for this proof; stop without creating roles or databases.
+CLUSTER="$(psql_maint -c "SELECT current_setting('cluster_name')")"
+[[ "$CLUSTER" == "$CLUSTER_MARKER" ]] || { echo "cluster_name '$CLUSTER' is not the S5 fixture marker '$CLUSTER_MARKER'; refusing to touch this server" >&2; exit 3; }
+[[ "$(psql_maint -c "SELECT count(*) FROM pg_roles WHERE rolname IN ('supabase_admin','supabase_auth_admin','supabase_storage_admin','authenticator','pgbouncer')")" == "0" ]] \
+  || { echo "server carries hosted-platform roles; not a synthetic fixture" >&2; exit 3; }
 
 # 2. Explicit fixture role matrix (cluster-level, disposable lane only; shape
 #    mirrors S1's Supabase-like fixture and the hosted role model):
@@ -79,9 +91,17 @@ done
 # 3. Dedicated database owned by the migration role (create once; never drop anything).
 #    Single-shot: a database that already carries migration history must be reset explicitly
 #    by the operator (DROP DATABASE g2_s5_etq0_disposable as the cluster superuser) first.
+#    The database is stamped with DB_MARKER at creation; an existing database of the same name
+#    without exactly that comment is foreign and is refused (never repaired, never dropped here).
 if [[ "$(psql_maint -c "SELECT count(*) FROM pg_database WHERE datname='g2_s5_etq0_disposable'")" == "0" ]]; then
   psql_maint -c 'CREATE DATABASE g2_s5_etq0_disposable OWNER postgres'
+  psql_maint -v marker="$DB_MARKER" <<'SQL'
+COMMENT ON DATABASE g2_s5_etq0_disposable IS :'marker';
+SQL
 fi
+EXISTING_MARKER="$(psql_maint -c "SELECT COALESCE(shobj_description(oid,'pg_database'),'') FROM pg_database WHERE datname='g2_s5_etq0_disposable'")"
+[[ "$EXISTING_MARKER" == "$DB_MARKER" ]] \
+  || { echo "g2_s5_etq0_disposable exists without the S5 disposable marker comment; refusing to reuse it" >&2; exit 3; }
 psql_maint -c 'ALTER DATABASE g2_s5_etq0_disposable OWNER TO postgres'
 [[ "$(psql_db -c "SELECT count(*) FROM pg_tables WHERE schemaname='public'")" == "0" ]] \
   || { echo "g2_s5_etq0_disposable already has public tables; reset it explicitly before bootstrapping again" >&2; exit 3; }
