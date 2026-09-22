@@ -13,7 +13,7 @@
 # verify.sql RAISE (section 3e/3f/8 of the S1 harness); nothing new is authored against S1 objects.
 #
 # Controls (each is a real `bash scripts/release.sh` process; its exit code is recorded, never masked):
-#   C0  S2-only tree (no S1 migration)          → refuses at step 0, exit 1, NO database contact
+#   C0  S2-only tree = candidate HEAD export minus S1-owned paths → refuses at step 0, exit 1, NO database contact
 #   C0b integrated tree minus verify.sql         → refuses at step 0, exit 1, NO database contact
 #   P   pre-state prep on <db> and <db>_lock     → 164 real parent migrations applied; candidate pending
 #   C1  integrated release on pre-state          → exit 0; deploys candidate (165); verifier discovered+passed
@@ -35,9 +35,13 @@ ROOT=$(pwd)
 SUPER_URL=${S1_PG_SUPER_URL-}
 DB=${1-s1_rls_s2comp}
 OUT=${S2_COMP_OUT:-/tmp/s1s2-composition.$$}
-S2_ONLY_COMMIT=${S2_ONLY_COMMIT:-e15e25c28824b43558f7c231eec26a5ac64bafa9}
+# C0 builds its "S2-only" tree from the CANDIDATE HEAD itself (throwaway export) with the declared S1-owned paths removed,
+# so the release.sh/contract under test are the exact candidate bytes. (Until 9742037b this used the historical S2 head
+# e15e25c2, which is only equivalent while release.sh is unchanged since e15e25c2 — it is not, after the D1/D2/D3 repair.)
+C0_TREE_COMMIT=$(git rev-parse HEAD)
 MIG=20261224000000_rls_close_public_exposure
 MIG_DIR=prisma/migrations/$MIG
+S1_OWNED_PATHS="$MIG_DIR test/db"   # declared S1-owned paths removed from the C0 throwaway export (never from the worktree)
 
 # ---------- 0. S1 disposable-target guard FIRST: nothing below runs until both layers pass.
 #              (offline layer = pure string checks, exit 64 without any connection;
@@ -75,7 +79,7 @@ for f in $RELEASE_TMP_FILES; do [ -e "$f" ] && { echo "refusing: $f exists (anot
   echo "== S1+S2 composition proof start_utc=$(date -u +%FT%TZ) pid=$$ host=$HOST_PART db=$DB db2=$DB2 out=$OUT"
   echo "head=$(git rev-parse HEAD) tree=$(git rev-parse HEAD^{tree}) parents=$(git log -1 --format=%P)"
   echo "clean=$([ -z "$(git status --porcelain --untracked-files=all)" ] && echo yes || echo NO)"
-  echo "s2_only_commit=$S2_ONLY_COMMIT"
+  echo "c0_tree_commit=$C0_TREE_COMMIT (candidate HEAD export minus S1-owned paths: $S1_OWNED_PATHS)"
   for f in scripts/release.sh scripts/release-required-verifiers.txt $MIG_DIR/migration.sql $MIG_DIR/down.sql $MIG_DIR/verify.sql \
            test/db/_support/s1-target-guard.sh test/db/_support/supabase-like-bootstrap.sql prisma/migrations/rls_fitness_backend.sql package-lock.json; do
     echo "sha256 $(sha "$f")  $f  blob=$(git rev-parse HEAD:"$f")"
@@ -106,11 +110,12 @@ run_release() {
 has()  { grep -qF -- "$2" "$1" && echo 1 || echo 0; }
 hasE() { grep -qE -- "$2" "$1" && echo 1 || echo 0; }
 
-# ---------- C0: S2-only tree (frozen S2 head, no S1 migration) refuses at step 0 without DB contact
+# ---------- C0: S2-only tree (candidate HEAD export, S1-owned paths removed in the throwaway copy only) refuses at step 0 without DB contact
 TMP=$(mktemp -d)
-mkdir -p "$TMP/s2only" && git archive "$S2_ONLY_COMMIT" | tar -x -C "$TMP/s2only" && ln -s "$ROOT/node_modules" "$TMP/s2only/node_modules"
-check "C0 tree: S2-only tree extracted from $S2_ONLY_COMMIT has release.sh identical to integrated head" "$(sha scripts/release.sh)" "$(sha "$TMP/s2only/scripts/release.sh")"
-check "C0 tree: S2-only tree has NO S1 verifier" 0 "$([ -f "$TMP/s2only/$MIG_DIR/verify.sql" ] && echo 1 || echo 0)"
+mkdir -p "$TMP/s2only" && git archive "$C0_TREE_COMMIT" | tar -x -C "$TMP/s2only" && ln -s "$ROOT/node_modules" "$TMP/s2only/node_modules"
+for p in $S1_OWNED_PATHS; do rm -rf "$TMP/s2only/$p"; done
+check "C0 tree: candidate-HEAD export minus S1-owned paths ($S1_OWNED_PATHS) has release.sh identical to integrated head" "$(sha scripts/release.sh)" "$(sha "$TMP/s2only/scripts/release.sh")"
+check "C0 tree: S2-only tree has NO S1 verifier (and no $MIG_DIR, no test/db)" 0 "$([ -e "$TMP/s2only/$MIG_DIR" ] || [ -e "$TMP/s2only/test/db" ] && echo 1 || echo 0)"
 run_release C0 "$TMP/s2only" "$CLOSED_URL"
 check "C0: S2-only release.sh exits 1" 1 "$RC"
 check "C0: refuses with 'REQUIRED catalog verifier missing'" 1 "$(has "$RLOG" 'REQUIRED catalog verifier missing from this image')"
