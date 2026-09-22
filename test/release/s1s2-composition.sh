@@ -114,7 +114,7 @@ check "C0 tree: S2-only tree has NO S1 verifier" 0 "$([ -f "$TMP/s2only/$MIG_DIR
 run_release C0 "$TMP/s2only" "$CLOSED_URL"
 check "C0: S2-only release.sh exits 1" 1 "$RC"
 check "C0: refuses with 'REQUIRED catalog verifier missing'" 1 "$(has "$RLOG" 'REQUIRED catalog verifier missing from this image')"
-check "C0: prisma CLI present in that tree (refusal is not 'prisma missing')" 1 "$(hasE "$RLOG" 'prisma_cli += prisma')"
+check "C0: prisma CLI present in that tree (refusal is not 'prisma missing'; banner shows the pinned version)" 1 "$(hasE "$RLOG" 'prisma_cli += prisma 6\.19\.3$')"
 check "C0: no 'step 1:' reached (no migrate status)" 0 "$(has "$RLOG" 'step 1:')"
 check "C0: no connection attempt (no P1001 / Can't reach)" 0 "$(hasE "$RLOG" "P1001|Can't reach database")"
 check "C0: /tmp/prisma_migrate.log never created" 0 "$([ -e "$OUT/C0/prisma_migrate.log" ] && echo 1 || echo 0)"
@@ -226,7 +226,10 @@ check "C7: blocker released" 0 "$(q "$APP2_URL" "select count(*) from pg_locks l
 check "C8 setup: prisma migrate resolve --rolled-back succeeds on the REAL failed row" 0 $?
 run_release C8 "$ROOT" "$APP2_URL"
 check "C8: release.sh exits 0 after failed-row recovery" 0 "$RC"
-check "C8: candidate was pending again (pending_before=1) and applied" 1 "$(has "$RLOG" 'pending_before=1')"
+# Prisma 6.19.3 `migrate status` reports a rolled-back candidate as "up to date" (B1 evidence C8.release.log:19) while
+# `migrate deploy` still re-applies it; the recovery proof is the real re-apply line plus the ledger, not the status count.
+check "C8: step 2 really re-applied the candidate after the rolled-back row (Applying migration line)" 1 "$(has "$RLOG" "Applying migration \`$MIG\`")"
+check "C8: ALL_APPLIED == parent chain + candidate (rolled-back row excluded, read through @prisma/client)" "$((PARENT_DIRS+1))" "$(sed -n 's/.*ALL_APPLIED=\([0-9a-z]*\).*/\1/p' "$RLOG" | head -1)"
 check "C8: verifiers_passed=1" 1 "$(has "$RLOG" 'verifiers_passed=1 verifiers_required=1')"
 check "C8: ledger total == parent chain + candidate (rolled-back row excluded)" "$((PARENT_DIRS+1))" "$(q "$APP2_URL" "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")"
 

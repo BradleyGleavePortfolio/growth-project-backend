@@ -56,7 +56,13 @@ echo "[release]   machine_id   = ${RELEASE_ID}"
 echo "[release]   git_sha      = ${GIT_SHA:-unknown}"
 echo "[release]   release_ver  = ${RELEASE_VERSION:-unknown}"
 echo "[release]   node_version = $(node -v 2>/dev/null || echo 'node missing')"
-echo "[release]   prisma_cli   = $(npx --no-install prisma --version 2>/dev/null | head -1 || echo 'prisma cli missing')"
+# Prisma 6 prints "Prisma schema loaded from …" before the version table, so
+# `head -1` never showed the CLI version. Capture the whole output first (no
+# early pipe close / SIGPIPE under pipefail), then pick the `prisma : X.Y.Z`
+# row. (S2 B1 finding D3, 2026-09-22)
+PRISMA_VERSION_OUT=$(npx --no-install prisma --version 2>/dev/null || true)
+PRISMA_CLI_LINE=$(printf '%s\n' "${PRISMA_VERSION_OUT}" | awk '/^prisma[[:space:]]+:[[:space:]]+/ { print "prisma " $3; found=1 } END { if (!found) print "prisma cli missing" }')
+echo "[release]   prisma_cli   = ${PRISMA_CLI_LINE}"
 echo "[release] ────────────────────────────────────────────────────────────"
 
 # Centralized failure reporter — fires on any unexpected exit so we never get
@@ -203,16 +209,20 @@ STATUS_LOG=/tmp/prisma_status.log
 # pipefail is fine here because tee always succeeds last.
 npx prisma migrate status 2>&1 | tee "${STATUS_LOG}" || true
 
-# Prisma 5 lists pending migrations with an ASCII dash (-), NOT the Unicode
-# bullet (•, U+2022) that was used in Prisma 4 and earlier. Using the bullet
-# always matched 0 lines. (Finding 4 — HIGH, audit 2026-05-19)
-# Any non-whitespace token follows the dash — migration names may contain
-# underscores, digits, letters, or hyphens. [^[:space:]]+ matches all of them.
-# (re-audit followup A)
-PENDING_COUNT=$(
-  grep -cE '^[[:space:]]+-[[:space:]]+[^[:space:]]+$' "${STATUS_LOG}" \
-    || echo 0
-)
+# Prisma 6.19.3 (pinned) `migrate status` prints, when the database is behind:
+#   Following migration(s) have not yet been applied:
+#   <name>            ← one bare directory name per line, no dash/bullet/indent
+#   <blank line>
+# (locked CLI source: `Following migration${…} have not yet been applied:\n${names.join("\n")}\n\n`).
+# The previous regex expected the Prisma-5 "  - name" form and always counted
+# 0; and `grep -c … || echo 0` emitted a two-line "0\n0" value. Count the
+# non-empty lines strictly inside that block with a single awk pass that
+# always prints exactly one integer. (S2 B1 finding D1, 2026-09-22)
+PENDING_COUNT=$(awk '
+  /have not yet been applied:$/ { inblock=1; next }
+  inblock && /^[[:space:]]*$/    { inblock=0 }
+  inblock && /^[^[:space:]]+$/   { n++ }
+  END { print n+0 }' "${STATUS_LOG}")
 echo "[release]   pending_migrations_detected = ${PENDING_COUNT}"
 
 # If the DB is fundamentally not baselined (P3005, schema not empty), abort
@@ -301,19 +311,34 @@ echo "[release]   verifiers_passed = ${VERIFIER_COUNT} (discovered=${DISCOVERED_
 # corrupting ALL_APPLIED= into a multi-line string. The temp-file approach
 # keeps the metric clean and lets us emit warnings to stdout separately.
 # (Finding 7 — MEDIUM, audit 2026-05-19; re-audit blocker 3)
+# `prisma db execute` is documented (6.19.3 --help) as "not meant for returning
+# data, but only to report success or failure", and in Prisma 6 it also
+# requires --url/--schema; the previous call failed every time and ALL_APPLIED
+# was always "unknown". The runtime image has no psql, but it does ship the
+# generated @prisma/client (postinstall `prisma generate`, asserted by the
+# Dockerfile), so query the ledger through the client's $queryRaw against
+# DIRECT_URL and print exactly one integer. Rows are counted only when
+# finished and not rolled back — the same rows `migrate deploy` treats as
+# applied. Any failure or unexpected result shape is reported verbatim and
+# leaves ALL_APPLIED=unknown (observability metric; gating unchanged).
+# (S2 B1 finding D2, 2026-09-22)
 APPLIED_TMP=$(mktemp)
-if npx prisma db execute --stdin <<'SQL' >"${APPLIED_TMP}" 2>&1
-SELECT COUNT(*) FROM _prisma_migrations WHERE rolled_back_at IS NULL;
-SQL
-then
-  APPLIED_COUNT=$(awk '/^[[:space:]]*[0-9]+/ { print $1; exit }' "${APPLIED_TMP}")
-  if [[ -z "${APPLIED_COUNT}" ]]; then
-    echo "[release] WARNING: could not parse applied count from prisma output:"
-    sed 's/^/[release]   /' "${APPLIED_TMP}"
-    APPLIED_COUNT="unknown"
-  fi
+if APPLIED_COUNT=$(DIRECT_URL="${DIRECT_URL}" node -e '
+  const { PrismaClient } = require("@prisma/client");
+  const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL, log: [] });
+  prisma.$queryRaw`SELECT COUNT(*)::int AS n FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`
+    .then((rows) => {
+      if (!Array.isArray(rows) || rows.length !== 1 || !Number.isInteger(rows[0].n) || rows[0].n < 0) {
+        throw new Error("unexpected _prisma_migrations count result: " + JSON.stringify(rows));
+      }
+      process.stdout.write(String(rows[0].n));
+      return prisma.$disconnect();
+    })
+    .catch((err) => { console.error(err && err.message ? err.message : String(err)); process.exit(2); });
+' 2>"${APPLIED_TMP}") && [[ "${APPLIED_COUNT}" =~ ^[0-9]+$ ]]; then
+  :
 else
-  echo "[release] WARNING: prisma db execute failed querying _prisma_migrations:"
+  echo "[release] WARNING: could not read finished, non-rolled-back count from _prisma_migrations via @prisma/client:"
   sed 's/^/[release]   /' "${APPLIED_TMP}"
   APPLIED_COUNT="unknown"
 fi
