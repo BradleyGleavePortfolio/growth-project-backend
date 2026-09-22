@@ -12,6 +12,7 @@ import {
   hasColumn, holdAdvisory, holdTransaction, json, legacy, legacyEntityCursor, oldClient, oldRoot, OLD_HEAD, prisma, prismaMigrateDeploy,
   quote, records, refused, resetData, root, run, settle, sql, sqlAdmin, sqlFile, stage, stageMany, target, targets, up, upFile, v2, worker,
 } from './utils/g2-pg17-harness';
+import type { Result } from './utils/g2-pg17-harness';
 import { G2_PG17_CLUSTER_MARKER, G2_PG17_DATABASE_MARKER } from './utils/g2-pg17-db';
 
 jest.setTimeout(180000);
