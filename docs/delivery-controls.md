@@ -178,8 +178,15 @@ change. The contract currently names
 contract but not that S1 migration cannot release (fails at step 0, no
 database contact) — the intended composition order.
 
-Prisma's "up to date" is not truth after an out-of-band reversal; only the
-verifier is. Do **not** use `prisma migrate resolve --rolled-back` after a
+Prisma's "up to date" is not truth after an out-of-band reversal, and on
+the pinned 6.19.3 it is also satisfied by a row marked `rolled_back_at`
+after `prisma migrate resolve --rolled-back` while `migrate deploy` still
+re-applies that migration (real composition run, S1S2-B-07): after any
+resolve, re-run the release; only the verifier is truth. A green release
+log contains `verifiers_passed = 1 (discovered=1, required=1)` but **not**
+the verifier's own `VERIFY OK …` NOTICE — `prisma db execute` surfaces
+failures (the RAISE text) but discards notices (S1S2-B-06); do not search
+production logs for the "relations protected" line. Do **not** use `prisma migrate resolve --rolled-back` after a
 *successful* migration was reversed out-of-band (it refuses with P3012, or
 silently no-ops if an earlier failed row exists). Recovery is a
 transactional manual forward (`psql --single-transaction -v

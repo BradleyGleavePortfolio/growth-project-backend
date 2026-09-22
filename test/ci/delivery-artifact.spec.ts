@@ -546,8 +546,23 @@ describe('release.sh — verifier contract preflight before DB contact, discover
 describe('release.sh — behaviour with a fake prisma runner (no database, no network)', () => {
   // Fixture: a scratch tree with scripts/release.sh, a contract file and prisma/migrations; a fake
   // `npx` on PATH that logs argv and emulates migrate status / migrate deploy / db execute.
+  // The `migrate status` text is the GENUINE Prisma 6.19.3 output captured in the real S1+S2 composition
+  // run (B1, C1/prisma_status.log, 2026-09-22): bare migration names, no dash. The fake `node` cannot
+  // return ledger rows, so ALL_APPLIED must honestly degrade to `unknown` here — the real value (165) is
+  // asserted only by the real-Prisma harness test/release/s1s2-composition.sh (S1S2-B-01/B-02).
   const REQUIRED = '20261224000000_rls_close_public_exposure';
-  const fixture = (setup: (root: string) => void) => {
+  const GENUINE_STATUS_PENDING = [
+    'Prisma schema loaded from prisma/schema.prisma',
+    'Datasource "db": PostgreSQL database "s1_rls_s2comp", schema "public" at "127.0.0.1:54321"',
+    '',
+    '165 migrations found in prisma/migrations',
+    'Following migration have not yet been applied:',
+    REQUIRED,
+    '',
+    'To apply migrations in development run prisma migrate dev.',
+    'To apply migrations in production run prisma migrate deploy.',
+  ].join('\n');
+  const fixture = (setup: (root: string) => void, extraEnv: Record<string, string> = {}) => {
     const root = mkdtempSync(join(tmpdir(), 'release-sh-'));
     mkdirSync(join(root, 'scripts'), { recursive: true });
     mkdirSync(join(root, 'bin'), { recursive: true });
@@ -561,9 +576,9 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
         '#!/usr/bin/env bash',
         'echo "$*" >>"${FAKE_NPX_LOG}"',
         'case "$*" in',
-        '  *"migrate status"*) echo "Database schema is up to date!"; exit 0;;',
+        // first status call (step 1) may report the pending block; after deploy (step 3) the fake is up to date
+        '  *"migrate status"*) if [ -n "${FAKE_STATUS_PENDING:-}" ] && [ ! -e "${FAKE_NPX_LOG}.status-seen" ]; then : >"${FAKE_NPX_LOG}.status-seen"; printf "%s\\n" "${FAKE_STATUS_PENDING}"; exit 1; fi; echo "Database schema is up to date!"; exit 0;;',
         '  *"migrate deploy"*) echo deploy-ran >>"${FAKE_NPX_LOG}"; exit 0;;',
-        '  *"db execute --stdin"*) echo " count"; echo " 1"; exit 0;;',
         '  *"db execute --url"*) all="$*"; f="${all##*--file }"; grep -q RAISE_FAIL "$f" && { echo "P1010 VERIFY FAILED"; exit 1; }; exit 0;;',
         '  *) exit 0;;',
         'esac',
@@ -584,6 +599,7 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
         DATABASE_URL: 'postgres://fake',
         DIRECT_URL: 'postgres://fake-direct',
         FAKE_NPX_LOG: log,
+        ...extraEnv,
       },
     });
     const deployed = readFileSync(log, 'utf8').split('\n').includes('deploy-ran');
@@ -598,6 +614,26 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     expect(r.code).toBe(0);
     expect(r.deployed).toBe(true);
     expect(r.out).toMatch(/verifiers_passed = 1 \(discovered=1, required=1\)/);
+  });
+  it('step 1 counts the genuine Prisma 6.19.3 pending block as exactly 1 (single-line metric; S1S2-B-01)', () => {
+    const r = fixture((root) => verifier(root, REQUIRED), { FAKE_STATUS_PENDING: GENUINE_STATUS_PENDING });
+    expect(r.code).toBe(0);
+    expect(r.deployed).toBe(true);
+    expect(r.out).toMatch(/^\[release\]   pending_migrations_detected = 1$/m);
+    expect(r.out).toMatch(/^\[release\]   pending_before=1$/m);
+    expect(r.out).not.toMatch(/^0$/m); // the old `grep -c … || echo 0` double-print
+  });
+  it('up-to-date status → pending 0 as a single line', () => {
+    const r = fixture((root) => verifier(root, REQUIRED));
+    expect(r.out).toMatch(/^\[release\]   pending_before=0$/m);
+    expect(r.out).not.toMatch(/^0$/m);
+  });
+  it('ALL_APPLIED without a real ledger degrades to `unknown` with the cause printed, never a fabricated count (S1S2-B-02)', () => {
+    const r = fixture((root) => verifier(root, REQUIRED));
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/^\[release\]   ALL_APPLIED=unknown$/m);
+    expect(r.out).toContain('could not read finished, non-rolled-back count from _prisma_migrations via @prisma/client');
+    expect(r.out).not.toMatch(/ALL_APPLIED=\d/);
   });
   it('required verifier missing from the image → refused BEFORE migrate deploy', () => {
     const r = fixture((root) => verifier(root, '20260101000000_other'));

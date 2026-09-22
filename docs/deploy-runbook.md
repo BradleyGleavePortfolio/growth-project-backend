@@ -183,18 +183,22 @@ even if the dashboard shows the new one.
      SENTRY_DSN=https://...@sentry.io/...
    ```
 
-3. **Take a DB snapshot before any deploy that includes a migration.**
-   Supabase backs up nightly, but a pre-deploy snapshot makes rollback
-   point-in-time precise:
+3. **Take a reference dump before any deploy that includes a migration**,
+   and be precise about what it is:
 
    ```sh
    pg_dump "$STAGING_DATABASE_URL" \
-     --no-owner --no-acl \
      --file backups/staging-$(date +%F-%H%M).sql
    ```
 
    Store the dump somewhere durable (1Password vault attachment, S3
-   bucket, etc.) — never commit it.
+   bucket, etc.) — never commit it. Do **not** add `--no-owner --no-acl`:
+   the S1 privilege/RLS migration's state *is* owners, grants and
+   policies, and a dump that excludes them cannot reproduce it. Even a
+   full dump is a reference copy for diagnosis and comparison; **this
+   repository contains no demonstrated restore procedure for a live
+   database** (no drill, no ACL/owner restoration proof), so a dump load
+   must not be presented or planned as the rollback route (see §3 step 4).
 
 4. **Deploy.**
 
@@ -202,17 +206,13 @@ even if the dashboard shows the new one.
    fly deploy -a <staging-app> --remote-only
    ```
 
-   The `release_command` (see `scripts/release.sh`) runs first. It will
-   run `prisma migrate deploy`. If that fails with P3005 (the DB has not
-   been baselined yet), the script will only fall back to `prisma db
-   push --accept-data-loss` when **all** of the following hold:
-
-   - `RELEASE_ALLOW_DB_PUSH=1` is set as a Fly secret, **and**
-   - the database does NOT already contain a `_prisma_migrations` table.
-
-   Both guards are additive — leave `RELEASE_ALLOW_DB_PUSH` unset on any
-   environment that holds real data. Set it only for a one-time bootstrap
-   on a fresh DB after taking a backup.
+   The `release_command` (see `scripts/release.sh`) runs first: verifier
+   contract preflight, `prisma migrate status`, `prisma migrate deploy`,
+   status re-check, catalog verifiers (§11.2). If status reports P3005
+   (schema present but not baselined) the release **aborts** with a
+   pointer to §2.1. There is **no** `db push --accept-data-loss` fallback
+   and no `RELEASE_ALLOW_DB_PUSH` switch in the current script; earlier
+   revisions of this runbook described one that no longer exists.
 
 5. **Watch the release log.**
 
@@ -238,9 +238,8 @@ empty *or* to already have a populated `_prisma_migrations` table that
 matches the repository's migration history. A production database that
 was created out-of-band (Supabase SQL editor, restored snapshot,
 sandbox copy, etc.) has neither, and `release.sh` will then refuse to
-proceed: it sees a populated schema but no `_prisma_migrations` table,
-and the `RELEASE_ALLOW_DB_PUSH=1` fallback **deliberately does not
-fire** on a populated DB (see `scripts/release.sh`).
+proceed (P3005 abort in step 1, see `scripts/release.sh`). There is no
+automatic fallback of any kind.
 
 This is a one-time setup — once baselined, every subsequent deploy
 just runs `prisma migrate deploy` cleanly. The baseline contract:
@@ -250,30 +249,32 @@ just runs `prisma migrate deploy` cleanly. The baseline contract:
 2. **Populated DB that was built by a prior `prisma migrate deploy`**:
    `_prisma_migrations` already exists. No action needed.
 3. **Populated DB that was NOT built by Prisma** (manual schema, raw
-   SQL, restored from a non-Prisma source): one-time baseline required
-   before the first deploy. Run, on a maintenance window:
+   SQL, restored from a non-Prisma source): a baseline is required before
+   the first deploy, and **marking migrations applied is a claim about the
+   schema, not a fix for it**. `prisma migrate resolve --applied <name>`
+   writes a ledger row without checking that the DDL is present; looping
+   it over every directory fabricates history and a later
+   `migrate deploy` would then skip migrations the database never
+   received. The established route is:
 
-   ```sh
-   # From a trusted shell with DATABASE_URL pointed at the DB.
-   # Lists the migrations directory; mark each as already applied.
-   for d in prisma/migrations/*/ ; do
-     name=$(basename "$d")
-     npx prisma migrate resolve --applied "$name"
-   done
+   1. prove equivalence first — `prisma migrate diff --from-url
+      "$DIRECT_URL" --to-migrations prisma/migrations --shadow-database-url
+      <disposable DB>` must report no difference (or every difference must
+      be understood and closed by a forward migration);
+   2. only then mark the *proven-present* migrations applied, one by one,
+      from a trusted shell against `DIRECT_URL`, under separate production
+      authorization, recording the diff output alongside;
+   3. re-dispatch `Fly Deploy`; step 1 must now show no P3005 and step 4's
+      catalog verifier must pass — the verifier, not the ledger, is the
+      truth about the S1 privilege/RLS state.
 
-   # Confirm the baseline is in place.
-   psql "$DATABASE_URL" -c '\d _prisma_migrations'
-   ```
+   This procedure has **not** been drilled against the production
+   database in this repository; treat it as the required shape of the
+   work, not as a completed proof.
 
-   Then re-run the deploy. `release.sh` will pick up the now-baselined
-   DB and `prisma migrate deploy` will be a no-op until the next real
-   migration lands.
-
-**Never use `RELEASE_ALLOW_DB_PUSH=1` against a database that holds
-real data.** The escape hatch is for greenfield bootstraps only and is
-guarded by a presence-of-`_prisma_migrations` check precisely because
-`db push --accept-data-loss` would otherwise rewrite tables and
-silently truncate columns.
+**Never run `prisma db push --accept-data-loss` against a database that
+holds real data.** The release command has no such path; do not add one
+by hand.
 
 ## 3. Migration backup & rollback
 
@@ -283,8 +284,14 @@ For every migration:
 2. **Run the migration via the release command** (Fly auto-runs it; do
    not invoke `prisma migrate deploy` from your laptop against the
    prod DB).
-3. **If the deploy aborts**, Fly leaves the previous machines running —
-   but *where* it aborted decides whether the database changed:
+3. **If the deploy aborts**, first *observe* what is running — do not
+   presume it. A `release_command` failure means Fly did not roll out the
+   new image, but confirm with `fly machines list -a <app>` (or the
+   `machines-before.json` manifest) that the previous image is still
+   serving; `verify-fly-release.sh`/`/readyz` can also fail *after* the
+   rollout, in which case the new image is serving (stage C in
+   `docs/delivery-controls.md` §7). Then *where* it aborted decides
+   whether the database changed:
    - **`release.sh` step 0 or 1** (verifier contract preflight, status
      check), the evidence gate, or the image build: nothing was applied.
      Fix forward and re-dispatch; no production action.
@@ -324,18 +331,25 @@ For every migration:
    fly deploy -a <app> --image registry.fly.io/<app>:<image_ref.tag from machines-before.json>
    ```
 
-   The previous image still expects the new schema, so the rollback is
-   safe as long as the migration was additive (added columns/tables,
-   nullable defaults). For destructive migrations (drop column, rename),
-   restore the pre-deploy snapshot instead:
+   Before using it, establish **explicitly** that the previous image is
+   compatible with the schema now in the database — "the migration was
+   additive" is not that proof. Check: (a) the applied migration list
+   (`_prisma_migrations` via `DIRECT_URL`) against the previous image's
+   `prisma/migrations`; (b) for privilege/RLS migrations such as S1's
+   `20261224000000_rls_close_public_exposure`, that every role the previous
+   image connects as still holds the privileges its queries need (the
+   migration deliberately removes grants and adds policies; an older
+   caller may lose access rather than "keep working"); (c) that the
+   catalog verifier still passes after the code rollback. If (b) fails,
+   the recovery is a forward code fix, not an image rollback.
 
-   ```sh
-   psql "$STAGING_DATABASE_URL" < backups/staging-<timestamp>.sql
-   ```
-
-   Only restore against a DB you control end-to-end. Never restore
-   production from a stale snapshot without first rotating Supabase
-   service-role keys.
+   Restoring a database from a dump is **not** an established procedure
+   here: a `pg_dump` load into a database that has since changed is
+   undemonstrated, and no owner/ACL restoration, drain/containment or
+   key-rotation drill exists in this repository. Do not schedule it as the
+   recovery for a destructive or privilege migration; treat such a
+   migration as requiring its own reviewed reverse migration (S1-owned
+   content) before it ships.
 
 5. **After any rollback or restore, run the catalog verifiers** —
    `prisma migrate status` reads `_prisma_migrations`, not the catalog, and
@@ -548,7 +562,7 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 | Stripe webhooks 400-ing in production. | Verify `STRIPE_WEBHOOK_SECRET` matches the live endpoint. Check Sentry for the rejection reason. |
 | Coach console hits CORS error. | Check `CORS_ORIGINS` for the exact origin (scheme + host + port). Wildcard is rejected. |
 | Invite landing page empty. | Verify `PUBLIC_INVITE_BASE_URL`, `APP_STORE_URL`, `PLAY_STORE_URL`, `PUBLIC_WEB_SIGNUP_URL`. Empty values fall through to placeholder defaults baked into `invite-landing.controller.ts`. |
-| Need to fully roll back a destructive migration. | Restore the pre-deploy `pg_dump` snapshot, then redeploy the previous image (§3). |
+| Need to fully roll back a destructive or privilege/RLS migration. | No demonstrated restore route exists (§3 step 4). Ship a reviewed forward reverse migration (S1-owned) and, if the previous image must serve meanwhile, prove caller/schema compatibility explicitly first. |
 
 ### 7.1 Shell script line-ending hazard (release_command)
 
@@ -979,14 +993,21 @@ inspect the captured output. Never `set +e`.
    as "zero verifiers". The contract path is pinned (no env override).
 1. **Status check** — `prisma migrate status` enumerates pending migrations
    and (critically) surfaces a P3005 "not baselined" error before we touch
-   anything. P3005 aborts the release with a runbook pointer to §9.2 of
+   anything. P3005 aborts the release with a runbook pointer to §2.1 of
    this document; we never auto-`db push --accept-data-loss` from CI.
+   On the pinned Prisma 6.19.3 the pending list is printed as bare
+   migration names under "have not yet been applied:", which is what
+   `pending_migrations_detected` counts.
 2. **Apply** — `prisma migrate deploy`. Forward-only. Never resets the DB.
    Stops at the first migration that fails and propagates the exit code.
 3. **Verify** — re-run `migrate status` and require the literal string
    `Database schema is up to date` or `No pending migrations`. This catches
    the (rare) class of failure where `migrate deploy` claims success but
-   leaves a partially-applied migration row in `_prisma_migrations`.
+   leaves a partially-applied migration row in `_prisma_migrations`. It
+   attests **only the ledger**: a migration marked `rolled_back_at` by
+   `prisma migrate resolve --rolled-back` also satisfies "up to date" on
+   Prisma 6.19.3 (observed in the real composition run, S1S2-B-07), and an
+   out-of-band reversal is invisible to it. Step 4 is the truth.
 4. **Catalog verifiers** — run every `verify.sql` discovered in step 0 via
    `prisma db execute --url "$DIRECT_URL" --file <verifier>`; a `RAISE`
    is a non-zero exit and fails the release. Then assert
@@ -1036,10 +1057,19 @@ case Fly's release status is the only signal.
    authorization (`psql "$DIRECT_URL" --single-transaction -v
    ON_ERROR_STOP=1 -f <reverse.sql>`), then re-dispatch the current `main`.
    Migration/verifier content is S1-owned.
-5. If `_prisma_migrations` is wedged with a `started_at`/`finished_at IS NULL`
-   row, the operator must `prisma migrate resolve --applied <name>` or
-   `--rolled-back <name>` manually using `DIRECT_URL`. This is a deliberate
-   manual step — CI never resolves migrations.
+5. If `_prisma_migrations` holds a *failed* row (`finished_at IS NULL`,
+   `rolled_back_at IS NULL`) for the S1 migration — its DDL ran in one
+   transaction and was rolled back — the operator runs
+   `prisma migrate resolve --rolled-back <name>` against `DIRECT_URL` and
+   **re-dispatches the release**: `migrate deploy` re-applies it (proven on
+   the disposable PG 17.6 fixture, control C8). Do not use `--applied` on a
+   failed row unless the catalog has been verified to contain the DDL — it
+   would only fabricate history. This is a deliberate manual step — CI never
+   resolves migrations.
+5b. After `resolve --rolled-back`, `prisma migrate status` reports
+   "Database schema is up to date" although the migration is not applied
+   (S1S2-B-07). Never read that as done: always re-run the release and let
+   step 4's catalog verifier decide.
 6. If step 4 reports `catalog verifier FAILED: prisma/migrations/<m>/verify.sql`:
    the migration rows say applied but `pg_catalog` disagrees (out-of-band
    reversal, partial DDL, missing grant/policy). Do **not** run

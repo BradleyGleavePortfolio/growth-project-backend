@@ -233,7 +233,7 @@ echo "[release]   pending_migrations_detected = ${PENDING_COUNT}"
 if grep -qE "P3005|database schema is not empty|is not managed by Prisma Migrate" "${STATUS_LOG}"; then
   echo "[release] DB is not baselined for Prisma Migrate (P3005)."
   echo "[release] This is a one-time operator task — do NOT auto-resolve from CI."
-  echo "[release] See docs/deploy-runbook.md §9.2 for the baseline runbook."
+  echo "[release] See docs/deploy-runbook.md §2.1 for the baseline runbook."
   exit 1
 fi
 
