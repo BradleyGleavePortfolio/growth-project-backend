@@ -34,6 +34,13 @@ for name in G2_PG17_DATABASE_URL G2_PG17_CONFIRM G2_PG17_PASSWORD G2_PG17_PSQL G
 done
 [[ -x "$G2_PG17_PSQL" ]] || { echo "psql binary not executable: $G2_PG17_PSQL" >&2; exit 2; }
 [[ -d "$ROOT/node_modules/prisma" ]] || { echo "node_modules missing in $ROOT (run npm ci under the heavy lock first)" >&2; exit 2; }
+# Dependency provenance is closed: `prisma generate` must never auto-install anything (B2 finding:
+# an output directory outside a package root made the CLI run `npm i` silently). The O client is
+# generated INSIDE the O checkout, whose node_modules is the shared symlink to the pinned npm-ci tree,
+# and @prisma/client must resolve from there to exactly $ROOT/node_modules/@prisma/client.
+export PRISMA_GENERATE_SKIP_AUTOINSTALL=1
+[[ "$G2_PG17_OLD_CLIENT" == "$G2_PG17_OLD_ROOT"/* ]] \
+  || { echo "G2_PG17_OLD_CLIENT must live inside G2_PG17_OLD_ROOT (pinned package root); got $G2_PG17_OLD_CLIENT" >&2; exit 2; }
 
 # Validate the target before opening any connection (same guard as the spec).
 eval "$(cd "$ROOT" && node -r ts-node/register/transpile-only -e '
@@ -50,6 +57,9 @@ export PGPASSWORD="$G2_PG17_PASSWORD"
 psql_maint() { "$G2_PG17_PSQL" -X -w -qAt -v ON_ERROR_STOP=1 "$MAINT_URL" "$@"; }
 psql_db() { "$G2_PG17_PSQL" -X -w -qAt -v ON_ERROR_STOP=1 "$PSQL_URL" "$@"; }
 
+MODE="${1:-bootstrap}"
+case "$MODE" in bootstrap|generate-only) ;; *) echo "usage: g2-pg17-bootstrap.sh [bootstrap|generate-only]" >&2; exit 2;; esac
+if [[ "$MODE" == bootstrap ]]; then
 # 1. Server identity: PostgreSQL 17.x on loopback, expected exact version.
 VERSION="$(psql_maint -c 'SHOW server_version_num')"
 ADDRESS="$(psql_maint -c 'SELECT inet_server_addr()')"
@@ -119,6 +129,8 @@ psql_db -c 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT AL
 # 20261221000000_enable_pg_stat_statements requires pg_stat_statements to pre-exist for a non-superuser); superuser-only step.
 psql_db -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS btree_gist; CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
 
+fi # MODE=bootstrap steps 1-3
+
 # 4. Preserved O source: exact head, shared dependency tree, 164 base migrations.
 [[ "$(git -C "$G2_PG17_OLD_ROOT" rev-parse HEAD)" == "$OLD_HEAD" ]] || { echo "old root is not $OLD_HEAD" >&2; exit 4; }
 git -C "$G2_PG17_OLD_ROOT" diff --quiet HEAD -- package.json package-lock.json src prisma \
@@ -130,6 +142,7 @@ git -C "$ROOT" diff --quiet "$OLD_HEAD" HEAD -- package.json package-lock.json \
 OLD_COUNT="$(find "$G2_PG17_OLD_ROOT/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | wc -l)"
 [[ "$OLD_COUNT" == "164" ]] || { echo "old root has $OLD_COUNT migrations, expected 164" >&2; exit 4; }
 
+if [[ "$MODE" == bootstrap ]]; then
 # 5. Full base history through the real release mechanism on the O schema.
 #    Runs as the non-superuser BYPASSRLS `postgres` role (owner), never as the cluster superuser.
 (cd "$G2_PG17_OLD_ROOT" && DATABASE_URL="$MIGRATE_AUTH_URL" DIRECT_URL="$MIGRATE_AUTH_URL" \
@@ -142,21 +155,34 @@ APPLIED="$(psql_db -c "SELECT count(*) FROM \"_prisma_migrations\" WHERE finishe
 [[ "$(psql_db -c "SELECT count(*) FROM pg_attribute WHERE attrelid='public.\"ScoutReconstructionLedger\"'::regclass AND attname='source_platform' AND NOT attisdropped")" == "0" ]] \
   || { echo "ledger already has source_platform before E" >&2; exit 5; }
 
+fi # MODE=bootstrap step 5
+
 # 6. Independent O client generated from the O schema into its own directory.
 mkdir -p "$G2_PG17_OLD_CLIENT"
+PINNED_CLIENT_PKG="$(cd "$ROOT" && node -p 'require("fs").realpathSync(require.resolve("@prisma/client/package.json"))')"
+RESOLVED_CLIENT_PKG="$(node -p 'try { require("fs").realpathSync(require.resolve("@prisma/client/package.json", { paths: [process.argv[1]] })) } catch (e) { "UNRESOLVED" }' "$G2_PG17_OLD_CLIENT")"
+[[ "$RESOLVED_CLIENT_PKG" == "$PINNED_CLIENT_PKG" ]] \
+  || { echo "@prisma/client does not resolve from $G2_PG17_OLD_CLIENT to the pinned tree ($RESOLVED_CLIENT_PKG != $PINNED_CLIENT_PKG); refusing to generate" >&2; exit 6; }
+echo "O_CLIENT_RESOLUTION pinned=$PINNED_CLIENT_PKG version=$(node -p 'require(process.argv[1]).version' "$PINNED_CLIENT_PKG") skip_autoinstall=$PRISMA_GENERATE_SKIP_AUTOINSTALL"
 OLD_SCHEMA_COPY="$G2_PG17_OLD_CLIENT/.schema-for-generate.prisma"
 sed "s|provider = \"prisma-client-js\"|provider = \"prisma-client-js\"\n  output   = \"$G2_PG17_OLD_CLIENT\"|" \
   "$G2_PG17_OLD_ROOT/prisma/schema.prisma" > "$OLD_SCHEMA_COPY"
 (cd "$G2_PG17_OLD_ROOT" && "$ROOT/node_modules/.bin/prisma" generate --schema "$OLD_SCHEMA_COPY" >/dev/null)
 grep -q 'model ScoutReconstructionLedger' "$G2_PG17_OLD_CLIENT/schema.prisma"
+ENGINE=libquery_engine-debian-openssl-3.0.x.so.node
+[[ "$(sha256sum "$G2_PG17_OLD_CLIENT/$ENGINE" | cut -c1-64)" == "$(sha256sum "$ROOT/node_modules/@prisma/engines/$ENGINE" | cut -c1-64)" ]] \
+  || { echo "generated O client engine differs from the pinned @prisma/engines copy" >&2; exit 6; }
+echo "O_CLIENT_GENERATED dir=$G2_PG17_OLD_CLIENT engine_sha256=$(sha256sum "$G2_PG17_OLD_CLIENT/$ENGINE" | cut -c1-64) runtime_sha256=$(sha256sum "$G2_PG17_OLD_CLIENT/runtime/library.js" | cut -c1-64)"
 ! awk '/model ScoutReconstructionLedger \{/,/\}/' "$G2_PG17_OLD_CLIENT/schema.prisma" | grep -q source_platform \
   || { echo "generated O client unexpectedly knows source_platform" >&2; exit 6; }
 
 # 7. Candidate (E/T) client in the candidate root.
 (cd "$ROOT" && ./node_modules/.bin/prisma generate >/dev/null)
+echo "CANDIDATE_CLIENT_GENERATED dir=$ROOT/node_modules/.prisma/client engine_sha256=$(sha256sum "$ROOT/node_modules/.prisma/client/$ENGINE" | cut -c1-64) runtime_sha256=$(sha256sum "$ROOT/node_modules/.prisma/client/runtime/library.js" | cut -c1-64)"
 awk '/model ScoutReconstructionLedger \{/,/\}/' "$ROOT/node_modules/.prisma/client/schema.prisma" | grep -q 'source_platform' \
   || { echo "candidate client lacks source_platform" >&2; exit 7; }
 
+if [[ "$MODE" == generate-only ]]; then echo "G2_PG17_GENERATE_OK"; exit 0; fi   # no connection in this mode
 psql_db -c "SELECT json_build_object('database',current_database(),'version',current_setting('server_version_num'),
   'directory',current_setting('data_directory'),'address',inet_server_addr(),'port',inet_server_port(),
   'applied',(SELECT count(*) FROM \"_prisma_migrations\" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL))"
