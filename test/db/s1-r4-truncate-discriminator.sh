@@ -110,20 +110,24 @@ git show "$S1_PRED_HEAD:$MIG_DIR/verify.sql" >"$PRED_VERIFY" 2>>"$LOG" || : >"$P
 check "predecessor control: frozen b7d7fe59 verify.sql extracted from history matches its pinned sha256" "$S1_PRED_VERIFY_SHA256" "$(sha256sum "$PRED_VERIFY" | cut -c1-64)"
 check "current verifier differs from the predecessor (a changed verifier is under test)" differs "$(cmp -s "$PRED_VERIFY" $MIG_DIR/verify.sql && echo same || echo differs)"
 
-# ---------- 4. seed marker row only if the control table is empty (synthetic, removed at the end)
+# ---------- 4. precondition decision BEFORE any write of ours (S1-R4-A-01 low observation):
+#               if anything above failed, issue no INSERT/GRANT at all. The guard and read-only
+#               probes have already run, so this is "no write issued by this script", not "nothing
+#               happened on the connection".
+PRECOND_FAIL=$FAIL
 SEEDED_BY_US=0
-if [ "$(q "$PG_URL" 'select count(*) from "MuxProcessedEvent"')" = "0" ]; then
-  q "$PG_URL" "insert into \"MuxProcessedEvent\"(mux_event_id, type) values ('s1-r4-synthetic-control','s1.r4.truncate.control')" >/dev/null
-  SEEDED_BY_US=1
-  echo "note: control table was empty; inserted one synthetic marker row (removed at the end)"
-fi
-
-# ---------- 5. the shared controls (identical to the full harness §4b)
-if [ $FAIL -eq 0 ]; then
+if [ "$PRECOND_FAIL" -ne 0 ]; then
+  bad "controls NOT run: $PRECOND_FAIL precondition check(s) failed above; this script issued no INSERT/GRANT/REVOKE (fail closed)"
+else
+  # ---------- 5a. seed marker row only if the control table is empty (synthetic, removed at the end)
+  if [ "$(q "$PG_URL" 'select count(*) from "MuxProcessedEvent"')" = "0" ]; then
+    q "$PG_URL" "insert into \"MuxProcessedEvent\"(mux_event_id, type) values ('s1-r4-synthetic-control','s1.r4.truncate.control')" >/dev/null
+    SEEDED_BY_US=1
+    echo "note: control table was empty; inserted one synthetic marker row (removed at the end)"
+  fi
+  # ---------- 5b. the shared controls (identical to the full harness §4b)
   . test/db/_support/s1-truncate-controls.sh
   s1_truncate_controls "$PG_URL" "$AUTHN_URL" "$PRED_VERIFY"
-else
-  bad "controls NOT run: a precondition failed above (fail closed, nothing mutated)"
 fi
 
 # ---------- 6. cleanup of our own marker row only; final positive control
