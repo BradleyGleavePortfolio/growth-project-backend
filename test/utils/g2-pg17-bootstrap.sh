@@ -157,6 +157,20 @@ APPLIED="$(psql_db -c "SELECT count(*) FROM \"_prisma_migrations\" WHERE finishe
 
 fi # MODE=bootstrap step 5
 
+# Provenance reads are enforced, never decorative (S5-R3-A-05 / S5-R3B-02): a missing file is a
+# refusal (exit 6), not an empty field nested inside an echo.
+hash_required() { # <label> <file>
+  [[ -f "$2" ]] || { echo "$1 provenance file missing: $2" >&2; exit 6; }
+  sha256sum "$2" | cut -c1-64
+}
+ENGINE=libquery_engine-debian-openssl-3.0.x.so.node
+PINNED_ENGINE_SHA="$(hash_required 'pinned @prisma/engines' "$ROOT/node_modules/@prisma/engines/$ENGINE")"
+# The runtime a generated client actually executes. The default-output candidate client requires
+# `@prisma/client/runtime/library.js` from the pinned package (it has no runtime/ copy of its own);
+# a custom-output client (the O client) receives a copy under <output>/runtime/.
+PINNED_RUNTIME="$(cd "$ROOT" && node -p 'require("fs").realpathSync(require.resolve("@prisma/client/runtime/library.js"))')"
+PINNED_RUNTIME_SHA="$(hash_required 'pinned @prisma/client runtime' "$PINNED_RUNTIME")"
+
 # 6. Independent O client generated from the O schema into its own directory.
 mkdir -p "$G2_PG17_OLD_CLIENT"
 PINNED_CLIENT_PKG="$(cd "$ROOT" && node -p 'require("fs").realpathSync(require.resolve("@prisma/client/package.json"))')"
@@ -169,16 +183,32 @@ sed "s|provider = \"prisma-client-js\"|provider = \"prisma-client-js\"\n  output
   "$G2_PG17_OLD_ROOT/prisma/schema.prisma" > "$OLD_SCHEMA_COPY"
 (cd "$G2_PG17_OLD_ROOT" && "$ROOT/node_modules/.bin/prisma" generate --schema "$OLD_SCHEMA_COPY" >/dev/null)
 grep -q 'model ScoutReconstructionLedger' "$G2_PG17_OLD_CLIENT/schema.prisma"
-ENGINE=libquery_engine-debian-openssl-3.0.x.so.node
-[[ "$(sha256sum "$G2_PG17_OLD_CLIENT/$ENGINE" | cut -c1-64)" == "$(sha256sum "$ROOT/node_modules/@prisma/engines/$ENGINE" | cut -c1-64)" ]] \
+O_ENGINE_SHA="$(hash_required 'generated O client engine' "$G2_PG17_OLD_CLIENT/$ENGINE")"
+[[ "$O_ENGINE_SHA" == "$PINNED_ENGINE_SHA" ]] \
   || { echo "generated O client engine differs from the pinned @prisma/engines copy" >&2; exit 6; }
-echo "O_CLIENT_GENERATED dir=$G2_PG17_OLD_CLIENT engine_sha256=$(sha256sum "$G2_PG17_OLD_CLIENT/$ENGINE" | cut -c1-64) runtime_sha256=$(sha256sum "$G2_PG17_OLD_CLIENT/runtime/library.js" | cut -c1-64)"
+# The O client's copied runtime must be the pinned package runtime: identical bytes, or the pinned
+# bytes preceded only by the generator's header (observed 130 B for prisma 6.19.3). Any other
+# difference is a refusal; a false refusal here fails closed and is reported, never skipped.
+O_RUNTIME="$G2_PG17_OLD_CLIENT/runtime/library.js"
+O_RUNTIME_SHA="$(hash_required 'generated O client runtime' "$O_RUNTIME")"
+PINNED_RUNTIME_SIZE="$(stat -c %s "$PINNED_RUNTIME")"
+O_RUNTIME_SIZE="$(stat -c %s "$O_RUNTIME")"
+[[ "$O_RUNTIME_SIZE" -ge "$PINNED_RUNTIME_SIZE" ]] && cmp -s <(tail -c "$PINNED_RUNTIME_SIZE" "$O_RUNTIME") "$PINNED_RUNTIME" \
+  || { echo "generated O client runtime ($O_RUNTIME_SIZE B, $O_RUNTIME_SHA) does not end with the pinned @prisma/client runtime ($PINNED_RUNTIME_SIZE B, $PINNED_RUNTIME_SHA)" >&2; exit 6; }
+echo "O_CLIENT_GENERATED dir=$G2_PG17_OLD_CLIENT engine_sha256=$O_ENGINE_SHA runtime=$O_RUNTIME runtime_sha256=$O_RUNTIME_SHA runtime_header_bytes=$((O_RUNTIME_SIZE - PINNED_RUNTIME_SIZE)) pinned_runtime=$PINNED_RUNTIME pinned_runtime_sha256=$PINNED_RUNTIME_SHA"
 ! awk '/model ScoutReconstructionLedger \{/,/\}/' "$G2_PG17_OLD_CLIENT/schema.prisma" | grep -q source_platform \
   || { echo "generated O client unexpectedly knows source_platform" >&2; exit 6; }
 
 # 7. Candidate (E/T) client in the candidate root.
 (cd "$ROOT" && ./node_modules/.bin/prisma generate >/dev/null)
-echo "CANDIDATE_CLIENT_GENERATED dir=$ROOT/node_modules/.prisma/client engine_sha256=$(sha256sum "$ROOT/node_modules/.prisma/client/$ENGINE" | cut -c1-64) runtime_sha256=$(sha256sum "$ROOT/node_modules/.prisma/client/runtime/library.js" | cut -c1-64)"
+CANDIDATE_ENGINE_SHA="$(hash_required 'generated candidate client engine' "$ROOT/node_modules/.prisma/client/$ENGINE")"
+[[ "$CANDIDATE_ENGINE_SHA" == "$PINNED_ENGINE_SHA" ]] \
+  || { echo "generated candidate client engine differs from the pinned @prisma/engines copy" >&2; exit 6; }
+# The runtime the candidate client actually loads, resolved from the generated client directory.
+CANDIDATE_RUNTIME="$(node -p 'try { require("fs").realpathSync(require.resolve("@prisma/client/runtime/library.js", { paths: [process.argv[1]] })) } catch (e) { "UNRESOLVED" }' "$ROOT/node_modules/.prisma/client")"
+[[ "$CANDIDATE_RUNTIME" == "$PINNED_RUNTIME" ]] \
+  || { echo "candidate client runtime resolves to $CANDIDATE_RUNTIME, not the pinned $PINNED_RUNTIME" >&2; exit 6; }
+echo "CANDIDATE_CLIENT_GENERATED dir=$ROOT/node_modules/.prisma/client engine_sha256=$CANDIDATE_ENGINE_SHA runtime=$CANDIDATE_RUNTIME runtime_sha256=$PINNED_RUNTIME_SHA"
 awk '/model ScoutReconstructionLedger \{/,/\}/' "$ROOT/node_modules/.prisma/client/schema.prisma" | grep -q 'source_platform' \
   || { echo "candidate client lacks source_platform" >&2; exit 7; }
 
