@@ -3,6 +3,7 @@ import { PersonState, Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
+import { decodeScoutCursor, scoutCursorOrder, scoutCursorWhere } from './scout-cursor';
 import { RECONSTRUCT_ENTITY_TYPE, RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 import {
   ROSTER_DEFAULT_PAGE_SIZE,
@@ -55,7 +56,7 @@ export class ScoutRosterService {
     if (!Number.isInteger(limit) || limit < 1 || limit > ROSTER_MAX_PAGE_SIZE) {
       throw new BadRequestException('limit out of range');
     }
-    const after = decodeCursor(cursor);
+    const after = decodeScoutCursor(cursor, coachId, intentId, RECONSTRUCT_ENTITY_TYPE);
 
     const where = {
       coach_id: coachId,
@@ -98,10 +99,10 @@ export class ScoutRosterService {
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...(after !== null ? { source_id: { gt: after } } : {}),
+            ...scoutCursorWhere(after),
           },
           select: { source_id: true, target_id: true },
-          orderBy: { source_id: 'asc' },
+          orderBy: scoutCursorOrder(after),
           take: limit + 1,
         });
 
@@ -192,27 +193,6 @@ export class ScoutRosterService {
     }
     return out;
   }
-}
-
-/**
- * Decode an opaque forward-only cursor into the ledger source_id to page after.
- * The cursor is base64url(source_id); an unparseable or empty-decoding token is
- * a 400 (fail closed) rather than a silent full-scan-from-start.
- */
-function decodeCursor(cursor: string | undefined): string | null {
-  if (cursor === undefined || cursor === '') return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-  } catch {
-    throw new BadRequestException('malformed cursor');
-  }
-  // base64url decoding is lenient; require a non-empty round-trippable token so a
-  // garbage cursor cannot masquerade as "start from the beginning".
-  if (decoded === '' || encodeCursor(decoded) !== cursor) {
-    throw new BadRequestException('malformed cursor');
-  }
-  return decoded;
 }
 
 /** Encode a ledger source_id into an opaque forward-only cursor. */

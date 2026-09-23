@@ -6917,6 +6917,7 @@ model ScoutReconstructionLedger {
   intent_id   String
   entity_type String
   source_id   String
+  source_platform String?
   status      String
   target_id   String?
   reason      String?

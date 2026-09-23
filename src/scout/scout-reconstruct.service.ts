@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
+import { isCanonicalPlatform } from './scout-platform';
 import {
   buildFamilyRegistry,
   type FamilyReconstructor,
@@ -164,10 +165,9 @@ export class ScoutReconstructService {
 
   /**
    * Reconstruct one staged row for the given family. Skips (mapper rejection)
-   * write a ledger row with a reason and no target. A unique-violation (a
-   * concurrent pass won the insert race) is retried once and converges
-   * idempotently. Any other thrown error is isolated to this row and recorded as
-   * `failed`, so sibling rows are unaffected (poison-row isolation).
+   * write a ledger outcome unless success was already committed. Ordinary map
+   * and target errors are isolated; structural provenance conflicts and terminal
+   * ledger failures stop the operation rather than inventing durable accounting.
    */
   private async reconstructRow(
     family: FamilyReconstructor,
@@ -175,128 +175,127 @@ export class ScoutReconstructService {
     intentId: string,
     row: StagedRow,
   ): Promise<void> {
-    const mapped = family.map({
-      source_id: row.source_id,
-      source_platform: row.source_platform,
-      payload: row.payload,
-    });
-
-    if (!mapped.ok) {
-      await this.writeLedger(
+    // Old ingestion may have admitted noncanonical tokens. Never normalize or
+    // invent provenance; a structural failure stops this operation truthfully.
+    if (!isCanonicalPlatform(row.source_platform)) {
+      throw new ProvenanceConflict();
+    }
+    let mapped: ReturnType<FamilyReconstructor['map']>;
+    try {
+      mapped = family.map(row);
+    } catch (err) {
+      await this.writeOutcome(
         family.entityType,
         coachId,
         intentId,
-        row.source_id,
+        row,
+        RECONSTRUCT_STATUS.failed,
+        summarizeError(err),
+      );
+      return;
+    }
+    if (!mapped.ok) {
+      await this.writeOutcome(
+        family.entityType,
+        coachId,
+        intentId,
+        row,
         RECONSTRUCT_STATUS.skipped,
-        null,
         mapped.reason,
       );
       return;
     }
-
     try {
-      await this.persistReconstructed(family, coachId, intentId, row.source_id, mapped.mapped);
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        // A concurrent reconstruction of the same (coach, intent, source) won
-        // the insert race. Both upserts are idempotent, so a single retry now
-        // finds the sibling's row and converges to `reconstructed` — never a
-        // spurious `failed` or a duplicate.
-        try {
-          await this.persistReconstructed(family, coachId, intentId, row.source_id, mapped.mapped);
-          return;
-        } catch (retryErr) {
-          await this.writeLedger(
+      await retryContention(() =>
+        this.prisma.$transaction(async (tx) => {
+          // Keep target-before-ledger lock order compatible with old writers.
+          const targetId = await family.persist(tx, coachId, row.source_id, mapped.mapped);
+          await this.claimAndWrite(
+            tx,
             family.entityType,
             coachId,
             intentId,
-            row.source_id,
-            RECONSTRUCT_STATUS.failed,
+            row,
+            RECONSTRUCT_STATUS.reconstructed,
+            targetId,
             null,
-            summarizeError(retryErr),
           );
-          return;
-        }
-      }
-      await this.writeLedger(
+        }),
+      );
+    } catch (err) {
+      if (err instanceof ProvenanceConflict) throw err;
+      await this.writeOutcome(
         family.entityType,
         coachId,
         intentId,
-        row.source_id,
+        row,
         RECONSTRUCT_STATUS.failed,
-        null,
         summarizeError(err),
       );
     }
   }
 
-  /**
-   * Persist one row's canonical target via the family, then mark the ledger
-   * `reconstructed` atomically in the same transaction. The family owns the
-   * domain write (Person or ScoutReconstructedEntity) and returns its id; the
-   * engine owns the honest ledger row keyed by (coach, intent, family, source).
-   */
-  private async persistReconstructed(
-    family: FamilyReconstructor,
-    coachId: string,
-    intentId: string,
-    sourceId: string,
-    mapped: unknown,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const targetId = await family.persist(tx, coachId, sourceId, mapped);
-
-      await tx.scoutReconstructionLedger.upsert({
-        where: {
-          coach_id_intent_id_entity_type_source_id: {
-            coach_id: coachId,
-            intent_id: intentId,
-            entity_type: family.entityType,
-            source_id: sourceId,
-          },
-        },
-        create: {
-          coach_id: coachId,
-          intent_id: intentId,
-          entity_type: family.entityType,
-          source_id: sourceId,
-          status: RECONSTRUCT_STATUS.reconstructed,
-          target_id: targetId,
-          reason: null,
-        },
-        update: { status: RECONSTRUCT_STATUS.reconstructed, target_id: targetId, reason: null },
-      });
-    });
-  }
-
-  private async writeLedger(
+  private async writeOutcome(
     entityType: string,
     coachId: string,
     intentId: string,
-    sourceId: string,
+    row: StagedRow,
+    status: string,
+    reason: string,
+  ): Promise<void> {
+    // A terminal ledger-write failure propagates: do not report a fabricated
+    // durable outcome. Success/skip/failure transactions each retry at most once.
+    await retryContention(() =>
+      this.prisma.$transaction((tx) =>
+        this.claimAndWrite(tx, entityType, coachId, intentId, row, status, null, reason),
+      ),
+    );
+  }
+
+  private async claimAndWrite(
+    tx: Prisma.TransactionClient,
+    entityType: string,
+    coachId: string,
+    intentId: string,
+    row: StagedRow,
     status: string,
     targetId: string | null,
     reason: string | null,
   ): Promise<void> {
-    await this.prisma.scoutReconstructionLedger.upsert({
+    const identity = {
+      coach_id: coachId,
+      intent_id: intentId,
+      entity_type: entityType,
+      source_id: row.source_id,
+    };
+    const outcome = { status, target_id: targetId, reason };
+    await tx.scoutReconstructionLedger.upsert({
+      where: { coach_id_intent_id_entity_type_source_id: identity },
+      create: { ...identity, source_platform: row.source_platform, ...outcome },
+      // Do NOT change status before checking precedence. A no-op upsert can
+      // race an insert; P2002 retries the entire transaction, never part of it.
+      update: {},
+    });
+    const claimed = await tx.scoutReconstructionLedger.updateMany({
       where: {
-        coach_id_intent_id_entity_type_source_id: {
-          coach_id: coachId,
-          intent_id: intentId,
-          entity_type: entityType,
-          source_id: sourceId,
-        },
+        ...identity,
+        OR: [{ source_platform: null }, { source_platform: row.source_platform }],
       },
-      create: {
-        coach_id: coachId,
-        intent_id: intentId,
-        entity_type: entityType,
-        source_id: sourceId,
-        status,
-        target_id: targetId,
-        reason,
+      data: { source_platform: row.source_platform },
+    });
+    if (claimed.count !== 1) throw new ProvenanceConflict();
+    // The claim UPDATE holds the row lock until commit. Under ReadCommitted a
+    // waiting claim rechecks the predicate against the winner's current row.
+    // Non-success attempts are last serialized writer wins; success dominates
+    // T attempts, preserving target AND reason of a committed reconstruction.
+    await tx.scoutReconstructionLedger.updateMany({
+      where: {
+        ...identity,
+        ...(status === RECONSTRUCT_STATUS.reconstructed
+          ? {}
+          : { status: { not: RECONSTRUCT_STATUS.reconstructed } }),
       },
-      update: { status, target_id: targetId, reason },
+      data: outcome,
     });
   }
 
@@ -324,9 +323,25 @@ export class ScoutReconstructService {
   }
 }
 
-/** True for a Prisma unique-constraint violation (concurrent insert race). */
-function isUniqueViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+/** No source, tenant, payload or database detail in a structural error. */
+class ProvenanceConflict extends ConflictException {
+  constructor() {
+    super('reconstruction provenance conflict');
+  }
+}
+
+/** Only actual Prisma insert races / transaction conflicts, once per attempt. */
+async function retryContention<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (err) {
+    if (
+      !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+      !['P2002', 'P2034'].includes(err.code)
+    )
+      throw err;
+    return operation();
+  }
 }
 
 /**
@@ -335,6 +350,7 @@ function isUniqueViolation(err: unknown): boolean {
  */
 function summarizeError(err: unknown): string {
   if (err instanceof Prisma.PrismaClientKnownRequestError) return `error:Prisma.${err.code}`;
-  if (err instanceof Error) return `error:${err.name}`;
+  // Error.name is mutable and can carry arbitrary source/database content.
+  if (err instanceof Error) return 'error:Error';
   return 'error:unknown';
 }

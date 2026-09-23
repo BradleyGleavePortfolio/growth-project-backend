@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
+import { decodeScoutCursor, scoutCursorOrder, scoutCursorWhere } from './scout-cursor';
 import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
@@ -72,7 +73,7 @@ export class ScoutEntitiesService {
     if (!Number.isInteger(limit) || limit < 1 || limit > ENTITIES_MAX_PAGE_SIZE) {
       throw new BadRequestException('limit out of range');
     }
-    const after = decodeCursor(cursor, coachId, intentId, family);
+    const after = decodeScoutCursor(cursor, coachId, intentId, family);
 
     const where = {
       coach_id: coachId,
@@ -105,10 +106,10 @@ export class ScoutEntitiesService {
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...(after !== null ? { source_id: { gt: after } } : {}),
+            ...scoutCursorWhere(after),
           },
           select: { source_id: true, target_id: true },
-          orderBy: { source_id: 'asc' },
+          orderBy: scoutCursorOrder(after),
           take: limit + 1,
         });
 
@@ -201,68 +202,8 @@ export class ScoutEntitiesService {
   }
 }
 
-/**
- * Decode an opaque forward-only cursor into the ledger source_id to page after,
- * verifying it was minted for THIS (coach, intent, family, order). A cursor
- * whose binding does not match the current request — or that is unparseable — is
- * a 400 (fail closed), never a silent full-scan-from-start or a cross-context
- * replay. The binding is a consistency guard, not an authorizer.
- */
-function decodeCursor(
-  cursor: string | undefined,
-  coachId: string,
-  intentId: string,
-  family: string,
-): string | null {
-  if (cursor === undefined || cursor === '') return null;
-  let after: string;
-  try {
-    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-    const parsed = JSON.parse(decoded) as unknown;
-    if (!isCursorPayload(parsed)) throw new Error('shape');
-    if (
-      parsed.c !== coachId ||
-      parsed.i !== intentId ||
-      parsed.f !== family ||
-      parsed.o !== CURSOR_ORDER ||
-      parsed.s === ''
-    ) {
-      throw new Error('binding');
-    }
-    after = parsed.s;
-  } catch {
-    throw new BadRequestException('malformed cursor');
-  }
-  // Require an exact round-trip so a garbage or tampered token cannot masquerade
-  // as a valid cursor "from the beginning".
-  if (encodeCursor(coachId, intentId, family, after) !== cursor) {
-    throw new BadRequestException('malformed cursor');
-  }
-  return after;
-}
-
 /** Encode a ledger source_id into an opaque cursor bound to its read context. */
 function encodeCursor(coachId: string, intentId: string, family: string, sourceId: string): string {
   const payload = { c: coachId, i: intentId, f: family, o: CURSOR_ORDER, s: sourceId };
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-}
-
-interface CursorPayload {
-  c: string;
-  i: string;
-  f: string;
-  o: string;
-  s: string;
-}
-
-function isCursorPayload(value: unknown): value is CursorPayload {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.c === 'string' &&
-    typeof v.i === 'string' &&
-    typeof v.f === 'string' &&
-    typeof v.o === 'string' &&
-    typeof v.s === 'string'
-  );
 }

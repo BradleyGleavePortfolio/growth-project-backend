@@ -134,6 +134,7 @@ interface StagedRecord {
   readonly payload: Prisma.JsonValue;
 }
 interface LedgerRow {
+  source_platform?: string | null;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -246,6 +247,28 @@ class FakePrisma {
   };
 
   scoutReconstructionLedger = {
+    updateMany: async (args: {
+      where: {
+        coach_id: string;
+        intent_id: string;
+        entity_type: string;
+        source_id: string;
+        OR?: Array<{ source_platform: string | null }>;
+        status?: { not: string };
+      };
+      data: Partial<LedgerRow>;
+    }) => {
+      const w = args.where;
+      const row = this.ledger.get(`${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_id}`);
+      if (
+        !row ||
+        (w.OR && !w.OR.some((p) => p.source_platform === (row.source_platform ?? null))) ||
+        (w.status && row.status === w.status.not)
+      )
+        return { count: 0 };
+      Object.assign(row, args.data);
+      return { count: 1 };
+    },
     upsert: async (args: {
       where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
       create: LedgerRow;
