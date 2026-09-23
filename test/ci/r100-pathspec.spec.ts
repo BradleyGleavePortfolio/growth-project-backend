@@ -1,7 +1,13 @@
-// Regression tests for the R100 quality-gate measurement pathspecs. git
-// pathspecs default to fnmatch with FNM_PATHNAME OFF, so a bare `src/**/*.ts`
-// SKIPS a top-level file like src/main.ts; the :(glob) prefix makes `**` match
-// zero-or-more segments. Exercises the exact `git diff -- <pathspec>` plumbing.
+// Regression tests for the R100 quality-gate measurement scope. git pathspecs
+// default to fnmatch with FNM_PATHNAME OFF, so a bare `src/**/*.ts` SKIPS a
+// top-level file like src/main.ts; the :(glob) prefix makes `**` match
+// zero-or-more segments. The first block exercises the exact
+// `git diff -- <pathspec>` plumbing that motivated the fix. The workflow no
+// longer carries any pathspec: the banned-casts job delegates to
+// scripts/check-r75.js, whose scope is the `scan` block of
+// .github/r75-policy.json (prefix/suffix filtering in code, so top-level files
+// are in scope by construction). The second block guards that delegation and
+// the policy data; the checker itself is executed by test/ci/r75-*.spec.ts.
 
 import { execFileSync } from 'child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
@@ -111,32 +117,80 @@ describe('R100 pathspec coverage (git diff — the gate plumbing)', () => {
   });
 });
 
-describe('R100 workflow guards against reintroducing the bare pathspec', () => {
+describe('R100 workflow delegates measurement scope to the committed checker and policy', () => {
   const yml = readFileSync(
     join(__dirname, '../../.github/workflows/r100-quality-gate.yml'),
     'utf8',
   );
+  const policy = JSON.parse(
+    readFileSync(join(__dirname, '../../.github/r75-policy.json'), 'utf8'),
+  ) as {
+    scan: {
+      includeExtensions: string[];
+      includeRoots: string[];
+      includeFiles: string[];
+      excludeSuffixes: string[];
+      excludeSegments: string[];
+    };
+  };
 
-  // Semantic guard (finding #4): catch a bare quoted file-glob for ANY
-  // directory ('<seg>/**/....<ext>' with no :(...glob...) prefix — the buggy
-  // form). Bare directory recursion like 'src/**' is intentionally left alone.
-  const bareFileGlob = /'[\w.-]+\/\*\*\/[^']*\.[A-Za-z]+'/g;
-  const globbed = /:\((?:exclude,)?glob\)[\w.-]+\/\*\*\//g;
+  // Mirrors scripts/check-r75.js inScope() over the policy DATA so a scope
+  // regression in the JSON is caught here; the checker's own behaviour against
+  // real Git objects is covered by test/ci/r75-boundaries.spec.ts.
+  const inPolicyScope = (path: string): boolean => {
+    const { scan } = policy;
+    if (
+      scan.excludeSegments.some((part) => path.startsWith(part) || path.includes(`/${part}`)) ||
+      scan.excludeSuffixes.some((suffix) => path.endsWith(suffix))
+    ) {
+      return false;
+    }
+    return (
+      scan.includeFiles.includes(path) ||
+      (scan.includeExtensions.some((suffix) => path.endsWith(suffix)) &&
+        scan.includeRoots.some((root) => path.startsWith(root)))
+    );
+  };
 
-  it('uses :(glob) directory file-globs (guard is not vacuous)', () => {
-    expect(yml.match(globbed)?.length ?? 0).toBeGreaterThan(0);
+  it('the banned-casts job runs the committed checker instead of an inline scan', () => {
+    expect(yml).toContain('node scripts/check-r75.js --mode=range');
+    expect(yml).toMatch(/--base="\$BASE_SHA"/);
+    expect(yml).toMatch(/--head="\$HEAD_SHA"/);
   });
 
-  it('contains no bare directory file-glob pathspec (semantic regression guard)', () => {
-    // Strip the glob'd forms first; any bare file-glob left is an offender
-    // regardless of which directory it names.
-    const withoutGlobbed = yml.replace(/:\((?:exclude,)?glob\)[^']*/g, '');
-    expect(withoutGlobbed.match(bareFileGlob) ?? []).toEqual([]);
+  it('carries no pathspec or token list of its own (no second implementation to drift)', () => {
+    // Bare or :(glob) file-globs, a PATHSPEC array, or a grep-based counter in
+    // the workflow would mean scope/tokens are defined in two places again.
+    const bareFileGlob = /'[\w.-]+\/\*\*\/[^']*\.[A-Za-z]+'/g;
+    expect(yml.match(bareFileGlob) ?? []).toEqual([]);
+    expect(yml).not.toMatch(/:\((?:exclude,)?glob\)/);
+    expect(yml).not.toMatch(/PATHSPEC=\(/);
+    expect(yml).not.toMatch(/TOKENS=\(/);
+    expect(yml).not.toMatch(/grep\s+-c/);
   });
 
-  it('banned-cast scan covers scripts/**/*.js and src js/jsx (production JS scanned)', () => {
-    expect(yml).toContain(":(glob)scripts/**/*.js'");
-    expect(yml).toContain(":(glob)src/**/*.js'");
-    expect(yml).toContain(":(glob)src/**/*.jsx'");
+  it('the header names the policy file as the scope authority, not a scope list', () => {
+    expect(yml).toContain('.github/r75-policy.json');
+    expect(yml).not.toMatch(/excluding \*\.d\.ts/);
+  });
+
+  it('policy scope covers top-level and nested src TS/JS, scripts .js and dangerfile.js', () => {
+    for (const path of [
+      'src/top.ts',
+      'src/nested/deep.ts',
+      'src/top.js',
+      'src/nested/widget.jsx',
+      'scripts/relevance.js',
+      'dangerfile.js',
+    ]) {
+      expect({ path, scanned: inPolicyScope(path) }).toEqual({ path, scanned: true });
+    }
+  });
+
+  it('policy scope includes test sources (R75 applies to tests) and never a workflow file', () => {
+    expect(inPolicyScope('test/top.spec.ts')).toBe(true);
+    expect(inPolicyScope('src/top.spec.ts')).toBe(true);
+    expect(inPolicyScope('.github/workflows/gate.yml')).toBe(false);
+    expect(inPolicyScope('.github/r75-policy.json')).toBe(false);
   });
 });

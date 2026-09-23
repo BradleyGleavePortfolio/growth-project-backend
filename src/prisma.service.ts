@@ -17,13 +17,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       return;
     }
     if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('connection_limit=')) {
-      this.logger.warn('DATABASE_URL has no connection_limit — Prisma will use its default. See docs/database-pool.md');
+      this.logger.warn(
+        'DATABASE_URL has no connection_limit — Prisma will use its default. See docs/database-pool.md',
+      );
     }
     // Fire-and-forget — don't block app startup on DB connection
     this.$connect()
       .then(() => this.logger.log('Database connected successfully'))
-      .catch((err) =>
-        this.logger.error('Database connection failed on startup:', err.message),
+      .catch(() =>
+        this.logger.error({
+          event: 'database_startup_connection_failed',
+          operation: 'database.connect',
+        }),
       );
   }
 

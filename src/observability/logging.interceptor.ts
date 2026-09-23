@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { Request, Response } from 'express';
 import { AppLoggerService } from './app-logger.service';
@@ -31,7 +26,9 @@ export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
 
-    const req = context.switchToHttp().getRequest<Request & { requestId?: string; user?: { id?: string; sub?: string } }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { requestId?: string; user?: { id?: string; sub?: string } }>();
     const res = context.switchToHttp().getResponse<Response>();
     const start = Date.now();
 
@@ -44,14 +41,14 @@ export class LoggingInterceptor implements NestInterceptor {
         next: () => {
           const latency = Date.now() - start;
           const status = res.statusCode;
-          const path = req.route?.path ?? req.path;
+          const path = req.route?.path ?? '[unmatched]';
 
           this.logger.logStructured(
             status >= 500 ? 'error' : status >= 400 ? 'warn' : 'log',
-            `${req.method} ${req.path} ${status}`,
+            `${req.method} ${path} ${status}`,
             {
               method: req.method,
-              path: req.path,
+              path,
               status,
               latency_ms: latency,
               request_id: req.requestId,
@@ -68,14 +65,16 @@ export class LoggingInterceptor implements NestInterceptor {
             typeof (err as { status?: number }).status === 'number'
               ? (err as { status: number }).status
               : 500;
-          const path = req.route?.path ?? req.path;
+          const path = req.route?.path ?? '[unmatched]';
 
           this.logger.logStructured(
             'error',
-            `${req.method} ${req.path} ${status} — ${err instanceof Error ? err.message : String(err)}`,
+            // The exception filter owns diagnostic sanitization. This earlier
+            // sink must never serialize exception messages, stacks or causes.
+            `${req.method} ${path} ${status}`,
             {
               method: req.method,
-              path: req.path,
+              path,
               status,
               latency_ms: latency,
               request_id: req.requestId,

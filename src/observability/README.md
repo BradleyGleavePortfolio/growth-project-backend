@@ -1,8 +1,8 @@
 # Observability Module
 
-Production-grade observability for The Growth Project backend.  This module
+Production-grade observability for The Growth Project backend. This module
 owns structured logging, request tracing, Prometheus metrics, deep health
-checks, and CPU profiling.  It must be the **first import in AppModule** so
+checks, and CPU profiling. It must be the **first import in AppModule** so
 the request-id middleware runs before every auth guard and audit interceptor.
 
 ---
@@ -15,7 +15,7 @@ found and fixed quickly:
 1. **Structured logs** — every line is a JSON object with a fixed shape so a
    log-aggregation backend (Better Stack, Datadog, etc.) can index it.
 2. **Request tracing** — a unique `X-Request-ID` ties every log line from a
-   single HTTP request together.  Support engineers copy the ID from a mobile
+   single HTTP request together. Support engineers copy the ID from a mobile
    client error response and pull all the server logs for that request.
 3. **Metrics** — a Prometheus `/metrics` endpoint lets Grafana show request
    rates, error rates, and latency percentiles in real time.
@@ -31,18 +31,18 @@ the OWNER role and a feature flag so it is never accidentally exposed.
 
 Every JSON log line contains these fields:
 
-| Field | Type | Description |
-|---|---|---|
-| `timestamp` | string (ISO-8601 UTC) | When the line was emitted |
-| `level` | `"log"` \| `"warn"` \| `"error"` \| `"debug"` \| `"verbose"` | Severity |
-| `context` | string? | NestJS class / module name (e.g. `"HTTP"`, `"Bootstrap"`) |
-| `request_id` | string? | X-Request-ID for the current HTTP request (set by middleware) |
-| `user_id` | string? | Supabase UUID of the authenticated user (set by LoggingInterceptor) |
-| `method` | string? | HTTP method (`"GET"`, `"POST"`, …) — on request-end lines only |
-| `path` | string? | Raw request path — on request-end lines only |
-| `status` | number? | HTTP status code — on request-end lines only |
-| `latency_ms` | number? | Round-trip latency in milliseconds — on request-end lines only |
-| `message` | string | Human-readable log message |
+| Field        | Type                                                         | Description                                                         |
+| ------------ | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `timestamp`  | string (ISO-8601 UTC)                                        | When the line was emitted                                           |
+| `level`      | `"log"` \| `"warn"` \| `"error"` \| `"debug"` \| `"verbose"` | Severity                                                            |
+| `context`    | string?                                                      | NestJS class / module name (e.g. `"HTTP"`, `"Bootstrap"`)           |
+| `request_id` | string?                                                      | X-Request-ID for the current HTTP request (set by middleware)       |
+| `user_id`    | string?                                                      | Supabase UUID of the authenticated user (set by LoggingInterceptor) |
+| `method`     | string?                                                      | HTTP method (`"GET"`, `"POST"`, …) — on request-end lines only      |
+| `path`       | string?                                                      | Raw request path — on request-end lines only                        |
+| `status`     | number?                                                      | HTTP status code — on request-end lines only                        |
+| `latency_ms` | number?                                                      | Round-trip latency in milliseconds — on request-end lines only      |
+| `message`    | string                                                       | Human-readable log message                                          |
 
 Example (pretty-printed for readability — the actual line is single-line JSON):
 
@@ -64,7 +64,7 @@ Example (pretty-printed for readability — the actual line is single-line JSON)
 ### Redaction rules
 
 The following key names (case-insensitive) are **always replaced with
-`"[REDACTED]"`** before the line is written.  The list is enforced by
+`"[REDACTED]"`** before the line is written. The list is enforced by
 `redactObject` (recursive object walk) and `redactLogLine` (belt-and-suspenders
 string replacement on the serialised JSON):
 
@@ -88,7 +88,7 @@ above names: `request_id`, `user_id`, `method`, `path`, `status`,
 `RequestIdMiddleware` runs on every route before any guard or interceptor.
 
 - **Incoming header present** (`X-Request-ID: <value>`): the value is sanitised
-  (alphanumeric + hyphens only, max 128 chars) and used as the ID.  The mobile
+  (alphanumeric + hyphens only, max 128 chars) and used as the ID. The mobile
   client, Fly's edge, or a test harness can supply an ID for end-to-end
   correlation.
 - **No header**: a 16-byte cryptographic random hex string is generated.
@@ -115,14 +115,14 @@ above names: `request_id`, `user_id`, `method`, `path`, `status`,
 
 ## Metrics
 
-Served at `GET /metrics` (Prometheus text format 0.0.4).  No auth.
+Served at `GET /metrics` (Prometheus text format 0.0.4). No auth.
 
-| Metric name | Type | Labels | Description |
-|---|---|---|---|
-| `http_requests_total` | counter | `method`, `route`, `status` | Total HTTP requests |
-| `http_request_duration_ms` | histogram | `method`, `route`, `status` | Request latency in ms |
-| `db_query_total` | counter | `model`, `operation` | Prisma queries by model |
-| `redis_op_total` | counter | `command` | Redis commands (when Redis is in use) |
+| Metric name                | Type      | Labels                      | Description                           |
+| -------------------------- | --------- | --------------------------- | ------------------------------------- |
+| `http_requests_total`      | counter   | `method`, `route`, `status` | Total HTTP requests                   |
+| `http_request_duration_ms` | histogram | `method`, `route`, `status` | Request latency in ms                 |
+| `db_query_total`           | counter   | `model`, `operation`        | Prisma queries by model               |
+| `redis_op_total`           | counter   | `command`                   | Redis commands (when Redis is in use) |
 
 Histogram latency buckets: **10, 25, 50, 100, 250, 500, 1000, 2500, 5000 ms**.
 
@@ -137,27 +137,35 @@ Sentry is initialised in `src/instrument.ts` (imported first in `main.ts` so
 it attaches to Node's `http` module before any request arrives).
 
 - **`SENTRY_DSN` set**: all 5xx responses and unhandled exceptions are
-  forwarded to Sentry.  4xx are deliberately skipped (validation errors and
+  forwarded to Sentry. 4xx are deliberately skipped (validation errors and
   auth failures would flood the Sentry project with noise).
-- **`SENTRY_DSN` unset**: Sentry is a no-op.  No error is thrown on boot.
+- **`SENTRY_DSN` unset**: Sentry is a no-op. No error is thrown on boot.
 - **Sample rates**:
   - `tracesSampleRate`: defaults to `SENTRY_TRACES_SAMPLE_RATE` (env) or `0.1`.
   - Error capture rate: `1.0` (every unhandled exception is captured).
-- **PII stripping** (`beforeSend`): `Authorization` and `Cookie` headers are
-  deleted from the event before transmission.
+- **Error-event metadata boundary** (`beforeSend`): ORM failures use a static
+  diagnostic envelope. Other errors retain ordinary exception/message details,
+  event identifiers, release/environment, and allowlisted application tags
+  (including request correlation and the HTTP route template). Automatically
+  enriched request URLs, queries, headers, bodies, transaction names, breadcrumbs,
+  contexts, users and extras are not forwarded on these error events.
+  This boundary does not sanitize arbitrary exception/message text, source
+  context in stack frames, sampled transactions/spans, or attachments. It is
+  not a claim of universal telemetry privacy; those surfaces require separate
+  release evidence. Client-facing error-response paths are unchanged.
 
 ---
 
 ## Endpoints
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/metrics` | None (public) | Prometheus metrics scrape endpoint |
-| `GET` | `/health/deep` | None (public) | Deep readiness: DB + Redis check |
-| `GET` | `/debug/profile` | OWNER role + `PROFILE_ENABLED=on` | 30-second V8 CPU profile (`.cpuprofile` download) |
+| Method | Path             | Auth                              | Description                                       |
+| ------ | ---------------- | --------------------------------- | ------------------------------------------------- |
+| `GET`  | `/metrics`       | None (public)                     | Prometheus metrics scrape endpoint                |
+| `GET`  | `/health/deep`   | None (public)                     | Deep readiness: DB + Redis check                  |
+| `GET`  | `/debug/profile` | OWNER role + `PROFILE_ENABLED=on` | 30-second V8 CPU profile (`.cpuprofile` download) |
 
 The existing shallow health endpoints (`/health`, `/healthz`, `/readyz`) are in
-`src/health/` and are unchanged.  `/health/deep` lives here because it depends
+`src/health/` and are unchanged. `/health/deep` lives here because it depends
 on the observability module's runtime configuration.
 
 ---
@@ -167,6 +175,7 @@ on the observability module's runtime configuration.
 ### `GET /health/deep`
 
 Success (200):
+
 ```json
 {
   "ok": true,
@@ -178,11 +187,13 @@ Success (200):
 ```
 
 Redis unconfigured (no `REDIS_URL`) (200):
+
 ```json
 { "ok": true, "db": "up", "redis": "unconfigured", "uptime": 3600, "timestamp": "..." }
 ```
 
 Failure (503):
+
 ```json
 {
   "ok": false,
@@ -198,40 +209,40 @@ Failure (503):
 
 ## Environment variables
 
-| Variable | Default | Tier | Description |
-|---|---|---|---|
-| `LOG_LEVEL` | `info` | optional | Minimum log level: `error`, `warn`, `log`, `debug`, `verbose` |
-| `LOG_FORMAT` | `json` | optional | `json` for machine-readable (production) or `pretty` for human-readable (development) |
-| `METRICS_ENABLED` | `on` | optional | `on` enables the `/metrics` endpoint and counter tracking; `off` disables both |
-| `PROFILE_ENABLED` | `off` | optional | `on` activates `GET /debug/profile`.  Requires OWNER role.  Leave `off` in production unless actively profiling |
-| `SENTRY_DSN` | _(unset)_ | feature | Sentry project DSN.  When unset Sentry is a no-op |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | optional | Fraction of transactions sampled for Sentry Performance (0.0–1.0) |
+| Variable                    | Default   | Tier     | Description                                                                                                   |
+| --------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `LOG_LEVEL`                 | `info`    | optional | Minimum log level: `error`, `warn`, `log`, `debug`, `verbose`                                                 |
+| `LOG_FORMAT`                | `json`    | optional | `json` for machine-readable (production) or `pretty` for human-readable (development)                         |
+| `METRICS_ENABLED`           | `on`      | optional | `on` enables the `/metrics` endpoint and counter tracking; `off` disables both                                |
+| `PROFILE_ENABLED`           | `off`     | optional | `on` activates `GET /debug/profile`. Requires OWNER role. Leave `off` in production unless actively profiling |
+| `SENTRY_DSN`                | _(unset)_ | feature  | Sentry project DSN. When unset Sentry is a no-op                                                              |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1`     | optional | Fraction of transactions sampled for Sentry Performance (0.0–1.0)                                             |
 
 ---
 
 ## Prisma models touched
 
-None.  This module adds no database tables.
+None. This module adds no database tables.
 
 ---
 
 ## Test coverage
 
-| File | What it asserts |
-|---|---|
+| File                         | What it asserts                                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `test/observability.spec.ts` | `redactObject`: passwords, tokens, bloodwork values are replaced with `[REDACTED]`; nested objects are walked; circular references are handled; original object is not mutated |
-| | `redactLogLine`: password and authorization values in serialised JSON strings are stripped |
-| | `MetricsService`: `render()` produces valid Prometheus text; `recordRequest` increments counters; histogram buckets are cumulative; disabled mode returns comment-only text |
-| | `AppLoggerService`: emits JSON with required fields; includes `request_id` thread-local; redacts password in meta |
-| | `RequestIdMiddleware`: generates hex id when header absent; honours incoming header; strips unsafe chars; truncates to 128 chars; resets `userId` on each request |
-| | `HealthDeepController`: returns `ok:true` on DB success; returns `ok:false` + 503 on DB failure |
+|                              | `redactLogLine`: password and authorization values in serialised JSON strings are stripped                                                                                     |
+|                              | `MetricsService`: `render()` produces valid Prometheus text; `recordRequest` increments counters; histogram buckets are cumulative; disabled mode returns comment-only text    |
+|                              | `AppLoggerService`: emits JSON with required fields; includes `request_id` thread-local; redacts password in meta                                                              |
+|                              | `RequestIdMiddleware`: generates hex id when header absent; honours incoming header; strips unsafe chars; truncates to 128 chars; resets `userId` on each request              |
+|                              | `HealthDeepController`: returns `ok:true` on DB success; returns `ok:false` + 503 on DB failure                                                                                |
 
 ---
 
 ## Future work
 
-- **Log shipping**: forward JSON stdout to [Better Stack Logs](https://betterstack.com/logs) via Fly's `[metrics]` block or a Fluent Bit sidecar.  The JSON shape is already compliant.
-- **Metrics backend**: scrape `/metrics` with [Grafana Cloud](https://grafana.com/products/cloud/) or self-hosted Prometheus.  Add alert rules for: p99 latency > 1000ms, error rate > 1%, DB query count spikes.
+- **Log shipping**: forward JSON stdout to [Better Stack Logs](https://betterstack.com/logs) via Fly's `[metrics]` block or a Fluent Bit sidecar. The JSON shape is already compliant.
+- **Metrics backend**: scrape `/metrics` with [Grafana Cloud](https://grafana.com/products/cloud/) or self-hosted Prometheus. Add alert rules for: p99 latency > 1000ms, error rate > 1%, DB query count spikes.
 - **Distributed tracing**: attach OpenTelemetry trace/span IDs to log lines and forward to a Jaeger or Tempo backend for cross-service waterfall views.
 - **Sentry Performance**: bump `SENTRY_TRACES_SAMPLE_RATE` to `0.5` once traffic baselines are established.
 - **prom-client**: replace the hand-rolled metrics implementation with `prom-client` (Node.js Prometheus client) and `@willsoto/nestjs-prometheus` for SDK features like push gateway, exemplars, and built-in Node.js process metrics (`process_cpu_seconds_total`, `process_resident_memory_bytes`).

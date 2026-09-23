@@ -55,10 +55,14 @@ export class ThrottlerExceptionFilter implements ExceptionFilter {
   catch(_exception: ThrottlerException, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request & { user?: { id?: string; sub?: string }; ip?: string }>();
+    const request = ctx.getRequest<
+      Request & { user?: { id?: string; sub?: string }; ip?: string }
+    >();
 
     const method = request.method ?? 'UNKNOWN';
-    const path = request.url ?? 'unknown';
+    // Guards can fail before a route is resolved. Never fall back to the caller
+    // URL, which can contain invitation credentials and unbounded metric labels.
+    const path = request.route?.path ?? '[unmatched]';
     const userId = request.user?.id ?? request.user?.sub ?? null;
     const ip = request.ip ?? request.socket?.remoteAddress ?? null;
 

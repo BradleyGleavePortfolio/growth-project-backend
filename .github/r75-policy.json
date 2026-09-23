@@ -1,0 +1,72 @@
+{
+  "doc": "Declarative policy for scripts/check-r75.js (R75 / R100.A2). Banned literals live here as data, never assembled in executable source, so the checker cannot evade its own scan. .json is not in scan.includeExtensions, so this file is not self-matched.",
+  "scan": {
+    "includeExtensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".cjs", ".mjs", ".sh"],
+    "includeRoots": ["src/", "test/", "__tests__/", "scripts/"],
+    "includeFiles": ["dangerfile.js"],
+    "excludeSuffixes": [],
+    "excludeSegments": []
+  },
+  "patternNote": "The three swallowed-error forms remain DISTINCT classes: deletion of one return form cannot pay for introduction of another. {{gap}} denotes whitespace or line/block comment trivia at a pattern boundary. Keyword boundaries prevent concatenated identifiers from matching. This is a lexical pattern gate, not a complete JavaScript/TypeScript AST analysis.",
+  "suppressions": [
+    {
+      "token": "@ts-expect-error",
+      "note": "R75 permits this directive when the same line carries a non-empty reason. Non-empty is the whole rule: no minimum length, no ASCII or alphanumeric requirement, no issue number. The exception applies to this directive occurrence only; other banned tokens on the same line still count."
+    }
+  ],
+  "scopeNote": "Application AND test sources are in scope, including declarations, executable module variants and authored nested paths. Directory names alone prove no generated provenance. Positive roots exclude top-level dependencies/build output; no authored child or suffix is exempted. Source-root links fail closed. Fixture DATA remains outside executable extensions.",
+  "tokens": [
+    {
+      "name": "@ts-ignore",
+      "pattern": "@ts-ignore"
+    },
+    {
+      "name": "@ts-expect-error",
+      "pattern": "@ts-expect-error"
+    },
+    {
+      "name": "Coming soon",
+      "pattern": "Coming soon",
+      "flags": "i"
+    },
+    {
+      "name": "lorem ipsum",
+      "pattern": "lorem ipsum",
+      "flags": "i"
+    },
+    {
+      "name": "foo@bar",
+      "pattern": "foo@bar",
+      "flags": "i"
+    },
+    {
+      "name": "John Doe",
+      "pattern": "John Doe",
+      "flags": "i"
+    },
+    {
+      "name": "as any",
+      "pattern": "\\bas\\b{{gap}}any\\b"
+    },
+    {
+      "name": "as unknown as",
+      "pattern": "\\bas\\b{{gap}}unknown\\b{{gap}}as\\b"
+    },
+    {
+      "name": "as never",
+      "pattern": "\\bas\\b{{gap}}never\\b"
+    },
+    {
+      "name": "empty-catch-null",
+      "pattern": "\\.{{gap}}catch{{gap}}\\({{gap}}(?:async\\b{{gap}})?(?:\\({{gap}}[^()]*\\)|[A-Za-z_$][\\w$]*){{gap}}=>{{gap}}null{{gap}}\\)"
+    },
+    {
+      "name": "empty-catch-undefined",
+      "pattern": "\\.{{gap}}catch{{gap}}\\({{gap}}(?:async\\b{{gap}})?(?:\\({{gap}}[^()]*\\)|[A-Za-z_$][\\w$]*){{gap}}=>{{gap}}undefined{{gap}}\\)"
+    },
+    {
+      "name": "empty-catch-block",
+      "pattern": "\\.{{gap}}catch{{gap}}\\({{gap}}(?:async\\b{{gap}})?(?:\\({{gap}}[^()]*\\)|[A-Za-z_$][\\w$]*){{gap}}=>{{gap}}\\{{{gap}}\\}{{gap}}\\)"
+    }
+  ]
+}

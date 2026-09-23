@@ -1,3 +1,4 @@
+import { ORM_ERROR_NAME, safeDiagnostic } from './orm-diagnostics';
 import * as Sentry from '@sentry/node';
 
 /**
@@ -68,8 +69,58 @@ export function buildSentryOptions(
         ...(release ? { release } : {}),
       },
     },
-    beforeSend(event) {
-      return stripSensitiveHeaders(event);
+    beforeSend(event, hint) {
+      const original = hint.originalException;
+      if (
+        safeDiagnostic(original) !== original ||
+        event.exception?.values?.some((item) => ORM_ERROR_NAME.test(item.type ?? ''))
+      ) {
+        // Allowlist the diagnostic envelope; never forward request bodies,
+        // breadcrumbs, frame locals, contexts or extras from an ORM failure.
+        return {
+          type: undefined,
+          event_id: event.event_id,
+          timestamp: event.timestamp,
+          environment: event.environment,
+          release: event.release,
+          level: event.level,
+          tags: { request_id: event.tags?.request_id },
+          exception: {
+            values: [{ type: 'DatabaseRequestError', value: 'Database request failed' }],
+          },
+        };
+      }
+      // Default SDK integrations add concrete URLs, queries and headers after
+      // the HTTP filter has selected a safe route template. Do not forward
+      // that automatic metadata (including duplicate copies in transaction
+      // names, breadcrumbs or contexts). Keep application-owned correlation
+      // and ordinary exception diagnostics. This is an error-event metadata
+      // boundary, not a sanitizer for arbitrary exception text or trace spans.
+      const tags: NonNullable<Sentry.ErrorEvent['tags']> = {};
+      for (const key of [
+        'request_id',
+        'http.method',
+        'http.path',
+        'service',
+        'runtime',
+        'environment',
+        'release',
+      ]) {
+        if (event.tags?.[key] !== undefined) tags[key] = event.tags[key];
+      }
+      return {
+        type: undefined,
+        event_id: event.event_id,
+        timestamp: event.timestamp,
+        environment: event.environment,
+        release: event.release,
+        level: event.level,
+        platform: event.platform,
+        exception: event.exception,
+        message: event.message,
+        logentry: event.logentry,
+        tags,
+      };
     },
   };
 }

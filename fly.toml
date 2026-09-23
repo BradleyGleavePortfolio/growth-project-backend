@@ -47,6 +47,19 @@ primary_region = 'sjc'
   min_machines_running = 1
   processes = ['app']
 
+  # Service-level readiness gates routing; DB failure must not drive restarts.
+  # This timeout bounds the probe, not the application's underlying DB query.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/readyz"
+    protocol = "http"
+
+    [http_service.checks.headers]
+      X-Forwarded-Proto = "https"
+
 [[vm]]
   memory = '2gb'
   cpus = 2
