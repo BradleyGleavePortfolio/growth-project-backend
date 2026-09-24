@@ -896,7 +896,7 @@
   "info": {
     "description": "Frozen public contract for the tgp-importer Chrome extension + mobile pairing surface. Generated from the backend @nestjs/swagger document — do not hand-edit. Run `npm run contract:importer` to regenerate.",
     "title": "Growth Project API — Importer Contract",
-    "version": "2.0.0-c1-s1.1"
+    "version": "2.0.0-c1-s1.2"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1998,7 +1998,7 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits legacy. Omit for the first page. A malformed or mismatched cursor is a 400 (fail closed).",
+            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits scoped v2. Omit for the first page. A malformed or mismatched cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -2040,7 +2040,7 @@
                 }
               }
             },
-            "description": "Invalid query (missing/oversized intent_id, unsupported family, out-of-range limit, or malformed/mismatched cursor). Standard HttpExceptionFilter envelope."
+            "description": "Invalid query (missing/oversized intent_id, unsupported family, out-of-range limit, or malformed/mismatched cursor, including a legacy cursor that no longer resolves — restart from the first page). Standard HttpExceptionFilter envelope."
           },
           "401": {
             "content": {
@@ -2112,7 +2112,7 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits legacy. A malformed cursor is a 400 (fail closed).",
+            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits scoped v2. A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -2154,7 +2154,7 @@
                 }
               }
             },
-            "description": "Invalid query (missing/oversized intent_id, out-of-range limit, or malformed cursor). Standard HttpExceptionFilter envelope."
+            "description": "Invalid query (missing/oversized intent_id, out-of-range limit, or malformed cursor, including a legacy cursor that no longer resolves — restart from the first page). Standard HttpExceptionFilter envelope."
           },
           "401": {
             "content": {

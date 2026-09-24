@@ -3,7 +3,13 @@ import { PersonState, Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
-import { decodeScoutCursor, scoutCursorOrder, scoutCursorWhere } from './scout-cursor';
+import {
+  decodeScoutCursor,
+  encodeScoutCursor,
+  resolveScoutCursor,
+  scoutCursorOrder,
+  scoutCursorWhere,
+} from './scout-cursor';
 import { RECONSTRUCT_ENTITY_TYPE, RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 import {
   ROSTER_DEFAULT_PAGE_SIZE,
@@ -30,8 +36,11 @@ type Tx = Prisma.TransactionClient;
  *    count; reconstructed/skipped/failed are read from the durable ledger, so a
  *    partial pass is visible (staged > reconstructed + skipped + failed).
  *  - Deterministic, bounded pagination: reconstructed ledger rows are read one
- *    bounded page at a time ordered by source_id; the cursor is an opaque
- *    forward-only token; a malformed cursor / oversized limit fails closed (400).
+ *    bounded page at a time ordered by (source_id, source_platform); the cursor
+ *    is an opaque forward-only scoped v2 token naming that boundary. A legacy
+ *    source-only token is still accepted and resolved to its boundary inside
+ *    the read snapshot, within this (coach, intent, clients) scope only; a
+ *    malformed, unresolvable, or oversized cursor / limit fails closed (400).
  *  - Erasure preserved: Deleted persons are excluded from the roster list.
  *  - Read-only, idempotent, PII-safe: no mutation, no email/billing/secret in the
  *    response or logs.
@@ -85,6 +94,15 @@ export class ScoutRosterService {
           throw new NotFoundException();
         }
 
+        // Q1: a legacy token becomes a full (source_id, source_platform)
+        // boundary here — after the gate, before any count or page read, and
+        // never outside this scope. Unresolvable is a 400; nothing else runs.
+        const position = await resolveScoutCursor(
+          tx,
+          { ...where, status: RECONSTRUCT_STATUS.reconstructed },
+          after,
+        );
+
         // staged: authoritative source count. reconstructed/skipped/failed: ledger.
         const staged = await tx.scoutIngestEntity.count({ where });
         const grouped = await tx.scoutReconstructionLedger.groupBy({
@@ -93,16 +111,17 @@ export class ScoutRosterService {
           _count: { _all: true },
         });
         // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
-        // second count query. Ordered by source_id (asc) — the same deterministic
-        // order the reconstruction write pages in — so the cursor is stable.
+        // second count query. Ordered by (source_id, source_platform) asc on every
+        // page — the same deterministic order the reconstruction write pages in —
+        // so the cursor is stable and identity ties never repeat or skip a row.
         const ledgerPage = await tx.scoutReconstructionLedger.findMany({
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...scoutCursorWhere(after),
+            ...scoutCursorWhere(position),
           },
-          select: { source_id: true, target_id: true },
-          orderBy: scoutCursorOrder(after),
+          select: { source_id: true, source_platform: true, target_id: true },
+          orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
 
@@ -119,11 +138,20 @@ export class ScoutRosterService {
     const count = (status: string): number =>
       grouped.find((g) => g.status === status)?._count._all ?? 0;
 
-    // next_cursor is anchored to the LEDGER source_id (not a filtered Person), so
+    // next_cursor is anchored to the LEDGER row (not a filtered Person), so
     // paging advances deterministically even when a Deleted person is skipped
-    // from the visible list.
-    const nextCursor =
-      hasMore && pageRows.length > 0 ? encodeCursor(pageRows[pageRows.length - 1].source_id) : null;
+    // from the visible list. Emitted as a scoped v2 token naming the last row's
+    // (source_id, source_platform).
+    const last = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1] : undefined;
+    const nextCursor = last
+      ? encodeScoutCursor(
+          coachId,
+          intentId,
+          RECONSTRUCT_ENTITY_TYPE,
+          last.source_id,
+          last.source_platform,
+        )
+      : null;
 
     this.analytics.capture(coachId, Events.SCOUT_RECONSTRUCT_ROSTER_READ, {
       intent_id: intentId,
@@ -193,9 +221,4 @@ export class ScoutRosterService {
     }
     return out;
   }
-}
-
-/** Encode a ledger source_id into an opaque forward-only cursor. */
-function encodeCursor(sourceId: string): string {
-  return Buffer.from(sourceId, 'utf8').toString('base64url');
 }

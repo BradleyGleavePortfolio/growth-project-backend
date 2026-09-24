@@ -439,7 +439,7 @@ describe('importer contract (R80 freeze)', () => {
     });
 
     it('setup recovery is an unfrozen 2.x prerelease, with optional nonce and current lookup', () => {
-      expect(contract.info.version).toBe('2.0.0-c1-s1.1');
+      expect(contract.info.version).toBe('2.0.0-c1-s1.2');
       const dto = rec(dig(contract, 'components', 'schemas', 'PairInitDto'));
       expect(dto.required).toEqual(['chosen_platform']);
       expect(dig(dto, 'properties', 'setup_nonce', 'format')).toBe('uuid');

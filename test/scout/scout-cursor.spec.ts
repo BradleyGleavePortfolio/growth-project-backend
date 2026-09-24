@@ -1,4 +1,4 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException, ValidationPipe } from '@nestjs/common';
 import { PrismaService } from '../../src/prisma.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { ScoutRosterService } from '../../src/scout/scout-roster.service';
@@ -7,10 +7,13 @@ import { ScoutRosterQueryDto } from '../../src/scout/scout-roster.dto';
 import { ScoutEntitiesQueryDto } from '../../src/scout/scout-entities.dto';
 import {
   decodeScoutCursor,
+  encodeScoutCursor,
+  resolveScoutCursor,
   SCOUT_CURSOR_MAX_LENGTH,
   scoutCursorOrder,
   scoutCursorWhere,
 } from '../../src/scout/scout-cursor';
+import { Prisma } from '@prisma/client';
 
 const encode = (s: string) => Buffer.from(s, 'utf8').toString('base64url');
 const envelope = (family: string) => ({
@@ -24,27 +27,121 @@ const envelope = (family: string) => ({
 });
 const v2 = (v: unknown) => `v2.${encode(JSON.stringify(v))}`;
 
-describe('Q0 scoped decoder and HTTP boundary', () => {
+const SCOPE = {
+  coach_id: 'coach',
+  intent_id: 'intent',
+  entity_type: 'workouts',
+  status: 'reconstructed',
+};
+/** A ledger reader fake: records the resolution query and answers with the given rows. */
+function ledgerTx(rows: Array<{ source_platform: string | null }>) {
+  const findMany = jest.fn((_args: unknown) => Promise.resolve(rows));
+  const tx = { scoutReconstructionLedger: { findMany } } as object as Prisma.TransactionClient;
+  return { tx, findMany };
+}
+
+describe('Q1 scoped v2 encoder, decoder, legacy resolution and HTTP boundary', () => {
   it.each(['clients', 'workouts', 'client_history'])('accepts exact v2 %s boundary', (family) => {
     const after = decodeScoutCursor(v2(envelope(family)), 'coach', 'intent', family);
     expect(after).toEqual({ s: 'source', p: 'truecoach' });
-    expect(scoutCursorWhere(after)).toEqual({
+    expect(scoutCursorWhere({ s: 'source', p: 'truecoach' })).toEqual({
       OR: [
         { source_id: { gt: 'source' } },
         { source_id: 'source', source_platform: { gt: 'truecoach' } },
       ],
     });
-    expect(scoutCursorOrder(after)).toEqual([{ source_id: 'asc' }, { source_platform: 'asc' }]);
+    expect(scoutCursorOrder()).toEqual([{ source_id: 'asc' }, { source_platform: 'asc' }]);
   });
 
-  it('retains the distinct legacy formats without a provenance lookup', () => {
+  it.each(['clients', 'workouts', 'client_history'])(
+    'emits the exact canonical v2 envelope for %s and round-trips it',
+    (family) => {
+      const token = encodeScoutCursor('coach', 'intent', family, 'source', 'truecoach');
+      expect(token).toBe(v2(envelope(family)));
+      expect(token.startsWith('v2.')).toBe(true);
+      const json = Buffer.from(token.slice(3), 'base64url').toString('utf8');
+      expect(Object.keys(JSON.parse(json) as object)).toEqual(['v', 'c', 'i', 'f', 'o', 's', 'p']);
+      expect(decodeScoutCursor(token, 'coach', 'intent', family)).toEqual({
+        s: 'source',
+        p: 'truecoach',
+      });
+      // Emitted tokens are bound: any other scope or endpoint refuses them.
+      expect(() => decodeScoutCursor(token, 'other', 'intent', family)).toThrow('malformed cursor');
+      expect(() => decodeScoutCursor(token, 'coach', 'other', family)).toThrow('malformed cursor');
+      expect(() =>
+        decodeScoutCursor(token, 'coach', 'intent', family === 'clients' ? 'workouts' : 'clients'),
+      ).toThrow('malformed cursor');
+    },
+  );
+
+  it('round-trips every worst-case boundary and stays within the HTTP bound', () => {
+    for (const id of ['\u0001'.repeat(256), '😀'.repeat(256), '\\'.repeat(256), '"'.repeat(256)]) {
+      const token = encodeScoutCursor(id, id, 'clients', id, 'a'.repeat(256));
+      expect(token.length).toBeLessThanOrEqual(SCOUT_CURSOR_MAX_LENGTH);
+      expect(decodeScoutCursor(token, id, id, 'clients')).toEqual({ s: id, p: 'a'.repeat(256) });
+    }
+  });
+
+  it('fails closed instead of emitting an undecodable token', () => {
+    const bad: Array<[string, string, string, string]> = [
+      ['coach', 'intent', '', 'truecoach'],
+      ['coach', 'intent', 'a'.repeat(257), 'truecoach'],
+      ['coach', 'intent', 's\u0000', 'truecoach'],
+      ['coach', 'intent', '\ud800', 'truecoach'],
+      ['coach', 'intent', 's', 'TrueCoach'],
+      ['coach', 'intent', 's', ''],
+      ['coach', 'intent', 's', 'a'.repeat(257)],
+      ['', 'intent', 's', 'truecoach'],
+      ['coach', '', 's', 'truecoach'],
+    ];
+    for (const [c, i, s, p] of bad) {
+      expect(() => encodeScoutCursor(c, i, 'clients', s, p)).toThrow(InternalServerErrorException);
+    }
+  });
+
+  it('still decodes the distinct legacy formats to a source-only boundary', () => {
     const e = { c: 'coach', i: 'intent', f: 'workouts', o: 'source_id:asc', s: 's' };
     expect(decodeScoutCursor(encode('s'), 'coach', 'intent', 'clients')).toEqual({ s: 's' });
     expect(decodeScoutCursor(encode(JSON.stringify(e)), 'coach', 'intent', 'workouts')).toEqual({
       s: 's',
     });
-    expect(scoutCursorWhere({ s: 's' })).toEqual({ source_id: { gt: 's' } });
-    expect(scoutCursorOrder({ s: 's' })).toEqual({ source_id: 'asc' });
+    expect(scoutCursorWhere(null)).toEqual({});
+  });
+
+  it('resolves a legacy boundary only through exactly one canonical ledger row in scope', async () => {
+    const { tx, findMany } = ledgerTx([{ source_platform: 'truecoach' }]);
+    await expect(resolveScoutCursor(tx, SCOPE, { s: 's' })).resolves.toEqual({
+      s: 's',
+      p: 'truecoach',
+    });
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany.mock.calls[0][0]).toEqual({
+      where: { ...SCOPE, source_id: 's' },
+      select: { source_platform: true },
+      take: 2,
+    });
+  });
+
+  it('passes v2 and empty boundaries through without any lookup', async () => {
+    const { tx, findMany } = ledgerTx([]);
+    await expect(resolveScoutCursor(tx, SCOPE, { s: 's', p: 'p' })).resolves.toEqual({
+      s: 's',
+      p: 'p',
+    });
+    await expect(resolveScoutCursor(tx, SCOPE, null)).resolves.toBeNull();
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, Array<{ source_platform: string | null }>]>([
+    ['absent (forged, foreign or never reconstructed)', []],
+    ['tied across platforms', [{ source_platform: 'a' }, { source_platform: 'b' }]],
+    ['noncanonical provenance', [{ source_platform: 'TrueCoach' }]],
+    ['null provenance', [{ source_platform: null }]],
+  ])('refuses an unresolvable legacy boundary as the documented 400: %s', async (_label, rows) => {
+    const { tx } = ledgerTx(rows);
+    const err = await resolveScoutCursor(tx, SCOPE, { s: 's' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message).toBe('malformed cursor');
   });
 
   it.each(['clients', 'workouts'])(

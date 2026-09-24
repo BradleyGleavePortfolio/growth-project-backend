@@ -3,7 +3,13 @@ import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
-import { decodeScoutCursor, scoutCursorOrder, scoutCursorWhere } from './scout-cursor';
+import {
+  decodeScoutCursor,
+  encodeScoutCursor,
+  resolveScoutCursor,
+  scoutCursorOrder,
+  scoutCursorWhere,
+} from './scout-cursor';
 import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
@@ -15,9 +21,6 @@ import { RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 
 /** Prisma transaction client — the interactive-transaction handle passed to $transaction. */
 type Tx = Prisma.TransactionClient;
-
-/** Forward-only ordering this endpoint pages in — pinned into the cursor. */
-const CURSOR_ORDER = 'source_id:asc';
 
 /**
  * IMPORTER-I — authoritative read bridge for reconstructed NON-person canonical
@@ -34,11 +37,13 @@ const CURSOR_ORDER = 'source_id:asc';
  *  - No existence oracle: an unknown, cross-tenant, OR not-yet-settled intent all
  *    collapse to a single indistinguishable 404.
  *  - Deterministic, bounded pagination: reconstructed ledger rows are read one
- *    bounded page at a time ordered by source_id; the cursor is an opaque
- *    forward-only token BOUND to (coach, intent, family, order) — a malformed or
- *    mismatched cursor fails closed (400). The binding is a consistency guard,
- *    not an authorizer: authorization is the settled-intent gate re-run every
- *    call.
+ *    bounded page at a time ordered by (source_id, source_platform); the cursor
+ *    is an opaque forward-only scoped v2 token BOUND to (coach, intent, family,
+ *    order) and naming that boundary. A legacy source-only token is still
+ *    accepted and resolved inside the read snapshot within the same scope; a
+ *    malformed, mismatched, or unresolvable cursor fails closed (400). The
+ *    binding is a consistency guard, not an authorizer: authorization is the
+ *    settled-intent gate re-run every call.
  *  - Honest page metadata, no total scan: `page_count` is the size of THIS page;
  *    the endpoint issues no unbounded count query.
  *  - Erasure preserved: a cascade-erased entity is simply absent from the join,
@@ -99,17 +104,27 @@ export class ScoutEntitiesService {
           throw new NotFoundException();
         }
 
+        // Q1: a legacy token becomes a full (source_id, source_platform)
+        // boundary here — after the gate, before any page read, and never
+        // outside this (coach, intent, family). Unresolvable is a 400.
+        const position = await resolveScoutCursor(
+          tx,
+          { ...where, status: RECONSTRUCT_STATUS.reconstructed },
+          after,
+        );
+
         // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
-        // second count query. Ordered by source_id (asc) — the same deterministic
-        // order the reconstruction write pages in — so the cursor is stable.
+        // second count query. Ordered by (source_id, source_platform) asc on every
+        // page — the same deterministic order the reconstruction write pages in —
+        // so the cursor is stable and identity ties never repeat or skip a row.
         const ledgerPage = await tx.scoutReconstructionLedger.findMany({
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...scoutCursorWhere(after),
+            ...scoutCursorWhere(position),
           },
-          select: { source_id: true, target_id: true },
-          orderBy: scoutCursorOrder(after),
+          select: { source_id: true, source_platform: true, target_id: true },
+          orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
 
@@ -124,13 +139,14 @@ export class ScoutEntitiesService {
 
     const { hasMore, pageRows, entities } = snapshot;
 
-    // next_cursor is anchored to the LEDGER source_id (not a filtered entity), so
+    // next_cursor is anchored to the LEDGER row (not a filtered entity), so
     // paging advances deterministically even when a cascade-erased row is dropped
-    // from the visible page.
-    const nextCursor =
-      hasMore && pageRows.length > 0
-        ? encodeCursor(coachId, intentId, family, pageRows[pageRows.length - 1].source_id)
-        : null;
+    // from the visible page. Emitted as a scoped v2 token naming the last row's
+    // (source_id, source_platform).
+    const last = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1] : undefined;
+    const nextCursor = last
+      ? encodeScoutCursor(coachId, intentId, family, last.source_id, last.source_platform)
+      : null;
 
     this.analytics.capture(coachId, Events.SCOUT_RECONSTRUCT_ENTITIES_READ, {
       intent_id: intentId,
@@ -200,10 +216,4 @@ export class ScoutEntitiesService {
     }
     return out;
   }
-}
-
-/** Encode a ledger source_id into an opaque cursor bound to its read context. */
-function encodeCursor(coachId: string, intentId: string, family: string, sourceId: string): string {
-  const payload = { c: coachId, i: intentId, f: family, o: CURSOR_ORDER, s: sourceId };
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }

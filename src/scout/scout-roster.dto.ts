@@ -44,7 +44,9 @@ export class ScoutRosterQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `page.next_cursor` by a prior ' +
-      'call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits legacy. A malformed cursor is a 400 (fail closed).',
+      'call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits scoped v2. ' +
+      'A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed ' +
+      'row, is a 400 (fail closed): restart pagination from the first page.',
     maxLength: SCOUT_CURSOR_MAX_LENGTH,
   })
   @IsOptional()

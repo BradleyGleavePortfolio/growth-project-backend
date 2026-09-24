@@ -26,7 +26,7 @@ interface StagedRow {
   payload: unknown;
 }
 interface LedgerRow {
-  source_platform?: string | null;
+  source_platform: string;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -34,6 +34,21 @@ interface LedgerRow {
   status: string;
   target_id: string | null;
   reason: string | null;
+}
+/** The five-field ledger identity the N writer addresses. */
+interface LedgerIdentity {
+  coach_id: string;
+  intent_id: string;
+  entity_type: string;
+  source_platform: string;
+  source_id: string;
+}
+
+function p2002(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('unique violation', {
+    code: 'P2002',
+    clientVersion: 'test',
+  });
 }
 
 class FakePrisma {
@@ -63,12 +78,12 @@ class FakePrisma {
   private personKey(coach: string, platform: string, personId: string): string {
     return `${coach}|${platform}|${personId}`;
   }
-  private ledgerKey(r: {
-    coach_id: string;
-    intent_id: string;
-    entity_type: string;
-    source_id: string;
-  }): string {
+  /**
+   * The ledger is keyed by the NARROW (coach, intent, entity, source) key the
+   * real table still enforces until C, so a wide-identity upsert that misses
+   * but collides on the narrow key raises P2002 exactly like PostgreSQL.
+   */
+  private ledgerKey(r: LedgerIdentity): string {
     return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_id}`;
   }
 
@@ -83,8 +98,12 @@ class FakePrisma {
       const skip = args.skip ?? 0;
       const take = args.take ?? this.staged.length;
       this.pages.push({ skip, take });
-      // Deterministic order by source_id, mirroring the service's orderBy.
-      const ordered = [...this.staged].sort((a, b) => a.source_id.localeCompare(b.source_id));
+      // Deterministic (source_id, source_platform) order, mirroring the service's orderBy.
+      const ordered = [...this.staged].sort(
+        (a, b) =>
+          a.source_id.localeCompare(b.source_id) ||
+          a.source_platform.localeCompare(b.source_platform),
+      );
       return ordered.slice(skip, skip + take);
     },
   };
@@ -135,21 +154,14 @@ class FakePrisma {
 
   scoutReconstructionLedger = {
     updateMany: async (args: {
-      where: {
-        coach_id: string;
-        intent_id: string;
-        entity_type: string;
-        source_id: string;
-        OR?: Array<{ source_platform: string | null }>;
-        status?: { not: string };
-      };
+      where: LedgerIdentity & { status?: { not: string } };
       data: Partial<LedgerRow>;
     }) => {
       const w = args.where;
-      const row = this.ledger.get(`${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_id}`);
+      const row = this.ledger.get(this.ledgerKey(w));
       if (
         !row ||
-        (w.OR && !w.OR.some((p) => p.source_platform === (row.source_platform ?? null))) ||
+        row.source_platform !== w.source_platform ||
         (w.status && row.status === w.status.not)
       )
         return { count: 0 };
@@ -157,16 +169,20 @@ class FakePrisma {
       return { count: 1 };
     },
     upsert: async (args: {
-      where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerIdentity };
       create: LedgerRow;
       update: Partial<LedgerRow>;
     }) => {
-      const key = this.ledgerKey(args.where.coach_id_intent_id_entity_type_source_id);
+      const w = args.where.coach_id_intent_id_entity_type_source_platform_source_id;
+      const key = this.ledgerKey(w);
       const existing = this.ledger.get(key);
-      if (existing) {
+      if (existing && existing.source_platform === w.source_platform) {
         Object.assign(existing, args.update);
         return existing;
       }
+      // Wide identity missed but the narrow key is taken: the INSERT half of the
+      // upsert violates the retained narrow unique index (P2002), as on PG.
+      if (existing) throw p2002();
       const row = { ...args.create };
       this.ledger.set(key, row);
       return row;
@@ -245,14 +261,13 @@ describe('ScoutReconstructService', () => {
   );
 
   it.each(['skipped', 'failed'])(
-    'claims NULL but preserves a committed success on %s replay, including reason',
+    'preserves a committed success on %s replay, including reason (no claim step)',
     async (attempt) => {
       const { service, prisma } = build((p) => {
         p.staged = [stagedClient('1')];
       });
       await service.reconstruct('coach-1', 'intent-1');
       const row = [...prisma.ledger.values()][0];
-      row.source_platform = null;
       row.reason = 'retained-success-reason';
       const target = row.target_id;
       if (attempt === 'skipped')
@@ -272,7 +287,7 @@ describe('ScoutReconstructService', () => {
   );
 
   it.each(['reconstructed', 'skipped', 'failed'])(
-    'refuses contradictory provenance even if preserving an existing %s',
+    'reports a narrow-key collision (same source, other platform, existing %s) as 409 with nothing written',
     async (status) => {
       const { service, prisma } = build((p) => {
         p.staged = [stagedClient('1')];
@@ -282,15 +297,47 @@ describe('ScoutReconstructService', () => {
       row.source_platform = 'different';
       row.status = status;
       const before = { ...row };
+      const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert');
+      const precedence = jest.spyOn(prisma.scoutReconstructionLedger, 'updateMany');
       jest
         .spyOn(service['families'].get('clients')!, 'map')
         .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
-      await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toThrow(
-        'reconstruction provenance conflict',
-      );
+      const err = await service.reconstruct('coach-1', 'intent-1').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).message).toBe('reconstruction provenance conflict');
+      // Wide upsert (retried once for the P2002) never reached precedence; the
+      // ledger holds exactly the pre-existing row, byte for byte.
+      expect(upsert).toHaveBeenCalledTimes(2);
+      expect(precedence).not.toHaveBeenCalled();
+      expect(prisma.ledger.size).toBe(1);
       expect(row).toEqual(before);
+      expect(JSON.stringify(err)).not.toContain('different');
     },
   );
+
+  it('addresses the ledger by the five-field identity with an empty update (no claim, no early status)', async () => {
+    const { service, prisma } = build((p) => {
+      p.staged = [stagedClient('1')];
+    });
+    const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert');
+    const precedence = jest.spyOn(prisma.scoutReconstructionLedger, 'updateMany');
+    await service.reconstruct('coach-1', 'intent-1');
+    const identity = {
+      coach_id: 'coach-1',
+      intent_id: 'intent-1',
+      entity_type: 'clients',
+      source_platform: 'truecoach',
+      source_id: '1',
+    };
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0]).toEqual({
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: identity },
+      create: { ...identity, status: 'reconstructed', target_id: expect.any(String), reason: null },
+      update: {},
+    });
+    expect(precedence).toHaveBeenCalledTimes(1);
+    expect(precedence.mock.calls[0][0].where).toEqual(identity);
+  });
 
   it('uses serialized last non-success attempt, then allows success to upgrade it', async () => {
     const { service, prisma } = build((p) => {
@@ -366,23 +413,34 @@ describe('ScoutReconstructService', () => {
     },
   );
 
-  it.each(['P2002', 'P2034', 'P2003'])(
-    'bounds exhausted/nonretryable %s ledger writes',
-    async (code) => {
-      const { service, prisma } = build((p) => {
-        p.staged = [{ ...stagedClient('1'), source_platform: 'unsupported' }];
-      });
-      const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert').mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('private', {
-          code,
-          clientVersion: 'test',
-        }),
-      );
-      await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toMatchObject({ code });
-      expect(upsert).toHaveBeenCalledTimes(code === 'P2003' ? 1 : 2);
-      expect(prisma.ledger.size).toBe(0);
-    },
-  );
+  it.each(['P2034', 'P2003'])('bounds exhausted/nonretryable %s ledger writes', async (code) => {
+    const { service, prisma } = build((p) => {
+      p.staged = [{ ...stagedClient('1'), source_platform: 'unsupported' }];
+    });
+    const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert').mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('private', {
+        code,
+        clientVersion: 'test',
+      }),
+    );
+    await expect(service.reconstruct('coach-1', 'intent-1')).rejects.toMatchObject({ code });
+    expect(upsert).toHaveBeenCalledTimes(code === 'P2003' ? 1 : 2);
+    expect(prisma.ledger.size).toBe(0);
+  });
+
+  it('maps a P2002 that survives the single retry to the 409 provenance conflict', async () => {
+    const { service, prisma } = build((p) => {
+      p.staged = [{ ...stagedClient('1'), source_platform: 'unsupported' }];
+    });
+    const upsert = jest
+      .spyOn(prisma.scoutReconstructionLedger, 'upsert')
+      .mockRejectedValue(p2002());
+    const err = await service.reconstruct('coach-1', 'intent-1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).message).toBe('reconstruction provenance conflict');
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.ledger.size).toBe(0);
+  });
 
   it('rejects an intent that has not settled (still running) with 409', async () => {
     const { service } = build((p) => {

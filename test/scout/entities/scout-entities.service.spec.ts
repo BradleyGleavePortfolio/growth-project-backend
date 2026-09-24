@@ -10,6 +10,7 @@ import {
   ENTITY_REVIEW_FAMILIES,
 } from '../../../src/scout/scout-entities.dto';
 import { RECONSTRUCT_FAMILY } from '../../../src/scout/scout-reconstruct.dto';
+import { decodeScoutCursor } from '../../../src/scout/scout-cursor';
 
 /**
  * ScoutEntitiesService unit tests (IMPORTER-I).
@@ -31,6 +32,7 @@ interface LedgerRow {
   intent_id: string;
   entity_type: string;
   source_id: string;
+  source_platform: string;
   status: string;
   target_id: string | null;
 }
@@ -51,7 +53,9 @@ interface Where {
   intent_id?: string;
   entity_type?: string;
   status?: string;
-  source_id?: { gt?: string };
+  source_id?: string | { gt?: string };
+  source_platform?: { gt?: string };
+  OR?: Where[];
   id?: { in?: string[] };
 }
 
@@ -68,6 +72,8 @@ class FakePrisma {
   transactionCalls: Array<{ isolationLevel?: string }> = [];
   private txDepth = 0;
   readsOutsideTx = 0;
+  /** Every ledger findMany, in order, so tests can prove what was (not) read. */
+  ledgerReads: Array<{ where: Where; take?: number; orderBy?: unknown }> = [];
 
   $transaction = async <T>(
     fn: (tx: FakePrisma) => Promise<T>,
@@ -98,17 +104,19 @@ class FakePrisma {
   };
 
   scoutReconstructionLedger = {
-    findMany: async (args: { where: Where; take?: number }) => {
+    findMany: async (args: { where: Where; take?: number; orderBy?: unknown }) => {
       this.noteRead();
-      let rows = this.ledgerRows.filter(
-        (r) =>
-          matchBase(r, args.where) &&
-          (args.where.status === undefined || r.status === args.where.status) &&
-          (args.where.source_id?.gt === undefined || r.source_id > args.where.source_id.gt),
-      );
-      rows = rows.sort((a, b) => a.source_id.localeCompare(b.source_id));
+      this.ledgerReads.push(args);
+      // Real (source_id, source_platform) order and predicate semantics: the
+      // fake mirrors the schema's wide identity so tie-break paging is proven
+      // by behaviour (PG remains the authority; see the NQ1 real-PG proof).
+      let rows = this.ledgerRows.filter((r) => matchLedger(r, args.where)).sort(byIdentity);
       if (args.take !== undefined) rows = rows.slice(0, args.take);
-      return rows.map((r) => ({ source_id: r.source_id, target_id: r.target_id }));
+      return rows.map((r) => ({
+        source_id: r.source_id,
+        source_platform: r.source_platform,
+        target_id: r.target_id,
+      }));
     },
   };
 
@@ -146,6 +154,37 @@ function matchBase(
     (w.intent_id === undefined || r.intent_id === w.intent_id) &&
     (w.entity_type === undefined || r.entity_type === w.entity_type)
   );
+}
+
+function matchLedger(r: LedgerRow, w: Where): boolean {
+  if (!matchBase(r, w)) return false;
+  if (w.status !== undefined && r.status !== w.status) return false;
+  if (typeof w.source_id === 'string' && r.source_id !== w.source_id) return false;
+  if (
+    typeof w.source_id === 'object' &&
+    w.source_id.gt !== undefined &&
+    !(r.source_id > w.source_id.gt)
+  )
+    return false;
+  if (w.source_platform?.gt !== undefined && !(r.source_platform > w.source_platform.gt))
+    return false;
+  if (w.OR !== undefined && !w.OR.some((o) => matchLedger(r, o))) return false;
+  return true;
+}
+
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const byIdentity = (a: LedgerRow, b: LedgerRow): number =>
+  cmp(a.source_id, b.source_id) || cmp(a.source_platform, b.source_platform);
+
+const b64 = (v: string): string => Buffer.from(v, 'utf8').toString('base64url');
+/** The exact scoped v2 token Q1 must emit for an entity-family boundary. */
+function expectedV2(coach: string, intent: string, f: string, s: string, p: string): string {
+  const o = 'source_id:asc,source_platform:asc';
+  return `v2.${b64(JSON.stringify({ v: 2, c: coach, i: intent, f, o, s, p }))}`;
+}
+/** The legacy scope-bound token Q0 emitted for an entity-family boundary. */
+function legacyEntities(coach: string, intent: string, f: string, s: string): string {
+  return b64(JSON.stringify({ c: coach, i: intent, f, o: 'source_id:asc', s }));
 }
 
 // Wire the service through the Nest DI container: `useValue` is typed to accept
@@ -200,6 +239,7 @@ function seed(
       intent_id: intent,
       entity_type: family,
       source_id: sid,
+      source_platform: platform,
       status: 'reconstructed',
       target_id: targetId,
     });
@@ -312,6 +352,10 @@ describe('ScoutEntitiesService.getEntities', () => {
     expect(page1.next_cursor).toBeTruthy();
     // Cursor is opaque (base64url of a bound payload), not the raw source_id.
     expect(page1.next_cursor).not.toBe('s001');
+    // Q1: the exact scoped v2 token of the last LEDGER row; first page ordered
+    // by (source_id, source_platform) like every later page.
+    expect(page1.next_cursor).toBe(expectedV2(COACH, INTENT, FAM, 's001', 'truecoach'));
+    expect(fake.ledgerReads[0].orderBy).toEqual([{ source_id: 'asc' }, { source_platform: 'asc' }]);
 
     const page2 = await service.getEntities(COACH, INTENT, FAM, page1.next_cursor ?? undefined, 2);
     expect(page2.entities.map((e) => e.source_id)).toEqual(['truecoach_s002', 'truecoach_s003']);
@@ -335,6 +379,161 @@ describe('ScoutEntitiesService.getEntities', () => {
     }
     expect(seen).toHaveLength(7);
     expect(new Set(seen).size).toBe(7);
+  });
+
+  describe('Q1 cursor emission and legacy-boundary resolution', () => {
+    it('emits scoped v2 on every non-final page, each accepted back by the decoder', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 5 });
+      const { service } = await makeService(fake);
+      let cursor: string | undefined;
+      const emitted: string[] = [];
+      for (let guard = 0; guard < 10; guard++) {
+        const page = await service.getEntities(COACH, INTENT, FAM, cursor, 2);
+        if (!page.next_cursor) break;
+        emitted.push(page.next_cursor);
+        expect(decodeScoutCursor(page.next_cursor, COACH, INTENT, FAM)).toEqual({
+          s: page.entities[page.entities.length - 1].source_id.replace('truecoach_', ''),
+          p: 'truecoach',
+        });
+        cursor = page.next_cursor;
+      }
+      expect(emitted).toEqual([
+        expectedV2(COACH, INTENT, FAM, 's001', 'truecoach'),
+        expectedV2(COACH, INTENT, FAM, 's003', 'truecoach'),
+      ]);
+    });
+
+    it('resolves a Q0-emitted legacy entities token to the same next page as its v2 twin', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 5 });
+      const { service } = await makeService(fake);
+      const page1 = await service.getEntities(COACH, INTENT, FAM, undefined, 2);
+      const viaV2 = await service.getEntities(
+        COACH,
+        INTENT,
+        FAM,
+        page1.next_cursor ?? undefined,
+        2,
+      );
+      const viaLegacy = await service.getEntities(
+        COACH,
+        INTENT,
+        FAM,
+        legacyEntities(COACH, INTENT, FAM, 's001'),
+        2,
+      );
+      expect(viaLegacy).toEqual(viaV2);
+      expect(viaLegacy.entities.map((e) => e.source_id)).toEqual([
+        'truecoach_s002',
+        'truecoach_s003',
+      ]);
+      const reads = fake.ledgerReads.slice(-2);
+      expect(reads[0]).toEqual({
+        where: {
+          coach_id: COACH,
+          intent_id: INTENT,
+          entity_type: FAM,
+          status: 'reconstructed',
+          source_id: 's001',
+        },
+        select: { source_platform: true },
+        take: 2,
+      });
+      expect(reads[1].where.OR).toEqual([
+        { source_id: { gt: 's001' } },
+        { source_id: 's001', source_platform: { gt: 'truecoach' } },
+      ]);
+      expect(fake.readsOutsideTx).toBe(0);
+    });
+
+    it('400s an unresolvable legacy token (absent source) with no page read', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      const { service } = await makeService(fake);
+      const before = fake.ledgerReads.length;
+      const err = await service
+        .getEntities(COACH, INTENT, FAM, legacyEntities(COACH, INTENT, FAM, 'zzz-absent'), 2)
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).message).toBe('malformed cursor');
+      expect(fake.ledgerReads.length - before).toBe(1);
+      expect(fake.ledgerReads[before].take).toBe(2);
+    });
+
+    it('resolves within the token family only: a row of another family is not a boundary', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      seed(fake, { family: RECONSTRUCT_FAMILY.client_history, reconstructed: 0 });
+      const { service } = await makeService(fake);
+      // s001 is reconstructed for `workouts` only; a client_history legacy
+      // token naming it is scope-bound to client_history and finds nothing.
+      await expect(
+        service.getEntities(
+          COACH,
+          INTENT,
+          RECONSTRUCT_FAMILY.client_history,
+          legacyEntities(COACH, INTENT, RECONSTRUCT_FAMILY.client_history, 's001'),
+          2,
+        ),
+      ).rejects.toThrow('malformed cursor');
+    });
+
+    it('enumerates identity ties exactly once and refuses a tied legacy boundary', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 2 });
+      // Future-schema fixture: one source_id reconstructed from three platforms.
+      for (const p of ['c-plat', 'a-plat', 'b-plat']) {
+        const id = `e-${p}`;
+        fake.ledgerRows.push({
+          coach_id: COACH,
+          intent_id: INTENT,
+          entity_type: FAM,
+          source_id: 's000',
+          source_platform: p,
+          status: 'reconstructed',
+          target_id: id,
+        });
+        fake.entities.push({
+          id,
+          coach_id: COACH,
+          source_platform: p,
+          entity_type: FAM,
+          source_id: `${p}_s000`,
+          client_source_id: null,
+          label: null,
+          created_at: new Date(0),
+          updated_at: new Date(0),
+        });
+      }
+      const { service } = await makeService(fake);
+      const seen: string[] = [];
+      const tokens: string[] = [];
+      let cursor: string | undefined;
+      for (let guard = 0; guard < 20; guard++) {
+        const page = await service.getEntities(COACH, INTENT, FAM, cursor, 1);
+        seen.push(...page.entities.map((e) => e.source_id));
+        if (!page.next_cursor) break;
+        tokens.push(page.next_cursor);
+        cursor = page.next_cursor;
+      }
+      expect(seen).toEqual([
+        'a-plat_s000',
+        'b-plat_s000',
+        'c-plat_s000',
+        'truecoach_s000',
+        'truecoach_s001',
+      ]);
+      expect(tokens).toEqual([
+        expectedV2(COACH, INTENT, FAM, 's000', 'a-plat'),
+        expectedV2(COACH, INTENT, FAM, 's000', 'b-plat'),
+        expectedV2(COACH, INTENT, FAM, 's000', 'c-plat'),
+        expectedV2(COACH, INTENT, FAM, 's000', 'truecoach'),
+      ]);
+      await expect(
+        service.getEntities(COACH, INTENT, FAM, legacyEntities(COACH, INTENT, FAM, 's000'), 1),
+      ).rejects.toThrow('malformed cursor');
+    });
   });
 
   it('rejects a malformed cursor (fail closed, never a silent full scan)', async () => {
@@ -422,6 +621,7 @@ describe('ScoutEntitiesService.getEntities', () => {
       intent_id: INTENT,
       entity_type: FAM,
       source_id: 's999',
+      source_platform: 'truecoach',
       status: 'reconstructed',
       target_id: 'e-foreign',
     });
@@ -450,6 +650,7 @@ describe('ScoutEntitiesService.getEntities', () => {
       intent_id: INTENT,
       entity_type: RECONSTRUCT_FAMILY.workouts,
       source_id: 's999',
+      source_platform: 'truecoach',
       status: 'reconstructed',
       target_id: 'e-crossfam',
     });
@@ -475,6 +676,7 @@ describe('ScoutEntitiesService.getEntities', () => {
         intent_id: INTENT,
         entity_type: FAM,
         source_id: 'z-skip',
+        source_platform: 'truecoach',
         status: 'skipped',
         target_id: null,
       },
@@ -483,6 +685,7 @@ describe('ScoutEntitiesService.getEntities', () => {
         intent_id: INTENT,
         entity_type: FAM,
         source_id: 'z-fail',
+        source_platform: 'truecoach',
         status: 'failed',
         target_id: null,
       },

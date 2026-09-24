@@ -44,7 +44,8 @@ export class ScoutRosterController {
     status: 400,
     description:
       'Invalid query (missing/oversized intent_id, out-of-range limit, or malformed ' +
-      'cursor). Standard HttpExceptionFilter envelope.',
+      'cursor, including a legacy cursor that no longer resolves — restart from the ' +
+      'first page). Standard HttpExceptionFilter envelope.',
     schema: errorEnvelopeSchema(),
   })
   @ApiResponse({

@@ -33,10 +33,14 @@ import {
  *    rejected fail-closed, and the rest are read one deterministic page at a
  *    time — never the whole roster at once and never an unbounded query burst.
  *  - Idempotent: the canonical target is keyed on the tenant-scoped external_ref
- *    and the ledger on (coach_id, intent_id, entity_type, source_id), both
- *    upserted, so a replay mints no new rows and returns identical counts. A
- *    concurrent replay that loses the insert race (unique violation) is retried
- *    once and converges, never a spurious `failed`.
+ *    and the ledger on the wide identity (coach_id, intent_id, entity_type,
+ *    source_platform, source_id), both upserted, so a replay mints no new rows
+ *    and returns identical counts. A concurrent replay that loses the insert
+ *    race (unique violation) is retried once and converges, never a spurious
+ *    `failed`. A unique violation that persists after the retry cannot be the
+ *    wide identity (the retry's upsert would have matched it): it is a
+ *    provenance collision on the retained narrow key and is a 409 with nothing
+ *    written, never a fabricated ledger outcome.
  *  - Poison-row isolation: each staged row is reconstructed in its own
  *    transaction inside a try/catch; one bad row is recorded `failed` and its
  *    siblings still reconstruct.
@@ -77,7 +81,8 @@ export class ScoutReconstructService {
     const staged = await this.prisma.scoutIngestEntity.count({ where });
     this.assertWithinBound(coachId, intentId, staged);
 
-    // Deterministic paged read (ordered by source_id): bounded memory + a
+    // Deterministic paged read (ordered by source_id, source_platform — the
+    // staged identity, total once the narrow key is gone): bounded memory + a
     // bounded number of queries regardless of roster size. Each row is
     // reconstructed idempotently, so a re-run picks up exactly where a prior
     // pass left off without minting duplicates.
@@ -85,7 +90,7 @@ export class ScoutReconstructService {
       const page = await this.prisma.scoutIngestEntity.findMany({
         where,
         select: { source_id: true, source_platform: true, payload: true },
-        orderBy: { source_id: 'asc' },
+        orderBy: [{ source_id: 'asc' }, { source_platform: 'asc' }],
         take: RECONSTRUCT_PAGE_SIZE,
         skip,
       });
@@ -210,7 +215,7 @@ export class ScoutReconstructService {
         this.prisma.$transaction(async (tx) => {
           // Keep target-before-ledger lock order compatible with old writers.
           const targetId = await family.persist(tx, coachId, row.source_id, mapped.mapped);
-          await this.claimAndWrite(
+          await this.writeLedger(
             tx,
             family.entityType,
             coachId,
@@ -247,12 +252,20 @@ export class ScoutReconstructService {
     // durable outcome. Success/skip/failure transactions each retry at most once.
     await retryContention(() =>
       this.prisma.$transaction((tx) =>
-        this.claimAndWrite(tx, entityType, coachId, intentId, row, status, null, reason),
+        this.writeLedger(tx, entityType, coachId, intentId, row, status, null, reason),
       ),
     );
   }
 
-  private async claimAndWrite(
+  /**
+   * Final (N) ledger write: one wide-identity upsert, then the precedence
+   * update. The staged row's platform is part of the identity, so there is no
+   * claim step — the database's NOT NULL + canonical CHECK (R) and the wide key
+   * are the arbiter. A concurrent insert of the same identity surfaces as P2002
+   * and the caller retries the whole transaction once; the retry's upsert then
+   * matches the committed row and proceeds to precedence.
+   */
+  private async writeLedger(
     tx: Prisma.TransactionClient,
     entityType: string,
     coachId: string,
@@ -266,26 +279,19 @@ export class ScoutReconstructService {
       coach_id: coachId,
       intent_id: intentId,
       entity_type: entityType,
+      source_platform: row.source_platform,
       source_id: row.source_id,
     };
     const outcome = { status, target_id: targetId, reason };
     await tx.scoutReconstructionLedger.upsert({
-      where: { coach_id_intent_id_entity_type_source_id: identity },
-      create: { ...identity, source_platform: row.source_platform, ...outcome },
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: identity },
+      create: { ...identity, ...outcome },
       // Do NOT change status before checking precedence. A no-op upsert can
       // race an insert; P2002 retries the entire transaction, never part of it.
       update: {},
     });
-    const claimed = await tx.scoutReconstructionLedger.updateMany({
-      where: {
-        ...identity,
-        OR: [{ source_platform: null }, { source_platform: row.source_platform }],
-      },
-      data: { source_platform: row.source_platform },
-    });
-    if (claimed.count !== 1) throw new ProvenanceConflict();
-    // The claim UPDATE holds the row lock until commit. Under ReadCommitted a
-    // waiting claim rechecks the predicate against the winner's current row.
+    // The precedence UPDATE holds the row lock until commit. Under ReadCommitted
+    // a waiting writer rechecks the predicate against the winner's current row.
     // Non-success attempts are last serialized writer wins; success dominates
     // T attempts, preserving target AND reason of a committed reconstruction.
     await tx.scoutReconstructionLedger.updateMany({
@@ -330,18 +336,34 @@ class ProvenanceConflict extends ConflictException {
   }
 }
 
-/** Only actual Prisma insert races / transaction conflicts, once per attempt. */
+/**
+ * Only actual Prisma insert races / transaction conflicts, once per attempt. A
+ * unique violation that survives the retry is not a race: the wide-identity
+ * upsert would have matched a committed row of the same identity, so the row
+ * blocking the insert carries the same narrow (coach, intent, entity, source)
+ * key under a different platform. That is a provenance collision — reported as
+ * the same 409 the T writer returned for it, with nothing written.
+ */
 async function retryContention<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (err) {
-    if (
-      !(err instanceof Prisma.PrismaClientKnownRequestError) ||
-      !['P2002', 'P2034'].includes(err.code)
-    )
-      throw err;
-    return operation();
+    if (!isContention(err)) throw err;
+    try {
+      return await operation();
+    } catch (again) {
+      if (again instanceof Prisma.PrismaClientKnownRequestError && again.code === 'P2002') {
+        throw new ProvenanceConflict();
+      }
+      throw again;
+    }
   }
+}
+
+function isContention(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(err.code)
+  );
 }
 
 /**
