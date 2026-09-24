@@ -36,7 +36,8 @@ export class ScoutIngestController {
     summary: 'Ingest a batch of crawled entities',
     description:
       'Receives the extension crawl envelope { intent_id, entity_type, entities[] }. ' +
-      'Idempotent on (coach_id, intent_id, sourceId). Returns 202 { received, deduped }. ' +
+      'Idempotent on (coach_id, intent_id, entity_type, sourcePlatform, sourceId). ' +
+      'Returns 202 { received, deduped }. ' +
       'Returns 404 when FEATURE_SCOUT_INGEST is off.',
   })
   @ApiResponse({ status: 202, description: 'Batch accepted.', type: ScoutIngestResult })

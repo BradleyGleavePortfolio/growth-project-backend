@@ -79,12 +79,13 @@ class FakePrisma {
     return `${coach}|${platform}|${personId}`;
   }
   /**
-   * The ledger is keyed by the NARROW (coach, intent, entity, source) key the
-   * real table still enforces until C, so a wide-identity upsert that misses
-   * but collides on the narrow key raises P2002 exactly like PostgreSQL.
+   * The ledger is keyed by the five-field WIDE identity (coach, intent, entity,
+   * platform, source): the only unique key the real table carries since G2-C
+   * (20270121000000_scout_identity_contract dropped the narrow key). The same
+   * source on another platform is a distinct row, exactly like PostgreSQL.
    */
   private ledgerKey(r: LedgerIdentity): string {
-    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_id}`;
+    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_platform}|${r.source_id}`;
   }
 
   scoutImport = {
@@ -176,13 +177,11 @@ class FakePrisma {
       const w = args.where.coach_id_intent_id_entity_type_source_platform_source_id;
       const key = this.ledgerKey(w);
       const existing = this.ledger.get(key);
-      if (existing && existing.source_platform === w.source_platform) {
+      if (existing) {
         Object.assign(existing, args.update);
         return existing;
       }
-      // Wide identity missed but the narrow key is taken: the INSERT half of the
-      // upsert violates the retained narrow unique index (P2002), as on PG.
-      if (existing) throw p2002();
+      // G2-C: no narrow key remains, so a wide-identity miss is simply an insert.
       const row = { ...args.create };
       this.ledger.set(key, row);
       return row;
@@ -287,31 +286,47 @@ describe('ScoutReconstructService', () => {
   );
 
   it.each(['reconstructed', 'skipped', 'failed'])(
-    'reports a narrow-key collision (same source, other platform, existing %s) as 409 with nothing written',
+    'G2-C: the same source on another platform (existing %s) is a distinct identity — its own ledger row and target, the existing row untouched',
     async (status) => {
       const { service, prisma } = build((p) => {
         p.staged = [stagedClient('1')];
       });
       await service.reconstruct('coach-1', 'intent-1');
-      const row = [...prisma.ledger.values()][0];
-      row.source_platform = 'different';
-      row.status = status;
-      const before = { ...row };
+      const existing = [...prisma.ledger.values()][0];
+      existing.status = status;
+      const before = { ...existing };
+      // The second observation of source 1 arrives on another registered platform.
+      prisma.staged = [{ ...stagedClient('1'), source_platform: 'conformance_alpha' }];
       const upsert = jest.spyOn(prisma.scoutReconstructionLedger, 'upsert');
       const precedence = jest.spyOn(prisma.scoutReconstructionLedger, 'updateMany');
-      jest
-        .spyOn(service['families'].get('clients')!, 'map')
-        .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
-      const err = await service.reconstruct('coach-1', 'intent-1').catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(ConflictException);
-      expect((err as ConflictException).message).toBe('reconstruction provenance conflict');
-      // Wide upsert (retried once for the P2002) never reached precedence; the
-      // ledger holds exactly the pre-existing row, byte for byte.
-      expect(upsert).toHaveBeenCalledTimes(2);
-      expect(precedence).not.toHaveBeenCalled();
-      expect(prisma.ledger.size).toBe(1);
-      expect(row).toEqual(before);
-      expect(JSON.stringify(err)).not.toContain('different');
+      const result = await service.reconstruct('coach-1', 'intent-1');
+      // The tally is cumulative over the ledger: the pre-existing row keeps its status and the
+      // new identity is reconstructed beside it.
+      expect(result).toEqual({
+        intent_id: 'intent-1',
+        staged: 1,
+        reconstructed: status === 'reconstructed' ? 2 : 1,
+        skipped: status === 'skipped' ? 1 : 0,
+        failed: status === 'failed' ? 1 : 0,
+      });
+      // One wide upsert, no retry, precedence applied to the NEW identity only.
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(precedence).toHaveBeenCalledTimes(1);
+      expect(prisma.ledger.size).toBe(2);
+      expect(existing).toEqual(before);
+      const added = [...prisma.ledger.values()].find((r) => r !== existing)!;
+      expect(added).toMatchObject({
+        coach_id: 'coach-1',
+        intent_id: 'intent-1',
+        entity_type: 'clients',
+        source_platform: 'conformance_alpha',
+        source_id: '1',
+        status: 'reconstructed',
+      });
+      // Distinct target: the Person key embeds the platform.
+      expect(added.target_id).not.toBeNull();
+      expect(added.target_id).not.toBe(before.target_id);
+      expect(prisma.persons.size).toBe(2);
     },
   );
 

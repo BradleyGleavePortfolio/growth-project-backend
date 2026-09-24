@@ -82,7 +82,8 @@ describe('ScoutIngestService', () => {
   // NOTE: replay/dedup counting was previously asserted here against a mocked
   // createMany count — a tautology (the mock decided the count, so the test
   // only proved received - count arithmetic, not that the unique index dedups).
-  // The real idempotency semantics of the (coach_id, intent_id, source_id) key
+  // The real idempotency semantics of the (coach_id, intent_id, entity_type,
+  // source_platform, source_id) key
   // — including that a re-observation with a fresh capturedAt is a no-op replay
   // and a new intent_id inserts a fresh series (R-IDEMP-1) — are now enforced
   // structurally and asserted in scout-ingest.idempotency.spec.ts. The

@@ -38,9 +38,9 @@ import {
  *    and returns identical counts. A concurrent replay that loses the insert
  *    race (unique violation) is retried once and converges, never a spurious
  *    `failed`. A unique violation that persists after the retry cannot be the
- *    wide identity (the retry's upsert would have matched it): it is a
- *    provenance collision on the retained narrow key and is a 409 with nothing
- *    written, never a fabricated ledger outcome.
+ *    wide identity (the retry's upsert would have matched it): it is an
+ *    unexpected unique violation (G2-C: no narrow key remains) and is a 409
+ *    with nothing written, never a fabricated ledger outcome.
  *  - Poison-row isolation: each staged row is reconstructed in its own
  *    transaction inside a try/catch; one bad row is recorded `failed` and its
  *    siblings still reconstruct.
@@ -82,7 +82,7 @@ export class ScoutReconstructService {
     this.assertWithinBound(coachId, intentId, staged);
 
     // Deterministic paged read (ordered by source_id, source_platform — the
-    // staged identity, total once the narrow key is gone): bounded memory + a
+    // staged identity, total per family at G2-C): bounded memory + a
     // bounded number of queries regardless of roster size. Each row is
     // reconstructed idempotently, so a re-run picks up exactly where a prior
     // pass left off without minting duplicates.
@@ -339,10 +339,11 @@ class ProvenanceConflict extends ConflictException {
 /**
  * Only actual Prisma insert races / transaction conflicts, once per attempt. A
  * unique violation that survives the retry is not a race: the wide-identity
- * upsert would have matched a committed row of the same identity, so the row
- * blocking the insert carries the same narrow (coach, intent, entity, source)
- * key under a different platform. That is a provenance collision — reported as
- * the same 409 the T writer returned for it, with nothing written.
+ * upsert would have matched a committed row of the same identity, so the
+ * violation comes from a unique key this writer does not select on (G2-C: no
+ * narrow key remains; an unexpected constraint, never the identity). It is
+ * reported as the same fail-closed 409 the T writer returned, with nothing
+ * written.
  */
 async function retryContention<T>(operation: () => Promise<T>): Promise<T> {
   try {

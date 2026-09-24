@@ -39,9 +39,9 @@ export class ScoutReconstructController {
       'Reconstructs the staged entities of one settled crawl intent for the given `entity_type` ' +
       'family (defaults to `clients`, which mints invite-pending roster Person records; ' +
       '`workouts`/`client_history` mint canonical reconstructed-entity records). Idempotent on ' +
-      '(coach_id, intent_id, entity_type, source_id). Returns 200 { staged, reconstructed, ' +
-      'skipped, failed }. Returns 400 for an unsupported family, 409 when the intent has not ' +
-      'settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.',
+      '(coach_id, intent_id, entity_type, source_platform, source_id). Returns 200 { staged, ' +
+      'reconstructed, skipped, failed }. Returns 400 for an unsupported family, 409 when the ' +
+      'intent has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.',
   })
   @ApiResponse({
     status: 200,

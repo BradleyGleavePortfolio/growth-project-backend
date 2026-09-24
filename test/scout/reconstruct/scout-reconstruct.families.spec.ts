@@ -60,13 +60,15 @@ class FakePrisma {
   private entityKey(coach: string, platform: string, entityType: string, sourceId: string): string {
     return `${coach}|${platform}|${entityType}|${sourceId}`;
   }
+  /** G2-C: the five-field wide identity is the ledger's only key (narrow key dropped). */
   private ledgerKey(r: {
     coach_id: string;
     intent_id: string;
     entity_type: string;
+    source_platform: string;
     source_id: string;
   }): string {
-    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_id}`;
+    return `${r.coach_id}|${r.intent_id}|${r.entity_type}|${r.source_platform}|${r.source_id}`;
   }
 
   scoutImport = {
@@ -148,8 +150,8 @@ class FakePrisma {
       Object.assign(row, args.data);
       return { count: 1 };
     },
-    // Keyed by the NARROW key the real table still enforces until C: a wide
-    // identity that misses while the narrow key is taken raises P2002, as on PG.
+    // Keyed by the WIDE identity, the real table's only key since G2-C: the same
+    // source on another platform or in another family is a distinct row, as on PG.
     upsert: async (args: {
       where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerRow };
       create: LedgerRow;
@@ -158,15 +160,9 @@ class FakePrisma {
       const w = args.where.coach_id_intent_id_entity_type_source_platform_source_id;
       const key = this.ledgerKey(w);
       const existing = this.ledger.get(key);
-      if (existing && existing.source_platform === w.source_platform) {
+      if (existing) {
         Object.assign(existing, args.update);
         return existing;
-      }
-      if (existing) {
-        throw new Prisma.PrismaClientKnownRequestError('unique violation', {
-          code: 'P2002',
-          clientVersion: 'test',
-        });
       }
       const row = { ...args.create };
       this.ledger.set(key, row);

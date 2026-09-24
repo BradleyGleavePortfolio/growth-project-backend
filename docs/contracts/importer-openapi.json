@@ -1613,7 +1613,7 @@
     },
     "/api/scout/ingest": {
       "post": {
-        "description": "Receives the extension crawl envelope { intent_id, entity_type, entities[] }. Idempotent on (coach_id, intent_id, sourceId). Returns 202 { received, deduped }. Returns 404 when FEATURE_SCOUT_INGEST is off.",
+        "description": "Receives the extension crawl envelope { intent_id, entity_type, entities[] }. Idempotent on (coach_id, intent_id, entity_type, sourcePlatform, sourceId). Returns 202 { received, deduped }. Returns 404 when FEATURE_SCOUT_INGEST is off.",
         "operationId": "ScoutIngestController_ingest",
         "parameters": [],
         "requestBody": {
@@ -1870,7 +1870,7 @@
     },
     "/api/scout/reconstruct": {
       "post": {
-        "description": "Reconstructs the staged entities of one settled crawl intent for the given `entity_type` family (defaults to `clients`, which mints invite-pending roster Person records; `workouts`/`client_history` mint canonical reconstructed-entity records). Idempotent on (coach_id, intent_id, entity_type, source_id). Returns 200 { staged, reconstructed, skipped, failed }. Returns 400 for an unsupported family, 409 when the intent has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.",
+        "description": "Reconstructs the staged entities of one settled crawl intent for the given `entity_type` family (defaults to `clients`, which mints invite-pending roster Person records; `workouts`/`client_history` mint canonical reconstructed-entity records). Idempotent on (coach_id, intent_id, entity_type, source_platform, source_id). Returns 200 { staged, reconstructed, skipped, failed }. Returns 400 for an unsupported family, 409 when the intent has not settled, and 404 when FEATURE_SCOUT_RECONSTRUCT is off.",
         "operationId": "ScoutReconstructController_run",
         "parameters": [],
         "requestBody": {
