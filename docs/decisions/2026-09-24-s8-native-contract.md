@@ -21,7 +21,7 @@ PLAN L313 adds that migrating history is not a new live business action. Today n
 path writes a native TGP feature table:
 
 - `clients` upserts the scout-only, non-login `Person` and writes only `display_name`
-  (`src/scout/reconstruct/families.ts` L60-88; `prisma/schema.prisma` L6920-6937).
+  (`src/scout/reconstruct/families.ts` L60-88; `prisma/schema.prisma` L6920-6934).
 - `workouts` and `client_history` upsert the generic `ScoutReconstructedEntity`
   `{client_source_id, label}` (`families.ts` L97-130; `schema.prisma` L6981-6993).
 - The coach roster reads `User`, not `Person` (`src/coach/coach.service.ts` L133-147).
@@ -56,6 +56,16 @@ family and what must be reported when it cannot be reached.
 - The closed canonical-family allow-list (`src/scout/scout-reconstruct.dto.ts` L11-18) is
   TGP-side, not a source leak. Adding a canonical TGP family (for example `programs`) is a
   core change by design; adding a source is not.
+- **One source step per canonical family, unless the id space is declared shared.** A spec
+  may map at most one source step to a given canonical family. Two or more steps may map to
+  the same family only if the spec explicitly declares that those steps share one source id
+  space. Otherwise the interpreter rejects the whole spec (fail closed) before any row is
+  mapped. Reason: the D-S8-3 key drops the source step label, so two steps with overlapping
+  ids (for example `workouts` and `workout_templates`, both numeric) would otherwise merge a
+  different record into `already_present`. S8-A proves this in
+  `test/scout/reconstruct/mapping-spec-validation.spec.ts`: a spec with two steps mapped to
+  one family and no shared-id-space declaration is rejected; the same spec with the
+  declaration is accepted.
 
 ### D-S8-2: client principal for client-owned native data
 
@@ -68,7 +78,7 @@ silently absent and never `complete`.
   `WorkoutSession` (L864-865), `WeightLog` (L932-933), `Habit` (L1038-1039) and `CheckIn`
   (L1104-1105).
 - D2 forbids minting an auth `User` for an imported person (`schema.prisma` L6904-6911), and
-  `User.email` is `@unique` (L158). `Person` has no relation to `User` (L6920-6937).
+  `User.email` is `@unique` (L158). `Person` has no relation to `User` (L6920-6934).
 - Excluded routes: a non-login `User` (violates D2 and needs fabricated email), and an
   import-held parallel timeline (PLAN L313: "do not ... create a parallel domain store").
 - **Reserved to Bradley, option (a):** add a nullable `person_id` beside the `User` foreign
@@ -81,7 +91,8 @@ silently absent and never `complete`.
 ### D-S8-3: native identity key
 
 - Native provenance is keyed on `(coach_id, source_namespace, entity_type, source_id)`,
-  where `entity_type` is the canonical TGP family.
+  where `entity_type` is the canonical TGP family. This is safe only because D-S8-1 allows
+  at most one source id space per canonical family.
 - Until G3 source principal/workspace attribution lands, `source_namespace` equals
   `source_platform`. After G3 it becomes platform plus workspace/account identity (PLAN
   L309). It is an opaque string, never parsed by writers.
@@ -119,13 +130,13 @@ silently absent and never `complete`.
 
 Each source identity ends a pass in exactly one outcome:
 
-| Outcome            | Meaning                                                                                 | PLAN L248 count            |
-| ------------------ | --------------------------------------------------------------------------------------- | -------------------------- |
-| `created`          | This pass created the native row(s) and their provenance.                               | `created_native`           |
-| `already_present`  | Provenance exists and the native row exists, is owned by the coach and is not archived. | `already_present_verified` |
-| `unresolved`       | A valid source record has no truthful native result yet; the reason is a §3.7 code.     | `unresolved`               |
-| rejected (skipped) | The source row is unusable (`unsupported_platform:<token>`, `missing_source_id`).       | `rejected`                 |
-| `failed`           | Transient or poison-row error; retried on replay.                                       | reported as failed         |
+| Outcome            | Meaning                                                                                                                                       | PLAN L248 count            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `created`          | This pass created the native row(s) and their provenance.                                                                                     | `created_native`           |
+| `already_present`  | Provenance exists and the native row exists, is owned by the coach and is not archived. Its persisted child provenance is re-reported (§3.4). | `already_present_verified` |
+| `unresolved`       | A valid source record has no truthful native result yet; the reason is a §3.7 code.                                                           | `unresolved`               |
+| rejected (skipped) | The source row is unusable (`unsupported_platform:<token>`, `missing_source_id`).                                                             | `rejected`                 |
+| `failed`           | Transient or poison-row error; retried on replay.                                                                                             | reported as failed         |
 
 - The existing ledger vocabulary `reconstructed|skipped|failed`
   (`scout-reconstruct.dto.ts` L109-114) is unchanged. `created` and `already_present` are
@@ -136,23 +147,38 @@ Each source identity ends a pass in exactly one outcome:
   `already_present_verified`. A generic `ScoutReconstructedEntity` row is evidence
   (`target_kind` `scout_entity`). It never counts as native. A client-owned row written only
   as evidence is counted `unresolved:no_native_client_principal` in native counts.
+- Child counts (for example exercises) come from child provenance rows, not the ledger;
+  children are never ledger rows. "Tally = ledger" applies to top-level rows only.
 - A family is `complete` only when every staged identity is `created` or
-  `already_present`. Any `unresolved` or `failed` row makes the family at most `partial`.
+  `already_present` **and** no child provenance row under any of its parents is
+  `unresolved`. Any `unresolved` or `failed` row, top-level or child, makes the family at
+  most `partial`.
   An unmapped family makes the run at most `partial` (PLAN L307). The terminal verdict itself
   belongs to the S7-L single arbiter, not to writers.
 
 ### 3.3 Provenance
 
-- One provenance record per native row written, including nested children
-  (S8-B `ImportNativeProvenance`): `coach_id`, `import_intent_id` (nullable until S7-L L4
-  binds Scout runs to server intents), `source_namespace`, `entity_type`, `source_id`,
+- S8-B `ImportNativeProvenance` fields: `coach_id`, `import_intent_id` (nullable until S7-L
+  L4 binds Scout runs to server intents), `source_namespace`, `entity_type`, `source_id`,
   `native_kind`, `native_id`, `outcome`, `reason`.
+- One provenance record is written per native row written (top-level or nested child),
+  with `native_id` set and outcome `created`.
+- One provenance record is also written per **unresolved nested child**, with
+  `native_id = null`, outcome `unresolved` and the §3.7 reason. It is written in the
+  parent's transaction. `native_id` is therefore nullable, and it is null exactly when the
+  outcome is `unresolved`. Top-level unresolved and rejected rows are recorded in the ledger
+  (`skipped` + reason), not in provenance.
 - It is unique on the D-S8-3 key. It is written in the **same transaction** as the native
   row, so a native row never exists without provenance, and provenance never points at a
   row that was not committed.
-- Nested child identity (for example an exercise inside a workout) is
-  `entity_type = <family>.<child>` with `source_id = <parent source_id>#<child source id>`,
-  or `#<ordinal>` when the source gives no child id.
+- Nested child identity (for example an exercise inside a workout) uses
+  `entity_type = <family>.<child>` (for example `workouts.exercise`). Its `source_id` is an
+  injective encoding: `<n>:<parent source_id>#id:<child source id>` when the source gives a
+  child id, else `<n>:<parent source_id>#ord:<ordinal>`. Here `<n>` is the decimal character
+  length of the parent source id, and `<ordinal>` is the decimal 0-based source position.
+  The length prefix makes the parent boundary unambiguous even if the parent id contains `#`
+  or `:`. The distinct `#id:` / `#ord:` markers keep a child whose id is `3` apart from an
+  id-less child at position 3.
 - The minimum `native_kind` / `target_kind` set required by this contract is: `person`,
   `scout_entity`, `workout_program`, `workout_plan`, `workout_plan_exercise` (child only,
   not a ledger target). S8-B owns the final closed CHECK list.
@@ -165,6 +191,14 @@ Each source identity ends a pass in exactly one outcome:
 - Per source identity, one transaction does the following: look up provenance by the
   D-S8-3 key, then either verify it (outcome `already_present`) or insert the native row(s)
   and provenance.
+- **Children on replay.** An `already_present` parent writes nothing. On every pass it
+  re-reads its child provenance and re-reports every persisted `unresolved` child in the
+  pass counts. A replay or a new intent therefore can never report the family `complete`
+  while an exercise stays unresolved.
+- **No late child inserts.** S8 never inserts a later-resolved child into an existing
+  imported plan. That would be an update under create-only (D-S8-4), and it could collide
+  with an exercise the coach added at that `order`. The child stays `unresolved` for S9, or
+  until this contract is explicitly amended.
 - A unique-key race on provenance re-reads and converges to `already_present`. This matches
   the engine's retry-once convergence (`families.ts` L25-28).
 - Replay creates zero duplicates and zero drift: same staged input, same native rows, same
@@ -177,7 +211,7 @@ Each source identity ends a pass in exactly one outcome:
 
 | Situation                                                                                   | Outcome                                                                                          |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Provenance exists and the native row is present and owned by the coach                      | `already_present`; no write                                                                      |
+| Provenance exists and the native row is present and owned by the coach                      | `already_present`; no write; persisted unresolved children are re-reported (§3.4)                |
 | Provenance exists but the coach archived or deleted the native row                          | `unresolved:native_target_removed`; do not recreate (coach removal is an edit)                   |
 | Provenance points at a row owned by another coach, or of another kind                       | `unresolved:identity_conflict`; no write                                                         |
 | A pre-existing native row not created by import has the same name                           | No merge by name or email; create a separate imported row. Names are not identity (PLAN L309)    |
@@ -212,13 +246,34 @@ drip or progression triggers, webhooks, invitations, payment actions or schedule
 - **No live flags.** Imported programs keep `is_regime = false`. Regime promotion and
   package attachment are live coach actions (`schema.prisma` L2205-2223).
 - **Native invariants, not live paths.** Writers reproduce the row set that the equivalent
-  native create path leaves, and nothing more. `createPlan` writes one `WorkoutPlan` row and
-  no revision (`workout-builder.service.ts` L345-366). The native program create paths also
-  write an initial `WorkoutProgramRevision` and set `head_revision_id` (L1046, L1204,
-  L1252). Where the native path writes an initial revision, the import writes it with
-  `cause = 'initial'` and `author_kind = 'coach'`, with `author_id` as the importing coach.
-  No new `author_kind` token is introduced (vocabulary at `schema.prisma` L2252-2255, L2271-2274).
-  Provenance lives in the provenance table, not in the revision vocabulary.
+  native coach template-create path leaves, and nothing more. The revision rule is fixed:
+  - **Program-day `WorkoutPlan`** (`program_id` set): the import follows `copyProgramPlans`
+    as used by `forkTemplate` (`workout-builder.service.ts` L913-1009, called at
+    L1060-1066). In the same transaction it writes the plan, its resolved exercise rows and
+    one `WorkoutPlanRevision`, then sets the plan's `head_revision_id` (L1001-1004).
+    - The revision has `revision_index = 0`, `cause = 'initial'`, `author_kind = 'coach'`
+      and `author_id` = the importing coach.
+    - `exercises_json` is the `serialiseExerciseRows` shape (L1446-1470) over the exercise
+      rows actually written. Unresolved children are absent.
+    - `plan_meta_json` is `{name, type, duration_estimate_minutes, week_index, day_index}`
+      (L989-995).
+    - Autosave and undo reject a plan with a null head (409 "Plan has no revision baseline",
+      `workout-builder-autosave.service.ts` L494-522). This rule keeps imported program days
+      editable and undoable in the builder.
+  - **Standalone `WorkoutPlan`** (`program_id` null): the import follows `createPlan`
+    (L345-366), with no revision and `head_revision_id` null. Native standalone plans have
+    no revision baseline either, so imported standalone plans behave exactly like native
+    ones: the legacy exercise editor works (`setExercises`, L460), and autosave/undo is
+    unavailable, as it is natively. Giving them a revision would create a baseline that the
+    legacy editor never maintains, so a later undo could restore a stale snapshot.
+  - **`WorkoutProgram`:** the import follows the fork precedent (`forkTemplate` program
+    create, L1046-1060): no `WorkoutProgramRevision`, `head_revision_id` null, `version = 1`.
+    Two other program-create paths are **not** precedents. Clone-to-client (L1204, L1252)
+    uses `cause = 'clone'` and `is_template = false`. The AI materialiser's program revision
+    uses `author_kind = 'ai'` (`create-workout-plan.materialiser.ts` L493-521).
+  - No new `author_kind` or `cause` token is introduced (vocabulary at `schema.prisma`
+    L2252-2255, L2271-2274). Provenance lives in the provenance table, not in the revision
+    vocabulary.
 - No database trigger exists on the S8-C target tables at this base (no `CREATE TRIGGER`
   touching them under `prisma/migrations`). S8-C re-checks this at its own base.
 
@@ -330,7 +385,7 @@ The S9 reason-code catalogue (CQ-17) adopts this list.
 | `is_template`                                                         | `true` (master template; L2201-2203)                                                                                                        |
 | `forked_from_id`, `cloned_from_id`, `goal_tag`, `regime_display_name` | `null` (goal tag only if spec-declared)                                                                                                     |
 | `is_regime`                                                           | `false`                                                                                                                                     |
-| `version`, `head_revision_id`                                         | As the native create path (§3.6)                                                                                                            |
+| `version`, `head_revision_id`                                         | `1`, `null`; no program revision (fork precedent, §3.6)                                                                                     |
 | `archived_at`                                                         | `null`; archived source programs → `unresolved:source_archived`                                                                             |
 
 ### 4.3 `workouts` (unlinked coach templates) → `WorkoutPlan` (S8-C)
@@ -344,7 +399,7 @@ The S9 reason-code catalogue (CQ-17) adopts this list.
 | `program_id`                                         | Parent program via provenance (`programs`, parent source id); no parent role → `null` standalone plan (L2156-2161)                  |
 | `week_index`, `day_index`                            | 0-based when there is a parent program; `null` when standalone                                                                      |
 | `is_template`                                        | Mirrors the parent program (`true`) when there is one (L2162); standalone keeps the `createPlan` default (`false`)                  |
-| `version`, `cloned_from_plan_id`, `head_revision_id` | `1`, `null`, as the native create path                                                                                              |
+| `version`, `cloned_from_plan_id`, `head_revision_id` | `1`, `null`. Program day: the revision-0 id written in the same transaction. Standalone: `null` (§3.6)                              |
 
 - Client-linked workouts are client-owned (§3.8) and yield
   `unresolved:no_native_client_principal`. Their generic evidence row may continue.
@@ -358,7 +413,7 @@ The S9 reason-code catalogue (CQ-17) adopts this list.
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `workout_plan_id`            | Parent plan written in the same transaction                                                                                                                                                                          |
 | `exercise_external_id`       | Required, not null; "ExerciseDB catalog identifier — NOT a FK" (`schema.prisma` L2302). Written only for an exact, verified reference; otherwise the child is **not written** and is `unresolved:exercise_reference` |
-| `order`                      | Source ordinal, 0-based. Gaps left by unresolved children are kept, so a later resolution does not renumber. Unique per plan among non-archived rows (partial index, L2315-2317)                                     |
+| `order`                      | Source ordinal, 0-based. Gaps left by unresolved children are kept, so native order matches source order; no later insert fills them (§3.4). Unique per plan among non-archived rows (partial index, L2315-2317)     |
 | `sets`                       | Required integer ≥ 1                                                                                                                                                                                                 |
 | `reps_or_duration_seconds`   | §3.9                                                                                                                                                                                                                 |
 | `weight_lbs`, `rest_seconds` | Optional; §3.9                                                                                                                                                                                                       |
@@ -373,9 +428,14 @@ The S9 reason-code catalogue (CQ-17) adopts this list.
   identifier space the native renderers resolve `exercise_external_id` against. The writer
   paths pass it through unvalidated (`workout-builder.service.ts` L526, L967). Until that is
   confirmed, every exercise reference is `unresolved:exercise_reference`.
-- A plan whose children are partly unresolved is `created`, with child provenance rows
-  carrying the unresolved reasons. The family cannot be `complete` while any child is
-  unresolved.
+- **Unresolved exercise records.** An unresolved exercise has no `WorkoutPlanExercise` row.
+  Its record is a child provenance row (§3.3): `entity_type = workouts.exercise`, the
+  injective child `source_id`, `native_kind = workout_plan_exercise`, `native_id = null`,
+  `outcome = unresolved` and the reason (for example `unresolved:exercise_reference`).
+- A plan whose children are partly or wholly unresolved is still `created`, and an
+  `already_present` plan re-reports those children on every pass (§3.4). The `workouts`
+  family is never `complete` while any child exercise is unresolved. Under the S8-C
+  precondition above, that currently means every plan with exercises.
 
 ### 4.5 Client-owned families (blocked on D-S8-2; recorded for S8-E)
 
@@ -429,9 +489,12 @@ native targets and the constraints S8-E must honour are:
 - **S8-A:** interpreter output deep-equals every existing mapper fixture, including skip
   reasons.
   - Unmapped labels yield `unresolved_family:<token>`.
+  - A spec with two or more steps mapped to one family and no shared-id-space declaration
+    is rejected (`test/scout/reconstruct/mapping-spec-validation.spec.ts`, D-S8-1).
   - A third source lands as JSON plus a test, with zero `src/**/*.ts` in that commit.
 - **S8-B:** provenance keyed per D-S8-3; the §3.3 minimum `native_kind` / `target_kind`
-  set; outcomes `created|already_present|unresolved`.
+  set; outcomes `created|already_present|unresolved`; `native_id` nullable (null only for
+  `unresolved`); a `source_id` column wide enough for the §3.3 child encoding.
 - **S8-C:**
   - §4.2-4.4 column rules.
   - §3.4 replay produces zero duplicates or drift.
