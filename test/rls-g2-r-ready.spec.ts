@@ -99,13 +99,15 @@ const stagingInsert = (id: string, platform: string, role?: string, source = id)
 /** Refusal with the SQLSTATE visible: psql prints `ERROR:  <sqlstate>:` under verbose verbosity. */
 const refusedCode = (statement: string, sqlstate: string) =>
   refused(`\\set VERBOSITY verbose\n${statement}`, `ERROR:  ${sqlstate}:`);
-/** R's entry gate refused: nothing of R exists, history and rows are untouched. */
+/** R's entry gate refused: nothing of R exists (or, for a decoy holding an R name, exactly the
+ *  pre-refusal catalog), history and rows are untouched. */
 function expectRefusedUp(
   message: RegExp,
   before: { ledger: unknown; staging: unknown; applied: string },
+  expectedWide: unknown = ABSENT,
 ) {
   expect(() => sqlFile(rUpFile)).toThrow(message);
-  expect(wide()).toEqual(ABSENT);
+  expect(wide()).toEqual(expectedWide);
   expect(allLedger()).toEqual(before.ledger);
   expect(stagingSnapshot()).toEqual(before.staging);
   expect(appliedMigrations()).toBe(before.applied);
@@ -322,12 +324,23 @@ describe('stage 2: the entry gate on E+B — refusals leave everything untouched
     expect(decoyBefore.index).toBe(
       'CREATE INDEX "ScoutIngestEntity_identity_key" ON public.g2r_decoy USING btree (x)',
     );
-    expectRefusedUp(/G2-R wide identity already present/, before);
+    /** wide() sees the decoy's R-named objects; only the decoy may own them, never the real tables. */
+    const onlyDecoy = (w: any) => {
+      expect(w.ledgerNotNull).toBe(false);
+      expect(w.indexes.length + w.checks.length).toBeGreaterThan(0);
+      for (const [, , , , def] of w.indexes) expect(def).toContain(' ON public.g2r_decoy ');
+      for (const [, , rel] of w.checks) expect(rel).toMatch(/^(public\.)?g2r_decoy$/);
+    };
+    let wideBefore = wide();
+    onlyDecoy(wideBefore);
+    expectRefusedUp(/G2-R wide identity already present/, before, wideBefore);
     expect(decoy()).toEqual(decoyBefore);
     sql(`DROP INDEX public."ScoutIngestEntity_identity_key";
       ALTER TABLE public.g2r_decoy ADD CONSTRAINT "ScoutReconstructionLedger_source_platform_canonical" CHECK (x IS NOT NULL)`);
     before = snapshot();
-    expectRefusedUp(/G2-R wide identity already present/, before);
+    wideBefore = wide();
+    onlyDecoy(wideBefore);
+    expectRefusedUp(/G2-R wide identity already present/, before, wideBefore);
     expect(decoy()).toEqual({
       index: null,
       constraints: ['ScoutReconstructionLedger_source_platform_canonical'],

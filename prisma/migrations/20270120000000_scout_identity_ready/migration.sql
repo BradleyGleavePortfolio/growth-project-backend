@@ -46,6 +46,17 @@ BEGIN
       RAISE EXCEPTION 'G2-R unexpected identity prerequisite';
     END IF;
   END LOOP;
+  -- Nothing this file creates may already exist under its name (raw rerun, partial state or a
+  -- decoy relation/constraint holding the name): refused, never dropped or adopted.
+  IF to_regclass('public."ScoutIngestEntity_identity_key"') IS NOT NULL
+    OR to_regclass('public."ScoutReconstructionLedger_identity_key"') IS NOT NULL
+    OR EXISTS (
+      SELECT 1 FROM pg_catalog.pg_constraint
+      WHERE conname IN ('ScoutIngestEntity_source_platform_canonical',
+                        'ScoutReconstructionLedger_source_platform_canonical')
+    ) THEN
+    RAISE EXCEPTION 'G2-R wide identity already present';
+  END IF;
   -- E must be present exactly as shipped: nullable TEXT, no default, no constraint. The
   -- staging column must be the accepted NOT NULL TEXT, no default, no constraint.
   IF NOT EXISTS (
@@ -90,17 +101,6 @@ BEGIN
       AND t.tgconstraint = 0
   ) THEN
     RAISE EXCEPTION 'G2-R fence absent';
-  END IF;
-  -- Nothing this file creates may already exist under its name (raw rerun, partial state or a
-  -- decoy relation/constraint holding the name): refused, never dropped or adopted.
-  IF to_regclass('public."ScoutIngestEntity_identity_key"') IS NOT NULL
-    OR to_regclass('public."ScoutReconstructionLedger_identity_key"') IS NOT NULL
-    OR EXISTS (
-      SELECT 1 FROM pg_catalog.pg_constraint
-      WHERE conname IN ('ScoutIngestEntity_source_platform_canonical',
-                        'ScoutReconstructionLedger_source_platform_canonical')
-    ) THEN
-    RAISE EXCEPTION 'G2-R wide identity already present';
   END IF;
   -- Data preconditions: the drain is complete and every value is already canonical. A
   -- violation names the class only; no identifiers or values are raised.
