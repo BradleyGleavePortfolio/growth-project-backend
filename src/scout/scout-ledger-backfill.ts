@@ -254,7 +254,7 @@ export async function readDrainState(
       AND pn.nspname = 'public' AND p.proname = 'scout_ledger_platform_fence' AND p.pronargs = 0
       AND NOT t.tgisinternal AND t.tgenabled <> 'D'
       AND t.tgtype = ${FENCE_TRIGGER_TYPE}::int2 AND t.tgqual IS NULL
-      AND t.tgattr::int2[] = '{}'::int2[] AND t.tgnargs = 0 AND t.tgconstraint = 0`;
+      AND cardinality(t.tgattr::int2[]) = 0 AND t.tgnargs = 0 AND t.tgconstraint = 0`;
   return { ledgerTotal: counts.total, nulls: counts.nulls, mismatch, fenced: fences === 1 };
 }
 

@@ -61,7 +61,7 @@ BEGIN
       AND NOT p.prosecdef
       AND t.tgtype = 7
       AND t.tgqual IS NULL
-      AND t.tgattr::int2[] = '{}'::int2[]
+      AND cardinality(t.tgattr::int2[]) = 0
       AND t.tgnargs = 0
       AND t.tgconstraint = 0
   ) THEN
