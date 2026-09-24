@@ -36,6 +36,7 @@ import {
   root,
   run,
   settle,
+  skippedOf,
   sql,
   sqlAdmin,
   sqlFile,
@@ -43,6 +44,8 @@ import {
   stageMany,
   target,
   targets,
+  UNMAPPED_PLATFORM,
+  UNMAPPED_REASON,
   v2,
   blocked,
   worker,
@@ -259,23 +262,45 @@ describe('stage 1: N — the final writer on the accepted R shape', () => {
       const t = `t2-${family}`;
       settle('coach', n);
       settle('coach', t);
-      // Every 6th clients name is refused by the target (accepted fixture semantics: `failed`);
-      // the workouts fixture stays all-success.
-      const failEvery = family === 'clients' ? 6 : 0;
-      stageMany(24, family, 'truecoach', 'coach', n, failEvery);
-      stageMany(24, family, 'truecoach', 'coach', t, failEvery);
+      // Every 6th row of both families is staged under the product's own unmapped canonical
+      // platform: the family dispatch (identical on N and T) records it `skipped` with the exact
+      // `unsupported_platform:<token>` reason. 24 rows, k=6 → floor(24/6)=4 skipped, 20 reconstructed.
+      const skipEvery = 6;
+      const skipped = skippedOf(24, skipEvery);
+      stageMany(24, family, 'truecoach', 'coach', n, skipEvery);
+      stageMany(24, family, 'truecoach', 'coach', t, skipEvery);
       const fromN = await run({ intent: n, family });
       const fromT = await run({ intent: t, family }, true);
       expect(fromN.failure).toBeUndefined();
       expect(fromT.failure).toBeUndefined();
       expect(tally(fromN.result)).toEqual(tally(fromT.result));
-      expect(fromN.result).toMatchObject({
+      expect(fromN.result).toEqual({
+        intent_id: n,
         staged: 24,
-        reconstructed: family === 'clients' ? 20 : 24,
-        failed: family === 'clients' ? 4 : 0,
+        reconstructed: 24 - skipped,
+        skipped,
+        failed: 0,
       });
       expect(outcomes(n, family)).toEqual(outcomes(t, family));
       expect(outcomes(n, family)).toHaveLength(24);
+      // The skipped rows are exactly the unmapped-platform rows: no target, the product's reason.
+      expect(
+        json(`SELECT COALESCE(jsonb_agg(jsonb_build_array(source_id,source_platform,status,target_id,reason)
+        ORDER BY source_id),'[]') FROM "ScoutReconstructionLedger"
+        WHERE intent_id=${quote(n)} AND status<>'reconstructed'`),
+      ).toEqual(
+        Array.from({ length: skipped }, (_, i) => [
+          `s${String((i + 1) * skipEvery).padStart(5, '0')}`,
+          UNMAPPED_PLATFORM,
+          'skipped',
+          null,
+          UNMAPPED_REASON,
+        ]),
+      );
+      expect(
+        sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE intent_id=${quote(n)}
+        AND status='reconstructed' AND (source_platform<>'truecoach' OR target_id IS NULL OR reason IS NOT NULL)`),
+      ).toBe('0');
       // Provenance is the staged provenance, row for row.
       expect(
         sql(`SELECT count(*) FROM "ScoutReconstructionLedger" l JOIN "ScoutIngestEntity" s
@@ -294,24 +319,33 @@ describe('stage 1: N — the final writer on the accepted R shape', () => {
     }
   });
   it('N03: mixed T and N processes on one staged row, both orders: one ledger row, one target, success dominates', async () => {
+    // Each staged identity here sits beside a genuinely skipped sibling (the product's unmapped
+    // canonical platform, see N02) so every mixed-writer pass carries one success and one
+    // non-success outcome and the tally is {reconstructed: 1, skipped: 1} for BOTH writers.
+    const mixed = { staged: 2, reconstructed: 1, skipped: 1, failed: 0 };
+    const skippedRow = (source: string) => ['clients', source, UNMAPPED_PLATFORM, 'skipped', null];
     // (a) T paused after its staging read; N completes; T resumes and converges on N's row.
+    resetData();
     stage('m1', 'clients');
+    stage('m1-skip', 'clients', UNMAPPED_PLATFORM, 'Synthetic M1S');
     const tPaused = worker({ pause: 'staged' }, true);
     await tPaused.ready;
     const n1 = await run();
-    expect(n1.result).toMatchObject({ reconstructed: 1 });
+    expect(n1.result).toMatchObject(mixed);
     tPaused.release();
     const t1 = await tPaused.done;
     expect(t1.failure).toBeUndefined();
-    expect(t1.result).toMatchObject({ reconstructed: 1 });
+    expect(t1.result).toMatchObject(mixed);
     expect(ledgerIds(`source_id='m1'`)).toHaveLength(1);
+    expect(ledgerIds(`source_id='m1-skip'`)).toHaveLength(1);
     expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('1');
-    expect(identityRows('coach', 'intent', 'clients')[0].slice(0, 4)).toEqual([
-      'clients',
-      'm1',
-      'truecoach',
-      'reconstructed',
+    expect(identityRows('coach', 'intent', 'clients').map((r: string[]) => r.slice(0, 4))).toEqual([
+      ['clients', 'm1', 'truecoach', 'reconstructed'],
+      skippedRow('m1-skip').slice(0, 4),
     ]);
+    expect(sql(`SELECT reason FROM "ScoutReconstructionLedger" WHERE source_id='m1-skip'`)).toBe(
+      UNMAPPED_REASON,
+    );
     // (b) N paused inside its row transaction before the ledger write (target persisted,
     // uncommitted); T starts, waits on N's row lock; N resumes and commits; T converges.
     resetData();
@@ -329,29 +363,71 @@ describe('stage 1: N — the final writer on the accepted R shape', () => {
     expect(ledgerIds(`source_id='m2'`)).toHaveLength(1);
     expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('1');
     // (c) N paused after its staging read; T completes; N resumes: its wide-identity upsert
-    // matches T's committed row (same staged platform) and precedence keeps success.
+    // matches T's committed row (same staged platform) and precedence keeps success. The
+    // genuinely skipped sibling converges too: one ledger row, still `skipped`, product reason.
     resetData();
     stage('m3', 'clients');
+    stage('m3-skip', 'clients', UNMAPPED_PLATFORM, 'Synthetic M3S');
     const nStaged = worker({ pause: 'staged' });
     await nStaged.ready;
     const t3 = await run({}, true);
-    expect(t3.result).toMatchObject({ reconstructed: 1 });
+    expect(t3.result).toMatchObject(mixed);
     nStaged.release();
     const n3 = await nStaged.done;
     expect(n3.failure).toBeUndefined();
-    expect(n3.result).toMatchObject({ reconstructed: 1 });
+    expect(n3.result).toMatchObject(mixed);
     expect(ledgerIds(`source_id='m3'`)).toHaveLength(1);
+    expect(ledgerIds(`source_id='m3-skip'`)).toHaveLength(1);
     expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('1');
-    // (d) Success dominates a later non-success attempt from either writer.
+    expect(sql(`SELECT reason FROM "ScoutReconstructionLedger" WHERE source_id='m3-skip'`)).toBe(
+      UNMAPPED_REASON,
+    );
+    // (d) Success dominates a later non-success attempt from either writer. The same staged
+    // identity cannot genuinely flip from success to a skip (the registered mappers are total
+    // and deterministic), so the later refusal is the accepted, explicitly labelled fixture
+    // mapper of the shared worker; it applies to the whole family, so the genuinely skipped
+    // sibling takes the product's other precedence rule — a non-success outcome is replaced by
+    // the last serialized non-success writer (status and null target unchanged, reason theirs).
     const [[, , , status, targetBefore]] = identityRows('coach', 'intent', 'clients');
     expect(status).toBe('reconstructed');
+    expect(typeof targetBefore).toBe('string');
     const tSkip = await run({ mapper: 'skip' }, true);
     expect(tSkip.failure).toBeUndefined();
     const nSkip = await run({ mapper: 'skip' });
     expect(nSkip.failure).toBeUndefined();
     expect(identityRows('coach', 'intent', 'clients')).toEqual([
       ['clients', 'm3', 'truecoach', 'reconstructed', targetBefore],
+      skippedRow('m3-skip'),
     ]);
+    expect(sql(`SELECT reason FROM "ScoutReconstructionLedger" WHERE source_id='m3-skip'`)).toBe(
+      'fixture:mapper-skip',
+    );
+    expect(sql(`SELECT reason FROM "ScoutReconstructionLedger" WHERE source_id='m3'`)).toBe('');
+    // (e) The other order: a non-success outcome committed FIRST (by T, then by N) is replaced
+    // by a later success from the other writer; the target is minted by the successful pass.
+    for (const [first, then] of [
+      [true, false],
+      [false, true],
+    ]) {
+      resetData();
+      stage('m4', 'clients');
+      const refused = await run({ mapper: 'skip' }, first);
+      expect(refused.failure).toBeUndefined();
+      expect(refused.result).toMatchObject({ staged: 1, reconstructed: 0, skipped: 1 });
+      expect(identityRows('coach', 'intent', 'clients')).toEqual([
+        ['clients', 'm4', 'truecoach', 'skipped', null],
+      ]);
+      expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('0');
+      const succeeded = await run({}, then);
+      expect(succeeded.failure).toBeUndefined();
+      expect(succeeded.result).toMatchObject({ staged: 1, reconstructed: 1, skipped: 0 });
+      const [[, , , after, targetAfter]] = identityRows('coach', 'intent', 'clients');
+      expect(after).toBe('reconstructed');
+      expect(typeof targetAfter).toBe('string');
+      expect(ledgerIds(`source_id='m4'`)).toHaveLength(1);
+      expect(sql(`SELECT count(*) FROM "Person" WHERE coach_id='coach'`)).toBe('1');
+      expect(sql(`SELECT reason FROM "ScoutReconstructionLedger" WHERE source_id='m4'`)).toBe('');
+    }
     console.warn(
       'PG17_N03_QUERIES',
       JSON.stringify({
@@ -431,10 +507,26 @@ describe('stage 1: N — the final writer on the accepted R shape', () => {
     for (const family of ['clients', 'workouts']) {
       const intent = `n6-${family}`;
       settle('coach', intent);
-      const success = family === 'clients' ? 9 : 12;
-      stageMany(12, family, 'truecoach', 'coach', intent, family === 'clients' ? 4 : 0);
+      // clients: every 4th of 12 rows under the unmapped canonical platform → floor(12/4)=3 skipped,
+      // 9 reconstructed (see N02); workouts stays all-success (12/0). The readers page only
+      // `reconstructed` rows, so the visible union is the success count on both heads.
+      const skipEvery = family === 'clients' ? 4 : 0;
+      const skipped = skippedOf(12, skipEvery);
+      const success = 12 - skipped;
+      stageMany(12, family, 'truecoach', 'coach', intent, skipEvery);
       const n = await run({ intent, family });
-      expect(n.result).toMatchObject({ reconstructed: success });
+      expect(n.failure).toBeUndefined();
+      expect(n.result).toEqual({
+        intent_id: intent,
+        staged: 12,
+        reconstructed: success,
+        skipped,
+        failed: 0,
+      });
+      expect(
+        sql(`SELECT count(*) FROM "ScoutReconstructionLedger" WHERE intent_id=${quote(intent)}
+        AND status='skipped' AND source_platform=${quote(UNMAPPED_PLATFORM)} AND reason=${quote(UNMAPPED_REASON)}`),
+      ).toBe(String(skipped));
       const rows = records('coach', intent, family);
       const t = await run({ intent, family }, true);
       expect(t.failure).toBeUndefined();
@@ -629,29 +721,61 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
   );
 
   it.each(['clients', 'workouts'])(
-    'Q05: a %s token outside its (coach, intent, family) scope, or on the other endpoint, is 400; a foreign coach is 404',
+    'Q05: a %s token outside its (coach, intent, family) scope, or on the other endpoint, is 400 with no page read; a token-less foreign coach is 404',
     async (family) => {
       for (const id of ['a', 'b']) stage(id, family);
       await run({ family });
       const action = actionOf(family);
       const otherFamily = family === 'clients' ? 'workouts' : 'clients';
-      const foreign = [
-        v2(otherFamily, 'a'),
-        v2(family, 'a', 'truecoach', 'other'),
-        v2(family, 'a', 'truecoach', 'coach', 'other'),
-        nextLegacy(otherFamily, 'a'),
-        v2(family, 'a', 'TrueCoach'),
+      // A scope-bound token's own (c, i, f) must equal the request scope (brief: foreign coach or
+      // intent → 400 `malformed cursor`; decodeScoutCursor runs before the settled-intent gate,
+      // the same order as the accepted R reader). Both directions are refused identically: a
+      // token for another scope presented here, and this scope's token presented by a foreign
+      // coach or for a foreign intent. Every v2 token and the legacy entities token are
+      // scope-bound; the legacy roster token is a bare source id and carries no scope (below).
+      const foreign: Record<string, unknown>[] = [
+        { cursor: v2(otherFamily, 'a') },
+        { cursor: v2(family, 'a', 'truecoach', 'other') },
+        { cursor: v2(family, 'a', 'truecoach', 'coach', 'other') },
+        { cursor: nextLegacy(otherFamily, 'a') },
+        { cursor: v2(family, 'a', 'TrueCoach') },
+        { cursor: v2(family, 'a'), coach: 'foreign' },
+        { cursor: v2(family, 'a'), intent: 'foreign' },
+        ...(family === 'clients'
+          ? []
+          : [
+              { cursor: nextLegacy(family, 'a'), coach: 'foreign' },
+              { cursor: nextLegacy(family, 'a'), intent: 'foreign' },
+            ]),
       ];
-      for (const cursor of foreign) {
-        const refused = await run({ action, family, cursor });
+      for (const request of foreign) {
+        const refused = await run({ action, family, ...request });
         expect(refused.result).toBeUndefined();
         expect(refused.failure).toEqual(MALFORMED);
         expect(readPage(refused.queries)).toBe(false);
+        // No reflection: the rejection carries neither the token nor its decoded fields.
+        expect(JSON.stringify(refused.failure)).not.toContain(String(request.cursor));
+        expect(JSON.stringify(refused.failure)).not.toContain('foreign');
       }
-      expect((await run({ action, family, coach: 'foreign' })).failure?.status).toBe(404);
-      expect(
-        (await run({ action, family, cursor: v2(family, 'a'), coach: 'foreign' })).failure?.status,
-      ).toBe(404);
+      // Without a scope in hand (no token, or the scope-less legacy roster token) nothing can
+      // mismatch at decode: the settled-intent gate is the uniform 404 (no existence oracle) for
+      // a foreign coach and for a foreign intent, and no page is read.
+      const gated: Record<string, unknown>[] = [
+        { coach: 'foreign' },
+        { intent: 'foreign' },
+        ...(family === 'clients'
+          ? [
+              { cursor: nextLegacy(family, 'a'), coach: 'foreign' },
+              { cursor: nextLegacy(family, 'a'), intent: 'foreign' },
+            ]
+          : []),
+      ];
+      for (const request of gated) {
+        const refused = await run({ action, family, ...request });
+        expect(refused.result).toBeUndefined();
+        expect(refused.failure?.status).toBe(404);
+        expect(readPage(refused.queries)).toBe(false);
+      }
       const valid = await run({ action, family, cursor: v2(family, 'a') });
       expect(ids(visible(family, valid.result))).toHaveLength(1);
     },

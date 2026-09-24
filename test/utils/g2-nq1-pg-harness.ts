@@ -136,23 +136,37 @@ export function stage(
     VALUES (${quote(`${coach}-${intent}-${family}-${platform}-${source}`)},${quote(coach)},${quote(intent)},${quote(family)},
     ${quote(source)},${quote(platform)},${quote(JSON.stringify({ name, client_id: 'client-new' }))})`);
 }
-/** Bulk synthetic staging through generate_series; names are synthetic, no customer data. */
+/**
+ * A canonical platform token (R CHECK `^[a-z0-9][a-z0-9._:-]{0,255}$`) with NO registered source
+ * mapper. The product's own family dispatch (src/scout/reconstruct/families.ts, byte-identical on
+ * the N and T heads) records such a row `skipped` with reason `unsupported_platform:<token>`; it is
+ * the one non-success outcome the current product reaches from staged data alone (every registered
+ * mapper is total, and a noncanonical token is a structural 409, not a ledger outcome).
+ */
+export const UNMAPPED_PLATFORM = 'auto:other.example';
+export const UNMAPPED_REASON = `unsupported_platform:${UNMAPPED_PLATFORM}`;
+/** Bulk synthetic staging through generate_series; names are synthetic, no customer data.
+ *  `skipEvery` > 0 stages every k-th row under UNMAPPED_PLATFORM (a genuine, data-reachable
+ *  `skipped`); the other rows carry `platform`. */
 export function stageMany(
   count: number,
   family = 'clients',
   platform = 'truecoach',
   coach = 'coach',
   intent = 'intent',
-  failEvery = 0,
+  skipEvery = 0,
   prefix = 's',
 ) {
   sql(`INSERT INTO "ScoutIngestEntity" (id,coach_id,intent_id,entity_type,source_id,source_platform,payload)
     SELECT ${quote(`${coach}-${intent}-${prefix}`)}||lpad(n::text,5,'0'),${quote(coach)},${quote(intent)},${quote(family)},
-      ${quote(prefix)}||lpad(n::text,5,'0'),${quote(platform)},
-      jsonb_build_object('name',CASE WHEN ${failEvery} > 0 AND n % ${failEvery} = 0 THEN 'FAIL' ELSE 'Synthetic '||n END,
-        'client_id','client-'||n)
+      ${quote(prefix)}||lpad(n::text,5,'0'),
+      CASE WHEN ${skipEvery} > 0 AND n % ${skipEvery} = 0 THEN ${quote(UNMAPPED_PLATFORM)} ELSE ${quote(platform)} END,
+      jsonb_build_object('name','Synthetic '||n,'client_id','client-'||n)
     FROM generate_series(1,${count}) n`);
 }
+/** How many of `count` rows `stageMany(..., skipEvery)` stages under UNMAPPED_PLATFORM. */
+export const skippedOf = (count: number, skipEvery: number) =>
+  skipEvery > 0 ? Math.floor(count / skipEvery) : 0;
 export function legacy(
   status: string,
   platform: string | null | 'ABSENT' = null,
