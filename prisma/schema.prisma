@@ -6769,6 +6769,7 @@ model ImportIntent {
   paired_at       DateTime?
   superseded_at   DateTime?
   challenge       ExtensionPairCode?
+  native_provenance ImportNativeProvenance[]
 
   @@unique([id, coach_id])
   @@unique([coach_id, setup_nonce])
@@ -6945,6 +6946,10 @@ model ScoutReconstructionLedger {
   source_platform String
   status      String
   target_id   String?
+  // S8-B (20270122000000_scout_native_provenance_expand): the native kind of target_id, closed by
+  // CHECK (person | scout_entity | workout_program | workout_plan); NULL for every row written by
+  // the N/Q1/C writer, which never names it. A typed target requires a target_id (shape CHECK).
+  target_kind String?
   reason      String?
   created_at  DateTime @default(now())
 
@@ -6956,6 +6961,34 @@ model ScoutReconstructionLedger {
   // cross-family/cross-platform identity exists (forward repair otherwise).
   @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutReconstructionLedger_identity_key")
   @@index([coach_id, intent_id])
+}
+
+// S8-B native provenance ledger (docs/decisions/2026-09-24-s8-native-contract.md §3.3; migration
+// 20270122000000_scout_native_provenance_expand). One row per (coach_id, source_namespace, entity_type,
+// source_id): which native TGP object a canonical source entity became, or why it did not
+// (outcome `unresolved` ⇔ native_id NULL, reason required). Child entities encode their parent in
+// source_id (`<len>:<parent>#id:<child>` / `<len>:<parent>#ord:<n>`). The database carries the closed
+// CHECKs on native_kind and outcome and the two shape CHECKs; Prisma cannot express them. Bound to
+// the import intent by the composite (id, coach_id) key with ON DELETE RESTRICT: provenance never
+// silently vanishes with its intent. RLS RESTRICTIVE deny-all to anon + authenticated; service_role
+// only. Written by the S8-C..E native writers; this model ships schema-only.
+model ImportNativeProvenance {
+  id               String        @id @default(uuid())
+  coach_id         String
+  import_intent_id String?       @db.Uuid
+  intent           ImportIntent? @relation(fields: [import_intent_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+  source_namespace String
+  entity_type      String
+  source_id        String
+  native_kind      String
+  native_id        String?
+  outcome          String
+  reason           String?
+  created_at       DateTime      @default(now())
+
+  @@unique([coach_id, source_namespace, entity_type, source_id], map: "ImportNativeProvenance_identity_key")
+  @@index([coach_id, native_kind, native_id])
+  @@index([coach_id, import_intent_id])
 }
 
 // ============================================================
