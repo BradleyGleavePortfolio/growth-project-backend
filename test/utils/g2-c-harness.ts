@@ -70,7 +70,8 @@ export const narrow = () =>
   FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
   WHERE c.relname IN ('ScoutIngestEntity_coach_id_intent_id_source_id_key',
     'ScoutReconstructionLedger_coach_id_intent_id_entity_type_source_id_key'::name)
-    AND c.relnamespace='public'::regnamespace`);
+    AND c.relnamespace='public'::regnamespace
+    AND i.indrelid IN ('public."ScoutIngestEntity"'::regclass,'public."ScoutReconstructionLedger"'::regclass)`);
 /** Any relation in `public` holding a narrow name (an index, or a decoy table/view): oid, kind. */
 export const narrowNamed = () =>
   json(`SELECT COALESCE(jsonb_agg(jsonb_build_array(relname,oid,relkind) ORDER BY relname),'[]')
