@@ -95,6 +95,7 @@ const REFUSE_DOWN =
   'Native provenance state exists; retain schema and use compatible forward repair';
 const byName = (list: any[]) => Object.fromEntries(list.map((entry: any[]) => [entry[0], entry]));
 const tally = (staged: number, reconstructed: number) => ({
+  intent_id: 'intent',
   staged,
   reconstructed,
   skipped: 0,
