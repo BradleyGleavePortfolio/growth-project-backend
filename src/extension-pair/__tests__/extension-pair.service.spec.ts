@@ -1,6 +1,6 @@
 import { BadRequestException, GoneException } from '@nestjs/common';
 import { ExtensionPairService } from '../extension-pair.service';
-import { asAuthDouble, asPrismaDouble } from './test-doubles.test';
+import { asAuthDouble, asPrismaDouble, withSetupTransaction } from './test-doubles.test';
 
 // Minimal in-shape doubles. We drive the service directly with mocked Prisma +
 // AuthService so no network / DB is touched (DESIGN.md v0.3 §11: hermetic).
@@ -31,7 +31,8 @@ function makeRow(overrides: Partial<Row> = {}): Row {
 }
 
 function makePrisma() {
-  return {
+  return withSetupTransaction({
+    user: { findFirst: jest.fn().mockResolvedValue({ id: 'coach-1' }) },
     extensionPairCode: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -40,7 +41,7 @@ function makePrisma() {
       // ceiling so the underlying failure code surfaces unless a test overrides.
       update: jest.fn().mockResolvedValue({ failed_attempts: 1 }),
     },
-  };
+  });
 }
 
 function makeAuth() {
@@ -110,7 +111,7 @@ describe('ExtensionPairService', () => {
 
     it('retries on a unique-code collision then succeeds', async () => {
       prisma.extensionPairCode.create
-        .mockRejectedValueOnce({ code: 'P2002' })
+        .mockRejectedValueOnce({ code: 'P2002', meta: { target: ['code'] } })
         .mockImplementation(async ({ data }: any) => data);
 
       const result = await svc.init('coach-1', 'truecoach');
@@ -147,7 +148,10 @@ describe('ExtensionPairService', () => {
     it('does not touch existing codes when the mint itself fails', async () => {
       // A failed mint must never nuke a coach's existing valid code — the
       // invalidation runs only AFTER a successful create.
-      prisma.extensionPairCode.create.mockRejectedValue({ code: 'P2002' });
+      prisma.extensionPairCode.create.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['code'] },
+      });
       await expect(svc.init('coach-1', 'truecoach')).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.extensionPairCode.updateMany).not.toHaveBeenCalled();
     });
@@ -418,7 +422,10 @@ describe('ExtensionPairService', () => {
     });
 
     it('gives up with a 400 after exhausting all collision retries', async () => {
-      prisma.extensionPairCode.create.mockRejectedValue({ code: 'P2002' });
+      prisma.extensionPairCode.create.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['code'] },
+      });
       await expect(svc.init('coach-1', 'truecoach')).rejects.toBeInstanceOf(BadRequestException);
       // 5 attempts, all colliding.
       expect(prisma.extensionPairCode.create).toHaveBeenCalledTimes(5);
@@ -456,7 +463,11 @@ describe('ExtensionPairService', () => {
       prisma.extensionPairCode.findUnique.mockResolvedValue(makeRow());
       await svc.status('coach-1', '142856');
       expect(prisma.extensionPairCode.findUnique).toHaveBeenCalledWith({
-        where: { code: '142856' },
+        where: {
+          code: '142856',
+          coach_id: 'coach-1',
+          coach: { role: { in: ['coach', 'owner'] }, deleted_at: null },
+        },
       });
     });
   });

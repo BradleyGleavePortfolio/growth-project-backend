@@ -237,6 +237,7 @@ model User {
   // from the mobile app to bootstrap the desktop Chrome extension. Only
   // meaningful for role=coach/owner; empty for clients.
   extension_pair_codes           ExtensionPairCode[]      @relation("ExtensionPairCodeCoach")
+  import_intents                 ImportIntent[]           @relation("ImportIntentCoach")
 
   // SaaS billing additions (1:1 with coach users; null for clients/owners).
   coach_subscription           CoachSubscription?
@@ -6737,6 +6738,8 @@ model MarketplaceAbuseSignal {
 model ExtensionPairCode {
   id              String    @id @default(uuid())
   code            String    @unique
+  import_intent_id String?   @unique @db.Uuid
+  intent          ImportIntent? @relation(fields: [import_intent_id, coach_id], references: [id, coach_id], onDelete: Cascade)
   coach_id        String
   coach           User      @relation("ExtensionPairCodeCoach", fields: [coach_id], references: [id], onDelete: Cascade)
   chosen_platform String
@@ -6751,6 +6754,25 @@ model ExtensionPairCode {
   @@index([coach_id])
   @@index([expires_at])
   @@index([used_at])
+  @@unique([import_intent_id, coach_id])
+}
+
+// Setup authority only. Pair challenge deletion never deletes this record.
+// One current setup per coach is enforced by a partial unique SQL index.
+model ImportIntent {
+  id              String    @id @default(uuid()) @db.Uuid
+  coach_id        String
+  coach           User      @relation("ImportIntentCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  setup_nonce     String?   @db.Uuid
+  chosen_platform String
+  created_at      DateTime  @default(now())
+  paired_at       DateTime?
+  superseded_at   DateTime?
+  challenge       ExtensionPairCode?
+
+  @@unique([id, coach_id])
+  @@unique([coach_id, setup_nonce])
+  @@index([coach_id, superseded_at])
 }
 
 // ─── ScoutProgressSnapshot ──────────────────────────────────────────────────────
