@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  buildMessage,
   IsArray,
   IsISO8601,
   IsNotEmpty,
@@ -11,8 +12,37 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateBy,
   ValidateNested,
+  type ValidationOptions,
 } from 'class-validator';
+import { isCanonicalPlatform } from './scout-platform';
+
+/**
+ * G2-R boundary rule for `sourcePlatform`: the single semantic authority is
+ * isCanonicalPlatform (src/scout/scout-platform.ts), which the T writer and the
+ * database CHECK (20270120000000_scout_identity_ready) also mirror. Delegating to
+ * the function (rather than restating a regex here) keeps the API boundary in exact
+ * parity with both, so a noncanonical token is a field-level 400 at ingest instead
+ * of a 500 from the staging CHECK. No normalization, no fallback.
+ */
+export function IsCanonicalPlatformToken(options?: ValidationOptions): PropertyDecorator {
+  return ValidateBy(
+    {
+      name: 'isCanonicalPlatformToken',
+      validator: {
+        validate: (value: unknown) => isCanonicalPlatform(value),
+        defaultMessage: buildMessage(
+          (eachPrefix) =>
+            `${eachPrefix}$property must be a canonical platform token: 1-256 characters, ` +
+            'starting with [a-z0-9], containing only [a-z0-9._:-]',
+          options,
+        ),
+      },
+    },
+    options,
+  );
+}
 
 // Ceiling on entities per batch. The extension's background worker chunks
 // crawls into batches; a batch larger than this is treated as an oversized
@@ -49,6 +79,7 @@ export class ScoutEntityDto {
   @IsString()
   @MinLength(1)
   @MaxLength(256)
+  @IsCanonicalPlatformToken()
   sourcePlatform!: string;
 
   // Strict ISO8601 with a mandatory "T" date/time separator. The extension's

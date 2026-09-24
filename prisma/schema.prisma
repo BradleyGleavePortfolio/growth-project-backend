@@ -6891,6 +6891,9 @@ model ScoutIngestEntity {
   created_at      DateTime  @default(now())
 
   @@unique([coach_id, intent_id, source_id])
+  // G2-R wide identity: declared alongside the narrow key, which keeps arbitrating
+  // duplicates (a narrow duplicate is always a wide duplicate). Not the identity itself yet.
+  @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutIngestEntity_identity_key")
   @@index([coach_id, entity_type])
 }
 
@@ -6946,6 +6949,11 @@ model ScoutReconstructionLedger {
   created_at  DateTime @default(now())
 
   @@unique([coach_id, intent_id, entity_type, source_id])
+  // G2-R wide identity beside the retained narrow key (see ScoutIngestEntity). source_platform
+  // stays `String?` here while the database is NOT NULL from 20270120000000 on: the accepted T
+  // writer's null-claim branch and its specs compile unchanged until N; the resulting
+  // informational `migrate diff` drift (DROP NOT NULL) is recorded, not a schema push.
+  @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutReconstructionLedger_identity_key")
   @@index([coach_id, intent_id])
 }
 

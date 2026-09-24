@@ -13,7 +13,10 @@
  *   - an unknown TOP-LEVEL field → 400 (forbidNonWhitelisted),
  *   - an unknown ENTITY field → 400 (nested forbidNonWhitelisted),
  *   - malformed JSON body → 400 (body parser),
- *   - capturedAt: "bad" → 400 (strict IsISO8601, proving FIX-2).
+ *   - capturedAt: "bad" → 400 (strict IsISO8601, proving FIX-2),
+ *   - a noncanonical sourcePlatform → 400 with a field-level message (G2-R D2), and
+ *     the decorator's accept/reject set is exactly isCanonicalPlatform's over a table
+ *     that includes malformed input and trailing line terminators.
  *
  * Requests use node:http against a real listening socket (repo pattern — see
  * feature-flag-not-found.bootstrap.spec.ts; supertest is not a dependency).
@@ -22,6 +25,11 @@ import 'reflect-metadata';
 import * as http from 'http';
 import { INestApplication, Module, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+
+import { ScoutEntityDto } from '../../src/scout/scout-ingest.dto';
+import { isCanonicalPlatform } from '../../src/scout/scout-platform';
 
 import { ScoutIngestController } from '../../src/scout/scout-ingest.controller';
 import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
@@ -183,5 +191,106 @@ describe('POST /api/scout/ingest through the production ValidationPipe', () => {
   it('rejects capturedAt: "bad" → 400 (strict ISO8601, proves FIX-2)', async () => {
     const res = await post(baseUrl, envelope({ entities: [makeEntity({ capturedAt: 'bad' })] }));
     expect(res.status).toBe(400);
+  });
+
+  it('rejects a noncanonical sourcePlatform → 400 with a field-level message; nothing staged (G2-R D2)', async () => {
+    for (const sourcePlatform of ['TrueCoach', 'auto:x.com\n', ' truecoach', '-truecoach']) {
+      const res = await post(baseUrl, envelope({ entities: [makeEntity({ sourcePlatform })] }));
+      expect(res.status).toBe(400);
+      // Field-level: the ValidationPipe's message array names the nested property and the
+      // decorator's own reason, so a client learns which field failed and why.
+      expect(JSON.stringify(res.body)).toMatch(
+        /entities\.0\.sourcePlatform must be a canonical platform token/,
+      );
+      expect(capturedRows).toHaveLength(0);
+    }
+  });
+
+  it('accepts canonical sourcePlatform tokens at the boundary unchanged (fixtures stay valid)', async () => {
+    for (const sourcePlatform of [
+      'truecoach',
+      'auto:coachrx.example.com',
+      'a',
+      `z${'-'.repeat(255)}`,
+    ]) {
+      const res = await post(baseUrl, envelope({ entities: [makeEntity({ sourcePlatform })] }));
+      expect(res.status).toBe(202);
+    }
+    expect(capturedRows).toHaveLength(4);
+  });
+});
+
+/**
+ * G2-R D2 parity: the boundary decorator delegates to isCanonicalPlatform, so its accept/reject
+ * set over this table must equal the function's. The table is chosen to break a merely similar
+ * regex: empty, exact length bounds, every leading-character class, case, whitespace, NUL,
+ * trailing \n and \r\n (a `$` anchor with multiline or a trailing-newline allowance would admit
+ * them), non-ASCII, and non-string inputs. The database CHECK shipped by
+ * 20270120000000_scout_identity_ready mirrors the same predicate.
+ */
+describe('ScoutEntityDto.sourcePlatform parity with isCanonicalPlatform', () => {
+  const table: unknown[] = [
+    '',
+    'a',
+    '0',
+    'truecoach',
+    'auto:coachrx.example.com',
+    'a.b_c:d-e',
+    'z'.repeat(256),
+    'z'.repeat(257),
+    `a${'.'.repeat(255)}`,
+    `a${'.'.repeat(256)}`,
+    '-truecoach',
+    '.truecoach',
+    ':truecoach',
+    '_truecoach',
+    'TrueCoach',
+    'true coach',
+    ' truecoach',
+    'truecoach ',
+    'truecoach\n',
+    'truecoach\r\n',
+    '\ntruecoach',
+    'true\ncoach',
+    'truecoach\u0000',
+    'truecoach/',
+    'true@coach',
+    'trüecoach',
+    'ｔruecoach',
+    'truecoach\u200b',
+    1,
+    null,
+    undefined,
+    ['truecoach'],
+    { toString: () => 'truecoach' },
+  ];
+  const dtoAccepts = async (sourcePlatform: unknown) => {
+    const dto = plainToInstance(ScoutEntityDto, {
+      sourceId: 's1',
+      sourcePlatform,
+      capturedAt: '2026-07-08T12:00:00.000Z',
+      payload: { plan: 'gold' },
+    });
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+    return errors.filter((e) => e.property === 'sourcePlatform').length === 0;
+  };
+
+  it('accepts exactly the values isCanonicalPlatform accepts', async () => {
+    const outcomes = await Promise.all(
+      table.map(async (value) => ({
+        value: typeof value === 'string' ? JSON.stringify(value) : String(value),
+        dto: await dtoAccepts(value),
+        authority: isCanonicalPlatform(value),
+      })),
+    );
+    expect(outcomes.filter((o) => o.dto !== o.authority)).toEqual([]);
+    // The table must genuinely exercise both classes, and the authority itself must hold the
+    // properties the database CHECK relies on (a stale table would otherwise prove nothing).
+    expect(outcomes.filter((o) => o.authority)).toHaveLength(7);
+    expect(outcomes.filter((o) => !o.authority)).toHaveLength(table.length - 7);
+    expect(isCanonicalPlatform('truecoach\n')).toBe(false);
+    expect(isCanonicalPlatform('truecoach\r\n')).toBe(false);
+    expect(isCanonicalPlatform('z'.repeat(256))).toBe(true);
+    expect(isCanonicalPlatform('z'.repeat(257))).toBe(false);
   });
 });
