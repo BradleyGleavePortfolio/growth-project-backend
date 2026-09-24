@@ -1,15 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
+import { type StagedSourceRow } from '../../../src/scout/reconstruct/mapping-spec';
 import {
-  mapTrueCoachEntity,
-  type StagedEntityRow,
-} from '../../../src/scout/mappers/truecoach-entity.mapper';
+  buildSourceMapperRegistry,
+  type SourceMapper,
+} from '../../../src/scout/reconstruct/source-mapper-registry';
+import { RECONSTRUCT_FAMILY } from '../../../src/scout/scout-reconstruct.dto';
 
 /**
- * Unit tests for the pure, total TrueCoach generic-entity mapper (IMPORTER-H).
+ * Unit tests for TrueCoach generic-entity mapping (IMPORTER-H; S8-A: the generic
+ * interpreter over the data-only `sources/truecoach.json` spec, which replaced
+ * the retired per-source TypeScript mapper — every assertion below is unchanged
+ * from it, and each row is mapped under BOTH non-person families, which must
+ * agree exactly as the single retired mapper did).
  *
- * This mapper is the D2 guardrail for the NON-person families (`workouts`,
+ * This mapping is the D2 guardrail for the NON-person families (`workouts`,
  * `client_history`): the client link is the opaque client_id/clientId and the
  * label is a best-effort title/name. Identity is the opaque source_id, which the
  * engine carries directly as the external_ref key — the mapper never re-derives
@@ -20,6 +26,14 @@ import {
  * fixtures embed both a client email and billing noise precisely so an
  * accidental read would fail these assertions.
  */
+
+type StagedEntityRow = StagedSourceRow;
+const trueCoach = buildSourceMapperRegistry().get('truecoach') as SourceMapper;
+function mapTrueCoachEntity(r: StagedEntityRow) {
+  const workouts = trueCoach.mapEntity(RECONSTRUCT_FAMILY.workouts, r);
+  expect(trueCoach.mapEntity(RECONSTRUCT_FAMILY.client_history, r)).toEqual(workouts);
+  return workouts;
+}
 
 function goldenRows(fixture: string, key: string): readonly Prisma.JsonObject[] {
   const raw = JSON.parse(

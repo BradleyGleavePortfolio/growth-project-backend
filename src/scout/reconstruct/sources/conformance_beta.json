@@ -1,0 +1,40 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "conformance_beta",
+  "steps": {
+    "athletes": "clients",
+    "programs": "workouts",
+    "sessions": "client_history"
+  },
+  "families": {
+    "clients": {
+      "displayName": {
+        "paths": [
+          ["data", "person", "fullName"],
+          ["data", "person", "nickname"]
+        ],
+        "coerce": "string"
+      }
+    },
+    "workouts": {
+      "clientSourceId": {
+        "paths": [["links", "athlete", "ref"], ["athleteRef"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": {
+        "paths": [["meta", "headline"], ["summary"]],
+        "coerce": "string"
+      }
+    },
+    "client_history": {
+      "clientSourceId": {
+        "paths": [["links", "athlete", "ref"], ["athleteRef"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": {
+        "paths": [["meta", "headline"], ["summary"]],
+        "coerce": "string"
+      }
+    }
+  }
+}

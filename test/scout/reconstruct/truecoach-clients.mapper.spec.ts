@@ -1,20 +1,27 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
+import { type StagedSourceRow } from '../../../src/scout/reconstruct/mapping-spec';
 import {
-  mapTrueCoachClient,
-  type StagedClientRow,
-} from '../../../src/scout/mappers/truecoach-clients.mapper';
+  buildSourceMapperRegistry,
+  type SourceMapper,
+} from '../../../src/scout/reconstruct/source-mapper-registry';
 
 /**
- * Unit tests for the pure, total TrueCoach `clients` mapper.
+ * Unit tests for TrueCoach `clients` mapping (S8-A: the generic interpreter over
+ * the data-only `sources/truecoach.json` spec, which replaced the retired
+ * per-source TypeScript mapper — every assertion below is unchanged from it).
  *
- * The mapper is the D2 guardrail in code: identity is the opaque platform id
+ * The mapping is the D2 guardrail: identity is the opaque platform id
  * (source_id), the display name is best-effort, and email is deliberately never
  * read. These tests drive it against the SAME real recorded payload shapes the
  * extension captures (test/fixtures/truecoach/clients.golden.json) so the roster
  * mapping is proven against bytes Chrome actually emitted, not synthetic stubs.
  */
+
+type StagedClientRow = StagedSourceRow;
+const trueCoach = buildSourceMapperRegistry().get('truecoach') as SourceMapper;
+const mapTrueCoachClient = (r: StagedClientRow) => trueCoach.mapClient(r);
 
 function goldenClients(): readonly Prisma.JsonObject[] {
   const fixture = JSON.parse(

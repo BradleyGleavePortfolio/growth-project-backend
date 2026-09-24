@@ -1,15 +1,27 @@
 import { Prisma } from '@prisma/client';
 import {
-  mapConformanceAlphaClient,
-  mapConformanceAlphaEntity,
-} from '../../../src/scout/mappers/conformance-alpha.mapper';
-import { mapTrueCoachClient } from '../../../src/scout/mappers/truecoach-clients.mapper';
-import {
   buildSourceMapperRegistry,
   type SourceMapper,
 } from '../../../src/scout/reconstruct/source-mapper-registry';
 import { buildFamilyRegistry, type StagedRow } from '../../../src/scout/reconstruct/families';
 import { RECONSTRUCT_FAMILY } from '../../../src/scout/scout-reconstruct.dto';
+
+/**
+ * S8-A: `conformance_alpha` is now the data-only `sources/conformance_alpha.json`
+ * spec under the one generic interpreter (the per-source TypeScript mapper is
+ * retired). Every assertion below is unchanged from the retired mapper; entity
+ * rows are mapped under BOTH non-person families, which must agree exactly.
+ */
+const sources = buildSourceMapperRegistry();
+const alpha = sources.get('conformance_alpha') as SourceMapper;
+const mapConformanceAlphaClient = (r: StagedRow) => alpha.mapClient(r);
+function mapConformanceAlphaEntity(r: StagedRow) {
+  const workouts = alpha.mapEntity(RECONSTRUCT_FAMILY.workouts, r);
+  expect(alpha.mapEntity(RECONSTRUCT_FAMILY.client_history, r)).toEqual(workouts);
+  return workouts;
+}
+const mapTrueCoachClient = (r: StagedRow) =>
+  (sources.get('truecoach') as SourceMapper).mapClient(r);
 
 /**
  * PR-2a — the deterministic, non-production `conformance_alpha` adapter proving

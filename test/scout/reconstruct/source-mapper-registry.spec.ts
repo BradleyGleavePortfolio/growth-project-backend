@@ -26,7 +26,11 @@ describe('buildSourceMapperRegistry — source_platform dispatch', () => {
   const registry = buildSourceMapperRegistry();
 
   it('registers truecoach plus the non-production conformance_alpha adapter', () => {
-    expect([...registry.keys()]).toEqual(['truecoach', 'conformance_alpha']);
+    // Loaded from the data-only `sources/*.json` specs in byte-sorted filename
+    // order; a further source adds keys without touching this seam.
+    const keys = [...registry.keys()];
+    expect(keys).toEqual(expect.arrayContaining(['truecoach', 'conformance_alpha']));
+    expect(keys).toEqual([...keys].sort());
   });
 
   it('returns undefined for any unregistered platform (fail-closed at the seam)', () => {
@@ -47,6 +51,7 @@ describe('buildSourceMapperRegistry — source_platform dispatch', () => {
   it('routes non-person families through the TrueCoach entity mapper (concrete fields)', () => {
     const mapper = registry.get('truecoach') as SourceMapper;
     const result = mapper.mapEntity(
+      RECONSTRUCT_FAMILY.workouts,
       row('truecoach', 'w_1', { title: 'Upper Body A', client_id: 7, price: 49.99 }),
     );
     expect(result).toEqual({

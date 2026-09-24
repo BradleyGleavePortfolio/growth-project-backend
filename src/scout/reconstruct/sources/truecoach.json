@@ -1,0 +1,28 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "truecoach",
+  "steps": {
+    "clients": "clients",
+    "workouts": "workouts",
+    "client_history": "client_history"
+  },
+  "families": {
+    "clients": {
+      "displayName": { "paths": [["name"]], "coerce": "string" }
+    },
+    "workouts": {
+      "clientSourceId": {
+        "paths": [["client_id"], ["clientId"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": { "paths": [["title"], ["name"]], "coerce": "string" }
+    },
+    "client_history": {
+      "clientSourceId": {
+        "paths": [["client_id"], ["clientId"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": { "paths": [["title"], ["name"]], "coerce": "string" }
+    }
+  }
+}

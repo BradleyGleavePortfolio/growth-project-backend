@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
-import { type MappedClient } from '../mappers/truecoach-clients.mapper';
-import { type MappedEntity } from '../mappers/truecoach-entity.mapper';
 import { RECONSTRUCT_FAMILY } from '../scout-reconstruct.dto';
+import { type MappedClient, type MappedEntity } from './mapping-spec';
 import { buildSourceMapperRegistry } from './source-mapper-registry';
 
 /** Prisma transaction client — the interactive-transaction handle. */
@@ -40,9 +39,10 @@ export interface FamilyReconstructor<M = unknown> {
 
 /**
  * The `source_platform` → mapper seam. A family no longer hard-wires a single
- * source's mapper; it looks the mapper up by the row's `source_platform` and
+ * source's mapper; it looks the source's data-only mapping up by the row's
+ * `source_platform` (one generic interpreter over `./sources/*.json`, S8-A) and
  * fails closed with the exact `unsupported_platform:<token>` skip reason when no
- * source is registered — byte-identical to the reason each mapper still returns
+ * source is registered — byte-identical to the reason the interpreter returns
  * from its own internal guard. Built once at module load; the map is read-only.
  */
 const sourceMapperRegistry = buildSourceMapperRegistry();
@@ -100,7 +100,7 @@ function genericEntityFamily(entityType: string): FamilyReconstructor<MappedEnti
     map(row) {
       const mapper = sourceMapperRegistry.get(row.source_platform);
       if (mapper === undefined) return unsupportedPlatform(row);
-      const result = mapper.mapEntity(row);
+      const result = mapper.mapEntity(entityType, row);
       return result.ok ? { ok: true, mapped: result.entity } : result;
     },
     async persist(tx, coachId, sourceId, entity) {
