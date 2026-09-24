@@ -6942,7 +6942,7 @@ model ScoutReconstructionLedger {
   intent_id   String
   entity_type String
   source_id   String
-  source_platform String?
+  source_platform String
   status      String
   target_id   String?
   reason      String?
@@ -6950,9 +6950,10 @@ model ScoutReconstructionLedger {
 
   @@unique([coach_id, intent_id, entity_type, source_id])
   // G2-R wide identity beside the retained narrow key (see ScoutIngestEntity). source_platform
-  // stays `String?` here while the database is NOT NULL from 20270120000000 on: the accepted T
-  // writer's null-claim branch and its specs compile unchanged until N; the resulting
-  // informational `migrate diff` drift (DROP NOT NULL) is recorded, not a schema push.
+  // is `String` from N on, matching the NOT NULL + canonical CHECK the database carries since
+  // 20270120000000; the final writer upserts on this five-field identity and has no null-claim.
+  // No migration ships with N: the column and both keys already exist. The narrow key is
+  // retained until C.
   @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutReconstructionLedger_identity_key")
   @@index([coach_id, intent_id])
 }

@@ -51,7 +51,8 @@ export class ScoutEntitiesController {
     status: 400,
     description:
       'Invalid query (missing/oversized intent_id, unsupported family, out-of-range ' +
-      'limit, or malformed/mismatched cursor). Standard HttpExceptionFilter envelope.',
+      'limit, or malformed/mismatched cursor, including a legacy cursor that no longer ' +
+      'resolves — restart from the first page). Standard HttpExceptionFilter envelope.',
     schema: errorEnvelopeSchema(),
   })
   @ApiResponse({

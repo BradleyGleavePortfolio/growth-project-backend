@@ -74,9 +74,10 @@ export class ScoutEntitiesQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `next_cursor` by a prior call ' +
-      'for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits legacy. ' +
-      'Omit for the first page. A malformed or ' +
-      'mismatched cursor is a 400 (fail closed).',
+      'for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits scoped v2. ' +
+      'Omit for the first page. A malformed or mismatched cursor, or a legacy cursor that ' +
+      'no longer resolves to one reconstructed row, is a 400 (fail closed): restart ' +
+      'pagination from the first page.',
     maxLength: SCOUT_CURSOR_MAX_LENGTH,
   })
   @IsOptional()

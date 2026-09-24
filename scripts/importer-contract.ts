@@ -43,9 +43,10 @@ export const API_PREFIX = '/api';
 // change and no regeneration in the release flow). Bump this by hand only when
 // the importer surface itself changes in a client-visible way.
 // Unfrozen forward-2.x prerelease: the C1 setup-recovery surface (2.0.0-c1-s1.0)
-// composed with the 1.4.1 cursor-limit repair. Not consumer-frozen; reconcile
-// before consumers.
-export const CONTRACT_VERSION = '2.0.0-c1-s1.1';
+// composed with the 1.4.1 cursor-limit repair (s1.1) and the Q1 scoped v2
+// cursor emission / legacy-boundary resolution (s1.2). Not consumer-frozen;
+// reconcile before consumers.
+export const CONTRACT_VERSION = '2.0.0-c1-s1.2';
 
 /** Recursively sort object keys so JSON.stringify is byte-stable across runs. */
 export function stableSort<T>(value: T): T {

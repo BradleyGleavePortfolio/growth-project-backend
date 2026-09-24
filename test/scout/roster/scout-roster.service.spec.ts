@@ -9,6 +9,7 @@ import {
   ROSTER_MAX_PAGE_SIZE,
 } from '../../../src/scout/scout-roster.dto';
 import { RECONSTRUCT_ENTITY_TYPE } from '../../../src/scout/scout-reconstruct.dto';
+import { decodeScoutCursor } from '../../../src/scout/scout-cursor';
 
 /**
  * ScoutRosterService unit tests.
@@ -36,6 +37,7 @@ interface LedgerRow {
   intent_id: string;
   entity_type: string;
   source_id: string;
+  source_platform: string;
   status: string;
   target_id: string | null;
 }
@@ -55,7 +57,9 @@ interface Where {
   intent_id?: string;
   entity_type?: string;
   status?: string;
-  source_id?: { gt?: string };
+  source_id?: string | { gt?: string };
+  source_platform?: { gt?: string };
+  OR?: Where[];
   id?: { in?: string[] };
   state?: { not?: PersonState };
 }
@@ -76,6 +80,8 @@ class FakePrisma {
   transactionCalls: Array<{ isolationLevel?: string }> = [];
   private txDepth = 0;
   readsOutsideTx = 0;
+  /** Every ledger findMany, in order, so tests can prove what was (not) read. */
+  ledgerReads: Array<{ where: Where; take?: number; orderBy?: unknown }> = [];
 
   // Interactive $transaction: records the isolation option and runs the callback
   // against this same fake as the tx client, so the real service's reads (count,
@@ -126,17 +132,19 @@ class FakePrisma {
         _count: { _all: n },
       }));
     },
-    findMany: async (args: { where: Where; take?: number }) => {
+    findMany: async (args: { where: Where; take?: number; orderBy?: unknown }) => {
       this.noteRead();
-      let rows = this.ledgerRows.filter(
-        (r) =>
-          matchBase(r, args.where) &&
-          (args.where.status === undefined || r.status === args.where.status) &&
-          (args.where.source_id?.gt === undefined || r.source_id > args.where.source_id.gt),
-      );
-      rows = rows.sort((a, b) => a.source_id.localeCompare(b.source_id));
+      this.ledgerReads.push(args);
+      // Real (source_id, source_platform) order and predicate semantics: the
+      // fake mirrors the schema's wide identity so tie-break paging is proven
+      // by behaviour (PG remains the authority; see the NQ1 real-PG proof).
+      let rows = this.ledgerRows.filter((r) => matchLedger(r, args.where)).sort(byIdentity);
       if (args.take !== undefined) rows = rows.slice(0, args.take);
-      return rows.map((r) => ({ source_id: r.source_id, target_id: r.target_id }));
+      return rows.map((r) => ({
+        source_id: r.source_id,
+        source_platform: r.source_platform,
+        target_id: r.target_id,
+      }));
     },
   };
 
@@ -173,6 +181,33 @@ function matchBase(
     (w.intent_id === undefined || r.intent_id === w.intent_id) &&
     (w.entity_type === undefined || r.entity_type === w.entity_type)
   );
+}
+
+function matchLedger(r: LedgerRow, w: Where): boolean {
+  if (!matchBase(r, w)) return false;
+  if (w.status !== undefined && r.status !== w.status) return false;
+  if (typeof w.source_id === 'string' && r.source_id !== w.source_id) return false;
+  if (
+    typeof w.source_id === 'object' &&
+    w.source_id.gt !== undefined &&
+    !(r.source_id > w.source_id.gt)
+  )
+    return false;
+  if (w.source_platform?.gt !== undefined && !(r.source_platform > w.source_platform.gt))
+    return false;
+  if (w.OR !== undefined && !w.OR.some((o) => matchLedger(r, o))) return false;
+  return true;
+}
+
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const byIdentity = (a: LedgerRow, b: LedgerRow): number =>
+  cmp(a.source_id, b.source_id) || cmp(a.source_platform, b.source_platform);
+
+const b64 = (v: string): string => Buffer.from(v, 'utf8').toString('base64url');
+/** The exact scoped v2 token Q1 must emit for a roster boundary. */
+function expectedV2(coach: string, intent: string, s: string, p: string): string {
+  const o = 'source_id:asc,source_platform:asc';
+  return `v2.${b64(JSON.stringify({ v: 2, c: coach, i: intent, f: ET, o, s, p }))}`;
 }
 
 function makeService(fake: FakePrisma): {
@@ -223,6 +258,7 @@ function seed(
       intent_id: intent,
       entity_type: ET,
       source_id: sid,
+      source_platform: 'truecoach',
       status,
       target_id: targetId,
     });
@@ -348,6 +384,11 @@ describe('ScoutRosterService.getRoster', () => {
     expect(page1.page.next_cursor).toBeTruthy();
     // Cursor is opaque (base64url), not the raw source_id.
     expect(page1.page.next_cursor).not.toBe('s001');
+    // Q1: every non-final page emits the exact scoped v2 token of its last
+    // LEDGER row (source_id, source_platform); the first page is ordered the
+    // same way as every later page.
+    expect(page1.page.next_cursor).toBe(expectedV2(COACH, INTENT, 's001', 'truecoach'));
+    expect(fake.ledgerReads[0].orderBy).toEqual([{ source_id: 'asc' }, { source_platform: 'asc' }]);
 
     const page2 = await service.getRoster(COACH, INTENT, page1.page.next_cursor ?? undefined, 2);
     expect(page2.persons.map((p) => p.source_person_id)).toEqual(['tc_s002', 'tc_s003']);
@@ -381,6 +422,178 @@ describe('ScoutRosterService.getRoster', () => {
       'tc_s006',
     ]);
     expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  describe('Q1 cursor emission and legacy-boundary resolution', () => {
+    const legacyRoster = (s: string): string => b64(s);
+
+    it('emits scoped v2 on every non-final page and the decoder accepts each one back', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 5 });
+      const { service } = makeService(fake);
+      let cursor: string | undefined;
+      const emitted: string[] = [];
+      for (let guard = 0; guard < 10; guard++) {
+        const page = await service.getRoster(COACH, INTENT, cursor, 2);
+        if (!page.page.has_more) {
+          expect(page.page.next_cursor).toBeNull();
+          break;
+        }
+        const token = page.page.next_cursor ?? '';
+        emitted.push(token);
+        expect(token.startsWith('v2.')).toBe(true);
+        expect(decodeScoutCursor(token, COACH, INTENT, ET)).toEqual({
+          s: page.persons[page.persons.length - 1].source_person_id.replace('tc_', ''),
+          p: 'truecoach',
+        });
+        cursor = token;
+      }
+      expect(emitted).toEqual([
+        expectedV2(COACH, INTENT, 's001', 'truecoach'),
+        expectedV2(COACH, INTENT, 's003', 'truecoach'),
+      ]);
+    });
+
+    it('resolves a Q0-emitted legacy roster token to the same next page as its v2 twin', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 5 });
+      const { service } = makeService(fake);
+      const page1 = await service.getRoster(COACH, INTENT, undefined, 2);
+      const viaV2 = await service.getRoster(COACH, INTENT, page1.page.next_cursor ?? undefined, 2);
+      const viaLegacy = await service.getRoster(COACH, INTENT, legacyRoster('s001'), 2);
+      expect(viaLegacy).toEqual(viaV2);
+      expect(viaLegacy.persons.map((p) => p.source_person_id)).toEqual(['tc_s002', 'tc_s003']);
+      // Resolution happened inside the one RepeatableRead snapshot, after the
+      // gate, as a bounded (take 2) equality lookup — then the page read.
+      expect(fake.transactionCalls).toHaveLength(3);
+      const reads = fake.ledgerReads.slice(-2);
+      expect(reads[0]).toEqual({
+        where: {
+          coach_id: COACH,
+          intent_id: INTENT,
+          entity_type: ET,
+          status: 'reconstructed',
+          source_id: 's001',
+        },
+        select: { source_platform: true },
+        take: 2,
+      });
+      expect(reads[1].where.OR).toEqual([
+        { source_id: { gt: 's001' } },
+        { source_id: 's001', source_platform: { gt: 'truecoach' } },
+      ]);
+      expect(fake.readsOutsideTx).toBe(0);
+    });
+
+    it('400s an unresolvable legacy token (absent source) before any count or page read', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      const { service } = makeService(fake);
+      const before = fake.ledgerReads.length;
+      const err = await service
+        .getRoster(COACH, INTENT, legacyRoster('zzz-never-reconstructed'), 2)
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).message).toBe('malformed cursor');
+      // Exactly one ledger read: the resolution lookup. No page was read.
+      expect(fake.ledgerReads.length - before).toBe(1);
+      expect(fake.ledgerReads[before].take).toBe(2);
+      expect(JSON.stringify(err)).not.toContain('zzz-never');
+    });
+
+    it('never widens a roster legacy token past the requested (coach, intent, clients) scope', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      seed(fake, { intent: 'intent-2', reconstructed: 0 });
+      // The boundary exists as a reconstructed row of intent-1 (and of another
+      // coach), but not of intent-2: the intent-2 read must not find it.
+      fake.ledgerRows.push({
+        coach_id: OTHER,
+        intent_id: 'intent-2',
+        entity_type: ET,
+        source_id: 's001',
+        source_platform: 'truecoach',
+        status: 'reconstructed',
+        target_id: null,
+      });
+      const { service } = makeService(fake);
+      await expect(service.getRoster(COACH, 'intent-2', legacyRoster('s001'), 2)).rejects.toThrow(
+        'malformed cursor',
+      );
+      // A skipped/failed row of the same source is not a boundary either.
+      fake.ledgerRows.push({
+        coach_id: COACH,
+        intent_id: 'intent-2',
+        entity_type: ET,
+        source_id: 's001',
+        source_platform: 'truecoach',
+        status: 'skipped',
+        target_id: null,
+      });
+      await expect(service.getRoster(COACH, 'intent-2', legacyRoster('s001'), 2)).rejects.toThrow(
+        'malformed cursor',
+      );
+    });
+
+    it('enumerates identity ties exactly once via (source_id, source_platform) and refuses a tied legacy boundary', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 2 });
+      // Future-schema fixture: the same source_id reconstructed from three
+      // platforms (only possible once the narrow key is gone at C).
+      for (const p of ['c-plat', 'a-plat', 'b-plat']) {
+        fake.ledgerRows.push({
+          coach_id: COACH,
+          intent_id: INTENT,
+          entity_type: ET,
+          source_id: 's000',
+          source_platform: p,
+          status: 'reconstructed',
+          target_id: `p-${p}`,
+        });
+        fake.persons.push({
+          id: `p-${p}`,
+          coach_id: COACH,
+          source_platform: p,
+          source_person_id: `${p}_s000`,
+          display_name: null,
+          state: PersonState.InvitePending,
+          created_at: new Date(0),
+          updated_at: new Date(0),
+        });
+      }
+      const { service } = makeService(fake);
+      const seen: string[] = [];
+      const tokens: string[] = [];
+      let cursor: string | undefined;
+      for (let guard = 0; guard < 20; guard++) {
+        const page = await service.getRoster(COACH, INTENT, cursor, 1);
+        seen.push(...page.persons.map((p) => p.source_person_id));
+        if (!page.page.has_more) break;
+        tokens.push(page.page.next_cursor ?? '');
+        cursor = page.page.next_cursor ?? undefined;
+      }
+      expect(seen).toEqual(['a-plat_s000', 'b-plat_s000', 'c-plat_s000', 'tc_s000', 'tc_s001']);
+      expect(tokens).toEqual([
+        expectedV2(COACH, INTENT, 's000', 'a-plat'),
+        expectedV2(COACH, INTENT, 's000', 'b-plat'),
+        expectedV2(COACH, INTENT, 's000', 'c-plat'),
+        expectedV2(COACH, INTENT, 's000', 'truecoach'),
+      ]);
+      // A legacy token naming the tied source cannot pick a platform: 400 restart.
+      await expect(service.getRoster(COACH, INTENT, legacyRoster('s000'), 1)).rejects.toThrow(
+        'malformed cursor',
+      );
+    });
+
+    it('does not hand out a token when the last ledger row is not encodable', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      fake.ledgerRows[1].source_platform = 'Not-Canonical';
+      const { service } = makeService(fake);
+      await expect(service.getRoster(COACH, INTENT, undefined, 2)).rejects.toThrow(
+        'cursor boundary not encodable',
+      );
+    });
   });
 
   it('rejects a malformed cursor (fail closed, never a silent full scan)', async () => {
@@ -423,6 +636,7 @@ describe('ScoutRosterService.getRoster', () => {
       intent_id: INTENT,
       entity_type: ET,
       source_id: 's999',
+      source_platform: 'truecoach',
       status: 'reconstructed',
       target_id: 'p-foreign',
     });

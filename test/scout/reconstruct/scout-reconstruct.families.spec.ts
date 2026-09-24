@@ -26,7 +26,7 @@ interface StagedRow {
   payload: unknown;
 }
 interface LedgerRow {
-  source_platform?: string | null;
+  source_platform: string;
   coach_id: string;
   intent_id: string;
   entity_type: string;
@@ -79,7 +79,11 @@ class FakePrisma {
     findMany: async (args: { take?: number; skip?: number }) => {
       const skip = args.skip ?? 0;
       const take = args.take ?? this.staged.length;
-      const ordered = [...this.staged].sort((a, b) => a.source_id.localeCompare(b.source_id));
+      const ordered = [...this.staged].sort(
+        (a, b) =>
+          a.source_id.localeCompare(b.source_id) ||
+          a.source_platform.localeCompare(b.source_platform),
+      );
       return ordered.slice(skip, skip + take);
     },
   };
@@ -127,8 +131,8 @@ class FakePrisma {
         coach_id: string;
         intent_id: string;
         entity_type: string;
+        source_platform: string;
         source_id: string;
-        OR?: Array<{ source_platform: string | null }>;
         status?: { not: string };
       };
       data: Partial<LedgerRow>;
@@ -137,23 +141,32 @@ class FakePrisma {
       const row = this.ledger.get(`${w.coach_id}|${w.intent_id}|${w.entity_type}|${w.source_id}`);
       if (
         !row ||
-        (w.OR && !w.OR.some((p) => p.source_platform === (row.source_platform ?? null))) ||
+        row.source_platform !== w.source_platform ||
         (w.status && row.status === w.status.not)
       )
         return { count: 0 };
       Object.assign(row, args.data);
       return { count: 1 };
     },
+    // Keyed by the NARROW key the real table still enforces until C: a wide
+    // identity that misses while the narrow key is taken raises P2002, as on PG.
     upsert: async (args: {
-      where: { coach_id_intent_id_entity_type_source_id: LedgerRow };
+      where: { coach_id_intent_id_entity_type_source_platform_source_id: LedgerRow };
       create: LedgerRow;
       update: Partial<LedgerRow>;
     }) => {
-      const key = this.ledgerKey(args.where.coach_id_intent_id_entity_type_source_id);
+      const w = args.where.coach_id_intent_id_entity_type_source_platform_source_id;
+      const key = this.ledgerKey(w);
       const existing = this.ledger.get(key);
-      if (existing) {
+      if (existing && existing.source_platform === w.source_platform) {
         Object.assign(existing, args.update);
         return existing;
+      }
+      if (existing) {
+        throw new Prisma.PrismaClientKnownRequestError('unique violation', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
       }
       const row = { ...args.create };
       this.ledger.set(key, row);
