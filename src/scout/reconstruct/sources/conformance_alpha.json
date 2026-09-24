@@ -1,0 +1,28 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "conformance_alpha",
+  "steps": {
+    "members": "clients",
+    "routines": "workouts",
+    "activity-log": "client_history"
+  },
+  "families": {
+    "clients": {
+      "displayName": { "paths": [["profile", "name"]], "coerce": "string_or_finite_number" }
+    },
+    "workouts": {
+      "clientSourceId": {
+        "paths": [["attributes", "member_id"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": { "paths": [["attributes", "title"]], "coerce": "string_or_finite_number" }
+    },
+    "client_history": {
+      "clientSourceId": {
+        "paths": [["attributes", "member_id"]],
+        "coerce": "string_or_finite_number"
+      },
+      "label": { "paths": [["attributes", "title"]], "coerce": "string_or_finite_number" }
+    }
+  }
+}
