@@ -6872,9 +6872,10 @@ model ScoutImport {
 // entity; only intent_id/entity_type on the outer envelope stay snake_case.
 //
 // coach_id comes from the extension bearer-token identity (never a body field);
-// the (coach_id, intent_id, source_id) unique key makes the endpoint idempotent
-// so the extension can safely replay a batch during retry/recovery without
-// duplicating rows.
+// the (coach_id, intent_id, entity_type, source_platform, source_id) unique key
+// (G2-C: the wide identity is the only key) makes the endpoint idempotent so the
+// extension can safely replay a batch during retry/recovery without duplicating
+// rows, while one source_id may exist per family and per platform.
 //
 // RLS: RESTRICTIVE deny-all to anon + authenticated — written/read only via
 // service_role (the ingest endpoint runs server-side). Mirrors
@@ -6890,9 +6891,8 @@ model ScoutIngestEntity {
   payload         Json
   created_at      DateTime  @default(now())
 
-  @@unique([coach_id, intent_id, source_id])
-  // G2-R wide identity: declared alongside the narrow key, which keeps arbitrating
-  // duplicates (a narrow duplicate is always a wide duplicate). Not the identity itself yet.
+  // G2-C identity contract: the wide key is the identity. The narrow
+  // (coach_id, intent_id, source_id) key was dropped by 20270121000000_scout_identity_contract.
   @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutIngestEntity_identity_key")
   @@index([coach_id, entity_type])
 }
@@ -6948,12 +6948,12 @@ model ScoutReconstructionLedger {
   reason      String?
   created_at  DateTime @default(now())
 
-  @@unique([coach_id, intent_id, entity_type, source_id])
-  // G2-R wide identity beside the retained narrow key (see ScoutIngestEntity). source_platform
-  // is `String` from N on, matching the NOT NULL + canonical CHECK the database carries since
-  // 20270120000000; the final writer upserts on this five-field identity and has no null-claim.
-  // No migration ships with N: the column and both keys already exist. The narrow key is
-  // retained until C.
+  // G2-C identity contract: the five-field wide identity is the only key (see ScoutIngestEntity).
+  // source_platform is `String` from N on, matching the NOT NULL + canonical CHECK the database
+  // carries since 20270120000000; the writer upserts on this identity and has no null-claim.
+  // The narrow (coach_id, intent_id, entity_type, source_id) key was dropped by
+  // 20270121000000_scout_identity_contract; its down.sql recreates it only when no
+  // cross-family/cross-platform identity exists (forward repair otherwise).
   @@unique([coach_id, intent_id, entity_type, source_platform, source_id], map: "ScoutReconstructionLedger_identity_key")
   @@index([coach_id, intent_id])
 }

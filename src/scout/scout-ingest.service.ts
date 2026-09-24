@@ -47,18 +47,22 @@ export class ScoutIngestService {
   /**
    * Persist a crawl batch for `coachId`, idempotently.
    *
-   * Idempotency is enforced by the (coach_id, intent_id, source_id) unique
-   * index + `skipDuplicates`, which compiles to INSERT ... ON CONFLICT DO
-   * NOTHING. A replayed batch (extension retry/recovery) inserts zero rows and
-   * is reported as fully deduped. In-batch duplicate source_ids collapse the
-   * same way, so `received` counts the envelope while `deduped` counts every
-   * entity that did not produce a new row.
+   * Idempotency is enforced by the (coach_id, intent_id, entity_type,
+   * source_platform, source_id) unique index (G2-C: the wide identity is the
+   * only key) + `skipDuplicates`, which compiles to INSERT ... ON CONFLICT DO
+   * NOTHING with no conflict target, so whatever unique indexes the database
+   * carries arbitrate. A replayed batch (extension retry/recovery) inserts zero
+   * rows and is reported as fully deduped. In-batch duplicate identities
+   * collapse the same way, so `received` counts the envelope while `deduped`
+   * counts every entity that did not produce a new row. The same source_id in
+   * another family or on another platform is a distinct identity and inserts.
    *
    * R-IDEMP-1 (2026-07-08): capturedAt is a value, not a key. The idempotency
-   * key is (coach_id, intent_id, source_id) — "the coach saw entity X during
-   * crawl session Y." A coach's crawl re-observes the same source entity over
-   * time; each re-observation within an intent must be a no-op replay, not a
-   * new row. Putting capturedAt in the key would break this: an extension retry
+   * key is (coach_id, intent_id, entity_type, source_platform, source_id) —
+   * "the coach saw entity X of family F on platform P during crawl session Y."
+   * A coach's crawl re-observes the same source entity over time; each
+   * re-observation within an intent must be a no-op replay, not a new row.
+   * Putting capturedAt in the key would break this: an extension retry
    * carrying a fresh timestamp would insert a duplicate, defeating replay
    * safety. Different intent_id = a new observation series, correctly inserts.
    */

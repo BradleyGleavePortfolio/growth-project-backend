@@ -87,10 +87,19 @@ describe('IMPORTER-F schema + migration structural guard', () => {
   });
 
   describe('ScoutReconstructionLedger (idempotent reconciliation)', () => {
-    it('keys the ledger on (coach_id, intent_id, entity_type, source_id)', () => {
-      const unique = ledger.match(/@@unique\(\[([^\]]+)\]\)/) as RegExpMatchArray;
-      const cols = unique[1].split(',').map((c) => c.trim());
-      expect(cols).toEqual(['coach_id', 'intent_id', 'entity_type', 'source_id']);
+    it('keys the ledger on exactly the G2-C wide identity (coach_id, intent_id, entity_type, source_platform, source_id) under the identity map name', () => {
+      const keys = [...ledger.matchAll(/@@unique\(\[([^\]]+)\](?:,\s*map:\s*"([^"]+)")?\)/g)].map(
+        (m) => ({ cols: m[1].split(',').map((c) => c.trim()), map: m[2] ?? null }),
+      );
+      expect(keys).toEqual([
+        {
+          cols: ['coach_id', 'intent_id', 'entity_type', 'source_platform', 'source_id'],
+          map: 'ScoutReconstructionLedger_identity_key',
+        },
+      ]);
+      // The historical narrow key (this migration's DDL) was dropped by
+      // 20270121000000_scout_identity_contract; it must not be declared.
+      expect(ledger).not.toContain('@@unique([coach_id, intent_id, entity_type, source_id])');
     });
 
     it('carries an optional target_id and reason for non-reconstructed outcomes', () => {
@@ -98,7 +107,7 @@ describe('IMPORTER-F schema + migration structural guard', () => {
       expect(ledger).toMatch(/reason\s+String\?/);
     });
 
-    it('creates the ledger UNIQUE INDEX in the migration DDL', () => {
+    it('historical DDL: this migration created the original narrow ledger UNIQUE INDEX', () => {
       const ddl = migration.match(
         /CREATE UNIQUE INDEX[^;]*"ScoutReconstructionLedger"[^;]*\(([^)]*)\)/,
       ) as RegExpMatchArray;
