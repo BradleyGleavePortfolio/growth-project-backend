@@ -323,6 +323,7 @@ echo "[release]   verifiers_passed = ${VERIFIER_COUNT} (discovered=${DISCOVERED_
 # leaves ALL_APPLIED=unknown (observability metric; gating unchanged).
 # (S2 B1 finding D2, 2026-09-22)
 APPLIED_TMP=$(mktemp)
+# shellcheck disable=SC2016  # JS source for node -e; $queryRaw must not expand
 if APPLIED_COUNT=$(DIRECT_URL="${DIRECT_URL}" node -e '
   const { PrismaClient } = require("@prisma/client");
   const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL, log: [] });

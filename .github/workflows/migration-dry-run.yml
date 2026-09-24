@@ -570,6 +570,11 @@ jobs:
             npx prisma migrate deploy >/dev/null
           }
 
+          # Every migration directory in apply order: byte-wise ascending by
+          # directory name, in the same prisma/migrations/<name> form as
+          # NEW_DIRS. Used to reverse each NEW directory as part of its chain.
+          mapfile -t ALL_DIRS < <(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
+
           FAIL=0
           while IFS= read -r dir; do
             [ -z "$dir" ] && continue
@@ -592,22 +597,65 @@ jobs:
             fi
 
             # down.sql present — prove it actually reverses the migration.
-            echo "  down.sql present — verifying forward → down → forward schema parity."
+            #
+            # Staged down.sql files are fail-closed and refuse while a later
+            # migration's objects are still present (the G2 downs must run
+            # R, then B, then E). So reverse $dir in its only valid order:
+            # from the migrated tip, apply the down.sql of every later
+            # directory (newest first), then $dir/down.sql; re-apply
+            # $dir/migration.sql and every later migration.sql (oldest
+            # first); require a byte-identical schema. With no later
+            # directory this is forward → down → forward on $dir alone.
+            idx=-1
+            for i in "${!ALL_DIRS[@]}"; do
+              if [ "${ALL_DIRS[$i]}" = "$dir" ]; then
+                idx=$i
+                break
+              fi
+            done
+            if [ "$idx" -lt 0 ]; then
+              echo "  FAIL: $dir is not a directory under prisma/migrations."
+              FAIL=1
+              continue
+            fi
+            CHAIN=("${ALL_DIRS[@]:$idx}")
+            missing=0
+            for later in "${CHAIN[@]:1}"; do
+              if [ ! -f "$later/down.sql" ]; then
+                echo "  FAIL: $later applies after $dir but has no down.sql; $dir cannot be reversed in chain order."
+                missing=1
+              fi
+            done
+            if [ "$missing" -ne 0 ]; then
+              FAIL=1
+              continue
+            fi
+            echo "  down.sql present — verifying forward → down chain (${#CHAIN[@]} dir(s), newest first) → forward schema parity."
 
             reset_and_migrate_forward
             BEFORE=$(mktemp)
             dump_normalized > "$BEFORE"
 
-            echo "  Applying $dir/down.sql ..."
-            if ! $PSQL -f "$dir/down.sql" >/dev/null; then
-              echo "  FAIL: $dir/down.sql did not apply cleanly."
-              FAIL=1
-              continue
+            chain_ok=1
+            for (( i = ${#CHAIN[@]} - 1; i >= 0; i-- )); do
+              echo "  Applying ${CHAIN[$i]}/down.sql ..."
+              if ! $PSQL -f "${CHAIN[$i]}/down.sql" >/dev/null; then
+                echo "  FAIL: ${CHAIN[$i]}/down.sql did not apply cleanly (reversing $dir)."
+                chain_ok=0
+                break
+              fi
+            done
+            if [ "$chain_ok" -eq 1 ]; then
+              for mig in "${CHAIN[@]}"; do
+                echo "  Re-applying $mig/migration.sql ..."
+                if ! $PSQL -f "$mig/migration.sql" >/dev/null; then
+                  echo "  FAIL: re-applying $mig/migration.sql after the down chain for $dir failed."
+                  chain_ok=0
+                  break
+                fi
+              done
             fi
-
-            echo "  Re-applying $dir/migration.sql ..."
-            if ! $PSQL -f "$dir/migration.sql" >/dev/null; then
-              echo "  FAIL: re-applying $dir/migration.sql after down.sql failed."
+            if [ "$chain_ok" -eq 0 ]; then
               FAIL=1
               continue
             fi
@@ -616,9 +664,9 @@ jobs:
             dump_normalized > "$AFTER"
 
             if diff -u "$BEFORE" "$AFTER" > schema-parity.diff; then
-              echo "  OK: schema is byte-identical after forward → down → forward."
+              echo "  OK: schema is byte-identical after forward → down chain → forward."
             else
-              echo "  FAIL: $dir/down.sql does not faithfully reverse migration.sql."
+              echo "  FAIL: $dir/down.sql (with its down chain) does not faithfully reverse the migrations."
               echo "        Schema differs after re-applying forward:"
               sed 's/^/        /' schema-parity.diff
               FAIL=1
