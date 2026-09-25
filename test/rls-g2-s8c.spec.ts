@@ -195,6 +195,9 @@ describe('native persistence: target + provenance + typed ledger in one transact
 
   it('creates a standalone WorkoutPlan with ordered exercises, exact catalog links and unresolved children', async () => {
     stage('rt-1', 'workouts', STANDALONE);
+    // `User` carries the accepted seed system coach and is never reset: prove "no User minted"
+    // against the pre-writer baseline rather than an absolute count.
+    const usersBefore = count('User');
     const result = await run({ ...REGISTRY, family: 'workouts' });
     expect(result.result).toMatchObject({ staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
     const [plan] = plans();
@@ -287,7 +290,7 @@ describe('native persistence: target + provenance + typed ledger in one transact
     expect(count('ScoutReconstructionLedger', `status='reconstructed'`)).toBe(1);
     expect(count('ClientWorkoutAssignment')).toBe(0);
     expect(count('Notification')).toBe(0);
-    expect(count('User')).toBe(1);
+    expect(count('User')).toBe(usersBefore);
     expect(count('Person')).toBe(0);
     // The writer's rows satisfy S8-B's CHECKs by construction (a violation would have aborted the tx).
     expect(count('ImportNativeProvenance', `(native_id IS NULL) <> (outcome='unresolved')`)).toBe(
@@ -379,6 +382,7 @@ describe('client principal: explicit unresolved, never a User (N2)', () => {
   it('client-linked workout stays generic evidence with an unresolved provenance marker; no plan, no User', async () => {
     stage('rt-c', 'workouts', { ...STANDALONE, title: 'Client Push', client_id: 'c-1' });
     stage('blk-c', 'programs', { ...PROGRAM, client_id: 'c-1' });
+    const usersBefore = count('User');
     const workouts = await run({ ...REGISTRY, family: 'workouts' });
     const programsRun = await run({ ...REGISTRY, family: 'programs' });
     expect(workouts.result).toMatchObject({ staged: 1, reconstructed: 1, skipped: 0, failed: 0 });
@@ -424,9 +428,8 @@ describe('client principal: explicit unresolved, never a User (N2)', () => {
     ]);
     expect(count('WorkoutPlan')).toBe(0);
     expect(count('WorkoutProgram')).toBe(0);
-    // Only the fixture coach besides the accepted seed system coach
-    // (migration 20261215000100_seed_b5_contract_templates): the writer minted no User.
-    expect(count('User', `id <> 'b5-system-coach-tgp'`)).toBe(1);
+    // The writer minted no User (baseline form: the table carries the accepted seed system coach).
+    expect(count('User')).toBe(usersBefore);
     expect(count('ClientWorkoutAssignment')).toBe(0);
   });
 });
