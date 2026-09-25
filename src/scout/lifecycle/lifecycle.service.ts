@@ -435,12 +435,18 @@ export class ScoutLifecycleService {
    * After a zero-row gate (the writer's transaction already rolled back): re-read unlocked and
    * classify. No row → `run_not_started`. Fenced or terminal → `run_fenced`. Open but past its
    * deadline → fence `timed_out` in a short transaction of our own (the row is free: the
-   * triggering writer released it), then `run_fenced`.
+   * triggering writer released it), then `run_fenced`. Open and NOT yet expired → the row was
+   * committed by a Start after the gate ran (it did not exist, or was not visible, when the gate
+   * saw zero rows); answer `run_not_started` exactly as the failed gate did and never fence a
+   * fresh run as `timed_out`. No write happens on that path.
    */
   async classifyClosed(coachId: string, intentId: string): Promise<ClosedRun> {
     const row = await this.readRun(coachId, intentId);
     if (!row || row.mode !== 'server') return { kind: 'not_started' };
     if (row.terminal_status === null && row.fenced_at === null) {
+      if (row.deadline_at !== null && row.deadline_at.getTime() > Date.now()) {
+        return { kind: 'not_started' };
+      }
       const fenced = await this.fence(coachId, intentId, 'timed_out');
       if (fenced) {
         return {

@@ -524,12 +524,15 @@ describe('stage 3: constraints and API roles on S7-L', () => {
   it('L06: anon/authenticated are refused by policy; a service_role transaction that rolls back persists nothing', () => {
     const intentId = intent(COACH);
     const count = runCount();
+    // anon/authenticated are NOLOGIN in the fixture (as in production); they are reached through
+    // SET ROLE from the owner session inside the statement itself (accepted S8-B P06 pattern), so
+    // the RLS decision, not a connection refusal, is what each statement exercises.
     for (const role of ['anon', 'authenticated']) {
-      expect(sqlAs(role, `SELECT count(*) FROM "${RUN}"`)).toBe('0');
-      refused(serverRunInsert(COACH, intentId), 'row-level security', role);
+      expect(sql(`SET ROLE ${role}; SELECT count(*) FROM "${RUN}"`)).toBe('0');
+      refused(`SET ROLE ${role}; ${serverRunInsert(COACH, intentId)}`, 'row-level security');
       // Policy-filtered UPDATE/DELETE see no rows: nothing changes.
-      sqlAs(role, `UPDATE "${RUN}" SET phase='reconciling' WHERE mode='server'`);
-      sqlAs(role, `DELETE FROM "${RUN}"`);
+      sql(`SET ROLE ${role}; UPDATE "${RUN}" SET phase='reconciling' WHERE mode='server'`);
+      sql(`SET ROLE ${role}; DELETE FROM "${RUN}"`);
     }
     expect(runCount()).toBe(count);
     expect(sql(`SELECT count(*) FROM "${RUN}" WHERE phase='reconciling'`)).toBe('0');

@@ -395,6 +395,22 @@ describe('ScoutLifecycleService', () => {
         terminal_status: 'timed_out',
       });
     });
+
+    it('an open row with a FUTURE deadline (Start committed after the gate) → run_not_started, no fence, no write', async () => {
+      // Review B F1: the zero-row gate ran before a concurrent Start committed; the reread now sees
+      // a fresh open run. It must not be fenced timed_out (that would make a new run permanently
+      // terminal and burn the unique intent). Same answer as the failed gate, and nothing mutated.
+      d.runFindUnique.mockResolvedValue(openRun({ deadline_at: new Date(Date.now() + 60_000) }));
+      const closed = await service.classifyClosed(COACH, INTENT);
+      expect(closed).toEqual({ kind: 'not_started' });
+      expect(ScoutLifecycleService.closedConflict(closed).getResponse()).toMatchObject({
+        code: 'run_not_started',
+      });
+      expect(d.transaction).not.toHaveBeenCalled();
+      expect(d.queryRaw).not.toHaveBeenCalled();
+      expect(d.executeRaw).not.toHaveBeenCalled();
+      expect(d.capture).not.toHaveBeenCalled();
+    });
   });
 
   describe('projections (§5)', () => {
