@@ -14,6 +14,8 @@ import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
   ENTITY_REVIEW_FAMILIES,
+  ENTITY_TARGET_KIND,
+  EntityTargetKind,
   ReconstructedEntityDto,
   ScoutEntitiesResult,
 } from './scout-entities.dto';
@@ -21,6 +23,25 @@ import { RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 
 /** Prisma transaction client — the interactive-transaction handle passed to $transaction. */
 type Tx = Prisma.TransactionClient;
+
+/** One reconstructed ledger row as the page read projects it (S8-F adds the nullable kind). */
+type LedgerPageRow = {
+  source_id: string;
+  source_platform: string;
+  target_id: string | null;
+  target_kind: string | null;
+};
+
+/**
+ * S8-F: the native provenance outcomes that prove a same-coach native row was
+ * produced (or found already present) by an accepted import. `unresolved` and
+ * every other outcome never qualify, so an `unresolved` provenance row with a
+ * NULL native_id can never dress an evidence row up as native.
+ */
+const NATIVE_PROVENANCE_OUTCOMES: readonly string[] = ['created', 'already_present'];
+
+/** Minimal native projection shared by WorkoutPlan and WorkoutProgram (name only; no payload). */
+type NativeRecord = { id: string; name: string; created_at: Date; updated_at: Date };
 
 /**
  * IMPORTER-I — authoritative read bridge for reconstructed NON-person canonical
@@ -50,6 +71,12 @@ type Tx = Prisma.TransactionClient;
  *    so it drops from the page — there is no `Deleted` state to leak.
  *  - Read-only, idempotent, PII-safe: no mutation, no email/billing/secret in the
  *    response or logs.
+ *  - Native targets (S8-F): a ledger row typed `workout_plan` / `workout_program`
+ *    resolves to the coach's own live native row, and only when a same-coach
+ *    native provenance row (`created` / `already_present`) vouches for that
+ *    (kind, id). Legacy NULL-kind and `scout_entity` rows keep the generic
+ *    evidence join unchanged. The response is additive: `target_kind` +
+ *    nullable `native_id`; every established field keeps its meaning.
  */
 @Injectable()
 export class ScoutEntitiesService {
@@ -123,7 +150,7 @@ export class ScoutEntitiesService {
             status: RECONSTRUCT_STATUS.reconstructed,
             ...scoutCursorWhere(position),
           },
-          select: { source_id: true, source_platform: true, target_id: true },
+          select: { source_id: true, source_platform: true, target_id: true, target_kind: true },
           orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
@@ -165,55 +192,168 @@ export class ScoutEntitiesService {
   }
 
   /**
-   * Join reconstructed ledger rows to their canonical `ScoutReconstructedEntity`,
-   * preserving ledger order and dropping any missing target (erasure preserved).
-   * The entity read re-asserts coach_id AND entity_type so a stale/forged
-   * target_id can never cross tenants or families. Runs on the caller's
+   * Join reconstructed ledger rows to what they target, preserving ledger order
+   * and dropping any missing target (erasure preserved). Runs on the caller's
    * transaction client so it shares the one consistent snapshot.
+   *
+   * Dispatch is by the ledger row's `target_kind` (S8-F):
+   *  - NULL (legacy) or `scout_entity` → the generic canonical
+   *    `ScoutReconstructedEntity` join, unchanged: it re-asserts coach_id AND
+   *    entity_type so a stale/forged target_id can never cross tenants or
+   *    families. Reported with the EFFECTIVE kind `scout_entity`, native_id null.
+   *  - `workout_plan` / `workout_program` → the tenant-owned native table, which
+   *    must hold a same-coach, NOT archived row, AND a same-coach
+   *    `ImportNativeProvenance` row with matching (native_kind, native_id) and a
+   *    `created` / `already_present` outcome. Missing row, other tenant,
+   *    archived, missing/mismatched provenance or a non-qualifying outcome all
+   *    drop the row (fail closed). The join never touches `import_intent_id`.
+   *  - a typed kind with a NULL target_id, or any unknown kind → dropped.
+   * Dropped rows still advance paging because next_cursor anchors to the ledger.
    */
   private async materialize(
     tx: Tx,
     coachId: string,
     family: string,
-    rows: Array<{ source_id: string; target_id: string | null }>,
+    rows: LedgerPageRow[],
   ): Promise<ReconstructedEntityDto[]> {
-    const targetIds = rows.map((r) => r.target_id).filter((id): id is string => id !== null);
-    if (targetIds.length === 0) return [];
+    const evidenceIds: string[] = [];
+    const planIds: string[] = [];
+    const programIds: string[] = [];
+    for (const row of rows) {
+      const kind = ScoutEntitiesService.effectiveKind(row);
+      if (row.target_id === null || kind === null) continue;
+      if (kind === ENTITY_TARGET_KIND.scout_entity) evidenceIds.push(row.target_id);
+      else if (kind === ENTITY_TARGET_KIND.workout_plan) planIds.push(row.target_id);
+      else programIds.push(row.target_id);
+    }
+    if (evidenceIds.length + planIds.length + programIds.length === 0) return [];
 
-    const records = await tx.scoutReconstructedEntity.findMany({
-      where: {
-        id: { in: targetIds },
-        coach_id: coachId,
-        entity_type: family,
-      },
-      select: {
-        id: true,
-        source_platform: true,
-        entity_type: true,
-        source_id: true,
-        client_source_id: true,
-        label: true,
-        created_at: true,
-        updated_at: true,
-      },
-    });
+    const evidence = evidenceIds.length
+      ? await tx.scoutReconstructedEntity.findMany({
+          where: {
+            id: { in: evidenceIds },
+            coach_id: coachId,
+            entity_type: family,
+          },
+          select: {
+            id: true,
+            source_platform: true,
+            entity_type: true,
+            source_id: true,
+            client_source_id: true,
+            label: true,
+            created_at: true,
+            updated_at: true,
+          },
+        })
+      : [];
+    const evidenceById = new Map(evidence.map((r) => [r.id, r]));
 
-    const byId = new Map(records.map((r) => [r.id, r]));
+    // Native joins: same coach, live (archived_at IS NULL), name-only projection.
+    const nativeSelect = { id: true, name: true, created_at: true, updated_at: true } as const;
+    const plans: NativeRecord[] = planIds.length
+      ? await tx.workoutPlan.findMany({
+          where: { id: { in: planIds }, coach_id: coachId, archived_at: null },
+          select: nativeSelect,
+        })
+      : [];
+    const programs: NativeRecord[] = programIds.length
+      ? await tx.workoutProgram.findMany({
+          where: { id: { in: programIds }, coach_id: coachId, archived_at: null },
+          select: nativeSelect,
+        })
+      : [];
+    const nativeById = new Map<string, NativeRecord>();
+    for (const r of plans) nativeById.set(`${ENTITY_TARGET_KIND.workout_plan}:${r.id}`, r);
+    for (const r of programs) nativeById.set(`${ENTITY_TARGET_KIND.workout_program}:${r.id}`, r);
+
+    // Provenance: a same-coach (native_kind, native_id) row with a qualifying
+    // outcome is REQUIRED for every native row served. Keyed by kind so a plan id
+    // can never be vouched for by a program provenance row (or vice versa).
+    const proven = new Set<string>();
+    if (nativeById.size > 0) {
+      const kinds: Array<{ native_kind: string; native_id: { in: string[] } }> = [];
+      if (plans.length)
+        kinds.push({
+          native_kind: ENTITY_TARGET_KIND.workout_plan,
+          native_id: { in: plans.map((r) => r.id) },
+        });
+      if (programs.length)
+        kinds.push({
+          native_kind: ENTITY_TARGET_KIND.workout_program,
+          native_id: { in: programs.map((r) => r.id) },
+        });
+      const provenance = await tx.importNativeProvenance.findMany({
+        where: {
+          coach_id: coachId,
+          outcome: { in: [...NATIVE_PROVENANCE_OUTCOMES] },
+          OR: kinds,
+        },
+        select: { native_kind: true, native_id: true },
+      });
+      for (const p of provenance) {
+        if (p.native_id !== null) proven.add(`${p.native_kind}:${p.native_id}`);
+      }
+    }
+
     const out: ReconstructedEntityDto[] = [];
     for (const row of rows) {
-      const r = row.target_id ? byId.get(row.target_id) : undefined;
-      if (!r) continue;
+      const kind = ScoutEntitiesService.effectiveKind(row);
+      if (row.target_id === null || kind === null) continue;
+      if (kind === ENTITY_TARGET_KIND.scout_entity) {
+        const r = evidenceById.get(row.target_id);
+        if (!r) continue;
+        out.push({
+          id: r.id,
+          target_kind: ENTITY_TARGET_KIND.scout_entity,
+          native_id: null,
+          source_platform: r.source_platform,
+          entity_type: r.entity_type,
+          source_id: r.source_id,
+          client_source_id: r.client_source_id,
+          label: r.label,
+          created_at: r.created_at.toISOString(),
+          updated_at: r.updated_at.toISOString(),
+        });
+        continue;
+      }
+      const key = `${kind}:${row.target_id}`;
+      const native = nativeById.get(key);
+      if (!native || !proven.has(key)) continue;
       out.push({
-        id: r.id,
-        source_platform: r.source_platform,
-        entity_type: r.entity_type,
-        source_id: r.source_id,
-        client_source_id: r.client_source_id,
-        label: r.label,
-        created_at: r.created_at.toISOString(),
-        updated_at: r.updated_at.toISOString(),
+        id: native.id,
+        target_kind: kind,
+        native_id: native.id,
+        // Provenance stays the LEDGER's (source_platform, source_id): the native
+        // table carries no source identity and none is invented here.
+        source_platform: row.source_platform,
+        entity_type: family,
+        source_id: row.source_id,
+        client_source_id: null,
+        label: native.name,
+        created_at: native.created_at.toISOString(),
+        updated_at: native.updated_at.toISOString(),
       });
     }
     return out;
+  }
+
+  /**
+   * The kind a ledger row is materialized as: NULL means the pre-S8-B generic
+   * evidence row (`scout_entity`); the two native kinds pass through; anything
+   * else (person, a future kind, garbage) is `null` = not served here.
+   */
+  private static effectiveKind(row: Pick<LedgerPageRow, 'target_kind'>): EntityTargetKind | null {
+    switch (row.target_kind) {
+      case null:
+      case ENTITY_TARGET_KIND.scout_entity:
+        return ENTITY_TARGET_KIND.scout_entity;
+      case ENTITY_TARGET_KIND.workout_plan:
+        return ENTITY_TARGET_KIND.workout_plan;
+      case ENTITY_TARGET_KIND.workout_program:
+        return ENTITY_TARGET_KIND.workout_program;
+      default:
+        return null;
+    }
   }
 }

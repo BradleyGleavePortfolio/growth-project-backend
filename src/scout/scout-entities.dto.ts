@@ -43,6 +43,24 @@ export const ENTITY_REVIEW_FAMILIES: readonly string[] = RECONSTRUCT_ENTITY_TYPE
 );
 
 /**
+ * S8-F — the materialized target kinds an entity row can report. Mirrors the
+ * non-person values of the ledger's nullable `target_kind` column (S8-B/S8-C):
+ *  - `scout_entity`: generic canonical evidence in `ScoutReconstructedEntity`
+ *    (also the EFFECTIVE kind reported for legacy NULL-kind ledger rows);
+ *  - `workout_program`: a tenant-owned native `WorkoutProgram`;
+ *  - `workout_plan`: a tenant-owned native `WorkoutPlan`.
+ * The person kind is never served here (roster contract). Any other kind is
+ * dropped from the page (fail closed), never guessed.
+ */
+export const ENTITY_TARGET_KIND = {
+  scout_entity: 'scout_entity',
+  workout_program: 'workout_program',
+  workout_plan: 'workout_plan',
+} as const;
+export type EntityTargetKind = (typeof ENTITY_TARGET_KIND)[keyof typeof ENTITY_TARGET_KIND];
+export const ENTITY_TARGET_KINDS: readonly EntityTargetKind[] = Object.values(ENTITY_TARGET_KIND);
+
+/**
  * GET /api/scout/reconstruct/entities query. coach_id is taken from the bearer
  * identity (never a query/body field); the inputs are which settled intent to
  * read, which non-person family, and an opaque forward-only page cursor.
@@ -106,10 +124,42 @@ export class ScoutEntitiesQueryDto {
  * key. `client_source_id` is the soft provenance link to the owning client and
  * `label` a best-effort PII-minimal title. NEVER any email, billing, or
  * credential field.
+ *
+ * S8-F (additive): `target_kind` names what `id` points at and `native_id` is
+ * the tenant-owned native record id when the row was reconstructed into a
+ * native table (`workout_program` / `workout_plan`); it is null for generic
+ * `scout_entity` evidence, including every legacy row. All established fields
+ * keep their meaning; a native row's `label` is the native record's name and
+ * its `client_source_id` is null (never invented).
  */
 export class ReconstructedEntityDto {
-  @ApiProperty({ description: 'Opaque server-issued canonical entity id.', format: 'uuid' })
+  @ApiProperty({
+    description:
+      'Opaque server-issued canonical id: the ScoutReconstructedEntity id for ' +
+      '`scout_entity` rows, or the owned native record id for native target kinds.',
+    format: 'uuid',
+  })
   id!: string;
+
+  @ApiProperty({
+    description:
+      'What `id` references. `scout_entity` is generic canonical evidence (also the ' +
+      'effective kind of legacy rows); `workout_program` / `workout_plan` are ' +
+      'tenant-owned native records. Rows of any other kind are never served.',
+    enum: ENTITY_TARGET_KINDS,
+    example: ENTITY_TARGET_KIND.scout_entity,
+  })
+  target_kind!: EntityTargetKind;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The owned native record id when `target_kind` is a native kind ' +
+      '(equal to `id`); null for `scout_entity` evidence rows.',
+  })
+  native_id!: string | null;
 
   @ApiProperty({ description: 'Source platform slug (provenance).', example: 'truecoach' })
   source_platform!: string;

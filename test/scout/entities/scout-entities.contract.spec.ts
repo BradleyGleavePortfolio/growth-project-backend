@@ -10,6 +10,8 @@ import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
   ENTITY_REVIEW_FAMILIES,
+  ENTITY_TARGET_KIND,
+  ENTITY_TARGET_KINDS,
   ReconstructedEntityDto,
   ScoutEntitiesResult,
 } from '../../../src/scout/scout-entities.dto';
@@ -149,14 +151,37 @@ describe('IMPORTER-I OpenAPI route shape', () => {
         'entity_type',
         'id',
         'label',
+        'native_id',
         'source_id',
         'source_platform',
+        'target_kind',
         'updated_at',
       ].sort(),
     );
-    for (const banned of ['email', 'price', 'billing', 'coach_id', 'payload']) {
+    for (const banned of ['email', 'price', 'billing', 'coach_id', 'payload', 'owner_user_id']) {
       expect(props).not.toContain(banned);
     }
+  });
+
+  it('S8-F: publishes target_kind as the closed non-person kind enum and native_id nullable', () => {
+    const props = rec(
+      dig(document, 'components', 'schemas', 'ReconstructedEntityDto', 'properties'),
+    );
+    const kind = rec(props.target_kind);
+    expect((kind.enum as string[]).slice().sort()).toEqual([...ENTITY_TARGET_KINDS].sort());
+    expect(kind.enum).not.toContain('person');
+    const nativeId = rec(props.native_id);
+    expect(nativeId.nullable).toBe(true);
+    expect(nativeId.type).toBe('string');
+    // Both are required members of the row (additive, always present).
+    const required = dig(
+      document,
+      'components',
+      'schemas',
+      'ReconstructedEntityDto',
+      'required',
+    ) as string[];
+    expect(required).toEqual(expect.arrayContaining(['target_kind', 'native_id']));
   });
 });
 
@@ -183,6 +208,8 @@ describe('IMPORTER-I PR-M4 fixture consumer', () => {
   function entity(sourceId: string): ReconstructedEntityDto {
     return {
       id: `id-${sourceId}`,
+      target_kind: ENTITY_TARGET_KIND.scout_entity,
+      native_id: null,
       source_platform: 'truecoach',
       entity_type: RECONSTRUCT_FAMILY.workouts,
       source_id: sourceId,
@@ -253,5 +280,20 @@ describe('IMPORTER-I PR-M4 fixture consumer', () => {
     for (const banned of ['email', 'price', 'billing', 'coach_id']) {
       expect(Object.prototype.hasOwnProperty.call(row, banned)).toBe(false);
     }
+  });
+
+  it('S8-F: a consumer can distinguish evidence from native rows by target_kind alone', () => {
+    const evidence = entity('a');
+    const native: ReconstructedEntityDto = {
+      ...entity('b'),
+      id: 'plan-b',
+      target_kind: ENTITY_TARGET_KIND.workout_plan,
+      native_id: 'plan-b',
+      client_source_id: null,
+    };
+    expect(evidence.native_id).toBeNull();
+    expect(native.native_id).toBe(native.id);
+    expect(ENTITY_TARGET_KINDS).toContain(evidence.target_kind);
+    expect(ENTITY_TARGET_KINDS).toContain(native.target_kind);
   });
 });

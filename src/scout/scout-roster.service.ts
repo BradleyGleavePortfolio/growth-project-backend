@@ -12,8 +12,10 @@ import {
 } from './scout-cursor';
 import { RECONSTRUCT_ENTITY_TYPE, RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 import {
+  ROSTER_BRIDGE_PENDING,
   ROSTER_DEFAULT_PAGE_SIZE,
   ROSTER_MAX_PAGE_SIZE,
+  ROSTER_TARGET_KIND,
   ScoutRosterPersonDto,
   ScoutRosterResult,
 } from './scout-roster.dto';
@@ -120,7 +122,7 @@ export class ScoutRosterService {
             status: RECONSTRUCT_STATUS.reconstructed,
             ...scoutCursorWhere(position),
           },
-          select: { source_id: true, source_platform: true, target_id: true },
+          select: { source_id: true, source_platform: true, target_id: true, target_kind: true },
           orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
@@ -170,6 +172,10 @@ export class ScoutRosterService {
       },
       persons,
       page: { limit, next_cursor: nextCursor, has_more: hasMore },
+      // S8-F: the roster is still the interim Person bridge (native contract
+      // §4.1). Always true — including on an empty page — until the accepted
+      // S8-D principal bridge replaces it. Not a per-row flag, not a count.
+      roster_bridge_pending: ROSTER_BRIDGE_PENDING,
     };
   }
 
@@ -178,13 +184,20 @@ export class ScoutRosterService {
    * dropping any Deleted or missing target (erasure preserved). The Person read
    * re-asserts coach_id so a stale/forged target_id can never cross tenants. Runs
    * on the caller's transaction client so it shares the one consistent snapshot.
+   *
+   * S8-F: only rows whose ledger `target_kind` is NULL (legacy) or `person` are
+   * Person targets. Any other kind is never joined to Person — it is dropped
+   * (paging still advances because next_cursor anchors to the ledger row).
    */
   private async materialize(
     tx: Tx,
     coachId: string,
-    rows: Array<{ source_id: string; target_id: string | null }>,
+    rows: Array<{ source_id: string; target_id: string | null; target_kind: string | null }>,
   ): Promise<ScoutRosterPersonDto[]> {
-    const targetIds = rows.map((r) => r.target_id).filter((id): id is string => id !== null);
+    const personRows = rows.filter(
+      (r) => r.target_kind === null || r.target_kind === ROSTER_TARGET_KIND,
+    );
+    const targetIds = personRows.map((r) => r.target_id).filter((id): id is string => id !== null);
     if (targetIds.length === 0) return [];
 
     const persons = await tx.person.findMany({
@@ -206,7 +219,7 @@ export class ScoutRosterService {
 
     const byId = new Map(persons.map((p) => [p.id, p]));
     const out: ScoutRosterPersonDto[] = [];
-    for (const row of rows) {
+    for (const row of personRows) {
       const p = row.target_id ? byId.get(row.target_id) : undefined;
       if (!p) continue;
       out.push({

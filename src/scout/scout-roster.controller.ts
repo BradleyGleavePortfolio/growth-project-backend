@@ -37,7 +37,10 @@ export class ScoutRosterController {
       'accounting { staged, reconstructed, skipped, failed } and deterministic, ' +
       'bounded cursor pagination. Excludes deleted and cross-tenant rows; never ' +
       'returns email or billing fields. Returns 404 when the intent is unknown ' +
-      'for the caller or when the scout flags are off.',
+      'for the caller or when the scout flags are off. The response carries ' +
+      'roster_bridge_pending: true (also on empty pages): these are interim Person ' +
+      'bridge rows, not native roster clients or principals, until the S8-D bridge ' +
+      'is accepted. Only person-kind ledger rows are materialized here.',
   })
   @ApiResponse({ status: 200, description: 'Reconstructed roster page.', type: ScoutRosterResult })
   @ApiResponse({
