@@ -676,7 +676,8 @@
             "enum": [
               "clients",
               "workouts",
-              "client_history"
+              "client_history",
+              "programs"
             ],
             "example": "clients",
             "type": "string"
@@ -1991,7 +1992,8 @@
             "schema": {
               "enum": [
                 "workouts",
-                "client_history"
+                "client_history",
+                "programs"
               ],
               "example": "workouts",
               "type": "string"

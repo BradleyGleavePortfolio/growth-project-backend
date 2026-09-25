@@ -119,6 +119,7 @@ export interface SourceMappingSpec {
     readonly clients?: PersonFieldRules;
     readonly workouts?: EntityFieldRules;
     readonly client_history?: EntityFieldRules;
+    readonly programs?: EntityFieldRules;
   };
   readonly sharedIdSpaces?: Readonly<Partial<Record<CanonicalFamily, readonly string[]>>>;
 }
@@ -238,6 +239,7 @@ export function interpretEntity(
 function entityRules(spec: SourceMappingSpec, family: string): EntityFieldRules | undefined {
   if (family === RECONSTRUCT_FAMILY.workouts) return spec.families.workouts;
   if (family === RECONSTRUCT_FAMILY.client_history) return spec.families.client_history;
+  if (family === RECONSTRUCT_FAMILY.programs) return spec.families.programs;
   return undefined;
 }
 

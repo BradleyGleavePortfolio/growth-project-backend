@@ -3,15 +3,18 @@ import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validato
 
 /**
  * The entity families the reconstruction engine can reconstruct (IMPORTER-H).
- * `clients` targets the invite-pending roster `Person`; `workouts` and
- * `client_history` target the generic canonical `ScoutReconstructedEntity`
- * table. Billing/messaging are deliberately absent — an unlisted family is a
- * 400 at validation and can never be reconstructed.
+ * `clients` targets the invite-pending roster `Person`; `client_history`
+ * targets the generic canonical `ScoutReconstructedEntity` table; `workouts`
+ * targets that evidence table unless the source declares native workout rules
+ * (then a WorkoutPlan template, S8-C); `programs` targets WorkoutProgram
+ * templates (S8-C). Billing/messaging are deliberately absent — an unlisted
+ * family is a 400 at validation and can never be reconstructed.
  */
 export const RECONSTRUCT_FAMILY = {
   clients: 'clients',
   workouts: 'workouts',
   client_history: 'client_history',
+  programs: 'programs',
 } as const;
 
 /** The closed allow-list of reconstructable families (fail-closed). */
