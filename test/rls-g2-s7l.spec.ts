@@ -265,12 +265,17 @@ describe('stage 1: OLD shape baseline and refusing entry gates', () => {
       `SELECT 1 FROM "${RUN}" WHERE coach_id=${quote(COACH)} FOR UPDATE`,
     );
     await holder.held;
-    const started = Date.now();
-    refusedFile(upFile, '55P03');
-    expect(Date.now() - started).toBeGreaterThanOrEqual(4500);
-    expect(lifecycleColumns()).toEqual([]);
-    expect(shape()).toEqual(before);
-    holder.release();
+    try {
+      const started = Date.now();
+      // psql's default stderr carries the message, not the SQLSTATE (55P03).
+      refusedFile(upFile, 'canceling statement due to lock timeout');
+      expect(Date.now() - started).toBeGreaterThanOrEqual(4500);
+      expect(lifecycleColumns()).toEqual([]);
+      expect(shape()).toEqual(before);
+    } finally {
+      // Always release: a failed assertion must not leak the held lock into later tests.
+      holder.release();
+    }
     await new Promise((r) => setTimeout(r, 200));
     expect(
       sqlAdmin(`SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid=l.relation
