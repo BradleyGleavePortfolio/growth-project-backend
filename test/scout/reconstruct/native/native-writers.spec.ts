@@ -193,14 +193,14 @@ describe('persistWorkoutTemplate', () => {
       ['plank', 0, plan.id],
     ]);
     const prov = [...tx.provenance.values()];
-    expect(prov.map((p) => [p.source_id, p.native_kind, p.outcome, p.reason])).toEqual([
-      ['3:w-1#id:b', 'workout_plan_exercise', 'created', null],
-      ['3:w-1#id:a', 'workout_plan_exercise', 'created', 'prescription:time'],
-      ['w-1', 'workout_plan', 'created', null],
-    ]);
     expect(
-      prov.every((p) => p.entity_type === 'workouts' && p.source_namespace === 's8c-proof'),
-    ).toBe(true);
+      prov.map((p) => [p.entity_type, p.source_id, p.native_kind, p.outcome, p.reason]),
+    ).toEqual([
+      ['workouts.exercise', '3:w-1#id:b', 'workout_plan_exercise', 'created', null],
+      ['workouts.exercise', '3:w-1#id:a', 'workout_plan_exercise', 'created', 'prescription:time'],
+      ['workouts', 'w-1', 'workout_plan', 'created', null],
+    ]);
+    expect(prov.every((p) => p.source_namespace === 's8c-proof')).toBe(true);
     // Target rows are written before their provenance; the parent's provenance is last.
     expect(tx.calls.indexOf('workoutPlan.create')).toBeLessThan(
       tx.calls.indexOf('workoutPlanExercise.create'),
@@ -236,11 +236,11 @@ describe('persistWorkoutTemplate', () => {
       '22222222-2222-4222-8222-222222222222',
     ]);
     const unresolved = [...tx.provenance.values()].filter((p) => p.outcome === 'unresolved');
-    expect(unresolved.map((p) => [p.source_id, p.native_id, p.reason])).toEqual([
-      ['3:w-1#id:c', null, 'unresolved:exercise_reference'],
-      ['3:w-1#id:s', null, 'unresolved:exercise_reference'],
-      ['3:w-1#id:n', null, 'unresolved:exercise_reference'],
-      ['3:w-1#ord:4', null, 'unresolved:invalid_value:sets'],
+    expect(unresolved.map((p) => [p.entity_type, p.source_id, p.native_id, p.reason])).toEqual([
+      ['workouts.exercise', '3:w-1#id:c', null, 'unresolved:exercise_reference'],
+      ['workouts.exercise', '3:w-1#id:s', null, 'unresolved:exercise_reference'],
+      ['workouts.exercise', '3:w-1#id:n', null, 'unresolved:exercise_reference'],
+      ['workouts.exercise', '3:w-1#ord:4', null, 'unresolved:invalid_value:sets'],
     ]);
     // Replay: already_present with the unresolved children re-counted.
     expect(await persistWorkoutTemplate(tx.asTx(), COACH, ROW, template)).toEqual({
@@ -248,6 +248,38 @@ describe('persistWorkoutTemplate', () => {
       unresolvedChildren: 4,
     });
     expect(tx.plans.size).toBe(1);
+
+    // §3.3 namespace: a top-level workout whose raw source id equals an encoded child id is a
+    // distinct identity (entity_type `workouts` vs `workouts.exercise`) and the parent's
+    // unresolved children are still re-reported on replay.
+    const collidingRow = { ...ROW, source_id: '3:w-1#id:n' };
+    const colliding = await persistWorkoutTemplate(tx.asTx(), COACH, collidingRow, {
+      ...standalone,
+      exercises: [],
+    });
+    expect(colliding).toEqual({
+      ok: true,
+      targetId: expect.any(String),
+      targetKind: 'workout_plan',
+      unresolvedChildren: 0,
+    });
+    expect(tx.plans.size).toBe(2);
+    expect(
+      [...tx.provenance.values()]
+        .filter((p) => p.source_id === '3:w-1#id:n')
+        .map((p) => [p.entity_type, p.native_kind, p.outcome]),
+    ).toEqual([
+      ['workouts.exercise', 'workout_plan_exercise', 'unresolved'],
+      ['workouts', 'workout_plan', 'created'],
+    ]);
+    expect(await persistWorkoutTemplate(tx.asTx(), COACH, ROW, template)).toEqual({
+      ...out,
+      unresolvedChildren: 4,
+    });
+    expect(await persistWorkoutTemplate(tx.asTx(), COACH, collidingRow, standalone)).toEqual({
+      ...colliding,
+      unresolvedChildren: 0,
+    });
     expect(tx.exercises.size).toBe(1);
   });
 
@@ -445,5 +477,47 @@ describe('persistEvidence (workouts kept as evidence)', () => {
       unresolvedChildren: 0,
     });
     expect(tx.entities.size).toBe(0);
+  });
+
+  it('returns a failed verification as-is and writes nothing (plan gone or foreign)', async () => {
+    const tx = fresh();
+    const native = await persistWorkoutTemplate(tx.asTx(), COACH, ROW, standalone);
+    if (!native.ok) throw new Error('setup');
+    const snapshot = [...tx.provenance.values()].map((p) => ({ ...p }));
+    const parent = snapshot.find((p) => p.native_kind === 'workout_plan')!;
+    expect(parent).toMatchObject({ outcome: 'created', native_id: native.targetId });
+
+    // Coach archived the plan → native_target_removed; no evidence row, provenance untouched.
+    tx.plans.get(native.targetId)!.archived_at = new Date();
+    tx.calls = [];
+    expect(
+      await persistEvidence(tx.asTx(), COACH, ROW, entity, { recordNoNativePrincipal: true }),
+    ).toEqual({ ok: false, reason: 'unresolved:native_target_removed' });
+    expect(tx.calls).toEqual(['importNativeProvenance.findUnique', 'workoutPlan.findUnique']);
+
+    // Coach deleted the plan → still native_target_removed.
+    tx.plans.delete(native.targetId);
+    expect(
+      await persistEvidence(tx.asTx(), COACH, ROW, entity, { recordNoNativePrincipal: true }),
+    ).toEqual({ ok: false, reason: 'unresolved:native_target_removed' });
+
+    // Provenance points at another tenant, or at the wrong native kind → identity_conflict.
+    tx.plans.set(native.targetId, { id: native.targetId, coach_id: 'coach-b', archived_at: null });
+    expect(
+      await persistEvidence(tx.asTx(), COACH, ROW, entity, { recordNoNativePrincipal: true }),
+    ).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+    [...tx.provenance.values()].find((p) => p.id === parent.id)!.native_kind = 'workout_program';
+    expect(
+      await persistEvidence(tx.asTx(), COACH, ROW, entity, { recordNoNativePrincipal: true }),
+    ).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+
+    expect(tx.entities.size).toBe(0);
+    expect(tx.plans.size).toBe(1);
+    // Every provenance row (parent and children) is byte-equal to the post-create snapshot,
+    // apart from this test's own native_kind mutation on the parent.
+    expect([...tx.provenance.values()]).toEqual(
+      snapshot.map((p) => (p.id === parent.id ? { ...p, native_kind: 'workout_program' } : p)),
+    );
+    expect(tx.calls.filter((c) => /upsert|update|create/.test(c))).toEqual([]);
   });
 });

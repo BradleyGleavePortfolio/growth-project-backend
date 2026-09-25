@@ -326,7 +326,11 @@ function enumField(
   if (typeof raw !== 'string' && typeof raw !== 'number') return invalid(field);
   const key = String(raw).trim();
   const mapped = Object.prototype.hasOwnProperty.call(rule.map, key) ? rule.map[key] : undefined;
-  return mapped !== undefined && allowed.includes(mapped) ? present(mapped) : invalid(field);
+  // A present key absent from the explicit map is `enum_unmapped` (§3.7): the spec needs an
+  // entry, the data is not invalid. A mapped destination outside the native enum stays invalid.
+  if (mapped === undefined)
+    return { ok: false, reason: unresolved(UNRESOLVED_CODE.enum_unmapped, field) };
+  return allowed.includes(mapped) ? present(mapped) : invalid(field);
 }
 
 function flagField(payload: Prisma.JsonValue, rule: NativeRule | undefined): boolean {

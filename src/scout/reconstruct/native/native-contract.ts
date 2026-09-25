@@ -32,11 +32,18 @@ export type ProvenanceOutcome = (typeof PROVENANCE_OUTCOME)[keyof typeof PROVENA
  */
 export const NATIVE_FAMILY = { programs: 'programs', workouts: 'workouts' } as const;
 export type NativeFamily = (typeof NATIVE_FAMILY)[keyof typeof NATIVE_FAMILY];
+/**
+ * Provenance `entity_type` of a workout's nested exercise children (§3.3). Not a
+ * staged family: the unique provenance key omits `native_kind` and top-level
+ * source ids are arbitrary text, so children live in their own namespace.
+ */
+export const CHILD_ENTITY_TYPE = { workouts_exercise: 'workouts.exercise' } as const;
 
 /** Closed unresolved code catalogue (§3.7). A code takes at most one qualifier. */
 export const UNRESOLVED_CODE = {
   missing_required_field: 'missing_required_field',
   invalid_value: 'invalid_value',
+  enum_unmapped: 'enum_unmapped',
   prescription_not_integral: 'prescription_not_integral',
   exercise_reference: 'exercise_reference',
   no_native_client_principal: 'no_native_client_principal',
@@ -53,6 +60,7 @@ export type UnresolvedCode = (typeof UNRESOLVED_CODE)[keyof typeof UNRESOLVED_CO
 const QUALIFIED: ReadonlySet<UnresolvedCode> = new Set<UnresolvedCode>([
   UNRESOLVED_CODE.missing_required_field,
   UNRESOLVED_CODE.invalid_value,
+  UNRESOLVED_CODE.enum_unmapped,
   UNRESOLVED_CODE.prescription_not_integral,
   UNRESOLVED_CODE.relationship_pending,
   UNRESOLVED_CODE.relationship_missing,

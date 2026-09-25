@@ -239,23 +239,31 @@ describe('native persistence: target + provenance + typed ledger in one transact
       outcome: 'created',
       reason: null,
     });
-    expect(byKey(provenance, 'workouts', childSourceId('rt-1', { id: 'e1' }))).toMatchObject({
+    expect(
+      byKey(provenance, 'workouts.exercise', childSourceId('rt-1', { id: 'e1' })),
+    ).toMatchObject({
       native_kind: 'workout_plan_exercise',
       native_id: rows[0].id,
       outcome: 'created',
     });
-    expect(byKey(provenance, 'workouts', childSourceId('rt-1', { id: 'e2' }))).toMatchObject({
+    expect(
+      byKey(provenance, 'workouts.exercise', childSourceId('rt-1', { id: 'e2' })),
+    ).toMatchObject({
       native_kind: 'workout_plan_exercise',
       native_id: rows[1].id,
       outcome: 'created',
     });
-    expect(byKey(provenance, 'workouts', childSourceId('rt-1', { ordinal: 2 }))).toMatchObject({
+    expect(
+      byKey(provenance, 'workouts.exercise', childSourceId('rt-1', { ordinal: 2 })),
+    ).toMatchObject({
       native_kind: 'workout_plan_exercise',
       native_id: null,
       outcome: 'unresolved',
       reason: 'unresolved:exercise_reference',
     });
-    expect(byKey(provenance, 'workouts', childSourceId('rt-1', { id: 'e4' }))).toMatchObject({
+    expect(
+      byKey(provenance, 'workouts.exercise', childSourceId('rt-1', { id: 'e4' })),
+    ).toMatchObject({
       native_kind: 'workout_plan_exercise',
       native_id: null,
       outcome: 'unresolved',
@@ -509,7 +517,16 @@ describe('legacy compatibility and unchanged precedence', () => {
   it('legacy families and pre-existing NULL-kind ledger rows are untouched by the native writer', async () => {
     sql(`INSERT INTO "ScoutReconstructionLedger" (id,coach_id,intent_id,entity_type,source_id,source_platform,status,target_id,target_kind)
       VALUES ('legacy-1','coach','intent','clients','p-1','s8c-proof','reconstructed','person-legacy',NULL)`);
-    stage('h-1', 'client_history', { title: 'Ran 5k', client_id: 'c-1' });
+    // Legacy client_history resolves through the repository mapping registry (not the native seam):
+    // stage it on the accepted TrueCoach source so the accepted path is what runs.
+    stage(
+      'h-1',
+      'client_history',
+      { title: 'Ran 5k', client_id: 'c-1' },
+      'coach',
+      'intent',
+      'truecoach',
+    );
     stage('rt-1', 'workouts', STANDALONE);
     const history = await run({ ...REGISTRY, family: 'client_history' });
     const workouts = await run({ ...REGISTRY, family: 'workouts' });
@@ -529,7 +546,11 @@ describe('legacy compatibility and unchanged precedence', () => {
       target_kind: null,
     });
     expect(byKey(ledgerRows(), 'client_history', 'h-1')?.target_id).toBeTruthy();
-    expect(provenanceRows().filter((r) => r.entity_type !== 'workouts')).toEqual([]);
+    expect(
+      provenanceRows().filter(
+        (r) => !['workouts', 'workouts.exercise'].includes(r.entity_type ?? ''),
+      ),
+    ).toEqual([]);
   });
 
   it('a later-removed or archived native target does not downgrade the reconstructed ledger row and mints nothing new', async () => {

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import {
+  CHILD_ENTITY_TYPE,
   NATIVE_KIND,
   PROVENANCE_OUTCOME,
   childSourceIdPrefix,
@@ -116,7 +117,7 @@ export async function countUnresolvedChildren(tx: Tx, parent: ProvenanceKey): Pr
     where: {
       coach_id: parent.coachId,
       source_namespace: parent.sourceNamespace,
-      entity_type: parent.entityType,
+      entity_type: CHILD_ENTITY_TYPE.workouts_exercise,
       source_id: { startsWith: childSourceIdPrefix(parent.sourceId) },
       native_kind: NATIVE_KIND.workout_plan_exercise,
       outcome: PROVENANCE_OUTCOME.unresolved,

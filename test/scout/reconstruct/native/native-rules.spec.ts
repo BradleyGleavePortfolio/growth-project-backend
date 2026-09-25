@@ -319,7 +319,12 @@ describe('interpretWorkout', () => {
     expect(
       linked.ok && [linked.mapped.programSourceId, linked.mapped.weekIndex, linked.mapped.dayIndex],
     ).toEqual(['p-1', 0, 2]);
+    // Present key absent from the explicit enum map → enum_unmapped (§3.7), not invalid_value.
     expect(interpretWorkout(rules, seam({ kind: 'yoga' }))).toEqual({
+      ok: false,
+      reason: 'unresolved:enum_unmapped:type',
+    });
+    expect(interpretWorkout(rules, seam({ kind: { not: 'a key' } }))).toEqual({
       ok: false,
       reason: 'unresolved:invalid_value:type',
     });

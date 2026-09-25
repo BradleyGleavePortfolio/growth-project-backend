@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { MappedEntity } from '../mapping-spec';
 import {
+  CHILD_ENTITY_TYPE,
   NATIVE_FAMILY,
   NATIVE_KIND,
   PROVENANCE_OUTCOME,
@@ -284,7 +285,11 @@ export async function persistWorkoutTemplate(
   const written: ExerciseRow[] = [];
   let unresolvedChildren = 0;
   for (const child of mapped.exercises) {
-    const childKey: ProvenanceKey = { ...provenance, sourceId: child.childSourceId };
+    const childKey: ProvenanceKey = {
+      ...provenance,
+      entityType: CHILD_ENTITY_TYPE.workouts_exercise,
+      sourceId: child.childSourceId,
+    };
     if (!child.ok) {
       unresolvedChildren += 1;
       await recordUnresolved(tx, childKey, NATIVE_KIND.workout_plan_exercise, child.reason);
@@ -368,13 +373,15 @@ export async function persistEvidence(
     const existing = await findProvenance(tx, provenance);
     if (existing !== null && existing.outcome !== PROVENANCE_OUTCOME.unresolved) {
       // A native plan was already brought across for this identity; it stays the target.
+      // A failed verification (§3.5 `native_target_removed` / `identity_conflict`) is returned
+      // as-is before any evidence or provenance write: the CREATED row is never rewritten.
       const verified = await verifyTarget(tx, coachId, existing, 'workout_plan');
-      if (verified.ok)
-        return ok(
-          verified.targetId,
-          LEDGER_TARGET_KIND.workout_plan,
-          await countUnresolvedChildren(tx, provenance),
-        );
+      if (!verified.ok) return verified;
+      return ok(
+        verified.targetId,
+        LEDGER_TARGET_KIND.workout_plan,
+        await countUnresolvedChildren(tx, provenance),
+      );
     }
   }
   const record = await tx.scoutReconstructedEntity.upsert({
