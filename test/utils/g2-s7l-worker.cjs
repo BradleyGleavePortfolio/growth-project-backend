@@ -13,13 +13,24 @@
 // The OLD image (root/client of OLD_HEAD) supports legacy actions only: complete | progress |
 // status; its ScoutService has no lifecycle parameter.
 const { join } = require('path');
+const { existsSync } = require('fs');
 const input = JSON.parse(process.env.G2_S7L_WORKER);
 const Module = require('module');
 const resolveFilename = Module._resolveFilename;
+// A custom-output client (the OLD image) carries its own runtime copy; the services import the
+// error classes from '@prisma/client/runtime/library', so both must resolve to ONE module
+// instance or `instanceof` is false. A default-output client has no runtime copy: fall through.
+const clientRuntime = join(input.client, 'runtime/library.js');
 Module._resolveFilename = function (request, ...args) {
-  return request === '@prisma/client'
-    ? join(input.client, 'index.js')
-    : resolveFilename.call(this, request, ...args);
+  if (request === '@prisma/client') return join(input.client, 'index.js');
+  if (
+    (request === '@prisma/client/runtime/library' ||
+      request === '@prisma/client/runtime/library.js') &&
+    existsSync(clientRuntime)
+  ) {
+    return clientRuntime;
+  }
+  return resolveFilename.call(this, request, ...args);
 };
 if (Number.isInteger(input.deadlineMs) && input.deadlineMs > 0) {
   process.env.SCOUT_RUN_DEADLINE_MS = String(input.deadlineMs);
