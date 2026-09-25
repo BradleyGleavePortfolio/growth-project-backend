@@ -145,15 +145,22 @@ describe('S8-C PG17 disposable target guard', () => {
     expect(G2_S8C_CANDIDATE_HEAD_ENV).toBe('G2_S8C_CANDIDATE_HEAD');
     expect(harness).toContain(`export const EXPECTED_MIGRATIONS = ${EXPECTED_MIGRATIONS};`);
     expect(harness).toContain(`export const S8B_MIGRATION = '${S8B_MIGRATION}';`);
-    // S8-C ships no migration: the repository tracks exactly the accepted 171 directories.
-    const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations'), {
-      withFileTypes: true,
-    })
+    // S8-C ships no migration: the proof base's 171 directories are present, in order, and end at
+    // the S8-B migration. Lanes landed after the proof base may add later, well-formed migrations.
+    const migrationsDir = resolve(__dirname, '../../prisma/migrations');
+    const migrations = readdirSync(migrationsDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-    expect(migrations).toHaveLength(EXPECTED_MIGRATIONS);
-    expect(migrations).toContain(S8B_MIGRATION);
-    expect(migrations.filter((name) => name > S8B_MIGRATION)).toEqual([]);
+      .map((entry) => entry.name)
+      .sort();
+    const baseMigrations = migrations.slice(0, EXPECTED_MIGRATIONS);
+    expect(baseMigrations).toHaveLength(EXPECTED_MIGRATIONS);
+    expect(baseMigrations[EXPECTED_MIGRATIONS - 1]).toBe(S8B_MIGRATION);
+    expect(baseMigrations.filter((name) => name > S8B_MIGRATION)).toEqual([]);
+    for (const later of migrations.slice(EXPECTED_MIGRATIONS)) {
+      expect(later > S8B_MIGRATION).toBe(true);
+      expect(later).toMatch(/^\d{14}_[a-z0-9_]+$/);
+      expect(readdirSync(resolve(migrationsDir, later))).toContain('migration.sql');
+    }
   });
   it('binds the proof to one attested, clean, non-base candidate head', () => {
     const base = '93389265a846095b846fa8f1fb0dad782fb6ee9f';
