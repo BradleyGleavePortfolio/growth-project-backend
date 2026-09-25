@@ -25,6 +25,23 @@ export const ROSTER_DEFAULT_PAGE_SIZE = 50;
 export const ROSTER_MAX_PAGE_SIZE = 200;
 
 /**
+ * S8-F — the only ledger `target_kind` the roster materializes (besides the
+ * legacy NULL kind, which means the same pre-S8-B Person target). Mirrors the
+ * ledger's person kind value written by the clients writer; any other kind is
+ * never joined to Person here.
+ */
+export const ROSTER_TARGET_KIND = 'person';
+
+/**
+ * S8-F — response-level qualifier. The roster remains the interim accepted
+ * Person bridge (native contract §4.1): imported clients are NOT yet visible in
+ * the User-based coach roster and no principal is minted here. Fixed `true`
+ * until the accepted S8-D bridge lands and this reader is revised; it is never
+ * derived from row contents or counts.
+ */
+export const ROSTER_BRIDGE_PENDING = true as const;
+
+/**
  * GET /api/scout/reconstruct/roster query. coach_id is taken from the bearer
  * identity (never a query/body field); the only inputs are which settled intent
  * to read and an opaque forward-only page cursor.
@@ -163,4 +180,14 @@ export class ScoutRosterResult {
 
   @ApiProperty({ type: ScoutRosterPageDto, description: 'Pagination envelope.' })
   page!: ScoutRosterPageDto;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Always true for now: these rows are the interim reconstructed Person bridge, ' +
+      'not native coach-roster clients or principals. Imported clients stay absent from ' +
+      'the User-based roster until the S8-D bridge is accepted. Present on empty pages too.',
+    example: true,
+  })
+  roster_bridge_pending!: boolean;
 }

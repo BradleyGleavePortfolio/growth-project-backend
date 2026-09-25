@@ -313,14 +313,18 @@ describe('importer contract (R80 freeze)', () => {
 
     it('advertises a PII-minimal ReconstructedEntityDto row (no email/billing/coach_id)', () => {
       const row = props('ReconstructedEntityDto');
+      // S8-F adds exactly two additive fields: the materialized `target_kind` and the
+      // nullable owned `native_id`. Every legacy field keeps its meaning.
       expect(row).toEqual([
         'client_source_id',
         'created_at',
         'entity_type',
         'id',
         'label',
+        'native_id',
         'source_id',
         'source_platform',
+        'target_kind',
         'updated_at',
       ]);
       for (const banned of ['email', 'price', 'billing', 'coach_id', 'payload']) {

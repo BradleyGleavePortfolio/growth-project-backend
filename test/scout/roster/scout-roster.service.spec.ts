@@ -5,8 +5,10 @@ import { Events } from '../../../src/analytics/events';
 import { PrismaService } from '../../../src/prisma.service';
 import { ScoutRosterService } from '../../../src/scout/scout-roster.service';
 import {
+  ROSTER_BRIDGE_PENDING,
   ROSTER_DEFAULT_PAGE_SIZE,
   ROSTER_MAX_PAGE_SIZE,
+  ROSTER_TARGET_KIND,
 } from '../../../src/scout/scout-roster.dto';
 import { RECONSTRUCT_ENTITY_TYPE } from '../../../src/scout/scout-reconstruct.dto';
 import { decodeScoutCursor } from '../../../src/scout/scout-cursor';
@@ -40,6 +42,8 @@ interface LedgerRow {
   source_platform: string;
   status: string;
   target_id: string | null;
+  /** S8-F: the ledger's nullable kind. Omitted (legacy) reads back as NULL. */
+  target_kind?: string | null;
 }
 interface PersonRow {
   id: string;
@@ -144,14 +148,19 @@ class FakePrisma {
         source_id: r.source_id,
         source_platform: r.source_platform,
         target_id: r.target_id,
+        target_kind: r.target_kind ?? null,
       }));
     },
   };
+
+  /** Every Person findMany, so tests can prove which target ids were (not) looked up. */
+  personReads: Array<{ ids: string[] }> = [];
 
   person = {
     findMany: async (args: { where: Where }) => {
       this.noteRead();
       const ids = new Set(args.where.id?.in ?? []);
+      this.personReads.push({ ids: [...ids] });
       return this.persons
         .filter(
           (p) =>
@@ -762,5 +771,113 @@ describe('ScoutRosterService.getRoster', () => {
       expect(fake.transactionCalls).toHaveLength(1);
       expect(fake.readsOutsideTx).toBe(0);
     });
+  });
+});
+
+/**
+ * S8-F — roster qualifier and kind fence (readiness F10). The roster stays the
+ * interim accepted Person bridge: every response says so at the top level
+ * (`roster_bridge_pending: true`, empty pages included), and only NULL-kind
+ * (legacy) or `person`-kind ledger rows are ever joined to Person. A typed
+ * non-person row is dropped while the ledger-anchored cursor still advances.
+ */
+describe('ScoutRosterService S8-F interim bridge qualifier', () => {
+  it('exposes roster_bridge_pending: true on a populated page', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 2 });
+    const { service } = makeService(fake);
+    const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+    expect(res.roster_bridge_pending).toBe(true);
+    expect(ROSTER_BRIDGE_PENDING).toBe(true);
+    expect(Object.keys(res).sort()).toEqual(
+      ['accounting', 'intent_id', 'page', 'persons', 'roster_bridge_pending'].sort(),
+    );
+  });
+
+  it('exposes roster_bridge_pending: true on an EMPTY page too (settled, nothing reconstructed)', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 0, skipped: 1 });
+    const { service } = makeService(fake);
+    const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+    expect(res.persons).toEqual([]);
+    expect(res.roster_bridge_pending).toBe(true);
+  });
+
+  it('is response-level only: no per-row flag is added to a roster row', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    const { service } = makeService(fake);
+    const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+    expect(res.persons[0]).not.toHaveProperty('roster_bridge_pending');
+    expect(res.persons[0]).not.toHaveProperty('target_kind');
+    expect(res.persons[0]).not.toHaveProperty('native_id');
+  });
+
+  it('F10: an explicit person kind materializes exactly like a legacy NULL kind', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 2 });
+    fake.ledgerRows[1].target_kind = ROSTER_TARGET_KIND;
+    const { service } = makeService(fake);
+    const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+    expect(res.persons.map((p) => p.source_person_id)).toEqual(['tc_s000', 'tc_s001']);
+  });
+
+  it('F10: a non-person kind is never joined to Person, even when the id matches a Person row', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    // A typed native row whose target_id happens to equal an existing Person id
+    // of this coach: it must not be looked up, let alone served as a Person.
+    const decoy = fake.persons[0].id;
+    for (const kind of ['workout_plan', 'workout_program', 'scout_entity', 'meal_plan']) {
+      fake.ledgerRows.push({
+        coach_id: COACH,
+        intent_id: INTENT,
+        entity_type: ET,
+        source_id: `z-${kind}`,
+        source_platform: 'truecoach',
+        status: 'reconstructed',
+        target_id: decoy,
+        target_kind: kind,
+      });
+    }
+    const { service } = makeService(fake);
+    const res = await service.getRoster(COACH, INTENT, undefined, undefined);
+    expect(res.persons.map((p) => p.source_person_id)).toEqual(['tc_s000']);
+    // The Person lookup carried only the legacy row's id — once.
+    expect(fake.personReads).toEqual([{ ids: [decoy] }]);
+    // Accounting is ledger truth and still counts the typed rows as reconstructed.
+    expect(res.accounting.reconstructed).toBe(5);
+  });
+
+  it('F10: a page made only of non-person kinds is empty, and the cursor still advances', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 }); // s000 (legacy person)
+    for (const sid of ['a-typed', 'b-typed']) {
+      fake.ledgerRows.push({
+        coach_id: COACH,
+        intent_id: INTENT,
+        entity_type: ET,
+        source_id: sid,
+        source_platform: 'truecoach',
+        status: 'reconstructed',
+        target_id: `plan-${sid}`,
+        target_kind: 'workout_plan',
+      });
+    }
+    const { service } = makeService(fake);
+    const page1 = await service.getRoster(COACH, INTENT, undefined, 2);
+    expect(page1.persons).toEqual([]);
+    expect(page1.page.has_more).toBe(true);
+    expect(page1.roster_bridge_pending).toBe(true);
+    expect(decodeScoutCursor(page1.page.next_cursor as string, COACH, INTENT, ET)).toEqual({
+      s: 'b-typed',
+      p: 'truecoach',
+    });
+    // No Person read happened at all for the typed-only page.
+    expect(fake.personReads).toEqual([]);
+    const page2 = await service.getRoster(COACH, INTENT, page1.page.next_cursor ?? undefined, 2);
+    expect(page2.persons.map((p) => p.source_person_id)).toEqual(['tc_s000']);
+    expect(page2.page.has_more).toBe(false);
+    expect(page2.roster_bridge_pending).toBe(true);
   });
 });

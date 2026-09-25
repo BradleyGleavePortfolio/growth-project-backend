@@ -40,7 +40,11 @@ export class ScoutEntitiesController {
       'no full-collection total scan and is not a second progress system. ' +
       'Excludes cross-tenant rows and cascade-erased rows; never returns email or ' +
       'billing fields. Returns 404 when the intent is unknown for the caller or ' +
-      'when the scout flags are off.',
+      'when the scout flags are off. Each row reports its materialized target_kind: ' +
+      'generic scout_entity evidence (native_id null, the effective kind of every ' +
+      'legacy row) or an owned native workout_program / workout_plan row (native_id ' +
+      'set), the latter served only when the coach owns a live native row backed by ' +
+      'matching import provenance; anything else is dropped from the page.',
   })
   @ApiResponse({
     status: 200,

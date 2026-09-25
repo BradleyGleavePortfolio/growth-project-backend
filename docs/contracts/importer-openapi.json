@@ -321,13 +321,19 @@
             "type": "string"
           },
           "id": {
-            "description": "Opaque server-issued canonical entity id.",
+            "description": "Opaque server-issued canonical id: the ScoutReconstructedEntity id for `scout_entity` rows, or the owned native record id for native target kinds.",
             "format": "uuid",
             "type": "string"
           },
           "label": {
             "description": "Best-effort PII-minimal display label (a title/name), if the source provided one.",
             "example": "Upper Body — Week 3",
+            "nullable": true,
+            "type": "string"
+          },
+          "native_id": {
+            "description": "The owned native record id when `target_kind` is a native kind (equal to `id`); null for `scout_entity` evidence rows.",
+            "format": "uuid",
             "nullable": true,
             "type": "string"
           },
@@ -341,6 +347,16 @@
             "example": "truecoach",
             "type": "string"
           },
+          "target_kind": {
+            "description": "What `id` references. `scout_entity` is generic canonical evidence (also the effective kind of legacy rows); `workout_program` / `workout_plan` are tenant-owned native records. Rows of any other kind are never served.",
+            "enum": [
+              "scout_entity",
+              "workout_program",
+              "workout_plan"
+            ],
+            "example": "scout_entity",
+            "type": "string"
+          },
           "updated_at": {
             "description": "When the record last changed.",
             "format": "date-time",
@@ -349,6 +365,8 @@
         },
         "required": [
           "id",
+          "target_kind",
+          "native_id",
           "source_platform",
           "entity_type",
           "source_id",
@@ -1038,13 +1056,19 @@
               "$ref": "#/components/schemas/ScoutRosterPersonDto"
             },
             "type": "array"
+          },
+          "roster_bridge_pending": {
+            "description": "Always true for now: these rows are the interim reconstructed Person bridge, not native coach-roster clients or principals. Imported clients stay absent from the User-based roster until the S8-D bridge is accepted. Present on empty pages too.",
+            "example": true,
+            "type": "boolean"
           }
         },
         "required": [
           "intent_id",
           "accounting",
           "persons",
-          "page"
+          "page",
+          "roster_bridge_pending"
         ],
         "type": "object"
       },
@@ -2290,7 +2314,7 @@
     },
     "/api/scout/reconstruct/entities": {
       "get": {
-        "description": "Returns the reconstructed non-person canonical rows (workouts / client_history) for one settled crawl intent and family, joined to the reconstruction ledger, with honest per-page metadata (page_count + an opaque forward-only cursor) and deterministic bounded pagination. Issues no full-collection total scan and is not a second progress system. Excludes cross-tenant rows and cascade-erased rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "description": "Returns the reconstructed non-person canonical rows (workouts / client_history) for one settled crawl intent and family, joined to the reconstruction ledger, with honest per-page metadata (page_count + an opaque forward-only cursor) and deterministic bounded pagination. Issues no full-collection total scan and is not a second progress system. Excludes cross-tenant rows and cascade-erased rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off. Each row reports its materialized target_kind: generic scout_entity evidence (native_id null, the effective kind of every legacy row) or an owned native workout_program / workout_plan row (native_id set), the latter served only when the coach owns a live native row backed by matching import provenance; anything else is dropped from the page.",
         "operationId": "ScoutEntitiesController_getEntities",
         "parameters": [
           {
@@ -2419,7 +2443,7 @@
     },
     "/api/scout/reconstruct/roster": {
       "get": {
-        "description": "Returns the invite-pending roster Person records reconstructed from one settled crawl intent, joined to the reconstruction ledger, with honest accounting { staged, reconstructed, skipped, failed } and deterministic, bounded cursor pagination. Excludes deleted and cross-tenant rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "description": "Returns the invite-pending roster Person records reconstructed from one settled crawl intent, joined to the reconstruction ledger, with honest accounting { staged, reconstructed, skipped, failed } and deterministic, bounded cursor pagination. Excludes deleted and cross-tenant rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off. The response carries roster_bridge_pending: true (also on empty pages): these are interim Person bridge rows, not native roster clients or principals, until the S8-D bridge is accepted. Only person-kind ledger rows are materialized here.",
         "operationId": "ScoutRosterController_getRoster",
         "parameters": [
           {

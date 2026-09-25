@@ -8,6 +8,7 @@ import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
   ENTITY_REVIEW_FAMILIES,
+  ENTITY_TARGET_KIND,
 } from '../../../src/scout/scout-entities.dto';
 import { RECONSTRUCT_FAMILY } from '../../../src/scout/scout-reconstruct.dto';
 import { decodeScoutCursor } from '../../../src/scout/scout-cursor';
@@ -35,6 +36,28 @@ interface LedgerRow {
   source_platform: string;
   status: string;
   target_id: string | null;
+  /** S8-F: the ledger's nullable kind. Omitted (legacy) reads back as NULL. */
+  target_kind?: string | null;
+}
+/** S8-F: a native WorkoutPlan / WorkoutProgram row (only the columns the reader touches). */
+interface NativeRow {
+  id: string;
+  coach_id: string;
+  name: string;
+  archived_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+/** S8-F: an ImportNativeProvenance row (identity columns kept for realism; never joined on). */
+interface ProvenanceRow {
+  coach_id: string;
+  import_intent_id: string | null;
+  source_namespace: string;
+  entity_type: string;
+  source_id: string;
+  native_kind: string;
+  native_id: string | null;
+  outcome: string;
 }
 interface EntityRow {
   id: string;
@@ -57,6 +80,10 @@ interface Where {
   source_platform?: { gt?: string };
   OR?: Where[];
   id?: { in?: string[] };
+  archived_at?: null;
+  native_kind?: string;
+  native_id?: { in?: string[] };
+  outcome?: { in?: string[] };
 }
 
 class FakePrisma {
@@ -116,7 +143,60 @@ class FakePrisma {
         source_id: r.source_id,
         source_platform: r.source_platform,
         target_id: r.target_id,
+        target_kind: r.target_kind ?? null,
       }));
+    },
+  };
+
+  // S8-F native tables + provenance. Real predicate semantics for the columns
+  // the reader filters on (id IN, coach_id, archived_at IS NULL; coach_id,
+  // outcome IN, OR over (native_kind, native_id IN)) so tenancy, archive and
+  // provenance denial are proven by behaviour, not by a pre-decided answer.
+  plans: NativeRow[] = [];
+  programs: NativeRow[] = [];
+  provenance: ProvenanceRow[] = [];
+  nativeReads: Array<{ table: string; where: Where }> = [];
+
+  private nativeFindMany(table: 'plans' | 'programs') {
+    return async (args: { where: Where }) => {
+      this.noteRead();
+      this.nativeReads.push({ table, where: args.where });
+      const ids = new Set(args.where.id?.in ?? []);
+      return this[table]
+        .filter(
+          (n) =>
+            ids.has(n.id) &&
+            (args.where.coach_id === undefined || n.coach_id === args.where.coach_id) &&
+            (args.where.archived_at === undefined || n.archived_at === null),
+        )
+        .map((n) => ({
+          id: n.id,
+          name: n.name,
+          created_at: n.created_at,
+          updated_at: n.updated_at,
+        }));
+    };
+  }
+
+  workoutPlan = { findMany: this.nativeFindMany('plans') };
+  workoutProgram = { findMany: this.nativeFindMany('programs') };
+
+  importNativeProvenance = {
+    findMany: async (args: { where: Where }) => {
+      this.noteRead();
+      this.nativeReads.push({ table: 'provenance', where: args.where });
+      const matchKind = (p: ProvenanceRow, w: Where): boolean =>
+        (w.native_kind === undefined || p.native_kind === w.native_kind) &&
+        (w.native_id?.in === undefined ||
+          (p.native_id !== null && w.native_id.in.includes(p.native_id)));
+      return this.provenance
+        .filter(
+          (p) =>
+            (args.where.coach_id === undefined || p.coach_id === args.where.coach_id) &&
+            (args.where.outcome?.in === undefined || args.where.outcome.in.includes(p.outcome)) &&
+            (args.where.OR === undefined || args.where.OR.some((o) => matchKind(p, o))),
+        )
+        .map((p) => ({ native_kind: p.native_kind, native_id: p.native_id }));
     },
   };
 
@@ -708,14 +788,17 @@ describe('ScoutEntitiesService.getEntities', () => {
         'entity_type',
         'id',
         'label',
+        'native_id',
         'source_id',
         'source_platform',
+        'target_kind',
         'updated_at',
       ].sort(),
     );
     expect(row).not.toHaveProperty('email');
     expect(row).not.toHaveProperty('coach_id');
     expect(row).not.toHaveProperty('price');
+    expect(row).not.toHaveProperty('payload');
   });
 
   it('is site-agnostic: projects a non-TrueCoach source platform identically', async () => {
@@ -762,7 +845,11 @@ describe('ScoutEntitiesService.getEntities', () => {
   it('every reviewable family is a non-person family (clients excluded)', () => {
     expect(ENTITY_REVIEW_FAMILIES).not.toContain(RECONSTRUCT_FAMILY.clients);
     expect(ENTITY_REVIEW_FAMILIES).toEqual(
-      expect.arrayContaining([RECONSTRUCT_FAMILY.workouts, RECONSTRUCT_FAMILY.client_history]),
+      expect.arrayContaining([
+        RECONSTRUCT_FAMILY.workouts,
+        RECONSTRUCT_FAMILY.client_history,
+        RECONSTRUCT_FAMILY.programs,
+      ]),
     );
   });
 
@@ -874,5 +961,404 @@ describe('ScoutEntitiesService.getEntities', () => {
       expect(fake.transactionCalls).toHaveLength(0);
       expect(fake.readsOutsideTx).toBe(0);
     });
+  });
+});
+
+/**
+ * S8-F — native target materialization (readiness F01–F09, F11). Legacy and
+ * `scout_entity` rows keep the generic evidence join; typed `workout_plan` /
+ * `workout_program` rows resolve to the coach's own live native row ONLY when a
+ * same-coach provenance row with a `created` / `already_present` outcome vouches
+ * for that exact (native_kind, native_id). Everything else is dropped, and the
+ * ledger-anchored cursor still advances past dropped rows.
+ */
+describe('ScoutEntitiesService S8-F native targets', () => {
+  const T0 = new Date('2026-09-01T00:00:00.000Z');
+  const T1 = new Date('2026-09-02T00:00:00.000Z');
+  // The `programs` family joined RECONSTRUCT_FAMILY in S8-C (N3), so it is a
+  // reviewable non-person family here and F03 runs unconditionally (composed
+  // onto S8-C; the former `it.skip` fallback is gone — a missing family now FAILS
+  // the allow-list assertion below rather than skipping).
+  const PROGRAMS_FAMILY = RECONSTRUCT_FAMILY.programs;
+
+  function ledger(
+    fake: FakePrisma,
+    row: Partial<LedgerRow> & { source_id: string; target_id: string | null },
+  ): void {
+    fake.ledgerRows.push({
+      coach_id: COACH,
+      intent_id: INTENT,
+      entity_type: FAM,
+      source_platform: 'truecoach',
+      status: 'reconstructed',
+      ...row,
+    });
+  }
+  function plan(fake: FakePrisma, id: string, opts: Partial<NativeRow> = {}): void {
+    fake.plans.push({
+      id,
+      coach_id: COACH,
+      name: `Plan ${id}`,
+      archived_at: null,
+      created_at: T0,
+      updated_at: T1,
+      ...opts,
+    });
+  }
+  function program(fake: FakePrisma, id: string, opts: Partial<NativeRow> = {}): void {
+    fake.programs.push({
+      id,
+      coach_id: COACH,
+      name: `Program ${id}`,
+      archived_at: null,
+      created_at: T0,
+      updated_at: T1,
+      ...opts,
+    });
+  }
+  function vouch(
+    fake: FakePrisma,
+    nativeKind: string,
+    nativeId: string | null,
+    opts: Partial<ProvenanceRow> = {},
+  ): void {
+    fake.provenance.push({
+      coach_id: COACH,
+      // S8-C C2: written NULL by the native writer; the reader must never join on it.
+      import_intent_id: null,
+      source_namespace: 'truecoach',
+      entity_type: FAM,
+      source_id: `src-${nativeId ?? 'none'}`,
+      native_kind: nativeKind,
+      native_id: nativeId,
+      outcome: 'created',
+      ...opts,
+    });
+  }
+
+  it('F01: a legacy NULL-kind row is unchanged apart from the additive fields', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([
+      {
+        id: `e-${COACH}-${FAM}-s000`,
+        target_kind: ENTITY_TARGET_KIND.scout_entity,
+        native_id: null,
+        source_platform: 'truecoach',
+        entity_type: FAM,
+        source_id: 'truecoach_s000',
+        client_source_id: 'truecoach_client_0',
+        label: 'Item s000',
+        created_at: '2026-07-18T00:00:00.000Z',
+        updated_at: '2026-07-18T00:00:00.000Z',
+      },
+    ]);
+    // The generic evidence join is the ONLY join a legacy page triggers.
+    expect(fake.nativeReads).toEqual([]);
+  });
+
+  it('F01: an explicit scout_entity kind takes the identical evidence path', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    fake.ledgerRows[0].target_kind = 'scout_entity';
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toHaveLength(1);
+    expect(res.entities[0]).toMatchObject({
+      target_kind: ENTITY_TARGET_KIND.scout_entity,
+      native_id: null,
+      id: `e-${COACH}-${FAM}-s000`,
+    });
+    expect(fake.nativeReads).toEqual([]);
+  });
+
+  it('F02: a workout_plan row resolves to the owned native plan with provenance', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1', { name: 'Upper Body — Week 3' });
+    vouch(fake, 'workout_plan', 'plan-1');
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([
+      {
+        id: 'plan-1',
+        target_kind: ENTITY_TARGET_KIND.workout_plan,
+        native_id: 'plan-1',
+        source_platform: 'truecoach',
+        entity_type: FAM,
+        source_id: 'w1',
+        client_source_id: null,
+        label: 'Upper Body — Week 3',
+        created_at: T0.toISOString(),
+        updated_at: T1.toISOString(),
+      },
+    ]);
+    expect(res.page_count).toBe(1);
+    // Same-coach, live-only native read; provenance keyed by (kind, id) and
+    // restricted to the qualifying outcomes; no import_intent_id predicate.
+    const planRead = fake.nativeReads.find((r) => r.table === 'plans');
+    expect(planRead?.where).toEqual({ id: { in: ['plan-1'] }, coach_id: COACH, archived_at: null });
+    const prov = fake.nativeReads.find((r) => r.table === 'provenance');
+    expect(prov?.where).toEqual({
+      coach_id: COACH,
+      outcome: { in: ['created', 'already_present'] },
+      OR: [{ native_kind: 'workout_plan', native_id: { in: ['plan-1'] } }],
+    });
+    expect(JSON.stringify(prov?.where)).not.toContain('import_intent_id');
+    expect(fake.readsOutsideTx).toBe(0);
+  });
+
+  it('F02: an already_present outcome qualifies exactly like created', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    vouch(fake, 'workout_plan', 'plan-1', { outcome: 'already_present' });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities.map((e) => e.native_id)).toEqual(['plan-1']);
+  });
+
+  it('F03: a workout_program row resolves to the owned native program', async () => {
+    expect(ENTITY_REVIEW_FAMILIES).toContain(PROGRAMS_FAMILY);
+    const fake = new FakePrisma();
+    seed(fake, { family: PROGRAMS_FAMILY });
+    ledger(fake, {
+      entity_type: PROGRAMS_FAMILY,
+      source_id: 'p1',
+      target_id: 'prog-1',
+      target_kind: 'workout_program',
+    });
+    program(fake, 'prog-1', { name: '12-Week Strength' });
+    vouch(fake, 'workout_program', 'prog-1', { entity_type: PROGRAMS_FAMILY });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, PROGRAMS_FAMILY, undefined, undefined);
+    expect(res.entities).toEqual([
+      {
+        id: 'prog-1',
+        target_kind: ENTITY_TARGET_KIND.workout_program,
+        native_id: 'prog-1',
+        source_platform: 'truecoach',
+        entity_type: PROGRAMS_FAMILY,
+        source_id: 'p1',
+        client_source_id: null,
+        label: '12-Week Strength',
+        created_at: T0.toISOString(),
+        updated_at: T1.toISOString(),
+      },
+    ]);
+    expect(fake.nativeReads.find((r) => r.table === 'programs')?.where).toEqual({
+      id: { in: ['prog-1'] },
+      coach_id: COACH,
+      archived_at: null,
+    });
+  });
+
+  it("F04: another tenant's native row is never served, even with that tenant's provenance", async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-x', target_kind: 'workout_plan' });
+    plan(fake, 'plan-x', { coach_id: OTHER });
+    vouch(fake, 'workout_plan', 'plan-x', { coach_id: OTHER });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+    expect(res.page_count).toBe(0);
+    expect(res.next_cursor).toBeNull();
+  });
+
+  it('F04: a same-coach native row vouched only by cross-tenant provenance is dropped', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    vouch(fake, 'workout_plan', 'plan-1', { coach_id: OTHER });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+  });
+
+  it('F05: a native row with no provenance is dropped (fail closed)', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+  });
+
+  it('F05: an unresolved provenance row (NULL native_id) never qualifies a native row', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    // S8-C N2: client-linked workouts leave an `unresolved` workout_plan
+    // provenance row with native_id NULL. It vouches for nothing.
+    vouch(fake, 'workout_plan', null, { outcome: 'unresolved' });
+    vouch(fake, 'workout_plan', 'plan-1', { outcome: 'unresolved' });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+  });
+
+  it('F06: a kind mismatch between the ledger and provenance is dropped', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    // Ledger says plan, provenance says program for the same id: no match.
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    vouch(fake, 'workout_program', 'plan-1');
+    // Ledger says program, but the id is a plan: the program join finds nothing.
+    ledger(fake, { source_id: 'w2', target_id: 'plan-2', target_kind: 'workout_program' });
+    plan(fake, 'plan-2');
+    vouch(fake, 'workout_plan', 'plan-2');
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+  });
+
+  it('F06: a typed kind with a NULL target_id is dropped without any native read', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: null, target_kind: 'workout_plan' });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities).toEqual([]);
+    expect(fake.nativeReads).toEqual([]);
+  });
+
+  it('F07: an archived native row is absent while the ledger-anchored cursor advances past it', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    for (const [sid, id] of [
+      ['w1', 'plan-1'],
+      ['w2', 'plan-2'],
+      ['w3', 'plan-3'],
+    ] as const) {
+      ledger(fake, { source_id: sid, target_id: id, target_kind: 'workout_plan' });
+      plan(fake, id, id === 'plan-2' ? { archived_at: T1 } : {});
+      vouch(fake, 'workout_plan', id);
+    }
+    const { service } = await makeService(fake);
+    const page1 = await service.getEntities(COACH, INTENT, FAM, undefined, 2);
+    // Page 1 covers ledger rows w1,w2; the archived plan-2 is dropped but the
+    // cursor is anchored to the LAST LEDGER row (w2), so nothing is re-read.
+    expect(page1.entities.map((e) => e.native_id)).toEqual(['plan-1']);
+    expect(page1.page_count).toBe(1);
+    expect(page1.next_cursor).toBe(expectedV2(COACH, INTENT, FAM, 'w2', 'truecoach'));
+    const page2 = await service.getEntities(COACH, INTENT, FAM, page1.next_cursor ?? undefined, 2);
+    expect(page2.entities.map((e) => e.native_id)).toEqual(['plan-3']);
+    expect(page2.next_cursor).toBeNull();
+  });
+
+  it('F08: a mixed page keeps ledger order across evidence and native rows', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 2 }); // s000, s001 legacy evidence
+    ledger(fake, { source_id: 'a-native', target_id: 'plan-a', target_kind: 'workout_plan' });
+    plan(fake, 'plan-a');
+    vouch(fake, 'workout_plan', 'plan-a');
+    ledger(fake, { source_id: 's000z', target_id: 'plan-z', target_kind: 'workout_plan' });
+    plan(fake, 'plan-z');
+    vouch(fake, 'workout_plan', 'plan-z');
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    // Ledger (source_id, source_platform) order: a-native < s000 < s000z < s001.
+    expect(res.entities.map((e) => [e.target_kind, e.native_id, e.source_id])).toEqual([
+      ['workout_plan', 'plan-a', 'a-native'],
+      ['scout_entity', null, 'truecoach_s000'],
+      ['workout_plan', 'plan-z', 's000z'],
+      ['scout_entity', null, 'truecoach_s001'],
+    ]);
+    expect(res.page_count).toBe(4);
+  });
+
+  it('F09: an unknown or person kind is dropped and never joined anywhere', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    ledger(fake, { source_id: 'u1', target_id: 'e-whatever', target_kind: 'meal_plan' });
+    ledger(fake, { source_id: 'u2', target_id: 'person-1', target_kind: 'person' });
+    // Even if the ids happen to exist somewhere, the unknown kind is not served.
+    plan(fake, 'e-whatever');
+    vouch(fake, 'workout_plan', 'e-whatever');
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities.map((e) => e.source_id)).toEqual(['truecoach_s000']);
+    expect(fake.nativeReads).toEqual([]);
+  });
+
+  it('F11: native rows carry the ledger provenance, the native name and no invented client link', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { sourcePlatform: 'trainerize' });
+    ledger(fake, {
+      source_id: 'tz-77',
+      source_platform: 'trainerize',
+      target_id: 'plan-77',
+      target_kind: 'workout_plan',
+    });
+    plan(fake, 'plan-77', { name: 'Leg Day' });
+    vouch(fake, 'workout_plan', 'plan-77', { source_namespace: 'trainerize' });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    const row = res.entities[0];
+    expect(row).toMatchObject({
+      id: 'plan-77',
+      native_id: 'plan-77',
+      source_platform: 'trainerize',
+      source_id: 'tz-77',
+      label: 'Leg Day',
+      client_source_id: null,
+    });
+    expect(Object.keys(row).sort()).toEqual(
+      [
+        'client_source_id',
+        'created_at',
+        'entity_type',
+        'id',
+        'label',
+        'native_id',
+        'source_id',
+        'source_platform',
+        'target_kind',
+        'updated_at',
+      ].sort(),
+    );
+    for (const banned of ['coach_id', 'owner_user_id', 'payload', 'email', 'visibility']) {
+      expect(row).not.toHaveProperty(banned);
+    }
+  });
+
+  it('F11: the settled-intent gate is unchanged — a typed page for an unsettled intent is a uniform 404', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { terminalStatus: null });
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1');
+    vouch(fake, 'workout_plan', 'plan-1');
+    const { service } = await makeService(fake);
+    await expect(
+      service.getEntities(COACH, INTENT, FAM, undefined, undefined),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(fake.nativeReads).toEqual([]);
+  });
+
+  it('analytics stays counts-only with native rows (no names, no native ids)', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {});
+    ledger(fake, { source_id: 'w1', target_id: 'plan-1', target_kind: 'workout_plan' });
+    plan(fake, 'plan-1', { name: 'Secret Name' });
+    vouch(fake, 'workout_plan', 'plan-1');
+    const { service, capture } = await makeService(fake);
+    await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(capture).toHaveBeenCalledWith(COACH, Events.SCOUT_RECONSTRUCT_ENTITIES_READ, {
+      intent_id: INTENT,
+      entity_type: FAM,
+      returned: 1,
+      has_more: false,
+    });
+    expect(JSON.stringify(capture.mock.calls)).not.toContain('Secret Name');
+    expect(JSON.stringify(capture.mock.calls)).not.toContain('plan-1');
   });
 });
