@@ -258,12 +258,20 @@ describe('interpreter — identity guard and unresolved families', () => {
 describe('repository specs — the live sources', () => {
   const registry = buildSourceMapperRegistry();
 
-  it('TrueCoach `notes` (emitted by the live blueprint) is explicitly unresolved', () => {
+  it('TrueCoach `notes` and the undeclared canonical `programs` family are unresolved', () => {
     expect(resolveStagedFamily(registry, 'truecoach', 'notes')).toEqual({
       ok: false,
       reason: 'unresolved_family:notes',
     });
     for (const family of Object.values(RECONSTRUCT_FAMILY)) {
+      if (family === RECONSTRUCT_FAMILY.programs) {
+        // Canonical, but the accepted truecoach.json declares no `programs` rules: fail closed.
+        expect(resolveStagedFamily(registry, 'truecoach', family)).toEqual({
+          ok: false,
+          reason: 'unresolved_family:programs',
+        });
+        continue;
+      }
       expect(resolveStagedFamily(registry, 'truecoach', family)).toEqual({ ok: true, family });
     }
   });
