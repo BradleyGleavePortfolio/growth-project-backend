@@ -39,7 +39,7 @@ import {
   EXPECTED_MIGRATIONS,
   expectedVersion,
   holdTransaction,
-  json,
+  jsonAdmin,
   quote,
   root,
   run,
@@ -90,8 +90,10 @@ beforeEach(() => {
 
 describe('lane identity (bootstrap state, never repaired here)', () => {
   it('is the S8-C disposable PG17 lane with the full accepted history and S8-B objects present', () => {
+    // `data_directory` is readable only by superusers / pg_read_all_settings: observe the lane
+    // identity over the existing admin connection (the migration role stays unprivileged).
     const facts =
-      json(`SELECT json_build_object('version',current_setting('server_version_num')::int,
+      jsonAdmin(`SELECT json_build_object('version',current_setting('server_version_num')::int,
       'cluster',current_setting('cluster_name'),'directory',current_setting('data_directory'),
       'port',inet_server_port(),'db',current_database())`);
     expect(facts).toEqual({
@@ -218,11 +220,12 @@ describe('native persistence: target + provenance + typed ledger in one transact
     expect(rows[0]).toMatchObject({
       sets: 3,
       reps_or_duration_seconds: 8,
-      weight_lbs: toPounds(100, 'kg'),
       rest_seconds: 90,
       superset_group_id: null,
       notes: 'brace',
     });
+    // The double round-trips through the Prisma Float path, which is not bit-exact (1 ulp).
+    expect(rows[0].weight_lbs).toBeCloseTo(toPounds(100, 'kg'), 9);
     expect(rows[1]).toMatchObject({
       sets: 3,
       reps_or_duration_seconds: 10,
@@ -421,7 +424,9 @@ describe('client principal: explicit unresolved, never a User (N2)', () => {
     ]);
     expect(count('WorkoutPlan')).toBe(0);
     expect(count('WorkoutProgram')).toBe(0);
-    expect(count('User')).toBe(1);
+    // Only the fixture coach besides the accepted seed system coach
+    // (migration 20261215000100_seed_b5_contract_templates): the writer minted no User.
+    expect(count('User', `id <> 'b5-system-coach-tgp'`)).toBe(1);
     expect(count('ClientWorkoutAssignment')).toBe(0);
   });
 });
