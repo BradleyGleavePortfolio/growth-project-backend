@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma.service';
 import { isCanonicalPlatform } from './scout-platform';
 import {
   buildFamilyRegistry,
+  isPersistOutcome,
   type FamilyReconstructor,
   type StagedRow,
 } from './reconstruct/families';
@@ -214,7 +215,38 @@ export class ScoutReconstructService {
       await retryContention(() =>
         this.prisma.$transaction(async (tx) => {
           // Keep target-before-ledger lock order compatible with old writers.
-          const targetId = await family.persist(tx, coachId, row.source_id, mapped.mapped);
+          const result = await family.persist(tx, coachId, row.source_id, mapped.mapped);
+          if (isPersistOutcome(result)) {
+            // S8-C typed handoff: the native target kind/id (or the
+            // database-determined unresolved reason) lands in the SAME
+            // transaction and the SAME precedence update as the status.
+            if (!result.ok) {
+              await this.writeLedger(
+                tx,
+                family.entityType,
+                coachId,
+                intentId,
+                row,
+                RECONSTRUCT_STATUS.skipped,
+                null,
+                result.reason,
+              );
+              return;
+            }
+            await this.writeLedger(
+              tx,
+              family.entityType,
+              coachId,
+              intentId,
+              row,
+              RECONSTRUCT_STATUS.reconstructed,
+              result.targetId,
+              null,
+              result.targetKind,
+            );
+            return;
+          }
+          // Legacy `string | null` result: ledger target_kind stays NULL (never reinterpreted).
           await this.writeLedger(
             tx,
             family.entityType,
@@ -222,7 +254,7 @@ export class ScoutReconstructService {
             intentId,
             row,
             RECONSTRUCT_STATUS.reconstructed,
-            targetId,
+            result,
             null,
           );
         }),
@@ -274,6 +306,7 @@ export class ScoutReconstructService {
     status: string,
     targetId: string | null,
     reason: string | null,
+    targetKind: string | null = null,
   ): Promise<void> {
     const identity = {
       coach_id: coachId,
@@ -282,7 +315,15 @@ export class ScoutReconstructService {
       source_platform: row.source_platform,
       source_id: row.source_id,
     };
-    const outcome = { status, target_id: targetId, reason };
+    // `target_kind` (S8-B closed set, S8-C typed handoff) is only ever carried
+    // alongside a typed target; a legacy write leaves the column untouched so
+    // historical NULL kinds are never rewritten or reinterpreted.
+    const outcome = {
+      status,
+      target_id: targetId,
+      reason,
+      ...(targetKind === null ? {} : { target_kind: targetKind }),
+    };
     await tx.scoutReconstructionLedger.upsert({
       where: { coach_id_intent_id_entity_type_source_platform_source_id: identity },
       create: { ...identity, ...outcome },

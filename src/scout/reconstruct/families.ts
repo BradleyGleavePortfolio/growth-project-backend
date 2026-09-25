@@ -1,7 +1,18 @@
 import { Prisma } from '@prisma/client';
 import { RECONSTRUCT_FAMILY } from '../scout-reconstruct.dto';
 import { type MappedClient, type MappedEntity } from './mapping-spec';
-import { buildSourceMapperRegistry } from './source-mapper-registry';
+import { buildNativeFamilies } from './native/native-families';
+import { buildNativeRuleRegistry, type NativeRuleRegistry } from './native/native-rule-registry';
+import { type PersistResult } from './native/persist-outcome';
+import { buildSourceMapperRegistry, type SourceMapper } from './source-mapper-registry';
+
+export {
+  LEDGER_TARGET_KIND,
+  isPersistOutcome,
+  type LedgerTargetKind,
+  type PersistOutcome,
+  type PersistResult,
+} from './native/persist-outcome';
 
 /** Prisma transaction client — the interactive-transaction handle. */
 export type Tx = Prisma.TransactionClient;
@@ -11,6 +22,8 @@ export interface StagedRow {
   readonly source_id: string;
   readonly source_platform: string;
   readonly payload: Prisma.JsonValue;
+  /** Staged step token when the engine forwards it; families fall back to their own name. */
+  readonly entity_type?: string;
 }
 
 /** A pure map step: either a mapped domain value or a skip with a reason. */
@@ -21,7 +34,9 @@ export type MapResult<M> =
  * One parameterized reconstruction mechanism (IMPORTER-H). A family owns two
  * responsibilities and NOTHING else: a pure/total `map` (source row → canonical
  * value or skip reason) and a `persist` (canonical value → the domain target,
- * returning its id). The engine owns everything generic around them — the
+ * returning its id — or, since S8-C, a typed {@link PersistOutcome} carrying the
+ * closed ledger `target_kind` with the id, or a database-determined unresolved
+ * reason). The engine owns everything generic around them — the
  * settled/bounded gates, deterministic paging, the per-row transaction, the
  * P2002 retry-once convergence, poison-row isolation, and the honest ledger. So
  * adding a family is a map + persist pair, never a cloned pipeline.
@@ -34,7 +49,7 @@ export type MapResult<M> =
 export interface FamilyReconstructor<M = unknown> {
   readonly entityType: string;
   map(row: StagedRow): MapResult<M>;
-  persist(tx: Tx, coachId: string, sourceId: string, mapped: M): Promise<string | null>;
+  persist(tx: Tx, coachId: string, sourceId: string, mapped: M): Promise<PersistResult>;
 }
 
 /**
@@ -130,16 +145,37 @@ function genericEntityFamily(entityType: string): FamilyReconstructor<MappedEnti
 }
 
 /**
- * Build the entity_type → reconstructor registry. `clients` targets `Person`;
- * every non-person family shares the generic canonical table. Billing is
- * deliberately absent — an unregistered family fails closed at the engine
- * boundary, so billing can never be reconstructed even if it were staged.
+ * Optional injection seam for the NATIVE families (tests / proofs); production
+ * uses the repository data. Legacy families keep the repository mapper registry.
  */
-export function buildFamilyRegistry(): ReadonlyMap<string, FamilyReconstructor> {
+export interface FamilyRegistryOptions {
+  readonly sourceMappers?: ReadonlyMap<string, SourceMapper>;
+  readonly nativeRules?: NativeRuleRegistry;
+}
+
+/**
+ * Build the entity_type → reconstructor registry. `clients` targets `Person`
+ * (legacy result, ledger kind NULL); `client_history` shares the generic
+ * canonical table (legacy result, kind NULL). `workouts` and `programs` are the
+ * S8-C native families: the same map/persist seam, but their persist returns a
+ * typed outcome — `workouts` keeps the accepted evidence write (typed
+ * `scout_entity`) unless the source declares native workout rules, and
+ * `programs` targets WorkoutProgram templates. Billing is deliberately absent —
+ * an unregistered family fails closed at the engine boundary, so billing can
+ * never be reconstructed even if it were staged.
+ */
+export function buildFamilyRegistry(
+  options: FamilyRegistryOptions = {},
+): ReadonlyMap<string, FamilyReconstructor> {
+  const native = buildNativeFamilies({
+    sourceMappers: options.sourceMappers ?? sourceMapperRegistry,
+    nativeRules: options.nativeRules ?? buildNativeRuleRegistry(),
+  });
   const families: FamilyReconstructor[] = [
     clientsFamily,
-    genericEntityFamily(RECONSTRUCT_FAMILY.workouts),
+    native.workouts,
     genericEntityFamily(RECONSTRUCT_FAMILY.client_history),
+    native.programs,
   ];
   return new Map(families.map((family) => [family.entityType, family]));
 }
