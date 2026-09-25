@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { PrismaService } from '../prisma.service';
@@ -7,6 +7,7 @@ import {
   type ScoutIngestDto,
   type ScoutIngestResult,
 } from './scout-ingest.dto';
+import { RunGateClosed, ScoutLifecycleService } from './lifecycle/lifecycle.service';
 
 /**
  * Payload keys stripped server-side before persistence (case-insensitive,
@@ -39,10 +40,15 @@ const REDACTED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
 
 @Injectable()
 export class ScoutIngestService {
+  private readonly lifecycle: ScoutLifecycleService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    @Optional() lifecycle?: ScoutLifecycleService,
+  ) {
+    this.lifecycle = lifecycle ?? new ScoutLifecycleService(prisma, analytics);
+  }
 
   /**
    * Persist a crawl batch for `coachId`, idempotently.
@@ -65,6 +71,13 @@ export class ScoutIngestService {
    * Putting capturedAt in the key would break this: an extension retry
    * carrying a fresh timestamp would insert a duplicate, defeating replay
    * safety. Different intent_id = a new observation series, correctly inserts.
+   *
+   * S7-L (decision §3.1): when `intent_id` is the text of an owned server setup
+   * intent the batch is written inside ONE transaction whose first statement is
+   * the run gate (`assertRunOpen`, an UPDATE that is itself the row lock); a
+   * closed gate rolls the batch back and answers 409 `run_not_started` /
+   * `run_fenced` (+ `fence_reason`). A legacy intent string keeps the single
+   * createMany below unchanged.
    */
   async ingest(coachId: string, dto: ScoutIngestDto): Promise<ScoutIngestResult> {
     const received = dto.entities.length;
@@ -81,10 +94,31 @@ export class ScoutIngestService {
       payload: redactPayload(entity.payload),
     }));
 
-    const { count } = await this.prisma.scoutIngestEntity.createMany({
-      data: rows,
-      skipDuplicates: true,
-    });
+    const resolution = await this.lifecycle.resolve(coachId, dto.intent_id);
+    let count: number;
+    if (resolution.mode === 'server') {
+      try {
+        count = await this.prisma.$transaction(async (tx) => {
+          const epoch = await this.lifecycle.assertRunOpen(tx, coachId, dto.intent_id);
+          if (epoch === null) throw new RunGateClosed();
+          const written = await tx.scoutIngestEntity.createMany({
+            data: rows,
+            skipDuplicates: true,
+          });
+          return written.count;
+        });
+      } catch (err) {
+        if (!(err instanceof RunGateClosed)) throw err;
+        throw ScoutLifecycleService.closedConflict(
+          await this.lifecycle.classifyClosed(coachId, dto.intent_id),
+        );
+      }
+    } else {
+      ({ count } = await this.prisma.scoutIngestEntity.createMany({
+        data: rows,
+        skipDuplicates: true,
+      }));
+    }
 
     const deduped = received - count;
 

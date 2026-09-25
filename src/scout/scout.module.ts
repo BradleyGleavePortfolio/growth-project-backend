@@ -14,6 +14,8 @@ import { ScoutRosterController } from './scout-roster.controller';
 import { ScoutRosterService } from './scout-roster.service';
 import { ScoutEntitiesController } from './scout-entities.controller';
 import { ScoutEntitiesService } from './scout-entities.service';
+import { ScoutLifecycleService } from './lifecycle/lifecycle.service';
+import { ScoutRunController } from './lifecycle/run.controller';
 
 // IMPORTER-E + IMPORTER-B — unified scout module (DESIGN.md v0.3 §10 + §2).
 //
@@ -28,6 +30,12 @@ import { ScoutEntitiesService } from './scout-entities.service';
 // MacrosModule and avoids the circular-import risk of pulling AuthModule.
 // ScheduleModule is loaded once at the app root, so the service's @Interval
 // flush tick is picked up without importing it here.
+//
+// S7-L: ScoutRunController / ScoutLifecycleService own the server-run lifecycle
+// (POST /api/scout/runs/start|cancel, the writer gate, fences and the one
+// terminal write). ScoutService and ScoutIngestService take the lifecycle
+// service as an optional dependency: absent (as in their pre-S7-L unit specs)
+// they construct their own, so legacy behaviour is unchanged either way.
 @Module({
   imports: [NotificationsModule],
   controllers: [
@@ -36,8 +44,10 @@ import { ScoutEntitiesService } from './scout-entities.service';
     ScoutReconstructController,
     ScoutRosterController,
     ScoutEntitiesController,
+    ScoutRunController,
   ],
   providers: [
+    ScoutLifecycleService,
     ScoutService,
     ScoutIngestService,
     ScoutReconstructService,

@@ -6770,6 +6770,11 @@ model ImportIntent {
   superseded_at   DateTime?
   challenge       ExtensionPairCode?
   native_provenance ImportNativeProvenance[]
+  // S7-L (20270123000000_scout_run_lifecycle_expand): the server-owned run of this setup intent
+  // once a Start was accepted. The database holds it to at most one (partial unique index on
+  // ScoutImport.import_intent_id); the composite FK RESTRICTs deleting the intent while its run
+  // exists. Declared as a list only because the relation is composite-keyed on (id, coach_id).
+  runs            ScoutImport[]
 
   @@unique([id, coach_id])
   @@unique([coach_id, setup_nonce])
@@ -6858,7 +6863,36 @@ model ScoutImport {
   started_at      DateTime  @default(now())
   completed_at    DateTime?
 
+  // S7-L (20270123000000_scout_run_lifecycle_expand; docs/decisions/2026-09-24-s7l-run-lifecycle.md).
+  // mode ∈ legacy | server (CHECK). `server` ⇔ intent_id is the text of the owned ImportIntent.id
+  // bound below and a Start was accepted; every pre-S7-L row and every client-minted string is
+  // `legacy` (default). The database mode-shape CHECK binds a server row to import_intent_id,
+  // accepted_start_at, deadline_at (> accepted_start_at) and the server terminal vocabulary
+  // (complete | partial | blocked | failed | cancelled | timed_out); a legacy row keeps
+  // import_intent_id NULL and the legacy vocabulary (success | partial | failed).
+  mode              String    @default("legacy")
+  import_intent_id  String?   @db.Uuid
+  // Open-run phase: discovering (Start) → transferring (first accepted ingest/progress) →
+  // reconciling (/complete accepted); NULL on legacy rows (CHECK).
+  phase             String?
+  // Server-owned clock (D-S7L-3): set once at Start, never updated; the deadline is enforced
+  // lazily by the lifecycle routes and writers, never by a timer.
+  accepted_start_at DateTime?
+  deadline_at       DateTime?
+  last_observed_at  DateTime?
+  // Fences (D-S7L-4): fenced_at and fence_reason (cancelled | timed_out | revoked) are set
+  // together or not at all; every fence increments execution_epoch (≥ 1, CHECK).
+  execution_epoch   Int       @default(1)
+  fenced_at         DateTime?
+  fence_reason      String?
+  // Closed catalog from src/scout/lifecycle/reason-codes.ts (the only writer); opaque here.
+  reason_code       String?
+  // Owner-scoped binding to the setup authority; at most one run per intent (partial unique index
+  // ScoutImport_import_intent_id_key WHERE import_intent_id IS NOT NULL).
+  intent            ImportIntent? @relation(fields: [import_intent_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+
   @@unique([coach_id, intent_id])
+  @@unique([import_intent_id])
   @@index([coach_id])
 }
 

@@ -28,6 +28,9 @@ function makePrisma(doubles: PrismaDoubles): PrismaService {
     scoutImportCompletion: { create: doubles.create },
     scoutImport: { upsert: doubles.importUpsert, findUnique: doubles.importFindUnique },
     scoutIngestEntity: { groupBy: doubles.ingestGroupBy },
+    // S7-L: the read projects `families[]` from the reconstruction ledger for
+    // legacy and server rows alike; legacy fixtures have no ledger rows.
+    scoutReconstructionLedger: { groupBy: jest.fn().mockResolvedValue([]) },
     // Batch $transaction([...]) resolves iff every op resolves; a rejected op
     // (e.g. the ledger's P2002) rejects the whole transaction, mirroring the
     // real client's all-or-nothing settle so the state upsert never lands alone.
@@ -734,11 +737,53 @@ describe('ScoutService', () => {
       ingestGroupBy.mockResolvedValue(groups());
       const res = await service.getImportStatus('coach-1', 'intent-1');
       expect(Object.keys(res).sort()).toEqual([
+        'accepted_start_at',
+        'claimed_status',
         'completed_at',
+        'deadline_at',
         'entity_counts',
+        'execution_epoch',
+        'families',
         'intent_id',
+        'last_observed_at',
+        'mode',
+        'phase',
+        'reason_code',
         'started_at',
         'status',
+      ]);
+      // S7-L §7: a legacy row projects the additive fields as the legacy constants.
+      expect(res).toMatchObject({
+        mode: 'legacy',
+        phase: null,
+        accepted_start_at: null,
+        deadline_at: null,
+        last_observed_at: null,
+        execution_epoch: 1,
+        claimed_status: 'failed',
+        reason_code: null,
+      });
+      expect(res.families).toEqual([
+        {
+          family: 'clients',
+          observed_unique: null,
+          staged_unique: 12,
+          created_native: null,
+          already_present_verified: null,
+          rejected: null,
+          unresolved: null,
+          ledger: { reconstructed: 0, skipped: 0, failed: 0 },
+        },
+        {
+          family: 'workouts',
+          observed_unique: null,
+          staged_unique: 4,
+          created_native: null,
+          already_present_verified: null,
+          rejected: null,
+          unresolved: null,
+          ledger: { reconstructed: 0, skipped: 0, failed: 0 },
+        },
       ]);
     });
   });

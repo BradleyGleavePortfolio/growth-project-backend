@@ -7,7 +7,11 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ScoutIngestDto, ScoutIngestResult } from './scout-ingest.dto';
 import { ScoutIngestService } from './scout-ingest.service';
-import { errorEnvelopeSchema, rateLimitSchema } from '../common/errors/importer-error-responses';
+import {
+  envelopeWithCode,
+  errorEnvelopeSchema,
+  rateLimitSchema,
+} from '../common/errors/importer-error-responses';
 
 @ApiTags('scout')
 @ApiBearerAuth('bearer')
@@ -63,6 +67,16 @@ export class ScoutIngestController {
     status: 404,
     description: 'Feature disabled (FEATURE_SCOUT_INGEST off — uniform R-DARK-1 404).',
     schema: errorEnvelopeSchema(),
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Server-owned run only (D-S7L-5 fixed codes): `run_not_started` — the intent is a paired ' +
+      'setup intent but POST /scout/runs/start was never called for it; `run_fenced` — the run ' +
+      'is fenced or terminal (`fence_reason` is `cancelled` | `timed_out` | `revoked` when a ' +
+      'fence was recorded). The batch is rolled back; nothing is written. Legacy intents never ' +
+      '409 here.',
+    schema: envelopeWithCode(['run_not_started', 'run_fenced']),
   })
   @ApiResponse({
     status: 429,

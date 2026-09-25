@@ -31,6 +31,8 @@ export const IMPORTER_BARE_PATHS = [
   '/scout/reconstruct',
   '/scout/reconstruct/entities',
   '/scout/reconstruct/roster',
+  '/scout/runs/start',
+  '/scout/runs/cancel',
 ] as const;
 
 // Applied to every selected path so the artifact presents the real,
@@ -44,9 +46,11 @@ export const API_PREFIX = '/api';
 // the importer surface itself changes in a client-visible way.
 // Unfrozen forward-2.x prerelease: the C1 setup-recovery surface (2.0.0-c1-s1.0)
 // composed with the 1.4.1 cursor-limit repair (s1.1) and the Q1 scoped v2
-// cursor emission / legacy-boundary resolution (s1.2). Not consumer-frozen;
-// reconcile before consumers.
-export const CONTRACT_VERSION = '2.0.0-c1-s1.2';
+// cursor emission / legacy-boundary resolution (s1.2), then the S7-L server-owned
+// run lifecycle (s2.0: /scout/runs/start + /scout/runs/cancel, the widened
+// import/status vocabulary and its additive lifecycle + families fields, the
+// 409 lifecycle codes). Not consumer-frozen; reconcile before consumers.
+export const CONTRACT_VERSION = '2.0.0-c1-s2.0';
 
 /** Recursively sort object keys so JSON.stringify is byte-stable across runs. */
 export function stableSort<T>(value: T): T {

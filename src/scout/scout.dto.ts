@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  RUN_MODES,
+  RUN_PHASES,
+  RUN_REASON_CODES,
+  type RunMode,
+  type RunPhase,
+  type RunReasonCode,
+} from './lifecycle/reason-codes';
+import {
   ArrayMaxSize,
   IsArray,
   IsIn,
@@ -152,10 +160,21 @@ export class ScoutCompleteDto {
 }
 
 // States the READ surface can prove: `running` is derived from present evidence
-// when no terminal row exists yet; the other three are the settled
-// terminal_status reflected verbatim. `pending`/`cancelled` are deliberately
-// absent (not representable). See docs/decisions/2026-07-15-importer-import-status-read.md.
-export const SCOUT_READ_STATUSES = ['running', ...SCOUT_TERMINAL_STATUSES] as const;
+// when no terminal row exists yet; a legacy run's three terminals are the settled
+// terminal_status reflected verbatim. S7-L widens the vocabulary with the server-run
+// terminals (`complete|blocked|cancelled|timed_out`; `partial|failed` are shared) — a
+// legacy row still never projects them and a server row never projects `success`.
+// `pending` stays deliberately absent (not representable).
+// See docs/decisions/2026-07-15-importer-import-status-read.md and
+// docs/decisions/2026-09-24-s7l-run-lifecycle.md §5.
+export const SCOUT_READ_STATUSES = [
+  'running',
+  ...SCOUT_TERMINAL_STATUSES,
+  'complete',
+  'blocked',
+  'cancelled',
+  'timed_out',
+] as const;
 export type ScoutReadStatus = (typeof SCOUT_READ_STATUSES)[number];
 
 /** GET /api/scout/import/status query — one run, identified by its intent id. */
@@ -177,6 +196,70 @@ export class ScoutImportEntityCountDto {
 
   @ApiProperty({ description: 'Entities actually committed (proof, not an estimate).', minimum: 0 })
   committed!: number;
+}
+
+/** Reconstruction ledger tally of one family (N/Q1 invariant 6: staged = sum of the three). */
+export class ScoutImportFamilyLedgerDto {
+  @ApiProperty({ minimum: 0 })
+  reconstructed!: number;
+
+  @ApiProperty({ minimum: 0 })
+  skipped!: number;
+
+  @ApiProperty({ minimum: 0 })
+  failed!: number;
+}
+
+/**
+ * S7-L §5 `families[]` entry. `staged_unique` is the distinct (source_platform, source_id)
+ * count of staged rows for the family — the staged row count, because that wide identity is
+ * the staging table's only key. Every native bucket is null until the slice that proves it
+ * (S8-B provenance / S9 reconciliation / S10 observation) exists; null means "not yet known".
+ */
+export class ScoutImportFamilyDto {
+  @ApiProperty({ description: 'Entity family.', example: 'clients' })
+  family!: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Observed by the extension (S10); null until known.',
+  })
+  observed_unique!: number | null;
+
+  @ApiProperty({ minimum: 0, description: 'Distinct staged source identities for the family.' })
+  staged_unique!: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Native rows created (S9); null until known.',
+  })
+  created_native!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Verified already present (S9); null until known.',
+  })
+  already_present_verified!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Rejected by reconciliation (S9); null until known.',
+  })
+  rejected!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Unresolved by reconciliation (S9); null until known.',
+  })
+  unresolved!: number | null;
+
+  @ApiProperty({ type: ScoutImportFamilyLedgerDto, description: 'Reconstruction ledger tally.' })
+  ledger!: ScoutImportFamilyLedgerDto;
 }
 
 // 200 body for GET /api/scout/import/status. Evidence-only: `entity_counts` are
@@ -213,6 +296,73 @@ export class ScoutImportStatusResult {
     description: 'Settled at (ISO-8601); null while running.',
   })
   completed_at!: string | null;
+
+  // ── S7-L additive lifecycle fields (decision §5). Legacy rows project
+  // mode='legacy', phase=null, null clocks, execution_epoch=1, reason_code=null.
+
+  @ApiProperty({
+    description: '`server` for a run started via POST /scout/runs/start; `legacy` otherwise.',
+    enum: RUN_MODES,
+  })
+  mode!: RunMode;
+
+  @ApiProperty({
+    description: 'Open-run phase of a server run; null on legacy rows and once terminal.',
+    enum: RUN_PHASES,
+    nullable: true,
+  })
+  phase!: RunPhase | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Server-owned start of a server run (written once at Start); null on legacy rows.',
+  })
+  accepted_start_at!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'accepted_start_at + SCOUT_RUN_DEADLINE_MS; enforced lazily. Null on legacy rows.',
+  })
+  deadline_at!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Last write accepted through the run gate; null on legacy rows.',
+  })
+  last_observed_at!: string | null;
+
+  @ApiProperty({ description: 'Fence epoch of the run (1 until fenced).', minimum: 1 })
+  execution_epoch!: number;
+
+  @ApiProperty({
+    description:
+      "The extension's stored /complete claim (`success|partial|failed`); null while none. On a " +
+      'server run this is INPUT to the arbiter, never the terminal itself.',
+    enum: SCOUT_TERMINAL_STATUSES,
+    nullable: true,
+  })
+  claimed_status!: ScoutTerminalStatus | null;
+
+  @ApiProperty({
+    description: 'Why the server run reached its terminal; null while open and on legacy rows.',
+    enum: RUN_REASON_CODES,
+    nullable: true,
+  })
+  reason_code!: RunReasonCode | null;
+
+  @ApiProperty({
+    type: [ScoutImportFamilyDto],
+    description:
+      'Per-family evidence: staged unique rows and the reconstruction ledger tally. Native ' +
+      'buckets are null (= not yet known, never 0) until later slices fill them.',
+  })
+  families!: ScoutImportFamilyDto[];
 }
 
 /** 200 body: the settle call is acknowledged and echoes the intent id. */

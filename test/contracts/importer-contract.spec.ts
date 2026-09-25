@@ -34,7 +34,10 @@ import { contractOutPath } from '../../scripts/export-importer-contract';
 // `any` token (the sibling test/openapi-spec.spec.ts predates this cleanup).
 const rec = (value: unknown): Record<string, unknown> => value as Record<string, unknown>;
 const dig = (root: unknown, ...keys: string[]): unknown =>
-  keys.reduce<unknown>((acc, key) => rec(acc)[key], root);
+  keys.reduce<unknown>(
+    (acc, key) => (acc !== null && typeof acc === 'object' ? rec(acc)[key] : undefined),
+    root,
+  );
 
 describe('importer contract (R80 freeze)', () => {
   jest.setTimeout(60_000);
@@ -168,28 +171,89 @@ describe('importer contract (R80 freeze)', () => {
       expect(notFound).toMatch(/no existence oracle/i);
     });
 
-    it('returns the ScoutImportStatusResult projection on 200 with exactly its five fields', () => {
+    it('returns the ScoutImportStatusResult projection on 200: the five legacy fields plus the S7-L additive lifecycle fields', () => {
       const res = dig(contract, 'paths', path, 'get', 'responses', '200', 'content');
       expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
         '#/components/schemas/ScoutImportStatusResult',
       );
       expect(props('ScoutImportStatusResult')).toEqual([
+        'accepted_start_at',
+        'claimed_status',
         'completed_at',
+        'deadline_at',
         'entity_counts',
+        'execution_epoch',
+        'families',
         'intent_id',
+        'last_observed_at',
+        'mode',
+        'phase',
+        'reason_code',
         'started_at',
         'status',
       ]);
     });
 
-    it('pins status to the four provable states only — no pending/cancelled', () => {
+    it('pins status to the provable states: running, the legacy terminals and the S7-L server terminals — no pending', () => {
       const en = dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties');
       expect((rec(rec(en).status).enum as string[]).sort()).toEqual([
+        'blocked',
+        'cancelled',
+        'complete',
         'failed',
         'partial',
         'running',
         'success',
+        'timed_out',
       ]);
+    });
+
+    it('S7-L lifecycle fields carry the reason-code catalog as enums and nullable server clocks', () => {
+      const en = rec(
+        dig(contract, 'components', 'schemas', 'ScoutImportStatusResult', 'properties'),
+      );
+      expect((rec(en.mode).enum as string[]).sort()).toEqual(['legacy', 'server']);
+      expect((rec(en.phase).enum as string[]).sort()).toEqual([
+        'discovering',
+        'reconciling',
+        'transferring',
+      ]);
+      expect(rec(en.phase).nullable).toBe(true);
+      expect((rec(en.reason_code).enum as string[]).sort()).toEqual([
+        'cancelled_by_coach',
+        'deadline_exceeded',
+        'reconciliation_not_performed',
+        'revoked',
+        'transfer_failed',
+        'unresolved_family',
+      ]);
+      expect((rec(en.claimed_status).enum as string[]).sort()).toEqual([
+        'failed',
+        'partial',
+        'success',
+      ]);
+      for (const clock of ['accepted_start_at', 'deadline_at', 'last_observed_at']) {
+        expect(rec(en[clock])).toMatchObject({
+          type: 'string',
+          format: 'date-time',
+          nullable: true,
+        });
+      }
+      expect(rec(en.execution_epoch)).toMatchObject({ type: 'number', minimum: 1 });
+      expect(dig(en, 'families', 'items', '$ref')).toBe(
+        '#/components/schemas/ScoutImportFamilyDto',
+      );
+      expect(props('ScoutImportFamilyDto')).toEqual([
+        'already_present_verified',
+        'created_native',
+        'family',
+        'ledger',
+        'observed_unique',
+        'rejected',
+        'staged_unique',
+        'unresolved',
+      ]);
+      expect(props('ScoutImportFamilyLedgerDto')).toEqual(['failed', 'reconstructed', 'skipped']);
     });
 
     it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {
@@ -439,7 +503,7 @@ describe('importer contract (R80 freeze)', () => {
     });
 
     it('setup recovery is an unfrozen 2.x prerelease, with optional nonce and current lookup', () => {
-      expect(contract.info.version).toBe('2.0.0-c1-s1.2');
+      expect(contract.info.version).toBe('2.0.0-c1-s2.0');
       const dto = rec(dig(contract, 'components', 'schemas', 'PairInitDto'));
       expect(dto.required).toEqual(['chosen_platform']);
       expect(dig(dto, 'properties', 'setup_nonce', 'format')).toBe('uuid');
@@ -893,6 +957,96 @@ describe('importer contract (R80 freeze)', () => {
           '$ref',
         ),
       ).toBe('#/components/schemas/RateLimitError');
+    });
+  });
+
+  describe('S7-L run lifecycle: POST /api/scout/runs/start + /api/scout/runs/cancel', () => {
+    const start = () => rec(dig(contract, 'paths', '/api/scout/runs/start', 'post'));
+    const cancel = () => rec(dig(contract, 'paths', '/api/scout/runs/cancel', 'post'));
+
+    it('both routes are bearer-guarded POSTs answering 200 with their typed result', () => {
+      for (const [op, result] of [
+        [start(), 'ScoutRunStartResult'],
+        [cancel(), 'ScoutRunCancelResult'],
+      ] as const) {
+        expect(op.security).toEqual([{ bearer: [] }]);
+        expect(dig(op, 'responses', '200', 'content', 'application/json', 'schema', '$ref')).toBe(
+          `#/components/schemas/${result}`,
+        );
+        expect(Object.keys(rec(op.responses)).sort()).toEqual([
+          '200',
+          '400',
+          '401',
+          '403',
+          '404',
+          '409',
+          '429',
+        ]);
+      }
+    });
+
+    it('start takes only a uuid import_intent_id and returns the server-owned clock once', () => {
+      const dto = rec(dig(contract, 'components', 'schemas', 'ScoutRunStartDto'));
+      expect(Object.keys(rec(dto.properties))).toEqual(['import_intent_id']);
+      expect(dig(dto, 'properties', 'import_intent_id', 'format')).toBe('uuid');
+      expect(dto.required).toEqual(['import_intent_id']);
+      const res = rec(dig(contract, 'components', 'schemas', 'ScoutRunStartResult', 'properties'));
+      expect(Object.keys(res).sort()).toEqual([
+        'accepted_start_at',
+        'deadline_at',
+        'execution_epoch',
+        'intent_id',
+        'mode',
+        'phase',
+      ]);
+      expect(rec(res.mode).enum).toEqual(['server']);
+      expect(rec(res.phase).enum).toEqual(['discovering']);
+      expect(rec(res.accepted_start_at)).toMatchObject({ type: 'string', format: 'date-time' });
+      expect(rec(res.deadline_at)).toMatchObject({ type: 'string', format: 'date-time' });
+    });
+
+    it('cancel takes the intent_id and returns { intent_id, status: cancelled, execution_epoch }', () => {
+      const dto = rec(dig(contract, 'components', 'schemas', 'ScoutRunCancelDto'));
+      expect(Object.keys(rec(dto.properties))).toEqual(['intent_id']);
+      expect(dto.required).toEqual(['intent_id']);
+      const res = rec(dig(contract, 'components', 'schemas', 'ScoutRunCancelResult', 'properties'));
+      expect(Object.keys(res).sort()).toEqual(['execution_epoch', 'intent_id', 'status']);
+      expect(rec(res.status).enum).toEqual(['cancelled']);
+      expect(rec(res.execution_epoch)).toMatchObject({ minimum: 2 });
+    });
+
+    it('409 bodies pin the D-S7L-5 conflict codes as enums (no free text)', () => {
+      const codes = (op: Record<string, unknown>): string[] => {
+        const schema = rec(dig(op, 'responses', '409', 'content', 'application/json', 'schema'));
+        const all = (schema.allOf as unknown[]).map(rec);
+        const withCode = all.find((s) => dig(s, 'properties', 'code', 'enum') !== undefined);
+        return (dig(withCode, 'properties', 'code', 'enum') as string[]).slice().sort();
+      };
+      expect(codes(start())).toEqual([
+        'intent_not_paired',
+        'intent_superseded',
+        'legacy_run',
+        'run_terminal',
+      ]);
+      expect(codes(cancel())).toEqual(['legacy_run', 'run_terminal']);
+      const complete = rec(dig(contract, 'paths', '/api/scout/ingest/complete', 'post'));
+      expect(codes(complete)).toEqual(['run_not_started']);
+      // The batch receiver's writer gate (D-S7L-5 §3): a closed gate rolls the batch back and
+      // answers with one of exactly these two fixed codes; both are members of RUN_CONFLICT_CODES.
+      const ingest = rec(dig(contract, 'paths', '/api/scout/ingest', 'post'));
+      expect(codes(ingest)).toEqual(['run_fenced', 'run_not_started']);
+      const ingest409 = rec(dig(ingest, 'responses', '409'));
+      expect(ingest409.description).toMatch(/run_not_started/);
+      expect(ingest409.description).toMatch(/run_fenced/);
+      expect(ingest409.description).toMatch(/Legacy intents never 409/);
+    });
+
+    it('both routes share the uniform FEATURE_SCOUT_INGEST / not-found 404 wording', () => {
+      for (const op of [start(), cancel()]) {
+        const notFound = rec(dig(op, 'responses', '404')).description as string;
+        expect(notFound).toMatch(/FEATURE_SCOUT_INGEST/);
+        expect(notFound).toMatch(/R-DARK-1/);
+      }
     });
   });
 

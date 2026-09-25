@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -14,6 +14,8 @@ import {
   SCOUT_TERMINAL_STATUSES,
   ScoutTerminalStatus,
 } from './scout.dto';
+import { RunGateClosed, ScoutLifecycleService } from './lifecycle/lifecycle.service';
+import { runConflict } from './lifecycle/reason-codes';
 
 /** How often the in-process progress cache is flushed to Postgres (ms). */
 export const SCOUT_PROGRESS_FLUSH_MS = 5_000;
@@ -48,10 +50,20 @@ interface CachedSnapshot {
  * network flake loses the insert race (P2002), the whole transaction rolls
  * back (so the state is never re-flipped), and the call is a silent no-op so
  * the coach is never double-notified.
+ *
+ * S7-L (docs/decisions/2026-09-24-s7l-run-lifecycle.md): when the intent string
+ * is the text of an owned `ImportIntent.id` the run is SERVER-owned and every
+ * write here first passes the lifecycle gate (`assertRunOpen`): /progress is
+ * accepted or silently ignored (204 either way, never a write on a fenced run),
+ * /complete stores the extension's claim and hands the run to the arbiter
+ * instead of flipping the state itself, and the read projects the additive
+ * lifecycle fields. Anything else is a LEGACY run and keeps the behaviour above
+ * byte-for-byte (§7); the branch is decided once by `ScoutLifecycleService.resolve`.
  */
 @Injectable()
 export class ScoutService implements OnModuleDestroy {
   private readonly logger = new Logger(ScoutService.name);
+  private readonly lifecycle: ScoutLifecycleService;
 
   /**
    * Coalesced latest-snapshot-per-import cache; a snapshot stays authoritative
@@ -79,7 +91,10 @@ export class ScoutService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    @Optional() lifecycle?: ScoutLifecycleService,
+  ) {
+    this.lifecycle = lifecycle ?? new ScoutLifecycleService(prisma, analytics);
+  }
 
   private static storageKey(coachId: string, intentId: string, deviceId: string): string {
     return `${coachId}:${intentId}:${deviceId}`;
@@ -111,8 +126,34 @@ export class ScoutService implements OnModuleDestroy {
    * Hot path for POST /api/scout/progress. Records the latest snapshot for
    * (coachId, intent_id, device_id) in memory and returns immediately — no DB
    * write on the request. The snapshot is persisted on the next flush tick.
+   *
+   * S7-L: a legacy intent string (anything that is not a UUID) takes this path
+   * synchronously and unchanged. A UUID resolves asynchronously: an owned server
+   * run passes the gate first (its UPDATE is the accepted write: phase →
+   * `transferring`, `last_observed_at` = now) and a fenced / missing run is
+   * ignored with no write and no cached snapshot — the controller still answers 204.
    */
-  recordProgress(coachId: string, dto: ScoutProgressDto): void {
+  recordProgress(coachId: string, dto: ScoutProgressDto): void | Promise<void> {
+    if (ScoutLifecycleService.isUuid(dto.intent_id)) {
+      return this.recordResolvedProgress(coachId, dto);
+    }
+    this.cacheProgress(coachId, dto);
+  }
+
+  private async recordResolvedProgress(coachId: string, dto: ScoutProgressDto): Promise<void> {
+    const resolution = await this.lifecycle.resolve(coachId, dto.intent_id);
+    if (resolution.mode === 'legacy') {
+      this.cacheProgress(coachId, dto);
+      return;
+    }
+    const epoch = await this.prisma.$transaction((tx) =>
+      this.lifecycle.assertRunOpen(tx, coachId, dto.intent_id),
+    );
+    if (epoch === null) return;
+    this.cacheProgress(coachId, dto);
+  }
+
+  private cacheProgress(coachId: string, dto: ScoutProgressDto): void {
     const snapshot: Prisma.InputJsonValue = {
       intent_id: dto.intent_id,
       progress: dto.progress.map((p) => ({
@@ -258,6 +299,9 @@ export class ScoutService implements OnModuleDestroy {
       ),
     );
 
+    const resolution = await this.lifecycle.resolve(coachId, dto.intent_id);
+    if (resolution.mode === 'server') return this.completeServerRun(coachId, dto);
+
     const now = new Date();
     let firstTime: boolean;
     try {
@@ -311,6 +355,62 @@ export class ScoutService implements OnModuleDestroy {
     return { acknowledged: true, intent_id: dto.intent_id };
   }
 
+  /**
+   * S7-L /complete on a SERVER run (decision §3, §3.1). The gate UPDATE is the
+   * first statement of the transaction and the row lock; the claim is stored as
+   * the completion ledger row (input to the arbiter, never the terminal) and the
+   * phase moves to `reconciling` under a CAS on the gate's epoch. Then the run is
+   * handed to `onTransferSettled`, which arbitrates and writes the terminal under
+   * the same epoch — a fence that lands in between wins and the settle is a
+   * no-op. A closed gate rolls everything back: no run → 409 `run_not_started`;
+   * a fenced or terminal run (late or duplicate settle) → 200 ack no-op, unchanged.
+   */
+  private async completeServerRun(
+    coachId: string,
+    dto: ScoutCompleteDto,
+  ): Promise<{ acknowledged: true; intent_id: string }> {
+    const ack = { acknowledged: true as const, intent_id: dto.intent_id };
+    let epoch: number;
+    try {
+      epoch = await this.prisma.$transaction(async (tx) => {
+        const seen = await this.lifecycle.assertRunOpen(tx, coachId, dto.intent_id);
+        if (seen === null) throw new RunGateClosed();
+        await tx.scoutImportCompletion.create({
+          data: {
+            coach_id: coachId,
+            intent_id: dto.intent_id,
+            terminal_status: dto.terminal_status,
+            final_counts: (dto.final_counts ?? undefined) as Prisma.InputJsonValue | undefined,
+            error_summary: dto.error_summary,
+          },
+        });
+        await tx.$executeRaw`
+          UPDATE "ScoutImport" SET phase = 'reconciling'
+           WHERE coach_id = ${coachId} AND intent_id = ${dto.intent_id} AND mode = 'server'
+             AND terminal_status IS NULL AND fenced_at IS NULL AND execution_epoch = ${seen}`;
+        return seen;
+      });
+    } catch (err) {
+      if (err instanceof RunGateClosed) {
+        const closed = await this.lifecycle.classifyClosed(coachId, dto.intent_id);
+        if (closed.kind === 'not_started') throw runConflict('run_not_started');
+        return ack;
+      }
+      // A second claim for a still-open run (the earlier settle's arbitration
+      // lost its CAS to nothing yet): the ledger unique keeps the first claim.
+      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') return ack;
+      throw err;
+    }
+
+    await this.notifyComplete(coachId, dto);
+    this.analytics.capture(coachId, Events.SCOUT_INGEST_COMPLETED, {
+      intent_id: dto.intent_id,
+      terminal_status: dto.terminal_status,
+    });
+    await this.lifecycle.onTransferSettled(coachId, dto.intent_id, epoch);
+    return ack;
+  }
+
   /** Evidence-only read for GET /api/scout/import/status: settled state verbatim
    * or `running` derived from present evidence; counts are persisted rows, not
    * estimates. Scoped by `coachId` so unknown OR cross-tenant intents both 404.
@@ -327,7 +427,16 @@ export class ScoutService implements OnModuleDestroy {
   async getImportStatus(coachId: string, intentId: string): Promise<ScoutImportStatusResult> {
     await this.flushRun(coachId, intentId);
 
-    const [importRow, grouped, snapshot] = await Promise.all([
+    // S7-L lazy deadline (D-S7L-3): an open server run past its deadline is
+    // fenced `timed_out` BEFORE the read below projects it. Legacy strings skip
+    // this without touching the database.
+    const resolution = await this.lifecycle.resolve(coachId, intentId);
+    if (resolution.mode === 'server') {
+      const run = await this.lifecycle.readRun(coachId, intentId);
+      if (run) await this.lifecycle.enforceDeadline(coachId, intentId, run);
+    }
+
+    const [importRow, grouped, snapshot, ledger] = await Promise.all([
       this.prisma.scoutImport.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
       }),
@@ -343,11 +452,22 @@ export class ScoutService implements OnModuleDestroy {
         where: { coach_id: coachId, intent_id: intentId },
         orderBy: { updated_at: 'desc' },
       }),
+      this.lifecycle.readLedger(coachId, intentId),
     ]);
     if (!importRow && grouped.length === 0 && !snapshot) throw new NotFoundException();
 
-    const status = this.projectReadStatus(coachId, intentId, importRow?.terminal_status ?? null);
+    const serverRun = importRow?.mode === 'server';
+    const status = serverRun
+      ? this.projectServerStatus(coachId, intentId, importRow?.terminal_status ?? null)
+      : this.projectReadStatus(coachId, intentId, importRow?.terminal_status ?? null);
     const settled = status !== 'running';
+    // A legacy row's terminal IS the extension's claim (same transaction); a
+    // server row's claim lives only in the completion ledger.
+    const claimedStatus = serverRun
+      ? await this.lifecycle.readClaim(coachId, intentId)
+      : ScoutService.isTerminalStatus(importRow?.terminal_status ?? null)
+        ? (importRow?.terminal_status as ScoutTerminalStatus)
+        : null;
 
     // Stable first observation: earliest committed entity; the lifecycle start
     // and latest snapshot are ordered fallbacks used only when none exists yet.
@@ -372,7 +492,31 @@ export class ScoutService implements OnModuleDestroy {
         snapshot?.updated_at.toISOString() ??
         null,
       completed_at: settled ? (importRow?.completed_at?.toISOString() ?? null) : null,
+      ...ScoutLifecycleService.projectLifecycle(importRow),
+      claimed_status: claimedStatus,
+      families: ScoutLifecycleService.projectFamilies(grouped, ledger),
     };
+  }
+
+  /**
+   * S7-L server-run projection: `running` while open, the server terminal
+   * verbatim when recognised, else the same fail-closed `failed` + RED signal as
+   * the legacy rule. A server row never projects `success` (CQ-18).
+   */
+  private projectServerStatus(
+    coachId: string,
+    intentId: string,
+    terminalStatus: string | null,
+  ): ScoutReadStatus {
+    if (terminalStatus === null) return 'running';
+    const known = ScoutLifecycleService.serverTerminal(terminalStatus);
+    if (known) return known;
+    this.logger.error(
+      `scout run ${intentId} has an unrecognised persisted terminal_status; ` +
+        "failing closed to 'failed'",
+    );
+    this.analytics.capture(coachId, Events.SCOUT_IMPORT_STATUS_INVALID, { intent_id: intentId });
+    return 'failed';
   }
 
   /**

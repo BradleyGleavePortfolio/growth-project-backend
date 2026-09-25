@@ -143,6 +143,27 @@ export const Events = {
    * payloads, labels, or PII.
    */
   SCOUT_RECONSTRUCT_ENTITIES_READ: 'scout.reconstruct.entities.read',
+
+  /**
+   * S7-L run lifecycle — a server-owned run was started for a paired setup
+   * intent (POST /api/scout/runs/start, first Start only).
+   * Properties: { intent_id }. No tokens, payloads, or PII.
+   */
+  SCOUT_RUN_STARTED: 'scout.run.started',
+
+  /**
+   * S7-L run lifecycle — a server-owned run was fenced (cancel, lazy deadline,
+   * or the reserved G3 revoke) and its terminal written in the same transaction.
+   * Properties: { intent_id, fence_reason, terminal_status, execution_epoch }.
+   */
+  SCOUT_RUN_FENCED: 'scout.run.fenced',
+
+  /**
+   * S7-L run lifecycle — the accepted /complete of a server-owned run handed
+   * the run to the arbiter and a terminal was written.
+   * Properties: { intent_id, terminal_status, reason_code }.
+   */
+  SCOUT_RUN_SETTLED: 'scout.run.settled',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

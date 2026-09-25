@@ -11,7 +11,11 @@ import {
   ScoutProgressDto,
 } from './scout.dto';
 import { ScoutService } from './scout.service';
-import { errorEnvelopeSchema, rateLimitSchema } from '../common/errors/importer-error-responses';
+import {
+  envelopeWithCode,
+  errorEnvelopeSchema,
+  rateLimitSchema,
+} from '../common/errors/importer-error-responses';
 
 /**
  * IMPORTER-E — cross-device progress + completion for the tgp-importer Chrome
@@ -64,15 +68,21 @@ export class ScoutController {
     description:
       'Accepts the status_snapshot the extension broadcasts on every batch ' +
       'commit and records the latest per (coach, intent). Cheap by design: ' +
-      'the snapshot is coalesced in-process and flushed to storage on a timer.',
+      'the snapshot is coalesced in-process and flushed to storage on a timer. ' +
+      'On a server-owned run (intent_id = a paired setup intent) the snapshot first ' +
+      'passes the run gate; a fenced or unstarted run is ignored with no write — ' +
+      'still 204, never 409.',
   })
-  @ApiResponse({ status: 204, description: 'Snapshot accepted.' })
+  @ApiResponse({ status: 204, description: 'Snapshot accepted (or ignored on a fenced run).' })
   @Post('progress')
   @HttpCode(204)
   @Roles('coach', 'owner')
   @Throttle({ default: { ttl: 60_000, limit: 240 } })
-  postProgress(@Request() req: AuthedRequest, @Body() body: ScoutProgressDto): void {
-    this.scout.recordProgress(req.user.id, body);
+  postProgress(
+    @Request() req: AuthedRequest,
+    @Body() body: ScoutProgressDto,
+  ): void | Promise<void> {
+    return this.scout.recordProgress(req.user.id, body);
   }
 
   @ApiOperation({
@@ -84,9 +94,19 @@ export class ScoutController {
       'import.complete notification to the mobile app. Retries after a network ' +
       'flake are acknowledged no-ops — the ledger unique constraint rolls the ' +
       'transaction back, so the state is never re-flipped and the coach is ' +
-      'never double-notified.',
+      'never double-notified. On a server-owned run (intent_id = a paired setup ' +
+      'intent) the terminal_status is stored as the extension CLAIM and the run is ' +
+      'handed to the server arbiter, which decides the terminal; a late or duplicate ' +
+      'settle of a fenced or settled run is a 200 ack no-op.',
   })
   @ApiResponse({ status: 200, description: 'Completion acknowledged.', type: ScoutCompleteResult })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Server-owned run only: `run_not_started` — the intent is a paired setup intent but ' +
+      'POST /scout/runs/start was never called for it. Legacy intents never 409 here.',
+    schema: envelopeWithCode(['run_not_started']),
+  })
   @Post('ingest/complete')
   @HttpCode(200)
   @Roles('coach', 'owner')
