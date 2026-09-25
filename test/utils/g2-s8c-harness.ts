@@ -107,11 +107,16 @@ export function stage(
     ${quote(source)},${quote(platform)},${quote(JSON.stringify(payload))})
     ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload`);
 }
-/** Synthetic catalog rows the exact-identifier link may resolve against (id and slug). */
+/**
+ * Synthetic catalog rows the exact-identifier link may resolve against (id and slug).
+ * `updated_at` is `@updatedAt` in the schema: Prisma fills it client-side and the column has no
+ * database default, so this raw INSERT must supply it (every other NOT NULL column of the table
+ * either is listed here or carries a default in migration 20260601000000_add_exercise_catalog_video).
+ */
 export function catalog(items: readonly { id: string; slug: string }[]) {
   for (const item of items)
-    sql(`INSERT INTO "ExerciseCatalogItem" (id,slug,name,category,primary_muscle)
-      VALUES (${quote(item.id)},${quote(item.slug)},${quote(`Synthetic ${item.slug}`)},'strength','full_body')
+    sql(`INSERT INTO "ExerciseCatalogItem" (id,slug,name,category,primary_muscle,updated_at)
+      VALUES (${quote(item.id)},${quote(item.slug)},${quote(`Synthetic ${item.slug}`)},'strength','full_body',now())
       ON CONFLICT (id) DO NOTHING`);
 }
 
