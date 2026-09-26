@@ -15,6 +15,11 @@
   `private-evidence/execution/fa72efb2/OWNER_DECISION_S8D_2026-09-26.md` ("OWNER").
 - **Build rule (OWNER):** graded T4; slices sequenced after S11-A2's migration-count pin;
   production enablement remains owner-reserved.
+- **Round 2 (2026-09-26, same day):** revised after the independent T4 review
+  (`private-evidence/execution/fa72efb2/s8d/s8d_review.md`, verdict NO-GO on Round 1 `ded755ab`).
+  B1-B5 are closed in §2.2, §2.5, §2.3/§3.3, §5.1 and §3.5; the C-findings are folded in where
+  named; §7 now separates what is decided by derivation from what only the owner can answer.
+  §9 maps each finding to the text that closes it. Nothing in Round 2 changes L1-L8.
 
 ## 1. Decision
 
@@ -111,16 +116,93 @@ Change per table (S8-D3, §6):
   (`rg -l "\.workoutSession\." src` etc.); the builder must compile-fix reads without changing
   behaviour for user-owned rows. Counted in S8-D3's LOC (§6).
 
-### 2.2 RLS and tenant rules
+### 2.2 RLS and tenant rules (Round 2: effective policies, not the out-of-band file)
 
-- Existing policies on these tables compare `"user_id" = app.current_user_id()`
-  (`prisma/migrations/rls_fitness_backend.sql` L136-146; `CheckIn` also admits the row's
-  `coach_id`, L123-132). With `user_id` NULL the predicate is NULL → deny, so person-owned rows
-  are unreadable to `anon`/`authenticated` by construction (fail-closed); the header (L1-6)
-  records that the application connects as `service_role` and the policies protect direct
-  access. **No new permissive policy is added for `person_id`.** Coach access to person-owned rows
-  is server-side only, through code that asserts `person.coach_id = caller` the way the roster
-  reader does (`src/scout/scout-roster.service.ts` L32-34, L203-208).
+Round 1 read `prisma/migrations/rls_fitness_backend.sql` as the live policy set. That file is
+**not** a Prisma migration: it is applied out-of-band with `psql` as a "production pre-state twin"
+(`test/db/s1-rls-close-public-exposure.sh` L15, L101-102; `test/release/s1s2-composition.sh`
+L152-153), and later migration directories replaced some of its policies. The table below is the
+**effective** policy set per table at `dda794d7`, obtained by listing every `CREATE POLICY … ON
+"<Table>"` and `ENABLE ROW LEVEL SECURITY` across `prisma/migrations/**/*.sql` and reading the
+`DROP POLICY IF EXISTS` / `CREATE POLICY` pairs in directory order. `cur` =
+`app.current_user_id()`; `owner` = `app.is_owner()` (`20260607000000_rls_remaining_gaps/migration.sql`
+L13-19); `is_current_coach_of(x)` is false when `x` is NULL (`is_user_coached_by` requires
+`client_user_id IS NOT NULL`, same file L28-36).
+
+| Table                             | Effective policies (file:line)                                                                                                                                                                                                                                                                                            | Predicate today                                                                                                                                                                                                     | Person-owned row (`user_id`/`client_id` NULL) before D3                                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WorkoutSession`                  | `workout_session_owner_access` FOR ALL TO public, `rls_fitness_backend.sql` L142-146; enable/force L57-58. **No migration directory creates a policy on, or enables RLS for, this table** (`rg 'ENABLE ROW LEVEL SECURITY' prisma/migrations/*/migration.sql` has no `"WorkoutSession"` hit).                             | `"user_id" = cur`                                                                                                                                                                                                   | Deny for every non-bypass role (NULL predicate). No owner branch. In a database built from migration directories only — the S11 harness shape (`g2-s11-bootstrap.sh` L139) — the table has **no RLS at all**; pre-existing gap, closed by D3. |
+| `ExerciseSet`                     | `p_exerciseset_select/insert/update/delete`, `20261213000000_rls_tier3_workouts/migration.sql` L88-101; `p_exerciseset_service_role_all` L85; enable/force L81-82.                                                                                                                                                        | `owner OR EXISTS(ws: ws.user_id = cur OR is_current_coach_of(ws.user_id))`                                                                                                                                          | Only `owner` (the coach branch is false on NULL).                                                                                                                                                                                             |
+| `WeightLog`                       | `weight_log_owner_access`, `rls_fitness_backend.sql` L135-139; enable/force L54-55. None in directories.                                                                                                                                                                                                                  | `"user_id" = cur`                                                                                                                                                                                                   | Deny; same harness gap as `WorkoutSession`.                                                                                                                                                                                                   |
+| `Habit`                           | `habit_owner_access`, `rls_fitness_backend.sql` L206-210; enable/force L78-79. None in directories.                                                                                                                                                                                                                       | `"user_id" = cur`                                                                                                                                                                                                   | Deny; same harness gap.                                                                                                                                                                                                                       |
+| `HabitLog`                        | `p_habitlog_select/insert/update/delete`, `20261213000000_rls_tier5_notifications_community/migration.sql` L198-214; service_role L194; enable/force L190-191.                                                                                                                                                            | `owner OR EXISTS(h: h.user_id = cur OR is_current_coach_of(h.user_id))`                                                                                                                                             | Only `owner`.                                                                                                                                                                                                                                 |
+| `CheckIn`                         | `check_in_owner_all` L354-357, `check_in_client_all` L360-367, `check_in_coach_select` L370-372, `check_in_current_coach_insert` L375-381, `check_in_current_coach_update` L384-391 — all `20260607000000_rls_remaining_gaps/migration.sql`, which drops the out-of-band FOR ALL policy at L352 and re-forces RLS at L84. | owner; `"user_id" = cur`; **SELECT: `"coach_id" = cur` irrespective of `user_id`**; coach INSERT/UPDATE: `"coach_id" = cur AND is_current_coach_of("user_id")`                                                      | **The coach named in `coach_id` can SELECT a person-owned check-in directly.** Owner sees all. Client, coach insert/update: deny.                                                                                                             |
+| `ClientWorkoutAssignment`         | `assignment_coach_manage` FOR ALL, `20260702000000_fix_workout_rls_coach_role/migration.sql` L28-63 (replaces `20260621000000_fix_workout_rls_policies` L30-44); `assignment_client_read` FOR SELECT, `20260621000000_…` L47-56; enable/force `20260508000001_rls_workout_builder/migration.sql` L35-36.                  | Keyed on `auth.uid()` → `User.supabase_id`, **not** on `app.current_user_id()`. Coach: `assigned_by_coach_id = me AND me.role ∈ {coach, owner, sub_coach} AND WorkoutPlan.coach_id = me`. Client: `client_id = me`. | **The assigning coach has full access irrespective of `client_id`.** Client: deny.                                                                                                                                                            |
+| `ClientWorkoutAssignmentSnapshot` | `p_clientworkoutassignmentsnapshot_select/insert/update/delete`, `20261215000000_mwb_1_data_model/migration.sql` L334-347; service_role L331; enable/force L327-328.                                                                                                                                                      | `owner OR EXISTS(cwa: cwa.client_id = cur OR cwa.assigned_by_coach_id = cur OR is_current_coach_of(cwa.client_id) OR is_subcoach_of(cwa.client_id))`                                                                | Assigning coach and owner see it.                                                                                                                                                                                                             |
+
+So Round 1's "unreadable to `anon`/`authenticated` by construction" was false for `CheckIn`,
+`ClientWorkoutAssignment` and its snapshot, silent about the `owner` branch on four tables, and
+silent about the fact that three parents have no in-tree RLS at all. The application path is
+unaffected (Prisma connects as `service_role`, `rls_fitness_backend.sql` L4-6; `BYPASSRLS` in the
+harness, `g2-s11-bootstrap.sh` L96, L106); the exposure is direct database access — which is
+exactly what these policies exist to defend.
+
+**Decision for S8-D3 (hand-written SQL in the D3 migration, §2.9):**
+
+1. **Explicit `person_id IS NULL` guard on every non-owner branch.** Person-owned rows are
+   reachable **only** through the service-role code path that asserts `person.coach_id = caller`
+   (the roster reader's discipline, `src/scout/scout-roster.service.ts` L32-34, L203-208). No new
+   permissive policy is added for `person_id`.
+   - `CheckIn`: `check_in_client_all` (USING and WITH CHECK), `check_in_coach_select`,
+     `check_in_current_coach_insert`, `check_in_current_coach_update` each gain
+     `AND "person_id" IS NULL`. WITH CHECK included so no client or coach can insert or flip a
+     person-owned row through direct access; the flip is service-role only.
+   - `ClientWorkoutAssignment`: `assignment_coach_manage` (USING and WITH CHECK) and
+     `assignment_client_read` gain `AND "person_id" IS NULL`.
+   - `WorkoutSession`, `WeightLog`, `Habit`: D3 **recreates** the three out-of-band policies inside
+     the migration directory (`ENABLE`/`FORCE` + idempotent `DROP POLICY IF EXISTS` + `CREATE POLICY`)
+     with `"user_id" = cur AND "person_id" IS NULL`. This also closes the harness gap and
+     makes the tree self-describing; re-running `rls_fitness_backend.sql` afterwards would
+     re-widen them, so D3 adds the three policy names to that file's rollback comment block
+     (L226-249) and the out-of-band file is marked superseded for these three tables.
+   - Children: the non-owner `EXISTS(…)` branch of `p_exerciseset_*`, `p_habitlog_*` and
+     `p_clientworkoutassignmentsnapshot_*` gains `AND <parent>."person_id" IS NULL`.
+2. **Owner exception, stated truthfully.** The `app.is_owner()` branches on `ExerciseSet`,
+   `HabitLog`, `CheckIn` and the snapshot are **kept unchanged**: the backend `owner` role can
+   read person-owned rows directly, as it can read every other row on those tables today. D3
+   does not add an owner branch to `WorkoutSession`/`WeightLog`/`Habit` (none exists). If the
+   owner wants the operator role excluded from imported history, that is a one-line change per
+   policy and a product decision — recorded as a note, not an OQ, because the default is the
+   existing behaviour.
+3. **Cross-tenant `coach_id` protection on `CheckIn`.** `CheckIn.coach_id` is nullable and
+   independent of `user_id` (`schema.prisma` L1102-1107). For person-owned rows D3 enforces it in
+   the database: `CHECK ("person_id" IS NULL OR "coach_id" IS NOT NULL)` plus a composite
+   `FOREIGN KEY ("person_id", "coach_id") REFERENCES "Person"("id", "coach_id")` (backed by a new
+   unique index `Person(id, coach_id)`; `MATCH SIMPLE` skips user-owned rows where `person_id` is
+   NULL). The S8-E1b writer sets `coach_id = person.coach_id`; the link leaves `coach_id`
+   untouched (the client is attached to that same coach in the link transaction, so
+   `check_in_client_all`'s WITH CHECK `is_user_coached_by(user_id, coach_id)` L366 holds
+   afterwards); unlink leaves it untouched. A person-owned check-in can therefore never name a
+   coach other than the Person's tenant.
+4. **Role × owner-state test matrix** (PG spec in D3, run under the S11 RLS harness with
+   `SET ROLE authenticated` / `SET LOCAL app.current_user_id`, one case per cell per table, both
+   USING and WITH CHECK):
+
+   | Principal                                                | User-owned row (`user_id` set)                                                    | Person-owned row (`person_id` set)                                                                                         |
+   | -------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+   | `anon` (no `cur`)                                        | deny all verbs                                                                    | deny all verbs                                                                                                             |
+   | unrelated authenticated student (other coach)            | deny                                                                              | deny                                                                                                                       |
+   | same-coach other student                                 | deny                                                                              | deny                                                                                                                       |
+   | the Person's coach (`coach_id = person.coach_id`)        | as today (`CheckIn` select when `coach_id = cur`; CWA manage; children via coach) | **deny all verbs** on all eight tables (this is the row the review found exposed)                                          |
+   | a different coach                                        | deny                                                                              | deny                                                                                                                       |
+   | the client, before link / after unlink                   | allow own rows                                                                    | deny (not theirs)                                                                                                          |
+   | the linked client, after link (row now `user_id = cur`)  | allow                                                                             | n/a — the row is user-owned once linked                                                                                    |
+   | `owner` role                                             | as today                                                                          | allow on `ExerciseSet`, `HabitLog`, `CheckIn`, snapshot (stated exception); deny on `WorkoutSession`, `WeightLog`, `Habit` |
+   | any non-bypass principal, INSERT/UPDATE with `person_id` | —                                                                                 | WITH CHECK deny (flip and person-owned writes are service-role only)                                                       |
+
+   Plus: `CheckIn` insert with `person_id` set and `coach_id` ≠ `person.coach_id` fails the
+   composite FK (as service_role, to prove the constraint rather than the policy).
+
 - `Person` itself stays `service_role`-only with RESTRICTIVE deny-all to `anon` and
   `authenticated` (`prisma/migrations/20261223000200_scout_reconstruction/migration.sql`
   L76-86). Every new table in §2.4-2.5 copies that posture exactly.
@@ -128,8 +210,10 @@ Change per table (S8-D3, §6):
   external_ref L6971). A link may only bind it to a `User` whose `coach_id` (L164) is that coach,
   or is NULL and becomes that coach inside the link transaction (the same attach that
   `attachUserToCoachByCode` performs, `src/invite-codes/invite-codes.service.ts` L606-609, minus
-  the code). A `User` attached to another coach is refused (§7 OQ-4). Owners are refused, as
-  today (L563-568).
+  the code). A `User` attached to another coach is refused; `coach`, `sub_coach` and `owner`
+  claimants are refused (§7 OQ-4, decided by derivation; owner refusal as today, L563-568). The
+  link never reassigns an existing `coach_id` and never changes `role` except NULL-coach →
+  `student`.
 
 ### 2.3 `Person` states and transitions
 
@@ -143,18 +227,21 @@ Add `Person.linked_user_id String?` (indexed, not unique: the current active acc
 and the XOR flip need no join; the link transaction writes both or neither. Cardinality is
 enforced on `PersonLink` (§2.5), not here, so that the L8 merge case stays expressible (OQ-1).
 
-| From            | To              | Trigger                                                                                                                     | Slice |
-| --------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `InvitePending` | `Invited`       | Coach mints a `PersonInvite` (L2)                                                                                           | D4a   |
-| `Invited`       | `InvitePending` | The only open invite expires, is revoked, or the client answers "No" (L4); coach notified on "No"                           | D4    |
-| `Invited`       | `Claimed`       | Link transaction commits (L2-L4)                                                                                            | D4b   |
-| `InvitePending` | `Claimed`       | Coach-approved match confirmed by the client (L5) or merge (L8) — no invite row                                             | D6    |
-| `Claimed`       | `InvitePending` | Unlink by client or coach within 30 days (L7); after that only admin; re-link needs a fresh invite and a fresh confirmation | D5    |
-| any but Deleted | `Suspended`     | Coach or admin freeze; no invite can be minted or claimed while suspended (trigger set is OQ-8)                             | D4a   |
-| any             | `Deleted`       | Erasure. Terminal. Excluded from roster (L207). A `Claimed` Person cannot be deleted while it has an active link (OQ-7)     | —     |
+| From            | To              | Trigger                                                                                                                                                                                                                                                  | Slice |
+| --------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `InvitePending` | `Invited`       | Coach mints a `PersonInvite` (L2), including the invite minted for an accepted L5/L8 proposal (§3.3)                                                                                                                                                     | D4a   |
+| `Invited`       | `InvitePending` | The only open invite expires, is revoked, is locked, or the client answers "No" (L4); coach notified on "No"                                                                                                                                             | D4a/b |
+| `Invited`       | `Claimed`       | Link transaction commits (L2-L4; and L5/L8 after their invite + challenge + confirmation, §3.3)                                                                                                                                                          | D4b   |
+| `Claimed`       | `InvitePending` | Unlink by client or coach within 30 days (L7); after that only admin. **Every** later re-link, by any path, needs a newly minted Person-bound invite, a new challenge and a new client confirmation (B3; L7 is binding). No transition skips `Invited`.  | D5    |
+| any but Deleted | `Suspended`     | **Admin/manual safety freeze only** (owner surfaces), with reviewed reinstatement and audit; never automatic on failed codes — a failed code revokes that invite only (OQ-8, decided by derivation). No invite can be minted or claimed while suspended. | D4a   |
+| `Suspended`     | `InvitePending` | Admin reinstatement, audited                                                                                                                                                                                                                             | D4a   |
+| any             | `Deleted`       | Erasure. Terminal. Excluded from roster (L207). A `Claimed` Person cannot be deleted while it has an active link (OQ-7, owner). A replay of the external ref never resurrects it (§5.1).                                                                 | —     |
 
-Reconstruction replays keep upserting `display_name` (`src/scout/reconstruct/families.ts`
-L98) and never touch `state` or `linked_user_id`.
+There is **no** `InvitePending → Claimed` edge: proposals (L5/L8) are not Person states; they are
+`PersonLinkProposal` rows (§2.5) and activate only through `Invited → Claimed`.
+
+Reconstruction replays never touch `state` or `linked_user_id`, and from S8-D1 on they no longer
+overwrite `display_name` either (create-only, §5.1; OQ-11 decided by derivation).
 
 ### 2.4 `PersonInvite` and `PersonInviteChallenge` (new; not the existing `InviteCode`)
 
@@ -177,58 +264,102 @@ L41).
 
 `PersonInvite` (service_role only; RLS as §2.2):
 
-| Column                                                                             | Rule                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `coach_id`, `person_id` (FK Person, Restrict)                                | Bound to exactly one Person (L2). `coach_id` is the bearer coach, re-asserted against `person.coach_id`.                                                                                                            |
-| `created_by_user_id`                                                               | Head coach or sub-coach who tapped Invite (attribution as `InviteCode.invited_by_user_id`, L734-740).                                                                                                               |
-| `token_hash` `@unique`                                                             | sha256 of a ≥128-bit `crypto.randomBytes` URL token. The raw token is returned once to the sender path and never stored or logged (R30 precedent, `auth.service.ts` L310).                                          |
-| `contact_email`, `contact_phone` (nullable, at least one)                          | The contacts the coach **confirmed** for this Person (L2, L3). Held on the invite only; scrubbed to NULL when the invite reaches a terminal status. Never copied to `Person` or `User`; never used as a lookup key. |
-| `sent_via` (`email` \| `phone`), `sent_at`, `send_status`                          | Delivery of the invite link itself; `send_status` is the transport's truthful outcome (`sent` \| `logged` \| `failed`, as the bulk invite reports, `invite-codes.service.ts` L619-634).                             |
-| `status` (`open` \| `claimed` \| `declined` \| `revoked` \| `expired`)             | Partial unique `(person_id) WHERE status = 'open'`: at most one open invite per Person.                                                                                                                             |
-| `expires_at`                                                                       | Required. Default 14 days as `InviteCode` (L143, L841-843); OQ-5.                                                                                                                                                   |
-| `revoked_at`, `revoked_by_user_id`, `claimed_at`, `claimed_link_id`, `declined_at` | Terminal stamps; `claimed_link_id` → the `PersonLink`.                                                                                                                                                              |
-| `failed_attempts`                                                                  | Per-invite counter for wrong-token / wrong-code attempts that find the row; at 5 the invite is locked (`status = revoked`, reason `locked`) and must be re-minted — the pairing precedent (service L32-41).         |
+| Column                                                                             | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `coach_id`, `person_id` (FK Person, Restrict)                                | Bound to exactly one Person (L2). `coach_id` is the bearer coach, re-asserted against `person.coach_id`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `created_by_user_id`                                                               | Head coach or sub-coach who tapped Invite (attribution as `InviteCode.invited_by_user_id`, L734-740).                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `token_hash` `@unique`                                                             | sha256 of a ≥128-bit `crypto.randomBytes` URL token. The raw token is returned once to the sender path and never stored or logged (R30 precedent, `auth.service.ts` L310).                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `contact_email`, `contact_phone` (nullable, at least one)                          | The contacts the coach **confirmed** for this Person (L2, L3). Held on the invite only; scrubbed to NULL when the invite reaches a terminal status. Never copied to `Person` or `User`; never used as a lookup key.                                                                                                                                                                                                                                                                                                                                                               |
+| `sent_via` (`email` \| `phone`), `sent_at`, `send_status`                          | Delivery of the invite link itself; `send_status` is the transport's truthful outcome (`sent` \| `logged` \| `failed`, as the bulk invite reports, `invite-codes.service.ts` L619-634). **`logged` is not delivery**: a channel is offered to the claimant only if the transport for it is configured and the invite send on it reported `sent` (C8). While no SMS transport exists (§3.1) the phone contact is stored but shown as _unavailable_, and the product copy calls the email-only state a capability limitation, not the full L3 choice.                               |
+| `status` (`open` \| `claimed` \| `declined` \| `revoked` \| `expired`)             | Partial unique `(person_id) WHERE status = 'open'`: at most one open invite per Person.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `target_user_id` (nullable FK User)                                                | Set when the invite was minted for an accepted L5/L8 proposal (§3.3): only that authenticated user may request a challenge; anyone else gets the generic `{valid:false}`. NULL for an ordinary L2 invite.                                                                                                                                                                                                                                                                                                                                                                         |
+| `expires_at`                                                                       | Required. 14 days as `InviteCode` (L143, L841-843); OQ-5 (decided by derivation, §7).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `revoked_at`, `revoked_by_user_id`, `claimed_at`, `claimed_link_id`, `declined_at` | Terminal stamps; `claimed_link_id` → the `PersonLink`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `failed_attempts`                                                                  | Per-invite counter of wrong **codes** on challenges that belong to this invite, incremented atomically (`UPDATE … SET failed_attempts = failed_attempts + 1 WHERE id = ? RETURNING …`, never read-modify-write); at 5 the invite is locked (`status = revoked`, `revoke_reason = locked`) and must be re-minted — the pairing precedent (service L32-41). A guessed **unknown token** finds no row and charges nothing; only the per-IP throttle sees it (C3). Locking is a bounded nuisance an attacker holding a valid link can cause once; the coach is notified and re-mints. |
+| `resend_count`, `last_sent_at`                                                     | Resend of the invite link is limited to 3 per 24 h per invite and 10 per hour per coach; challenge resends to 3 per invite per claimant per hour (C3). Limits are implementation constants, not policy.                                                                                                                                                                                                                                                                                                                                                                           |
 
 `PersonInviteChallenge` (one-time code, service_role only):
 
-| Column                                      | Rule                                                                                                                                                                       |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `invite_id` (FK, Cascade), `coach_id` | One challenge per (invite, claimant) at a time; earlier open challenges are voided on resend.                                                                              |
-| `claimant_user_id`                          | The authenticated `User` who asked for the code. The verified challenge is usable **only** by this user (§3.2 step 3).                                                     |
-| `channel` (`email` \| `phone`)              | Chosen by the client from the invite's non-null contacts; the request body carries the enum only, never a contact value (L3 by API shape).                                 |
-| `code_hash`                                 | HMAC-SHA256 (server key) of a 6-digit `crypto.randomInt` code (`extension-pair.service.ts` L389-391); constant-time compare on verify.                                     |
-| `expires_at`                                | 10 minutes (OQ-5). `sent_at`, `send_status` as above.                                                                                                                      |
-| `failed_attempts`, `verified_at`            | Lockout at 5 wrong codes voids the challenge and charges the invite's counter; `verified_at` set once; a verified challenge expires 15 minutes after `verified_at` unused. |
+| Column                                        | Rule                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `invite_id` (FK, Cascade), `coach_id`   | One challenge per (invite, claimant) at a time; earlier open challenges are voided on resend.                                                                                                                                                                                                                                                  |
+| `claimant_user_id`                            | The authenticated `User` who asked for the code. The verified challenge is usable **only** by this user (§3.2 step 3).                                                                                                                                                                                                                         |
+| `channel` (`email` \| `phone`)                | Chosen by the client from the invite's non-null contacts; the request body carries the enum only, never a contact value (L3 by API shape).                                                                                                                                                                                                     |
+| `code_hash`                                   | HMAC-SHA256 (server key) of a 6-digit `crypto.randomInt` code (`extension-pair.service.ts` L389-391); constant-time compare on verify.                                                                                                                                                                                                         |
+| `expires_at`                                  | 10 minutes (OQ-5). `sent_at`, `send_status` as above.                                                                                                                                                                                                                                                                                          |
+| `failed_attempts`, `verified_at`, `voided_at` | Atomic increments as above; lockout at 5 wrong codes voids the challenge and charges the invite's counter; `verified_at` set once; a verified challenge expires 15 minutes after `verified_at` unused. **All** open or verified challenges of an invite are voided (`voided_at`) when the invite is revoked, declined, locked or expires (C3). |
 
-### 2.5 `PersonLink` — the audit and undo record
+### 2.5 `PersonLink`, `PersonLinkProposal`, `PersonLinkOutbox` (Round 2: B2, C4, B5)
 
-Insert-only except for the unlink stamps; written **in the same transaction** as the re-own
-(§2.7), so it is the durable audit even if the general audit write fails —
-`AuditService.write` deliberately swallows its own errors (`src/audit/audit.service.ts`
-L168-172, L185-215), so it is the secondary record, not the primary one (L6 "every link/unlink
-audited").
+`PersonLink` is the record of a **completed** link. It is inserted **only** by the link
+transaction (§2.7) with `linked_at` set, in the same transaction as the re-own, so it is the
+durable primary audit even when the general audit write fails — `AuditService.write` deliberately
+swallows its own errors (`src/audit/audit.service.ts` L168-172, L185-215) and is therefore the
+secondary record (L6 "every link/unlink audited"). Proposals never touch this table (B2).
 
-| Column                                                                                                  | Rule                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`, `coach_id`, `person_id` (FK Restrict), `user_id` (FK Restrict)                                    | The tenant, the Person and the account. `coach_id = person.coach_id` re-asserted.                                                                                                                                                                |
-| `path` (`invite` \| `coach_approved_match` \| `merge`)                                                  | L2-L4, L5, L8 respectively.                                                                                                                                                                                                                      |
-| `invite_id` (nullable FK), `challenge_id` (nullable FK)                                                 | Set on `path = invite`.                                                                                                                                                                                                                          |
-| `verified_channel`, `verified_contact_digest`                                                           | Channel and sha256 of the contact that was verified — never the raw contact (digest precedent: `ScoutRunDeclaration.account_scope_id_digest`, `schema.prisma` L7046-7047). NULL on `coach_approved_match`/`merge` unless OQ-6 decides otherwise. |
-| `client_confirmed_at`, `coach_confirmed_at`                                                             | Both required before `linked_at` on `coach_approved_match` and `merge`; `client_confirmed_at` alone on `invite` (the coach confirmed by minting).                                                                                                |
-| `linked_at`, `undo_deadline_at`                                                                         | `undo_deadline_at = linked_at + 30 days` (L7), computed once and never moved.                                                                                                                                                                    |
-| `records_moved` Json                                                                                    | Per-table counts `{moved, skipped}` written by the link transaction (§2.7). Counts only, no ids or contents.                                                                                                                                     |
-| `unlinked_at`, `unlinked_by` (`client` \| `coach` \| `admin`), `unlink_reason`, `records_returned` Json | Set once by the unlink transaction. `coach` is refused after `undo_deadline_at` (L7).                                                                                                                                                            |
-| `merged_into_link_id` (nullable)                                                                        | On `path = merge`: the earlier active link this one joins (L8 two-platform case).                                                                                                                                                                |
+| Column                                                                                                                                                  | Rule                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `coach_id`, `person_id` (FK Restrict), `user_id` (FK Restrict)                                                                                    | The tenant, the Person and the account. `coach_id = person.coach_id` enforced by the same composite-FK pattern as §2.2 item 3 (`(person_id, coach_id) → Person(id, coach_id)`).                                                                                                                                                                                                              |
+| `path` (`invite` \| `proposal_match` \| `proposal_merge`)                                                                                               | L2-L4; L5; L8. Every path ends in an invite + challenge + confirmation (§3.3), so `invite_id` and `challenge_id` are **NOT NULL** on all paths.                                                                                                                                                                                                                                              |
+| `invite_id` (FK), `challenge_id` (FK), `proposal_id` (nullable FK)                                                                                      | The invite and verified challenge that produced this link; `proposal_id` set on the two proposal paths. `CHECK ((path = 'invite') = (proposal_id IS NULL))`.                                                                                                                                                                                                                                 |
+| `verified_channel`, `verified_contact_digest`                                                                                                           | Channel and sha256 of the contact that was verified — never the raw contact (digest precedent: `ScoutRunDeclaration.account_scope_id_digest`, `schema.prisma` L7046-7047). NOT NULL (every path verifies a contact; OQ-6 may later relax this for first-time L5 only, §7).                                                                                                                   |
+| `client_confirmed_at` NOT NULL, `coach_confirmed_at` NOT NULL, `coach_confirmed_by_user_id`                                                             | The client's "yes" (§3.2 step 5) and the coach's act (minting the invite, or the proposal) with the actor id (C4: role alone is not attribution).                                                                                                                                                                                                                                            |
+| `linked_at` NOT NULL, `undo_deadline_at` NOT NULL                                                                                                       | `undo_deadline_at = linked_at + 30 days` (L7), computed once and never moved.                                                                                                                                                                                                                                                                                                                |
+| `records_moved` Json                                                                                                                                    | Per-table counts `{moved}` written by the link transaction (§2.7). Counts only, no ids or contents.                                                                                                                                                                                                                                                                                          |
+| `unlinked_at`, `unlinked_by_role` (`client` \| `coach` \| `admin`), `unlinked_by_user_id`, `unlink_reason_code`, `unlink_note`, `records_returned` Json | Set once by the unlink transaction (C4). `unlink_reason_code` is an enum (`not_me`, `wrong_person`, `changed_mind`, `coach_error`, `support_request`, `other`); `unlink_note` is optional free text stored for support and **never** shown automatically to the other side — notifications carry the reason code only (C4 PII/abuse rule). `coach` is refused after `undo_deadline_at` (L7). |
+| `merge_anchor_link_id` (nullable FK PersonLink)                                                                                                         | On `path = 'proposal_merge'`: the earlier **active** link this one joins (L8 two-platform case). `CHECK ((path = 'proposal_merge') = (merge_anchor_link_id IS NOT NULL))`. Anchor constraints below.                                                                                                                                                                                         |
+| `notify_status` (`pending` \| `delivered` \| `failed`), `notify_attempts`                                                                               | Mirror of the outbox rows for this link (B5), so the record shows whether L7's "other side notified" actually happened.                                                                                                                                                                                                                                                                      |
 
-Uniqueness: partial unique `(person_id) WHERE unlinked_at IS NULL` (one active link per Person,
-L6). The account-side rule "at most one Person per account per coach" is a partial unique
-`(coach_id, user_id) WHERE unlinked_at IS NULL AND path <> 'merge'`; how L8's two-platform merge
-coexists with L6's wording is OQ-1 — the DB rail above is the recommended reading, not a decision.
+**Uniqueness (B2).** Active = `linked_at IS NOT NULL AND unlinked_at IS NULL` (written out even
+though `linked_at` is NOT NULL, so the predicate stays correct if a later slice ever admits
+pending rows here — it must not). D3 lands:
+
+- `UNIQUE (person_id) WHERE linked_at IS NOT NULL AND unlinked_at IS NULL` — one active account
+  per Person (L6), absolute.
+- `UNIQUE (coach_id, user_id) WHERE linked_at IS NOT NULL AND unlinked_at IS NULL` — one Person
+  per account per coach (L6), **with no merge exemption**. This is the strict reading and the
+  safe interim default: until OQ-1 is answered, an L8 two-platform merge is refused by the
+  database (`proposal_merge` cannot activate) and the coach sees "two imported records for one
+  client — pending owner decision". The exemption index (`… AND path <> 'proposal_merge'`) and
+  the merge activation path are **D6 work that waits for OQ-1**; they are not in D3.
+- Merge anchor constraints, specified now so D6 does not design them: composite FK
+  `(merge_anchor_link_id, coach_id, user_id) REFERENCES PersonLink(id, coach_id, user_id)`
+  (same coach, same account, backed by a unique index on those three columns);
+  `CHECK (merge_anchor_link_id <> id)`; Person distinctness (`anchor.person_id <> person_id`) and
+  anchor activity are asserted in the link transaction under the Person lock and by a
+  constraint trigger, because a CHECK cannot read another row; unlinking an anchor requires
+  unlinking every link that names it in the same transaction (both return their own rows), so an
+  active merge never dangles.
+
+`PersonLinkProposal` (B2; new; service_role only) — the L5/L8 "coach says: this imported Person is
+this client" object, with its own lifecycle and **no** effect on `PersonLink` uniqueness:
+
+| Column                                                                                            | Rule                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`, `coach_id`, `person_id` (FK Restrict), `user_id` (FK Restrict), `kind` (`match` \| `merge`) | Composite FK to `Person(id, coach_id)`; `user.coach_id = coach_id` asserted at creation and re-checked at every transition (a client who has since left the coach voids the proposal).                                                                                                                                                           |
+| `proposed_by_user_id`, `created_at`                                                               | The coach or sub-coach who proposed (authorization: `Roles('coach')` guards as the roster reader, `scout-roster.controller.ts` L82-84, plus `person.coach_id = caller`'s coach).                                                                                                                                                                 |
+| `merge_anchor_link_id` (nullable)                                                                 | Required when `kind = merge`; must be an active link of the same `(coach_id, user_id)` at creation and at activation.                                                                                                                                                                                                                            |
+| `status` (`open` \| `accepted` \| `declined` \| `expired` \| `revoked` \| `superseded`)           | `UNIQUE (person_id) WHERE status = 'open'`. `expires_at` = 14 days. `declined` by the proposed client (in-app, L4 "No" semantics: coach notified); `revoked` by the proposing coach or admin; `expired` by the sweeper; `superseded` when the Person becomes `Claimed` by any other path or is deleted/suspended.                                |
+| `invite_id` (nullable FK)                                                                         | Set when the client taps "yes, start verification": the server mints a Person-bound `PersonInvite` with `target_user_id = user_id` (§2.4) and the ordinary challenge → verify → confirm flow runs (§3.2 steps 3-5). `accepted` is written by the link transaction itself, in the same transaction as `PersonLink` (same-transaction activation). |
+| `decided_at`, `decided_by_user_id`                                                                | Actor id for every terminal transition (C4).                                                                                                                                                                                                                                                                                                     |
+
+Proposals are visible on the roster as `proposal: {status, expires_at}` (§5.2); they never count
+as a link, never set `linked_user_id`, never change `Person.state`, and an open proposal does not
+block an ordinary L2 invite (the first path to complete supersedes the other under the Person
+lock).
+
+`PersonLinkOutbox` (B5; new; service_role only) — durable delivery of the L4/L7 notifications:
+
+| Column                                                                                                                                     | Rule                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `link_id` (FK), `event` (`linked` \| `unlinked` \| `declined` \| `proposal_*`), `recipient_user_id`, `channel` (`in_app` \| `email`) | One row per (event, recipient, channel), inserted **inside** the link/unlink transaction. The `in_app` row is materialised there too via `NotificationsService.createNotification(input, tx)` (`src/notifications/notifications.service.ts` L297-301 accepts the transaction client), so the in-app notice can never be lost.                   |
+| `attempts`, `next_attempt_at`, `delivered_at`, `last_error`                                                                                | A `@Cron` worker (precedent `src/notifications/nudges/nudge.scheduler.ts` L43) drains `delivered_at IS NULL AND next_attempt_at <= now()` with exponential back-off, max 8 attempts over ~48 h; on exhaustion `PersonLink.notify_status = failed` and an admin alert is raised. Payloads carry ids, display names and the reason **code** only. |
 
 Secondary audit: `AuditService.write` with actions `person.link.invited`, `.declined`,
-`.linked`, `.unlinked`, `.merge_proposed`, `.match_proposed`, `.revoked`; `tenant_coach_id`,
-`target_type = 'person'`, `target_id = person.id`, `target_user_id = user.id`, metadata = ids and
-counts only (the service's own PII rule, L160-165).
+`.linked`, `.unlinked`, `.proposal_created`, `.proposal_declined`, `.proposal_revoked`,
+`.revoked`, `.suspended`, `.reinstated`; `tenant_coach_id`, `target_type = 'person'`,
+`target_id = person.id`, `target_user_id = user.id`, `actor_user_id`, metadata = ids, reason
+codes and counts only (the service's own PII rule, L160-165).
 
 ### 2.6 What "imported" means (L7)
 
@@ -259,55 +390,103 @@ Person → `unresolved:relationship_pending:clients` (S8-DOC §3.5). Never by na
 
 **Link** (one transaction, `SELECT … FOR UPDATE` on the `Person` row first):
 
-1. Preconditions under the lock: `person.state ∈ {Invited, InvitePending}` and no active
-   `PersonLink`; the invite is `open`, unexpired, unlocked, and its challenge is `verified_at`
-   set for **this** `claimant_user_id` within the 15-minute window (path `invite`); the user
-   exists, is not deleted/scheduled for deletion (`User` L171-176), is not `owner`, and has
-   `coach_id` NULL or `= person.coach_id`.
+1. Preconditions under the lock: `person.state = Invited` and no active `PersonLink`; the
+   invite is `open`, unexpired, unlocked, bound to this Person, and — if `target_user_id` is set
+   — to this user; its challenge is `verified_at` set for **this** `claimant_user_id` within the
+   15-minute window; **if any `PersonLink` row exists for this Person (any historical link), the
+   invite's `created_at` must be later than the latest `unlinked_at`** (B3: a fresh invite, a fresh
+   challenge and a fresh confirmation for every re-link, on every path); the user exists, is not
+   deleted/scheduled for deletion (`User` L171-176), has role `student` or an unattached
+   account, and has `coach_id` NULL or `= person.coach_id`. Same checks on `proposal_match`;
+   `proposal_merge` additionally re-verifies the anchor (§2.5) and is refused while the strict
+   `(coach_id, user_id)` unique stands (OQ-1).
 2. `updateMany` the invite `WHERE id = ? AND status = 'open'` → `claimed`; `count !== 1` → the
    generic refusal (a lost race).
 3. If `user.coach_id` is NULL: set `coach_id = person.coach_id`, `role = student` (as
    `attachUserToCoachByCode` L606-609).
-4. For each of the five tables: `UPDATE … SET user_id = U, person_id = NULL WHERE person_id = P`.
-   For `CheckIn`, first detect `(P, date)` rows colliding with an existing `(U, date)` row
-   (L1129): they are **not** moved and are counted as `skipped` (S8-DOC §3.5
-   `unresolved:native_uniqueness` semantics; never overwrite the client's own row; OQ-3 asks the
-   owner whether to abort instead).
-5. Insert `PersonLink` (`linked_at`, `undo_deadline_at`, `records_moved`); set
-   `person.state = Claimed`, `person.linked_user_id = U`; scrub the invite's contacts.
-6. After commit: notify the coach (in-app, `NotificationsService.createNotification`,
-   `src/notifications/notifications.service.ts` L297-301, keyed by the coach `user_id`), audit
-   secondary write, analytics without contacts.
+4. For each of the five tables: `UPDATE … SET user_id = U, person_id = NULL WHERE person_id = P
+AND coach_id/tenant matches` — the row set is the provenance join (`provenance.coach_id =
+P.coach_id AND provenance.person_id = P AND (native_kind, native_id) = (row kind, row id)`,
+   C5), not a bare `person_id` scan, so a row can only move if the import that created it is on
+   record. For `CheckIn`, first detect `(P, date)` rows colliding with an existing `(U, date)`
+   row (L1129). **Fail closed (OQ-3, decided by derivation):** the transaction aborts with a
+   stable code `link_collision` listing the colliding dates (dates only, no contents); the
+   client is told which of their own check-ins collide and may delete or re-date them and retry,
+   or answer "No". Neither row is ever overwritten and nothing is silently skipped; a partial link
+   with hidden residue is not an outcome this system produces ("unknown never silently becomes
+   zero").
+5. Insert `PersonLink` (`linked_at`, `undo_deadline_at`, `records_moved`, actor ids); set
+   `person.state = Claimed`, `person.linked_user_id = U`; mark the invite `claimed`, the
+   proposal (if any) `accepted`, every other open proposal for P `superseded`; void remaining
+   challenges; scrub the invite's contacts; insert the outbox rows and the in-app notifications
+   (`createNotification(input, tx)`) — all in this one transaction (C5: native updates, link
+   stamps and notification intent commit or roll back together).
+6. After commit: the outbox worker delivers the email copies (§2.5); secondary audit write;
+   analytics without contacts.
 
 **Unlink** (one transaction, same Person lock):
 
 1. Active `PersonLink` exists; actor is the linked client, the Person's coach (only if
    `now < undo_deadline_at`), or admin.
 2. Candidate rows = native rows `WHERE user_id = U` that have a provenance row with
-   `person_id = P` and matching `(native_kind, native_id)` — joined through the L7028 index. For
-   each: `SET person_id = P, user_id = NULL`. A `CheckIn` that cannot return because the Person
-   still holds a `skipped` row on that date (link step 4) stays with the client and is counted
-   `skipped` in `records_returned` — never overwritten. Rows without provenance (logged after
-   joining) stay.
-3. Stamp `unlinked_at/by/reason/records_returned`; `person.state = InvitePending`,
-   `linked_user_id = NULL`; the user's `coach_id` is **not** changed (leaving the coach is a
-   separate live action, OQ-4).
-4. Notify the other side (both are `User`s at this point); secondary audit.
+   `provenance.coach_id = P.coach_id AND provenance.person_id = P AND (native_kind, native_id)
+= (row kind, row id)` (C5: all four compared) — joined through the L7028 index. For each:
+   `SET person_id = P, user_id = NULL`. Rows without provenance (logged after joining) stay. An
+   imported row the client **deleted** while linked is gone; its provenance row remains and is
+   counted under `records_returned.missing` so the coach sees a truthful count, not a silent
+   zero. A `CheckIn` `(P, date)` collision on return cannot arise from the link path (the link
+   fails closed, step 4 above) and can only come from a post-link import writing to `U` on a
+   date where P already held a row — which the S8-E writer refuses (§2.8 case 4 routes to `U`,
+   and `U`'s own row on that date makes the write `unresolved:native_uniqueness`). Unlink still
+   detects it and **aborts** with `unlink_collision` rather than downgrading (C5); admin resolves.
+3. Stamp `unlinked_at`, `unlinked_by_role`, `unlinked_by_user_id`, `unlink_reason_code`,
+   `unlink_note`, `records_returned`; `person.state = InvitePending`, `linked_user_id = NULL`;
+   if this link is a merge anchor, unlink its dependants in the same transaction (§2.5); the
+   user's `coach_id` is **not** changed (leaving the coach is a separate live action, OQ-4).
+4. Outbox rows + in-app notifications in the same transaction (reason code only); secondary
+   audit after commit.
 
 Edits the client or coach made to an imported row while linked travel with the row back to the
-Person (the row is handed over, not copied, L6); whether that is wanted is OQ-2.
+Person (the row is handed over, not copied, L6); whether that is wanted is OQ-2 (owner; the
+interim default is exactly this hand-over). Lock discipline is shared: the S8-E writers, the link
+and the unlink all take the Person row lock first (`FOR SHARE` for writers, `FOR UPDATE` for link
+and unlink), so an import can never interleave with a flip (C5).
 
 ### 2.8 Idempotency and concurrency
 
 | Case                                           | Rail                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Confirm replayed (same user, same invite)      | Active `PersonLink(person, user)` already exists → 200 with the same link id; the move `updateMany` finds 0 rows. No second audit row. (L6 "replays idempotent")                                                                                                                                                                                                                        |
+| Confirm replayed (same user, same invite)      | Active `PersonLink(person, user, invite)` already exists → 200 with the same link id; nothing is re-run. No second audit or outbox row. (L6 "replays idempotent")                                                                                                                                                                                                                       |
 | Two claimants on one invite                    | Person `FOR UPDATE` serialises; the loser sees `status <> 'open'` or `state = Claimed` → generic refusal, invite `failed_attempts` charged.                                                                                                                                                                                                                                             |
 | Claim vs coach unlink                          | Same Person lock; unlink needs an active link, claim needs none — exactly one wins; the other reads the committed state.                                                                                                                                                                                                                                                                |
 | Claim vs import pass writing person-owned rows | The S8-E writer reads the Person under `FOR SHARE` in its per-row transaction (the engine already runs one transaction per row with P2002 retry-once, `families.ts` L40-41, and S11-B r2 retries raw serialization failures, `dda794d7`). If `state = Claimed` it writes `user_id = linked_user_id` directly and still stamps `provenance.person_id = P`, so a later unlink returns it. |
 | Claim vs revoke                                | Revoke is `updateMany WHERE status = 'open'`; the claim's step 2 is the same guard; one wins.                                                                                                                                                                                                                                                                                           |
 | Invite re-mint while one is open               | Partial unique on `(person_id) WHERE status='open'` → 409; coach must revoke first (revocation is a distinct audited act).                                                                                                                                                                                                                                                              |
-| Re-link after unlink                           | Fresh invite + fresh challenge + fresh confirmation (L7). The old `PersonLink` stays as history.                                                                                                                                                                                                                                                                                        |
+| Re-link after unlink, any path                 | Fresh Person-bound invite minted after the last `unlinked_at` + fresh challenge + fresh confirmation (L7, B3); an open proposal alone never links. The old `PersonLink` stays as history.                                                                                                                                                                                               |
+| Proposal vs L2 invite claim on the same Person | Both end in the same link transaction under the Person lock; the first to commit sets `Claimed`, the other proposal/invite is `superseded`/refused generically.                                                                                                                                                                                                                         |
+| Proposal expiry / client leaves coach          | Sweeper marks `expired`; every transition re-checks `user.coach_id = coach_id` and voids the proposal otherwise.                                                                                                                                                                                                                                                                        |
+
+### 2.9 Migration shape (C2)
+
+"One directory" in Round 1 was an estimate of count, not a proof of safety. The five parents are
+populated production tables; a repo precedent already uses `CREATE INDEX CONCURRENTLY` on
+`ClientWorkoutAssignment` for exactly that reason and documents that Prisma 6.19 runs a migration
+file **without** wrapping it in a transaction (`20260704000001_coach_brief_cwa_index_concurrent/migration.sql`
+L8-27), while the scout migrations set `lock_timeout = '5s'` / `statement_timeout = '30s'` inside an
+explicit `BEGIN` (`20270118000000_scout_ledger_platform_expand/migration.sql` L5-7). D3 is therefore
+**three directories**, landed as one slice:
+
+| Dir  | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Lock profile                                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| D3-1 | `BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';` new tables (`PersonInvite`, `PersonInviteChallenge`, `PersonLink`, `PersonLinkProposal`, `PersonLinkOutbox`) with their RLS; `Person.linked_user_id`; `ImportNativeProvenance.person_id`; on each of the five parents `ADD COLUMN person_id TEXT NULL`, `ALTER COLUMN user_id DROP NOT NULL`, and the XOR / coach CHECKs and FKs added **`NOT VALID`**; policy rewrites (§2.2). `COMMIT;` | Short ACCESS EXCLUSIVE per `ALTER TABLE` (catalog-only; no rewrite, no scan). Fails atomically on lock timeout and is re-runnable. |
+| D3-2 | `ALTER TABLE … VALIDATE CONSTRAINT` for every `NOT VALID` constraint from D3-1, one statement each, same timeouts.                                                                                                                                                                                                                                                                                                                                                 | SHARE UPDATE EXCLUSIVE (full scan, no write block).                                                                                |
+| D3-3 | `CREATE INDEX CONCURRENTLY IF NOT EXISTS` for every new index on the five parents (`(person_id)`, `(person_id, date)`, the partial uniques, `Person(id, coach_id)`), **no** `BEGIN`, one statement per index, with the invalid-index operator note copied from the precedent (L28-34).                                                                                                                                                                             | SHARE UPDATE EXCLUSIVE; never blocks DML.                                                                                          |
+
+No backfill is needed (every new column is NULL for every existing row; the XOR CHECK holds
+trivially). Rollback = the three `down.sql` files in reverse (drop indexes concurrently, drop
+constraints, drop columns, drop tables), each with the same timeouts (precedent
+`20270118000000_…/down.sql` L5-6). The type ripple (§2.1) ships in the same slice because the
+generated client changes at D3-1. All three directories count against the S11 pin (§6).
 
 ## 3. Link flow against the existing machinery
 
@@ -353,46 +532,82 @@ Person (the row is handed over, not copied, L6); whether that is wanted is OQ-2.
    `declined`, Person back to `InvitePending`, coach notified (L4). Either answer closes the
    invite.
 
-### 3.3 Fallback (L5) and merges (L8)
+### 3.3 Fallback (L5) and merges (L8) — proposals, then the same verified claim (B2, B3)
 
 - **Suggestions (L1).** The coach roster may show, per imported Person, candidate students of
   the **same coach** by display-name similarity computed at read time. Suggestions are never
   persisted as links and never auto-applied.
 - **L5.** `POST /scout/persons/:personId/link-proposals {user_id}` (coach): `user.coach_id =
-caller` required (already this coach's client — the cross-tenant rail), creates a
-  `PersonLink` with `coach_confirmed_at`, no `linked_at`; client receives an in-app notification
-  and sees the L4 disclosure (§3.2 step 4 payload) in-app; `POST /person-links/:id/confirm
-{answer}` from the linked client completes or declines. Whether L5 additionally requires the L3
-  one-time code is OQ-6 (recommendation recorded there).
-- **L8 already-a-client** is L5. **L8 same person from two platforms**: two Persons under one
-  coach; the second link is proposed by the coach as `path = merge` with
-  `merged_into_link_id` → the client confirms → the second Person's imported rows are re-owned
-  to the same account by the same transaction. Each Person keeps its own link and undo clock.
+caller` and `user.role = student` required (the cross-tenant rail), creates a
+  `PersonLinkProposal(kind = match)` (§2.5) — **not** a `PersonLink`. The client receives an
+  in-app notification and sees only the pre-verification disclosure (coach card, Person display
+  name, "an imported history may be yours"); `POST /me/link-proposals/:id/{decline|start}`.
+  `start` mints a Person-bound `PersonInvite` with `target_user_id = me` and the coach-held
+  contacts already confirmed on the proposal, then the ordinary §3.2 steps 3-5 run: challenge to a
+  coach-held contact, verify, L4 disclosure, confirm "yes". The link transaction writes
+  `PersonLink(path = proposal_match)` and `proposal.status = accepted` together. An in-app "yes"
+  on the proposal alone never links anything.
+- **B3 rule.** The invite-after-last-unlink precondition (§2.7 step 1) applies on this path
+  exactly as on L2, so a client unlinked yesterday cannot be re-attached by a coach proposal
+  without a new challenge and a new "yes". Whether a **first-time** L5 (Person with no historical
+  link) may skip the challenge is OQ-6 (owner); the interim default is the challenge on every
+  path.
+- **L8 already-a-client** is L5. **L8 same person from two platforms** is
+  `PersonLinkProposal(kind = merge, merge_anchor_link_id)`; its activation path is the same
+  invite + challenge + confirm, and it is **refused by the strict `(coach_id, user_id)` unique
+  until OQ-1 is answered** (§2.5). Until then the roster shows both Persons, one `Claimed`, one
+  "imported, not yet joined — pending owner decision on merges".
 
 ### 3.4 Undo (L7)
 
-- Client: `POST /me/person-links/:id/unlink` any time before `undo_deadline_at`.
-- Coach: `POST /scout/person-links/:id/unlink` only before `undo_deadline_at`; after it the
-  route answers 403 with a stable code (`undo_window_closed`) and the coach UI points to support.
-- Admin: existing owner surfaces (`src/admin/**`), audited with `unlinked_by = admin`.
-- Notifications to the other side in every case; "why" is free text from the actor, stored on
-  the link, shown to the other side.
+- Client: `POST /me/person-links/:id/unlink {reason_code, note?}` any time before
+  `undo_deadline_at`.
+- Coach: `POST /scout/person-links/:id/unlink {reason_code, note?}` only before
+  `undo_deadline_at`; after it the route answers 403 with a stable code (`undo_window_closed`)
+  and the coach UI points to support.
+- Admin: existing owner surfaces (`src/admin/**`), audited with `unlinked_by_role = admin` and the
+  admin's user id.
+- Notifications to the other side in every case through the outbox (§2.5), carrying the reason
+  **code** only; the free-text note is visible to support and to the actor, never pushed to the
+  other party (C4).
+
+### 3.5 Release gate: claim is not enabled before undo exists (B5)
+
+- D4b and D5 are **one releasable gate**: a single flag `FEATURE_PERSON_LINK` (dark by default,
+  enforced by the same `featureFlagNotFoundMiddleware` that hides `/api/scout/*`,
+  `scout-roster.controller.ts` L78-81) fronts every claim, confirm, proposal-start **and** unlink
+  route. The flag must not exist in any environment's configuration until D5 has landed on
+  `integration/importer` **and** its unlink specs (client, coach ≤ 30 d, admin, return-only-imported,
+  collision abort, outbox delivery, notification failure → `notify_status = failed` + alert) are
+  green on the RLS harness. D4a (mint/revoke/preview) may ship before D5 because it starts no
+  30-day clock.
+- Even on `integration/importer`, enabling the flag with real client data is owner-reserved
+  (S8-DOC/S11-DOC owner boundaries; §6). A build lane proves it with fixtures only.
+- Post-commit notification failure never affects the link: the intent is durable (outbox rows in
+  the link transaction), delivery retries with back-off, exhaustion is visible on the link
+  (`notify_status`) and raises an admin alert, and the coach roster shows the undo window from
+  the server regardless of whether the email arrived (the in-app notification is written in the
+  same transaction and cannot be lost).
 
 ## 4. Threat model
 
-| Threat                                                                                                                 | Rail that closes it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Forwarded invite / account takeover**: the invite link reaches someone other than the person                         | The link alone claims nothing. Claiming needs a one-time code delivered to a contact the coach confirmed (L3, §2.4), so the holder must also control that channel; the claimant can never substitute a contact (API shape, §3.2 step 3). Then the human must say "yes" to "is this you?" (L4). The 30-day undo (L7) and coach notification on link give a recovery path if all three fail. Contrast: today's `intended_email` compares an unverified login email (§2.4).                                                       |
-| **Contact change at the source / wrong contact on file**                                                               | The coach confirms the contact at invite time (L2). A wrong contact means the code reaches the wrong channel: the recipient sees only the masked pre-verification page (§3.2 step 2), never the Person's name or history, and cannot proceed without also being the account holder who confirms. The coach can revoke and re-mint at any time.                                                                                                                                                                                 |
-| **Coach mistake** (invites or proposes the wrong client)                                                               | Two-sided: the client must confirm after seeing the disclosure (L4/L5). Either side can unlink for 30 days and only imported rows move back (L7). `records_moved` makes the scope of the mistake visible.                                                                                                                                                                                                                                                                                                                      |
-| **Malicious coach** (tries to attach an imported history to an unrelated client, or to grab a client of another coach) | Cross-tenant is impossible by construction: `Person.coach_id` must equal the user's `coach_id` or the user must be unattached (§2.2); a link never changes an existing `coach_id`. Within tenant the client's confirmation is required, and the disclosure (name, counts, dates) lets the client refuse. Imported data is data the coach already holds, so the residual harm is showing it to the **wrong client**; minimum disclosure before confirmation keeps that to name + counts (OQ-10 on whether counts are too much). |
-| **Enumeration** (of invites, Persons, accounts)                                                                        | ≥128-bit token, hash-stored, so guessing is infeasible regardless of throttle; every public failure collapses to one `{valid:false}`; 6-digit codes are defended by the four stacked layers already accepted for pairing (`extension-pair.service.ts` L378-388: TTL, per-row lockout at 5, per-IP throttle, constant-time compare). No route reveals whether a Person exists to a non-owner (the roster reader's uniform 404, `scout-roster.service.ts` L85-97, is the model).                                                 |
-| **Replay** (confirm resent, invite email re-sent, webhook-style duplicates)                                            | Idempotent confirm (§2.8), single-use invite via `updateMany WHERE status='open'`, `EmailService` idempotency key per invite row (L816-819 pattern), challenge single `verified_at`.                                                                                                                                                                                                                                                                                                                                           |
-| **Race** (two claimants; claim vs unlink; claim vs import; claim vs revoke)                                            | Person row lock serialises every state transition (§2.8); the S8-E writer reads the Person under the same lock discipline; serialization failures are retried by the engine (S11-B r2).                                                                                                                                                                                                                                                                                                                                        |
-| **Cross-tenant data movement**                                                                                         | Every write is scoped by `coach_id` taken from the token; `PersonLink.coach_id = person.coach_id` re-asserted; the unlink join requires `provenance.coach_id = person.coach_id`; RLS on `Person`, invites, challenges and links is service_role-only (§2.2).                                                                                                                                                                                                                                                                   |
-| **Contact PII at rest**                                                                                                | Contacts live only on the invite and are scrubbed at terminal status; `PersonLink` stores a digest; logs and analytics carry ids, never contacts or codes.                                                                                                                                                                                                                                                                                                                                                                     |
-| **Audit loss**                                                                                                         | `PersonLink` is written in the link transaction; `AuditService.write` is best-effort by design (L168-172) and therefore secondary.                                                                                                                                                                                                                                                                                                                                                                                             |
-| **Privilege**: an `owner` or a coach account claiming as a client                                                      | Refused as `attachUserToCoachByCode` refuses owners (L563-568); the claimant must be `student` or unattached; a `coach`-role user cannot be linked (OQ-4 asks about coaches who are also someone's client).                                                                                                                                                                                                                                                                                                                    |
+| Threat                                                                                                                  | Rail that closes it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Forwarded invite / account takeover**: the invite link reaches someone other than the person                          | The link alone claims nothing. Claiming needs a one-time code delivered to a contact the coach confirmed (L3, §2.4), so the holder must also control that channel; the claimant can never substitute a contact (API shape, §3.2 step 3). Then the human must say "yes" to "is this you?" (L4). The 30-day undo (L7) and coach notification on link give a recovery path if all three fail. Contrast: today's `intended_email` compares an unverified login email (§2.4).                                                       |
+| **Contact change at the source / wrong contact on file**                                                                | The coach confirms the contact at invite time (L2). A wrong contact means the code reaches the wrong channel: the recipient sees only the masked pre-verification page (§3.2 step 2), never the Person's name or history, and cannot proceed without also being the account holder who confirms. The coach can revoke and re-mint at any time.                                                                                                                                                                                 |
+| **Coach mistake** (invites or proposes the wrong client)                                                                | Two-sided: the client must confirm after seeing the disclosure (L4/L5). Either side can unlink for 30 days and only imported rows move back (L7). `records_moved` makes the scope of the mistake visible.                                                                                                                                                                                                                                                                                                                      |
+| **Malicious coach** (tries to attach an imported history to an unrelated client, or to grab a client of another coach)  | Cross-tenant is impossible by construction: `Person.coach_id` must equal the user's `coach_id` or the user must be unattached (§2.2); a link never changes an existing `coach_id`. Within tenant the client's confirmation is required, and the disclosure (name, counts, dates) lets the client refuse. Imported data is data the coach already holds, so the residual harm is showing it to the **wrong client**; minimum disclosure before confirmation keeps that to name + counts (OQ-10 on whether counts are too much). |
+| **Enumeration** (of invites, Persons, accounts)                                                                         | ≥128-bit token, hash-stored, so guessing is infeasible regardless of throttle; every public failure collapses to one `{valid:false}`; 6-digit codes are defended by the four stacked layers already accepted for pairing (`extension-pair.service.ts` L378-388: TTL, per-row lockout at 5, per-IP throttle, constant-time compare). No route reveals whether a Person exists to a non-owner (the roster reader's uniform 404, `scout-roster.service.ts` L85-97, is the model).                                                 |
+| **Replay** (confirm resent, invite email re-sent, webhook-style duplicates)                                             | Idempotent confirm (§2.8), single-use invite via `updateMany WHERE status='open'`, `EmailService` idempotency key per invite row (L816-819 pattern), challenge single `verified_at`.                                                                                                                                                                                                                                                                                                                                           |
+| **Race** (two claimants; claim vs unlink; claim vs import; claim vs revoke)                                             | Person row lock serialises every state transition (§2.8); the S8-E writer reads the Person under the same lock discipline; serialization failures are retried by the engine (S11-B r2).                                                                                                                                                                                                                                                                                                                                        |
+| **Cross-tenant data movement**                                                                                          | Every write is scoped by `coach_id` taken from the token; `PersonLink.coach_id = person.coach_id` re-asserted; the unlink join requires `provenance.coach_id = person.coach_id`; RLS on `Person`, invites, challenges and links is service_role-only (§2.2).                                                                                                                                                                                                                                                                   |
+| **Contact PII at rest**                                                                                                 | Contacts live only on the invite and are scrubbed at terminal status; `PersonLink` stores a digest; logs and analytics carry ids, never contacts or codes.                                                                                                                                                                                                                                                                                                                                                                     |
+| **Audit loss**                                                                                                          | `PersonLink` is written in the link transaction; `AuditService.write` is best-effort by design (L168-172) and therefore secondary.                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Privilege**: an `owner` or a coach account claiming as a client                                                       | Refused as `attachUserToCoachByCode` refuses owners (L563-568); the claimant must be `student` or unattached; a `coach`-role user cannot be linked (OQ-4 asks about coaches who are also someone's client).                                                                                                                                                                                                                                                                                                                    |
+| **Re-link bypass** (a coach proposal re-attaches a client who just unlinked)                                            | Impossible: every path activates through a Person-bound invite minted after the last `unlinked_at`, a new challenge and a new "yes" (§2.7 step 1, §3.3; B3).                                                                                                                                                                                                                                                                                                                                                                   |
+| **Pending proposal squatting** (an unconfirmed proposal occupies the Person or account slot, or a merge row multiplies) | Proposals live in `PersonLinkProposal` with expiry/decline/revoke/supersede; `PersonLink` uniqueness is on completed links only; merge activation is refused until OQ-1; anchor constraints are composite FKs + checks (§2.5; B2).                                                                                                                                                                                                                                                                                             |
+| **Partial deployment** (claim live before undo exists; deadline clock runs with no exit)                                | D4b + D5 behind one flag; the flag cannot exist before D5's specs are green; in-app notice and outbox intent are written in the link transaction (§3.5; B5).                                                                                                                                                                                                                                                                                                                                                                   |
+| **Direct DB read of imported history** (coach via `check_in_coach_select` / `assignment_coach_manage`)                  | Every non-owner policy branch on the eight tables gains `person_id IS NULL`; three parents get in-tree policies for the first time; composite FK pins a person-owned check-in's `coach_id` to the Person's tenant (§2.2; B1).                                                                                                                                                                                                                                                                                                  |
 
 ## 5. Roster: "imported, not yet joined" and the typed `person` handoff
 
@@ -409,15 +624,37 @@ L510-520). S9 classifies a `reconstructed` row whose kind is not native as bucke
 Everything downstream already admits `person` as a native kind: the provenance and ledger CHECKs
 (`20270122000000_…/migration.sql` L141, L191), `LEDGER_TARGET_KIND.person`
 (`persist-outcome.ts` L16), `NATIVE_TARGET_KINDS` (`types.ts` L83-87), and S9-B's `readPersons`
-(`facts.service.ts` L1003-1015). Slice **S8-D1**: `clientsFamily.persist` returns
-`{ok: true, targetId, targetKind: 'person', unresolvedChildren: 0}` and writes the
-`ImportNativeProvenance` row (`native_kind = person`, `outcome = created | already_present`) in
-the same per-row transaction, following the S8-C writers (`native-writers.ts` L92, L238). Two
-corrections ride with it: (i) `readPersons` treats a `Deleted` Person as present because
-`Person` has no `archived_at` (L1010-1012) — S8-D1 maps `state = Deleted` to `removed`
-(S9-DOC bucket i); (ii) the `update: {display_name}` upsert branch (L98) is a later-pass
-overwrite that D-S8-4 forbids for provenance-carrying native rows — whether to keep the accepted
-byte-identical behaviour or go create-only is OQ-11; S8-D1 does not change it silently.
+(`facts.service.ts` L1003-1015).
+
+**Slice S8-D1 contract (B4; OQ-11 decided by derivation = create-only):** `clientsFamily.persist`
+follows the S8-C writer shape (`native-writers.ts` L91-105: look up provenance, verify the target,
+otherwise create) instead of the upsert at `families.ts` L84-100:
+
+1. `findProvenance(coach_id, source_namespace, entity_type = clients, source_id)`. If a row exists
+   with `native_kind = person`: load the Person by `native_id` and **verify** — `coach_id` must
+   equal the run's coach (else `unresolved:identity_conflict`, as `verifyTarget` L82); `state =
+Deleted` → `unresolved:native_target_removed` (as `archived_at` L80-81) and **no** update, no
+   re-creation, no state change (no silent resurrection); otherwise `already_present` with
+   `display_name` **untouched** (D-S8-4: later passes never overwrite an accepted row).
+2. If no provenance row exists but a Person matches the external ref
+   `(coach_id, source_platform, source_person_id)` (rows created before D1): adopt it — write the
+   provenance row with `outcome = already_present`, verify as in step 1 (a `Deleted` match is
+   `native_target_removed`, not adopted), and do **not** touch `display_name`. From this run on the
+   row is create-only.
+3. Otherwise `create` the Person with the mapped `display_name` and write provenance
+   `outcome = created`. Return `{ok: true, targetId, targetKind: 'person', unresolvedChildren: 0}`;
+   the engine stamps the ledger kind (`scout-reconstruct.service.ts` L510-520 typed branch).
+4. `readPersons` (`facts.service.ts` L1003-1015) maps `state = Deleted` to `removed` (S9-DOC
+   bucket i) instead of `present`.
+
+S8-D1 specs (named by the review): edited `display_name` survives a replay (create-only);
+replay against a `Deleted` Person yields `native_target_removed`, the Person stays `Deleted`, no
+new Person is created; a Person of another coach at the same external ref is
+`identity_conflict`; a pre-D1 Person is adopted once and thereafter `already_present`; historical
+ledgers with `target_kind` NULL stay bucket f `unresolved` until their run is re-staged (S9 reads
+the ledger, not the Person); five repeated runs produce one provenance row and identical
+outcomes. D1 flips D2 case (h) for the `clients` family only — a run is `complete` only when
+**every** family in it is complete (C6); other unresolved families keep it `partial`.
 
 ### 5.2 Rendering contract
 
@@ -430,7 +667,8 @@ roster** shows imported Persons. Slice S8-D2:
 - Coach roster response gains a sibling collection `imported_people[]` (not interleaved into
   the `User` array, so no existing consumer sees a non-User row): `{person_id, display_name,
 state, source_platform, joined: false, invite: {status, sent_via, expires_at} | null,
-suggestions: [{user_id, display_name}] | []}` for every Person of the coach with
+proposal: {status, expires_at} | null, suggestions: [{user_id, display_name}] | []}` for every
+  Person of the coach with
   `state ∉ {Claimed, Deleted}`. `Suspended` is shown with its state. Label copy is fixed:
   "imported, not yet joined".
 - A `Claimed` Person is not listed; instead the linked client's row carries
@@ -452,93 +690,113 @@ suggestions: [{user_id, display_name}] | []}` for every Person of the coach with
 Grades follow the T0-T4 routing; LOC = expected hand-written **production** lines (tests,
 fixtures, generated contracts excluded). "Migration" = a new `prisma/migrations/*` directory.
 
-| Slice  | Scope                                                                                                                                                                                                                                 | Grade | Depends on                                                     | Migration               | Prod LOC (est.)                                     | Ruling                                   |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------- | ----------------------- | --------------------------------------------------- | ---------------------------------------- |
-| S8-D0  | This decision record (+ 4-line forward pointer in S8-DOC D-S8-2)                                                                                                                                                                      | T4    | OWNER                                                          | no                      | 0                                                   | this commit                              |
-| S8-D1  | Typed `person` handoff: `clientsFamily.persist` returns `person` + provenance row; `readPersons` Deleted → removed; S9 fixtures; roster-bearing runs can settle `complete` (D2 case (h) flips)                                        | T3    | S11-A2 landed (J19 step 11 reads the roster)                   | no                      | 150-250                                             | PROCEED                                  |
-| S8-D2  | Coach roster `imported_people[]` + `person_link` marker; importer-G `roster_bridge_pending` retirement; contract regen; suggestions read (never applied)                                                                              | T3    | S8-D1                                                          | no                      | 250-400                                             | PROCEED                                  |
-| S8-D3  | Schema: `Person.linked_user_id`; `PersonInvite`, `PersonInviteChallenge`, `PersonLink`; `ImportNativeProvenance.person_id`; nullable owner + `person_id` + XOR CHECK + indexes + partial uniques on the five tables; RLS; type ripple | T4    | **S11-A2 and S11-D proofs landed, or explicit re-pin** (below) | **yes** (one directory) | 450-650 (≈250 SQL + ≈120 prisma + ≈150 compile-fix) | PROCEED (schema-only; one migration)     |
-| S8-D4a | Invite mint / list / revoke / send (email) / public preview; `Person` `InvitePending ↔ Invited`; audit; coach UI contract                                                                                                             | T4    | S8-D3                                                          | no                      | 350-450                                             | PROCEED                                  |
-| S8-D4b | Challenge (email OTP) / verify / disclosure / confirm; link transaction (§2.7) incl. `CheckIn` collision handling; notifications; idempotency + race specs                                                                            | T4    | S8-D4a                                                         | no                      | 450-600                                             | PROCEED (split from a 900-1,000 line D4) |
-| S8-D5  | Unlink (client, coach ≤30 d, admin); return-only-imported join; notifications; `person_link` marker semantics                                                                                                                         | T4    | S8-D4b                                                         | no                      | 300-450                                             | PROCEED                                  |
-| S8-D6  | L5 coach-approved match + L8 merge (`path`, `merged_into_link_id`, two-sided confirm)                                                                                                                                                 | T4    | S8-D5; OQ-1, OQ-6 answered                                     | no                      | 300-450                                             | PROCEED                                  |
-| S8-D7  | Phone channel: SMS transport + phone OTP; masked phone disclosure                                                                                                                                                                     | T4    | Owner decision on provider/spending; S8-D4b                    | no                      | 200-300                                             | BLOCKED (owner)                          |
-| S8-E1a | `WorkoutSession` + `ExerciseSet` person-owned writer (S8-DOC §4.5 rules); provenance kinds CHECK expand; `person_id` resolution via D-S8-3                                                                                            | T4    | S8-D3; S8-D1                                                   | **yes** (CHECK expand)  | 300-450                                             | PROCEED                                  |
-| S8-E1b | `WeightLog` + `CheckIn` writers (units §3.9; `reviewed_by_coach` contract amendment recorded explicitly, S8-DOC L457-460)                                                                                                             | T4    | S8-E1a                                                         | no                      | 250-350                                             | PROCEED                                  |
-| S8-E1c | `Habit` + `HabitLog` writer                                                                                                                                                                                                           | T3    | S8-E1a                                                         | no                      | 150-250                                             | PROCEED                                  |
-| S8-E1d | `ClientWorkoutAssignment` inactive import (PLAN L313; S8-DOC L241-245)                                                                                                                                                                | T4    | S8-E1a; owner confirms "inactive" semantics                    | no                      | 150-250                                             | PROCEED after OQ-12                      |
-| UX-D2  | Mobile: roster imported rows + label + Invite form + invite list                                                                                                                                                                      | T2    | S8-D2, S8-D4a                                                  | —                       | 300-500                                             | PROCEED                                  |
-| UX-D4  | Mobile: client claim screens (preview → verify → disclosure → yes/no) with minimum-disclosure rules                                                                                                                                   | T3    | S8-D4b                                                         | —                       | 300-450                                             | PROCEED                                  |
-| UX-D5  | Mobile: undo affordances both sides, notifications copy                                                                                                                                                                               | T2    | S8-D5                                                          | —                       | 150-250                                             | PROCEED                                  |
-| UX-EXT | Extension: no change required (roster and claim are mobile/web). Optional readiness-panel count "imported, not yet joined" from the server                                                                                            | T1    | S8-D2                                                          | —                       | ≤50                                                 | OPTIONAL                                 |
+| Slice  | Scope                                                                                                                                                                                                                                                                                               | Grade | Depends on                                                                                     | Migration                 | Prod LOC (est.) | Blocked by owner OQ                                      | Ruling                                              |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------- | ------------------------- | --------------- | -------------------------------------------------------- | --------------------------------------------------- |
+| S8-D0  | This decision record (Round 1 + Round 2) and the appended S8-DOC forward pointer                                                                                                                                                                                                                    | T4    | OWNER; independent T4 review                                                                   | no                        | 0               | —                                                        | this commit                                         |
+| S8-D1  | Typed `person` handoff, create-only with provenance verification (§5.1 steps 1-4); `readPersons` Deleted → removed; S9 fixtures; named specs; roster-bearing runs may settle `complete` only when every family is                                                                                   | T4    | S11-A2 landed                                                                                  | no                        | 200–300         | **none** (OQ-11 decided by derivation)                   | PROCEED after re-review of this record              |
+| S8-D2  | Coach roster `imported_people[]` + `person_link` + `proposal` markers; importer-G `roster_bridge_pending` retirement; contract regen; suggestions read (never applied); privacy review of every field emitted                                                                                       | T4    | S8-D1                                                                                          | no                        | 250–400         | **none** (renders server state only)                     | PROCEED                                             |
+| S8-D3  | Schema (§2.1-2.5, §2.9): five new tables, `Person.linked_user_id`, `provenance.person_id`, nullable owner + `person_id` + XOR/coach CHECKs + composite FKs on five parents, strict partial uniques, RLS rewrite for eight tables + role×state matrix spec, staged in three directories; type ripple | T4    | S11-A2 + S11-D proofs landed on the 173-pin, **or** explicit parent re-pin in the same landing | **yes — 3 dirs** (§2.9)   | 550–800         | none (merge exemption index deferred to D6)              | PROCEED; SPLIT if measured > 1,000                  |
+| S8-D4a | Invite mint / list / revoke / resend limits / email send / public preview; `Person` `InvitePending ↔ Invited`; `Suspended` admin freeze + reinstate; audit; coach UI contract                                                                                                                       | T4    | S8-D3                                                                                          | no                        | 400–500         | none (OQ-5, OQ-8 derived; OQ-13 = phone off)             | PROCEED                                             |
+| S8-D4b | Challenge (email OTP) / verify / disclosure / confirm; link transaction (§2.7) incl. `link_collision` abort; outbox rows + in-tx notifications; idempotency + race specs; `FEATURE_PERSON_LINK` gate shared with D5                                                                                 | T4    | S8-D4a                                                                                         | no                        | 500–650         | OQ-10 (interim: minimal disclosure)                      | PROCEED; **not enableable before D5** (§3.5)        |
+| S8-D5  | Unlink (client, coach ≤ 30 d, admin) with reason codes + actor ids; return-only-imported join (four-field compare); `missing` count; `unlink_collision` abort; outbox worker + `notify_status`; `person_link` marker semantics                                                                      | T4    | S8-D4b                                                                                         | no                        | 400–550         | OQ-2, OQ-7 (interim defaults in §7)                      | PROCEED; D4b + D5 land as one releasable gate       |
+| S8-D6  | `PersonLinkProposal` lifecycle (create/decline/revoke/expire/supersede/start → invite); L5 `proposal_match` activation; L8 merge activation + exemption index + anchor trigger                                                                                                                      | T4    | S8-D5                                                                                          | yes (exemption index)     | 350–500         | **OQ-1** (merge part), OQ-6 (challenge on first-time L5) | PROCEED for match part; merge part BLOCKED on OQ-1  |
+| S8-D7  | Phone channel: SMS transport + phone OTP; masked phone disclosure; "unavailable" → real choice                                                                                                                                                                                                      | T4    | owner spending/provider decision                                                               | no                        | 200–300         | **OQ-13**                                                | BLOCKED (owner)                                     |
+| S8-E1a | `WorkoutSession` + `ExerciseSet` person-owned writer (S8-DOC §4.5 rules); provenance kinds CHECK expand; `person_id` via D-S8-3; Person `FOR SHARE` discipline                                                                                                                                      | T4    | S8-D3, S8-D1                                                                                   | yes (CHECK expand, 1 dir) | 300–450         | none                                                     | PROCEED                                             |
+| S8-E1b | `WeightLog` + `CheckIn` writers (`coach_id = person.coach_id`; units §3.9; `reviewed_by_coach` contract amendment recorded explicitly, S8-DOC L457-460)                                                                                                                                             | T4    | S8-E1a                                                                                         | no                        | 250–350         | none                                                     | PROCEED                                             |
+| S8-E1c | `Habit` + `HabitLog` writer                                                                                                                                                                                                                                                                         | T4    | S8-E1a                                                                                         | no                        | 150–250         | none                                                     | PROCEED                                             |
+| S8-E1d | `ClientWorkoutAssignment` inactive import (PLAN L313; S8-DOC L241-245)                                                                                                                                                                                                                              | T4    | S8-E1a                                                                                         | no                        | 150–250         | **OQ-12**                                                | BLOCKED (owner) — writer stays unresolved meanwhile |
+| UX-D2  | Mobile: roster imported rows + label + Invite form + invite/proposal list                                                                                                                                                                                                                           | T2    | S8-D2, S8-D4a                                                                                  | —                         | 300–500         | none                                                     | PROCEED                                             |
+| UX-D4  | Mobile: client claim screens (preview → verify → disclosure → yes/no), proposal start, collision message, "phone unavailable" copy                                                                                                                                                                  | T3    | S8-D4b                                                                                         | —                         | 300–450         | OQ-10 (copy only)                                        | PROCEED                                             |
+| UX-D5  | Mobile: undo affordances both sides with reason codes, notifications copy                                                                                                                                                                                                                           | T2    | S8-D5                                                                                          | —                         | 150–250         | none                                                     | PROCEED                                             |
+| UX-EXT | Extension: no change required (roster and claim are mobile/web). Optional readiness-panel count "imported, not yet joined" from the server                                                                                                                                                          | T1    | S8-D2                                                                                          | —                         | ≤50             | none                                                     | OPTIONAL                                            |
 
-Single S8-E1 would be 850-1,300 lines; it is split by family above so no slice exceeds 1,000.
+**D1 and D2 depend on no owner OQ** (confirmed against §7: OQ-1/2/6/7/9/10/12/13 each block D5,
+D6, D7, E1d or copy only). All grades are T4 except pure UI (C7: D1 changes durable identity
+provenance and S9 completeness; D2 publishes PII and suggestions). LOC figures are planning
+estimates from file touch counts (§2.1), not measurements; a builder re-measures at grant time
+and splits any slice that crosses 1,000.
+
+Single S8-E1 would be 850-1,300 lines and single S8-D4 ~900-1,150; both are split above so no
+slice is planned above 1,000.
 
 **Migration sequencing.** The S11 proof lane pins the schema: `EXPECTED_MIGRATIONS = 173`
 (`test/utils/g2-s11-pg-harness.ts` L39; `test/utils/g2-s11-bootstrap.sh` L36, L159-160) and
 "last (sorted) directory is S10-B's `20270124000000_scout_run_observation_expand`" (bootstrap
 L164-165), with the prisma tree required byte-identical to `711c1f8f` (bootstrap L150-156;
-guard `test/utils/g2-s11-db-guard.spec.ts` L194-195, L220-222). Any S8-D3 or S8-E1a migration
-therefore breaks that lane's bootstrap until it is re-pinned. Rule: S8-D3 lands **after** S11-A2
-and S11-D have taken their proofs on the 173-pin, or the parent re-pins the S11 harness
-explicitly in the same landing (a T2 pin move, reviewed). S8-D1, S8-D2 ship no migration and may
-land earlier, after S11-A2 (they change what J19 step 11 reads).
+guard `test/utils/g2-s11-db-guard.spec.ts` L194-195, L220-222). Any S8-D3 (three directories,
+§2.9), S8-D6 or S8-E1a migration therefore breaks that lane's bootstrap until it is re-pinned.
+Rule: S8-D3 lands **after** S11-A2 and S11-D have taken their proofs on the 173-pin, or the parent
+re-pins the S11 harness explicitly in the same landing (a T2 pin move, reviewed). S8-D1, S8-D2
+ship no migration and may land earlier, after S11-A2 (they change what J19 step 11 reads).
 
 **Owner boundaries (unchanged):** production deployment and `FEATURE_*` values (`/api/scout/*`
 is dark unless flagged, `scout-roster.controller.ts` L78-81), live source accounts, G3-AUTH,
 S8-D/E principal enablement in production, CWS, branch protection, and the S8-D7 spending
 decision. Every slice above is built and proven on `integration/importer` only.
 
-## 7. Open questions (recorded, not decided)
+## 7. Open questions (Round 2: derived vs owner)
 
-- **OQ-1 L6 vs L8 cardinality.** L6 says one Person ↔ at most one account per coach; L8 lets the
-  same person imported from two platforms merge into one account, which is two Persons ↔ one
-  account under one coach. Recommended DB reading in §2.5 (per-Person uniqueness absolute;
-  per-account uniqueness except `path = merge`). Owner to confirm, or to say the two Persons
-  should instead be merged into one Person first (which needs a Person-merge primitive not
-  designed here).
-- **OQ-2 Edits while linked.** On unlink, an imported row that the client or coach edited while
-  linked returns to the Person with those edits (handed over, not copied). Acceptable, or should
-  edited imported rows stay with the client?
-- **OQ-3 `CheckIn` collision on link.** An imported check-in on a date where the client already
-  logged one cannot move (L1129). §2.7 proposes leave-with-Person + count as `skipped` and show
-  it; the alternative is to refuse the link. Which?
-- **OQ-4 Client already attached to another coach.** `User.coach_id` is single-valued (L164). A
-  claim by such a user is refused in §2.2 (L6 never across tenants; changing coach is a live
-  action). Confirm, and confirm that a `coach`-role user can never be linked as a client.
-- **OQ-5 TTLs.** Invite 14 days (matches `InviteCode`), one-time code 10 minutes, verified window
-  15 minutes, lockout 5. Confirm or change.
-- **OQ-6 Does L5 need the one-time code?** The L5 client is already this coach's authenticated
-  client; §3.3 proposes in-app confirmation only (the L3 code exists to bind a stranger to a
-  coach-held contact, which L5 does not do). Confirm, or require the code on L5 as well.
-- **OQ-7 Deletion inside the 30-day window.** If the linked client deletes their account within
-  30 days, account deletion today deletes these rows by `user_id` (`account-deletion.service.ts`
-  L790-795). Should imported rows first return to the Person (unlink-then-delete), or go with
-  the account? Related: may a `Claimed` Person be erased while linked?
-- **OQ-8 `Suspended`.** What sets and clears it (coach action, admin, automatic after N failed
-  claims)? Not derivable from the tree; today no code sets it.
-- **OQ-9 Families without a native destination.** Notes, goals, measurements, profile attributes
-  (S8-DOC L442-444) have no person-capable table. Remain unresolved, or is a destination wanted?
-- **OQ-10 Disclosure before "yes".** §3.2 step 4 shows the Person's display name plus per-family
-  counts and date ranges. Is a count too much for a not-yet-confirmed claimant, or too little
-  for the client to recognise their history?
-- **OQ-11 `Person.display_name` overwrite on replay.** Once `person` is a provenance-carrying
-  native kind, D-S8-4 create-only would forbid the accepted `update: {display_name}` branch
-  (`families.ts` L98). Keep the accepted behaviour (byte-identical) or go create-only?
-- **OQ-12 Imported assignments "inactive".** S8-DOC L243-245 says assignments import inactive;
-  `ClientWorkoutAssignment` has no inactive flag (L2323-2358). Define it (e.g. `completed_at`
-  set from source, never scheduled in the future) before S8-E1d.
-- **OQ-13 Phone provider.** No SMS transport exists; choosing one is spending (owner). Until then
-  the client can only choose channels the coach holds **and** the system can deliver to.
+### 7.1 Decided by derivation (no owner choice needed; recorded so the reasoning is auditable)
+
+| OQ    | Decision                                                                                                                                                                                                                                                  | Derived from                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OQ-3  | `CheckIn` `(user_id, date)` collision on link: **fail closed** — the link aborts with `link_collision` naming the dates; neither row is overwritten or silently skipped; the client resolves and retries or declines (§2.7 step 4).                       | L1129 unique key; mission rule "unknown never silently becomes zero"; S8-DOC §3.5 `native_uniqueness` semantics.                                  |
+| OQ-4  | A claimant attached to a different coach is **refused**; `coach`, `sub_coach` and `owner` accounts are never linkable as clients; the link never reassigns `coach_id` or downgrades a role (§2.2).                                                        | L6 tenant isolation; single-valued `User.coach_id` (L164); owner refusal precedent (L563-568).                                                    |
+| OQ-5  | Invite 14 days single-use; one-time code 10 min; verified-but-unconfirmed window 15 min; lockout at 5 wrong codes; resend limits 3/24 h per invite, 10/h per coach, challenge resends 3/h per claimant; per-IP throttle as the landing controller (§2.4). | `InviteCode` default (L143); `ExtensionPairCode` lockout (L41); implementation constants, revisable without touching L1-L8.                       |
+| OQ-8  | `Suspended` is an **admin/manual safety freeze** only, with audited reinstatement; nothing automatic — a failed-code lockout revokes that invite only (§2.3).                                                                                             | No code sets it today (L6951-6957); automatic suspension would let an attacker holding a link deny the coach's L2 right; least-privilege default. |
+| OQ-11 | `Person.display_name` is **create-only** once provenance is written; replays verify the target and preserve edits; pre-D1 rows are adopted once (§5.1).                                                                                                   | S8-DOC D-S8-4 (binding); S8-C writer pattern `native-writers.ts` L91-105.                                                                         |
+
+### 7.2 Owner questions (open; each has a safe interim default that ships until answered)
+
+| OQ    | Plain-words question for Bradley                                                                                                                                                                                                | Interim default (in force until answered)                                                                                                                                     | Blocks                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| OQ-1  | When the same client was imported twice by one coach (two platforms), should both imported records attach to the one account, or must they first be merged into one imported record?                                            | Strict L6: one Person per account per coach; merge activation refused by the database; both Persons shown, one unjoined (§2.5, §3.3).                                         | S8-D6 merge part (index + activation) only    |
+| OQ-2  | If a client edits imported history while linked and then unlinks, may the edited history go back to the coach's imported record, or should edited records stay with the client?                                                 | Hand over the row as it is (edits travel back); counts in `records_returned` (§2.7).                                                                                          | S8-D5 acceptance only (code path identical)   |
+| OQ-6  | For a client who is already your client (L5), is their in-app "yes" enough, or must they also receive a code at a contact you hold, like a new client?                                                                          | Code on every path, including L5/L8 (§3.3); for any Person with a past link the code is mandatory regardless (B3).                                                            | S8-D6 match part (only to relax)              |
+| OQ-7  | If the client deletes their account within the 30-day window, should the imported records go back to your imported record first, or be deleted with the account? May an actively linked imported record ever be erased?         | Account deletion is **blocked** while a link is inside its undo window (client is told to unlink first or wait); a linked Person cannot be erased (§2.3, §3.1 "Data rights"). | S8-D5 acceptance; account-deletion touchpoint |
+| OQ-9  | Notes, goals, measurements and profile fields have no place to live for an imported client. Do you want new destinations for them, or should they stay explicitly "unresolved" in this release?                                 | Explicitly `unresolved`; nothing fabricated (S8-DOC §3.5).                                                                                                                    | none in S8-D/E (future family slices)         |
+| OQ-10 | After the code is verified but before the client says "yes", should they see how many records and which dates the history covers, or only enough to answer "is this you?" (coach name, your name on the record, history kinds)? | Minimal: coach card, Person display name, family **kinds** only — no counts or date ranges until "yes" (§3.2 step 4 copy).                                                    | UX-D4 copy; S8-D4b disclosure payload         |
+| OQ-12 | How should an imported historical workout assignment appear so it never schedules or notifies anyone — what exact "inactive" state and fields should be kept?                                                                   | Assignment import stays `unresolved`; no `completed_at` invention (`ClientWorkoutAssignment` has no inactive flag, L2323-2358).                                               | S8-E1d                                        |
+| OQ-13 | Which SMS provider and budget may we use, and may the email-only version launch before phone is available?                                                                                                                      | Email only where deliverable; phone contact stored but marked unavailable; no D7 spend; copy names it a capability limitation (§2.4, C8).                                     | S8-D7                                         |
+
+**Confirmation:** S8-D1 and S8-D2 depend on none of the rows in §7.2.
+
+### 7.3 Notes that are not questions
+
+- The `owner` role's direct read of person-owned rows on `ExerciseSet`, `HabitLog`, `CheckIn` and
+  the snapshot is existing behaviour kept unchanged (§2.2 item 2). Removing it is a one-line
+  policy change per table if the owner wants it.
+- `rls_fitness_backend.sql` becomes superseded for `WorkoutSession`, `WeightLog`, `Habit` once D3
+  lands (§2.2 item 1); the parent should schedule the out-of-band file's retirement for those
+  three tables.
 
 ## 8. Invariant cross-check
 
-| Invariant                                          | Held by                                                                                                                             |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| New source → core diff 0                           | Nothing here is per-source; `person_id` resolution uses the D-S8-3 key through the S8-A interpreter (§2.6).                         |
-| No login `User` minted for an imported person (D2) | Claim requires an existing authenticated `User`; no route creates one (§3.1).                                                       |
-| Email/phone never an identity or linking key       | Contacts exist only on the invite for delivery and as an OTP channel; `PersonLink` holds a digest; no lookup by contact anywhere.   |
-| Unknown never silently becomes zero                | `records_moved.skipped`, `send_status`, and per-family `unresolved` stay visible; no family is `complete` before its writer exists. |
-| No fabricated server behaviour in UI               | §5.2: labels and link markers come from server fields only.                                                                         |
-| Owner-reserved boundaries untouched                | §6 boundaries; S8-D7 blocked on owner; flags stay dark.                                                                             |
-| Coach edits preserved (D-S8-4)                     | Link/unlink flip owner columns only; no content is rewritten; OQ-11 recorded rather than changed.                                   |
+| Invariant                                          | Held by                                                                                                                                                                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New source → core diff 0                           | Nothing here is per-source; `person_id` resolution uses the D-S8-3 key through the S8-A interpreter (§2.6).                                                                                                    |
+| No login `User` minted for an imported person (D2) | Claim requires an existing authenticated `User`; no route creates one (§3.1).                                                                                                                                  |
+| Email/phone never an identity or linking key       | Contacts exist only on the invite for delivery and as an OTP channel; `PersonLink` holds a digest; no lookup by contact anywhere.                                                                              |
+| Unknown never silently becomes zero                | Link and unlink abort on collision instead of skipping; `records_returned.missing`, `send_status`, `notify_status` and per-family `unresolved` stay visible; no family is `complete` before its writer exists. |
+| No fabricated server behaviour in UI               | §5.2: labels and link markers come from server fields only.                                                                                                                                                    |
+| Owner-reserved boundaries untouched                | §6 boundaries; S8-D7 blocked on owner; flags stay dark.                                                                                                                                                        |
+| Coach edits preserved (D-S8-4)                     | Link/unlink flip owner columns only; no content is rewritten; `Person.display_name` is create-only from S8-D1 (§5.1).                                                                                          |
+| Fresh invite + fresh confirmation on re-link (L7)  | §2.7 step 1 invite-after-last-unlink precondition on every path; no `InvitePending → Claimed` edge (§2.3, §3.3).                                                                                               |
+| Every link/unlink audited (L6)                     | `PersonLink` with actor ids and reason codes written in the transaction; outbox intent in the same transaction (§2.5).                                                                                         |
+
+## 9. Round 2 closure map (independent T4 review of `ded755ab`)
+
+| Finding | Closed by                                                                                                                                                                                                                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1      | §2.2: effective-policy inventory (eight tables, file:line), `person_id IS NULL` guards, in-tree policies for three parents, stated owner exception, composite-FK tenant pin on `CheckIn.coach_id`, role × owner-state matrix.            |
+| B2      | §2.5: `PersonLinkProposal` with lifecycle/authorization; `PersonLink` completed-only with `linked_at NOT NULL`; active uniques on `linked_at IS NOT NULL AND unlinked_at IS NULL`; strict account unique until OQ-1; anchor constraints. |
+| B3      | §2.3 (no `InvitePending → Claimed`), §2.7 step 1 (invite minted after last `unlinked_at`), §3.3 (proposals activate only through invite + challenge + confirmation).                                                                     |
+| B4      | §5.1: create-only with provenance verification; `Deleted` → `native_target_removed`, no resurrection; adoption of pre-D1 rows; named specs; C6 completeness rule.                                                                        |
+| B5      | §3.5: `FEATURE_PERSON_LINK` shared by D4b + D5; flag forbidden before D5 specs are green; outbox + in-transaction notifications; `notify_status` on the link.                                                                            |
+| C2      | §2.9 three-directory staged migration with `NOT VALID`/`VALIDATE`, `CONCURRENTLY`, timeouts, rollback.                                                                                                                                   |
+| C3      | §2.4: atomic counters, resend limits, void-all-challenges, unknown tokens charge nothing.                                                                                                                                                |
+| C4      | §2.5/§3.4: actor ids, reason-code enum, note never auto-shown.                                                                                                                                                                           |
+| C5      | §2.7: four-field provenance compare, deleted-row `missing` count, fail-closed collisions, shared lock discipline, single transaction.                                                                                                    |
+| C7      | §6: D1 and D2 re-graded T4; LOC labelled estimates.                                                                                                                                                                                      |
+| C8      | §2.4 `send_status`, §7.2 OQ-13 interim: email-only is a capability limitation.                                                                                                                                                           |
+| OQ      | §7.1 derived (3, 4, 5, 8, 11) and §7.2 owner (1, 2, 6, 7, 9, 10, 12, 13) with interim defaults and blocked slices.                                                                                                                       |
