@@ -527,9 +527,15 @@ describe('importer contract (R80 freeze)', () => {
       expect(Object.keys(rec(result.properties)).sort()).toEqual([
         'chosen_platform',
         'import_intent_id',
+        'readiness',
         'status',
       ]);
       expect(result.required).toContain('import_intent_id');
+      // S11-C (D-S11-5): optional advisory readiness block, a $ref to PairReadiness.
+      expect(result.required).not.toContain('readiness');
+      expect(dig(result, 'properties', 'readiness', 'allOf')).toEqual([
+        { $ref: '#/components/schemas/PairReadiness' },
+      ]);
       expect(Object.keys(rec(route.responses)).sort()).toEqual([
         '200',
         '400',

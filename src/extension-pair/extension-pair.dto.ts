@@ -111,6 +111,36 @@ export class PairStatusResult extends PairIntentResult {
   status!: PairStatus;
 }
 
+// S11-C (D-S11-5): advisory setup-to-run readiness. Read-only, owner-scoped, counts only.
+export const READINESS_RUN_STATES = ['none', 'open', 'terminal'] as const;
+export type ReadinessRunState = (typeof READINESS_RUN_STATES)[number];
+
+export class PairReadiness {
+  @ApiProperty({
+    enum: READINESS_RUN_STATES,
+    description:
+      'Server run of this setup: none (no Start accepted), open (no terminal recorded yet; ' +
+      'not a liveness claim), terminal (a terminal is recorded; read it from ' +
+      'GET /api/scout/import/status, the single read of run truth).',
+  })
+  run!: ReadinessRunState;
+
+  @ApiProperty({
+    description:
+      'True only when at least one run declaration has been received. Display as ' +
+      '"declaration received"; never as source authorized, ready or connected. This read ' +
+      'does not verify source authorization, which stays unknown.',
+  })
+  source_declared!: boolean;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Count of distinct declared source platforms; null when run is none.',
+  })
+  declared_platforms!: number | null;
+}
+
 export class PairSessionResult extends PairStatusResult {
   @ApiProperty({
     format: 'uuid',
@@ -123,6 +153,13 @@ export class PairSessionResult extends PairStatusResult {
     description: 'Source platform selected at pairing, not proof of any imported data.',
   })
   chosen_platform!: string;
+
+  @ApiPropertyOptional({
+    type: () => PairReadiness,
+    description:
+      'Advisory readiness of the run bound to this setup. Absent means not known, never "no".',
+  })
+  readiness?: PairReadiness;
 }
 
 export class PairRedeemResult extends PairIntentResult {

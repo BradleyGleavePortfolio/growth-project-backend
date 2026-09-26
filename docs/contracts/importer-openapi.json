@@ -152,6 +152,34 @@
         ],
         "type": "object"
       },
+      "PairReadiness": {
+        "properties": {
+          "declared_platforms": {
+            "description": "Count of distinct declared source platforms; null when run is none.",
+            "nullable": true,
+            "type": "number"
+          },
+          "run": {
+            "description": "Server run of this setup: none (no Start accepted), open (no terminal recorded yet; not a liveness claim), terminal (a terminal is recorded; read it from GET /api/scout/import/status, the single read of run truth).",
+            "enum": [
+              "none",
+              "open",
+              "terminal"
+            ],
+            "type": "string"
+          },
+          "source_declared": {
+            "description": "True only when at least one run declaration has been received. Display as \"declaration received\"; never as source authorized, ready or connected. This read does not verify source authorization, which stays unknown.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run",
+          "source_declared",
+          "declared_platforms"
+        ],
+        "type": "object"
+      },
       "PairRedeemDto": {
         "properties": {
           "code": {
@@ -216,6 +244,14 @@
             "description": "Persisted server-issued setup correlation.",
             "format": "uuid",
             "type": "string"
+          },
+          "readiness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PairReadiness"
+              }
+            ],
+            "description": "Advisory readiness of the run bound to this setup. Absent means not known, never \"no\"."
           },
           "status": {
             "description": "Lifecycle state of the polled code.",

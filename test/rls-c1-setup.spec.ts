@@ -251,11 +251,15 @@ describe('C1-S1 real PostgreSQL authority and recovery', () => {
     await prisma.extensionPairCode.updateMany({ data: { expires_at: new Date(0) } });
     await expect(svc().init('a', 'truecoach', key)).rejects.toMatchObject({ status: 410 });
     await prisma.extensionPairCode.deleteMany();
-    expect(await svc().current('a', key)).toEqual({
+    // S11-C: this lane builds no ScoutImport table, so the readiness read fails and the block is
+    // omitted (unknown): its exact expected value here is absent.
+    const recovered = await svc().current('a', key);
+    expect(recovered).toEqual({
       import_intent_id: setup.import_intent_id,
       chosen_platform: 'truecoach',
       status: 'expired',
     });
+    expect(recovered).not.toHaveProperty('readiness');
   });
 
   it('one concurrent redeem wins, atomically records pairing, and never replays tokens', async () => {
@@ -268,11 +272,14 @@ describe('C1-S1 real PostgreSQL authority and recovery', () => {
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
     await expect(svc().redeem(setup.pairing_code)).rejects.toMatchObject({ status: 410 });
     await prisma.extensionPairCode.deleteMany();
-    expect(await svc().session('a', setup.import_intent_id!)).toEqual({
+    // S11-C: no ScoutImport table on this lane, so readiness is absent (unknown), as above.
+    const paired = await svc().session('a', setup.import_intent_id!);
+    expect(paired).toEqual({
       import_intent_id: setup.import_intent_id,
       chosen_platform: 'truecoach',
       status: 'paired',
     });
+    expect(paired).not.toHaveProperty('readiness');
   });
 
   it('mint failure is retryable and expiry/supersession during mint cannot claim', async () => {
