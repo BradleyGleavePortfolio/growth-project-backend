@@ -219,13 +219,17 @@ describe('importer contract (R80 freeze)', () => {
         'transferring',
       ]);
       expect(rec(en.phase).nullable).toBe(true);
+      // S7-L's six codes plus the three S9 reconciliation codes (S9-C, D-S9-7; append-only).
       expect((rec(en.reason_code).enum as string[]).sort()).toEqual([
         'cancelled_by_coach',
+        'coverage_basis_unknown',
         'deadline_exceeded',
         'reconciliation_not_performed',
+        'relationship_unverified',
         'revoked',
         'transfer_failed',
         'unresolved_family',
+        'unresolved_identities',
       ]);
       expect((rec(en.claimed_status).enum as string[]).sort()).toEqual([
         'failed',
@@ -243,7 +247,30 @@ describe('importer contract (R80 freeze)', () => {
       expect(dig(en, 'families', 'items', '$ref')).toBe(
         '#/components/schemas/ScoutImportFamilyDto',
       );
+      // The eight S7-L keys plus the six S9-C additive (optional) keys of D-S9-5.
       expect(props('ScoutImportFamilyDto')).toEqual([
+        'already_present_verified',
+        'canonical_family',
+        'completeness_basis',
+        'created_native',
+        'family',
+        'ledger',
+        'native_present_verified',
+        'observed_unique',
+        'qualifiers',
+        'reasons',
+        'rejected',
+        'relationship_closure',
+        'staged_unique',
+        'unresolved',
+      ]);
+      expect(props('ScoutImportFamilyLedgerDto')).toEqual(['failed', 'reconstructed', 'skipped']);
+    });
+
+    it('S9-C: the additive family fields are optional, closed where the doc closes them, and additive only', () => {
+      const family = rec(dig(contract, 'components', 'schemas', 'ScoutImportFamilyDto'));
+      // The S7-L required set is unchanged: none of the S9 fields is required (R13/R15 absence).
+      expect((family.required as string[]).slice().sort()).toEqual([
         'already_present_verified',
         'created_native',
         'family',
@@ -253,7 +280,22 @@ describe('importer contract (R80 freeze)', () => {
         'staged_unique',
         'unresolved',
       ]);
-      expect(props('ScoutImportFamilyLedgerDto')).toEqual(['failed', 'reconstructed', 'skipped']);
+      const fp = rec(family.properties);
+      expect(rec(fp.canonical_family)).toMatchObject({ type: 'string', nullable: true });
+      expect(rec(fp.native_present_verified)).toMatchObject({ type: 'number', minimum: 0 });
+      expect(rec(fp.completeness_basis)).toMatchObject({ type: 'string' });
+      expect((rec(fp.relationship_closure).enum as string[]).sort()).toEqual([
+        'not_applicable',
+        'unverified',
+        'verified',
+      ]);
+      expect(dig(fp, 'reasons', 'items', '$ref')).toBe(
+        '#/components/schemas/ScoutImportReasonCountDto',
+      );
+      expect(props('ScoutImportReasonCountDto')).toEqual(['code', 'count']);
+      // Addendum C-7: `qualifiers[]` is a closed enum, never string[].
+      expect(rec(fp.qualifiers).type).toBe('array');
+      expect(dig(fp, 'qualifiers', 'items', 'enum')).toEqual(['roster_bridge_pending']);
     });
 
     it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {

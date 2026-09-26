@@ -532,6 +532,17 @@
             "nullable": true,
             "type": "number"
           },
+          "canonical_family": {
+            "description": "Canonical family the staged token resolves to (S9); null when unmapped or when the token resolves to different families across platforms. Present only when a report applies.",
+            "example": "workouts",
+            "nullable": true,
+            "type": "string"
+          },
+          "completeness_basis": {
+            "description": "Completeness basis for the family (S9 D-S9-3): 'none' until a basis is recorded. Present only when a report applies.",
+            "example": "none",
+            "type": "string"
+          },
           "created_native": {
             "description": "Native rows created (S9); null until known.",
             "nullable": true,
@@ -550,15 +561,46 @@
             ],
             "description": "Reconstruction ledger tally."
           },
+          "native_present_verified": {
+            "description": "Verified natively present (created or already present) identities (S9 D-S9-4). Present only when a report applies.",
+            "minimum": 0,
+            "type": "number"
+          },
           "observed_unique": {
             "description": "Observed by the extension (S10); null until known.",
             "nullable": true,
             "type": "number"
           },
+          "qualifiers": {
+            "description": "Family qualifiers (D-S9-5, closed enum, append-only); present only when a report applies.",
+            "items": {
+              "enum": [
+                "roster_bridge_pending"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reasons": {
+            "description": "Closed-catalogue reason histogram over the staged identities (S9 D-S9-7), sorted by code. Present only when a report applies.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutImportReasonCountDto"
+            },
+            "type": "array"
+          },
           "rejected": {
             "description": "Rejected by reconciliation (S9); null until known.",
             "nullable": true,
             "type": "number"
+          },
+          "relationship_closure": {
+            "description": "Relationship closure over the verified identities (S9 D-S9-5): not_applicable = no verified identity carries a declared edge. Present only when a report applies.",
+            "enum": [
+              "verified",
+              "unverified",
+              "not_applicable"
+            ],
+            "type": "string"
           },
           "staged_unique": {
             "description": "Distinct staged source identities for the family.",
@@ -602,6 +644,25 @@
           "reconstructed",
           "skipped",
           "failed"
+        ],
+        "type": "object"
+      },
+      "ScoutImportReasonCountDto": {
+        "properties": {
+          "code": {
+            "description": "Reason code from the closed S9 catalogue (never free text).",
+            "example": "unresolved:no_native_client_principal",
+            "type": "string"
+          },
+          "count": {
+            "description": "Identities of the family carrying this code.",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "count"
         ],
         "type": "object"
       },
@@ -690,7 +751,10 @@
               "deadline_exceeded",
               "transfer_failed",
               "unresolved_family",
-              "revoked"
+              "revoked",
+              "unresolved_identities",
+              "relationship_unverified",
+              "coverage_basis_unknown"
             ],
             "nullable": true,
             "type": "string"

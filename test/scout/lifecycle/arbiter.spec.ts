@@ -5,6 +5,7 @@ import {
   FENCE_TERMINALS,
   totalStaged,
 } from '../../../src/scout/lifecycle/arbiter';
+import { S9_RUN_REASON_CODES } from '../../../src/scout/lifecycle/lifecycle.service';
 import {
   FENCE_REASONS,
   RUN_REASON_CODES,
@@ -140,5 +141,68 @@ describe('S7-L arbiter (pure)', () => {
   it('totalStaged sums every family', () => {
     expect(totalStaged({})).toBe(0);
     expect(totalStaged({ a: 2, b: 3 })).toBe(5);
+  });
+
+  describe('S9-C — the three S9 codes and R09 precedence with a live S9 verdict', () => {
+    it('appends the three S9 codes after the six S7-L codes, order preserved (D-S9-7)', () => {
+      expect([...RUN_REASON_CODES]).toEqual([
+        'reconciliation_not_performed',
+        'cancelled_by_coach',
+        'deadline_exceeded',
+        'transfer_failed',
+        'unresolved_family',
+        'revoked',
+        'unresolved_identities',
+        'relationship_unverified',
+        'coverage_basis_unknown',
+      ]);
+      expect(S9_RUN_REASON_CODES).toEqual([
+        'unresolved_family',
+        'unresolved_identities',
+        'relationship_unverified',
+        'coverage_basis_unknown',
+      ]);
+    });
+
+    it('R09: a fence wins over every S9 verdict, complete included', () => {
+      for (const fence of FENCE_REASONS) {
+        for (const reconciliation of [
+          { outcome: 'complete' as const, reason_code: null },
+          { outcome: 'partial' as const, reason_code: 'coverage_basis_unknown' as const },
+          { outcome: 'partial' as const, reason_code: 'unresolved_identities' as const },
+        ]) {
+          expect(arbitrate(base({ fence, reconciliation, claim: 'success' }))).toEqual({
+            terminal_status: FENCE_TERMINALS[fence],
+            reason_code: FENCE_REASON_CODES[fence],
+          });
+        }
+      }
+    });
+
+    it('R09: claim failed with zero staged rows → failed / transfer_failed even when S9 says complete', () => {
+      expect(
+        arbitrate(
+          base({ claim: 'failed', reconciliation: { outcome: 'complete', reason_code: null } }),
+        ),
+      ).toEqual({ terminal_status: 'failed', reason_code: 'transfer_failed' });
+    });
+
+    it('S9 partial verdicts carry each S9 code verbatim into the terminal', () => {
+      for (const reason_code of [
+        'unresolved_identities',
+        'relationship_unverified',
+        'coverage_basis_unknown',
+      ] as const) {
+        expect(
+          arbitrate(
+            base({
+              claim: 'success',
+              staged_by_family: { workouts: 1 },
+              reconciliation: { outcome: 'partial', reason_code },
+            }),
+          ),
+        ).toEqual({ terminal_status: 'partial', reason_code });
+      }
+    });
   });
 });

@@ -3,6 +3,8 @@ import { Events } from '../../../src/analytics/events';
 import { PrismaService } from '../../../src/prisma.service';
 import { ScoutLifecycleService } from '../../../src/scout/lifecycle/lifecycle.service';
 import type { RunPassResult } from '../../../src/scout/reconstruct/orchestration/run-context';
+import { ReconciliationFactsService } from '../../../src/scout/reconciliation/facts.service';
+import type { ReconciliationFacts } from '../../../src/scout/reconciliation/types';
 import { ScoutReconstructService } from '../../../src/scout/scout-reconstruct.service';
 
 /**
@@ -12,7 +14,24 @@ import { ScoutReconstructService } from '../../../src/scout/scout-reconstruct.se
  * assertRunOpen, a CAS miss on a raised epoch writes nothing (G14), classifyClosed after a closed
  * gate (G03/G05), verdicts from durable facts not from the pass result (G01/G06), and that the hook
  * never writes a terminal field except through S7-L's single writeTerminal statement.
+ *
+ * S9-C (D-S9-1): the tail now asks the facts service for the S9 facts AFTER the lock and CAS check
+ * and hands `reconcile(facts).verdict` to the arbiter, so step 4's `reconciliation_not_performed`
+ * is no longer reachable from this hook. The facts service is a double here that returns an EMPTY
+ * staged partition — the S9-A reconciler's verdict for that is `partial / coverage_basis_unknown`
+ * (C-COV: required families undeterminable, unknown never zero) — so every case below keeps its
+ * S8-G meaning with that code substituted. The S9 order marker `facts` sits between `lock` and
+ * `terminal`; a CAS miss never reaches it.
  */
+
+const EMPTY_FACTS: ReconciliationFacts = {
+  claim: 'success',
+  families: [],
+  relationships: [],
+  spec_families: [],
+  ledger_without_staged: 0,
+  coverage: null,
+};
 
 const COACH = 'coach-1';
 const INTENT = '3f2b9c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
@@ -27,6 +46,7 @@ interface Doubles {
   runFindUnique: jest.Mock;
   capture: jest.Mock;
   reconstructRun: jest.Mock;
+  factsCollect: jest.Mock;
 }
 
 const passResult = (over: Partial<RunPassResult> = {}): RunPassResult => ({
@@ -61,6 +81,10 @@ function make(lockedRow: LockedRow | null) {
     reconstructRun: jest.fn(async () => {
       d.order.push('pass');
       return passResult();
+    }),
+    factsCollect: jest.fn(async () => {
+      d.order.push('facts');
+      return EMPTY_FACTS;
     }),
   };
   d.queryRaw.mockImplementation(async (strings: TemplateStringsArray) => {
@@ -106,7 +130,11 @@ function make(lockedRow: LockedRow | null) {
     Object.create(ScoutReconstructService.prototype) as ScoutReconstructService,
     { reconstructRun: d.reconstructRun },
   );
-  const service = new ScoutLifecycleService(prisma, analytics, reconstruct);
+  const facts = Object.assign(
+    Object.create(ReconciliationFactsService.prototype) as ReconciliationFactsService,
+    { collect: d.factsCollect },
+  );
+  const service = new ScoutLifecycleService(prisma, analytics, reconstruct, facts);
   return { d, service };
 }
 
@@ -130,17 +158,17 @@ describe('onTransferSettled — S8-G body', () => {
     expect(intent).toBe(INTENT);
     expect(ctx).toMatchObject({ mode: 'server', epoch: 1 });
     expect(typeof ctx.gate).toBe('function');
-    expect(d.order).toEqual(['pass', 'lock', 'terminal']);
-    // Until S9 supplies a reconciliation verdict the arbiter's step 4 is the truthful terminal.
+    expect(d.order).toEqual(['pass', 'lock', 'facts', 'terminal']);
+    // S9-C: the facts service is asked once, on the settle transaction, after the lock; the
+    // reconciler's verdict for an empty staged partition is the truthful terminal (D-S9-1).
+    expect(d.factsCollect).toHaveBeenCalledTimes(1);
+    expect(d.factsCollect).toHaveBeenCalledWith(
+      expect.objectContaining({ $queryRaw: d.queryRaw }),
+      COACH,
+      INTENT,
+    );
     expect(terminalCall(d)?.slice(1)).toEqual(
-      expect.arrayContaining([
-        'partial',
-        'partial',
-        'reconciliation_not_performed',
-        COACH,
-        INTENT,
-        1,
-      ]),
+      expect.arrayContaining(['partial', 'partial', 'coverage_basis_unknown', COACH, INTENT, 1]),
     );
     expect(d.capture).toHaveBeenCalledWith(
       COACH,
@@ -148,7 +176,7 @@ describe('onTransferSettled — S8-G body', () => {
       expect.objectContaining({
         intent_id: INTENT,
         terminal_status: 'partial',
-        reason_code: 'reconciliation_not_performed',
+        reason_code: 'coverage_basis_unknown',
       }),
     );
     // `complete` never appears in any write argument (S7-L invariant kept).
@@ -192,7 +220,7 @@ describe('onTransferSettled — S8-G body', () => {
     expect(d.stagedGroupBy).toHaveBeenCalledTimes(1);
     expect(d.ledgerGroupBy).toHaveBeenCalledTimes(1);
     expect(terminalCall(d)?.slice(1)).toEqual(
-      expect.arrayContaining(['partial', 'reconciliation_not_performed']),
+      expect.arrayContaining(['partial', 'coverage_basis_unknown']),
     );
   });
 
@@ -207,6 +235,7 @@ describe('onTransferSettled — S8-G body', () => {
     await service.onTransferSettled(COACH, INTENT, 1);
     expect(d.order).toEqual(['pass', 'lock']);
     expect(d.stagedGroupBy).not.toHaveBeenCalled();
+    expect(d.factsCollect).not.toHaveBeenCalled(); // S9 reads nothing on a CAS miss
     expect(d.executeRaw).not.toHaveBeenCalled();
     expect(d.capture).not.toHaveBeenCalled();
   });
@@ -305,7 +334,7 @@ describe('onTransferSettled — S8-G body', () => {
     b.d.completionFindUnique.mockResolvedValue({ terminal_status: 'failed' });
     await b.service.onTransferSettled(COACH, INTENT, 1);
     expect(terminalCall(b.d)?.slice(1)).toEqual(
-      expect.arrayContaining(['partial', 'reconciliation_not_performed']),
+      expect.arrayContaining(['partial', 'coverage_basis_unknown']),
     );
   });
 
@@ -323,5 +352,7 @@ describe('onTransferSettled — S8-G body', () => {
     const analytics = Object.create(AnalyticsService.prototype) as AnalyticsService;
     const service = new ScoutLifecycleService(prisma, analytics);
     expect(service).toHaveProperty('reconstruct', expect.any(ScoutReconstructService));
+    // S9-C: likewise the real facts service (never skips the verdict).
+    expect(service).toHaveProperty('facts', expect.any(ReconciliationFactsService));
   });
 });
