@@ -1,0 +1,13 @@
+{
+  "note": "TEST-ONLY synthetic key material for the S10-A pure tier (D-S10-1 verifier rule, D-S10-5). The `source` pair stands in for the synthetic s10_unseen SOURCE signer; `observer` stands in for a key an extension/client could hold and is never a manifest verifier. Neither key is used by any real platform.",
+  "source": {
+    "key_id": "s10_unseen.source.test",
+    "public_key_b64": "B4PqUoRPwIRyuuFgtCEJTez5qV33j9WwR96AIHeqxso=",
+    "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEINFMZ2UyCRo9skwXzEvM9N6lBsfs4qbiJKfAphu7fjgp"
+  },
+  "observer": {
+    "key_id": "s10_unseen.observer.test",
+    "public_key_b64": "QyhG7w2NlludWf/qb/jOLMrcevav5F/4MNiFZfK9nAw=",
+    "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEIFhe+eGJsHf3CjH5v8K5DmABwh3PSBzEGr+QhlFDcN8j"
+  }
+}

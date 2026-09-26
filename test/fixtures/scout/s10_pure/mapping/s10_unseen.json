@@ -1,0 +1,24 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "s10_unseen",
+  "steps": {
+    "members": "clients",
+    "plans": "programs",
+    "routines": "workouts",
+    "sessions": "workouts"
+  },
+  "families": {
+    "clients": {
+      "displayName": { "paths": [["name"]], "coerce": "string" }
+    },
+    "programs": {
+      "clientSourceId": { "paths": [["member_id"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["title"]], "coerce": "string" }
+    },
+    "workouts": {
+      "clientSourceId": { "paths": [["member_id"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["title"]], "coerce": "string" }
+    }
+  },
+  "sharedIdSpaces": { "workouts": ["routines", "sessions"] }
+}
