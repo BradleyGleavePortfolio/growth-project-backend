@@ -23,6 +23,16 @@
  *
  * Guard: without G2_S10B_DATABASE_URL the whole file is `describe.skip` and imports nothing from
  * the PG lane (the default jest suite picks up test/scout/**; it must not hard-fail there).
+ *
+ * SHAPES (proof v1 finding, s10d2/d2_diagnose_fix.md). The `complete` cases stage the NATIVE-CLEAN
+ * subset of the fixture (the two workouts rows; `clients` and `programs` declared, source-signed
+ * as EMPTY enumerations — the R33 unit shape, facts.service.coverage.spec `cleanRun`). A staged
+ * `clients` row can NOT be part of a `complete` run at this head: `clientsFamily.persist`
+ * (src/scout/reconstruct/families.ts L83-101) returns the legacy string id, so the engine writes
+ * the ledger row with `target_kind` NULL (scout-reconstruct.service.ts L510-520) and no provenance;
+ * S9-A classifies it bucket f `unresolved:evidence_only` (reconcile.ts L136-146; S9-DOC D-S9-2 f)
+ * → C-ID `unresolved_identities`. The typed `person` handoff is S8-D, blocked on D-S8-2 (owner).
+ * Case (h) pins that truth live instead of hiding it; nothing here injects around it.
  */
 import { createHash, createPrivateKey, sign } from 'crypto';
 import { readFileSync } from 'fs';
@@ -43,6 +53,9 @@ const SET = ROWS.sets as Record<
   'base' | 'client_linked' | 'undeclared_family' | 'canonical_token',
   Row[]
 >;
+/** The roster rows (`clients`, legacy Person handoff) and the native-clean rest of `base`. */
+const ROSTER: Row[] = SET.base.filter((r) => r.token === 'u10-members');
+const NATIVE_CLEAN: Row[] = SET.base.filter((r) => r.token !== 'u10-members');
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 const SCOPE = sha256(ROWS.account_scope_seed);
 
@@ -285,67 +298,114 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
       lane.sql(`SELECT count(*) FROM "WorkoutProgram" WHERE coach_id=${lane.quote(coach)}`),
     ),
   });
-  const basisOf = (basis: any, token: string) =>
-    basis.report.families.find((f: any) => f.tokens.some((t: any) => t.token === token));
+  /** The settled report's entry for a canonical family (declared-only entries have no tokens). */
+  const familyOf = (basis: any, family: string) =>
+    basis.report.families.find((f: any) => f.family === family);
+  const evidenceRows = (coach: string) =>
+    Number(
+      lane.sql(
+        `SELECT count(*) FROM "ScoutReconstructedEntity" WHERE coach_id=${lane.quote(coach)}`,
+      ),
+    );
 
   it('R39 (a) all declared units verified → complete (one settled basis, source-signed)', async () => {
     const coach = 's10u-a';
-    const { status, run, basis } = await chain(coach, SET.base);
+    const { status, run, basis } = await chain(coach, NATIVE_CLEAN);
     expect(run.terminal_status).toBe('complete');
     expect(run.reason_code).toBeNull();
     expect(status.status).toBe('complete');
     expect(basis).not.toBeNull();
     expect(basis.execution_epoch).toBe(run.execution_epoch);
     expect(basis.report.conditions).toEqual([]);
-    for (const token of ['u10-members', 'u10-routines', 'u10-sessions']) {
-      expect(basisOf(basis, token).completeness_basis).toBe('source_signed_enumeration');
+    expect(basis.report.required_families).toEqual(['clients', 'programs', 'workouts']);
+    for (const family of ['clients', 'programs', 'workouts']) {
+      expect(familyOf(basis, family).completeness_basis).toBe('source_signed_enumeration');
     }
-    // Native, not evidence: two roster persons and two coach-owned workout templates.
-    expect(nativeCounts(coach)).toEqual({ persons: 2, plans: 2, programs: 0 });
-    expect(
-      Number(lane.sql(`SELECT count(*) FROM "ScoutReconstructedEntity" WHERE coach_id='${coach}'`)),
-    ).toBe(0);
+    // The two declared-but-unstaged families are PROVEN empty (observed 0), never absent.
+    expect(familyOf(basis, 'clients').observed_unique).toBe(0);
+    expect(familyOf(basis, 'programs').observed_unique).toBe(0);
+    expect(familyOf(basis, 'workouts')).toMatchObject({
+      staged_unique: 2,
+      native_present_verified: 2,
+      unresolved: 0,
+      observed_unique: 2,
+    });
+    // Native, not evidence: two coach-owned workout templates (one per step, one id space).
+    expect(nativeCounts(coach)).toEqual({ persons: 0, plans: 2, programs: 0 });
+    expect(evidenceRows(coach)).toBe(0);
   });
 
   it('R41 replaying the intent over the same source ids creates no second native row', async () => {
     const coach = 's10u-replay';
-    await chain(coach, SET.base);
+    await chain(coach, NATIVE_CLEAN);
     const before = nativeCounts(coach);
-    const again = await chain(coach, SET.base);
+    expect(before.plans).toBe(2);
+    const again = await chain(coach, NATIVE_CLEAN);
     expect(nativeCounts(coach)).toEqual(before);
     expect(again.run.terminal_status).toBe('complete');
   });
 
   it("R39 (b) nativeRules 'absent' → partial / unresolved_identities", async () => {
-    const { run } = await chain('s10u-b', SET.base, { nativeRulesAbsent: true });
+    const coach = 's10u-b';
+    const { run, basis } = await chain(coach, NATIVE_CLEAN, { nativeRulesAbsent: true });
     expect(run.terminal_status).toBe('partial');
     expect(run.reason_code).toBe('unresolved_identities');
+    // The ONLY difference from (a) is the withheld rule set: the same two rows land as evidence.
+    expect(familyOf(basis, 'workouts')).toMatchObject({
+      native_present_verified: 0,
+      unresolved: 2,
+    });
+    expect(familyOf(basis, 'workouts').reasons).toEqual([
+      { code: 'unresolved:evidence_only', count: 2 },
+    ]);
+    expect(nativeCounts(coach)).toEqual({ persons: 0, plans: 0, programs: 0 });
+    expect(evidenceRows(coach)).toBe(2);
   });
 
-  it('R39 (c) a client-linked row → partial', async () => {
-    const { run, basis } = await chain('s10u-c', [...SET.base, ...SET.client_linked]);
+  it('R39 (c) a client-linked row → partial (no native client principal, D-S8-2)', async () => {
+    const coach = 's10u-c';
+    const { run, basis } = await chain(coach, [...NATIVE_CLEAN, ...SET.client_linked]);
     expect(run.terminal_status).toBe('partial');
-    expect(run.reason_code).not.toBeNull();
+    expect(run.reason_code).toBe('unresolved_identities');
     expect(basis.report.conditions).toContain('unresolved_identities');
+    expect(familyOf(basis, 'workouts')).toMatchObject({
+      staged_unique: 3,
+      native_present_verified: 2,
+      unresolved: 1,
+    });
+    expect(familyOf(basis, 'workouts').reasons).toEqual([
+      { code: 'unresolved:no_native_client_principal', count: 1 },
+    ]);
+    expect(nativeCounts(coach)).toEqual({ persons: 0, plans: 2, programs: 0 });
+    expect(evidenceRows(coach)).toBe(1);
   });
 
   it('R39 (d) staged undeclared client_history → unresolved_family', async () => {
-    const { run } = await chain('s10u-d', [...SET.base, ...SET.undeclared_family]);
+    const { run } = await chain('s10u-d', [...NATIVE_CLEAN, ...SET.undeclared_family]);
     expect(run.terminal_status).toBe('partial');
     expect(run.reason_code).toBe('unresolved_family');
   });
 
   it('R39 (e) one declared family unproven → coverage_basis_unknown', async () => {
-    const { run, basis } = await chain('s10u-e', SET.base, { families: ['clients', 'workouts'] });
+    const { run, basis } = await chain('s10u-e', NATIVE_CLEAN, {
+      families: ['clients', 'workouts'],
+    });
     expect(run.terminal_status).toBe('partial');
     expect(run.reason_code).toBe('coverage_basis_unknown');
-    expect(basisOf(basis, 'u10-members').completeness_basis).toBe('source_signed_enumeration');
+    expect(basis.report.conditions).toEqual(['coverage_basis_unknown']);
+    expect(familyOf(basis, 'clients').completeness_basis).toBe('source_signed_enumeration');
+    expect(familyOf(basis, 'workouts').completeness_basis).toBe('source_signed_enumeration');
+    expect(familyOf(basis, 'programs')).toMatchObject({
+      completeness_basis: 'none',
+      observed_unique: null,
+    });
   });
 
   it('R39 (f) extension-signed statements only → coverage_basis_unknown', async () => {
-    const { run, basis } = await chain('s10u-f', SET.base, { signer: 'observer' });
+    const { run, basis } = await chain('s10u-f', NATIVE_CLEAN, { signer: 'observer' });
     expect(run.terminal_status).toBe('partial');
     expect(run.reason_code).toBe('coverage_basis_unknown');
+    expect(basis.report.conditions).toEqual(['coverage_basis_unknown']);
     for (const family of basis.report.families) {
       expect(family.completeness_basis).toBe('none');
       expect(family.observed_unique).toBeNull();
@@ -353,9 +413,42 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
   });
 
   it('R27 live: canonical-token programs row is covered but unmapped by the pass → partial', async () => {
-    const { run, basis } = await chain('s10u-g', [...SET.base, ...SET.canonical_token]);
+    const { run, basis } = await chain('s10u-g', [...NATIVE_CLEAN, ...SET.canonical_token]);
     expect(run.terminal_status).toBe('partial');
+    expect(run.reason_code).toBe('unresolved_identities');
     expect(basis.report.conditions).not.toContain('coverage_basis_unknown');
+    expect(familyOf(basis, 'programs')).toMatchObject({
+      staged_unique: 1,
+      native_present_verified: 0,
+      completeness_basis: 'source_signed_enumeration',
+      observed_unique: 1,
+    });
     expect(nativeCounts('s10u-g').programs).toBe(0);
+  });
+
+  it('(h) staged clients rows → partial / unresolved_identities: Person rows exist, but the legacy handoff (ledger kind NULL, no provenance) is bucket f evidence_only until S8-D', async () => {
+    const coach = 's10u-h';
+    const { run, basis } = await chain(coach, [...ROSTER, ...NATIVE_CLEAN]);
+    expect(run.terminal_status).toBe('partial');
+    expect(run.reason_code).toBe('unresolved_identities');
+    // C-ID alone: coverage is known for every family (the source signed all three sets).
+    expect(basis.report.conditions).toEqual(['unresolved_identities']);
+    expect(familyOf(basis, 'clients')).toMatchObject({
+      staged_unique: 2,
+      native_present_verified: 0,
+      unresolved: 2,
+      reasons: [{ code: 'unresolved:evidence_only', count: 2 }],
+      qualifiers: ['roster_bridge_pending'],
+      completeness_basis: 'source_signed_enumeration',
+      observed_unique: 2,
+    });
+    expect(familyOf(basis, 'workouts')).toMatchObject({
+      native_present_verified: 2,
+      unresolved: 0,
+    });
+    // The roster Persons ARE written (S8-DOC §4.1) — the run is partial because S9 cannot verify
+    // them through the ledger/provenance join, not because anything is missing natively.
+    expect(nativeCounts(coach)).toEqual({ persons: 2, plans: 2, programs: 0 });
+    expect(evidenceRows(coach)).toBe(0);
   });
 });
