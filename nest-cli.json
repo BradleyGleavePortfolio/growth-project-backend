@@ -8,7 +8,9 @@
     "assets": [
       { "include": "email/templates/**/*.hbs", "outDir": "dist" },
       { "include": "notifications/templates/**/*.hbs", "outDir": "dist" },
-      { "include": "scout/reconstruct/sources/*.json", "outDir": "dist" }
+      { "include": "scout/reconstruct/sources/*.json", "outDir": "dist" },
+      { "include": "scout/reconstruct/native/sources/*.json", "outDir": "dist" },
+      { "include": "scout/induction/sources/*.json", "outDir": "dist" }
     ],
     "watchAssets": true
   }
