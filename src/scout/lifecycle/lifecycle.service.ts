@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AnalyticsService } from '../../analytics/analytics.service';
@@ -6,6 +6,7 @@ import { Events } from '../../analytics/events';
 import { PrismaService } from '../../prisma.service';
 import { buildFamilyRegistry } from '../reconstruct/families';
 import { RECONSTRUCT_STATUS } from '../scout-reconstruct.dto';
+import { ScoutReconstructService } from '../scout-reconstruct.service';
 import { SCOUT_TERMINAL_STATUSES, type ScoutTerminalStatus } from '../scout.dto';
 import { arbitrate, type ArbiterVerdict, type LedgerTally } from './arbiter';
 import type { ScoutRunCancelResult, ScoutRunStartResult } from './lifecycle.dto';
@@ -110,12 +111,16 @@ export class RunGateClosed extends Error {
 export class ScoutLifecycleService {
   readonly deadlineMs: number;
   private readonly registry = buildFamilyRegistry();
+  /** S8-G: the engine the settle hook drives one pass through (same seam pattern as ScoutService → this). */
+  private readonly reconstruct: ScoutReconstructService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
+    @Optional() reconstruct?: ScoutReconstructService,
   ) {
     this.deadlineMs = ScoutLifecycleService.readDeadlineMs(process.env[SCOUT_RUN_DEADLINE_MS_ENV]);
+    this.reconstruct = reconstruct ?? new ScoutReconstructService(prisma, analytics);
   }
 
   /** A positive integer number of milliseconds, else the parent-frozen default. */
@@ -306,11 +311,26 @@ export class ScoutLifecycleService {
   }
 
   /**
-   * §3 `onTransferSettled`: the accepted `/complete` hands the run to the arbiter. S7-L arbitrates
-   * immediately under a CAS on the epoch the settle observed; S8-G replaces this body with
-   * reconstruct-then-arbitrate and keeps the CAS. A miss (a fence won) is not an error.
+   * §3 `onTransferSettled`: the accepted `/complete` hands the run to the arbiter. S8-G body:
+   * reconstruct-then-arbitrate. One reconstruction pass runs first over the open run in phase
+   * `reconciling`, with this run's `assertRunOpen` as the §3.1 gate inside every per-row
+   * transaction and `epoch` (the value the settle observed at claim commit) as the per-row CAS.
+   * The pass writes only target rows and ledger outcomes — never a terminal field. If the gate
+   * closed mid-pass (a fence or the deadline won), the lazy classifier runs once so a past-deadline
+   * run is fenced `timed_out` truthfully; then the S7-L tail runs unchanged: lock the run, CAS on
+   * `epoch`, collect the durable facts, arbitrate, write the terminal. A miss (a fence won) is not
+   * an error. An unexpected pass failure propagates and leaves the run open for the lazy deadline
+   * — nothing terminal is ever written from a failed pass.
    */
   async onTransferSettled(coachId: string, intentId: string, epoch: number): Promise<void> {
+    const pass = await this.reconstruct.reconstructRun(coachId, intentId, {
+      mode: 'server',
+      epoch,
+      gate: (tx) => this.assertRunOpen(tx, coachId, intentId),
+    });
+    if (pass.stopped === 'gate_closed') {
+      await this.classifyClosed(coachId, intentId);
+    }
     const outcome = await this.prisma.$transaction(async (tx) => {
       const locked = await this.lockRun(tx, coachId, intentId);
       if (!locked || locked.terminal_status !== null || locked.execution_epoch !== epoch) {
