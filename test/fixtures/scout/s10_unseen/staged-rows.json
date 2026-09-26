@@ -1,0 +1,54 @@
+{
+  "note": "TEST-ONLY synthetic staged rows for the s10_unseen D2 proof (D-S10-5). Every value is synthetic: no real source, coach, client or account. Tokens: `u10-members` -> clients; `u10-routines` and `u10-sessions` -> workouts (one shared id space); `programs` is the canonical family token staged WITHOUT a `steps` entry; `client_history` is a family the spec leaves undeclared.",
+  "source_platform": "s10_unseen",
+  "account_scope_seed": "s10-unseen-synthetic-scope-1",
+  "sets": {
+    "base": [
+      {
+        "token": "u10-members",
+        "source_id": "u10-m-1",
+        "payload": { "u10_handle": "Synthetic Member One" }
+      },
+      {
+        "token": "u10-members",
+        "source_id": "u10-m-2",
+        "payload": { "u10_handle": "Synthetic Member Two" }
+      },
+      {
+        "token": "u10-routines",
+        "source_id": "u10-w-1",
+        "payload": { "u10_heading": "Synthetic Routine", "u10_modality": "lift" }
+      },
+      {
+        "token": "u10-sessions",
+        "source_id": "u10-w-2",
+        "payload": { "u10_heading": "Synthetic Session", "u10_modality": "run" }
+      }
+    ],
+    "client_linked": [
+      {
+        "token": "u10-sessions",
+        "source_id": "u10-w-3",
+        "payload": {
+          "u10_heading": "Synthetic Linked Session",
+          "u10_modality": "lift",
+          "u10_owner_ref": "u10-m-1"
+        }
+      }
+    ],
+    "undeclared_family": [
+      {
+        "token": "client_history",
+        "source_id": "u10-h-1",
+        "payload": { "u10_heading": "Synthetic History" }
+      }
+    ],
+    "canonical_token": [
+      {
+        "token": "programs",
+        "source_id": "u10-p-1",
+        "payload": { "u10_heading": "Synthetic Block", "u10_span_weeks": 4, "u10_span_days": 3 }
+      }
+    ]
+  }
+}

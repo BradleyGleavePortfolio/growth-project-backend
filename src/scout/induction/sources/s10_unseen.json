@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 1,
+  "sourcePlatform": "s10_unseen",
+  "expectedFamilies": ["clients", "programs", "workouts"],
+  "basisKinds": {
+    "clients": ["source_signed_enumeration"],
+    "programs": ["source_signed_enumeration"],
+    "workouts": ["source_signed_enumeration"]
+  },
+  "verifiers": [
+    {
+      "key_id": "s10_unseen.source.d2",
+      "alg": "ed25519",
+      "public_key_b64": "vK4m1Rfe07ym9fFGlefuxGwWnrjVvEm0FnAweXPPJP8="
+    }
+  ],
+  "nativeRules": "declared"
+}

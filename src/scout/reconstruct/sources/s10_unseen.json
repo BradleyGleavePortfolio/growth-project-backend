@@ -1,0 +1,23 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "s10_unseen",
+  "steps": {
+    "u10-members": "clients",
+    "u10-routines": "workouts",
+    "u10-sessions": "workouts"
+  },
+  "families": {
+    "clients": {
+      "displayName": { "paths": [["u10_handle"]], "coerce": "string" }
+    },
+    "programs": {
+      "clientSourceId": { "paths": [["u10_owner_ref"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["u10_heading"]], "coerce": "string" }
+    },
+    "workouts": {
+      "clientSourceId": { "paths": [["u10_owner_ref"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["u10_heading"]], "coerce": "string" }
+    }
+  },
+  "sharedIdSpaces": { "workouts": ["u10-routines", "u10-sessions"] }
+}
