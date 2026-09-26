@@ -1176,6 +1176,196 @@
         ],
         "type": "object"
       },
+      "ScoutRunDeclarationDto": {
+        "properties": {
+          "intent_id": {
+            "description": "Intent id of the open server run (the text form of the server setup intent).",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "platforms": {
+            "description": "The run’s authorized platform set: non-empty, unique canonical slugs, each with its non-empty expected scope set. Immutable once recorded.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunDeclarationPlatformDto"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "platforms"
+        ],
+        "type": "object"
+      },
+      "ScoutRunDeclarationPlatformDto": {
+        "properties": {
+          "account_scope_id_digests": {
+            "description": "The source accounts/workspaces authorized for this import, each as sha256 hex of the source's scope id (never the raw id). Non-empty and unique.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "source_platform": {
+            "description": "Canonical source platform slug (never normalised).",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_platform",
+          "account_scope_id_digests"
+        ],
+        "type": "object"
+      },
+      "ScoutRunDeclarationResult": {
+        "properties": {
+          "challenge_b64": {
+            "description": "The run’s ONE server-generated 32-byte challenge (RFC 4648 §4 base64) that every source statement must embed. An exact replay returns the original challenge.",
+            "maxLength": 44,
+            "minLength": 44,
+            "type": "string"
+          },
+          "declared_at": {
+            "description": "Server-owned; set once.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "intent_id": {
+            "description": "The run key: the intent id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "challenge_b64",
+          "declared_at"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationDto": {
+        "properties": {
+          "intent_id": {
+            "description": "Intent id of the open, declared server run.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "observations": {
+            "description": "One ObservationEvidenceV1 per (platform, scope, family): at most 4 families × the declared scopes, one entry per unit; the whole body is ≤ 32 KiB.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunObservationEvidenceSchema"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "observations"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationEvidenceSchema": {
+        "properties": {
+          "account_scope_id_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "basis_kind": {
+            "enum": [
+              "source_signed_enumeration"
+            ],
+            "type": "string"
+          },
+          "evidence_version": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "family": {
+            "enum": [
+              "clients",
+              "workouts",
+              "client_history",
+              "programs"
+            ],
+            "type": "string"
+          },
+          "key_id": {
+            "pattern": "^[a-z0-9._-]{1,64}$",
+            "type": "string"
+          },
+          "mapping_spec_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "signature_b64": {
+            "description": "Canonical base64 of the 64-byte Ed25519 source signature.",
+            "type": "string"
+          },
+          "source_platform": {
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          },
+          "statement_b64": {
+            "description": "Canonical base64 of the strict canonical JSON source statement.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_version",
+          "source_platform",
+          "account_scope_id_digest",
+          "family",
+          "basis_kind",
+          "mapping_spec_digest",
+          "statement_b64",
+          "key_id",
+          "signature_b64"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationResult": {
+        "properties": {
+          "execution_epoch": {
+            "description": "Epoch read under the run row lock and bound to every row.",
+            "minimum": 1,
+            "type": "number"
+          },
+          "intent_id": {
+            "description": "The run key: the intent id.",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "Entries identical to an already stored row (no row written).",
+            "minimum": 0,
+            "type": "number"
+          },
+          "stored": {
+            "description": "Evidence rows inserted by this request.",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "intent_id",
+          "execution_epoch",
+          "stored",
+          "replayed"
+        ],
+        "type": "object"
+      },
       "ScoutRunStartDto": {
         "properties": {
           "import_intent_id": {
@@ -2731,6 +2921,250 @@
           }
         ],
         "summary": "Cancel an open server-owned run",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/runs/declaration": {
+      "post": {
+        "description": "Before the run’s first staged row: records the immutable authorized platform set and, per platform, the expected account scope set (sha256 digests), in one transaction under the run lock, and returns the run’s ONE server-generated 32-byte challenge. An exact replay (order ignored) returns the original challenge and writes nothing.",
+        "operationId": "ObservationController_postDeclaration",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutRunDeclarationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutRunDeclarationResult"
+                }
+              }
+            },
+            "description": "Declared (or exact replay)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted, or the S10 envelope/evidence grammar, or a body over 32 KiB). Standard HttpExceptionFilter envelope; no row is written."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: FEATURE_SCOUT_INGEST off (R-DARK-1) OR the intent is unknown to the calling coach. Deliberately indistinguishable — no existence oracle."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "declaration_conflict",
+                            "declaration_after_ingest",
+                            "run_not_started",
+                            "run_fenced",
+                            "run_terminal",
+                            "legacy_run"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Refused. `code` is `declaration_conflict` (a different set is already declared), `declaration_after_ingest` (first declaration after a staged row or claim), or a run lifecycle code: `run_not_started`, `run_fenced`, `run_terminal`, `legacy_run`."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Declare the run’s authorized platforms and expected account scopes",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/runs/observation": {
+      "post": {
+        "description": "Only after a declaration and before the claim. Stores one validated ObservationEvidenceV1 per (platform, scope, family), bound to the epoch read under the run lock. The server records the evidence; it proves nothing until the settle-time evaluator verifies it. An identical replay writes nothing. The body is at most 32 KiB.",
+        "operationId": "ObservationController_postObservation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutRunObservationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutRunObservationResult"
+                }
+              }
+            },
+            "description": "Stored (or identical replay)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted, or the S10 envelope/evidence grammar, or a body over 32 KiB). Standard HttpExceptionFilter envelope; no row is written."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: FEATURE_SCOUT_INGEST off (R-DARK-1) OR the intent is unknown to the calling coach. Deliberately indistinguishable — no existence oracle."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "declaration_missing",
+                            "observation_conflict",
+                            "observation_after_claim",
+                            "observation_not_declared",
+                            "run_not_started",
+                            "run_fenced",
+                            "run_terminal",
+                            "legacy_run"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Refused (nothing stored). `code` is `declaration_missing`, `observation_conflict` (a different evidence is stored for the unit), `observation_after_claim`, `observation_not_declared` (undeclared platform/scope, no induction manifest, or a family outside it), or a run lifecycle code: `run_not_started`, `run_fenced`, `run_terminal`, `legacy_run`."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Upload source-signed observation evidence for a declared run",
         "tags": [
           "scout"
         ]
