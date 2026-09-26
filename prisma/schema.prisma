@@ -6890,6 +6890,10 @@ model ScoutImport {
   // Owner-scoped binding to the setup authority; at most one run per intent (partial unique index
   // ScoutImport_import_intent_id_key WHERE import_intent_id IS NOT NULL).
   intent            ImportIntent? @relation(fields: [import_intent_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+  // S10-B back-relations only (Prisma requires them for the three child FKs below); no column.
+  declarations      ScoutRunDeclaration[]
+  observations      ScoutRunObservation[]
+  settledBasis      ScoutRunSettledBasis?
 
   @@unique([coach_id, intent_id])
   @@unique([import_intent_id])
@@ -7023,6 +7027,65 @@ model ImportNativeProvenance {
   @@unique([coach_id, source_namespace, entity_type, source_id], map: "ImportNativeProvenance_identity_key")
   @@index([coach_id, native_kind, native_id])
   @@index([coach_id, import_intent_id])
+}
+
+// S10-B run declaration / observation evidence / settled basis (docs/decisions/2026-09-26-s10-induction.md
+// D-S10-2, D-S10-4; migration 20270124000000_scout_run_observation_expand). Three insert-only tables
+// keyed by the bearer's coach_id and bound to the run key (coach_id, intent_id) by composite FKs with
+// ON DELETE CASCADE (referential cleanup only, never a retention/erasure authorization; Q3). The
+// database carries what Prisma cannot express: the closed CHECKs (canonical slug, 64-hex digests,
+// 32-byte challenge, family / basis_kind vocabularies), the one-challenge-per-run trigger, the
+// insert-only trigger (every UPDATE, top-level DELETE and TRUNCATE refused) and the grants
+// (service_role SELECT + INSERT only). RLS RESTRICTIVE deny-all to anon + authenticated;
+// service_role only. Written by src/scout/induction/observation.service.ts (declaration,
+// observation) and by the S10-C settle path (settled basis).
+model ScoutRunDeclaration {
+  coach_id                String
+  intent_id               String
+  source_platform         String
+  // sha256 hex of the source's account/workspace scope id, never the raw id.
+  account_scope_id_digest String
+  // The run's ONE server-generated 32-byte challenge, identical in every row of the run.
+  challenge               Bytes
+  declared_at             DateTime
+  run                     ScoutImport           @relation(fields: [coach_id, intent_id], references: [coach_id, intent_id], onDelete: Cascade, onUpdate: Restrict)
+  observations            ScoutRunObservation[]
+
+  @@id([coach_id, intent_id, source_platform, account_scope_id_digest])
+}
+
+model ScoutRunObservation {
+  id                      String              @id @default(uuid())
+  coach_id                String
+  intent_id               String
+  // Read under the run row lock at upload; never client-supplied.
+  execution_epoch         Int
+  source_platform         String
+  account_scope_id_digest String
+  family                  String
+  basis_kind              String
+  // The validated ObservationEvidenceV1 (S10-A parseEvidence), re-validated by the evaluator.
+  evidence                Json
+  // sha256 of the canonical JSON of `evidence`.
+  evidence_digest         String              @db.Char(64)
+  received_at             DateTime
+  run                     ScoutImport         @relation(fields: [coach_id, intent_id], references: [coach_id, intent_id], onDelete: Cascade, onUpdate: Restrict)
+  declaration             ScoutRunDeclaration @relation(fields: [coach_id, intent_id, source_platform, account_scope_id_digest], references: [coach_id, intent_id, source_platform, account_scope_id_digest], onDelete: Cascade, onUpdate: Restrict, map: "ScoutRunObservation_declaration_fkey")
+
+  @@unique([coach_id, intent_id, execution_epoch, source_platform, account_scope_id_digest, family], map: "ScoutRunObservation_unit_key")
+}
+
+model ScoutRunSettledBasis {
+  coach_id            String
+  intent_id           String
+  execution_epoch     Int
+  report_version      Int
+  report              Json
+  observation_digests String[]
+  settled_at          DateTime
+  run                 ScoutImport @relation(fields: [coach_id, intent_id], references: [coach_id, intent_id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@id([coach_id, intent_id])
 }
 
 // ============================================================
