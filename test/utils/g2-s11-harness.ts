@@ -13,7 +13,8 @@
  * plus the progress-mirror and pairing-code readers the J-cases observe. No production writer is
  * emulated here: every behavioural step runs as the real service in test/utils/g2-s11-worker.cjs.
  *
- * S11-A2 deltas (D-S11-6 J09–J11; and nothing else): the S10-B table names join `resetData`; and,
+ * S11-A2 deltas (D-S11-6 J09–J11; and nothing else): `resetData` is UNCHANGED (the S10-B tables are
+ * insert-only and are cleared only by the run row's ON DELETE CASCADE — r2 fix, proof v1 finding);
  * after the A1 wrappers, the `induction` step wrappers (declare | observe plus the generic steps
  * routed through the TWO-SOURCE registry the worker composes from `INDUCTION_INPUT`), the
  * evidence-signing inputs (test/fixtures/scout/s11/s11-sources.ts, re-exported) and the readers
@@ -39,7 +40,9 @@ export const COMPLETION = 'ScoutImportCompletion';
 export const STAGED = 'ScoutIngestEntity';
 export const PROVENANCE = 'ImportNativeProvenance';
 export const LEDGER = 'ScoutReconstructionLedger';
-/** S11-A2: the S10-B induction tables (cascade from the run row; deleted explicitly all the same). */
+/** S11-A2: the S10-B induction tables — read only here. Their insert-only trigger refuses every
+ *  top-level DELETE/UPDATE/TRUNCATE (migration 20270124000000); `resetData` clears them ONLY through
+ *  the parent-run ON DELETE CASCADE of `DELETE FROM "ScoutImport"` (as the S10-B harness does). */
 export const DECLARATION = 'ScoutRunDeclaration';
 export const OBSERVATION = 'ScoutRunObservation';
 export const SETTLED_BASIS = 'ScoutRunSettledBasis';
@@ -284,7 +287,6 @@ export const targetSnapshot = (coach: string, intent: string) => ({
 export function resetData() {
   sql(`DELETE FROM "${PROVENANCE}"; DELETE FROM "${LEDGER}"; DELETE FROM "${STAGED}";
     DELETE FROM "ScoutReconstructedEntity"; DELETE FROM "ScoutProgressSnapshot";
-    DELETE FROM "${OBSERVATION}"; DELETE FROM "${DECLARATION}"; DELETE FROM "${SETTLED_BASIS}";
     DELETE FROM "${COMPLETION}"; DELETE FROM "${RUN}";
     DELETE FROM "WorkoutPlanRevision"; DELETE FROM "WorkoutPlanExercise"; DELETE FROM "WorkoutPlan";
     DELETE FROM "WorkoutProgram"; DELETE FROM "ExerciseCatalogItem"; DELETE FROM "Person";
