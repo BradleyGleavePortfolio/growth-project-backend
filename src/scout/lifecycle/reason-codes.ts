@@ -42,7 +42,11 @@ export const RUN_CONFLICT_CODES = [
 ] as const;
 export type RunConflictCode = (typeof RUN_CONFLICT_CODES)[number];
 
-/** Outcome reason codes persisted in `ScoutImport.reason_code` (D-S7L-5). */
+/**
+ * Outcome reason codes persisted in `ScoutImport.reason_code` (D-S7L-5). The last three are the
+ * S9 reconciliation codes (D-S9-7), appended by S9-C in D-S9-2 condition order after the six
+ * S7-L codes; the list is append-only and the existing order is preserved.
+ */
 export const RUN_REASON_CODES = [
   'reconciliation_not_performed',
   'cancelled_by_coach',
@@ -50,8 +54,21 @@ export const RUN_REASON_CODES = [
   'transfer_failed',
   'unresolved_family',
   'revoked',
+  'unresolved_identities',
+  'relationship_unverified',
+  'coverage_basis_unknown',
 ] as const;
 export type RunReasonCode = (typeof RUN_REASON_CODES)[number];
+
+/**
+ * S9-C — closed enums of the additive `families[]` projection (S9-DOC D-S9-5, Addendum C-7 /
+ * C-10), emitted as OpenAPI enums through `scout.dto.ts`. Both lists are append-only and spelt
+ * once here; the S9-A report types (`../reconciliation/types`) are the same literals.
+ */
+export const FAMILY_QUALIFIERS = ['roster_bridge_pending'] as const;
+export type FamilyQualifierCode = (typeof FAMILY_QUALIFIERS)[number];
+export const RELATIONSHIP_CLOSURES = ['verified', 'unverified', 'not_applicable'] as const;
+export type RelationshipClosureCode = (typeof RELATIONSHIP_CLOSURES)[number];
 
 /** Fixed, identifier-free conflict messages; the code is the machine-readable part. */
 const CONFLICT_MESSAGES: Record<RunConflictCode, string> = {

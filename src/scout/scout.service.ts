@@ -468,6 +468,11 @@ export class ScoutService implements OnModuleDestroy {
       : ScoutService.isTerminalStatus(importRow?.terminal_status ?? null)
         ? (importRow?.terminal_status as ScoutTerminalStatus)
         : null;
+    // S9-C (D-S9-5): a settled server run whose terminal is not
+    // `reconciliation_not_performed` gets its reconciliation report recomputed
+    // on read (one REPEATABLE READ transaction, no write); every other row —
+    // legacy, open, pre-S9 terminal — gets none and keeps the S7-L shape.
+    const report = serverRun ? await this.lifecycle.readReport(coachId, intentId, importRow) : null;
 
     // Stable first observation: earliest committed entity; the lifecycle start
     // and latest snapshot are ordered fallbacks used only when none exists yet.
@@ -494,7 +499,7 @@ export class ScoutService implements OnModuleDestroy {
       completed_at: settled ? (importRow?.completed_at?.toISOString() ?? null) : null,
       ...ScoutLifecycleService.projectLifecycle(importRow),
       claimed_status: claimedStatus,
-      families: ScoutLifecycleService.projectFamilies(grouped, ledger),
+      families: ScoutLifecycleService.projectFamilies(grouped, ledger, report),
     };
   }
 

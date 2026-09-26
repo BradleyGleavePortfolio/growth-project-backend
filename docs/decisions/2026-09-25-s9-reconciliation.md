@@ -630,3 +630,90 @@ source_id)`; attributed to the mapped entry the pair resolves to (creating a zer
   L174-181 length-prefixed `source_id`.
 - **Claim.** `ScoutImportCompletion.terminal_status` filtered to `success | partial | failed`; any
   other value is `null`.
+
+## Addendum B — S9-C closures (session d3a9f701, 2026-09-25)
+
+Appended only; nothing above this heading changed. Records the closures the two independent
+S9-C reviews (A and B, both initially NO-GO) required, and the scope grants the parent issued for
+them. Base for the S9-C candidate: `5407efae` (S9-B landed).
+
+### B.1 C-9 catalogue clause, amended (review A finding 3 / review B B-4 context)
+
+The C-9 sentence "S9-C adds a spec that asserts S9-A's copy of the §3.7 catalogue **equals** S8-C's
+runtime `UNRESOLVED_CODE`" is amended to:
+
+> S9-C adds a spec (`test/scout/reconciliation/catalogue-parity.spec.ts`) that asserts the runtime
+> `UNRESOLVED_CODE` (`native-contract.ts`) is a **subset** of S9-A's `UNRESOLVED_CATALOGUE`
+> (`reconciliation/types.ts`) **with identical qualifier shapes** for every shared code, and that
+> the surplus is **exactly** the pinned set `{date_zone_unknown, no_native_destination,
+unit_unknown}`.
+
+Rationale: the three surplus codes are §3.7 catalogue entries that no landed S8-C writer emits at
+this base (`no_native_destination:<family>` is the S9-A `WRITER_CODE` prefix reserved for the
+facts layer; `unit_unknown` / `date_zone_unknown` are declared for later rule kinds). Literal
+equality would require either widening S8-C's runtime constant with codes nothing emits or
+deleting catalogue entries from frozen S9-A — both outside S9-C's grant. The pinned surplus turns
+any future drift in either list into a red test that names the drifting code, which is the
+property C-9 wanted.
+
+### B.2 C-9 isolation applied on the settle path; timeout; serialization retry (review A A-1, review B B-2 / A-1(B))
+
+- Both S9 snapshot transactions — S8-G's settle tail in `onTransferSettled` and the status-path
+  `readReport` — open with one shared options object, `S9_SNAPSHOT_TX_OPTIONS =
+{ isolationLevel: RepeatableRead, timeout: 20 000 ms, maxWait: 5 000 ms }`
+  (`lifecycle.service.ts`). The timeout replaces Prisma's 5 000 ms interactive default, which
+  sits below R16's proven bound (10 000 ms for a 10k-row intent); 20 000 ms is twice R16 and one
+  fifteenth of `SCOUT_RUN_DEADLINE_MS_DEFAULT`.
+- **Retry rule.** Under REPEATABLE READ, PostgreSQL raises SQLSTATE 40001 (Prisma `P2034`) when
+  the `FOR NO KEY UPDATE` run row was changed by a concurrent committed writer (fence, cancel,
+  revoke) after the snapshot was taken. The settle tail retries the **whole** transaction from a
+  fresh snapshot, at most `SETTLE_ATTEMPTS = 3` times, on `P2034` **only**. Every attempt
+  re-locks and re-checks terminal/epoch first, so a retry is idempotent (the row that changed is
+  seen terminal or epoch-raised and the attempt returns with no write); any other error
+  propagates unchanged after one attempt; exhaustion rethrows the last serialization failure —
+  no terminal is ever fabricated. `readReport` is read-only and is not retried.
+- The live proof asserts the settle tail's statement shape only; PostgreSQL does not echo the
+  isolation level per statement, and adding a `SHOW transaction_isolation` probe would be a new
+  heuristic, so isolation is pinned at unit tier (the options object is asserted by identity on
+  both paths) and not re-asserted live.
+
+### B.3 C-6 implemented as closed-domain membership (review A A-2, review B B-4)
+
+`ScoutLifecycleService.admitReasonCode` no longer accepts a histogram key on grammar alone. A key
+is admitted only if: it is one of the constant S9-A report / writer / rejection codes; or it is
+`unresolved_family:<token>` with `<token>` a staged token of the projection; or it is
+`unsupported_platform:<p>` with `<p>` satisfying the platform-identifier grammar and, when the
+caller supplies the staged platforms, a member of them; or it is `unresolved:<code>` /
+`unresolved:<code>:<qualifier>` where `<code>` is a §3.7 catalogue code of the matching shape and
+`<qualifier>` is a member of the derived domain in `src/scout/lifecycle/reason-domains.ts` —
+canonical families (`RECONSTRUCT_FAMILY`, `NATIVE_FAMILY`, `CHILD_ENTITY_TYPE`), native target
+models (`Prisma.ModelName.{WorkoutProgram, WorkoutPlan, WorkoutPlanExercise, Person}`), their
+columns (`Prisma.<Model>ScalarFieldEnum`) and the native rule field keys (`NATIVE_RULE_FIELDS`,
+an additive export of `native-rules.ts` derived from its grammar tables). Every domain is derived
+from an existing constant, never hand-listed. Anything else folds to
+`unresolved:reason_unrecognised` with its count kept and its text never echoed
+(`unresolved:missing_required_field:Jane` and an unknown bare word are the pinned negatives).
+
+### B.4 Scope deviations recorded for the S9-C landing (review A "C" note, review B scope note)
+
+Relative to the D-S9-8 S9-C row, the landing also touches, by parent grant:
+
+- `test/contracts/importer-contract.spec.ts` and `docs/contracts/importer-openapi.json` — the Gen
+  row, adopted by the parent as generator owner (regenerated with `npm run contract:importer`, no
+  `CONTRACT_VERSION` bump).
+- `test/scout/orchestration/settle-hook.spec.ts` (landed S8-G spec) — facts double injected, call
+  order `pass, lock, facts, terminal`, the now-unreachable `reconciliation_not_performed`
+  expectation replaced by `coverage_basis_unknown`.
+- `test/scout/reconciliation/catalogue-parity.spec.ts` — the C-9 parity spec (B.1).
+- `test/rls-g2-s9c.spec.ts`, `test/scout/g2-s9c-db-guard.spec.ts`,
+  `test/utils/g2-s9c-{bootstrap.sh,db.ts,harness.ts,pg-harness.ts,worker.cjs}` — the S9-C live
+  PG proof lane (`g2_s9c_disposable`, port 55646, role `s9c_super`).
+- Helper additions in `reason-codes.ts` (`FAMILY_QUALIFIERS`, `RELATIONSHIP_CLOSURES` closed
+  enums beside the three appended reason codes),
+  `scout.dto.ts` (`ScoutImportReasonCountDto`), `lifecycle.service.ts` (`readReport`,
+  `reportApplies`, `projectReasons`, `admitReasonCode`, `settleWithSnapshot`,
+  `S9_SNAPSHOT_TX_OPTIONS`, `SETTLE_ATTEMPTS`) and the new `lifecycle/reason-domains.ts`.
+- `native-rules.ts` — the additive `NATIVE_RULE_FIELDS` export only (B.3).
+- The settle-tail isolation / timeout / retry edits in `onTransferSettled` (B.2), beyond "the
+  `reconciliation:` argument", granted by the parent for A-1/B-2.
+- The C-9 subset deviation (B.1).

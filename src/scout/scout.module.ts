@@ -16,6 +16,7 @@ import { ScoutEntitiesController } from './scout-entities.controller';
 import { ScoutEntitiesService } from './scout-entities.service';
 import { ScoutLifecycleService } from './lifecycle/lifecycle.service';
 import { ScoutRunController } from './lifecycle/run.controller';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 
 // IMPORTER-E + IMPORTER-B — unified scout module (DESIGN.md v0.3 §10 + §2).
 //
@@ -36,8 +37,12 @@ import { ScoutRunController } from './lifecycle/run.controller';
 // terminal write). ScoutService and ScoutIngestService take the lifecycle
 // service as an optional dependency: absent (as in their pre-S7-L unit specs)
 // they construct their own, so legacy behaviour is unchanged either way.
+//
+// S9-C: ReconciliationModule provides the read-only ReconciliationFactsService
+// the lifecycle service reconciles from (settle tail and recompute-on-read);
+// it is another optional constructor dependency with the same fallback rule.
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, ReconciliationModule],
   controllers: [
     ScoutController,
     ScoutIngestController,

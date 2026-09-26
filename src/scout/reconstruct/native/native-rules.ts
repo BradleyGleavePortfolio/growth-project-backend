@@ -620,6 +620,23 @@ const EXERCISE_FIELDS: Readonly<Record<keyof ExerciseItemRules, readonly RuleKin
   notes: ['text'],
 };
 
+/**
+ * S9-C (Addendum C-6): the closed set of native rule field keys a source may declare — every
+ * `<field>` qualifier the rule interpreters emit (`missing_required_field:<field>`,
+ * `invalid_value:<field>`, `enum_unmapped:<field>`, `prescription_not_integral:<field>`) is either
+ * one of these keys or a native column name. Derived from the grammar tables above; additive
+ * export, nothing else here changes.
+ */
+const WORKOUT_EXERCISES_KEY: keyof WorkoutNativeRules = 'exercises';
+export const NATIVE_RULE_FIELDS: readonly string[] = Array.from(
+  new Set<string>([
+    ...Object.keys(PROGRAM_FIELDS),
+    ...Object.keys(WORKOUT_FIELDS),
+    WORKOUT_EXERCISES_KEY,
+    ...Object.keys(EXERCISE_FIELDS),
+  ]),
+);
+
 class InvalidNativeRuleSet extends Error {
   constructor(origin: string, detail: string) {
     super(`invalid native rule set ${origin}: ${detail}`);
