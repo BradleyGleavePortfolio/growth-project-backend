@@ -184,7 +184,7 @@ export function worker(options: Record<string, unknown> = {}) {
         'PG17_PROCESS',
         JSON.stringify({
           name,
-          options: { ...options, spec: undefined, rules: undefined },
+          options: { ...options, spec: undefined, rules: undefined, induction: undefined },
           result: result.result,
           failure: result.failure,
           queries: result.queries.length,

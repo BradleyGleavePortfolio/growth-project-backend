@@ -1,0 +1,9 @@
+{
+  "note": "TEST-ONLY synthetic ed25519 key for the second S11 induction source (S11-A2, D-S11-6 J09-J11, D-S11-7(7)). Never a real source key: generated once for this fixture, the private half is committed on purpose so the two-host proof can sign source-enumeration statements the manifest verifier accepts.",
+  "source": {
+    "key_id": "s11_second.source.a2",
+    "purpose": "source signer — the manifest verifier for the second synthetic platform",
+    "public_key_b64": "5XZTR/nVuQqTC0oa4cxakqW68XKD0+1T7iCS++Hus/s=",
+    "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEIKMfIOCmPNzEy/zs077tch2jr39nZ0b7l8Pl8TAh08Ba"
+  }
+}

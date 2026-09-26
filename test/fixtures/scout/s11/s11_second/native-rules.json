@@ -1,0 +1,18 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "s11_second",
+  "families": {
+    "programs": {
+      "weeks": { "kind": "integer", "paths": [["t11_weeks"]] },
+      "daysPerWeek": { "kind": "integer", "paths": [["t11_days"]] }
+    },
+    "workouts": {
+      "type": {
+        "kind": "enum",
+        "paths": [["t11_kind"]],
+        "map": { "lift": "strength", "run": "cardio" },
+        "default": "strength"
+      }
+    }
+  }
+}

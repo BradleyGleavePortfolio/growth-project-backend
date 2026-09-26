@@ -1,0 +1,19 @@
+{
+  "note": "TEST-ONLY synthetic staged rows for the SECOND S11 induction source (S11-A2; D-S11-6 J09-J11; D-S11-7(7)). Every value is synthetic: no real source, coach, client or account. The source has NO roster family on purpose: `t11-blocks` -> programs, `t11-routines` -> workouts, so a run staging it beside the D2 source keeps `clients` provable through the first source alone while the second source's two families are provable only through ITS declaration (J10 discriminates). Rows carry no `t11_owner`, so every row is a coach-owned template (native-clean shape, s10d2/d2_diagnose_fix.md).",
+  "source_platform": "s11_second",
+  "account_scope_seed": "s11-second-synthetic-scope-1",
+  "sets": {
+    "native_clean": [
+      {
+        "token": "t11-blocks",
+        "source_id": "t11-b-1",
+        "payload": { "t11_title": "Synthetic Block Two", "t11_weeks": 6, "t11_days": 4 }
+      },
+      {
+        "token": "t11-routines",
+        "source_id": "t11-r-1",
+        "payload": { "t11_title": "Synthetic Routine Two", "t11_kind": "run" }
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "note": "TEST-ONLY statement template for the second S11 induction source. The run-bound fields (`challenge_b64`, `issued_at`) and the identity fields (`id_set_digest`, `observed_unique`, computed from the staged ids of the family by the independent reference digest in test/fixtures/scout/s11/s11-sources.ts) are filled at test time; everything else is fixed here. `signer` names the key in signer-test-key.json.",
+  "evidence_version": 1,
+  "basis_kind": "source_signed_enumeration",
+  "template": {
+    "date_window": null,
+    "snapshot_ref_seed": "s11-second-synthetic-snapshot-1",
+    "statement_version": 1,
+    "terminal": "end_of_list"
+  },
+  "families": ["programs", "workouts"],
+  "signers": { "verified": "source" }
+}

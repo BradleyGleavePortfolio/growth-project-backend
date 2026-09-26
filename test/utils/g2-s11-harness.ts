@@ -12,8 +12,26 @@
  * matching wrappers for the S11 worker actions (two hosts P1/P2, pairing, progress, native review)
  * plus the progress-mirror and pairing-code readers the J-cases observe. No production writer is
  * emulated here: every behavioural step runs as the real service in test/utils/g2-s11-worker.cjs.
+ *
+ * S11-A2 deltas (D-S11-6 J09–J11; and nothing else): the S10-B table names join `resetData`; and,
+ * after the A1 wrappers, the `induction` step wrappers (declare | observe plus the generic steps
+ * routed through the TWO-SOURCE registry the worker composes from `INDUCTION_INPUT`), the
+ * evidence-signing inputs (test/fixtures/scout/s11/s11-sources.ts, re-exported) and the readers
+ * for the declaration / observation / settled-basis rows. The A1 wrappers and `REGISTRY` are
+ * untouched: J01–J08 still run over the single fixture platform.
  */
 import { json, quote, run, sql, worker } from './g2-s11-pg-harness';
+import {
+  INDUCTION_INPUT,
+  SOURCES,
+  batchOf,
+  declarationOf,
+  evidenceSet,
+  idsByFamily,
+  tokensOf,
+  type FixtureRow,
+  type SyntheticSource,
+} from '../fixtures/scout/s11/s11-sources';
 
 export const RUN = 'ScoutImport';
 export const INTENT = 'ImportIntent';
@@ -21,6 +39,10 @@ export const COMPLETION = 'ScoutImportCompletion';
 export const STAGED = 'ScoutIngestEntity';
 export const PROVENANCE = 'ImportNativeProvenance';
 export const LEDGER = 'ScoutReconstructionLedger';
+/** S11-A2: the S10-B induction tables (cascade from the run row; deleted explicitly all the same). */
+export const DECLARATION = 'ScoutRunDeclaration';
+export const OBSERVATION = 'ScoutRunObservation';
+export const SETTLED_BASIS = 'ScoutRunSettledBasis';
 /** Fixture platform: canonical, synthetic, registered only through the injected spec. */
 export const PLATFORM = 's11-proof';
 /** Setup label (`ImportIntent.chosen_platform`): synthetic and deliberately NOT the staged
@@ -262,6 +284,7 @@ export const targetSnapshot = (coach: string, intent: string) => ({
 export function resetData() {
   sql(`DELETE FROM "${PROVENANCE}"; DELETE FROM "${LEDGER}"; DELETE FROM "${STAGED}";
     DELETE FROM "ScoutReconstructedEntity"; DELETE FROM "ScoutProgressSnapshot";
+    DELETE FROM "${OBSERVATION}"; DELETE FROM "${DECLARATION}"; DELETE FROM "${SETTLED_BASIS}";
     DELETE FROM "${COMPLETION}"; DELETE FROM "${RUN}";
     DELETE FROM "WorkoutPlanRevision"; DELETE FROM "WorkoutPlanExercise"; DELETE FROM "WorkoutPlan";
     DELETE FROM "WorkoutProgram"; DELETE FROM "ExerciseCatalogItem"; DELETE FROM "Person";
@@ -379,3 +402,106 @@ export const pairCodeRows = (coach: string) =>
   json(`SELECT COALESCE(jsonb_agg(jsonb_build_object('coach_id',coach_id,'import_intent_id',import_intent_id,
     'used',used_at IS NOT NULL,'failed_attempts',failed_attempts) ORDER BY created_at),'[]')
     FROM "ExtensionPairCode" WHERE coach_id=${quote(coach)}`) as Array<Record<string, any>>;
+
+/* ---------------------------------------------------------------------------------------------
+ * S11-A2 — induction steps over TWO synthetic sources (D-S11-6 J09–J11, D-S11-7(7)).
+ * `INDUCTION` replaces `REGISTRY` for these steps: the worker composes the repository-resident
+ * packages PLUS the second source's data-only packages (its own directory under
+ * test/fixtures/scout/s11/) and
+ * binds the planner, native families, facts service and observation service to that ONE composed
+ * registry. Slugs come from the fixture data (`SOURCES.first.platform`, `SOURCES.second.platform`);
+ * no S11 file types one. Every step is still the real service in one worker process per host.
+ * ------------------------------------------------------------------------------------------- */
+export { SOURCES, batchOf, declarationOf, evidenceSet, idsByFamily, tokensOf };
+export type { FixtureRow, SyntheticSource };
+export const INDUCTION = { induction: INDUCTION_INPUT };
+/** One real service step on `host` through the two-source registry. */
+export const onInduction = (host: Host, role: Role, options: Options) =>
+  run({ ...INDUCTION, ...options, host, role });
+export const induction = {
+  start: (host: Host, coach: string, intentId: string) =>
+    onInduction(host, 'phone', { action: 'start', coach, intent: intentId }),
+  /** POST /scout/import/declaration for the extension bearer `coach` (S10-B). */
+  declare: (host: Host, coach: string, intentId: string, sources: readonly SyntheticSource[]) =>
+    onInduction(host, 'ext', {
+      action: 'declare',
+      coach,
+      intent: intentId,
+      body: { platforms: sources.map(declarationOf) },
+    }),
+  /** One ingest batch: the rows of `token` of `src` (its own `source_platform`). */
+  ingest: (
+    host: Host,
+    coach: string,
+    intentId: string,
+    src: SyntheticSource,
+    token: string,
+    rows: readonly FixtureRow[] = src.nativeClean,
+  ) =>
+    onInduction(host, 'ext', {
+      action: 'ingest',
+      coach,
+      intent: intentId,
+      body: batchOf(src, token, rows),
+    }),
+  /** POST /scout/import/observation with a prepared evidence list (S10-B). */
+  observe: (host: Host, coach: string, intentId: string, observations: readonly unknown[]) =>
+    onInduction(host, 'ext', {
+      action: 'observe',
+      coach,
+      intent: intentId,
+      body: { observations },
+    }),
+  complete: (host: Host, coach: string, intentId: string, terminal_status = 'success') =>
+    onInduction(host, 'ext', {
+      action: 'complete',
+      coach,
+      intent: intentId,
+      body: { terminal_status },
+    }),
+  status: (host: Host, coach: string, intentId: string) =>
+    onInduction(host, 'phone', { action: 'status', coach, intent: intentId }),
+  /** A step whose worker stays alive at `pause` (J11's deterministic barrier; settle-redrive J13 shape). */
+  held: (host: Host, role: Role, options: Options) =>
+    worker({ ...INDUCTION, ...options, host, role }),
+};
+
+/** A PG `timestamp` rendered by to_jsonb has no zone; the columns are UTC by contract. */
+export const utc = (text: string) => new Date(/Z$|[+-]\d\d:\d\d$/.test(text) ? text : `${text}Z`);
+
+/**
+ * `issued_at` inside [accepted_start_at, received_at] (D-S10-3 E4): strictly after the run's
+ * accepted start and before the upload that follows. The wait is a clock ordering (the statement
+ * must be issued before the worker receives it), never a synchronisation between processes.
+ */
+export async function issuedAfterStart(coach: string, intentId: string): Promise<string> {
+  const acceptedStart = utc(runRow(coach, intentId).accepted_start_at).getTime();
+  const issuedMs = Math.max(Date.now(), acceptedStart) + 5;
+  while (Date.now() <= issuedMs + 5) await new Promise((r) => setTimeout(r, 5));
+  return new Date(issuedMs).toISOString();
+}
+/** The declaration rows of one run: platform, scope, challenge (base64), in key order. */
+export const declarationRows = (coach: string, intentId: string) =>
+  json(`SELECT COALESCE(jsonb_agg(jsonb_build_object('source_platform',source_platform,
+    'account_scope_id_digest',account_scope_id_digest,'challenge_b64',encode(challenge,'base64'),
+    'declared_at',declared_at) ORDER BY source_platform, account_scope_id_digest),'[]')
+    FROM "${DECLARATION}" WHERE coach_id=${quote(coach)} AND intent_id=${quote(intentId)}`) as Array<
+    Record<string, any>
+  >;
+/** The observation rows of one run: unit key + digest, in unit order. */
+export const observationRows = (coach: string, intentId: string) =>
+  json(`SELECT COALESCE(jsonb_agg(jsonb_build_object('execution_epoch',execution_epoch,
+    'source_platform',source_platform,'account_scope_id_digest',account_scope_id_digest,
+    'family',family,'basis_kind',basis_kind,'evidence_digest',evidence_digest)
+    ORDER BY execution_epoch, source_platform, account_scope_id_digest, family),'[]')
+    FROM "${OBSERVATION}" WHERE coach_id=${quote(coach)} AND intent_id=${quote(intentId)}`) as Array<
+    Record<string, any>
+  >;
+/** The settled-basis rows of one run (ONE per run by key; the settled report verbatim). */
+export const settledBasisRows = (coach: string, intentId: string) =>
+  json(`SELECT COALESCE(jsonb_agg(jsonb_build_object('execution_epoch',execution_epoch,
+    'report_version',report_version,'report',report,'observation_digests',observation_digests)
+    ORDER BY execution_epoch),'[]')
+    FROM "${SETTLED_BASIS}" WHERE coach_id=${quote(coach)} AND intent_id=${quote(intentId)}`) as Array<
+    Record<string, any>
+  >;

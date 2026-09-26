@@ -1,0 +1,18 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "s11_second",
+  "steps": {
+    "t11-blocks": "programs",
+    "t11-routines": "workouts"
+  },
+  "families": {
+    "programs": {
+      "clientSourceId": { "paths": [["t11_owner"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["t11_title"]], "coerce": "string" }
+    },
+    "workouts": {
+      "clientSourceId": { "paths": [["t11_owner"]], "coerce": "string_or_finite_number" },
+      "label": { "paths": [["t11_title"]], "coerce": "string" }
+    }
+  }
+}

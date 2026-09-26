@@ -16,12 +16,22 @@
 //     J07 and step 11 need (flagged in s11a1_builder_summary.md);
 //   - `messaging` joins the side-effect load spy keys (J08);
 //   - REMOVED donor actions no S11 case uses: settled | report | reconstruct | run-pass.
+// The S11-A2 deltas (D-S11-6 J09–J11, D-S11-8 row S11-A2; and nothing else):
+//   - ADDED actions declare | observe: the S10-B ObservationController over an ObservationService
+//     built on the SAME instrumented client and the SAME lifecycle (its FOR NO KEY UPDATE runs
+//     through the instrumented `$queryRaw`, so before-lock | locked pause it too);
+//   - ADDED `input.induction` ({ specs?, rules?, manifests? } — raw data-only packages): the
+//     two-source registry = the repository-resident specs / rule sets / manifests PLUS the
+//     injected ones, cross-checked by S10-C's `buildInductionRegistry`; the planner, the native
+//     families, the facts service (S10-C registry seam) and the observation service all bind the
+//     SAME composed registries. `input.spec` / `input.rules` (A1) are unchanged and exclusive of it.
 // Hooks only PAUSE real operations at named barriers; they never replace query results or
 // transaction semantics. Used only by the explicitly guarded S11 live proofs.
 // input (G2_S11_WORKER JSON): { root, head, client, url, coach, intent, action, pause?, pauseRow?,
-//   txTimeout?, deadlineMs?, body?, spec?, rules?, mapper?, family? }
+//   txTimeout?, deadlineMs?, body?, spec?, rules?, induction?, mapper?, family? }
 // action ∈ start | ingest | progress | complete | cancel | fence | status
 //        | pair-init | pair-redeem | pair-current | pair-session | roster | entities
+//        | declare (body: { platforms }) | observe (body: { observations })
 // pause  ∈ before-gate (inside a transaction, before the §3.1 gate UPDATE)
 //        | gated (gate UPDATE returned; row lock held; before the transaction's own rows)
 //        | before-ledger (before the first ledger upsert of a per-row transaction)
@@ -91,8 +101,19 @@ const { buildSourceMapperRegistry } = require(
 const { parseNativeRuleSet } = require(
   join(input.root, 'src/scout/reconstruct/native/native-rules'),
 );
-const { buildNativeRuleRegistry } = require(
+const { buildNativeRuleRegistry, loadNativeRuleSets } = require(
   join(input.root, 'src/scout/reconstruct/native/native-rule-registry'),
+);
+const { loadSourceMappingSpecs } = require(
+  join(input.root, 'src/scout/reconstruct/source-mapper-registry'),
+);
+const { loadInductionManifests, buildInductionRegistry } = require(
+  join(input.root, 'src/scout/induction/manifest-registry'),
+);
+const { parseInductionManifest } = require(join(input.root, 'src/scout/induction/parse'));
+const { ObservationService } = require(join(input.root, 'src/scout/induction/observation.service'));
+const { ObservationController } = require(
+  join(input.root, 'src/scout/induction/observation.controller'),
 );
 const { ExtensionPairService } = require(
   join(input.root, 'src/extension-pair/extension-pair.service'),
@@ -266,10 +287,35 @@ function instrument(target, onGate = null) {
   let failure;
   let families;
   let factsOptions = {};
+  let observationOptions = {};
   try {
     const prisma = instrument(db);
     const reconstruct = new ScoutReconstructService(prisma, analytics);
-    if (input.spec !== undefined || input.rules !== undefined) {
+    if (input.induction !== undefined) {
+      // S11-A2: two-source registry = repository defaults + injected data-only packages, parsed by
+      // the SAME parsers the loaders use, cross-checked by the SAME S10-C registry builder.
+      const parseAll = (raw, parse, key) =>
+        (raw ?? []).map((item, i) => parse(item, `g2-s11-worker:induction.${key}[${i}]`));
+      const specs = [
+        ...loadSourceMappingSpecs(),
+        ...parseAll(input.induction.specs, parseSourceMappingSpec, 'specs'),
+      ];
+      const rules = [
+        ...loadNativeRuleSets(),
+        ...parseAll(input.induction.rules, parseNativeRuleSet, 'rules'),
+      ];
+      const manifests = [
+        ...loadInductionManifests(),
+        ...parseAll(input.induction.manifests, parseInductionManifest, 'manifests'),
+      ];
+      const sourceMappers = buildSourceMapperRegistry(specs);
+      const nativeRules = buildNativeRuleRegistry(rules);
+      reconstruct.families = buildFamilyRegistry({ sourceMappers, nativeRules });
+      reconstruct.sourceMappers = sourceMappers;
+      const registry = buildInductionRegistry({ manifests, specs, nativeRuleSets: rules });
+      factsOptions = { sourceMappers, nativeRules, registry };
+      observationOptions = { registry };
+    } else if (input.spec !== undefined || input.rules !== undefined) {
       const specs =
         input.spec === undefined ? [] : [parseSourceMappingSpec(input.spec, 'g2-s11-worker:spec')];
       const rules =
@@ -293,6 +339,11 @@ function instrument(target, onGate = null) {
     const lifecycle = new ScoutLifecycleService(prisma, analytics, reconstruct, facts);
     const scout = new ScoutService(prisma, notifications, analytics, lifecycle);
     const pairing = new ExtensionPairService(prisma, auth);
+    // S11-A2: the S10-B route pair over the same client and lifecycle (controller, so the raw-body
+    // limit and envelope parse of the accepted route run too).
+    const induction = new ObservationController(
+      new ObservationService(prisma, lifecycle, observationOptions),
+    );
     const body = input.body ?? {};
     switch (input.action) {
       case 'start':
@@ -372,6 +423,20 @@ function instrument(target, onGate = null) {
           undefined,
         );
         break;
+      case 'declare':
+        result = await induction.postDeclaration(
+          { user: { id: input.coach } },
+          { intent_id: input.intent, platforms: body.platforms ?? [] },
+        );
+        break;
+      case 'observe': {
+        const envelope = { intent_id: input.intent, observations: body.observations ?? [] };
+        result = await induction.postObservation(
+          { user: { id: input.coach }, rawBody: Buffer.from(JSON.stringify(envelope), 'utf8') },
+          envelope,
+        );
+        break;
+      }
       default:
         throw new Error(`unknown action ${input.action}`);
     }

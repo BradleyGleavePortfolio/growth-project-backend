@@ -294,11 +294,17 @@ describe('S11 one-harness shape (D-S11-6, D-S11-7(7); static, no database)', () 
     'g2-s11-worker.cjs',
     '../rls-g2-s11.spec.ts',
     '../scout/s11/journey-core.pg.spec.ts',
+    '../scout/s11/journey-induction.pg.spec.ts',
+  ];
+  /** The S11 real-PG journey specs (A1 core, A2 induction) that must stay inert without the lane. */
+  const journeySpecs = [
+    '../scout/s11/journey-core.pg.spec.ts',
+    '../scout/s11/journey-induction.pg.spec.ts',
   ];
   const actionsOf = (worker: string) =>
     [...worker.matchAll(/^\s+case '([a-z-]+)':/gm)].map((m) => m[1]).sort();
 
-  it('the S11 worker carries exactly the donor actions S11 uses plus the S11-A1 additions', () => {
+  it('the S11 worker carries exactly the donor actions S11 uses plus the S11-A1 and S11-A2 additions', () => {
     const worker = read('g2-s11-worker.cjs');
     const donor = read('g2-s9c-worker.cjs');
     const kept = ['cancel', 'complete', 'fence', 'ingest', 'start', 'status'];
@@ -312,8 +318,10 @@ describe('S11 one-harness shape (D-S11-6, D-S11-7(7); static, no database)', () 
       'progress',
       'roster',
     ];
+    // S11-A2 (D-S11-6 J09-J11): the S10-B route pair, and nothing else.
+    const addedA2 = ['declare', 'observe'];
     expect(actionsOf(donor)).toEqual([...kept, ...removed].sort());
-    expect(actionsOf(worker)).toEqual([...kept, ...added].sort());
+    expect(actionsOf(worker)).toEqual([...kept, ...added, ...addedA2].sort());
     // Head attestation still precedes the first client; the mint stub is the only non-real service.
     expect(worker.indexOf("['rev-parse', 'HEAD']")).toBeLessThan(
       worker.indexOf('new PrismaClient'),
@@ -330,6 +338,25 @@ describe('S11 one-harness shape (D-S11-6, D-S11-7(7); static, no database)', () 
     expect(worker).toMatch(/\['https', require\('https'\)\]/);
     expect(worker).toContain('globalThis.fetch = ');
     expect(worker).toContain('pushCalls.push({ userId, kind:');
+    // S11-A2: declare | observe run the real S10-B controller over an ObservationService that shares
+    // the worker's instrumented client and lifecycle; the two-source registry is the repository
+    // defaults PLUS the injected data-only packages, cross-checked by S10-C's builder and handed
+    // to the planner, the native families, the facts service and the observation service alike.
+    expect(worker).toContain('new ObservationController(');
+    expect(worker).toContain('new ObservationService(prisma, lifecycle, observationOptions)');
+    expect(worker).toContain('induction.postDeclaration(');
+    expect(worker).toContain('induction.postObservation(');
+    expect(worker).toContain('if (input.induction !== undefined) {');
+    expect(worker).toContain('...loadSourceMappingSpecs(),');
+    expect(worker).toContain('...loadNativeRuleSets(),');
+    expect(worker).toContain('...loadInductionManifests(),');
+    expect(worker).toContain(
+      'const registry = buildInductionRegistry({ manifests, specs, nativeRuleSets: rules });',
+    );
+    expect(worker).toContain('factsOptions = { sourceMappers, nativeRules, registry };');
+    expect(worker).toContain('observationOptions = { registry };');
+    // The A1 single-platform injection is untouched and exclusive of the A2 one.
+    expect(worker).toContain('} else if (input.spec !== undefined || input.rules !== undefined) {');
   });
 
   it('every S11 harness file is bound to the S11 lane only and names no real platform slug', () => {
@@ -344,17 +371,60 @@ describe('S11 one-harness shape (D-S11-6, D-S11-7(7); static, no database)', () 
       expect(text).not.toMatch(/G2_S9C_|g2_s9c_disposable|s9c_super|G2_S10B_/);
     }
     // One harness: the S11 specs import the S11 harness and no donor harness.
-    for (const file of ['../rls-g2-s11.spec.ts', '../scout/s11/journey-core.pg.spec.ts']) {
+    for (const file of ['../rls-g2-s11.spec.ts', ...journeySpecs]) {
       const text = read(file);
       expect(text).toContain('g2-s11-');
       expect(text).not.toMatch(/g2-s(7l|8[a-z]|9[a-z]?|10[a-z]?)-/);
     }
   });
 
-  it('the real-PG journey spec is inert without the S11 lane and never builds its own harness', () => {
-    const journey = read('../scout/s11/journey-core.pg.spec.ts');
-    expect(journey).toContain('process.env.G2_S11_DATABASE_URL ? describe : describe.skip');
-    expect(journey).not.toMatch(/^import (?!type)[^;]*g2-s11-(pg-)?harness/m);
-    expect(journey).not.toMatch(/new PrismaClient|fork\(|spawn\(/);
+  it('the real-PG journey specs are inert without the S11 lane and never build their own harness', () => {
+    for (const file of journeySpecs) {
+      const journey = read(file);
+      expect(journey).toContain('process.env.G2_S11_DATABASE_URL ? describe : describe.skip');
+      expect(journey).not.toMatch(/^import (?!type)[^;]*g2-s11-(pg-)?harness/m);
+      expect(journey).not.toMatch(/new PrismaClient|fork\(|spawn\(/);
+    }
+  });
+
+  it('S11-A2: the second induction source is data only under test/fixtures/scout/s11 (no src change)', () => {
+    const dir = resolve(__dirname, '../fixtures/scout/s11/s11_second');
+    const files = readdirSync(dir).sort();
+    expect(files).toEqual([
+      'induction-manifest.json',
+      'mapping-spec.json',
+      'native-rules.json',
+      'signer-test-key.json',
+      'staged-rows.json',
+      'statements.json',
+    ]);
+    const slug = JSON.parse(readFileSync(resolve(dir, 'staged-rows.json'), 'utf8')).source_platform;
+    expect(typeof slug).toBe('string');
+    // Not a repository-resident source: no spec, rule set or manifest of that slug ships in src/.
+    for (const sub of ['reconstruct/sources', 'reconstruct/native/sources', 'induction/sources']) {
+      expect(readdirSync(resolve(__dirname, '../../src/scout', sub))).not.toContain(`${slug}.json`);
+    }
+    // The three packages agree on the slug, and the manifest verifier IS the fixture signer.
+    const spec = JSON.parse(readFileSync(resolve(dir, 'mapping-spec.json'), 'utf8'));
+    const rules = JSON.parse(readFileSync(resolve(dir, 'native-rules.json'), 'utf8'));
+    const manifest = JSON.parse(readFileSync(resolve(dir, 'induction-manifest.json'), 'utf8'));
+    const key = JSON.parse(readFileSync(resolve(dir, 'signer-test-key.json'), 'utf8'));
+    expect([spec.sourcePlatform, rules.sourcePlatform, manifest.sourcePlatform]).toEqual([
+      slug,
+      slug,
+      slug,
+    ]);
+    expect(manifest.expectedFamilies).toEqual(Object.keys(spec.families).sort());
+    expect(manifest.nativeRules).toBe('declared');
+    expect(manifest.verifiers).toEqual([
+      { key_id: key.source.key_id, alg: 'ed25519', public_key_b64: key.source.public_key_b64 },
+    ]);
+    // The harness reaches it only through the fixture module; the spec types no slug (D-S11-7(7)).
+    const harness = read('g2-s11-harness.ts');
+    expect(harness).toContain("from '../fixtures/scout/s11/s11-sources'");
+    expect(harness).toContain('export const INDUCTION = { induction: INDUCTION_INPUT };');
+    for (const file of ['g2-s11-harness.ts', '../scout/s11/journey-induction.pg.spec.ts']) {
+      expect(read(file).includes(slug)).toBe(false);
+    }
   });
 });
