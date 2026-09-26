@@ -364,6 +364,14 @@ export class ScoutService implements OnModuleDestroy {
    * the same epoch — a fence that lands in between wins and the settle is a
    * no-op. A closed gate rolls everything back: no run → 409 `run_not_started`;
    * a fenced or terminal run (late or duplicate settle) → 200 ack no-op, unchanged.
+   *
+   * S11-B (D-S11-4): a replayed claim on a run that is still open (the ledger
+   * unique refuses the second row, P2002) re-drives the settle when the earlier
+   * one was lost — process death between the claim commit and the terminal (G1).
+   * Eligibility and the epoch come from `redriveEpoch`, never from the body; the
+   * stored claim stays the arbiter input, and the push and analytics event stay
+   * first-claim-only. The settle tail is CAS-guarded and replay-safe, so a
+   * re-drive writes the verdict an uninterrupted run gets, or nothing.
    */
   private async completeServerRun(
     coachId: string,
@@ -396,9 +404,15 @@ export class ScoutService implements OnModuleDestroy {
         if (closed.kind === 'not_started') throw runConflict('run_not_started');
         return ack;
       }
-      // A second claim for a still-open run (the earlier settle's arbitration
-      // lost its CAS to nothing yet): the ledger unique keeps the first claim.
-      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') return ack;
+      // A second claim for a still-open run: the ledger unique keeps the first
+      // claim; if that claim's settle never reached a terminal, re-drive it.
+      if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
+        const pending = await this.redriveEpoch(coachId, dto.intent_id);
+        if (pending !== null) {
+          await this.lifecycle.onTransferSettled(coachId, dto.intent_id, pending);
+        }
+        return ack;
+      }
       throw err;
     }
 
@@ -409,6 +423,23 @@ export class ScoutService implements OnModuleDestroy {
     });
     await this.lifecycle.onTransferSettled(coachId, dto.intent_id, epoch);
     return ack;
+  }
+
+  /**
+   * S11-B (D-S11-4): decide a re-drive under the §3.1 gate in one short
+   * transaction of its own. The gate (open, unfenced, unexpired; it holds the row
+   * to commit) returns the DB epoch; `isSettlePending` then reads whether the run
+   * is `reconciling` with its completion row and no terminal. Returns that epoch
+   * when both hold, else null — a closed gate is the existing ack no-op, with no
+   * 409 and no classification, exactly as the refused claim answered before.
+   */
+  private async redriveEpoch(coachId: string, intentId: string): Promise<number | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const epoch = await this.lifecycle.assertRunOpen(tx, coachId, intentId);
+      if (epoch === null) return null;
+      const pending = await this.lifecycle.isSettlePending(tx, coachId, intentId);
+      return pending ? epoch : null;
+    });
   }
 
   /** Evidence-only read for GET /api/scout/import/status: settled state verbatim

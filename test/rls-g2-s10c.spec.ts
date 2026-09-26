@@ -235,15 +235,17 @@ describe('R36 — CAS miss or insert failure: no terminal, no basis', () => {
     expect(count(SETTLED)).toBe(0);
     // analytics.capture(coach, event, props) is recorded as its argument list.
     expect(done.events.filter((e: unknown[]) => /settled/i.test(String(e[1])))).toHaveLength(0);
-    // The claim committed before the settle, so the retry is a refused claim: a 200 ack no-op that
-    // leaves the run open. S11-B's settle re-drive supersedes exactly this assertion.
+    // The claim committed before the settle, so the retry is a refused claim (P2002). S11-B
+    // (D-S11-4): the run is still open in `reconciling` with its completion row, so the retry
+    // re-drives the lost settle — one terminal CAS, one basis row in the same transaction, no
+    // push — instead of the pre-S11-B ack no-op that left the run open.
     const retry = await complete(intentId);
     expect(retry.failure).toBeUndefined();
     expect(retry.pushes).toBe(0);
-    expect(retry.queries.filter(isTerminalCas)).toHaveLength(0);
-    expect(retry.queries.filter(isBasisInsert)).toHaveLength(0);
-    expect(runRow(COACH, intentId).terminal_status).toBeNull();
-    expect(count(SETTLED)).toBe(0);
+    expect(retry.queries.filter(isTerminalCas)).toHaveLength(1);
+    expect(retry.queries.filter(isBasisInsert)).toHaveLength(1);
+    expect(runRow(COACH, intentId).terminal_status).not.toBeNull();
+    expect(count(SETTLED)).toBe(1);
   });
 
   it('two concurrent claims: exactly one terminal write and exactly one basis row (the CAS loser inserts nothing)', async () => {

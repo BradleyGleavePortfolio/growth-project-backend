@@ -648,6 +648,25 @@ export class ScoutLifecycleService {
   }
 
   /**
+   * S11-B (D-S11-4) read helper for a replayed claim: true when this coach's open server run has
+   * a settle still pending — the claim committed (phase `reconciling`, completion row present) and
+   * no terminal or fence followed, so the settle that should have run after the claim was lost.
+   * A tenant-scoped SELECT: no lock, no write, no parameter but the coach and the intent. The
+   * caller reads it inside the transaction whose first statement was `assertRunOpen` and
+   * re-drives `onTransferSettled` with THAT gate's epoch, never a client-supplied one.
+   */
+  async isSettlePending(tx: Tx, coachId: string, intentId: string): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ pending: number }[]>`
+      SELECT 1 AS pending
+        FROM "ScoutImport" r
+       WHERE r.coach_id = ${coachId} AND r.intent_id = ${intentId} AND r.mode = 'server'
+         AND r.terminal_status IS NULL AND r.fenced_at IS NULL AND r.phase = 'reconciling'
+         AND EXISTS (SELECT 1 FROM "ScoutImportCompletion" c
+                      WHERE c.coach_id = r.coach_id AND c.intent_id = r.intent_id)`;
+    return rows.length === 1;
+  }
+
+  /**
    * After a zero-row gate (the writer's transaction already rolled back): re-read unlocked and
    * classify. No row → `run_not_started`. Fenced or terminal → `run_fenced`. Open but past its
    * deadline → fence `timed_out` in a short transaction of our own (the row is free: the
