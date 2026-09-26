@@ -92,6 +92,11 @@ class FakeDb {
     workoutProgram: [],
     workoutPlan: [],
     workoutPlanExercise: [],
+    // S10-C: the run row and the S10-B tables the coverage evaluator is fed from. Left empty
+    // here (no server run row ⇒ `coverage: null`, the S9 v1 value); facts.service.coverage.spec
+    // exercises them.
+    scoutRunDeclaration: [],
+    scoutRunObservation: [],
   };
   /** `{ model, method, where }` per call, for the aggregate/tenant assertions. */
   readonly calls: Array<{ model: string; method: string; where: Row }> = [];
@@ -313,6 +318,19 @@ describe('S9-B ReconciliationFactsService', () => {
         ledger_without_staged: 0,
         coverage: null,
       });
+    });
+    it('S10-C: without a run binding, or with a legacy one, coverage stays null and no S10 table is read', async () => {
+      const db = new FakeDb();
+      const bare = await service().collect(db.client(), COACH, INTENT);
+      expect(bare.coverage).toBeNull();
+      const legacy = await service().collect(db.client(), COACH, INTENT, {
+        mode: 'legacy',
+        execution_epoch: 1,
+        accepted_start_at: null,
+      });
+      expect(legacy.coverage).toBeNull();
+      expect(db.calls.some((c) => c.model.startsWith('scoutRun'))).toBe(false);
+      expect(db.calls.some((c) => c.model === 'scoutImport')).toBe(false);
     });
     it('reads the legacy claim only from the closed terminal set', async () => {
       const db = new FakeDb();

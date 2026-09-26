@@ -55,6 +55,10 @@ interface Doubles {
   executeRaw: jest.Mock;
   transaction: jest.Mock;
   capture: jest.Mock;
+  // S10-C (D-S10-4): the settled-basis record and the evidence digests it carries.
+  observationFindMany: jest.Mock;
+  basisCreate: jest.Mock;
+  basisFindUnique: jest.Mock;
 }
 
 function makeDoubles(): Doubles {
@@ -68,6 +72,9 @@ function makeDoubles(): Doubles {
     executeRaw: jest.fn(),
     transaction: jest.fn(),
     capture: jest.fn(),
+    observationFindMany: jest.fn().mockResolvedValue([]),
+    basisCreate: jest.fn().mockResolvedValue({}),
+    basisFindUnique: jest.fn().mockResolvedValue(null),
   };
   // Interactive $transaction(fn) hands the callback a tx that shares the raw doubles.
   d.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -77,6 +84,8 @@ function makeDoubles(): Doubles {
       scoutImportCompletion: { findUnique: d.completionFindUnique },
       scoutIngestEntity: { groupBy: jest.fn().mockResolvedValue([]) },
       scoutReconstructionLedger: { groupBy: d.ledgerGroupBy },
+      scoutRunObservation: { findMany: d.observationFindMany },
+      scoutRunSettledBasis: { create: d.basisCreate },
     }),
   );
   return d;
@@ -88,6 +97,7 @@ function makeService(d: Doubles): ScoutLifecycleService {
     scoutImport: { findUnique: d.runFindUnique, create: d.runCreate },
     scoutImportCompletion: { findUnique: d.completionFindUnique },
     scoutReconstructionLedger: { groupBy: d.ledgerGroupBy },
+    scoutRunSettledBasis: { findUnique: d.basisFindUnique },
     $transaction: d.transaction,
   });
   const analytics = Object.assign(Object.create(AnalyticsService.prototype) as AnalyticsService, {
@@ -558,6 +568,7 @@ describe('ScoutLifecycleService', () => {
       scoutImport: { findUnique: d.runFindUnique, create: d.runCreate },
       scoutImportCompletion: { findUnique: d.completionFindUnique },
       scoutReconstructionLedger: { groupBy: d.ledgerGroupBy },
+      scoutRunSettledBasis: { findUnique: d.basisFindUnique },
       $transaction: d.transaction,
     });
     const analytics = Object.assign(Object.create(AnalyticsService.prototype) as AnalyticsService, {
@@ -633,6 +644,7 @@ describe('ScoutLifecycleService', () => {
     fenced_at: null,
     fence_reason: null,
     deadline_at: null,
+    accepted_start_at: new Date('2026-09-24T10:00:00.000Z'), // S10-C: the evaluator binding
   };
   const terminalWrites = (d: Doubles) =>
     d.executeRaw.mock.calls.filter((c: unknown[]) =>
@@ -660,7 +672,12 @@ describe('ScoutLifecycleService', () => {
       });
       expect(s9.reconstructRun).toHaveBeenCalledTimes(1);
       expect(s9.collect).toHaveBeenCalledTimes(1);
-      expect(s9.collect.mock.calls[0].slice(1)).toEqual([COACH, INTENT]);
+      // S10-C: the collector receives the locked row's binding (D-S10-3 E1) — no run-row read of its own.
+      expect(s9.collect.mock.calls[0].slice(1)).toEqual([
+        COACH,
+        INTENT,
+        { mode: 'server', execution_epoch: 1, accepted_start_at: lockedOpen.accepted_start_at },
+      ]);
       // The facts service reads on the SAME transaction client the tail holds (D-S9-1), not on prisma.
       expect(s9.collect.mock.calls[0][0]).toHaveProperty('$executeRaw', d.executeRaw);
       const writes = terminalWrites(d);
@@ -1240,6 +1257,385 @@ describe('ScoutLifecycleService', () => {
       const a = ScoutLifecycleService.projectFamilies(STAGED, LEDGER, reconcile(withNotes).report);
       const b = ScoutLifecycleService.projectFamilies(STAGED, LEDGER, reconcile(withNotes).report);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    });
+  });
+
+  // ── S10-C (docs/decisions/2026-09-26-s10-induction.md D-S10-4, D-S10-6, D-S10-7 row S10-C) ──
+
+  describe('S10-C settle write: the settled basis is a record after the CAS (D-S10-4, R33, R36)', () => {
+    const settledReport = (f: ReconciliationFacts): ReconciliationReportV1 => ({
+      ...reconcile(f).report,
+      basis: 'settled',
+    });
+
+    it('R33 structural half: one terminal CAS, then ONE basis insert on the SAME transaction, carrying the settled report and the epoch digests', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      d.observationFindMany.mockResolvedValue([
+        { evidence_digest: 'a'.repeat(64) },
+        { evidence_digest: 'b'.repeat(64) },
+      ]);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(terminalWrites(d)).toHaveLength(1);
+      expect(d.basisCreate).toHaveBeenCalledTimes(1);
+      // Order inside the transaction: lock → collect → CAS → basis insert.
+      const cas = d.executeRaw.mock.invocationCallOrder[0];
+      const insert = d.basisCreate.mock.invocationCallOrder[0];
+      expect(insert).toBeGreaterThan(cas);
+      expect(insert).toBeGreaterThan(s9.collect.mock.invocationCallOrder[0]);
+      expect(d.transaction).toHaveBeenCalledTimes(1); // one settle transaction, not a second one
+      const data = d.basisCreate.mock.calls[0][0].data;
+      expect(data).toMatchObject({
+        coach_id: COACH,
+        intent_id: INTENT,
+        execution_epoch: 1,
+        report_version: 1,
+        observation_digests: ['a'.repeat(64), 'b'.repeat(64)],
+      });
+      expect(data.settled_at).toBeInstanceOf(Date);
+      expect(data.report).toEqual(settledReport(MIXED));
+      expect(data.report.basis).toBe('settled');
+      // The digests are THIS coach's rows at THIS epoch only (C-note: old epoch ignored).
+      expect(d.observationFindMany).toHaveBeenCalledTimes(1);
+      expect(d.observationFindMany.mock.calls[0][0].where).toEqual({
+        coach_id: COACH,
+        intent_id: INTENT,
+        execution_epoch: 1,
+      });
+      // The run row is not touched again: the arbiter's UPDATE is the only raw write (invariant 6).
+      expect(d.executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('R36: a CAS miss (0 rows) writes no basis and settles nothing', async () => {
+      const { service: svc } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(0);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(terminalWrites(d)).toHaveLength(1);
+      expect(d.basisCreate).not.toHaveBeenCalled();
+      expect(d.observationFindMany).not.toHaveBeenCalled();
+      expect(d.capture).not.toHaveBeenCalledWith(
+        COACH,
+        Events.SCOUT_RUN_SETTLED,
+        expect.anything(),
+      );
+    });
+
+    it('R36: an already-terminal or foreign-epoch lock row reaches neither the CAS nor the insert', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValueOnce([{ ...lockedOpen, terminal_status: 'partial' }]);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      d.queryRaw.mockResolvedValueOnce([{ ...lockedOpen, execution_epoch: 2 }]);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(s9.collect).not.toHaveBeenCalled();
+      expect(d.executeRaw).not.toHaveBeenCalled();
+      expect(d.basisCreate).not.toHaveBeenCalled();
+    });
+
+    it('R36: an insert failure propagates out of the settle transaction (rolling the terminal back with it), is not retried, and emits no settle event', async () => {
+      const { service: svc } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      const boom = new Error('fixture injected insert failure');
+      d.basisCreate.mockRejectedValue(boom);
+      await expect(svc.onTransferSettled(COACH, INTENT, 1)).rejects.toBe(boom);
+      expect(d.transaction).toHaveBeenCalledTimes(1); // only P2034 is retried (S9-C A-1)
+      expect(d.capture).not.toHaveBeenCalledWith(
+        COACH,
+        Events.SCOUT_RUN_SETTLED,
+        expect.anything(),
+      );
+    });
+
+    it('R34: a fence on the locked row still wins; the basis records the S9 report the fenced terminal was decided beside', async () => {
+      const { service: svc } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValue([
+        { ...lockedOpen, fenced_at: new Date(), fence_reason: 'cancelled' },
+      ]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(flatArgs(terminalWrites(d)[0])).toEqual(
+        expect.arrayContaining(['cancelled', 'cancelled_by_coach']),
+      );
+      expect(d.basisCreate).toHaveBeenCalledTimes(1);
+      expect(d.basisCreate.mock.calls[0][0].data.report).toEqual(settledReport(MIXED));
+    });
+
+    it('R34 / D-S10-8: a claim that is not success settles partial / coverage_basis_unknown from the S9 set — no new code', async () => {
+      const clean = facts([family('workouts', [identity('routines', 1, verified)])], 'partial');
+      const { service: svc } = wired(d, clean);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'partial' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      const args = flatArgs(terminalWrites(d)[0]);
+      expect(args).toEqual(expect.arrayContaining(['partial', 'coverage_basis_unknown']));
+      expect(args).not.toContain('complete');
+      expect(isRunReasonCode('coverage_basis_unknown')).toBe(true);
+      expect(d.basisCreate.mock.calls[0][0].data.report.conditions).toContain(
+        'coverage_basis_unknown',
+      );
+    });
+
+    it('invariant 1: a known, covering basis with a success claim and clean natives is the only way to complete — and then the basis row says so', async () => {
+      const proven: ReconciliationFacts = {
+        ...facts([family('workouts', [identity('routines', 1, verified)])]),
+        coverage: {
+          workouts: {
+            known: true,
+            basis_kind: 'source_signed_enumeration',
+            observed_unique: 1,
+            covers_staged_identities: true,
+          },
+        },
+      };
+      const { service: svc } = wired(d, proven);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(flatArgs(terminalWrites(d)[0])).toEqual(expect.arrayContaining(['complete', null]));
+      const stored = d.basisCreate.mock.calls[0][0].data.report as ReconciliationReportV1;
+      expect(stored.conditions).toEqual([]);
+      expect(stored.families[0]).toMatchObject({
+        completeness_basis: 'source_signed_enumeration',
+        observed_unique: 1,
+      });
+      // Same facts with `covers: false` (R23 terminal half) → partial / coverage_basis_unknown.
+      const provenWorkouts = proven.coverage!.workouts;
+      if (!provenWorkouts.known) throw new Error('fixture: workouts coverage must be known');
+      const notCovering: ReconciliationFacts = {
+        ...proven,
+        coverage: { workouts: { ...provenWorkouts, covers_staged_identities: false } },
+      };
+      expect(reconcile(notCovering).verdict).toEqual({
+        outcome: 'partial',
+        reason_code: 'coverage_basis_unknown',
+      });
+      expect(reconcile(notCovering).report.families[0]).toMatchObject({
+        completeness_basis: 'none',
+        observed_unique: 1, // the count stays a shown fact; the basis is not trusted
+      });
+    });
+  });
+
+  describe('S10-C status read: settled basis preferred, S9 recompute otherwise (D-S10-4 "Status", R35, R37)', () => {
+    const settledServer = (over: Partial<RunRow> = {}) =>
+      openRun({
+        phase: 'reconciling',
+        terminal_status: 'partial',
+        reason_code: 'unresolved_identities',
+        ...over,
+      });
+    const storedRow = (report: unknown, report_version = 1) => ({ report_version, report });
+
+    it('returns the settled report verbatim with basis settled, on one coach-scoped point read, opening no transaction', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      const recorded = { ...reconcile(MIXED).report, basis: 'settled' as const };
+      d.basisFindUnique.mockResolvedValue(storedRow(recorded));
+      const report = await svc.readReport(COACH, INTENT, settledServer());
+      expect(report).toBe(recorded);
+      expect(report?.basis).toBe('settled');
+      expect(d.basisFindUnique).toHaveBeenCalledTimes(1);
+      expect(d.basisFindUnique.mock.calls[0][0].where).toEqual({
+        coach_id_intent_id: { coach_id: COACH, intent_id: INTENT },
+      });
+      expect(d.transaction).not.toHaveBeenCalled();
+      expect(s9.collect).not.toHaveBeenCalled();
+      expect(d.executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('R35: the settled report does not change when the recompute would (a native row archived later)', async () => {
+      const recorded = { ...reconcile(MIXED).report, basis: 'settled' as const };
+      d.basisFindUnique.mockResolvedValue(storedRow(recorded));
+      // The live facts have drifted: the previously verified identity is now unresolved.
+      const drifted = facts([
+        family('workouts', [
+          identity('routines', 1, skipped('unresolved:native_missing')),
+          identity('routines', 2, skipped('unresolved:missing_required_field:name')),
+        ]),
+      ]);
+      const { service: svc } = wired(d, drifted);
+      const first = await svc.readReport(COACH, INTENT, settledServer());
+      const again = await svc.readReport(COACH, INTENT, settledServer());
+      expect(JSON.stringify(first)).toBe(JSON.stringify(again));
+      expect(JSON.stringify(first)).toBe(JSON.stringify(recorded));
+      expect(JSON.stringify(first)).not.toBe(JSON.stringify(reconcile(drifted).report));
+    });
+
+    it('without a basis row the S9-C recompute answers, byte-identical, with basis recomputed', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      const report = await svc.readReport(COACH, INTENT, settledServer());
+      expect(d.basisFindUnique).toHaveBeenCalledTimes(1);
+      expect(d.transaction).toHaveBeenCalledTimes(1);
+      expect(d.transaction.mock.calls[0][1]).toBe(S9_SNAPSHOT_TX_OPTIONS);
+      expect(s9.collect).toHaveBeenCalledTimes(1);
+      // Review A-1 / D-S10-4 L265-272: the no-basis recompute hands the collector NO run binding
+      // (exactly the S9-C call), so coverage stays unknown and no S10 evidence is read; a report
+      // that was never settled on evidence is never changed by later or backfilled evidence.
+      expect(s9.collect.mock.calls[0]).toHaveLength(3);
+      expect(s9.collect.mock.calls[0].slice(1)).toEqual([COACH, INTENT]);
+      expect(report?.basis).toBe('recomputed');
+      expect(JSON.stringify(report)).toBe(JSON.stringify(reconcile(MIXED).report));
+    });
+
+    it('review A-1: a fence-path terminal (no settled record) keeps the S9-C report — basis recomputed, coverage_basis_unknown, no binding', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      const fencedTerminal = settledServer({
+        terminal_status: 'cancelled',
+        reason_code: 'cancelled_by_coach',
+        fenced_at: new Date('2026-09-24T10:05:00.000Z'),
+        fence_reason: 'cancelled',
+        execution_epoch: 2,
+      });
+      const report = await svc.readReport(COACH, INTENT, fencedTerminal);
+      expect(d.basisFindUnique).toHaveBeenCalledTimes(1);
+      expect(s9.collect.mock.calls[0]).toHaveLength(3);
+      expect(report).toMatchObject({ report_version: 1, basis: 'recomputed' });
+      expect(report?.conditions).toContain('coverage_basis_unknown');
+      for (const fam of report?.families ?? []) {
+        expect(fam.observed_unique).toBeNull();
+        expect(fam.completeness_basis).toBe('none');
+      }
+      expect(d.basisCreate).not.toHaveBeenCalled();
+      expect(d.executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('a stored value that is not a version-1 settled report is never reinterpreted: the recompute answers', async () => {
+      const recorded = reconcile(MIXED).report;
+      for (const row of [
+        storedRow(recorded), // basis 'recomputed' stored: not a settled record
+        storedRow({ ...recorded, basis: 'settled' }, 2),
+        storedRow({ ...recorded, basis: 'settled', families: 'nope' }),
+        storedRow(null),
+        storedRow('settled'),
+      ]) {
+        d = makeDoubles();
+        d.basisFindUnique.mockResolvedValue(row);
+        const { service: svc, s9 } = wired(d, MIXED);
+        const report = await svc.readReport(COACH, INTENT, settledServer());
+        expect(s9.collect).toHaveBeenCalledTimes(1);
+        expect(report?.basis).toBe('recomputed');
+      }
+    });
+
+    it('R37: no report applies → null without a basis read, a transaction or a collect', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      await expect(svc.readReport(COACH, INTENT, openRun())).resolves.toBeNull();
+      await expect(
+        svc.readReport(COACH, INTENT, openRun({ mode: 'legacy', terminal_status: 'success' })),
+      ).resolves.toBeNull();
+      await expect(
+        svc.readReport(
+          COACH,
+          INTENT,
+          settledServer({ reason_code: 'reconciliation_not_performed' }),
+        ),
+      ).resolves.toBeNull();
+      expect(d.basisFindUnique).not.toHaveBeenCalled();
+      expect(d.transaction).not.toHaveBeenCalled();
+      expect(s9.collect).not.toHaveBeenCalled();
+    });
+
+    it('isSettledReport accepts exactly the stored shape', () => {
+      const ok = { ...reconcile(MIXED).report, basis: 'settled' };
+      expect(ScoutLifecycleService.isSettledReport(ok)).toBe(true);
+      expect(ScoutLifecycleService.isSettledReport({ ...ok, required_families: null })).toBe(true);
+      expect(ScoutLifecycleService.isSettledReport({ ...ok, basis: 'recomputed' })).toBe(false);
+      expect(ScoutLifecycleService.isSettledReport({ ...ok, report_version: '1' })).toBe(false);
+      expect(ScoutLifecycleService.isSettledReport({ ...ok, conditions: null })).toBe(false);
+      expect(ScoutLifecycleService.isSettledReport({ ...ok, ledger_without_staged: null })).toBe(
+        false,
+      );
+      expect(ScoutLifecycleService.isSettledReport([ok])).toBe(false);
+      expect(ScoutLifecycleService.isSettledReport(undefined)).toBe(false);
+    });
+  });
+
+  describe('S10-C finding-7 projection rule: observed_unique (R37)', () => {
+    const STAGED = [
+      { entity_type: 'routines', _count: { _all: 2 } },
+      { entity_type: 'sessions', _count: { _all: 1 } },
+    ];
+    /** A report family holding `tokens` with a recorded `observed_unique`. */
+    const holder = (
+      name: string,
+      tokens: readonly string[],
+      observed: number | null,
+      mapped = true,
+    ): ReconciliationFamilyV1 => {
+      const base = reconcile(MIXED).report.families.find((f) => f.family === 'workouts')!;
+      return {
+        ...base,
+        family: name,
+        mapped,
+        observed_unique: observed,
+        completeness_basis: observed === null ? 'none' : 'source_signed_enumeration',
+        tokens: tokens.map((token) => ({ ...base.tokens[0], token })),
+      };
+    };
+    const report = (
+      families: ReconciliationFamilyV1[],
+      basis: 'settled' | 'recomputed' = 'settled',
+    ): ReconciliationReportV1 => ({ ...reconcile(MIXED).report, basis, families });
+    const observedOf = (r: ReconciliationReportV1, token = 'routines') =>
+      ScoutLifecycleService.projectFamilies(STAGED, {}, r).find((f) => f.family === token)!
+        .observed_unique;
+
+    it('fills observed_unique from a settled report when the token IS the family: one mapped holder, its only token, non-null', () => {
+      expect(observedOf(report([holder('workouts', ['routines'], 3)]))).toBe(3);
+      // A verified EMPTY enumeration is a fact of 0, not an unknown (D-S10-3 R26).
+      expect(observedOf(report([holder('workouts', ['routines'], 0)]))).toBe(0);
+    });
+
+    it('stays null under a recomputed report (S9-C behaviour, byte-identical)', () => {
+      const r = report([holder('workouts', ['routines'], 3)], 'recomputed');
+      expect(observedOf(r)).toBeNull();
+      const out = ScoutLifecycleService.projectFamilies(STAGED, {}, r);
+      expect(out.find((f) => f.family === 'routines')).not.toHaveProperty('observed_unique', 3);
+    });
+
+    it('stays null when the family holds more than one token: the family count is not the token count', () => {
+      const r = report([holder('workouts', ['routines', 'sessions'], 3)]);
+      expect(observedOf(r, 'routines')).toBeNull();
+      expect(observedOf(r, 'sessions')).toBeNull();
+      // The other S9 fields are still filled (no regression of the S9-C projection).
+      const routines = ScoutLifecycleService.projectFamilies(STAGED, {}, r)[0];
+      expect(routines).toHaveProperty('canonical_family', 'workouts');
+      expect(routines).toHaveProperty('completeness_basis', 'source_signed_enumeration');
+    });
+
+    it('stays null for an unmapped holder, two holders, or a null observation', () => {
+      expect(observedOf(report([holder('routines', ['routines'], 3, false)]))).toBeNull();
+      expect(
+        observedOf(report([holder('workouts', ['routines'], 3), holder('notes', ['routines'], 1)])),
+      ).toBeNull();
+      expect(observedOf(report([holder('workouts', ['routines'], null)]))).toBeNull();
+    });
+
+    it('a token the report does not carry keeps the S7-L shape: null, no additive key', () => {
+      const [, sessions] = ScoutLifecycleService.projectFamilies(
+        STAGED,
+        {},
+        report([holder('workouts', ['routines'], 3)]),
+      );
+      expect(sessions.family).toBe('sessions');
+      expect(sessions.observed_unique).toBeNull();
+      expect(sessions).not.toHaveProperty('completeness_basis');
+    });
+
+    it('observedUniqueFor is the rule, spelled once', () => {
+      const h = holder('workouts', ['routines'], 2);
+      expect(ScoutLifecycleService.observedUniqueFor('routines', report([h]), [h])).toBe(2);
+      expect(
+        ScoutLifecycleService.observedUniqueFor('routines', report([h], 'recomputed'), [h]),
+      ).toBeNull();
+      expect(ScoutLifecycleService.observedUniqueFor('sessions', report([h]), [h])).toBeNull();
     });
   });
 });

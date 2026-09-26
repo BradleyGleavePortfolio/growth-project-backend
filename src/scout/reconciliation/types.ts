@@ -300,7 +300,12 @@ export interface ReconciliationFamilyV1 {
 
 export interface ReconciliationReportV1 {
   readonly report_version: 1;
-  readonly basis: 'recomputed';
+  /**
+   * `'recomputed'`: the reconciler's report over a fresh snapshot (S9-C read path).
+   * `'settled'` (S10-C, D-S10-4): the report the settling transaction recorded in
+   * `ScoutRunSettledBasis`, returned verbatim by the status read. The one S10 change to this file.
+   */
+  readonly basis: 'recomputed' | 'settled';
   /** Every D-S9-2 condition that holds, in order; `[]` iff the verdict is `complete`. */
   readonly conditions: readonly S9ReasonCode[];
   /**

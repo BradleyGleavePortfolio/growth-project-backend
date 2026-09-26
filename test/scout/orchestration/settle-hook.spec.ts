@@ -116,6 +116,9 @@ function make(lockedRow: LockedRow | null) {
     scoutImportCompletion: { findUnique: d.completionFindUnique },
     scoutIngestEntity: { groupBy: d.stagedGroupBy },
     scoutReconstructionLedger: { groupBy: d.ledgerGroupBy },
+    // S10-C: the settle transaction also writes the settled basis (D-S10-6); no observations here.
+    scoutRunObservation: { findMany: jest.fn(async () => []) },
+    scoutRunSettledBasis: { create: jest.fn(async () => ({})) },
   };
   const prisma = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
     scoutImport: { findUnique: d.runFindUnique },
@@ -166,6 +169,7 @@ describe('onTransferSettled — S8-G body', () => {
       expect.objectContaining({ $queryRaw: d.queryRaw }),
       COACH,
       INTENT,
+      expect.objectContaining({ mode: 'server', execution_epoch: 1 }), // S10-C run context
     );
     expect(terminalCall(d)?.slice(1)).toEqual(
       expect.arrayContaining(['partial', 'partial', 'coverage_basis_unknown', COACH, INTENT, 1]),
