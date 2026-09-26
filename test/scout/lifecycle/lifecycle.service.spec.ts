@@ -869,6 +869,76 @@ describe('ScoutLifecycleService', () => {
       expect(d.capture).not.toHaveBeenCalled();
     });
 
+    /**
+     * S11-B r2: what Prisma 6.19.3 raises when a `$queryRaw` / `$executeRaw` statement fails with
+     * a PostgreSQL SQLSTATE — the engine does not re-classify raw failures, so a 40001 on the
+     * `FOR NO KEY UPDATE` lock arrives as P2010 with the SQLSTATE in `meta.code` (the s11-lane-v1
+     * J13 loser got exactly this and returned 500).
+     */
+    const rawFailure = (meta: Record<string, unknown> | undefined) =>
+      new PrismaClientKnownRequestError(
+        `Raw query failed. Code: \`${String(meta?.code)}\`. Message: \`${String(meta?.message)}\``,
+        { code: 'P2010', clientVersion: '6.19.3', meta },
+      );
+    const rawSerialization = () =>
+      rawFailure({ code: '40001', message: 'could not serialize access due to concurrent update' });
+
+    it('S11-B r2: a raw-query serialization failure (P2010, meta.code 40001) IS a serialization failure; other P2010s are not', () => {
+      const is = ScoutLifecycleService.isSerializationFailure;
+      expect(is(rawSerialization())).toBe(true);
+      expect(is(rawFailure({ code: '40P01', message: 'deadlock detected' }))).toBe(true);
+      // Any other SQLSTATE on the raw path stays a plain failure: not retried.
+      expect(is(rawFailure({ code: '23505', message: 'duplicate key value' }))).toBe(false);
+      expect(is(rawFailure({ code: '42501', message: 'permission denied' }))).toBe(false);
+      expect(is(rawFailure({ code: 'N/A', message: 'N/A' }))).toBe(false);
+      // P2010 without meta (or with a non-string code) is never guessed to be retryable.
+      expect(is(rawFailure(undefined))).toBe(false);
+      expect(is(rawFailure({}))).toBe(false);
+      expect(is(rawFailure({ code: 40001 }))).toBe(false);
+      // The SQLSTATE alone does not make a non-P2010 retryable.
+      expect(
+        is(
+          new PrismaClientKnownRequestError('dup', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+            meta: { code: '40001' },
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('S11-B r2: a raw 40001 on the lock (attempt 1) is retried like P2034 — attempt 2 re-locks and its result is returned', async () => {
+      const { service: svc, s9 } = wired(d, MIXED);
+      // Attempt 1: the `FOR NO KEY UPDATE` lock trips on a row a concurrent committed writer
+      // changed after this snapshot was taken (the J13 race). Attempt 2 locks a fresh snapshot.
+      d.queryRaw.mockRejectedValueOnce(rawSerialization()).mockResolvedValueOnce([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(d.transaction).toHaveBeenCalledTimes(2);
+      for (const call of d.transaction.mock.calls) expect(call[1]).toBe(S9_SNAPSHOT_TX_OPTIONS);
+      expect(d.queryRaw).toHaveBeenCalledTimes(2);
+      // Attempt 1 never got past the lock: one facts collection, one terminal write, one event.
+      expect(s9.collect).toHaveBeenCalledTimes(1);
+      expect(terminalWrites(d)).toHaveLength(1);
+      expect(d.basisCreate).toHaveBeenCalledTimes(1);
+      expect(d.capture).toHaveBeenCalledTimes(1);
+      expect(d.capture).toHaveBeenCalledWith(COACH, Events.SCOUT_RUN_SETTLED, {
+        intent_id: INTENT,
+        terminal_status: 'partial',
+        reason_code: 'unresolved_identities',
+      });
+    });
+
+    it('S11-B r2: a raw failure with another SQLSTATE is NOT retried — one attempt, the P2010 propagates unchanged', async () => {
+      const { service: svc } = wired(d, MIXED);
+      const other = rawFailure({ code: '23505', message: 'duplicate key value' });
+      d.queryRaw.mockRejectedValueOnce(other);
+      await expect(svc.onTransferSettled(COACH, INTENT, 1)).rejects.toBe(other);
+      expect(d.transaction).toHaveBeenCalledTimes(1);
+      expect(d.capture).not.toHaveBeenCalled();
+    });
+
     it('without an injected facts service the constructor still accepts (prisma, analytics) — R13 callers unchanged', () => {
       expect(service).toBeInstanceOf(ScoutLifecycleService);
       expect(S9_RUN_REASON_CODES.every((c) => isRunReasonCode(c))).toBe(true);

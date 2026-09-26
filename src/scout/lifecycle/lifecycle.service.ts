@@ -477,14 +477,16 @@ export class ScoutLifecycleService {
    * S9-C (Addendum C-9): the settle tail runs with `S9_SNAPSHOT_TX_OPTIONS` (REPEATABLE READ
    * plus the R16-sized timeout) so the claim, staging, ledger, provenance and native reads the S9
    * facts collector performs see ONE database snapshot, and the terminal CAS is decided against
-   * that same snapshot. PostgreSQL raises a serialization failure (SQLSTATE 40001, Prisma P2034)
-   * when the `FOR NO KEY UPDATE` row was changed by a concurrent committed writer (a fence, a
-   * cancel, a revoke) after the snapshot was taken; the whole transaction is then retried from a
-   * fresh snapshot, at most `SETTLE_ATTEMPTS` times. Every attempt re-locks and re-checks
-   * terminal/epoch first, so a retry is idempotent: the row that changed is seen terminal or
-   * epoch-raised and the attempt returns null with no write. Only serialization failures are
-   * retried; anything else propagates unchanged, and exhaustion rethrows the last serialization
-   * failure — a run is never silently left with a fabricated terminal.
+   * that same snapshot. PostgreSQL raises a serialization failure (SQLSTATE 40001; see
+   * `isSerializationFailure` for the two Prisma shapes it arrives in) when the `FOR NO KEY UPDATE`
+   * row was changed by a concurrent committed writer (a fence, a cancel, a revoke, or a second
+   * replayed completion settling the same run) after the snapshot was taken; the whole
+   * transaction is then retried from a fresh snapshot, at most `SETTLE_ATTEMPTS` times. Every
+   * attempt re-locks and re-checks terminal/epoch first, so a retry is idempotent: the row that
+   * changed is seen terminal or epoch-raised and the attempt returns null with no write. Only
+   * serialization failures are retried; anything else propagates unchanged, and exhaustion
+   * rethrows the last serialization failure — a run is never silently left with a fabricated
+   * terminal.
    */
   private async settleWithSnapshot<T>(body: (tx: Tx) => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt += 1) {
@@ -498,9 +500,20 @@ export class ScoutLifecycleService {
     }
   }
 
-  /** Prisma P2034 ("write conflict or a deadlock") wraps PostgreSQL 40001 / 40P01. */
+  /**
+   * PostgreSQL 40001 (serialization_failure) / 40P01 (deadlock_detected) reach the client in two
+   * Prisma shapes. A typed query (`tx.model.*`) gets P2034 ("write conflict or a deadlock"). A
+   * `$queryRaw` / `$executeRaw` statement — the `lockRun` lock and the `writeTerminal` CAS are
+   * both raw — is NOT re-classified by the engine: it surfaces as P2010 ("raw query failed") with
+   * the SQLSTATE in `meta.code` (S11-B r2; the s11-lane-v1 J13 race returned exactly that). Only
+   * those two SQLSTATEs make a P2010 retryable; every other raw failure propagates unchanged.
+   */
   static isSerializationFailure(err: unknown): boolean {
-    return err instanceof PrismaClientKnownRequestError && err.code === 'P2034';
+    if (!(err instanceof PrismaClientKnownRequestError)) return false;
+    if (err.code === 'P2034') return true;
+    if (err.code !== 'P2010') return false;
+    const sqlstate = err.meta?.code;
+    return sqlstate === '40001' || sqlstate === '40P01';
   }
 
   private async lockRun(tx: Tx, coachId: string, intentId: string): Promise<LockedRow | null> {
