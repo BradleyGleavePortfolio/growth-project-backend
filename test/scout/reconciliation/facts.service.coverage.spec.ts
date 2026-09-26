@@ -1,15 +1,17 @@
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   buildInductionRegistry,
-  INDUCTION_MANIFESTS_DIR,
   loadInductionManifests,
   type InductionRegistry,
 } from '../../../src/scout/induction/manifest-registry';
 import { EMPTY_IDENTITY_SET_DIGEST, identitySetDigest } from '../../../src/scout/induction/digest';
 import { parseSourceMappingSpec } from '../../../src/scout/reconstruct/mapping-spec';
 import { parseNativeRuleSet } from '../../../src/scout/reconstruct/native/native-rules';
-import { buildNativeRuleRegistry } from '../../../src/scout/reconstruct/native/native-rule-registry';
+import {
+  buildNativeRuleRegistry,
+  loadNativeRuleSets,
+} from '../../../src/scout/reconstruct/native/native-rule-registry';
 import { buildSourceMapperRegistry } from '../../../src/scout/reconstruct/source-mapper-registry';
 import {
   ReconciliationFactsService,
@@ -28,6 +30,7 @@ import {
   S10_PURE_MANIFESTS_DIR,
   S10_PURE_SPEC_PATH,
   sha256,
+  TEST_KEYS,
   type StatementFields,
 } from '../../fixtures/scout/s10_pure/s10-pure-signer';
 
@@ -152,11 +155,16 @@ class FakeDb {
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────────────────
 
-/** `'default'` = construct WITHOUT a `registry` option (production wiring); else the given one. */
+/**
+ * `'default'` = construct WITHOUT a `registry` option (production wiring) over the SHIPPED native
+ * rule sets, so the disk-loaded manifests stay V6-consistent whatever ships (S10-D P: a shipped
+ * source with `nativeRules: 'declared'` and the same slug must not make construction throw);
+ * else the given registry over no native rules (the fixture package declares none).
+ */
 const service = (registry: InductionRegistry | 'default' = REGISTRY) =>
   new ReconciliationFactsService({
     sourceMappers: MAPPERS,
-    nativeRules: buildNativeRuleRegistry([]),
+    nativeRules: buildNativeRuleRegistry(registry === 'default' ? loadNativeRuleSets() : []),
     ...(registry === 'default' ? {} : { registry }),
   });
 
@@ -592,13 +600,29 @@ describe('S10-C ReconciliationFactsService.collect coverage (D-S10-3, D-S10-6)',
 });
 
 describe("S10-C default induction registry (over this service's mapper partition)", () => {
-  it('without a registry option, manifests come from disk (none here) → unknown, never a throw', async () => {
+  it('without a registry option, manifests come from disk → the fixture signer is trusted by none → unknown, never a throw', async () => {
     const db = provenRun();
     // (devloop-1: `service(undefined)` hit the parameter DEFAULT — the fixture registry — so
     // this test was proving the fixture, not the disk. `'default'` is an explicit sentinel.)
     const facts = await collect(db, RUN, service('default'));
-    expect(existsSync(INDUCTION_MANIFESTS_DIR)).toBe(false); // the premise: no manifest on disk
+    // S10-D P premise, an invariant over whatever ships (never "no manifest on disk"): no shipped
+    // manifest trusts the test-fixture signer, so fixture-signed evidence proves nothing.
+    const shippedKeys = loadInductionManifests().flatMap((m) =>
+      m.verifiers.map((v) => v.public_key_b64),
+    );
+    expect(shippedKeys).not.toContain(TEST_KEYS.source.public_key_b64);
+    expect(shippedKeys).not.toContain(TEST_KEYS.observer.public_key_b64);
     expect(facts.coverage).toEqual({ clients: UNKNOWN, programs: UNKNOWN, workouts: UNKNOWN });
+  });
+
+  it('the default-registry premise still fails on a real defect (a shipped manifest trusting the fixture key)', async () => {
+    const trusting = buildInductionRegistry({
+      manifests: loadInductionManifests(S10_PURE_MANIFESTS_DIR),
+      specs: [SPEC],
+      nativeRuleSets: [],
+    });
+    const facts = await collect(provenRun(), RUN, service(trusting));
+    expect(facts.coverage).toEqual(BASELINE); // the same evidence IS provable once trusted
   });
 
   it('drops a native rule set whose platform has no mapping spec here instead of failing construction', () => {
@@ -626,12 +650,19 @@ describe("S10-C default induction registry (over this service's mapper partition
       },
       'coverage.spec:foreign',
     );
+    // The shipped rule sets ride along (S10-D P: a shipped `nativeRules: 'declared'` manifest
+    // for this partition's slug stays V6-consistent); only the foreign one is dropped.
     const registry = ReconciliationFactsService.defaultRegistry(
       MAPPERS,
-      buildNativeRuleRegistry([foreignRules]),
+      buildNativeRuleRegistry([...loadNativeRuleSets(), foreignRules]),
     );
     expect(Array.from(registry.specFamilies.keys())).toEqual([SLUG]);
-    expect(registry.packages.size).toBe(0);
+    expect(Array.from(registry.packages.keys())).toEqual(
+      loadInductionManifests()
+        .map((m) => m.sourcePlatform)
+        .filter((platform) => platform === SLUG),
+    );
+    expect(registry.packages.has('elsewhere')).toBe(false);
   });
 });
 

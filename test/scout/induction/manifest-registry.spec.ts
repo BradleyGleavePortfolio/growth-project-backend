@@ -14,6 +14,8 @@ import {
   type SourceMappingSpec,
 } from '../../../src/scout/reconstruct/mapping-spec';
 import type { NativeRuleSet } from '../../../src/scout/reconstruct/native/native-rules';
+import { loadNativeRuleSets } from '../../../src/scout/reconstruct/native/native-rule-registry';
+import { loadSourceMappingSpecs } from '../../../src/scout/reconstruct/source-mapper-registry';
 import {
   S10_PURE_MANIFESTS_DIR,
   S10_PURE_SPEC_PATH,
@@ -68,8 +70,47 @@ describe('R20 — valid synthetic package', () => {
     expect(registry.specFamilies.get(SLUG)).toEqual(['clients', 'programs', 'workouts']);
   });
 
-  it('ships no real platform manifest: the repository directory is absent → empty registry', () => {
-    expect(loadInductionManifests(INDUCTION_MANIFESTS_DIR)).toEqual([]);
+  // S10-D P: invariants over WHATEVER ships (a new data-only source adds a manifest without
+  // touching this spec), never "the directory is absent". Positive guard: no production platform
+  // ships a manifest (no real source key is established, Q1/Q2).
+  const PRODUCTION_WITHOUT_MANIFEST = ['truecoach'] as const;
+  const shipped = () => ({
+    manifests: loadInductionManifests(INDUCTION_MANIFESTS_DIR),
+    specs: loadSourceMappingSpecs(),
+    nativeRuleSets: loadNativeRuleSets(),
+  });
+
+  it('every shipped manifest is a consistent package over the shipped spec and rule sets', () => {
+    const input = shipped();
+    const registry = buildInductionRegistry(input); // V2/V3/V6 cross-checks throw on a defect
+    expect([...registry.packages.keys()].sort()).toEqual(
+      input.manifests.map((m) => m.sourcePlatform).sort(),
+    );
+    for (const m of input.manifests) {
+      const spec = input.specs.find((s) => s.sourcePlatform === m.sourcePlatform);
+      if (spec === undefined) throw new Error(`no shipped spec for ${m.sourcePlatform}`);
+      expect(registry.packages.get(m.sourcePlatform)?.specDigest).toBe(mappingSpecDigest(spec));
+    }
+    for (const platform of PRODUCTION_WITHOUT_MANIFEST) {
+      expect(registry.packages.has(platform)).toBe(false);
+    }
+  });
+
+  it('the shipped-package invariant still fails on a real defect', () => {
+    const input = shipped();
+    // A manifest whose spec is not shipped (the orphan defect), whatever else ships.
+    const orphan = manifest({ sourcePlatform: 'p-orphan-manifest' });
+    expect(() =>
+      buildInductionRegistry({ ...input, manifests: [...input.manifests, orphan] }),
+    ).toThrow();
+    // A production manifest would trip the positive guard.
+    const guessed = build(
+      [manifest({ sourcePlatform: 'truecoach' })],
+      [{ ...SPEC, sourcePlatform: 'truecoach' }],
+    );
+    expect(PRODUCTION_WITHOUT_MANIFEST.filter((p) => guessed.packages.has(p))).toEqual([
+      'truecoach',
+    ]);
   });
 
   it('absent directory → empty; present-but-empty directory throws', () => {
