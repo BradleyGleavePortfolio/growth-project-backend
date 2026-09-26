@@ -37,14 +37,26 @@
  * B's extra roster rows are read directly from the D2 fixture's raw `base` set (the same file
  * `test/fixtures/scout/s10_unseen/staged-rows.json` D2's own live spec reads) — this file does not
  * add, inject or duplicate any fixture; it reads the existing one exactly as D2 does. No slug is
- * typed in this file (grep-checked by the guard spec's existing "no real platform slug" rule and
- * re-confirmed by a static check below); the fixture's `source_platform` field is read at runtime.
+ * typed in this file (grep-checked by the guard spec's existing "no real platform slug" rule);
+ * the fixture's `source_platform` field is read at runtime, in both J19 and J20 below.
  *
  * "P1"/"P2" label the host process; "phone"/"ext" label the client role, never an authenticated
  * principal (D-S11-1). Lane: the S11-only disposable PG17 lane (G2_S11_*). Without
  * G2_S11_DATABASE_URL this file is inert (describe.skip) and loads no harness. Run alone and in
  * band (it resets the lane's rows before every case):
  *   jest --runInBand test/scout/s11/journey-full.pg.spec.ts
+ *
+ * J20 (the core-diff check, below) lives INSIDE this same `live(...)` gate, not as a separate
+ * always-on describe (S11D review round 2, B1): it needs several historical commits to resolve
+ * as real ancestors of HEAD, and GitHub Actions' default `actions/checkout@v6` step is a shallow
+ * depth-1 checkout that does not carry that history — an ungated J20 would be deterministically
+ * red in default CI even though the code under test is fine. Gating J20 the same way as every
+ * other pg case in this file means: no `G2_S11_DATABASE_URL` -> J20 reports `skipped`, never a
+ * false pass; `G2_S11_DATABASE_URL` set, run from a full-history local clone -> J20 runs for real
+ * and fails hard (not silently) if a pinned commit is missing from history. J20's evidence is
+ * therefore a PARENT-ONLY proof-lane receipt from a full-history local clone, exactly like J19's
+ * — never a claim about the default no-DB/CI run, which only ever proves the file loads, parses,
+ * and stays fully inert.
  */
 
 // A module, not a script: journey-core.pg.spec.ts declares the same top-level names as a script,
@@ -362,9 +374,14 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       const basis = h.settledBasisRows(COACH_B, intentId)[0];
       expect(basis.report.conditions).toEqual(['unresolved_identities']);
       const clientsCell = byFamily(basis.report, 'clients');
+      // D2 case (h) discriminator (test/scout/s10/s10-unseen.pg.spec.ts:429-444): the qualifier
+      // is what actually distinguishes a real roster-bridge-pending settle from any other
+      // `unresolved_identities` cause landing on the same coverage numbers — asserted here, not
+      // just narrated, exactly as D2's own live spec asserts it.
       expect(clientsCell).toMatchObject({
         completeness_basis: 'source_signed_enumeration',
         observed_unique: rosterIds.size,
+        qualifiers: ['roster_bridge_pending'],
       });
       // The full identities table lives on the settled basis via the roster read below; the
       // point proved here is qualifier + honesty, matching D2 case (h) exactly.
@@ -388,6 +405,12 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       // is expected to keep listing these people, now bridged (owner-decided, not built here).
       const roster = await h.rosterOf('P1', COACH_B, intentId);
       expect(roster.failure).toBeUndefined();
+      // Response-level bridge-pending qualifier (src/scout/scout-roster.service.ts:178-179,
+      // `roster_bridge_pending: ROSTER_BRIDGE_PENDING`; the constant is defined fixed `true` at
+      // src/scout/scout-roster.dto.ts:42, `ROSTER_BRIDGE_PENDING = true as const`) — the native
+      // roster response's own field for "imported, not yet joined," asserted alongside the
+      // per-person `InvitePending` state below, not merely narrated in a comment.
+      expect(roster.result.roster_bridge_pending).toBe(true);
       expect(roster.result.accounting.staged).toBe(rosterIds.size);
       const gotIds = roster.result.persons
         .map((p: { source_person_id: string }) => p.source_person_id)
@@ -402,38 +425,47 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
     },
   );
 
-  it('this file types no source-platform-slug literal (D-S11-7(7); own static check)', () => {
-    const text = readFileSync(__filename, 'utf8');
-    const slugs = [FIRST().platform, SECOND().platform];
-    for (const slug of slugs) expect(text.includes(slug)).toBe(false);
-  });
-});
-
-/* -------------------------------------------------------------------------------------------
- * J20 (CORE DIFF, D-S10-5 / D-S11-7(7)) — a deterministic, no-database check. It needs no
- * PostgreSQL and runs regardless of the S11 lane env var (it is not inside the `live(...)`
- * block above): it only reads this git repository's own history and runs one repository script.
- *
- * Two parts, both must hold:
- *   (1) `rg -F -l <slug> src --type ts` finds NOTHING for every source slug this S11 slice
- *       touches (s10_unseen, and the S11-A2 second source `s11_second`), over EACH S11 slice
- *       commit's OWN src hunk -- not the working tree, and not one collapsed range, so that a
- *       slug hidden by an intermediate revert could not slip through a range diff.
- *   (2) `scripts/s10-core-diff-gate.sh` (unowned by this slice; D-S10-4/D-S10-5, S10-D) still
- *       passes against its pinned B, exactly as D2's own gate run pinned it
- *       (s10d2/d2_gate_summary.md step 9: `bash scripts/s10-core-diff-gate.sh 7fdcbc044dba...`).
- *
- * "Each S11 slice commit's own src hunk": the landed commits that touch `src/` between S11-A1
- * (3db615c0, which touches no `src/`) and this slice's base (03e7a234) -- S11-C (7fdcbc04),
- * S10-D D2 part 1 (144269d1, the source asset JSON -- D2 part 2 275e458c touches no `src/`),
- * S11-B (645fb6db) and S11-B r2 (dda794d7). Each is diffed against ITS OWN immediate parent
- * (`git diff <commit>^ <commit> -- src`), not a collapsed range, and requires no scratch clone:
- * `git show` reads history read-only. D2 is included because the grant names its source
- * (`s10_unseen`) explicitly ("incl. s10_unseen and the A2 second source"); S11-A2 (03e7a234)
- * itself touches no `src/` either (its second source is data-only under test/fixtures, D-S11-7(7)),
- * confirmed by its own empty diff below.
- * ------------------------------------------------------------------------------------------- */
-describe('J20 -- CORE DIFF = 0 (no database; runs on every lane)', () => {
+  /* ---------------------------------------------------------------------------------------
+   * J20 (CORE DIFF, D-S10-5 / D-S11-7(7)) -- a deterministic check. Round 2 (S11D review B1):
+   * this check now lives INSIDE the outer `live(...)` gate, exactly like every other pg case
+   * in this file -- it does NOT run in the default no-DB/CI config, and reports `skipped`
+   * there, never a false pass. It runs only in the parent's S11 lane proof, in a full-history
+   * local clone (never GitHub Actions' shallow `actions/checkout@v6` default depth-1 checkout,
+   * which does not carry the historical commits these checks resolve). J20's evidence is
+   * therefore a PARENT-ONLY proof-lane receipt (this builder does not run
+   * G2_S11_DATABASE_URL itself, per WORKER_RULES SS3) -- not a claim of a passing default CI
+   * run.
+   *
+   * Two parts, both must hold, and both fail hard -- never silently pass -- if a pinned
+   * commit is missing from history (see the ancestor check immediately below, which the other
+   * two checks depend on and which itself throws via `git rev-parse --verify` if a SHA is
+   * absent):
+   *   (1) `rg -F -l <slug> src --type ts` finds NOTHING for every source slug this S11 slice
+   *       touches (s10_unseen, and the S11-A2 second source `s11_second`), over EACH S11 slice
+   *       commit's OWN src hunk -- not the working tree, and not one collapsed range, so that a
+   *       slug hidden by an intermediate revert could not slip through a range diff.
+   *   (2) `scripts/s10-core-diff-gate.sh` (unowned by this slice; D-S10-4/D-S10-5, S10-D) still
+   *       passes against its pinned B, exactly as D2's own gate run pinned it
+   *       (s10d2/d2_gate_summary.md step 9: `bash scripts/s10-core-diff-gate.sh 7fdcbc044dba...`).
+   *
+   * "Each S11 slice commit's own src hunk": the landed commits that touch `src/` between
+   * S11-A1 (3db615c0, which touches no `src/`) and this slice's base (03e7a234) -- S11-C
+   * (7fdcbc04), S10-D D2 part 1 (144269d1, the source asset JSON -- D2 part 2 275e458c touches
+   * no `src/`), S11-B (645fb6db) and S11-B r2 (dda794d7). Each is diffed against ITS OWN
+   * immediate parent (`git diff <commit>^ <commit> -- src`), not a collapsed range, and
+   * requires no scratch clone: `git show` reads history read-only. D2 is included because the
+   * grant names its source (`s10_unseen`) explicitly ("incl. s10_unseen and the A2 second
+   * source"); S11-A2 (03e7a234) itself touches no `src/` either (its second source is
+   * data-only under test/fixtures, D-S11-7(7)), confirmed by its own empty diff below.
+   *
+   * Round 2 (S11D review C): SLICE_COMMITS below is a curated, manually pinned list, not a
+   * discovered one. A companion check ("no unlisted src-touching commit slipped in") walks
+   * `git rev-list 3db615c0^..HEAD`, diffs EVERY commit in that full range against its own
+   * parent for `-- src`, and fails loudly if any src-touching commit is absent from
+   * SLICE_COMMITS -- so a future rebase/insertion that adds an uncovered src commit is caught
+   * here rather than silently passing the two checks above (which only ever iterate the
+   * pinned list itself, and could not otherwise notice a missing entry).
+   * --------------------------------------------------------------------------------------- */
   const repoRoot = resolve(__dirname, '../../..');
   const git = (args: string[]): string =>
     execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
@@ -476,6 +508,34 @@ describe('J20 -- CORE DIFF = 0 (no database; runs on every lane)', () => {
       expect(() => git(['merge-base', '--is-ancestor', commit, head])).not.toThrow();
     }
   });
+
+  it(
+    'no src-touching commit in 3db615c0^..HEAD is missing from the curated SLICE_COMMITS pins ' +
+      '(D-S11D review C: the pins are curated, not discovered -- this walks the FULL range and ' +
+      'fails loudly on any uncovered src commit, so a future rebase/insertion cannot silently ' +
+      'bypass the two checks below, which only ever iterate the pinned list itself)',
+    () => {
+      const base = '3db615c0a5e64a63b910d34ce7c732ee6e63f24d';
+      const head = git(['rev-parse', 'HEAD']).trim();
+      const range = git(['rev-list', `${base}^..${head}`])
+        .split('\n')
+        .filter(Boolean);
+      expect(range.length).toBeGreaterThan(0);
+      const pinned = new Set(SLICE_COMMITS);
+      const missing: string[] = [];
+      for (const commit of range) {
+        const changed = git(['diff', '--name-only', `${commit}^`, commit, '--', 'src'])
+          .split('\n')
+          .filter(Boolean);
+        if (changed.length > 0 && !pinned.has(commit)) {
+          missing.push(
+            `${commit}: touches src/ (${changed.join(', ')}) but is NOT in SLICE_COMMITS`,
+          );
+        }
+      }
+      expect(missing).toEqual([]);
+    },
+  );
 
   it(
     "rg -F -l finds no source slug in any S11 slice commit's own src/**/*.ts hunk " +
