@@ -286,15 +286,26 @@ describe('R09 — the settle tail writes the S9 verdict (D-S9-1), never complete
     const s9At = tail.findIndex(isS9Read);
     const terminalAt = tail.findIndex(isTerminal);
     expect(s9At).toBeGreaterThan(0);
-    expect(terminalAt).toBe(tail.length - 1);
+    // S10-C (D-S10-4 "Settle write"): the terminal UPDATE is the LAST run-row statement of the
+    // tail; the only statements after it are the settled-basis record (one observation SELECT,
+    // one ScoutRunSettledBasis INSERT) in the same transaction. Superseded here: `terminalAt ===
+    // tail.length - 1`.
     expect(s9At).toBeLessThan(terminalAt);
     expect(tail.slice(0, terminalAt).filter(isWrite)).toEqual([]);
+    const afterTerminal = tail.slice(terminalAt + 1);
+    expect(afterTerminal.filter((q) => /"ScoutImport"/.test(q))).toEqual([]);
+    expect(afterTerminal.filter(isWrite)).toHaveLength(1);
+    expect(afterTerminal.filter(isWrite)[0]).toMatch(
+      /INSERT INTO (?:"public"\.)?"ScoutRunSettledBasis"/,
+    );
     // The S9 reader runs on the SAME transaction as the lock: no S9 read outside the tail.
     expect(done.queries.filter(isS9Read).length).toBe(tail.filter(isS9Read).length);
-    // The verdict written IS the recomputed report's verdict (D-S9-1 == D-S9-5 basis).
+    // The verdict written IS the report's verdict (D-S9-1 == D-S9-5 basis). S10-C (D-S10-4
+    // "Status"): a run the settle tail recorded answers with its settled record, `basis:
+    // 'settled'` (superseded here: `'recomputed'`); the fence-path terminal below still recomputes.
     const rep = await report(intentId);
     expect(rep.failure).toBeUndefined();
-    expect(rep.result).toMatchObject({ report_version: 1, basis: 'recomputed' });
+    expect(rep.result).toMatchObject({ report_version: 1, basis: 'settled' });
     expect(rep.result.conditions[0]).toBe(row.reason_code);
     expect(rep.result.conditions).toContain('coverage_basis_unknown'); // D-S9-3: unknown, never 0
     expect(rep.result.conditions).not.toContain('unresolved_family'); // every token is mapped
@@ -439,13 +450,15 @@ describe('R10(C) / R15 — recompute-on-read: the status carries the report addi
       claimed_status: 'success',
       reason_code: 'unresolved_identities',
     });
-    // One interactive read transaction (the D-S9-5 REPEATABLE READ recompute; the isolation
-    // option itself is pinned by the unit spec), no lock, no write on the status path.
+    // No lock, no write on the status path. S10-C (D-S10-4 "Status"): the settle tail recorded
+    // this run's basis, so the status read returns it from ONE point read and opens no
+    // transaction (superseded here: one REPEATABLE READ recompute with an S9 read; that path is
+    // still taken, unchanged, by fence-path and pre-S10 terminals — see the RC-2 case above).
     expect(first.queries.filter(isWrite)).toEqual([]);
     expect(first.queries.filter(isLock)).toEqual([]);
-    expect(first.queries.filter((q: string) => q === '-- tx:begin')).toHaveLength(1);
-    expect(first.queries.filter((q: string) => q === '-- tx:commit')).toHaveLength(1);
-    expect(segments(first.queries)[0].some(isS9Read)).toBe(true);
+    expect(first.queries.filter((q: string) => q === '-- tx:begin')).toEqual([]);
+    expect(first.queries.filter(isS9Read)).toEqual([]);
+    expect(first.queries.some((q: string) => /"ScoutRunSettledBasis"/.test(q))).toBe(true);
     const provenanceBefore = provenanceRows(COACH);
     const rep = await report(intentId);
     const byToken = new Map<string, any>(first.result.families.map((f: any) => [f.family, f]));
