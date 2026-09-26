@@ -151,10 +151,16 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
     completeness_basis: string;
     observed_unique: number | null;
   };
-  type Report = { coverage: CoverageCell[]; [key: string]: unknown };
-  const coverage = (report: Report): CoverageCell[] => report.coverage;
+  // Round 3 (proof v1 finding, leg B): the report's array of per-family coverage cells is
+  // called `families`, not `coverage` (src/scout/reconciliation/types.ts:324,
+  // `ReconciliationReportV1.families: readonly ReconciliationFamilyV1[]`; confirmed live-passing
+  // at test/scout/s10/s10-unseen.pg.spec.ts:302-303, `basis.report.families.find(...)`). There is
+  // a same-named but unrelated `coverage` field on the (different) RunFactsV1 type
+  // (types.ts:242, a Record, not an array) that this file never reads.
+  type Report = { families: CoverageCell[]; [key: string]: unknown };
+  const coverage = (report: Report): CoverageCell[] => report.families;
   const byFamily = (report: Report, family: string): CoverageCell => {
-    const cell = report.coverage.find((c) => c.family === family);
+    const cell = report.families.find((c) => c.family === family);
     if (cell === undefined) throw new Error(`no coverage cell for family ${family}`);
     return cell;
   };
@@ -262,12 +268,18 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
         midStatus.queries.filter((q: string) => /^\s*(INSERT|UPDATE|DELETE)/i.test(q)),
       ).toEqual([]);
 
-      // The replayed claim on P2 re-drives the settle: exactly one terminal write, one push.
+      // The replayed claim on P2 re-drives the settle: exactly one terminal write, but the push
+      // and analytics event stay first-claim-only (src/scout/scout.service.ts:369-371's own
+      // docblock; the `completeServerRun` P2002 branch at :407-412 calls `onTransferSettled`
+      // directly and never `notifyComplete` or `analytics.capture`, unlike the firstTime path at
+      // :415-419) — confirmed live-passing at test/scout/s11/settle-redrive.pg.spec.ts:263-266's
+      // `expectNoClaimSideEffects(replay)`, which asserts `replay.pushes` is 0, not 1, for the
+      // identical G1-redrive shape this leg drives on two real processes instead of one.
       const redrive = await h.induction.complete('P2', COACH_A, intentId);
       expect(redrive.failure).toBeUndefined();
       expect(redrive.result).toEqual(ack(intentId));
       expect(redrive.queries.filter(isTerminal)).toHaveLength(1);
-      expect(redrive.pushes).toBe(1);
+      expect(redrive.pushes).toBe(0);
       const run = h.runRow(COACH_A, intentId);
       expect(run).toMatchObject({
         terminal_status: 'complete',
