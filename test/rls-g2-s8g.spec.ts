@@ -80,7 +80,7 @@ const conflict = (code: string, extra: Record<string, unknown> = {}) =>
   expect.objectContaining({ status: 409, response: expect.objectContaining({ code, ...extra }) });
 
 /* ---- query-log helpers (statement shapes only; the worker never logs parameters) ---- */
-const isGate = (q: string) => q.includes('last_observed_at');
+const isGate = (q: string) => /SET last_observed_at\s*=/.test(q);
 const isLock = (q: string) => q.includes('FOR NO KEY UPDATE');
 const isTerminal = (q: string) => q.includes('SET terminal_status = ');
 const isFence = (q: string) => q.includes('SET fenced_at = ');
@@ -226,7 +226,7 @@ describe('P01 — open run, /complete → one ordered pass → truthful terminal
         TOKEN.workouts,
         [
           { sourceId: 'rt-1', payload: WORKOUT },
-          { sourceId: 'rt-c', payload: { ...WORKOUT, client_id: 'c-1' } },
+          { sourceId: 'rt-c', payload: { ...WORKOUT, title: 'Client Push', client_id: 'c-1' } },
         ],
       ],
       [TOKEN.client_history, [{ sourceId: 'h-1', payload: { title: 'note' } }]],
@@ -829,7 +829,10 @@ describe('P11 — tenant isolation, RLS, rollback (G11)', () => {
     const provenanceCount = count('ImportNativeProvenance');
     for (const role of ['anon', 'authenticated']) {
       expect(sql(`SET ROLE ${role}; SELECT count(*) FROM "ScoutReconstructionLedger"`)).toBe('0');
-      expect(sql(`SET ROLE ${role}; SELECT count(*) FROM "ImportNativeProvenance"`)).toBe('0');
+      refused(
+        `SET ROLE ${role}; SELECT count(*) FROM "ImportNativeProvenance"`,
+        'permission denied',
+      );
       refused(
         `SET ROLE ${role}; INSERT INTO "ScoutReconstructionLedger" (id,coach_id,intent_id,entity_type,source_platform,source_id,status)
          VALUES ('rls-${role}',${quote(COACH)},${quote(a)},'blocks',${quote(PLATFORM)},'rls','skipped')`,
