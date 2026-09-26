@@ -1,5 +1,17 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { stagedFamilyDigests } from '../induction/digest';
+import {
+  buildInductionRegistry,
+  loadInductionManifests,
+  type InductionRegistry,
+} from '../induction/manifest-registry';
+import {
+  evaluateCoverage,
+  type RunDeclaration,
+  type StagedPlatformFacts,
+  type StoredObservation,
+} from '../induction/verify';
 import { interpretEntity } from '../reconstruct/mapping-spec';
 import {
   CHILD_ENTITY_TYPE,
@@ -26,6 +38,7 @@ import { SCOUT_TERMINAL_STATUSES, type ScoutTerminalStatus } from '../scout.dto'
 import {
   NATIVE_TARGET_KINDS,
   type ClaimStatus,
+  type CoverageFact,
   type FamilyFacts,
   type FamilyQualifier,
   type IdentityFacts,
@@ -51,9 +64,12 @@ import {
  *    L66-89: the native id is the sole join, the owner is compared afterwards) so that a row
  *    owned by another coach is reported as `foreign_owner` and never as present — nothing about
  *    that row other than the comparison result leaves this module;
- *  - preserves native evidence truth: `coverage` is `null` in v1 (D-S9-3), `created` vs
- *    `already_present` is NOT split (D-S9-4; provenance `import_intent_id` is NULL at S8-C), an
- *    unknown is never a `0`, and no persistence of the report exists (D-S9-5);
+ *  - preserves native evidence truth: `coverage` comes only from the S10-A evaluator over the
+ *    run's stored declaration and evidence (D-S10-3; `null` unless the caller's run binding is a
+ *    `server` row with an accepted start),
+ *    `created` vs `already_present` is NOT split (D-S9-4; provenance `import_intent_id` is NULL
+ *    at S8-C), an unknown is never a `0`, and this module persists nothing (the settled basis is
+ *    the lifecycle's record, D-S10-4);
  *  - is source-agnostic: grouping is the accepted `resolveStagedFamily`, the parent role and the
  *    client link are read through the accepted S8-A / S8-C interpreters, never through a
  *    platform-specific branch;
@@ -91,6 +107,18 @@ import {
  *    `clientSourceId`, target = the `clients` identity `(same platform, clientSourceId)`;
  *    `consistent` is `null` (soft link, no native attribute to compare; S8-DOC §3.8).
  * `consistent` is never `true` by assumption: it is `true` only after a successful comparison.
+ *
+ * Coverage (S10-C; S10-DOC D-S10-3 E6, D-S10-7 row S10-C). The staged side of the evaluator's
+ * identity-set comparison is computed HERE, from the same partition the entries above use:
+ * `resolveFamily` is the one classifier (exported for the evaluator's callers and specs), and
+ * `stagedPlatformFacts` digests every mapped family of every staged platform with
+ * `stagedFamilyDigests` — a declared family with no staged row gets the empty-set digest, never
+ * an absence (absence would be "unknown"). The declaration and the observations of the SETTLE
+ * epoch are read coach-scoped in the caller's transaction; an observation stored under an earlier
+ * epoch is excluded by the query and, independently, refused by the evaluator (E3). The registry
+ * is bound to this service's mapper partition: a manifest or rule set naming a platform this
+ * service has no mapping spec for is dropped (that platform can never be proven here — unknown,
+ * never zero), while the loud artifact cross-check stays with `ObservationService` (S10-B).
  */
 
 /** The transaction (or client) the caller already holds; S9 runs inside S8-G's settle tx (D-S9-1). */
@@ -100,6 +128,8 @@ export type FactsDb = Prisma.TransactionClient;
 export interface ReconciliationFactsOptions {
   readonly sourceMappers?: ReadonlyMap<string, SourceMapper>;
   readonly nativeRules?: NativeRuleRegistry;
+  /** S10-C: the induction registry; default: on-disk manifests over this service's mappers. */
+  readonly registry?: InductionRegistry;
 }
 
 /** DI token for {@link ReconciliationFactsOptions}; absent → repository-resident registries. */
@@ -224,10 +254,85 @@ const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** The accepted S8-C workouts reconstructor; only its read-only `map` is used here. */
 type WorkoutInterpreter = ReturnType<typeof buildNativeFamilies>['workouts'];
 
+/**
+ * S10-C: the ONE classifier of `(platform, token)` → canonical family shared by the grouping
+ * below and the staged digests the evaluator compares (D-S10-3 E6: one partition). A token that
+ * resolves through the spec's `steps` maps to its family; a token that IS a canonical family the
+ * platform's spec declares maps to itself (the accepted S8-C staging convention); anything else,
+ * including any token of an unregistered platform, is `null`.
+ */
+export function resolveFamily(
+  sourceMappers: ReadonlyMap<string, SourceMapper>,
+  platform: string,
+  token: string,
+): string | null {
+  const step = resolveStagedFamily(sourceMappers, platform, token);
+  if (step.ok) return step.family;
+  const mapper = sourceMappers.get(platform);
+  if (mapper !== undefined && Object.prototype.hasOwnProperty.call(mapper.spec.families, token))
+    return token;
+  return null;
+}
+
+/**
+ * S10-C: the evaluator's staged side for every staged platform, from `resolveFamily`'s partition
+ * (D-S10-3 E6). A registered platform lists every family its spec declares as grouped and
+ * digests each one — the empty set for a family without a staged row (`digest.ts`
+ * `EMPTY_IDENTITY_SET_DIGEST`, count 0), never an absence. An unregistered platform has no
+ * grouped family and no digest: the evaluator can only leave it unknown. Unmapped tokens of a
+ * registered platform belong to no family digest (they surface as `unresolved_family` through
+ * the reconciler instead).
+ */
+export function stagedPlatformFacts(
+  sourceMappers: ReadonlyMap<string, SourceMapper>,
+  rows: Iterable<{ source_platform: string; entity_type: string; source_id: string }>,
+): StagedPlatformFacts[] {
+  const byPlatform = new Map<string, Map<string, string[]>>();
+  for (const row of rows) {
+    let groups = byPlatform.get(row.source_platform);
+    if (groups === undefined) {
+      groups = new Map<string, string[]>();
+      const mapper = sourceMappers.get(row.source_platform);
+      if (mapper !== undefined) {
+        for (const family of Object.keys(mapper.spec.families).sort(byString)) {
+          groups.set(family, []);
+        }
+      }
+      byPlatform.set(row.source_platform, groups);
+    }
+    const family = resolveFamily(sourceMappers, row.source_platform, row.entity_type);
+    if (family === null) continue;
+    // `resolveFamily` only names families the platform's spec declares, so the list exists;
+    // the fallback merely keeps this total should the two ever disagree.
+    const ids = groups.get(family);
+    if (ids === undefined) groups.set(family, [row.source_id]);
+    else ids.push(row.source_id);
+  }
+  return Array.from(byPlatform.entries())
+    .sort(([a], [b]) => byString(a, b))
+    .map(([source_platform, groups]) => ({
+      source_platform,
+      grouped_families: Array.from(groups.keys()),
+      families: stagedFamilyDigests(groups),
+    }));
+}
+
+/**
+ * The run-row columns that bind the evaluator (D-S10-3 E1/E3), supplied by the CALLER from the row
+ * it already holds (the settle tail's locked row; the status read's run row). The collector issues
+ * no run-row read of its own, so the S9-B statement count is unchanged for callers that pass none.
+ */
+export interface RunBinding {
+  mode: string;
+  execution_epoch: number;
+  accepted_start_at: Date | null;
+}
+
 @Injectable()
 export class ReconciliationFactsService {
   private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
   private readonly workoutInterpreter: WorkoutInterpreter;
+  private readonly registry: InductionRegistry;
 
   constructor(
     @Optional() @Inject(RECONCILIATION_FACTS_OPTIONS) options: ReconciliationFactsOptions = {},
@@ -239,10 +344,41 @@ export class ReconciliationFactsService {
       sourceMappers: this.sourceMappers,
       nativeRules,
     }).workouts;
+    this.registry =
+      options.registry ??
+      ReconciliationFactsService.defaultRegistry(this.sourceMappers, nativeRules);
   }
 
-  /** Collect the facts for one run. Reads only; safe inside the caller's transaction. */
-  async collect(db: FactsDb, coachId: string, intentId: string): Promise<ReconciliationFacts> {
+  /**
+   * S10-C: the induction registry over THIS service's mapper partition (fail loud at
+   * construction like the mapper and native registries). Artifacts naming a platform without a
+   * mapping spec here are dropped, not rejected: such a platform is unprovable in this partition
+   * (unknown), and the loud on-disk cross-check is `ObservationService`'s (S10-B).
+   */
+  static defaultRegistry(
+    sourceMappers: ReadonlyMap<string, SourceMapper>,
+    nativeRules: NativeRuleRegistry,
+  ): InductionRegistry {
+    return buildInductionRegistry({
+      manifests: loadInductionManifests().filter((m) => sourceMappers.has(m.sourcePlatform)),
+      specs: Array.from(sourceMappers.values()).map((m) => m.spec),
+      nativeRuleSets: Array.from(nativeRules.values()).filter((s) =>
+        sourceMappers.has(s.sourcePlatform),
+      ),
+    });
+  }
+
+  /**
+   * Collect the facts for one run. Reads only; safe inside the caller's transaction. `run` (S10-C)
+   * is the server run row's binding; without one — or for a non-server / not-yet-accepted row —
+   * `coverage` is `null` (unknown), exactly the S9 v1 facts, and no S10 table is read.
+   */
+  async collect(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+    run: RunBinding | null = null,
+  ): Promise<ReconciliationFacts> {
     const [claim, staged, ledger] = await Promise.all([
       this.readClaim(db, coachId, intentId),
       this.readStaged(db, coachId, intentId),
@@ -284,7 +420,7 @@ export class ReconciliationFactsService {
       if (stagedKeys.has(ledgerKey(row.entity_type, row.source_platform, row.source_id))) continue;
       ledgerWithoutStaged += 1;
       // Attributed to a family entry where the ledger row's own (platform, token) resolves.
-      const resolved = this.resolveFamily(row.source_platform, row.entity_type);
+      const resolved = resolveFamily(this.sourceMappers, row.source_platform, row.entity_type);
       if (resolved !== null) entryFor(true, resolved).ledgerWithoutStaged += 1;
     }
 
@@ -469,33 +605,60 @@ export class ReconciliationFactsService {
       specFamilies = known ? Array.from(union).sort(byString) : null;
     }
 
+    // ── 7. Coverage (S10-C, D-S10-3): the evaluator over the settle epoch's stored evidence ──
+    const coverage = await this.evaluateRunCoverage(db, coachId, intentId, run, staged);
+
     return {
       claim,
       families,
       relationships,
       spec_families: specFamilies,
       ledger_without_staged: ledgerWithoutStaged,
-      coverage: null, // D-S9-3: no coverage contract exists in v1; unknown, never 0.
+      coverage,
     };
+  }
+
+  /**
+   * S10-C: `coverage` for the run. `null` (unknown for every family, exactly the S9 v1 value)
+   * unless a `mode='server'` binding with an accepted start was supplied; otherwise the S10-A
+   * evaluator over the declaration, the observations stored at THIS epoch and the staged digests
+   * of `resolveFamily`'s partition. Nothing here is written and no count is ever derived from a
+   * staged row: `observed_unique` comes only from verified evidence.
+   */
+  private async evaluateRunCoverage(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+    run: RunBinding | null,
+    staged: readonly StagedRow[],
+  ): Promise<Readonly<Record<string, CoverageFact>> | null> {
+    if (run === null || run.mode !== 'server' || !(run.accepted_start_at instanceof Date)) {
+      return null;
+    }
+    const [declaration, observations] = await Promise.all([
+      this.readDeclaration(db, coachId, intentId),
+      this.readObservations(db, coachId, intentId, run.execution_epoch),
+    ]);
+    return evaluateCoverage({
+      run: {
+        coach_id: coachId,
+        intent_id: intentId,
+        execution_epoch: run.execution_epoch,
+        accepted_start_at: run.accepted_start_at,
+      },
+      declaration,
+      registry: this.registry,
+      observations,
+      staged: stagedPlatformFacts(this.sourceMappers, staged),
+    });
   }
 
   // ── Grouping / interpretation ──────────────────────────────────────────────────────────────
 
-  /** Canonical family for `(platform, token)` under the accepted dispatch, or null. */
-  private resolveFamily(platform: string, token: string): string | null {
-    const step = resolveStagedFamily(this.sourceMappers, platform, token);
-    if (step.ok) return step.family;
-    const mapper = this.sourceMappers.get(platform);
-    // Accepted convention: the token IS the canonical family the spec declares.
-    if (mapper !== undefined && Object.prototype.hasOwnProperty.call(mapper.spec.families, token))
-      return token;
-    return null;
-  }
-
   private group(row: StagedRow): Grouped {
     const identity = identityKey(row.source_platform, row.source_id);
     const mapper = this.sourceMappers.get(row.source_platform) ?? null;
-    const family = this.resolveFamily(row.source_platform, row.entity_type);
+    const family = resolveFamily(this.sourceMappers, row.source_platform, row.entity_type);
     if (family !== null) {
       return { row, identity, mapped: true, family, resolutionReason: null, mapper };
     }
@@ -704,6 +867,63 @@ export class ReconciliationFactsService {
     });
     const claim = completion?.terminal_status ?? null;
     return isLegacyTerminal(claim) ? claim : null;
+  }
+
+  /**
+   * The run's declaration as ONE `RunDeclaration` (S10-C): the shared challenge (identical in
+   * every row by the S10-B trigger; a disagreement is poisoned to an empty challenge so nothing
+   * verifies) and each platform's scope digests, sorted. `null` when the run declared nothing.
+   */
+  private async readDeclaration(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+  ): Promise<RunDeclaration | null> {
+    const rows = await db.scoutRunDeclaration.findMany({
+      where: { coach_id: coachId, intent_id: intentId },
+      select: { source_platform: true, account_scope_id_digest: true, challenge: true },
+      orderBy: [{ source_platform: 'asc' }, { account_scope_id_digest: 'asc' }],
+    });
+    if (rows.length === 0) return null;
+    const first = Buffer.from(rows[0].challenge);
+    const agreed = rows.every((r) => Buffer.from(r.challenge).equals(first));
+    const scopes = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = scopes.get(row.source_platform) ?? [];
+      list.push(row.account_scope_id_digest);
+      scopes.set(row.source_platform, list);
+    }
+    return {
+      challenge: agreed ? first : Buffer.alloc(0),
+      platforms: Array.from(scopes.entries()).map(([source_platform, digests]) => ({
+        source_platform,
+        account_scope_id_digests: digests,
+      })),
+    };
+  }
+
+  /**
+   * Stored evidence of THIS coach's run at the settle epoch only (S10-C; S10-B C-note "old
+   * epoch ignored at settle"): rows written under an earlier `execution_epoch` are excluded here
+   * and would be refused again by the evaluator's E3 binding if they ever reached it.
+   */
+  private async readObservations(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+    epoch: number,
+  ): Promise<StoredObservation[]> {
+    return db.scoutRunObservation.findMany({
+      where: { coach_id: coachId, intent_id: intentId, execution_epoch: epoch },
+      select: {
+        coach_id: true,
+        intent_id: true,
+        execution_epoch: true,
+        received_at: true,
+        evidence: true,
+      },
+      orderBy: { received_at: 'asc' },
+    });
   }
 
   private async readStaged(db: FactsDb, coachId: string, intentId: string): Promise<StagedRow[]> {

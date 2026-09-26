@@ -4,7 +4,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { Events } from '../../analytics/events';
 import { PrismaService } from '../../prisma.service';
-import { ReconciliationFactsService } from '../reconciliation/facts.service';
+import { ReconciliationFactsService, type RunBinding } from '../reconciliation/facts.service';
 import { reconcile } from '../reconciliation/reconcile';
 import {
   type FamilyQualifier,
@@ -107,6 +107,9 @@ interface LockedRow {
   fenced_at: Date | null;
   fence_reason: string | null;
   deadline_at: Date | null;
+  /** S10-C: the evaluator binding (D-S10-3 E1) handed to the facts collector; `mode` is `server`
+   *  by the lock's WHERE clause. */
+  accepted_start_at: Date | null;
 }
 
 /**
@@ -156,6 +159,23 @@ export interface FamilyProjection {
   reasons?: ReasonCount[];
   qualifiers?: FamilyQualifier[];
 }
+
+/**
+ * The S9 fields `projectToken` fills for one staged token (D-S9-5), plus `observed_unique` when
+ * (and only when) the S10 finding-7 rule supplies it from a settled report.
+ */
+export type TokenFill = Pick<
+  FamilyProjection,
+  | 'rejected'
+  | 'unresolved'
+  | 'canonical_family'
+  | 'native_present_verified'
+  | 'completeness_basis'
+  | 'relationship_closure'
+  | 'reasons'
+  | 'qualifiers'
+> &
+  Partial<Pick<FamilyProjection, 'observed_unique'>>;
 
 /** The run-row columns that decide whether a reconciliation report applies (D-S9-5, RC-2). */
 export type ReportScopeRow = Pick<RunRow, 'mode' | 'terminal_status' | 'reason_code'>;
@@ -430,10 +450,19 @@ export class ScoutLifecycleService {
         locked.fenced_at !== null && isFenceReason(locked.fence_reason)
           ? locked.fence_reason
           : null;
-      const reconciliation = await this.reconcileRun(tx, coachId, intentId);
+      const { verdict: reconciliation, report } = await this.reconcileRun(tx, coachId, intentId, {
+        mode: 'server',
+        execution_epoch: locked.execution_epoch,
+        accepted_start_at: locked.accepted_start_at,
+      });
       const verdict = arbitrate({ fence, reconciliation, ...facts });
       const written = await this.writeTerminal(tx, coachId, intentId, epoch, verdict);
-      return written ? verdict : null;
+      if (!written) return null;
+      // S10-C (D-S10-4): the settled basis is a RECORD of the terminal just written, inserted in
+      // the same transaction after the CAS succeeded. A CAS miss returns above and writes
+      // nothing; an insert failure throws and rolls the terminal back with it.
+      await this.writeSettledBasis(tx, coachId, intentId, epoch, report);
+      return verdict;
     });
     if (outcome) {
       this.analytics.capture(coachId, Events.SCOUT_RUN_SETTLED, {
@@ -476,7 +505,8 @@ export class ScoutLifecycleService {
 
   private async lockRun(tx: Tx, coachId: string, intentId: string): Promise<LockedRow | null> {
     const rows = await tx.$queryRaw<LockedRow[]>`
-      SELECT execution_epoch, terminal_status, fenced_at, fence_reason, deadline_at
+      SELECT execution_epoch, terminal_status, fenced_at, fence_reason, deadline_at,
+             accepted_start_at
         FROM "ScoutImport"
        WHERE coach_id = ${coachId} AND intent_id = ${intentId} AND mode = 'server'
        FOR NO KEY UPDATE`;
@@ -502,6 +532,52 @@ export class ScoutLifecycleService {
        WHERE coach_id = ${coachId} AND intent_id = ${intentId} AND mode = 'server'
          AND terminal_status IS NULL AND execution_epoch = ${epoch}`;
     return written === 1;
+  }
+
+  /**
+   * S10-C (D-S10-4 "Settle write"): ONE `ScoutRunSettledBasis` row per run, inserted only after
+   * `writeTerminal` returned true in the same transaction. It records the S9 report the terminal
+   * was decided on (`basis: 'settled'`) and the `evidence_digest`s of the observations stored at
+   * the settle epoch (this coach's run only), so the status read can return the settled report
+   * verbatim instead of recomputing it (R35: archiving a native row later changes nothing). The
+   * insert is not a second terminal writer — the run row is not touched — and the fence and CAS
+   * miss paths never reach it (R36). The table is insert-only and the PK is `(coach_id,
+   * intent_id)`, so a second row for the run is refused by the database, not merged.
+   */
+  private async writeSettledBasis(
+    tx: Tx,
+    coachId: string,
+    intentId: string,
+    epoch: number,
+    report: ReconciliationReportV1,
+  ): Promise<void> {
+    const observations = await tx.scoutRunObservation.findMany({
+      where: { coach_id: coachId, intent_id: intentId, execution_epoch: epoch },
+      select: { evidence_digest: true },
+      orderBy: { evidence_digest: 'asc' },
+    });
+    const settled: ReconciliationReportV1 = { ...report, basis: 'settled' };
+    await tx.scoutRunSettledBasis.create({
+      data: {
+        coach_id: coachId,
+        intent_id: intentId,
+        execution_epoch: epoch,
+        report_version: settled.report_version,
+        report: ScoutLifecycleService.reportToJson(settled),
+        observation_digests: observations.map((o) => o.evidence_digest),
+        settled_at: new Date(),
+      },
+    });
+  }
+
+  /**
+   * The settled report as the jsonb input value: a JSON round trip of a plain-data report (no Date,
+   * no function, no undefined key survives), so the bytes stored are exactly what `JSON.stringify`
+   * of the report says — the same serialisation the status read is compared against (R35).
+   */
+  static reportToJson(report: ReconciliationReportV1): Prisma.InputJsonValue {
+    const value: Prisma.InputJsonValue = JSON.parse(JSON.stringify(report));
+    return value;
   }
 
   /** The arbiter's facts for one run: the stored claim, staged rows and ledger tallies per family. */
@@ -677,10 +753,12 @@ export class ScoutLifecycleService {
     tx: Tx,
     coachId: string,
     intentId: string,
-  ): Promise<ReconciliationVerdict> {
-    const facts = await this.facts.collect(tx, coachId, intentId);
-    const verdict: ReconciliationVerdictV1 = reconcile(facts).verdict;
-    return { outcome: verdict.outcome, reason_code: verdict.reason_code };
+    run: RunBinding,
+  ): Promise<{ verdict: ReconciliationVerdict; report: ReconciliationReportV1 }> {
+    const facts = await this.facts.collect(tx, coachId, intentId, run);
+    const { verdict, report } = reconcile(facts);
+    const v: ReconciliationVerdictV1 = verdict;
+    return { verdict: { outcome: v.outcome, reason_code: v.reason_code }, report };
   }
 
   /**
@@ -698,10 +776,12 @@ export class ScoutLifecycleService {
   }
 
   /**
-   * Recompute-on-read (D-S9-5, Addendum C-9): when a report applies, one REPEATABLE READ
-   * transaction supplies the facts service its snapshot across staging, ledger, provenance and
-   * native tables; the reconciler's report is returned. No row is written. Returns null when no
-   * report applies, without opening a transaction.
+   * The report for the status read (D-S9-5; S10-C D-S10-4 "Status"). When a report applies:
+   * the run's settled basis, if one was recorded, is returned verbatim with `basis: 'settled'`
+   * (this coach's `(coach_id, intent_id)` row only; one point read, no transaction); otherwise
+   * the S9-C recompute-on-read — one REPEATABLE READ transaction supplies the facts service its
+   * snapshot and the reconciler's `'recomputed'` report is returned, byte-identical to S9-C. No
+   * row is written on either path. Returns null when no report applies, without any read.
    */
   async readReport(
     coachId: string,
@@ -709,9 +789,45 @@ export class ScoutLifecycleService {
     row: ReportScopeRow | null | undefined,
   ): Promise<ReconciliationReportV1 | null> {
     if (!ScoutLifecycleService.reportApplies(row)) return null;
+    const settled = await this.readSettledBasis(coachId, intentId);
+    if (settled !== null) return settled;
+    // No settled record (a fence-path or pre-S10 terminal): the S9-C recompute, byte-identical to
+    // S9-C — the collector gets NO run binding, so coverage stays unknown and no S10 evidence is
+    // read. Later or backfilled evidence never changes a report that was never settled on it.
     return this.prisma.$transaction(
       async (tx) => reconcile(await this.facts.collect(tx, coachId, intentId)).report,
       S9_SNAPSHOT_TX_OPTIONS,
+    );
+  }
+
+  /**
+   * S10-C: the recorded settled report, or null when none exists OR the stored value is not a
+   * version-1 `'settled'` report (then the S9 recompute answers; a stored record is never
+   * reinterpreted into something it does not say).
+   */
+  private async readSettledBasis(
+    coachId: string,
+    intentId: string,
+  ): Promise<ReconciliationReportV1 | null> {
+    const row = await this.prisma.scoutRunSettledBasis.findUnique({
+      where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
+      select: { report_version: true, report: true },
+    });
+    if (row === null || row.report_version !== 1) return null;
+    return ScoutLifecycleService.isSettledReport(row.report) ? row.report : null;
+  }
+
+  /** Structural check of a stored settled report (the jsonb column is typed `unknown`). */
+  static isSettledReport(value: unknown): value is ReconciliationReportV1 {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const r = value as Record<string, unknown>;
+    return (
+      r.report_version === 1 &&
+      r.basis === 'settled' &&
+      Array.isArray(r.conditions) &&
+      (r.required_families === null || Array.isArray(r.required_families)) &&
+      typeof r.ledger_without_staged === 'number' &&
+      Array.isArray(r.families)
     );
   }
 
@@ -730,14 +846,19 @@ export class ScoutLifecycleService {
    * — exactly the staged row count, because the wide identity
    * (coach_id, intent_id, entity_type, source_platform, source_id) is the table's only key (G2-C).
    * Native buckets stay null = "not yet known" (never 0) until S8-B provenance / S9;
-   * `observed_unique` stays null until S10.
+   * `observed_unique` stays null until a settled S10 basis vouches for it (below).
    *
    * S9-C (D-S9-5): with a `report`, each entry that has a token row in it is filled from that row
    * and its family — `rejected` / `unresolved` become counted facts and the additive fields
-   * appear. `created_native` / `already_present_verified` stay null (D-S9-4), `observed_unique`
-   * stays null (v1 has no coverage fact). Without a report (or for a token the report does not
-   * carry) the entry is exactly the S7-L shape — no additive key is present, no bucket becomes 0.
-   * Report-only entries (declared families without a staged token, RC-3) never create an entry.
+   * appear. `created_native` / `already_present_verified` stay null (D-S9-4). Without a report
+   * (or for a token the report does not carry) the entry is exactly the S7-L shape — no additive
+   * key is present, no bucket becomes 0. Report-only entries (declared families without a staged
+   * token, RC-3) never create an entry.
+   *
+   * S10-C (S10-DOC finding 7): `observed_unique` stays null under a `'recomputed'` report; under
+   * a `'settled'` one `projectToken` fills it only when exactly one report family holds the
+   * token, that family is mapped, the token is its only token and the family's `observed_unique`
+   * is non-null — otherwise null (never a sum, never a 0 for "not observed").
    */
   static projectFamilies(
     staged: readonly { entity_type: string; _count: { _all: number } }[],
@@ -769,26 +890,18 @@ export class ScoutLifecycleService {
    * across platforms in one intent: counts are summed over all of its rows, `canonical_family`
    * is null unless every row resolves to the same mapped family, `reasons` merges the families'
    * histograms and `qualifiers` their union. Returns null when the report has no row for the token.
+   * `observed_unique` is present only when the finding-7 rule fills it from a settled report.
    */
   static projectToken(
     token: string,
     report: ReconciliationReportV1,
     stagedTokens: ReadonlySet<string>,
-  ): Pick<
-    FamilyProjection,
-    | 'rejected'
-    | 'unresolved'
-    | 'canonical_family'
-    | 'native_present_verified'
-    | 'completeness_basis'
-    | 'relationship_closure'
-    | 'reasons'
-    | 'qualifiers'
-  > | null {
+  ): TokenFill | null {
     const holders: ReconciliationFamilyV1[] = report.families.filter((f) =>
       f.tokens.some((t) => t.token === token),
     );
     if (holders.length === 0) return null;
+    const observed = ScoutLifecycleService.observedUniqueFor(token, report, holders);
     const rows = holders.flatMap((f) => f.tokens.filter((t) => t.token === token));
     const sum = (pick: (r: (typeof rows)[number]) => number) =>
       rows.reduce((acc, r) => acc + pick(r), 0);
@@ -815,7 +928,27 @@ export class ScoutLifecycleService {
       qualifiers: PROJECTED_FAMILY_QUALIFIERS.filter((q) =>
         holders.some((f) => f.qualifiers.includes(q)),
       ),
+      ...(observed === null ? {} : { observed_unique: observed }),
     };
+  }
+
+  /**
+   * S10-DOC finding 7: the verified `observed_unique` a token may carry. A family's observation
+   * counts identities of the FAMILY; the token-shaped `families[]` entry may only show it when
+   * the token and the family are the same set — a settled report, exactly one holder, mapped, the
+   * token its only token, value non-null. Every other case is null (unknown), never a 0.
+   */
+  static observedUniqueFor(
+    token: string,
+    report: ReconciliationReportV1,
+    holders: readonly ReconciliationFamilyV1[],
+  ): number | null {
+    if (report.basis !== 'settled' || holders.length !== 1) return null;
+    const holder = holders[0];
+    if (!holder.mapped || holder.tokens.length !== 1 || holder.tokens[0].token !== token) {
+      return null;
+    }
+    return typeof holder.observed_unique === 'number' ? holder.observed_unique : null;
   }
 
   /**
