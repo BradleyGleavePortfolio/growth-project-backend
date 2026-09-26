@@ -20,6 +20,9 @@
   B1-B5 are closed in §2.2, §2.5, §2.3/§3.3, §5.1 and §3.5; the C-findings are folded in where
   named; §7 now separates what is decided by derivation from what only the owner can answer.
   §9 maps each finding to the text that closes it. Nothing in Round 2 changes L1-L8.
+- **Round 3 (2026-09-26):** delta review of Round 2 found two internal contradictions (B6
+  disclosure payload vs OQ-10 interim; B7 composite-FK ordering in D3) and a B5 follow-up
+  (flag-off must not strand an open undo). Closed in §3.2 step 4, §2.9 and §3.5; §9 updated.
 
 ## 1. Decision
 
@@ -178,8 +181,9 @@ exactly what these policies exist to defend.
    independent of `user_id` (`schema.prisma` L1102-1107). For person-owned rows D3 enforces it in
    the database: `CHECK ("person_id" IS NULL OR "coach_id" IS NOT NULL)` plus a composite
    `FOREIGN KEY ("person_id", "coach_id") REFERENCES "Person"("id", "coach_id")` (backed by a new
-   unique index `Person(id, coach_id)`; `MATCH SIMPLE` skips user-owned rows where `person_id` is
-   NULL). The S8-E1b writer sets `coach_id = person.coach_id`; the link leaves `coach_id`
+   unique constraint `Person(id, coach_id)` that **must exist before** the FK is added — created
+   `CONCURRENTLY` in D3-2 and promoted with `ADD CONSTRAINT … UNIQUE USING INDEX` in D3-3 ahead
+   of the FK, §2.9; `MATCH SIMPLE` skips user-owned rows where `person_id` is NULL). The S8-E1b writer sets `coach_id = person.coach_id`; the link leaves `coach_id`
    untouched (the client is attached to that same coach in the link transaction, so
    `check_in_client_all`'s WITH CHECK `is_user_coached_by(user_id, coach_id)` L366 holds
    afterwards); unlink leaves it untouched. A person-owned check-in can therefore never name a
@@ -324,7 +328,9 @@ pending rows here — it must not). D3 lands:
   the merge activation path are **D6 work that waits for OQ-1**; they are not in D3.
 - Merge anchor constraints, specified now so D6 does not design them: composite FK
   `(merge_anchor_link_id, coach_id, user_id) REFERENCES PersonLink(id, coach_id, user_id)`
-  (same coach, same account, backed by a unique index on those three columns);
+  (same coach, same account, backed by a unique constraint on those three columns which is
+  created **before** the FK in the same D3-1 statement list — legal because `PersonLink` is new
+  and empty, §2.9);
   `CHECK (merge_anchor_link_id <> id)`; Person distinctness (`anchor.person_id <> person_id`) and
   anchor activity are asserted in the link transaction under the Person lock and by a
   constraint trigger, because a CHECK cannot read another row; unlinking an anchor requires
@@ -466,27 +472,40 @@ and unlink), so an import can never interleave with a flip (C5).
 | Proposal vs L2 invite claim on the same Person | Both end in the same link transaction under the Person lock; the first to commit sets `Claimed`, the other proposal/invite is `superseded`/refused generically.                                                                                                                                                                                                                         |
 | Proposal expiry / client leaves coach          | Sweeper marks `expired`; every transition re-checks `user.coach_id = coach_id` and voids the proposal otherwise.                                                                                                                                                                                                                                                                        |
 
-### 2.9 Migration shape (C2)
+### 2.9 Migration shape (C2, B7)
 
-"One directory" in Round 1 was an estimate of count, not a proof of safety. The five parents are
-populated production tables; a repo precedent already uses `CREATE INDEX CONCURRENTLY` on
-`ClientWorkoutAssignment` for exactly that reason and documents that Prisma 6.19 runs a migration
-file **without** wrapping it in a transaction (`20260704000001_coach_brief_cwa_index_concurrent/migration.sql`
+"One directory" in Round 1 was an estimate of count, not a proof of safety, and Round 2's three
+directories put the `Person(id, coach_id)` unique index **after** the composite FK that references
+it — PostgreSQL refuses a foreign key whose referenced columns are not already covered by a
+non-partial unique index or constraint, so D3-1 would have failed (B7). The five parents are
+populated production tables; a repo precedent uses `CREATE INDEX CONCURRENTLY` on
+`ClientWorkoutAssignment` for that reason and documents that Prisma 6.19 runs a migration file
+**without** wrapping it in a transaction (`20260704000001_coach_brief_cwa_index_concurrent/migration.sql`
 L8-27), while the scout migrations set `lock_timeout = '5s'` / `statement_timeout = '30s'` inside an
-explicit `BEGIN` (`20270118000000_scout_ledger_platform_expand/migration.sql` L5-7). D3 is therefore
-**three directories**, landed as one slice:
+explicit `BEGIN` (`20270118000000_scout_ledger_platform_expand/migration.sql` L5-7). Ordering rule:
+**every unique key is created before any FK that references it; every constraint on a populated
+table is added `NOT VALID` and validated in a later directory; every index on a populated table is
+built `CONCURRENTLY` outside a transaction.** D3 is therefore **four directories**, landed as one
+slice, in this order:
 
-| Dir  | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Lock profile                                                                                                                       |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| D3-1 | `BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';` new tables (`PersonInvite`, `PersonInviteChallenge`, `PersonLink`, `PersonLinkProposal`, `PersonLinkOutbox`) with their RLS; `Person.linked_user_id`; `ImportNativeProvenance.person_id`; on each of the five parents `ADD COLUMN person_id TEXT NULL`, `ALTER COLUMN user_id DROP NOT NULL`, and the XOR / coach CHECKs and FKs added **`NOT VALID`**; policy rewrites (§2.2). `COMMIT;` | Short ACCESS EXCLUSIVE per `ALTER TABLE` (catalog-only; no rewrite, no scan). Fails atomically on lock timeout and is re-runnable. |
-| D3-2 | `ALTER TABLE … VALIDATE CONSTRAINT` for every `NOT VALID` constraint from D3-1, one statement each, same timeouts.                                                                                                                                                                                                                                                                                                                                                 | SHARE UPDATE EXCLUSIVE (full scan, no write block).                                                                                |
-| D3-3 | `CREATE INDEX CONCURRENTLY IF NOT EXISTS` for every new index on the five parents (`(person_id)`, `(person_id, date)`, the partial uniques, `Person(id, coach_id)`), **no** `BEGIN`, one statement per index, with the invalid-index operator note copied from the precedent (L28-34).                                                                                                                                                                             | SHARE UPDATE EXCLUSIVE; never blocks DML.                                                                                          |
+| Dir  | Transaction                                                                            | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Lock profile                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| D3-1 | `BEGIN … COMMIT` with `SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s'` | **New, empty tables** `PersonInvite`, `PersonInviteChallenge`, `PersonLink`, `PersonLinkProposal`, `PersonLinkOutbox` with their columns, PK, plain FKs to existing PKs (`Person(id)`, `User(id)`), CHECKs, **and their own unique indexes/constraints inline** — including `PersonLink(id, coach_id, user_id) UNIQUE` **before** the self-referencing anchor FK `(merge_anchor_link_id, coach_id, user_id) → PersonLink(id, coach_id, user_id)` in the same statement list (legal: the table is new and empty, so plain `CREATE UNIQUE INDEX` and immediate FKs are instantaneous); the two active partial uniques; RLS enable/force + deny-all policies. `Person.linked_user_id`, `ImportNativeProvenance.person_id` (nullable, no FK yet). On each of the five parents: `ADD COLUMN person_id TEXT NULL`, `ALTER COLUMN user_id/client_id DROP NOT NULL`, XOR CHECK and the `CheckIn` `(person_id IS NULL OR coach_id IS NOT NULL)` CHECK added **`NOT VALID`**. Policy rewrites (§2.2). **No composite FK to `Person` here.** | Catalog-only `ALTER TABLE`s: short ACCESS EXCLUSIVE, no rewrite, no scan. Atomic; re-runnable (`IF NOT EXISTS` on tables/indexes). |
+| D3-2 | **none** (`CONCURRENTLY`)                                                              | One statement per index, `CREATE [UNIQUE] INDEX CONCURRENTLY IF NOT EXISTS`: `Person(id, coach_id)` **unique**; `(person_id)` on the five parents; `(person_id, date) WHERE person_id IS NOT NULL` unique on `CheckIn`; `(person_id, scheduled_for)` on `ClientWorkoutAssignment`; `Person(linked_user_id)`; `ImportNativeProvenance(person_id)`. Invalid-index operator note copied from the precedent (L28-34).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | SHARE UPDATE EXCLUSIVE; never blocks DML.                                                                                          |
+| D3-3 | `BEGIN … COMMIT`, same timeouts                                                        | `ALTER TABLE "Person" ADD CONSTRAINT "Person_id_coach_id_key" UNIQUE USING INDEX …` (promotes the D3-2 index; metadata-only). Then the composite FKs, all **`NOT VALID`**: `CheckIn(person_id, coach_id) → Person(id, coach_id)`; `PersonLink(person_id, coach_id) → Person(id, coach_id)`; `PersonLinkProposal(person_id, coach_id) → Person(id, coach_id)`; `PersonInvite(person_id, coach_id) → Person(id, coach_id)`; and the plain `person_id → Person(id)` FKs on `WorkoutSession`, `WeightLog`, `Habit`, `ClientWorkoutAssignment`, `ImportNativeProvenance`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Short ACCESS EXCLUSIVE per statement; `NOT VALID` skips the scan.                                                                  |
+| D3-4 | `BEGIN … COMMIT`, same timeouts                                                        | `ALTER TABLE … VALIDATE CONSTRAINT` for every `NOT VALID` CHECK and FK from D3-1 and D3-3, one statement each.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | SHARE UPDATE EXCLUSIVE (full scan, no write block).                                                                                |
+
+Sequence proof for the two FKs the review named: `Person(id, coach_id)` unique index (D3-2) →
+promoted to a constraint (D3-3, first statement) → composite FKs (D3-3, later statements) →
+validation (D3-4). `PersonLink(id, coach_id, user_id)` unique (D3-1, before the anchor FK) → anchor
+FK (D3-1, after it). No statement references a key that a later directory creates.
 
 No backfill is needed (every new column is NULL for every existing row; the XOR CHECK holds
-trivially). Rollback = the three `down.sql` files in reverse (drop indexes concurrently, drop
-constraints, drop columns, drop tables), each with the same timeouts (precedent
-`20270118000000_…/down.sql` L5-6). The type ripple (§2.1) ships in the same slice because the
-generated client changes at D3-1. All three directories count against the S11 pin (§6).
+trivially). Rollback = four `down.sql` files applied in reverse (drop FKs and CHECKs, drop the
+unique constraint, `DROP INDEX CONCURRENTLY` each D3-2 index, drop columns, drop the five tables),
+each with the same timeouts (precedent `20270118000000_…/down.sql` L5-6). The type ripple (§2.1)
+ships in the same slice because the generated client changes at D3-1. **All four directories count
+against the S11 pin (§6): 173 → 177 at D3, 178 after S8-E1a, 179 after S8-D6.**
 
 ## 3. Link flow against the existing machinery
 
@@ -524,9 +543,15 @@ generated client changes at D3-1. All three directories count against the S11 pi
    and records `claimant_user_id = req.user.id`. Any `contact` field in the body is rejected
    (400) — L3.
 4. **Verify.** `POST /person-invites/:token/verify {code}` (JWT, same user): constant-time
-   compare, lockout, `verified_at`. Only now the response carries the L4 disclosure:
-   `{coach_display_name, person_display_name, summary: {families: [{family, count, from, to}]}}`
-   — counts and date ranges from provenance and the owned rows, never row contents.
+   compare, lockout, `verified_at`. Only now the response carries the L4 disclosure, and it is
+   **exactly** the OQ-10 interim payload (§7.2):
+   `{coach_display_name, person_display_name, family_kinds: ['workouts' | 'weight' | 'habits' | 'check_ins' | 'assignments', …]}`
+   — the **kinds** of imported history that exist for this Person, derived from provenance
+   `native_kind`; **no** record counts, **no** date ranges, **no** row contents before "yes".
+   Counts appear only in the post-"yes" response (`records_moved`, step 5) and in the
+   `link_collision` refusal (§2.7 step 4), both of which follow the client's confirmation. If
+   Bradley answers OQ-10 differently, this step and §7.2 are amended together — there is one
+   disclosure contract, not two.
 5. **Confirm.** `POST /person-invites/:token/confirm {answer: 'yes' | 'no'}` (JWT, same user).
    `yes` → §2.7 link transaction → 200 `{link_id, undo_until, records_moved}`. `no` → invite
    `declined`, Person back to `InvitePending`, coach notified (L4). Either answer closes the
@@ -540,8 +565,9 @@ generated client changes at D3-1. All three directories count against the S11 pi
 - **L5.** `POST /scout/persons/:personId/link-proposals {user_id}` (coach): `user.coach_id =
 caller` and `user.role = student` required (the cross-tenant rail), creates a
   `PersonLinkProposal(kind = match)` (§2.5) — **not** a `PersonLink`. The client receives an
-  in-app notification and sees only the pre-verification disclosure (coach card, Person display
-  name, "an imported history may be yours"); `POST /me/link-proposals/:id/{decline|start}`.
+  in-app notification and sees only the pre-verification disclosure of §3.2 step 2 (coach card
+  and "an imported history may be yours" — no Person name yet);
+  `POST /me/link-proposals/:id/{decline|start}`.
   `start` mints a Person-bound `PersonInvite` with `target_user_id = me` and the coach-held
   contacts already confirmed on the proposal, then the ordinary §3.2 steps 3-5 run: challenge to a
   coach-held contact, verify, L4 disclosure, confirm "yes". The link transaction writes
@@ -560,11 +586,11 @@ caller` and `user.role = student` required (the cross-tenant rail), creates a
 
 ### 3.4 Undo (L7)
 
-- Client: `POST /me/person-links/:id/unlink {reason_code, note?}` any time before
-  `undo_deadline_at`.
-- Coach: `POST /scout/person-links/:id/unlink {reason_code, note?}` only before
+- Client: `POST /api/person-links/:id/unlink {reason_code, note?}` any time before
+  `undo_deadline_at`. Ungated (§3.5).
+- Coach: `POST /api/coach/person-links/:id/unlink {reason_code, note?}` only before
   `undo_deadline_at`; after it the route answers 403 with a stable code (`undo_window_closed`)
-  and the coach UI points to support.
+  and the coach UI points to support. Ungated (§3.5).
 - Admin: existing owner surfaces (`src/admin/**`), audited with `unlinked_by_role = admin` and the
   admin's user id.
 - Notifications to the other side in every case through the outbox (§2.5), carrying the reason
@@ -575,14 +601,39 @@ caller` and `user.role = student` required (the cross-tenant rail), creates a
 
 - D4b and D5 are **one releasable gate**: a single flag `FEATURE_PERSON_LINK` (dark by default,
   enforced by the same `featureFlagNotFoundMiddleware` that hides `/api/scout/*`,
-  `scout-roster.controller.ts` L78-81) fronts every claim, confirm, proposal-start **and** unlink
-  route. The flag must not exist in any environment's configuration until D5 has landed on
+  `scout-roster.controller.ts` L78-81) fronts every claim, confirm and proposal-start route — **not** the unlink routes (below). The flag must not exist in any environment's configuration until D5 has landed on
   `integration/importer` **and** its unlink specs (client, coach ≤ 30 d, admin, return-only-imported,
   collision abort, outbox delivery, notification failure → `notify_status = failed` + alert) are
   green on the RLS harness. D4a (mint/revoke/preview) may ship before D5 because it starts no
   30-day clock.
 - Even on `integration/importer`, enabling the flag with real client data is owner-reserved
   (S8-DOC/S11-DOC owner boundaries; §6). A build lane proves it with fixtures only.
+- **Flag-off must never strand an open undo (B5 follow-up).** `featureFlagNotFoundMiddleware`
+  answers 404 for every request under a gated prefix whenever its env var is not `'true'`, read
+  at request time so operations can toggle it without a redeploy
+  (`src/common/feature-flag/feature-flag-not-found.middleware.ts` L20-31, L38-64). If the unlink
+  routes sat under `FEATURE_PERSON_LINK` (or under `/api/scout`, which `FEATURE_SCOUT_INGEST`
+  darkens, L22), a flag flip during an incident would silently remove L7's recovery right while
+  the 30-day clocks keep running. Two designs were weighed:
+  1. _Operational invariant_ — "never disable while active links exist". Rejected as the sole
+     rail: the very reason to flip a flag is an incident in the claim path, when waiting up to 30
+     days for links to close is not an option, and an env-var rule enforced by people is not a
+     rail the record can prove.
+  2. **_Authenticated unlink path outside the gate_ — chosen.** The client unlink route lives at
+     `POST /api/person-links/:id/unlink` and the coach unlink route at
+     `POST /api/coach/person-links/:id/unlink`, prefixes that appear in **no**
+     `FEATURE_GATED_ROUTES` entry, so they are mounted whenever the D5 build is deployed,
+     independent of `FEATURE_PERSON_LINK` and of the scout flags. They are JWT-guarded, act only
+     on a link whose `user_id` (client) or `coach_id` (coach, inside the window) is the caller,
+     answer a uniform 404 for any other id, and can only **return** rows (§2.7 unlink) — they
+     create, mint, verify or link nothing. Undo is a data-rights recovery path of the same kind
+     as account deletion, which is likewise never behind a dark flag; the R-DARK-1 exception is
+     recorded here deliberately. Admin unlink stays on the owner surfaces, which are not flagged
+     either. §3.4's route names are updated accordingly.
+     Belt-and-braces: disabling `FEATURE_PERSON_LINK` while `PersonLink` rows are inside their undo
+     window raises an admin alert listing their count (an ops-visible fact, not a rail), and the
+     mobile undo screens (UX-D5) read the link state from the ungated route, so they keep working
+     while claims are dark.
 - Post-commit notification failure never affects the link: the intent is durable (outbox rows in
   the link transaction), delivery retries with back-off, exhaustion is visible on the link
   (`notify_status`) and raises an admin alert, and the coach roster shows the undo window from
@@ -606,7 +657,7 @@ caller` and `user.role = student` required (the cross-tenant rail), creates a
 | **Privilege**: an `owner` or a coach account claiming as a client                                                       | Refused as `attachUserToCoachByCode` refuses owners (L563-568); the claimant must be `student` or unattached; a `coach`-role user cannot be linked (OQ-4 asks about coaches who are also someone's client).                                                                                                                                                                                                                                                                                                                    |
 | **Re-link bypass** (a coach proposal re-attaches a client who just unlinked)                                            | Impossible: every path activates through a Person-bound invite minted after the last `unlinked_at`, a new challenge and a new "yes" (§2.7 step 1, §3.3; B3).                                                                                                                                                                                                                                                                                                                                                                   |
 | **Pending proposal squatting** (an unconfirmed proposal occupies the Person or account slot, or a merge row multiplies) | Proposals live in `PersonLinkProposal` with expiry/decline/revoke/supersede; `PersonLink` uniqueness is on completed links only; merge activation is refused until OQ-1; anchor constraints are composite FKs + checks (§2.5; B2).                                                                                                                                                                                                                                                                                             |
-| **Partial deployment** (claim live before undo exists; deadline clock runs with no exit)                                | D4b + D5 behind one flag; the flag cannot exist before D5's specs are green; in-app notice and outbox intent are written in the link transaction (§3.5; B5).                                                                                                                                                                                                                                                                                                                                                                   |
+| **Partial deployment** (claim live before undo exists; deadline clock runs with no exit)                                | D4b + D5 behind one flag; the flag cannot exist before D5's specs are green; unlink routes are mounted outside every feature gate so a flag-off never strands an open undo; in-app notice and outbox intent are written in the link transaction (§3.5; B5).                                                                                                                                                                                                                                                                    |
 | **Direct DB read of imported history** (coach via `check_in_coach_select` / `assignment_coach_manage`)                  | Every non-owner policy branch on the eight tables gains `person_id IS NULL`; three parents get in-tree policies for the first time; composite FK pins a person-owned check-in's `coach_id` to the Person's tenant (§2.2; B1).                                                                                                                                                                                                                                                                                                  |
 
 ## 5. Roster: "imported, not yet joined" and the typed `person` handoff
@@ -695,7 +746,7 @@ fixtures, generated contracts excluded). "Migration" = a new `prisma/migrations/
 | S8-D0  | This decision record (Round 1 + Round 2) and the appended S8-DOC forward pointer                                                                                                                                                                                                                    | T4    | OWNER; independent T4 review                                                                   | no                        | 0               | —                                                        | this commit                                         |
 | S8-D1  | Typed `person` handoff, create-only with provenance verification (§5.1 steps 1-4); `readPersons` Deleted → removed; S9 fixtures; named specs; roster-bearing runs may settle `complete` only when every family is                                                                                   | T4    | S11-A2 landed                                                                                  | no                        | 200–300         | **none** (OQ-11 decided by derivation)                   | PROCEED after re-review of this record              |
 | S8-D2  | Coach roster `imported_people[]` + `person_link` + `proposal` markers; importer-G `roster_bridge_pending` retirement; contract regen; suggestions read (never applied); privacy review of every field emitted                                                                                       | T4    | S8-D1                                                                                          | no                        | 250–400         | **none** (renders server state only)                     | PROCEED                                             |
-| S8-D3  | Schema (§2.1-2.5, §2.9): five new tables, `Person.linked_user_id`, `provenance.person_id`, nullable owner + `person_id` + XOR/coach CHECKs + composite FKs on five parents, strict partial uniques, RLS rewrite for eight tables + role×state matrix spec, staged in three directories; type ripple | T4    | S11-A2 + S11-D proofs landed on the 173-pin, **or** explicit parent re-pin in the same landing | **yes — 3 dirs** (§2.9)   | 550–800         | none (merge exemption index deferred to D6)              | PROCEED; SPLIT if measured > 1,000                  |
+| S8-D3  | Schema (§2.1-2.5, §2.9): five new tables, `Person.linked_user_id`, `provenance.person_id`, nullable owner + `person_id` + XOR/coach CHECKs + composite FKs on five parents, strict partial uniques, RLS rewrite for eight tables + role×state matrix spec, staged in three directories; type ripple | T4    | S11-A2 + S11-D proofs landed on the 173-pin, **or** explicit parent re-pin in the same landing | **yes — 4 dirs** (§2.9)   | 550–800         | none (merge exemption index deferred to D6)              | PROCEED; SPLIT if measured > 1,000                  |
 | S8-D4a | Invite mint / list / revoke / resend limits / email send / public preview; `Person` `InvitePending ↔ Invited`; `Suspended` admin freeze + reinstate; audit; coach UI contract                                                                                                                       | T4    | S8-D3                                                                                          | no                        | 400–500         | none (OQ-5, OQ-8 derived; OQ-13 = phone off)             | PROCEED                                             |
 | S8-D4b | Challenge (email OTP) / verify / disclosure / confirm; link transaction (§2.7) incl. `link_collision` abort; outbox rows + in-tx notifications; idempotency + race specs; `FEATURE_PERSON_LINK` gate shared with D5                                                                                 | T4    | S8-D4a                                                                                         | no                        | 500–650         | OQ-10 (interim: minimal disclosure)                      | PROCEED; **not enableable before D5** (§3.5)        |
 | S8-D5  | Unlink (client, coach ≤ 30 d, admin) with reason codes + actor ids; return-only-imported join (four-field compare); `missing` count; `unlink_collision` abort; outbox worker + `notify_status`; `person_link` marker semantics                                                                      | T4    | S8-D4b                                                                                         | no                        | 400–550         | OQ-2, OQ-7 (interim defaults in §7)                      | PROCEED; D4b + D5 land as one releasable gate       |
@@ -723,8 +774,10 @@ slice is planned above 1,000.
 (`test/utils/g2-s11-pg-harness.ts` L39; `test/utils/g2-s11-bootstrap.sh` L36, L159-160) and
 "last (sorted) directory is S10-B's `20270124000000_scout_run_observation_expand`" (bootstrap
 L164-165), with the prisma tree required byte-identical to `711c1f8f` (bootstrap L150-156;
-guard `test/utils/g2-s11-db-guard.spec.ts` L194-195, L220-222). Any S8-D3 (three directories,
-§2.9), S8-D6 or S8-E1a migration therefore breaks that lane's bootstrap until it is re-pinned.
+guard `test/utils/g2-s11-db-guard.spec.ts` L194-195, L220-222). Any S8-D3 (four directories,
+§2.9: 173 → 177), S8-E1a (→ 178) or S8-D6 (→ 179) migration therefore breaks that lane's bootstrap
+until it is re-pinned (`EXPECTED_MIGRATIONS`, `LAST_MIGRATION` and the prisma-tree byte-identity
+base all move together).
 Rule: S8-D3 lands **after** S11-A2 and S11-D have taken their proofs on the 173-pin, or the parent
 re-pins the S11 harness explicitly in the same landing (a T2 pin move, reviewed). S8-D1, S8-D2
 ship no migration and may land earlier, after S11-A2 (they change what J19 step 11 reads).
@@ -755,7 +808,7 @@ decision. Every slice above is built and proven on `integration/importer` only.
 | OQ-6  | For a client who is already your client (L5), is their in-app "yes" enough, or must they also receive a code at a contact you hold, like a new client?                                                                          | Code on every path, including L5/L8 (§3.3); for any Person with a past link the code is mandatory regardless (B3).                                                            | S8-D6 match part (only to relax)              |
 | OQ-7  | If the client deletes their account within the 30-day window, should the imported records go back to your imported record first, or be deleted with the account? May an actively linked imported record ever be erased?         | Account deletion is **blocked** while a link is inside its undo window (client is told to unlink first or wait); a linked Person cannot be erased (§2.3, §3.1 "Data rights"). | S8-D5 acceptance; account-deletion touchpoint |
 | OQ-9  | Notes, goals, measurements and profile fields have no place to live for an imported client. Do you want new destinations for them, or should they stay explicitly "unresolved" in this release?                                 | Explicitly `unresolved`; nothing fabricated (S8-DOC §3.5).                                                                                                                    | none in S8-D/E (future family slices)         |
-| OQ-10 | After the code is verified but before the client says "yes", should they see how many records and which dates the history covers, or only enough to answer "is this you?" (coach name, your name on the record, history kinds)? | Minimal: coach card, Person display name, family **kinds** only — no counts or date ranges until "yes" (§3.2 step 4 copy).                                                    | UX-D4 copy; S8-D4b disclosure payload         |
+| OQ-10 | After the code is verified but before the client says "yes", should they see how many records and which dates the history covers, or only enough to answer "is this you?" (coach name, your name on the record, history kinds)? | Minimal: coach card, Person display name, family **kinds** only — no counts or date ranges until "yes" (§3.2 step 4 is this payload verbatim).                                | UX-D4 copy; S8-D4b disclosure payload         |
 | OQ-12 | How should an imported historical workout assignment appear so it never schedules or notifies anyone — what exact "inactive" state and fields should be kept?                                                                   | Assignment import stays `unresolved`; no `completed_at` invention (`ClientWorkoutAssignment` has no inactive flag, L2323-2358).                                               | S8-E1d                                        |
 | OQ-13 | Which SMS provider and budget may we use, and may the email-only version launch before phone is available?                                                                                                                      | Email only where deliverable; phone contact stored but marked unavailable; no D7 spend; copy names it a capability limitation (§2.4, C8).                                     | S8-D7                                         |
 
@@ -786,17 +839,20 @@ decision. Every slice above is built and proven on `integration/importer` only.
 
 ## 9. Round 2 closure map (independent T4 review of `ded755ab`)
 
-| Finding | Closed by                                                                                                                                                                                                                                |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B1      | §2.2: effective-policy inventory (eight tables, file:line), `person_id IS NULL` guards, in-tree policies for three parents, stated owner exception, composite-FK tenant pin on `CheckIn.coach_id`, role × owner-state matrix.            |
-| B2      | §2.5: `PersonLinkProposal` with lifecycle/authorization; `PersonLink` completed-only with `linked_at NOT NULL`; active uniques on `linked_at IS NOT NULL AND unlinked_at IS NULL`; strict account unique until OQ-1; anchor constraints. |
-| B3      | §2.3 (no `InvitePending → Claimed`), §2.7 step 1 (invite minted after last `unlinked_at`), §3.3 (proposals activate only through invite + challenge + confirmation).                                                                     |
-| B4      | §5.1: create-only with provenance verification; `Deleted` → `native_target_removed`, no resurrection; adoption of pre-D1 rows; named specs; C6 completeness rule.                                                                        |
-| B5      | §3.5: `FEATURE_PERSON_LINK` shared by D4b + D5; flag forbidden before D5 specs are green; outbox + in-transaction notifications; `notify_status` on the link.                                                                            |
-| C2      | §2.9 three-directory staged migration with `NOT VALID`/`VALIDATE`, `CONCURRENTLY`, timeouts, rollback.                                                                                                                                   |
-| C3      | §2.4: atomic counters, resend limits, void-all-challenges, unknown tokens charge nothing.                                                                                                                                                |
-| C4      | §2.5/§3.4: actor ids, reason-code enum, note never auto-shown.                                                                                                                                                                           |
-| C5      | §2.7: four-field provenance compare, deleted-row `missing` count, fail-closed collisions, shared lock discipline, single transaction.                                                                                                    |
-| C7      | §6: D1 and D2 re-graded T4; LOC labelled estimates.                                                                                                                                                                                      |
-| C8      | §2.4 `send_status`, §7.2 OQ-13 interim: email-only is a capability limitation.                                                                                                                                                           |
-| OQ      | §7.1 derived (3, 4, 5, 8, 11) and §7.2 owner (1, 2, 6, 7, 9, 10, 12, 13) with interim defaults and blocked slices.                                                                                                                       |
+| Finding | Closed by                                                                                                                                                                                                                                                              |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1      | §2.2: effective-policy inventory (eight tables, file:line), `person_id IS NULL` guards, in-tree policies for three parents, stated owner exception, composite-FK tenant pin on `CheckIn.coach_id`, role × owner-state matrix.                                          |
+| B2      | §2.5: `PersonLinkProposal` with lifecycle/authorization; `PersonLink` completed-only with `linked_at NOT NULL`; active uniques on `linked_at IS NOT NULL AND unlinked_at IS NULL`; strict account unique until OQ-1; anchor constraints.                               |
+| B3      | §2.3 (no `InvitePending → Claimed`), §2.7 step 1 (invite minted after last `unlinked_at`), §3.3 (proposals activate only through invite + challenge + confirmation).                                                                                                   |
+| B4      | §5.1: create-only with provenance verification; `Deleted` → `native_target_removed`, no resurrection; adoption of pre-D1 rows; named specs; C6 completeness rule.                                                                                                      |
+| B5      | §3.5: `FEATURE_PERSON_LINK` shared by D4b + D5; flag forbidden before D5 specs are green; outbox + in-transaction notifications; `notify_status` on the link.                                                                                                          |
+| C2      | §2.9 three-directory staged migration with `NOT VALID`/`VALIDATE`, `CONCURRENTLY`, timeouts, rollback.                                                                                                                                                                 |
+| C3      | §2.4: atomic counters, resend limits, void-all-challenges, unknown tokens charge nothing.                                                                                                                                                                              |
+| C4      | §2.5/§3.4: actor ids, reason-code enum, note never auto-shown.                                                                                                                                                                                                         |
+| C5      | §2.7: four-field provenance compare, deleted-row `missing` count, fail-closed collisions, shared lock discipline, single transaction.                                                                                                                                  |
+| C7      | §6: D1 and D2 re-graded T4; LOC labelled estimates.                                                                                                                                                                                                                    |
+| C8      | §2.4 `send_status`, §7.2 OQ-13 interim: email-only is a capability limitation.                                                                                                                                                                                         |
+| OQ      | §7.1 derived (3, 4, 5, 8, 11) and §7.2 owner (1, 2, 6, 7, 9, 10, 12, 13) with interim defaults and blocked slices.                                                                                                                                                     |
+| B6 (R3) | §3.2 step 4 returns exactly the §7.2 OQ-10 interim payload (coach, Person display name, family kinds; no counts/dates); §3.3 proposal pre-verification shows no Person name; one disclosure contract.                                                                  |
+| B7 (R3) | §2.9: four directories — unique keys before the FKs that reference them (`Person(id, coach_id)` CONCURRENTLY in D3-2, promoted in D3-3 before `NOT VALID` FKs, validated in D3-4; `PersonLink` triple unique before its anchor FK in D3-1); S11 pin 173 → 177/178/179. |
+| B5 (R3) | §3.5: unlink routes mounted outside every `FEATURE_GATED_ROUTES` prefix (chosen over an operational no-disable invariant, reasons stated); §3.4 routes renamed; alert on flag-off with open links.                                                                     |
