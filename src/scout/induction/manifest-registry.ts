@@ -4,7 +4,11 @@ import type { CanonicalFamily, SourceMappingSpec } from '../reconstruct/mapping-
 import type { NativeRuleSet } from '../reconstruct/native/native-rules';
 import type { InductionManifestV1 } from './contract';
 import { mappingSpecDigest } from './digest';
-import { isCanonicalFamily, parseInductionManifest } from './parse';
+import {
+  isCanonicalFamily,
+  parseInductionManifest,
+  parseInductionManifestForRuntime,
+} from './parse';
 
 // S10-A — the induction package registry (D-S10-1 V1-V6). Loaded once, read-only, fail closed and
 // loud like `source-mapper-registry.ts` and `native-rule-registry.ts`. The mapping specs and
@@ -21,9 +25,25 @@ function byteOrder(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Load and strictly validate every `*.json` manifest in byte-sorted filename order. */
+/**
+ * S12-B2 — TEST-ONLY artifacts (`testOnly` manifests, `test_only` verifiers) are allowed ONLY when
+ * the runtime is explicitly development or test (trimmed, case-insensitive). Everything else,
+ * including an unset or blank `NODE_ENV`, production, staging and unknown spellings, refuses them:
+ * fail closed, so a deployable image that never sets `NODE_ENV` cannot trust a committed test key.
+ */
+export function testOnlyArtifactsAllowed(nodeEnv: string | undefined): boolean {
+  const mode = (nodeEnv ?? '').trim().toLowerCase();
+  return mode === 'development' || mode === 'test';
+}
+
+/**
+ * Load and strictly validate every `*.json` manifest in byte-sorted filename order. With
+ * `refuseTestOnly` (default: the runtime is not explicitly development/test) a TEST-ONLY manifest is
+ * validated and then not loaded, and TEST-ONLY verifiers are dropped from the others.
+ */
 export function loadInductionManifests(
   dir: string = INDUCTION_MANIFESTS_DIR,
+  refuseTestOnly: boolean = !testOnlyArtifactsAllowed(process.env.NODE_ENV),
 ): InductionManifestV1[] {
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir)
@@ -33,28 +53,30 @@ export function loadInductionManifests(
     throw new Error(`induction manifest directory ${dir} is present but has no *.json manifest`);
   }
   const seen = new Set<string>();
-  return files.map((name) => {
-    const path = join(dir, name);
-    let raw: unknown;
-    try {
-      raw = JSON.parse(readFileSync(path, 'utf8'));
-    } catch (err) {
-      throw new Error(
-        `induction manifest ${path} is not valid JSON: ${err instanceof Error ? err.message : 'parse error'}`,
-      );
-    }
-    const manifest = parseInductionManifest(raw, path);
-    if (name !== `${manifest.sourcePlatform}.json`) {
-      throw new Error(
-        `induction manifest ${path} must be named <sourcePlatform>.json (${manifest.sourcePlatform})`,
-      );
-    }
-    if (seen.has(manifest.sourcePlatform)) {
-      throw new Error(`duplicate induction manifest for ${manifest.sourcePlatform} (${path})`);
-    }
-    seen.add(manifest.sourcePlatform);
-    return manifest;
-  });
+  return files
+    .map((name) => {
+      const path = join(dir, name);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(path, 'utf8'));
+      } catch (err) {
+        throw new Error(
+          `induction manifest ${path} is not valid JSON: ${err instanceof Error ? err.message : 'parse error'}`,
+        );
+      }
+      const manifest = parseInductionManifest(raw, path);
+      if (name !== `${manifest.sourcePlatform}.json`) {
+        throw new Error(
+          `induction manifest ${path} must be named <sourcePlatform>.json (${manifest.sourcePlatform})`,
+        );
+      }
+      if (seen.has(manifest.sourcePlatform)) {
+        throw new Error(`duplicate induction manifest for ${manifest.sourcePlatform} (${path})`);
+      }
+      seen.add(manifest.sourcePlatform);
+      return parseInductionManifestForRuntime(raw, path, refuseTestOnly);
+    })
+    .filter((manifest): manifest is InductionManifestV1 => manifest !== null);
 }
 
 /** One source's validated package: manifest plus the facts the evaluator binds to. */
