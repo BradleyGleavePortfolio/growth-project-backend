@@ -343,13 +343,16 @@ describe('importer contract (R80 freeze)', () => {
       expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
         '#/components/schemas/ScoutEntitiesResult',
       );
-      // page metadata only — deliberately NOT a full-collection total.
+      // page metadata only — deliberately NOT a full-collection total. S11-E adds
+      // `unclassified_staged` (staged rows no spec classifies; an honesty aggregate over the
+      // run's (platform, token) groups, not a row total).
       expect(props('ScoutEntitiesResult')).toEqual([
         'entities',
         'family',
         'intent_id',
         'next_cursor',
         'page_count',
+        'unclassified_staged',
       ]);
     });
 

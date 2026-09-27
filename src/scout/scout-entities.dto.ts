@@ -92,7 +92,7 @@ export class ScoutEntitiesQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `next_cursor` by a prior call ' +
-      'for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits scoped v2. ' +
+      'for the SAME intent + family. Accepts legacy, scoped v2 and scoped v3 tokens; emits scoped v3 (row-precise). ' +
       'Omit for the first page. A malformed or mismatched cursor, or a legacy cursor that ' +
       'no longer resolves to one reconstructed row, is a 400 (fail closed): restart ' +
       'pagination from the first page.',
@@ -225,4 +225,15 @@ export class ScoutEntitiesResult {
     description: 'Opaque cursor for the next page, or null when this is the last page.',
   })
   next_cursor!: string | null;
+
+  @ApiProperty({
+    description:
+      'Staged entities of this intent whose (source_platform, step token) no source mapping ' +
+      'spec classifies to ANY family (unregistered platform or unmapped token). Counted so an ' +
+      'unreadable staged row is never a silent absence; such rows are never listed. Not a ' +
+      "collection total: it is an aggregate over the run's few (platform, token) groups. Staged " +
+      'rows of other families are not counted here.',
+    example: 0,
+  })
+  unclassified_staged!: number;
 }

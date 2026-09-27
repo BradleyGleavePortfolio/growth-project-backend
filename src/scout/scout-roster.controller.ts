@@ -34,7 +34,7 @@ export class ScoutRosterController {
     description:
       'Returns the invite-pending roster Person records reconstructed from one ' +
       'settled crawl intent, joined to the reconstruction ledger, with honest ' +
-      'accounting { staged, reconstructed, skipped, failed } and deterministic, ' +
+      'accounting { staged, reconstructed, skipped, failed, unclassified } and deterministic, ' +
       'bounded cursor pagination. Excludes deleted and cross-tenant rows; never ' +
       'returns email or billing fields. Returns 404 when the intent is unknown ' +
       'for the caller or when the scout flags are off. The response carries ' +

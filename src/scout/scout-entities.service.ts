@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
+import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
 import {
   decodeScoutCursor,
   encodeScoutCursor,
@@ -19,6 +20,7 @@ import {
   ReconstructedEntityDto,
   ScoutEntitiesResult,
 } from './scout-entities.dto';
+import { classifyFamilyScope, familyScopeWhere } from './scout-family-scope';
 import { RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 
 /** Prisma transaction client — the interactive-transaction handle passed to $transaction. */
@@ -28,6 +30,7 @@ type Tx = Prisma.TransactionClient;
 type LedgerPageRow = {
   source_id: string;
   source_platform: string;
+  entity_type: string;
   target_id: string | null;
   target_kind: string | null;
 };
@@ -67,6 +70,12 @@ type NativeRecord = { id: string; name: string; created_at: Date; updated_at: Da
  *    settled-intent gate re-run every call.
  *  - Honest page metadata, no total scan: `page_count` is the size of THIS page;
  *    the endpoint issues no unbounded count query.
+ *  - S11-E family scope: staged and ledger rows carry the source's own step
+ *    token, so the requested family is resolved per (source_platform, token)
+ *    pair through the SAME registry the engine plans with — a token-mapped
+ *    source reads exactly like the legacy token == family convention. Staged
+ *    rows no spec can classify are reported in `unclassified_staged`, never a
+ *    silent absence and never served.
  *  - Erasure preserved: a cascade-erased entity is simply absent from the join,
  *    so it drops from the page — there is no `Deleted` state to leak.
  *  - Read-only, idempotent, PII-safe: no mutation, no email/billing/secret in the
@@ -80,6 +89,15 @@ type NativeRecord = { id: string; name: string; created_at: Date; updated_at: Da
  */
 @Injectable()
 export class ScoutEntitiesService {
+  /**
+   * S11-E: the `(platform, token) → family` registry — the same builder and the
+   * same repository data-only specs the engine reads
+   * (`scout-reconstruct.service.ts` `sourceMappers`). An instance field so a
+   * harness that composes an injected registry for the engine can hand the
+   * reader the identical one.
+   */
+  private readonly sourceMappers = buildSourceMapperRegistry();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
@@ -107,11 +125,10 @@ export class ScoutEntitiesService {
     }
     const after = decodeScoutCursor(cursor, coachId, intentId, family);
 
-    const where = {
-      coach_id: coachId,
-      intent_id: intentId,
-      entity_type: family,
-    };
+    // Tenant scope only. The family is NOT a literal `entity_type` filter on the
+    // staged/ledger tables: they carry the source's own step token (S11-E), so the
+    // family is resolved per (source_platform, token) pair inside the snapshot.
+    const tenant = { coach_id: coachId, intent_id: intentId };
 
     // Read the settled/ownership gate AND the entity page in ONE RepeatableRead
     // snapshot, so the rows returned can never disagree with the gate under a
@@ -131,9 +148,38 @@ export class ScoutEntitiesService {
           throw new NotFoundException();
         }
 
+        // S11-E: two bounded, tenant-scoped aggregates over the run's
+        // (platform, token) groups — staged (the same groupBy the engine plans
+        // from) and ledger — classified through the SAME registry the engine
+        // uses. Neither is a full-collection total: they group a run's few
+        // (platform, token) pairs, never its rows. A staged group no spec can
+        // classify is counted in `unclassified_staged` and never served.
+        const stagedGroups = await tx.scoutIngestEntity.groupBy({
+          by: ['source_platform', 'entity_type'],
+          where: tenant,
+          _count: { _all: true },
+        });
+        const ledgerGroups = await tx.scoutReconstructionLedger.groupBy({
+          by: ['source_platform', 'entity_type'],
+          where: tenant,
+          _count: { _all: true },
+        });
+        const scope = classifyFamilyScope(this.sourceMappers, family, stagedGroups, ledgerGroups);
+
+        if (scope.pairs.length === 0) {
+          // Nothing of this family was staged or ledgered for the run. A legacy
+          // token cannot name a boundary in an empty scope — the same 400 its
+          // lookup would produce; a v2 or absent cursor is the truthful empty page.
+          if (after !== null && after.p === undefined) {
+            throw new BadRequestException('malformed cursor');
+          }
+          return { scope, hasMore: false, pageRows: [] as LedgerPageRow[], entities: [] };
+        }
+        const where = familyScopeWhere(coachId, intentId, scope);
+
         // Q1: a legacy token becomes a full (source_id, source_platform)
         // boundary here — after the gate, before any page read, and never
-        // outside this (coach, intent, family). Unresolvable is a 400.
+        // outside this (coach, intent, family) scope. Unresolvable is a 400.
         const position = await resolveScoutCursor(
           tx,
           { ...where, status: RECONSTRUCT_STATUS.reconstructed },
@@ -141,16 +187,24 @@ export class ScoutEntitiesService {
         );
 
         // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
-        // second count query. Ordered by (source_id, source_platform) asc on every
-        // page — the same deterministic order the reconstruction write pages in —
-        // so the cursor is stable and identity ties never repeat or skip a row.
+        // second count query. Ordered by (source_id, source_platform, entity_type)
+        // asc on every page — the ledger's unique key, so the order is total even
+        // when two tokens of one platform share an id space — and the cursor names
+        // one row: ties never repeat or skip a row. The cursor continuation is
+        // AND-ed: the scope already owns the `OR`.
         const ledgerPage = await tx.scoutReconstructionLedger.findMany({
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...scoutCursorWhere(position),
+            ...(position === null ? {} : { AND: [scoutCursorWhere(position)] }),
           },
-          select: { source_id: true, source_platform: true, target_id: true, target_kind: true },
+          select: {
+            source_id: true,
+            source_platform: true,
+            entity_type: true,
+            target_id: true,
+            target_kind: true,
+          },
           orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
@@ -159,20 +213,27 @@ export class ScoutEntitiesService {
         const pageRows = hasMore ? ledgerPage.slice(0, limit) : ledgerPage;
         const entities = await this.materialize(tx, coachId, family, pageRows);
 
-        return { hasMore, pageRows, entities };
+        return { scope, hasMore, pageRows, entities };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
 
-    const { hasMore, pageRows, entities } = snapshot;
+    const { scope, hasMore, pageRows, entities } = snapshot;
 
     // next_cursor is anchored to the LEDGER row (not a filtered entity), so
     // paging advances deterministically even when a cascade-erased row is dropped
-    // from the visible page. Emitted as a scoped v2 token naming the last row's
-    // (source_id, source_platform).
+    // from the visible page. Emitted as a scoped v3 token naming the last row's
+    // (source_id, source_platform, entity_type).
     const last = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1] : undefined;
     const nextCursor = last
-      ? encodeScoutCursor(coachId, intentId, family, last.source_id, last.source_platform)
+      ? encodeScoutCursor(
+          coachId,
+          intentId,
+          family,
+          last.source_id,
+          last.source_platform,
+          last.entity_type,
+        )
       : null;
 
     this.analytics.capture(coachId, Events.SCOUT_RECONSTRUCT_ENTITIES_READ, {
@@ -188,6 +249,7 @@ export class ScoutEntitiesService {
       entities,
       page_count: entities.length,
       next_cursor: nextCursor,
+      unclassified_staged: scope.unclassified,
     };
   }
 

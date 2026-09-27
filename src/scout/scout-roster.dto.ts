@@ -61,7 +61,7 @@ export class ScoutRosterQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `page.next_cursor` by a prior ' +
-      'call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits scoped v2. ' +
+      'call. Omit for the first page. Accepts legacy, scoped v2 and scoped v3 tokens; emits scoped v3 (row-precise). ' +
       'A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed ' +
       'row, is a 400 (fail closed): restart pagination from the first page.',
     maxLength: SCOUT_CURSOR_MAX_LENGTH,
@@ -94,7 +94,13 @@ export class ScoutRosterQueryDto {
  * `staged > reconstructed + skipped + failed`.
  */
 export class ScoutRosterAccountingDto {
-  @ApiProperty({ description: 'Staged client entities considered for this intent.', example: 5 })
+  @ApiProperty({
+    description:
+      'Staged entities of this intent that classify to the roster (clients) family by their ' +
+      "source's own (source_platform, step token) pair through the source mapping registry " +
+      '(legacy token == family included).',
+    example: 5,
+  })
   staged!: number;
 
   @ApiProperty({ description: 'Entities mapped to a roster Person.', example: 3 })
@@ -105,6 +111,16 @@ export class ScoutRosterAccountingDto {
 
   @ApiProperty({ description: 'Entities that errored during reconstruction.', example: 1 })
   failed!: number;
+
+  @ApiProperty({
+    description:
+      'Staged entities of this intent whose (source_platform, step token) no source mapping ' +
+      'spec classifies to ANY family (unregistered platform or unmapped token). Counted here ' +
+      'so an unreadable staged row is never a silent zero; such rows are never listed. Staged ' +
+      'rows of other families are not counted here.',
+    example: 0,
+  })
+  unclassified!: number;
 }
 
 /**

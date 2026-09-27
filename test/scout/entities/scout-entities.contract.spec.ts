@@ -45,6 +45,7 @@ function stubService(): ScoutEntitiesService {
         entities: [],
         page_count: 0,
         next_cursor: null,
+        unclassified_staged: 0,
       }),
     } as Partial<ScoutEntitiesService>,
   ) as ScoutEntitiesService;
@@ -134,8 +135,17 @@ describe('IMPORTER-I OpenAPI route shape', () => {
     const props = Object.keys(
       rec(dig(document, 'components', 'schemas', 'ScoutEntitiesResult', 'properties')),
     ).sort();
-    expect(props).toEqual(['entities', 'family', 'intent_id', 'next_cursor', 'page_count']);
-    // No full-collection total is advertised — page_count is the only count.
+    // S11-E adds `unclassified_staged`: an aggregate over the run's (platform, token) groups
+    // that no spec classifies — an honesty field, not a collection total.
+    expect(props).toEqual([
+      'entities',
+      'family',
+      'intent_id',
+      'next_cursor',
+      'page_count',
+      'unclassified_staged',
+    ]);
+    // No full-collection total is advertised — page_count is the only row count.
     expect(props).not.toContain('total');
     expect(props).not.toContain('total_count');
   });
@@ -230,6 +240,7 @@ describe('IMPORTER-I PR-M4 fixture consumer', () => {
       entities,
       page_count: entities.length,
       next_cursor: nextCursor,
+      unclassified_staged: 0,
     };
   }
 

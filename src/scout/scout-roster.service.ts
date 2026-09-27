@@ -3,6 +3,7 @@ import { PersonState, Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
+import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
 import {
   decodeScoutCursor,
   encodeScoutCursor,
@@ -10,6 +11,7 @@ import {
   scoutCursorOrder,
   scoutCursorWhere,
 } from './scout-cursor';
+import { classifyFamilyScope, familyScopeWhere, inFamilyScope } from './scout-family-scope';
 import { RECONSTRUCT_ENTITY_TYPE, RECONSTRUCT_STATUS } from './scout-reconstruct.dto';
 import {
   ROSTER_BRIDGE_PENDING,
@@ -35,8 +37,13 @@ type Tx = Prisma.TransactionClient;
  *  - No existence oracle: an unknown OR cross-tenant intent both 404 (gated on a
  *    ScoutImport row for this coach), indistinguishable from each other.
  *  - Honest accounting: `staged` is the authoritative ScoutIngestEntity source
- *    count; reconstructed/skipped/failed are read from the durable ledger, so a
- *    partial pass is visible (staged > reconstructed + skipped + failed).
+ *    count of the rows that classify to the roster family; reconstructed/
+ *    skipped/failed are read from the durable ledger, so a partial pass is
+ *    visible (staged > reconstructed + skipped + failed). S11-E: the family is
+ *    resolved per staged (source_platform, token) pair through the SAME registry
+ *    the engine plans with, so a token-mapped source's roster is read exactly like
+ *    the legacy token == family convention; staged rows no spec can classify are
+ *    reported in `unclassified` — never a silent zero, never served.
  *  - Deterministic, bounded pagination: reconstructed ledger rows are read one
  *    bounded page at a time ordered by (source_id, source_platform); the cursor
  *    is an opaque forward-only scoped v2 token naming that boundary. A legacy
@@ -49,6 +56,15 @@ type Tx = Prisma.TransactionClient;
  */
 @Injectable()
 export class ScoutRosterService {
+  /**
+   * S11-E: the `(platform, token) → family` registry — the same builder and the
+   * same repository data-only specs the engine reads
+   * (`scout-reconstruct.service.ts` `sourceMappers`). An instance field so a
+   * harness that composes an injected registry for the engine can hand the
+   * reader the identical one.
+   */
+  private readonly sourceMappers = buildSourceMapperRegistry();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
@@ -69,11 +85,10 @@ export class ScoutRosterService {
     }
     const after = decodeScoutCursor(cursor, coachId, intentId, RECONSTRUCT_ENTITY_TYPE);
 
-    const where = {
-      coach_id: coachId,
-      intent_id: intentId,
-      entity_type: RECONSTRUCT_ENTITY_TYPE,
-    };
+    // Tenant scope only. The family is NOT a literal `entity_type` filter: staged
+    // and ledger rows carry the source's own step token (S11-E), so the roster
+    // family is resolved per (source_platform, token) pair inside the snapshot.
+    const tenant = { coach_id: coachId, intent_id: intentId };
 
     // Read the gate, the counts, and the roster page in ONE RepeatableRead
     // snapshot. All reads therefore see a single consistent moment, so the
@@ -96,33 +111,73 @@ export class ScoutRosterService {
           throw new NotFoundException();
         }
 
+        // S11-E: two bounded, tenant-scoped aggregates — the run's staged
+        // (platform, token) groups (the same groupBy the engine plans from) and
+        // the ledger's (status, platform, token) groups — classified through the
+        // SAME registry the engine uses. `staged` counts only the groups that
+        // classify to the roster family; a group no spec can classify is counted
+        // in `unclassified` (never a silent zero) and never served.
+        const stagedGroups = await tx.scoutIngestEntity.groupBy({
+          by: ['source_platform', 'entity_type'],
+          where: tenant,
+          _count: { _all: true },
+        });
+        const ledgerGroups = await tx.scoutReconstructionLedger.groupBy({
+          by: ['status', 'source_platform', 'entity_type'],
+          where: tenant,
+          _count: { _all: true },
+        });
+        const scope = classifyFamilyScope(
+          this.sourceMappers,
+          RECONSTRUCT_ENTITY_TYPE,
+          stagedGroups,
+          ledgerGroups,
+        );
+        const byStatus = new Map<string, number>();
+        for (const g of ledgerGroups) {
+          if (!inFamilyScope(scope, g)) continue;
+          byStatus.set(g.status, (byStatus.get(g.status) ?? 0) + g._count._all);
+        }
+
+        if (scope.pairs.length === 0) {
+          // Nothing of this family was staged or ledgered for the run. A legacy
+          // token cannot name a boundary in an empty scope — the same 400 its
+          // lookup would produce; a v2 or absent cursor is the truthful empty page.
+          if (after !== null && after.p === undefined) {
+            throw new BadRequestException('malformed cursor');
+          }
+          return { scope, byStatus, hasMore: false, pageRows: [], persons: [] };
+        }
+        const where = familyScopeWhere(coachId, intentId, scope);
+
         // Q1: a legacy token becomes a full (source_id, source_platform)
-        // boundary here — after the gate, before any count or page read, and
-        // never outside this scope. Unresolvable is a 400; nothing else runs.
+        // boundary here — after the gate, before any page read, and never
+        // outside this scope. Unresolvable is a 400; nothing else runs.
         const position = await resolveScoutCursor(
           tx,
           { ...where, status: RECONSTRUCT_STATUS.reconstructed },
           after,
         );
 
-        // staged: authoritative source count. reconstructed/skipped/failed: ledger.
-        const staged = await tx.scoutIngestEntity.count({ where });
-        const grouped = await tx.scoutReconstructionLedger.groupBy({
-          by: ['status'],
-          where,
-          _count: { _all: true },
-        });
         // Fetch limit + 1 reconstructed ledger rows to compute has_more without a
-        // second count query. Ordered by (source_id, source_platform) asc on every
-        // page — the same deterministic order the reconstruction write pages in —
-        // so the cursor is stable and identity ties never repeat or skip a row.
+        // second count query. Ordered by (source_id, source_platform, entity_type)
+        // asc on every page — the ledger's unique key, so the order is total even
+        // when two tokens of one platform share an id space — and the cursor names
+        // one row: ties never repeat or skip a row. The cursor continuation is
+        // AND-ed: the scope already owns the `OR`.
         const ledgerPage = await tx.scoutReconstructionLedger.findMany({
           where: {
             ...where,
             status: RECONSTRUCT_STATUS.reconstructed,
-            ...scoutCursorWhere(position),
+            ...(position === null ? {} : { AND: [scoutCursorWhere(position)] }),
           },
-          select: { source_id: true, source_platform: true, target_id: true, target_kind: true },
+          select: {
+            source_id: true,
+            source_platform: true,
+            entity_type: true,
+            target_id: true,
+            target_kind: true,
+          },
           orderBy: scoutCursorOrder(),
           take: limit + 1,
         });
@@ -131,19 +186,18 @@ export class ScoutRosterService {
         const pageRows = hasMore ? ledgerPage.slice(0, limit) : ledgerPage;
         const persons = await this.materialize(tx, coachId, pageRows);
 
-        return { staged, grouped, hasMore, pageRows, persons };
+        return { scope, byStatus, hasMore, pageRows, persons };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
 
-    const { staged, grouped, hasMore, pageRows, persons } = snapshot;
-    const count = (status: string): number =>
-      grouped.find((g) => g.status === status)?._count._all ?? 0;
+    const { scope, byStatus, hasMore, pageRows, persons } = snapshot;
+    const count = (status: string): number => byStatus.get(status) ?? 0;
 
     // next_cursor is anchored to the LEDGER row (not a filtered Person), so
     // paging advances deterministically even when a Deleted person is skipped
-    // from the visible list. Emitted as a scoped v2 token naming the last row's
-    // (source_id, source_platform).
+    // from the visible list. Emitted as a scoped v3 token naming the last row's
+    // (source_id, source_platform, entity_type).
     const last = hasMore && pageRows.length > 0 ? pageRows[pageRows.length - 1] : undefined;
     const nextCursor = last
       ? encodeScoutCursor(
@@ -152,6 +206,7 @@ export class ScoutRosterService {
           RECONSTRUCT_ENTITY_TYPE,
           last.source_id,
           last.source_platform,
+          last.entity_type,
         )
       : null;
 
@@ -165,10 +220,11 @@ export class ScoutRosterService {
     return {
       intent_id: intentId,
       accounting: {
-        staged,
+        staged: scope.staged,
         reconstructed: count(RECONSTRUCT_STATUS.reconstructed),
         skipped: count(RECONSTRUCT_STATUS.skipped),
         failed: count(RECONSTRUCT_STATUS.failed),
+        unclassified: scope.unclassified,
       },
       persons,
       page: { limit, next_cursor: nextCursor, has_more: hasMore },

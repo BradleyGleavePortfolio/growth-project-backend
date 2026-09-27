@@ -50,7 +50,7 @@ function makeReq(id: string): AuthedRequest {
 
 const emptyResult: ScoutRosterResult = {
   intent_id: 'intent-1',
-  accounting: { staged: 0, reconstructed: 0, skipped: 0, failed: 0 },
+  accounting: { staged: 0, reconstructed: 0, skipped: 0, failed: 0, unclassified: 0 },
   persons: [],
   page: { limit: 50, next_cursor: null, has_more: false },
   // S8-F: response-level interim Person bridge qualifier, present on empty pages too.

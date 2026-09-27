@@ -12,6 +12,7 @@ import {
 } from '../../../src/scout/scout-entities.dto';
 import { RECONSTRUCT_FAMILY } from '../../../src/scout/scout-reconstruct.dto';
 import { decodeScoutCursor } from '../../../src/scout/scout-cursor';
+import { buildSourceMapperRegistry } from '../../../src/scout/reconstruct/source-mapper-registry';
 
 /**
  * ScoutEntitiesService unit tests (IMPORTER-I).
@@ -38,6 +39,14 @@ interface LedgerRow {
   target_id: string | null;
   /** S8-F: the ledger's nullable kind. Omitted (legacy) reads back as NULL. */
   target_kind?: string | null;
+}
+/** S11-E: a staged row (the reader aggregates these per (platform, token) group). */
+interface IngestRow {
+  coach_id: string;
+  intent_id: string;
+  entity_type: string;
+  source_id: string;
+  source_platform: string;
 }
 /** S8-F: a native WorkoutPlan / WorkoutProgram row (only the columns the reader touches). */
 interface NativeRow {
@@ -74,11 +83,12 @@ interface EntityRow {
 interface Where {
   coach_id?: string;
   intent_id?: string;
-  entity_type?: string;
+  entity_type?: string | { gt?: string };
   status?: string;
   source_id?: string | { gt?: string };
-  source_platform?: { gt?: string };
+  source_platform?: string | { gt?: string };
   OR?: Where[];
+  AND?: Where[];
   id?: { in?: string[] };
   archived_at?: null;
   native_kind?: string;
@@ -94,13 +104,16 @@ class FakePrisma {
     terminal_status: string | null;
   }> = [];
   ledgerRows: LedgerRow[] = [];
+  ingest: IngestRow[] = [];
   entities: EntityRow[] = [];
+  /** Every aggregate (groupBy), in order, so boundedness is proven by behaviour. */
+  groupReads: Array<{ table: string; by: string[]; where: Where }> = [];
 
   transactionCalls: Array<{ isolationLevel?: string }> = [];
   private txDepth = 0;
   readsOutsideTx = 0;
   /** Every ledger findMany, in order, so tests can prove what was (not) read. */
-  ledgerReads: Array<{ where: Where; take?: number; orderBy?: unknown }> = [];
+  ledgerReads: Array<{ where: Where; take?: number; orderBy?: unknown; select?: unknown }> = [];
 
   $transaction = async <T>(
     fn: (tx: FakePrisma) => Promise<T>,
@@ -130,8 +143,32 @@ class FakePrisma {
     },
   };
 
+  scoutIngestEntity = {
+    groupBy: async (args: { by: string[]; where: Where }) => {
+      this.noteRead();
+      this.groupReads.push({ table: 'ingest', by: args.by, where: args.where });
+      return groupRows(
+        this.ingest.filter((r) => matchBase(r, args.where)),
+        args.by,
+      );
+    },
+  };
+
   scoutReconstructionLedger = {
-    findMany: async (args: { where: Where; take?: number; orderBy?: unknown }) => {
+    groupBy: async (args: { by: string[]; where: Where }) => {
+      this.noteRead();
+      this.groupReads.push({ table: 'ledger', by: args.by, where: args.where });
+      return groupRows(
+        this.ledgerRows.filter((r) => matchLedger(r, args.where)),
+        args.by,
+      );
+    },
+    findMany: async (args: {
+      where: Where;
+      take?: number;
+      orderBy?: unknown;
+      select?: unknown;
+    }) => {
       this.noteRead();
       this.ledgerReads.push(args);
       // Real (source_id, source_platform) order and predicate semantics: the
@@ -142,6 +179,7 @@ class FakePrisma {
       return rows.map((r) => ({
         source_id: r.source_id,
         source_platform: r.source_platform,
+        entity_type: r.entity_type,
         target_id: r.target_id,
         target_kind: r.target_kind ?? null,
       }));
@@ -225,19 +263,63 @@ class FakePrisma {
   };
 }
 
+/** A `groupBy` aggregate row, keyed by the requested `by` columns. */
+type GroupRow = { [column: string]: unknown; _count: { _all: number } };
+
+/** Real distinct-group semantics: one row per distinct `by` tuple with its `_count._all`. */
+function groupRows(rows: readonly object[], by: string[]): GroupRow[] {
+  const groups = new Map<string, GroupRow>();
+  for (const r of rows) {
+    const cols = r as Record<string, unknown>;
+    const key = by.map((k) => String(cols[k])).join('\u0000');
+    const g = groups.get(key);
+    if (g) g._count._all += 1;
+    else {
+      const row: GroupRow = { _count: { _all: 1 } };
+      for (const k of by) row[k] = String(cols[k]);
+      groups.set(key, row);
+    }
+  }
+  return [...groups.values()];
+}
+
+/** Generic predicate matcher for the columns the reader filters on (equality, gt, AND/OR). */
 function matchBase(
-  r: { coach_id: string; intent_id: string; entity_type: string },
+  r: { coach_id: string; intent_id: string; entity_type: string; source_platform: string },
   w: Where,
 ): boolean {
-  return (
-    (w.coach_id === undefined || r.coach_id === w.coach_id) &&
-    (w.intent_id === undefined || r.intent_id === w.intent_id) &&
-    (w.entity_type === undefined || r.entity_type === w.entity_type)
-  );
+  if (w.coach_id !== undefined && r.coach_id !== w.coach_id) return false;
+  if (w.intent_id !== undefined && r.intent_id !== w.intent_id) return false;
+  if (typeof w.entity_type === 'string' && r.entity_type !== w.entity_type) return false;
+  if (
+    typeof w.entity_type === 'object' &&
+    w.entity_type.gt !== undefined &&
+    !(r.entity_type > w.entity_type.gt)
+  )
+    return false;
+  if (typeof w.source_platform === 'string' && r.source_platform !== w.source_platform)
+    return false;
+  if (
+    typeof w.source_platform === 'object' &&
+    w.source_platform.gt !== undefined &&
+    !(r.source_platform > w.source_platform.gt)
+  )
+    return false;
+  if (w.OR !== undefined && !w.OR.some((o) => matchBase(r, o))) return false;
+  if (w.AND !== undefined && !w.AND.every((a) => matchBase(r, a))) return false;
+  return true;
 }
 
 function matchLedger(r: LedgerRow, w: Where): boolean {
-  if (!matchBase(r, w)) return false;
+  if (w.coach_id !== undefined && r.coach_id !== w.coach_id) return false;
+  if (w.intent_id !== undefined && r.intent_id !== w.intent_id) return false;
+  if (typeof w.entity_type === 'string' && r.entity_type !== w.entity_type) return false;
+  if (
+    typeof w.entity_type === 'object' &&
+    w.entity_type.gt !== undefined &&
+    !(r.entity_type > w.entity_type.gt)
+  )
+    return false;
   if (w.status !== undefined && r.status !== w.status) return false;
   if (typeof w.source_id === 'string' && r.source_id !== w.source_id) return false;
   if (
@@ -246,21 +328,43 @@ function matchLedger(r: LedgerRow, w: Where): boolean {
     !(r.source_id > w.source_id.gt)
   )
     return false;
-  if (w.source_platform?.gt !== undefined && !(r.source_platform > w.source_platform.gt))
+  if (typeof w.source_platform === 'string' && r.source_platform !== w.source_platform)
+    return false;
+  if (
+    typeof w.source_platform === 'object' &&
+    w.source_platform.gt !== undefined &&
+    !(r.source_platform > w.source_platform.gt)
+  )
     return false;
   if (w.OR !== undefined && !w.OR.some((o) => matchLedger(r, o))) return false;
+  if (w.AND !== undefined && !w.AND.every((a) => matchLedger(r, a))) return false;
   return true;
 }
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** The ledger's unique key order: (source_id, source_platform, entity_type). */
 const byIdentity = (a: LedgerRow, b: LedgerRow): number =>
-  cmp(a.source_id, b.source_id) || cmp(a.source_platform, b.source_platform);
+  cmp(a.source_id, b.source_id) ||
+  cmp(a.source_platform, b.source_platform) ||
+  cmp(a.entity_type, b.entity_type);
 
 const b64 = (v: string): string => Buffer.from(v, 'utf8').toString('base64url');
 /** The exact scoped v2 token Q1 must emit for an entity-family boundary. */
 function expectedV2(coach: string, intent: string, f: string, s: string, p: string): string {
   const o = 'source_id:asc,source_platform:asc';
   return `v2.${b64(JSON.stringify({ v: 2, c: coach, i: intent, f, o, s, p }))}`;
+}
+/** The exact scoped v3 (row) token the reader must emit for an entity-family boundary. */
+function expectedV3(
+  coach: string,
+  intent: string,
+  f: string,
+  s: string,
+  p: string,
+  t: string,
+): string {
+  const o = 'source_id:asc,source_platform:asc,entity_type:asc';
+  return `v3.${b64(JSON.stringify({ v: 3, c: coach, i: intent, f, o, s, p, t }))}`;
 }
 /** The legacy scope-bound token Q0 emitted for an entity-family boundary. */
 function legacyEntities(coach: string, intent: string, f: string, s: string): string {
@@ -286,7 +390,14 @@ async function makeService(fake: FakePrisma): Promise<{
   return { service: moduleRef.get(ScoutEntitiesService), capture };
 }
 
-/** Seed one settled intent with N reconstructed entities of a family. */
+/**
+ * Seed one settled intent with N reconstructed entities of a family. Default
+ * source: the legacy convention (`truecoach`, staged/ledger token == family).
+ * S11-E: `token` seeds a token-mapped source instead (the staged and ledger rows
+ * carry that token, exactly as the engine writes them; the canonical row still
+ * carries the family). `staged: false` seeds ledger + canonical rows only (a
+ * staged twin that is gone), which the reader must still attribute by ledger pair.
+ */
 function seed(
   fake: FakePrisma,
   opts: {
@@ -295,6 +406,8 @@ function seed(
     family?: string;
     reconstructed?: number;
     sourcePlatform?: string;
+    token?: string;
+    staged?: boolean;
     terminalStatus?: string | null;
   },
 ): void {
@@ -302,6 +415,7 @@ function seed(
   const intent = opts.intent ?? INTENT;
   const family = opts.family ?? FAM;
   const platform = opts.sourcePlatform ?? 'truecoach';
+  const token = opts.token ?? family;
   if (!fake.imports.some((i) => i.coach_id === coach && i.intent_id === intent)) {
     fake.imports.push({
       coach_id: coach,
@@ -313,11 +427,26 @@ function seed(
   const recN = opts.reconstructed ?? 0;
   for (let i = 0; i < recN; i++) {
     const sid = `s${String(i).padStart(3, '0')}`;
-    const targetId = `e-${coach}-${family}-${sid}`;
+    // The token joins the id only when it is not the family literal, so every
+    // pre-existing fixture id is unchanged and two tokens of one platform can share a sid.
+    const tokenPart = token === family ? '' : `-${token}`;
+    const targetId =
+      platform === 'truecoach'
+        ? `e-${coach}-${family}${tokenPart}-${sid}`
+        : `e-${coach}-${family}-${platform}${tokenPart}-${sid}`;
+    if (opts.staged !== false) {
+      fake.ingest.push({
+        coach_id: coach,
+        intent_id: intent,
+        entity_type: token,
+        source_id: sid,
+        source_platform: platform,
+      });
+    }
     fake.ledgerRows.push({
       coach_id: coach,
       intent_id: intent,
-      entity_type: family,
+      entity_type: token,
       source_id: sid,
       source_platform: platform,
       status: 'reconstructed',
@@ -434,8 +563,12 @@ describe('ScoutEntitiesService.getEntities', () => {
     expect(page1.next_cursor).not.toBe('s001');
     // Q1: the exact scoped v2 token of the last LEDGER row; first page ordered
     // by (source_id, source_platform) like every later page.
-    expect(page1.next_cursor).toBe(expectedV2(COACH, INTENT, FAM, 's001', 'truecoach'));
-    expect(fake.ledgerReads[0].orderBy).toEqual([{ source_id: 'asc' }, { source_platform: 'asc' }]);
+    expect(page1.next_cursor).toBe(expectedV3(COACH, INTENT, FAM, 's001', 'truecoach', FAM));
+    expect(fake.ledgerReads[0].orderBy).toEqual([
+      { source_id: 'asc' },
+      { source_platform: 'asc' },
+      { entity_type: 'asc' },
+    ]);
 
     const page2 = await service.getEntities(COACH, INTENT, FAM, page1.next_cursor ?? undefined, 2);
     expect(page2.entities.map((e) => e.source_id)).toEqual(['truecoach_s002', 'truecoach_s003']);
@@ -475,12 +608,13 @@ describe('ScoutEntitiesService.getEntities', () => {
         expect(decodeScoutCursor(page.next_cursor, COACH, INTENT, FAM)).toEqual({
           s: page.entities[page.entities.length - 1].source_id.replace('truecoach_', ''),
           p: 'truecoach',
+          t: FAM,
         });
         cursor = page.next_cursor;
       }
       expect(emitted).toEqual([
-        expectedV2(COACH, INTENT, FAM, 's001', 'truecoach'),
-        expectedV2(COACH, INTENT, FAM, 's003', 'truecoach'),
+        expectedV3(COACH, INTENT, FAM, 's001', 'truecoach', FAM),
+        expectedV3(COACH, INTENT, FAM, 's003', 'truecoach', FAM),
       ]);
     });
 
@@ -509,20 +643,27 @@ describe('ScoutEntitiesService.getEntities', () => {
         'truecoach_s003',
       ]);
       const reads = fake.ledgerReads.slice(-2);
+      // S11-E: the family is the registry-resolved (platform, token) pair predicate,
+      // not an `entity_type` literal; the cursor continuation is AND-ed onto it.
       expect(reads[0]).toEqual({
         where: {
           coach_id: COACH,
           intent_id: INTENT,
-          entity_type: FAM,
+          OR: [{ source_platform: 'truecoach', entity_type: FAM }],
           status: 'reconstructed',
           source_id: 's001',
         },
-        select: { source_platform: true },
+        select: { source_platform: true, entity_type: true },
         take: 2,
       });
-      expect(reads[1].where.OR).toEqual([
-        { source_id: { gt: 's001' } },
-        { source_id: 's001', source_platform: { gt: 'truecoach' } },
+      expect(reads[1].where.AND).toEqual([
+        {
+          OR: [
+            { source_id: { gt: 's001' } },
+            { source_id: 's001', source_platform: { gt: 'truecoach' } },
+            { source_id: 's001', source_platform: 'truecoach', entity_type: { gt: FAM } },
+          ],
+        },
       ]);
       expect(fake.readsOutsideTx).toBe(0);
     });
@@ -562,8 +703,11 @@ describe('ScoutEntitiesService.getEntities', () => {
     it('enumerates identity ties exactly once and refuses a tied legacy boundary', async () => {
       const fake = new FakePrisma();
       seed(fake, { reconstructed: 2 });
-      // Future-schema fixture: one source_id reconstructed from three platforms.
-      for (const p of ['c-plat', 'a-plat', 'b-plat']) {
+      // One source_id reconstructed from three REGISTERED platforms (the two
+      // conformance specs declare `workouts`, so the legacy token == family
+      // convention classifies them; an unregistered platform is excluded by the
+      // S11-E scope, see the registry-scoped suite below).
+      for (const p of ['conformance_beta', 'conformance_alpha']) {
         const id = `e-${p}`;
         fake.ledgerRows.push({
           coach_id: COACH,
@@ -598,17 +742,15 @@ describe('ScoutEntitiesService.getEntities', () => {
         cursor = page.next_cursor;
       }
       expect(seen).toEqual([
-        'a-plat_s000',
-        'b-plat_s000',
-        'c-plat_s000',
+        'conformance_alpha_s000',
+        'conformance_beta_s000',
         'truecoach_s000',
         'truecoach_s001',
       ]);
       expect(tokens).toEqual([
-        expectedV2(COACH, INTENT, FAM, 's000', 'a-plat'),
-        expectedV2(COACH, INTENT, FAM, 's000', 'b-plat'),
-        expectedV2(COACH, INTENT, FAM, 's000', 'c-plat'),
-        expectedV2(COACH, INTENT, FAM, 's000', 'truecoach'),
+        expectedV3(COACH, INTENT, FAM, 's000', 'conformance_alpha', FAM),
+        expectedV3(COACH, INTENT, FAM, 's000', 'conformance_beta', FAM),
+        expectedV3(COACH, INTENT, FAM, 's000', 'truecoach', FAM),
       ]);
       await expect(
         service.getEntities(COACH, INTENT, FAM, legacyEntities(COACH, INTENT, FAM, 's000'), 1),
@@ -803,14 +945,18 @@ describe('ScoutEntitiesService.getEntities', () => {
 
   it('is site-agnostic: projects a non-TrueCoach source platform identically', async () => {
     const fake = new FakePrisma();
-    // A structurally-different second adapter shape — canonical rows are read
-    // agnostic of which platform produced them (no adapter-specific read core).
-    seed(fake, { reconstructed: 2, sourcePlatform: 'trainerize' });
+    // A structurally-different second REGISTERED adapter (a conformance spec) —
+    // canonical rows are read agnostic of which platform produced them (no
+    // adapter-specific read core). S11-E: an unregistered platform is excluded.
+    seed(fake, { reconstructed: 2, sourcePlatform: 'conformance_beta' });
     const { service } = await makeService(fake);
     const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
     expect(res.entities).toHaveLength(2);
-    expect(res.entities.every((e) => e.source_platform === 'trainerize')).toBe(true);
-    expect(res.entities.map((e) => e.source_id)).toEqual(['trainerize_s000', 'trainerize_s001']);
+    expect(res.entities.every((e) => e.source_platform === 'conformance_beta')).toBe(true);
+    expect(res.entities.map((e) => e.source_id)).toEqual([
+      'conformance_beta_s000',
+      'conformance_beta_s001',
+    ]);
   });
 
   it('emits a PII-safe analytics read signal (counts only, no labels)', async () => {
@@ -980,6 +1126,17 @@ describe('ScoutEntitiesService S8-F native targets', () => {
   // onto S8-C; the former `it.skip` fallback is gone — a missing family now FAILS
   // the allow-list assertion below rather than skipping).
   const PROGRAMS_FAMILY = RECONSTRUCT_FAMILY.programs;
+  // S11-E: the reader classifies staged/ledger pairs through the registry, so a
+  // `programs` row must sit on a platform whose spec DECLARES that family (the
+  // legacy token == family convention) — resolved from the registry, no slug typed.
+  // Fails loudly if no repository spec declares it (the fixture would then model a
+  // row the engine could never have ledgered).
+  const PROGRAMS_PLATFORM = (() => {
+    for (const mapper of buildSourceMapperRegistry().values()) {
+      if (mapper.spec.families.programs !== undefined) return mapper.sourcePlatform;
+    }
+    throw new Error('no repository spec declares the programs family');
+  })();
 
   function ledger(
     fake: FakePrisma,
@@ -1125,15 +1282,19 @@ describe('ScoutEntitiesService S8-F native targets', () => {
   it('F03: a workout_program row resolves to the owned native program', async () => {
     expect(ENTITY_REVIEW_FAMILIES).toContain(PROGRAMS_FAMILY);
     const fake = new FakePrisma();
-    seed(fake, { family: PROGRAMS_FAMILY });
+    seed(fake, { family: PROGRAMS_FAMILY, sourcePlatform: PROGRAMS_PLATFORM });
     ledger(fake, {
       entity_type: PROGRAMS_FAMILY,
+      source_platform: PROGRAMS_PLATFORM,
       source_id: 'p1',
       target_id: 'prog-1',
       target_kind: 'workout_program',
     });
     program(fake, 'prog-1', { name: '12-Week Strength' });
-    vouch(fake, 'workout_program', 'prog-1', { entity_type: PROGRAMS_FAMILY });
+    vouch(fake, 'workout_program', 'prog-1', {
+      entity_type: PROGRAMS_FAMILY,
+      source_namespace: PROGRAMS_PLATFORM,
+    });
     const { service } = await makeService(fake);
     const res = await service.getEntities(COACH, INTENT, PROGRAMS_FAMILY, undefined, undefined);
     expect(res.entities).toEqual([
@@ -1141,7 +1302,7 @@ describe('ScoutEntitiesService S8-F native targets', () => {
         id: 'prog-1',
         target_kind: ENTITY_TARGET_KIND.workout_program,
         native_id: 'prog-1',
-        source_platform: 'truecoach',
+        source_platform: PROGRAMS_PLATFORM,
         entity_type: PROGRAMS_FAMILY,
         source_id: 'p1',
         client_source_id: null,
@@ -1249,7 +1410,7 @@ describe('ScoutEntitiesService S8-F native targets', () => {
     // cursor is anchored to the LAST LEDGER row (w2), so nothing is re-read.
     expect(page1.entities.map((e) => e.native_id)).toEqual(['plan-1']);
     expect(page1.page_count).toBe(1);
-    expect(page1.next_cursor).toBe(expectedV2(COACH, INTENT, FAM, 'w2', 'truecoach'));
+    expect(page1.next_cursor).toBe(expectedV3(COACH, INTENT, FAM, 'w2', 'truecoach', FAM));
     const page2 = await service.getEntities(COACH, INTENT, FAM, page1.next_cursor ?? undefined, 2);
     expect(page2.entities.map((e) => e.native_id)).toEqual(['plan-3']);
     expect(page2.next_cursor).toBeNull();
@@ -1292,23 +1453,23 @@ describe('ScoutEntitiesService S8-F native targets', () => {
 
   it('F11: native rows carry the ledger provenance, the native name and no invented client link', async () => {
     const fake = new FakePrisma();
-    seed(fake, { sourcePlatform: 'trainerize' });
+    seed(fake, { sourcePlatform: 'conformance_beta' });
     ledger(fake, {
-      source_id: 'tz-77',
-      source_platform: 'trainerize',
+      source_id: 'cb-77',
+      source_platform: 'conformance_beta',
       target_id: 'plan-77',
       target_kind: 'workout_plan',
     });
     plan(fake, 'plan-77', { name: 'Leg Day' });
-    vouch(fake, 'workout_plan', 'plan-77', { source_namespace: 'trainerize' });
+    vouch(fake, 'workout_plan', 'plan-77', { source_namespace: 'conformance_beta' });
     const { service } = await makeService(fake);
     const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
     const row = res.entities[0];
     expect(row).toMatchObject({
       id: 'plan-77',
       native_id: 'plan-77',
-      source_platform: 'trainerize',
-      source_id: 'tz-77',
+      source_platform: 'conformance_beta',
+      source_id: 'cb-77',
       label: 'Leg Day',
       client_source_id: null,
     });
@@ -1360,5 +1521,390 @@ describe('ScoutEntitiesService S8-F native targets', () => {
     });
     expect(JSON.stringify(capture.mock.calls)).not.toContain('Secret Name');
     expect(JSON.stringify(capture.mock.calls)).not.toContain('plan-1');
+  });
+});
+
+/**
+ * S11-E — registry-scoped family selection. Staged and ledger rows carry the
+ * source's own step token (the engine plans and ledgers per staged
+ * (source_platform, entity_type) group); the reader must select by the pairs that
+ * classify to the requested family through the SAME registry, keep the legacy
+ * token == family convention working, exclude other families, count what no spec
+ * can classify (never a silent absence), and stay bounded.
+ */
+describe('ScoutEntitiesService S11-E registry-scoped family selection', () => {
+  const registry = buildSourceMapperRegistry();
+  /** A registered source whose step token for `workouts` is NOT the family name (resolved, not typed). */
+  const mapped = (() => {
+    for (const mapper of registry.values()) {
+      const token = Object.keys(mapper.spec.steps).find(
+        (step) => mapper.spec.steps[step] === FAM && step !== FAM,
+      );
+      if (token !== undefined) return { platform: mapper.sourcePlatform, token };
+    }
+    throw new Error('no repository spec maps a non-literal workouts token');
+  })();
+  /**
+   * A registered source whose spec has a step token that IS another reviewable
+   * family's name but maps to `workouts` (the step wins over the literal, exactly
+   * as the engine plans it).
+   */
+  const shadowed = (() => {
+    for (const mapper of registry.values()) {
+      const token = Object.keys(mapper.spec.steps).find(
+        (step) =>
+          mapper.spec.steps[step] === FAM && step !== FAM && ENTITY_REVIEW_FAMILIES.includes(step),
+      );
+      if (token !== undefined) return { platform: mapper.sourcePlatform, token };
+    }
+    throw new Error('no repository spec has a family-named step mapped to workouts');
+  })();
+  const idOf = (platform: string, sid: string) =>
+    platform === 'truecoach' ? `truecoach_${sid}` : `${platform}_${sid}`;
+
+  it('reads a token-mapped source: the pair predicate replaces the family literal on every ledger read', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 3, sourcePlatform: mapped.platform, token: mapped.token });
+    const { service } = await makeService(fake);
+    const page1 = await service.getEntities(COACH, INTENT, FAM, undefined, 2);
+    expect(page1.entities.map((e) => e.source_id)).toEqual([
+      idOf(mapped.platform, 's000'),
+      idOf(mapped.platform, 's001'),
+    ]);
+    expect(page1.entities.every((e) => e.entity_type === FAM)).toBe(true);
+    expect(page1.page_count).toBe(2);
+    expect(page1.unclassified_staged).toBe(0);
+    expect(page1.next_cursor).toBe(
+      expectedV3(COACH, INTENT, FAM, 's001', mapped.platform, mapped.token),
+    );
+    const page2 = await service.getEntities(COACH, INTENT, FAM, page1.next_cursor ?? undefined, 2);
+    expect(page2.entities.map((e) => e.source_id)).toEqual([idOf(mapped.platform, 's002')]);
+    expect(page2.next_cursor).toBeNull();
+    for (const read of fake.ledgerReads) {
+      expect(read.where.entity_type).toBeUndefined();
+      expect(read.where.OR).toEqual([
+        { source_platform: mapped.platform, entity_type: mapped.token },
+      ]);
+    }
+  });
+
+  it('merges a legacy (token == family) source and a token-mapped source in one deterministic order', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 2 });
+    seed(fake, { reconstructed: 2, sourcePlatform: mapped.platform, token: mapped.token });
+    const { service } = await makeService(fake);
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await service.getEntities(COACH, INTENT, FAM, cursor, 3);
+      seen.push(...page.entities.map((e) => e.source_id));
+      if (!page.next_cursor) break;
+      cursor = page.next_cursor;
+    }
+    // (source_id, source_platform) asc: s000 ties break on platform, then s001.
+    const platforms = [mapped.platform, 'truecoach'].sort();
+    expect(seen).toEqual([
+      idOf(platforms[0], 's000'),
+      idOf(platforms[1], 's000'),
+      idOf(platforms[0], 's001'),
+      idOf(platforms[1], 's001'),
+    ]);
+    expect(fake.ledgerReads[0].where.OR).toEqual(
+      [
+        { source_platform: mapped.platform, entity_type: mapped.token },
+        { source_platform: 'truecoach', entity_type: FAM },
+      ].sort((a, b) => (a.source_platform < b.source_platform ? -1 : 1)),
+    );
+  });
+
+  it("excludes another family's rows, and classifies a family-NAMED step token by its step (the step wins over the literal)", async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    seed(fake, { family: RECONSTRUCT_FAMILY.client_history, reconstructed: 2 });
+    // A `shadowed.token` row on `shadowed.platform`: its literal names another
+    // reviewable family, but the platform's spec maps that step to `workouts`.
+    seed(fake, { reconstructed: 1, sourcePlatform: shadowed.platform, token: shadowed.token });
+    const { service } = await makeService(fake);
+    const workouts = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(workouts.entities.map((e) => e.source_id).sort()).toEqual(
+      ['truecoach_s000', idOf(shadowed.platform, 's000')].sort(),
+    );
+    expect(workouts.unclassified_staged).toBe(0);
+    const other = await service.getEntities(COACH, INTENT, shadowed.token, undefined, undefined);
+    // Read AS the literal family: the shadowed row is a `workouts` row, not this family's.
+    expect(other.entities).toEqual([]);
+    expect(other.unclassified_staged).toBe(0);
+    const history = await service.getEntities(
+      COACH,
+      INTENT,
+      RECONSTRUCT_FAMILY.client_history,
+      undefined,
+      undefined,
+    );
+    expect(history.entities.map((e) => e.source_id)).toEqual(['truecoach_s000', 'truecoach_s001']);
+  });
+
+  it('attributes a ledger pair whose staged twin is gone (rows stay readable; counts stay staged truth)', async () => {
+    const fake = new FakePrisma();
+    seed(fake, {
+      reconstructed: 2,
+      sourcePlatform: mapped.platform,
+      token: mapped.token,
+      staged: false,
+    });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities.map((e) => e.source_id)).toEqual([
+      idOf(mapped.platform, 's000'),
+      idOf(mapped.platform, 's001'),
+    ]);
+    expect(res.unclassified_staged).toBe(0);
+  });
+
+  it('counts staged rows no spec can classify in `unclassified_staged` and never serves them', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 1 });
+    seed(fake, { reconstructed: 1, sourcePlatform: 'unregistered-platform' });
+    seed(fake, { reconstructed: 1, token: 'not-a-step' });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+    expect(res.entities.map((e) => e.source_id)).toEqual(['truecoach_s000']);
+    expect(res.unclassified_staged).toBe(2);
+    expect(res.page_count).toBe(1);
+  });
+
+  describe('empty scope (nothing of the family staged or ledgered)', () => {
+    it('serves the truthful empty page without a ledger page read; unclassified is reported', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 2, sourcePlatform: 'unregistered-platform' });
+      const { service } = await makeService(fake);
+      const res = await service.getEntities(COACH, INTENT, FAM, undefined, undefined);
+      expect(res).toEqual({
+        intent_id: INTENT,
+        family: FAM,
+        entities: [],
+        page_count: 0,
+        next_cursor: null,
+        unclassified_staged: 2,
+      });
+      expect(fake.ledgerReads).toEqual([]);
+      expect(fake.transactionCalls).toEqual([{ isolationLevel: 'RepeatableRead' }]);
+    });
+
+    it('400s a legacy token (no boundary can exist) and serves a v2 token as the empty page', async () => {
+      const fake = new FakePrisma();
+      seed(fake, {});
+      const { service } = await makeService(fake);
+      await expect(
+        service.getEntities(COACH, INTENT, FAM, legacyEntities(COACH, INTENT, FAM, 's001'), 2),
+      ).rejects.toThrow('malformed cursor');
+      const v2 = await service.getEntities(
+        COACH,
+        INTENT,
+        FAM,
+        expectedV2(COACH, INTENT, FAM, 's001', 'truecoach'),
+        2,
+      );
+      expect(v2.entities).toEqual([]);
+      expect(v2.next_cursor).toBeNull();
+      expect(fake.ledgerReads).toEqual([]);
+    });
+  });
+
+  it('stays bounded: exactly two tenant-scoped aggregates and one limit+1 page read, regardless of row count', async () => {
+    const fake = new FakePrisma();
+    seed(fake, { reconstructed: 400 });
+    seed(fake, { reconstructed: 287, sourcePlatform: mapped.platform, token: mapped.token });
+    const { service } = await makeService(fake);
+    const res = await service.getEntities(COACH, INTENT, FAM, undefined, 50);
+    expect(res.page_count).toBe(50);
+    expect(fake.groupReads).toEqual([
+      {
+        table: 'ingest',
+        by: ['source_platform', 'entity_type'],
+        where: { coach_id: COACH, intent_id: INTENT },
+      },
+      {
+        table: 'ledger',
+        by: ['source_platform', 'entity_type'],
+        where: { coach_id: COACH, intent_id: INTENT },
+      },
+    ]);
+    expect(fake.ledgerReads).toHaveLength(1);
+    expect(fake.ledgerReads[0].take).toBe(51);
+    expect(fake.readsOutsideTx).toBe(0);
+  });
+});
+
+/**
+ * S11-E r2 (review A1) — a source spec may declare two step tokens of ONE platform
+ * that map to the SAME family and share an id space (`sharedIdSpaces`), so two
+ * reconstructed ledger rows can tie on (source_id, source_platform) and differ only
+ * by token. The page order and the emitted cursor must therefore be the ledger's
+ * unique key (source_id, source_platform, entity_type), and every older, less
+ * precise token must resolve unambiguously or fail closed.
+ */
+describe('ScoutEntitiesService S11-E r2 total order across tied tokens of one platform', () => {
+  /** Resolved FROM the registry: the first spec with two distinct steps mapped to `workouts`. */
+  const tied = (() => {
+    for (const mapper of buildSourceMapperRegistry().values()) {
+      const tokens = Object.keys(mapper.spec.steps).filter(
+        (step) => mapper.spec.steps[step] === FAM,
+      );
+      if (tokens.length >= 2) return { platform: mapper.sourcePlatform, tokens: tokens.sort() };
+    }
+    throw new Error('no repository spec maps two steps of one platform to workouts');
+  })();
+  const [tokenA, tokenB] = tied.tokens;
+  const entityId = (token: string, sid: string) =>
+    `e-${COACH}-${FAM}-${tied.platform}${token === FAM ? '' : `-${token}`}-${sid}`;
+  const seedTied = (fake: FakePrisma) => {
+    seed(fake, { reconstructed: 2, sourcePlatform: tied.platform, token: tokenA });
+    seed(fake, { reconstructed: 2, sourcePlatform: tied.platform, token: tokenB });
+  };
+
+  it('serves every tied row exactly once, in (source_id, platform, token) order, at limit 1 across pages', async () => {
+    const fake = new FakePrisma();
+    seedTied(fake);
+    const { service } = await makeService(fake);
+    const seen: string[] = [];
+    const cursors: string[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await service.getEntities(COACH, INTENT, FAM, cursor, 1);
+      expect(page.unclassified_staged).toBe(0);
+      seen.push(...page.entities.map((e) => e.id));
+      if (!page.next_cursor) break;
+      cursors.push(page.next_cursor);
+      cursor = page.next_cursor;
+    }
+    expect(seen).toEqual([
+      entityId(tokenA, 's000'),
+      entityId(tokenB, 's000'),
+      entityId(tokenA, 's001'),
+      entityId(tokenB, 's001'),
+    ]);
+    expect(new Set(seen).size).toBe(4);
+    expect(cursors).toEqual([
+      expectedV3(COACH, INTENT, FAM, 's000', tied.platform, tokenA),
+      expectedV3(COACH, INTENT, FAM, 's000', tied.platform, tokenB),
+      expectedV3(COACH, INTENT, FAM, 's001', tied.platform, tokenA),
+    ]);
+    expect(fake.ledgerReads[1].where.AND).toEqual([
+      {
+        OR: [
+          { source_id: { gt: 's000' } },
+          { source_id: 's000', source_platform: { gt: tied.platform } },
+          { source_id: 's000', source_platform: tied.platform, entity_type: { gt: tokenA } },
+        ],
+      },
+    ]);
+    for (const read of fake.ledgerReads) {
+      expect(read.where.coach_id).toBe(COACH);
+      expect(read.where.intent_id).toBe(INTENT);
+      expect(read.where.status).toBe('reconstructed');
+      expect(read.where.OR).toEqual(
+        tied.tokens.map((t) => ({ source_platform: tied.platform, entity_type: t })),
+      );
+    }
+    const again: string[] = [];
+    cursor = undefined;
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await service.getEntities(COACH, INTENT, FAM, cursor, 1);
+      again.push(...page.entities.map((e) => e.id));
+      if (!page.next_cursor) break;
+      cursor = page.next_cursor;
+    }
+    expect(again).toEqual(seen);
+  });
+
+  describe('a pair-only v2 token minted before r2', () => {
+    it('is refused at an AMBIGUOUS boundary (two rows share the pair): 400, one lookup, no page read', async () => {
+      const fake = new FakePrisma();
+      seedTied(fake);
+      const { service } = await makeService(fake);
+      const before = fake.ledgerReads.length;
+      await expect(
+        service.getEntities(
+          COACH,
+          INTENT,
+          FAM,
+          expectedV2(COACH, INTENT, FAM, 's000', tied.platform),
+          1,
+        ),
+      ).rejects.toThrow('malformed cursor');
+      expect(fake.ledgerReads.length - before).toBe(1);
+      expect(fake.ledgerReads[before]).toEqual({
+        where: {
+          coach_id: COACH,
+          intent_id: INTENT,
+          OR: tied.tokens.map((t) => ({ source_platform: tied.platform, entity_type: t })),
+          status: 'reconstructed',
+          source_id: 's000',
+          source_platform: tied.platform,
+        },
+        select: { entity_type: true },
+        take: 2,
+      });
+    });
+
+    it('resolves to the one row sharing the pair and continues after that row', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      const { service } = await makeService(fake);
+      const res = await service.getEntities(
+        COACH,
+        INTENT,
+        FAM,
+        expectedV2(COACH, INTENT, FAM, 's000', 'truecoach'),
+        5,
+      );
+      expect(res.entities.map((e) => e.source_id)).toEqual(['truecoach_s001', 'truecoach_s002']);
+      const [lookup, page] = fake.ledgerReads;
+      expect(lookup.select).toEqual({ entity_type: true });
+      expect(lookup.take).toBe(2);
+      expect(page.where.AND).toEqual([
+        {
+          OR: [
+            { source_id: { gt: 's000' } },
+            { source_id: 's000', source_platform: { gt: 'truecoach' } },
+            { source_id: 's000', source_platform: 'truecoach', entity_type: { gt: FAM } },
+          ],
+        },
+      ]);
+    });
+
+    it('continues after a pair no row shares (no tie can exist), exactly as it did before r2', async () => {
+      const fake = new FakePrisma();
+      seed(fake, { reconstructed: 3 });
+      const { service } = await makeService(fake);
+      const res = await service.getEntities(
+        COACH,
+        INTENT,
+        FAM,
+        expectedV2(COACH, INTENT, FAM, 's000a', 'truecoach'),
+        5,
+      );
+      expect(res.entities.map((e) => e.source_id)).toEqual(['truecoach_s001', 'truecoach_s002']);
+      expect(fake.ledgerReads[1].where.AND).toEqual([
+        {
+          OR: [
+            { source_id: { gt: 's000a' } },
+            { source_id: 's000a', source_platform: { gt: 'truecoach' } },
+          ],
+        },
+      ]);
+    });
+  });
+
+  it('a legacy (source-only) token at a tied source id is refused before any page read', async () => {
+    const fake = new FakePrisma();
+    seedTied(fake);
+    const { service } = await makeService(fake);
+    await expect(
+      service.getEntities(COACH, INTENT, FAM, legacyEntities(COACH, INTENT, FAM, 's000'), 1),
+    ).rejects.toThrow('malformed cursor');
+    expect(fake.ledgerReads).toHaveLength(1);
+    expect(fake.ledgerReads[0].select).toEqual({ source_platform: true, entity_type: true });
   });
 });
