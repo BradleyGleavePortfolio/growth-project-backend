@@ -59,9 +59,7 @@ try {
 
 if (
   !configuration ||
-  !Array.isArray(configuration.include) ||
   !Array.isArray(configuration.allowlist) ||
-  configuration.include.some((glob) => typeof glob !== "string") ||
   configuration.allowlist.some(
     (entry) =>
       !entry ||
@@ -71,12 +69,11 @@ if (
   )
 ) {
   fail(
-    "configuration must contain include globs and allowlist {glob, reason, retire} entries",
+    "configuration must contain allowlist {glob, reason, retire} entries",
   );
   process.exit();
 }
 
-const includes = configuration.include.map(globToRegExp);
 const entries = configuration.allowlist.map((entry) => ({
   ...entry,
   pattern: globToRegExp(entry.glob),
@@ -88,10 +85,6 @@ const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer
   .filter(Boolean);
 
 for (const file of trackedFiles) {
-  if (!includes.some((pattern) => pattern.test(file))) {
-    continue;
-  }
-
   const content = readFileSync(file, "utf8");
   const hits = content.match(hitPattern) ?? [];
   if (hits.length === 0) {
