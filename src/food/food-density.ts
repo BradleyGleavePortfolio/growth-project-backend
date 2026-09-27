@@ -4,7 +4,7 @@
 // are stored per-100g (see NutrientBasis docs). Converting "1 cup oats" to a
 // real gram value requires either a per-food density (Cronometer's approach)
 // or a category-level fallback (this file). Per-food density is a separate,
-// bigger piece of work; this lookup is the "Trainerize-grade floor" that
+// bigger piece of work; this lookup is the quality floor that
 // stops the picker from silently treating `1 cup` as `1 serving`.
 //
 // Densities are average g/ml values sourced from public USDA FDC food-group

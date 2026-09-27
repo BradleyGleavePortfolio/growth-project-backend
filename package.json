@@ -26,7 +26,8 @@
     "backfill:coach-subscriptions": "ts-node scripts/backfill-coach-subscriptions.ts",
     "seed:foods": "ts-node prisma/seed-foods.ts",
     "seed:exercise-catalog": "ts-node scripts/seed-exercise-catalog.ts",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "guard:vendors": "node scripts/vendor-name-guard.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.104.1",

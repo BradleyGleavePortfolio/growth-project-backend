@@ -1,0 +1,27 @@
+[
+  {
+    "glob": "test/**",
+    "reason": "Tests and fixtures preserve legacy source-contract evidence.",
+    "retire": "V1 learned-path parity"
+  },
+  {
+    "glob": "src/**/__tests__/**",
+    "reason": "Tests preserve legacy source-contract evidence.",
+    "retire": "V1 learned-path parity"
+  },
+  {
+    "glob": "src/**/*.spec.ts",
+    "reason": "Tests preserve legacy source-contract evidence.",
+    "retire": "V1 learned-path parity"
+  },
+  {
+    "glob": "docs/decisions/**",
+    "reason": "Historical decision records are retained for auditability.",
+    "retire": "Historical records retained"
+  },
+  {
+    "glob": "src/scout/reconstruct/sources/truecoach.json",
+    "reason": "Quarantined legacy oracle.",
+    "retire": "V1 learned-path parity"
+  }
+]

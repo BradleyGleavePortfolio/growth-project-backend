@@ -12,7 +12,7 @@
 // Anything else falls through to "no parse, use the whole query as the food
 // name", which is the safe default. We do NOT try to extract brands, adjectives,
 // or compound quantities ("1 cup of oats AND a banana") — those are out of
-// scope for the Trainerize-grade floor (see audit §9 / §10).
+// scope for the food-logger quality floor (see audit §9 / §10).
 
 export type CanonicalUnit =
   | 'g'

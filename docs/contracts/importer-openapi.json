@@ -112,8 +112,8 @@
       "PairInitDto": {
         "properties": {
           "chosen_platform": {
-            "description": "Source coaching platform the coach is migrating from. Lowercase slug driven by the extension ROADMAP matrix (truecoach, trainerize, mypthub, …).",
-            "example": "truecoach",
+            "description": "Source coaching platform the coach is migrating from. Use the lowercase slug supplied by the authorized source site.",
+            "example": "example-site",
             "type": "string"
           },
           "setup_nonce": {
@@ -201,7 +201,7 @@
           },
           "chosen_platform": {
             "description": "Source platform the code was minted for (echoed to the extension).",
-            "example": "truecoach",
+            "example": "example-site",
             "type": "string"
           },
           "import_intent_id": {
@@ -380,7 +380,7 @@
           },
           "source_platform": {
             "description": "Source platform slug (provenance).",
-            "example": "truecoach",
+            "example": "example-site",
             "type": "string"
           },
           "target_kind": {
@@ -534,7 +534,7 @@
           },
           "sourcePlatform": {
             "description": "Slug of the platform the record was captured from (camelCase, top-level).",
-            "example": "truecoach",
+            "example": "example-site",
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
@@ -1107,7 +1107,7 @@
           },
           "source_platform": {
             "description": "Source platform slug (provenance).",
-            "example": "truecoach",
+            "example": "example-site",
             "type": "string"
           },
           "state": {

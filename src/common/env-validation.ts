@@ -286,7 +286,7 @@ export const ENV_RULES: EnvRule[] = [
       'Feature flag — set to "on" to enable the weekly Coach AI insight digest cron. Default off so the cron is dormant in every environment until explicitly enabled.',
   },
   {
-    // Promoted to hard-required as part of the food logger Trainerize-grade floor:
+    // Promoted to hard-required as part of the food logger quality floor:
     // food search silently returning [] for the USDA branch is undetectable in
     // production (operators see no error), so the boot must fail loudly instead.
     // Free key at https://api.data.gov/signup (takes ~1 minute).

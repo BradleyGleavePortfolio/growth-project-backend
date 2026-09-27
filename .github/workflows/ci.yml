@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Vendor-name guard
+        run: npm run guard:vendors
+
       - name: Generate Prisma client
         run: npx prisma generate
 
