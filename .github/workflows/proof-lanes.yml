@@ -1,0 +1,100 @@
+# GH-LANES (EXEC-42D8C5B5): TGP PostgreSQL proof lanes on GitHub-hosted runners, one job per stage, in parallel.
+# Lives only on proof/harness and proof/run/** branches (orphan history; never on main/integration).
+# A run = a commit on proof/run/<label> whose tree = this harness + PROOF_TARGET. See README.md.
+name: proof-lanes
+on:
+  push:
+    branches: ['proof/run/**']
+permissions:
+  contents: read
+concurrency:
+  group: proof-lanes-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  TARGET_URL: https://github.com/${{ github.repository }}.git
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.pf.outputs.sha }}
+      pkg_lock: ${{ steps.pf.outputs.pkg_lock }}
+      matrix: ${{ steps.pf.outputs.matrix }}
+      skips: ${{ steps.pf.outputs.skips }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { path: harness, persist-credentials: false }
+      - id: pf
+        run: bash harness/proof/preflight.sh harness/PROOF_TARGET "$TARGET_URL" "$RUNNER_TEMP/preflight"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with: { name: preflight, path: '${{ runner.temp }}/preflight', if-no-files-found: error }
+
+  stage:
+    needs: preflight
+    name: ${{ matrix.lane }}/${{ matrix.stage }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.preflight.outputs.matrix) }}
+    env:
+      SHA: ${{ needs.preflight.outputs.sha }}
+      PKG_LOCK_EXPECT: ${{ needs.preflight.outputs.pkg_lock }}
+      TARGET_DIR: ${{ github.workspace }}/target
+      PG_DIST: ${{ runner.temp }}/pg17/dist
+      LANE_PSQL: /usr/lib/postgresql/18/bin/psql
+    steps:
+      - uses: actions/checkout@v7
+        with: { path: harness, persist-credentials: false }
+      - name: fetch target (full history, detached, clean)
+        run: bash harness/proof/setup-runner.sh target "$SHA" "$TARGET_DIR" "$TARGET_URL"
+      - name: verify package-lock sha256
+        run: test "$(sha256sum target/package-lock.json | cut -c1-64)" = "$PKG_LOCK_EXPECT"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20.20.1
+          cache: npm
+          cache-dependency-path: target/package-lock.json
+      - uses: actions/cache@v6
+        with: { path: ~/pg-jar, key: zonky-pg-17.6.0-23da5a04 }
+      - name: PostgreSQL 17.6 server + psql 18 client
+        if: matrix.stage != 'guard'
+        run: |
+          bash harness/proof/setup-runner.sh pg "$HOME/pg-jar" "$PG_DIST" &
+          bash harness/proof/setup-runner.sh psql
+          wait $! 
+      - name: ripgrep
+        if: matrix.stage == 'journey-full'
+        run: bash harness/proof/setup-runner.sh rg
+      - name: npm ci (target's own lock)
+        working-directory: target
+        run: timeout 1800 npm ci --no-audit --no-fund
+      - name: stage ${{ matrix.lane }}/${{ matrix.stage }}
+        run: bash harness/proof/stage.sh "${{ matrix.lane }}" "${{ matrix.stage }}" "$SHA" "$TARGET_DIR" "$RUNNER_TEMP/run/result-${{ matrix.lane }}-${{ matrix.stage }}"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: result-${{ matrix.lane }}-${{ matrix.stage }}
+          path: ${{ runner.temp }}/run/result-${{ matrix.lane }}-${{ matrix.stage }}
+          if-no-files-found: warn
+
+  aggregate:
+    needs: [preflight, stage]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with: { path: harness, persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { path: artifacts }
+      - name: aggregate
+        env:
+          MATRIX: ${{ needs.preflight.outputs.matrix }}
+          SKIPS: ${{ needs.preflight.outputs.skips }}
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+        run: bash harness/proof/aggregate.sh harness/PROOF_TARGET artifacts "$RUNNER_TEMP/summary"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with: { name: summary, path: '${{ runner.temp }}/summary', if-no-files-found: warn }
