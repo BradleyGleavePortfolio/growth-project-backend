@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# GH-LANES stage runner: ONE stage of one lane on a GitHub-hosted runner, against a target checked out by
+# GH-LANES lane/stage runner: the stages of one lane, SERIALLY on ONE fresh cluster with ONE bootstrap (ALL = the full
+# local STAGE_TABLE in order, exactly like lane-s11.sh / lane-s10b.sh; or an explicit comma list), on a GitHub-hosted runner, against a target checked out by
 # setup-runner.sh target and installed by `npm ci`. Port of the common body of the qualified local runners
 # (execution/42d8c5b5/proof/lane-s11.sh / lane-s10b.sh) with sandbox paths parameterised. Differences, all deliberate:
 #   - no canonical lock / runtime sentinel / donor copy (a hosted runner is private to this job);
 #   - node_modules come from `npm ci` of the target's own package-lock (its sha256 is pinned by preflight and re-checked here);
-#   - one stage per job: a live stage gets its own fresh cluster + bootstrap; guard needs no PG;
+#   - stage selection comes from the job (ALL for the authoritative lane job; one stage for the fast per-stage signal);
+#   - migration identity compares the exact sorted applied-name list with the migration dirs at HEAD (no duplicates,
+#     no unfinished/rolled-back rows), stricter than the local count+max rule;
 #   - the PG 17.6 dist is the same zonky artifact (pins in lanes.sh); psql client is PGDG 18.
 # Pass rules are unchanged: rc 0, 0 failed/skipped/todo, passed==total, suites all passed == file count, a PASS line per file,
 # total == static `it(` count at HEAD (>= when it.each/test.each/test( is used). Any skipped test = FAIL.
-# Usage: stage.sh <lane> <stage> <HEAD_SHA> <target dir> <RUN_DIR (must not exist)>
+# Usage: stage.sh <lane> <ALL|stage[,stage...]> <HEAD_SHA> <target dir> <RUN_DIR (must not exist)>
 # Env: PG_DIST (dir with bin/ lib/), LANE_PSQL (psql path), PKG_LOCK_EXPECT (64-hex).
 # RC: 0 ok | 64 usage | 70 precondition/refused | 71 deps | 72 jest count/skip or pg init | 73 identity | 74 teardown/post | other = stage rc.
 set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); . "$HERE/lanes.sh"
-[ $# = 5 ] || { echo "usage: stage.sh <lane> <stage> <HEAD_SHA> <target dir> <RUN_DIR>" >&2; exit 64; }
+[ $# = 5 ] || { echo "usage: stage.sh <lane> <ALL|stage[,stage...]> <HEAD_SHA> <target dir> <RUN_DIR>" >&2; exit 64; }
 LANE=$1; STAGE=$2; HEAD_SHA=$3; W=${4%/}; RUN_DIR=${5%/}
 lane_load "$LANE" || { echo "unknown lane $LANE" >&2; exit 64; }
 [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "bad HEAD_SHA" >&2; exit 64; }
@@ -23,7 +26,7 @@ export GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1 NODE_OPT
        CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1 PRISMA_GENERATE_SKIP_AUTOINSTALL=1 npm_config_offline=true \
        npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false
 DIST=${PG_DIST:?PG_DIST}; PSQL=${LANE_PSQL:-/usr/lib/postgresql/18/bin/psql}; PKG_EXPECT=${PKG_LOCK_EXPECT:-$DEFAULT_PKG_LOCK_SHA256}
-SCR=${RUNNER_TEMP:-/tmp}/lane-$LANE-$STAGE-$$; mkdir -p "$SCR"
+SCR=${RUNNER_TEMP:-/tmp}/lane-$LANE-${STAGE//,/_}-$$; mkdir -p "$SCR"
 PORT_LO=55650; PORT_HI=55699
 LOG=$RUN_DIR/runner.log
 ts(){ date -u +%FT%TZ; }; now(){ date +%s; }
@@ -52,7 +55,7 @@ teardown_all(){ local bad=0 p
   TEARDOWN="postmaster_alive=$(pm_alive && echo yes || echo no) port_listeners=$pl"
   log "TEARDOWN $TEARDOWN bad=$bad"; return $bad; }
 write_result(){ local rc=$1 T1; T1=$(now)
-  { echo "RC=$rc"; echo "STAGE=$CUR_STAGE"; echo "LANE=$LANE_NAME"; echo "JOB_STAGE=$STAGE"; echo "HEAD=$HEAD_SHA"; echo "TREE=$TREE"
+  { echo "RC=$rc"; echo "STAGE=$CUR_STAGE"; echo "LANE=$LANE_NAME"; echo "JOB_STAGES=$STAGE"; echo "STAGES_RUN_ORDER=${SEL# }"; echo "HEAD=$HEAD_SHA"; echo "TREE=$TREE"
     echo "PKG_LOCK_SHA256=$PKG_LOCK"; echo "PKG_LOCK_EXPECTED=$PKG_EXPECT"; echo "MIGRATIONS_AT_HEAD=$MIG_N"; echo "LAST_MIGRATION_AT_HEAD=$LAST_MIG"
     echo "MIGRATIONS_APPLIED=$MIG_APPLIED"; echo "CLIENT_INDEX_DTS_SHA256=$CLIENT_SHA"; echo "HARNESS_COMMIT=$HARNESS_SHA"
     echo "STAGE_SH_SHA256=$STAGE_SH_SHA"; echo "LANES_SH_SHA256=$LANES_SHA"; echo "PORT=$PORT"
@@ -72,12 +75,14 @@ on_signal(){ log "SIGNAL $1 during stage=$CUR_STAGE"
   RES+=("STAGE_RESULT name=$CUR_STAGE status=ABORTED_BY_SIGNAL_$1 rc=124"); FINAL_RC=124; exit 124; }
 trap finish EXIT; trap 'on_signal TERM' TERM; trap 'on_signal INT' INT; trap 'on_signal HUP' HUP
 log "START lane=$LANE_NAME stage=$STAGE head=$HEAD_SHA target=$W harness=$HARNESS_SHA stage_sh=$STAGE_SH_SHA"
-# ---- select: the job's stage (+ bootstrap if live)
-ROW=""; for s in "${STAGE_TABLE[@]}"; do [ "${s%%|*}" = "$STAGE" ] && ROW=$s; done
-[ -n "$ROW" ] || die 64 "unknown stage '$STAGE' for lane $LANE_NAME"
-IFS='|' read -r _ _ _ _ SKIND _ <<<"$ROW"
-NEED_PG=0; [ "$SKIND" = live ] && NEED_PG=1
-SEL=" $STAGE "; [ "$NEED_PG" = 1 ] && SEL=" bootstrap$SEL"
+# ---- select: ALL (full lane table, in order) or the explicit list (+ bootstrap once if any stage is live)
+ALL_NAMES=""; for s in "${STAGE_TABLE[@]}"; do ALL_NAMES="$ALL_NAMES ${s%%|*}"; done
+if [ "$STAGE" = ALL ]; then REQ_STAGES=""; SEL=" $ALL_NAMES "
+else REQ_STAGES=$STAGE; [[ "$STAGE" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || die 64 "bad stage list '$STAGE'"; SEL=" ${STAGE//,/ } "
+  for n in $SEL; do case " $ALL_NAMES " in *" $n "*) ;; *) die 64 "unknown stage '$n' for lane $LANE_NAME";; esac; done; fi
+NEED_PG=0; for s in "${STAGE_TABLE[@]}"; do IFS='|' read -r n _ _ _ k _ <<<"$s"; case "$SEL" in *" $n "*) [ "$k" = live ] && NEED_PG=1;; esac; done
+[ "$NEED_PG" = 1 ] && SEL=" bootstrap$SEL"
+log "SELECTED lane=$LANE_NAME stages=[${SEL# }] need_pg=$NEED_PG"
 # ---- tools
 CUR_STAGE=tools
 NODEV=$(node --version 2>/dev/null); grep -q '^v20\.' <<<"$NODEV" || die 70 "node major != 20 ($NODEV)"
@@ -153,11 +158,16 @@ CONF
   DD=$(psqlq 'SHOW data_directory'); VN=$(psqlq 'SHOW server_version_num'); CN=$(psqlq "SELECT current_setting('cluster_name')")
   DM=$(psqlq "SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()")
   MIG_APPLIED=$(psqlq 'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL')
+  MIG_ROWS=$(psqlq 'SELECT count(*) FROM "_prisma_migrations"')
+  psqlq 'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL' | LC_ALL=C sort >"$RUN_DIR/migrations-applied.txt"
+  printf '%s\n' "$MIGS" >"$RUN_DIR/migrations-at-head.txt"
+  MIG_DUP=$(uniq -d "$RUN_DIR/migrations-applied.txt" | wc -l)
+  MIG_SET_OK=no; [ "$MIG_DUP" = 0 ] && [ "$MIG_ROWS" = "$MIG_APPLIED" ] && cmp -s "$RUN_DIR/migrations-applied.txt" "$RUN_DIR/migrations-at-head.txt" && MIG_SET_OK=yes
   ML=$(psqlq 'SELECT max(migration_name) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL'); PT=$(psqlq 'SELECT inet_server_port()')
-  ID="data_directory=$DD server_version_num=$VN cluster_name=$CN db_marker_ok=$([ "$DM" = "$DB_MARKER" ] && echo yes || echo NO) applied=$MIG_APPLIED last=$ML port=$PT"
-  [ "$DD" = "$PGDATA" ] && [ "$VN" = 170006 ] && [ "$CN" = "$MARKER" ] && [ "$DM" = "$DB_MARKER" ] && [ "$MIG_APPLIED" = "$MIG_N" ] && [ "$ML" = "$LAST_MIG" ] && [ "$PT" = "$PORT" ] \
+  ID="data_directory=$DD server_version_num=$VN cluster_name=$CN db_marker_ok=$([ "$DM" = "$DB_MARKER" ] && echo yes || echo NO) applied=$MIG_APPLIED rows=$MIG_ROWS dup=$MIG_DUP exact_set=$MIG_SET_OK last=$ML port=$PT"
+  [ "$DD" = "$PGDATA" ] && [ "$VN" = 170006 ] && [ "$CN" = "$MARKER" ] && [ "$DM" = "$DB_MARKER" ] && [ "$MIG_APPLIED" = "$MIG_N" ] && [ "$ML" = "$LAST_MIG" ] && [ "$MIG_SET_OK" = yes ] && [ "$PT" = "$PORT" ] \
     || { RES+=("STAGE_RESULT name=bootstrap status=FAIL rc=73 secs=$(( $(now) - TB )) identity=[$ID]"); die 73 "identity mismatch: $ID"; }
-  RES+=("STAGE_RESULT name=bootstrap status=PASS rc=0 secs=$(( $(now) - TB )) migrations_applied=$MIG_APPLIED last=$ML")
+  RES+=("STAGE_RESULT name=bootstrap status=PASS rc=0 secs=$(( $(now) - TB )) migrations_applied=$MIG_APPLIED exact_set=yes last=$ML")
   log "BOOTSTRAP_IDENTITY_OK $ID"
 fi
 # ---- the jest stage (verbatim pass rules from the local common body)
@@ -167,8 +177,10 @@ for s in "${STAGE_TABLE[@]}"; do
   IFS='|' read -r NAME CFG TMO FILES KIND REQ <<<"$s"
   case "$SEL" in *" $NAME "*) ;; *) continue;; esac
   CUR_STAGE=$NAME; MISSING=""; for f in $FILES; do [ -f "$W/$f" ] || MISSING="$MISSING $f"; done
-  # Optional-absent stages are dropped by preflight; a job that was scheduled for a missing file is a FAIL.
-  if [ -n "$MISSING" ]; then RES+=("STAGE_RESULT name=$NAME status=FAIL rc=70 missing=[$MISSING]"); die 70 "stage $NAME spec files absent at HEAD:$MISSING"; fi
+  if [ -n "$MISSING" ]; then
+    if [ "$REQ" = opt ] && [ -z "$REQ_STAGES" ]; then RES+=("STAGE_RESULT name=$NAME status=SKIP_ABSENT_AT_HEAD files=[$FILES]"); log "STAGE $NAME absent at HEAD (optional; not run)"; continue; fi
+    RES+=("STAGE_RESULT name=$NAME status=FAIL rc=70 missing=[$MISSING]"); die 70 "stage $NAME spec files absent at HEAD:$MISSING"
+  fi
   if case " $NEED_RG_FOR " in *" $NAME "*) true;; *) false;; esac; then command -v rg >/dev/null || { RES+=("STAGE_RESULT name=$NAME status=FAIL rc=70 reason=rg-missing"); die 70 "rg not on PATH"; }; fi
   EXP=0; LB=0; NF=0
   for f in $FILES; do NF=$((NF + 1)); c=$(grep -cE '^\s*it\(' "$W/$f" || true); EXP=$((EXP + c)); grep -qE '\b(it|test)\.each\b|^\s*test\(' "$W/$f" && LB=1; done

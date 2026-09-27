@@ -1,6 +1,9 @@
-# GH-LANES (EXEC-42D8C5B5): TGP PostgreSQL proof lanes on GitHub-hosted runners, one job per stage, in parallel.
+# GH-LANES (EXEC-42D8C5B5): TGP PostgreSQL proof lanes on GitHub-hosted runners.
 # Lives only on proof/harness and proof/run/** branches (orphan history; never on main/integration).
-# A run = a commit on proof/run/<label> whose tree = this harness + PROOF_TARGET. See README.md.
+# A run = a commit on proof/run/<label> whose ONLY parent is the reviewed harness commit (HARNESS_SHA in PROOF_TARGET)
+# and whose tree differs from it only by PROOF_TARGET. See README.md.
+# Jobs: preflight -> run (matrix: one SERIAL job per lane = the authoritative proof, one cluster + one bootstrap, local
+# stage order; plus one fast-signal job per stage) -> aggregate (the verdict; PASS only in FULL mode).
 name: proof-lanes
 on:
   push:
@@ -20,21 +23,20 @@ jobs:
       sha: ${{ steps.pf.outputs.sha }}
       pkg_lock: ${{ steps.pf.outputs.pkg_lock }}
       matrix: ${{ steps.pf.outputs.matrix }}
-      skips: ${{ steps.pf.outputs.skips }}
     steps:
       - uses: actions/checkout@v7
-        with: { path: harness, persist-credentials: false }
+        with: { path: harness, persist-credentials: false, fetch-depth: 2 }
       - id: pf
-        run: bash harness/proof/preflight.sh harness/PROOF_TARGET "$TARGET_URL" "$RUNNER_TEMP/preflight"
+        run: bash harness/proof/preflight.sh harness "$TARGET_URL" "$RUNNER_TEMP/preflight"
       - if: always()
         uses: actions/upload-artifact@v7
         with: { name: preflight, path: '${{ runner.temp }}/preflight', if-no-files-found: error }
 
-  stage:
+  run:
     needs: preflight
-    name: ${{ matrix.lane }}/${{ matrix.stage }}
+    name: ${{ matrix.kind }} ${{ matrix.lane }} ${{ matrix.stages }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 100
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.preflight.outputs.matrix) }}
@@ -43,6 +45,7 @@ jobs:
       PKG_LOCK_EXPECT: ${{ needs.preflight.outputs.pkg_lock }}
       TARGET_DIR: ${{ github.workspace }}/target
       LANE_PSQL: /usr/lib/postgresql/18/bin/psql
+      ART: ${{ matrix.kind == 'lane' && format('lane-{0}', matrix.lane) || format('stage-{0}-{1}', matrix.lane, matrix.stages) }}
     steps:
       - run: echo "PG_DIST=$RUNNER_TEMP/pg17/dist" >>"$GITHUB_ENV"
       - uses: actions/checkout@v7
@@ -59,42 +62,40 @@ jobs:
       - uses: actions/cache@v6
         with: { path: ~/pg-jar, key: zonky-pg-17.6.0-23da5a04 }
       - name: PostgreSQL 17.6 server + psql 18 client
-        if: matrix.stage != 'guard'
+        if: matrix.stages != 'guard'
         run: |
           bash harness/proof/setup-runner.sh pg "$HOME/pg-jar" "$PG_DIST" &
           bash harness/proof/setup-runner.sh psql
           wait $!
       - name: ripgrep
-        if: matrix.stage == 'journey-full'
+        if: matrix.lane == 's11' && (matrix.stages == 'ALL' || contains(matrix.stages, 'journey-full'))
         run: bash harness/proof/setup-runner.sh rg
       - name: npm ci (target's own lock)
         working-directory: target
         run: timeout 1800 npm ci --no-audit --no-fund
-      - name: stage ${{ matrix.lane }}/${{ matrix.stage }}
-        run: bash harness/proof/stage.sh "${{ matrix.lane }}" "${{ matrix.stage }}" "$SHA" "$TARGET_DIR" "$RUNNER_TEMP/run/result-${{ matrix.lane }}-${{ matrix.stage }}"
+      - name: ${{ matrix.kind }} ${{ matrix.lane }} ${{ matrix.stages }}
+        run: bash harness/proof/stage.sh "${{ matrix.lane }}" "${{ matrix.stages }}" "$SHA" "$TARGET_DIR" "$RUNNER_TEMP/run/$ART"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: result-${{ matrix.lane }}-${{ matrix.stage }}
-          path: ${{ runner.temp }}/run/result-${{ matrix.lane }}-${{ matrix.stage }}
+          name: ${{ env.ART }}
+          path: ${{ runner.temp }}/run/${{ env.ART }}
           if-no-files-found: warn
 
   aggregate:
-    needs: [preflight, stage]
+    needs: [preflight, run]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-        with: { path: harness, persist-credentials: false }
+        with: { path: harness, persist-credentials: false, fetch-depth: 2 }
       - uses: actions/download-artifact@v8
         with: { path: artifacts }
       - name: aggregate
         env:
-          MATRIX: ${{ needs.preflight.outputs.matrix }}
-          SKIPS: ${{ needs.preflight.outputs.skips }}
-          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
-        run: bash harness/proof/aggregate.sh harness/PROOF_TARGET artifacts "$RUNNER_TEMP/summary"
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash harness/proof/aggregate.sh harness artifacts "$RUNNER_TEMP/summary" "$TARGET_URL"
       - if: always()
         uses: actions/upload-artifact@v7
         with: { name: summary, path: '${{ runner.temp }}/summary', if-no-files-found: warn }

@@ -1,53 +1,46 @@
 #!/usr/bin/env bash
-# GH-LANES preflight: parse PROOF_TARGET, prove the SHA exists on the remote, check package-lock and stage files at the
-# target (shallow fetch; no PG, no npm), and emit the job matrix. Fail closed: any doubt -> non-zero before any PG job.
-# Usage: preflight.sh <PROOF_TARGET file> <repo url> <out dir>
+# GH-LANES preflight (no PG, no npm): parse PROOF_TARGET (exact allowlist), verify the run commit is bound to HARNESS_SHA,
+# shallow-fetch the exact target, pin package-lock, derive the stage manifest from the target tree, validate every EXPECT_*
+# against it, and emit the job matrix. Fail closed: any doubt -> exit 70 before any PG job.
+# Usage: preflight.sh <harness checkout = run commit, fetch-depth 2> <repo url> <out dir>
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); . "$HERE/lanes.sh"
-PT=$1; URL=$2; OUT=$3; mkdir -p "$OUT"; R=$OUT/PREFLIGHT
+HD=$1; URL=$2; OUT=$3; mkdir -p "$OUT"; R=$OUT/PREFLIGHT; : >"$R"
 fail(){ echo "PREFLIGHT_FAIL $*" | tee -a "$R" >&2; exit 70; }
-: >"$R"
-[ -f "$PT" ] || fail "PROOF_TARGET missing"
-SHA=$(sed -n 1p "$PT" | tr -d '\r' | sed 's/[[:space:]]*$//')
-[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "line 1 of PROOF_TARGET is not a 40-hex lowercase commit id: '$SHA'"
-kv(){ sed -n '2,$p' "$PT" | tr -d '\r' | grep -E "^$1=" | tail -1 | cut -d= -f2- || true; }
-# Unknown keys are refused (typos must not silently weaken a proof).
-while IFS= read -r l; do
-  [ -z "$l" ] && continue; case "$l" in \#*) continue;; esac
-  k=${l%%=*}; [[ "$l" == *=* ]] || fail "PROOF_TARGET line '$l' is not KEY=VALUE"
-  case "$k" in STAGES|PKG_LOCK_SHA256|EXPECT_TOTAL_s11|EXPECT_TOTAL_s10b|EXPECT_*) ;; *) fail "unknown PROOF_TARGET key '$k'";; esac
-done < <(sed -n '2,$p' "$PT" | tr -d '\r')
-PKG_EXPECT=$(kv PKG_LOCK_SHA256); PKG_EXPECT=${PKG_EXPECT:-$DEFAULT_PKG_LOCK_SHA256}
-[[ "$PKG_EXPECT" =~ ^[0-9a-f]{64}$ ]] || fail "PKG_LOCK_SHA256 not 64-hex"
-REQ=$(kv STAGES | tr ',' ' ')
-echo "TARGET=$SHA" >>"$R"; echo "STAGES_REQUESTED=${REQ:-all}" >>"$R"
-# Shallow fetch of exactly the target commit: fails for an unknown/unreachable SHA.
+ERR=$(pt_parse "$HD/PROOF_TARGET" 2>&1 >/dev/null) || fail "PROOF_TARGET refused: $ERR"
+pt_parse "$HD/PROOF_TARGET"
+ERR=$(run_binding "$HD" "$PT_HARNESS" 2>&1) || fail "run binding refused: $ERR"
+MODE=FULL; [ "$PT_PARTIAL" = 1 ] && MODE=PARTIAL
+{ echo "TARGET=$PT_SHA"; echo "HARNESS_SHA=$PT_HARNESS"; echo "RUN_COMMIT=$(git -C "$HD" rev-parse HEAD)"; echo "MODE=$MODE"; echo "STAGES_REQUESTED=${PT_STAGES:-all}"; } >>"$R"
 T=$(mktemp -d); git init -q "$T"; git -C "$T" remote add origin "$URL"
-timeout 300 git -C "$T" fetch -q --depth=1 --no-tags origin "$SHA" 2>>"$R" || fail "target $SHA not fetchable from $URL"
-[ "$(git -C "$T" rev-parse FETCH_HEAD)" = "$SHA" ] && [ "$(git -C "$T" cat-file -t "$SHA")" = commit ] || fail "fetched object is not commit $SHA"
-TREE=$(git -C "$T" rev-parse "$SHA^{tree}")
-PKG=$(git -C "$T" show "$SHA:package-lock.json" 2>/dev/null | sha256sum | cut -c1-64)
-git -C "$T" cat-file -e "$SHA:package-lock.json" 2>/dev/null || fail "no package-lock.json at target"
-[ "$PKG" = "$PKG_EXPECT" ] || fail "package-lock.json sha256 $PKG != expected $PKG_EXPECT"
-MIG_N=$(git -C "$T" ls-tree -d --name-only "$SHA:prisma/migrations" | grep -c . || true)
-LAST_MIG=$(git -C "$T" ls-tree -d --name-only "$SHA:prisma/migrations" | LC_ALL=C sort | tail -1)
-{ echo "TREE=$TREE"; echo "PKG_LOCK_SHA256=$PKG"; echo "MIGRATIONS_AT_HEAD=$MIG_N"; echo "LAST_MIGRATION_AT_HEAD=$LAST_MIG"; } >>"$R"
-ALL=""; for L in $LANES; do lane_load "$L"; for s in "${STAGE_TABLE[@]}"; do ALL="$ALL ${s%%|*}"; done; done
-for n in $REQ; do [ "$n" = bootstrap ] && continue; case " $ALL " in *" $n "*) ;; *) fail "unknown stage '$n' (known:$ALL)";; esac; done
-INC=""; SKIPS=""
-for L in $LANES; do lane_load "$L"
-  for s in "${STAGE_TABLE[@]}"; do IFS='|' read -r NAME _ _ FILES _ RQ <<<"$s"
-    if [ -n "$REQ" ]; then case " $REQ " in *" $NAME "*) ;; *) continue;; esac; fi
-    MISSING=""; for f in $FILES; do git -C "$T" cat-file -e "$SHA:$f" 2>/dev/null || MISSING="$MISSING $f"; done
-    if [ -n "$MISSING" ]; then
-      if [ "$RQ" = opt ] && [ -z "$REQ" ]; then SKIPS="$SKIPS $L/$NAME"; echo "STAGE_RESULT lane=$L name=$NAME status=SKIP_ABSENT_AT_HEAD files=[$FILES]" >>"$R"; continue; fi
-      fail "stage $L/$NAME spec files absent at target:$MISSING"
-    fi
-    INC="$INC${INC:+,}{\"lane\":\"$L\",\"stage\":\"$NAME\"}"
-  done
+timeout 300 git -C "$T" fetch -q --depth=1 --no-tags origin "$PT_SHA" 2>>"$R" || fail "target $PT_SHA not fetchable from $URL"
+[ "$(git -C "$T" rev-parse FETCH_HEAD)" = "$PT_SHA" ] && [ "$(git -C "$T" cat-file -t "$PT_SHA")" = commit ] || fail "fetched object is not commit $PT_SHA"
+git -C "$T" cat-file -e "$PT_SHA:package-lock.json" 2>/dev/null || fail "no package-lock.json at target"
+PKG=$(git -C "$T" show "$PT_SHA:package-lock.json" | sha256sum | cut -c1-64)
+[ "$PKG" = "$PT_PKG" ] || fail "package-lock.json sha256 $PKG != expected $PT_PKG"
+MIGS=$(git -C "$T" ls-tree -d --name-only "$PT_SHA:prisma/migrations" | LC_ALL=C sort)
+{ echo "TREE=$(git -C "$T" rev-parse "$PT_SHA^{tree}")"; echo "PKG_LOCK_SHA256=$PKG"; echo "MIGRATIONS_AT_HEAD=$(grep -c . <<<"$MIGS")"; echo "LAST_MIGRATION_AT_HEAD=$(tail -1 <<<"$MIGS")"; } >>"$R"
+MAN=$(manifest "$T" "$PT_SHA" "$PT_STAGES" 2>&1) || fail "manifest: $MAN"
+while read -r L N S; do echo "MANIFEST lane=$L stage=$N status=$S" >>"$R"; done <<<"$MAN"
+# every lane nonempty in FULL mode; every EXPECT_* names something that will actually run
+if [ "$MODE" = FULL ]; then for L in $LANES; do grep -q "^$L [^ ]* run$" <<<"$MAN" || fail "lane $L has no runnable stage at target"; done; fi
+for k in "${!PT_EXPECT[@]}"; do
+  case "$k" in
+    EXPECT_TOTAL_*) grep -q "^${k#EXPECT_TOTAL_} [^ ]* run$" <<<"$MAN" || fail "$k pins lane ${k#EXPECT_TOTAL_}, which runs no stage in this run";;
+    EXPECT_*) grep -q "^[^ ]* ${k#EXPECT_} run$" <<<"$MAN" || fail "$k pins stage ${k#EXPECT_}, which is absent at target or not selected";;
+  esac
+  echo "PIN $k=${PT_EXPECT[$k]}" >>"$R"
+done
+INC=""
+for L in $LANES; do
+  RUNS=$(awk -v l="$L" '$1==l && $3=="run"{print $2}' <<<"$MAN" | paste -sd, -)
+  [ -z "$RUNS" ] && continue
+  [ "$MODE" = FULL ] && LS=ALL || LS=$RUNS
+  INC="$INC${INC:+,}{\"kind\":\"lane\",\"lane\":\"$L\",\"stages\":\"$LS\"}"
+  for N in ${RUNS//,/ }; do INC="$INC,{\"kind\":\"stage\",\"lane\":\"$L\",\"stages\":\"$N\"}"; done
 done
 [ -n "$INC" ] || fail "no stages selected"
 echo "PREFLIGHT_OK" >>"$R"; cat "$R"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
-  { echo "sha=$SHA"; echo "pkg_lock=$PKG"; echo "matrix={\"include\":[$INC]}"; echo "skips=${SKIPS# }"; } >>"$GITHUB_OUTPUT"
+  { echo "sha=$PT_SHA"; echo "pkg_lock=$PKG"; echo "mode=$MODE"; echo "matrix={\"include\":[$INC]}"; } >>"$GITHUB_OUTPUT"
 fi
