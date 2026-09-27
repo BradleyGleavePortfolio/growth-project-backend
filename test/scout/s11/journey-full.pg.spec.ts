@@ -105,6 +105,9 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
   afterAll(() => h?.resetData());
 
   const FIRST = () => h.SOURCES.first;
+  /** A roster read on `host` through the two-source induction registry (review B B1). */
+  const rosterVia = (host: Host, coach: string, intentId: string) =>
+    h.onInduction(host, 'phone', { action: 'roster', coach, intent: intentId });
   const SECOND = () => h.SOURCES.second;
 
   /** Steps 1-2: setup on the phone (P1), pairing on the extension (P2). */
@@ -309,7 +312,15 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       expect(byFamily(basis.report, 'clients').observed_unique).toBe(0);
 
       // ---- J17 (terminal): readiness reads `terminal` on either host, with no reason code leaked.
-      const lateReadiness = await h.pairCurrent('P2', COACH_A, intentId);
+      // Round 4 (proof v2 finding, leg A :313): `pairCurrent`'s third argument is the SETUP
+      // NONCE (test/utils/g2-s11-harness.ts `pairCurrent = (host, coach, nonce?)` ->
+      // `pairing.current(coach, nonce)`, src/extension-pair/extension-pair.service.ts `current`:
+      // a nonce filters `setup_nonce`), so passing the intent id there read a setup that does
+      // not exist -> 404 "Pairing session not found". The nonce-less read (the coach's current,
+      // non-superseded setup) is the live-passing terminal-readiness precedent at
+      // test/scout/s11/readiness.pg.spec.ts:139-144 (R4, `h.pairCurrent('P1', COACH)` after the
+      // run went terminal), and J01 above already read this same coach's setup that way.
+      const lateReadiness = await h.pairCurrent('P2', COACH_A);
       expect(lateReadiness.failure).toBeUndefined();
       expect(lateReadiness.result.readiness).toEqual({
         run: 'terminal',
@@ -321,11 +332,19 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       // ---- Step 11 (native review): the final roster read lists EXACTLY the reconstructed
       // identities — for this native-clean run that is the exact EMPTY roster, asserted empty
       // BECAUSE none were staged (not because of a failure or a non-`complete` terminal).
-      const rosterP1 = await h.rosterOf('P1', COACH_A, intentId);
+      // Round 4: the empty projection is DISCRIMINATED from a blind reader by a direct read of
+      // the coach's Person rows (test/scout/s11/journey-induction.pg.spec.ts:147 and
+      // settle-redrive.pg.spec.ts:146 read `h.persons(coach)` the same way, live-passing): no
+      // Person exists for this coach, so an empty roster is the truth, not a reader gap.
+      expect(h.persons(COACH_A)).toEqual([]);
+      // S11-E r2 (review B B1): the roster reads go through the TWO-SOURCE induction registry
+      // (`h.onInduction`, the registry this leg planned with), not `h.rosterOf`'s single
+      // A1-platform REGISTRY, which classifies none of this leg's tokens.
+      const rosterP1 = await rosterVia('P1', COACH_A, intentId);
       expect(rosterP1.failure).toBeUndefined();
       expect(rosterP1.result.persons).toEqual([]);
       expect(rosterP1.result.accounting.staged).toBe(0);
-      const rosterP2 = await h.rosterOf('P2', COACH_A, intentId);
+      const rosterP2 = await rosterVia('P2', COACH_A, intentId);
       expect(rosterP2.failure).toBeUndefined();
       expect(JSON.stringify(rosterP2.result)).toBe(JSON.stringify(rosterP1.result));
 
@@ -415,7 +434,7 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       // principal, and never silently promoted to a client. This is the truth S8-D changes: once
       // it lands, an otherwise-identical run is expected to settle `complete` and this same read
       // is expected to keep listing these people, now bridged (owner-decided, not built here).
-      const roster = await h.rosterOf('P1', COACH_B, intentId);
+      const roster = await rosterVia('P1', COACH_B, intentId);
       expect(roster.failure).toBeUndefined();
       // Response-level bridge-pending qualifier (src/scout/scout-roster.service.ts:178-179,
       // `roster_bridge_pending: ROSTER_BRIDGE_PENDING`; the constant is defined fixed `true` at
@@ -423,6 +442,20 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       // roster response's own field for "imported, not yet joined," asserted alongside the
       // per-person `InvitePending` state below, not merely narrated in a comment.
       expect(roster.result.roster_bridge_pending).toBe(true);
+      // S11-E (src/scout/scout-roster.service.ts, `classifyFamilyScope`): `staged` counts the
+      // staged (source_platform, token) groups that classify to the roster family through the
+      // engine's registry — so the D2 roster token counts here although it is not literally
+      // `clients` (the proof v2 leg-B failure at :426, `staged` 0 vs 2, was the reader filtering
+      // `entity_type == 'clients'`). `unclassified` is the additive honesty field: staged rows
+      // NO spec classifies. It is 0 here because the read goes through the two-source induction
+      // registry (`rosterVia` → `h.onInduction`; review B B1: `h.rosterOf` carries the single
+      // A1-platform REGISTRY, under which every token of this leg is unclassified) and the
+      // worker hands the reader the SAME composed registry the engine planned with
+      // (test/utils/g2-s11-worker.cjs `roster.sourceMappers = reconstruct.sourceMappers`), so
+      // the second source's rows classify to their own native families. Traced against that
+      // registry: (first, roster token) → clients: staged 2; (first, two native tokens) and
+      // (second, two native tokens) → their own families: unclassified 0.
+      expect(roster.result.accounting.unclassified).toBe(0);
       expect(roster.result.accounting.staged).toBe(rosterIds.size);
       const gotIds = roster.result.persons
         .map((p: { source_person_id: string }) => p.source_person_id)
@@ -432,7 +465,7 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
         expect(person.state).toBe('InvitePending');
         expect(person.source_platform).toBe(first.platform);
       }
-      const rosterOther = await h.rosterOf('P2', COACH_B, intentId);
+      const rosterOther = await rosterVia('P2', COACH_B, intentId);
       expect(JSON.stringify(rosterOther.result)).toBe(JSON.stringify(roster.result));
     },
   );
@@ -472,11 +505,16 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
    *
    * Round 2 (S11D review C): SLICE_COMMITS below is a curated, manually pinned list, not a
    * discovered one. A companion check ("no unlisted src-touching commit slipped in") walks
-   * `git rev-list 3db615c0^..HEAD`, diffs EVERY commit in that full range against its own
-   * parent for `-- src`, and fails loudly if any src-touching commit is absent from
-   * SLICE_COMMITS -- so a future rebase/insertion that adds an uncovered src commit is caught
-   * here rather than silently passing the two checks above (which only ever iterate the
-   * pinned list itself, and could not otherwise notice a missing entry).
+   * `git rev-list 3db615c0^..S11_RANGE_END`, diffs EVERY commit in that full range against
+   * its own parent for `-- src`, and fails loudly if any src-touching commit is absent from
+   * SLICE_COMMITS -- so a rebase/insertion inside the range that adds an uncovered src commit
+   * is caught here rather than silently passing the two checks above (which only ever iterate
+   * the pinned list itself, and could not otherwise notice a missing entry).
+   *
+   * S11-E: the range is closed at S11_RANGE_END (the S11-E src commit), not at `HEAD`: the
+   * S11 slice's src surface is now complete, and later slices (S12+) pin their own ranges
+   * under their own gates rather than silently widening this one. The ancestor check
+   * includes S11_RANGE_END, so the walk can never run over an unreachable end.
    * --------------------------------------------------------------------------------------- */
   const repoRoot = resolve(__dirname, '../../..');
   const git = (args: string[]): string =>
@@ -491,7 +529,10 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
     '645fb6db022f2ef6299ed4aa2bcd3f409d2a8298', // S11-B (settle re-drive)
     'dda794d7e8bee0482a7ad373795fcc51dcf54bb5', // S11-B r2 (raw-query retry)
     '03e7a2344ef95b019c751983527bbc9f78200921', // S11-A2 (no src change; the base this slice builds on)
+    'ce37c6eeb49be1d65ee7c38f86068bd92af824b0', // S11-E (readers classify tokens through the registry)
   ];
+  /** The last commit of the S11 slice's src surface (S11-E); the full-range walk ends here. */
+  const S11_RANGE_END = 'ce37c6eeb49be1d65ee7c38f86068bd92af824b0';
   /** The pinned B for scripts/s10-core-diff-gate.sh (D2 diagnose/fix gate run; s10d2/d2_diagnose_fix.md
    *  lines 129-130: `s10-core-diff-gate.sh 7fdcbc044dba...` -> `PASS B=7fdcbc04... HEAD=275e458c...`). */
   const GATE_B = '7fdcbc044dba1747d0db2f2750ced951f3b6b752';
@@ -512,9 +553,9 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
     return [d2.source_platform, a2.source_platform];
   };
 
-  it('every SLICE_COMMITS entry resolves and is an ancestor of HEAD (pins are real, not stale)', () => {
+  it('every SLICE_COMMITS entry and S11_RANGE_END resolve and are ancestors of HEAD (pins are real, not stale)', () => {
     const head = git(['rev-parse', 'HEAD']).trim();
-    for (const commit of SLICE_COMMITS) {
+    for (const commit of [...SLICE_COMMITS, S11_RANGE_END]) {
       const resolved = git(['rev-parse', '--verify', '--quiet', `${commit}^{commit}`]).trim();
       expect(resolved).toBe(commit);
       expect(() => git(['merge-base', '--is-ancestor', commit, head])).not.toThrow();
@@ -522,14 +563,13 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
   });
 
   it(
-    'no src-touching commit in 3db615c0^..HEAD is missing from the curated SLICE_COMMITS pins ' +
+    'no src-touching commit in 3db615c0^..S11_RANGE_END is missing from the curated SLICE_COMMITS pins ' +
       '(D-S11D review C: the pins are curated, not discovered -- this walks the FULL range and ' +
       'fails loudly on any uncovered src commit, so a future rebase/insertion cannot silently ' +
       'bypass the two checks below, which only ever iterate the pinned list itself)',
     () => {
       const base = '3db615c0a5e64a63b910d34ce7c732ee6e63f24d';
-      const head = git(['rev-parse', 'HEAD']).trim();
-      const range = git(['rev-list', `${base}^..${head}`])
+      const range = git(['rev-list', `${base}^..${S11_RANGE_END}`])
         .split('\n')
         .filter(Boolean);
       expect(range.length).toBeGreaterThan(0);

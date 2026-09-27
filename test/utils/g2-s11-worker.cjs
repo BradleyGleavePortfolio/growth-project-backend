@@ -25,6 +25,11 @@
 //     injected ones, cross-checked by S10-C's `buildInductionRegistry`; the planner, the native
 //     families, the facts service (S10-C registry seam) and the observation service all bind the
 //     SAME composed registries. `input.spec` / `input.rules` (A1) are unchanged and exclusive of it.
+// The S11-E delta (readers resolve source tokens through the registry; and nothing else):
+//   - roster | entities hand the reader the SAME `sourceMappers` the engine planned with
+//     (`reconstruct.sourceMappers`, composed above from the injected A1 spec / A2 packages), the
+//     same CJS field assignment the engine seam already uses — otherwise the readers would classify
+//     the injected platforms' rows as `unclassified` from the repository registry alone.
 // Hooks only PAUSE real operations at named barriers; they never replace query results or
 // transaction semantics. Used only by the explicitly guarded S11 live proofs.
 // input (G2_S11_WORKER JSON): { root, head, client, url, coach, intent, action, pause?, pauseRow?,
@@ -406,16 +411,17 @@ function instrument(target, onGate = null) {
       case 'pair-session':
         result = await pairing.session(input.coach, input.intent);
         break;
-      case 'roster':
-        result = await new ScoutRosterService(prisma, analytics).getRoster(
-          input.coach,
-          input.intent,
-          undefined,
-          undefined,
-        );
+      case 'roster': {
+        const roster = new ScoutRosterService(prisma, analytics);
+        // S11-E: the reader classifies (platform, token) through the registry the engine ran.
+        roster.sourceMappers = reconstruct.sourceMappers;
+        result = await roster.getRoster(input.coach, input.intent, undefined, undefined);
         break;
-      case 'entities':
-        result = await new ScoutEntitiesService(prisma, analytics).getEntities(
+      }
+      case 'entities': {
+        const entities = new ScoutEntitiesService(prisma, analytics);
+        entities.sourceMappers = reconstruct.sourceMappers;
+        result = await entities.getEntities(
           input.coach,
           input.intent,
           body.family ?? 'workouts',
@@ -423,6 +429,7 @@ function instrument(target, onGate = null) {
           undefined,
         );
         break;
+      }
       case 'declare':
         result = await induction.postDeclaration(
           { user: { id: input.coach } },
