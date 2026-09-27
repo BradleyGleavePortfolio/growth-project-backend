@@ -22,6 +22,23 @@ export interface ProvenanceRecord {
 
 type Row = Record<string, unknown> & { id: string };
 
+/** A roster `Person` as the S8-D1 writer sees it (no `archived_at`; `state` carries removal). */
+export interface PersonRecord {
+  id: string;
+  coach_id: string;
+  source_platform: string;
+  source_person_id: string;
+  display_name: string | null;
+  state: 'InvitePending' | 'Invited' | 'Claimed' | 'Suspended' | 'Deleted';
+}
+
+/** Structural P2002 (the writer/engine only read `.code`). */
+function uniqueViolation(): Error {
+  const err = new Error('Unique constraint failed') as Error & { code: string };
+  err.code = 'P2002';
+  return err;
+}
+
 let counter = 0;
 const nextId = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -33,6 +50,8 @@ export class FakeNativeTx {
   exercises = new Map<string, Row>();
   revisions = new Map<string, Row>();
   entities = new Map<string, Row>();
+  /** Persons keyed by id; the external ref (coach|platform|source_person_id) is enforced on create. */
+  persons = new Map<string, PersonRecord>();
   catalog: { id: string; slug: string }[] = [];
   /** When set, the named model.method throws on its next call (simulates a mid-transaction failure). */
   failAt: string | null = null;
@@ -69,11 +88,7 @@ export class FakeNativeTx {
     create: async (args: { data: Omit<ProvenanceRecord, 'id'> }) => {
       this.hit('importNativeProvenance.create');
       const k = this.key(args.data);
-      if (this.provenance.has(k)) {
-        const err = new Error('Unique constraint failed') as Error & { code: string };
-        err.code = 'P2002';
-        throw err;
-      }
+      if (this.provenance.has(k)) throw uniqueViolation();
       const row = { id: nextId('prov'), ...args.data };
       this.provenance.set(k, row);
       return row;
@@ -149,6 +164,67 @@ export class FakeNativeTx {
     };
   }
 
+  /**
+   * S8-D1 `Person` primitives: exactly `findUnique` (by id or by the external
+   * ref) and `create`. Deliberately NO `upsert`/`update`: the writer is
+   * create-only, so a fake that silently accepted an update would hide a
+   * display_name overwrite. A duplicate external ref on create is P2002, as on
+   * PostgreSQL (`@@unique([coach_id, source_platform, source_person_id])`).
+   */
+  person = {
+    findUnique: async (args: {
+      where:
+        | { id: string }
+        | {
+            coach_id_source_platform_source_person_id: {
+              coach_id: string;
+              source_platform: string;
+              source_person_id: string;
+            };
+          };
+    }) => {
+      this.hit('person.findUnique');
+      if ('id' in args.where) return this.persons.get(args.where.id) ?? null;
+      const ref = args.where.coach_id_source_platform_source_person_id;
+      return (
+        [...this.persons.values()].find(
+          (p) =>
+            p.coach_id === ref.coach_id &&
+            p.source_platform === ref.source_platform &&
+            p.source_person_id === ref.source_person_id,
+        ) ?? null
+      );
+    },
+    create: async (args: {
+      data: {
+        coach_id: string;
+        source_platform: string;
+        source_person_id: string;
+        display_name: string | null;
+      };
+    }) => {
+      this.hit('person.create');
+      const d = args.data;
+      const clash = [...this.persons.values()].some(
+        (p) =>
+          p.coach_id === d.coach_id &&
+          p.source_platform === d.source_platform &&
+          p.source_person_id === d.source_person_id,
+      );
+      if (clash) throw uniqueViolation();
+      const row: PersonRecord = { id: nextId('person'), state: 'InvitePending', ...d };
+      this.persons.set(row.id, row);
+      return { id: row.id };
+    },
+  };
+
+  /** Seed a Person directly (a pre-D1 row, another coach's row, a Deleted row). */
+  seedPerson(fields: Omit<PersonRecord, 'id'> & { id?: string }): PersonRecord {
+    const row: PersonRecord = { id: fields.id ?? nextId('person'), ...fields };
+    this.persons.set(row.id, row);
+    return row;
+  }
+
   workoutProgram = this.table('workoutProgram', () => this.programs);
   workoutPlan = this.table('workoutPlan', () => this.plans);
   workoutPlanExercise = this.table('workoutPlanExercise', () => this.exercises);
@@ -187,26 +263,27 @@ export class FakeNativeTx {
 
   /** Snapshot-and-restore transaction: a throw leaves no partial state behind. */
   async $transaction<T>(fn: (tx: FakeNativeTx) => Promise<T>): Promise<T> {
-    const snapshot = [
-      this.provenance,
-      this.programs,
-      this.plans,
-      this.exercises,
-      this.revisions,
-      this.entities,
-    ].map((m) => new Map([...m].map(([k, v]) => [k, { ...v }])));
+    const clone = <V extends object>(m: Map<string, V>): Map<string, V> =>
+      new Map([...m].map(([k, v]) => [k, { ...v }]));
+    const snapshot = {
+      provenance: clone(this.provenance),
+      programs: clone(this.programs),
+      plans: clone(this.plans),
+      exercises: clone(this.exercises),
+      revisions: clone(this.revisions),
+      entities: clone(this.entities),
+      persons: clone(this.persons),
+    };
     try {
       return await fn(this);
     } catch (err) {
-      [this.provenance, this.programs, this.plans, this.exercises, this.revisions, this.entities] =
-        snapshot as [
-          Map<string, ProvenanceRecord>,
-          Map<string, Row>,
-          Map<string, Row>,
-          Map<string, Row>,
-          Map<string, Row>,
-          Map<string, Row>,
-        ];
+      this.provenance = snapshot.provenance;
+      this.programs = snapshot.programs;
+      this.plans = snapshot.plans;
+      this.exercises = snapshot.exercises;
+      this.revisions = snapshot.revisions;
+      this.entities = snapshot.entities;
+      this.persons = snapshot.persons;
       throw err;
     }
   }

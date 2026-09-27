@@ -661,6 +661,119 @@ describe('S9-B ReconciliationFactsService', () => {
     });
   });
 
+  describe('S8-D1 typed person kind (contract §5.1 step 4: Deleted → removed)', () => {
+    /** A clients row the D1 writer produced: ledger kind `person`, provenance `person`, a Person row. */
+    function client(
+      db: FakeDb,
+      sourceId: string,
+      person: Partial<{ coach_id: string; state: string; updated_at: Date | null }> = {},
+      outcome = 'created',
+    ) {
+      const row = db.add('person', {
+        coach_id: COACH,
+        state: 'InvitePending',
+        updated_at: new Date('2026-09-26T00:00:00Z'),
+        display_name: 'x',
+        ...person,
+      });
+      stage(db, 'people', sourceId, { name: 'x' });
+      ledger(db, 'people', sourceId, 'reconstructed', { target_id: row.id, target_kind: 'person' });
+      provenance(db, 'clients', sourceId, 'person', row.id, outcome);
+      return row;
+    }
+
+    it('a live Person of this coach is present_owned (bucket j) for created and already_present alike; the qualifier still rides', async () => {
+      const db = new FakeDb();
+      client(db, 'P1', {}, 'created');
+      client(db, 'P2', { state: 'Suspended' }, 'already_present');
+      const facts = await service().collect(db.client(), COACH, INTENT);
+      const clients = family(facts, 'clients');
+      expect(identity(clients, 'P1').ledger).toMatchObject({
+        status: 'reconstructed',
+        target_kind: 'person',
+        provenance: { outcome: 'created', native: 'present_owned' },
+      });
+      expect(identity(clients, 'P2').ledger).toMatchObject({
+        provenance: { outcome: 'already_present', native: 'present_owned' },
+      });
+      expect(clients.qualifiers).toEqual(['roster_bridge_pending']);
+      const result = reconcile(facts);
+      expect(result.report.families.find((f) => f.family === 'clients')).toMatchObject({
+        staged_unique: 2,
+        native_present_verified: 2,
+        unresolved: 0,
+        reasons: [],
+        qualifiers: ['roster_bridge_pending'],
+      });
+      // Only clients staged here ⇒ the run's sole condition is the v1 coverage basis.
+      expect(result.report.conditions).toEqual(['coverage_basis_unknown']);
+    });
+
+    it("a Deleted Person is removed (bucket i, native_target_removed); another coach's Person is foreign_owner (identity_conflict)", async () => {
+      const db = new FakeDb();
+      client(db, 'D1', { state: 'Deleted' });
+      client(db, 'F1', { coach_id: OTHER });
+      client(db, 'L1');
+      const facts = await service().collect(db.client(), COACH, INTENT);
+      const clients = family(facts, 'clients');
+      expect(identity(clients, 'D1').ledger).toMatchObject({ provenance: { native: 'removed' } });
+      expect(identity(clients, 'F1').ledger).toMatchObject({
+        provenance: { native: 'foreign_owner' },
+      });
+      expect(identity(clients, 'L1').ledger).toMatchObject({
+        provenance: { native: 'present_owned' },
+      });
+      const result = reconcile(facts);
+      expect(result.report.families.find((f) => f.family === 'clients')).toMatchObject({
+        staged_unique: 3,
+        native_present_verified: 1,
+        unresolved: 2,
+        reasons: [
+          { code: 'unresolved:identity_conflict', count: 1 },
+          { code: 'unresolved:native_target_removed', count: 1 },
+        ],
+      });
+      expect(result.report.conditions[0]).toBe('unresolved_identities');
+    });
+
+    it('a historical NULL-kind ledger row stays bucket f even when a later person provenance row exists', async () => {
+      const db = new FakeDb();
+      const row = db.add('person', {
+        coach_id: COACH,
+        state: 'InvitePending',
+        updated_at: new Date(),
+      });
+      stage(db, 'people', 'H1', { name: 'x' });
+      // The pre-D1 engine wrote the Person id with no kind; S9 reads the ledger, not the Person.
+      ledger(db, 'people', 'H1', 'reconstructed', { target_id: row.id, target_kind: null });
+      provenance(db, 'clients', 'H1', 'person', row.id, 'already_present');
+      const facts = await service().collect(db.client(), COACH, INTENT);
+      expect(identity(family(facts, 'clients'), 'H1').ledger).toMatchObject({
+        status: 'reconstructed',
+        target_kind: null,
+      });
+      const result = reconcile(facts);
+      expect(result.report.families.find((f) => f.family === 'clients')).toMatchObject({
+        native_present_verified: 0,
+        unresolved: 1,
+        reasons: [{ code: 'unresolved:evidence_only', count: 1 }],
+      });
+      expect(result.report.conditions).toEqual(['unresolved_identities', 'coverage_basis_unknown']);
+    });
+
+    it('reads Persons only through the bounded id lookup (state + updated_at selected, no write)', async () => {
+      const db = new FakeDb();
+      client(db, 'P1');
+      client(db, 'P2', { state: 'Deleted' });
+      await service().collect(db.client(), COACH, INTENT);
+      const personReads = db.calls.filter((c) => c.model === 'person');
+      expect(personReads).toHaveLength(1);
+      expect(personReads[0].method).toBe('findMany');
+      expect(Object.keys(personReads[0].where)).toEqual(['id']);
+      expect(personReads[0].where.id.in).toHaveLength(2);
+    });
+  });
+
   describe('relationship edges (B-2: one edge per declared relationship)', () => {
     it('emits program_parent even when the parent is unstaged and unresolvable', async () => {
       const db = new FakeDb();

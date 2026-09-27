@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { PersonState, type Prisma } from '@prisma/client';
 import { stagedFamilyDigests } from '../induction/digest';
 import {
   buildInductionRegistry,
@@ -1005,11 +1005,18 @@ export class ReconciliationFactsService {
     for (const chunk of chunks(ids, LOOKUP_CHUNK)) {
       const rows = await db.person.findMany({
         where: { id: { in: chunk } },
-        select: { id: true, coach_id: true },
+        select: { id: true, coach_id: true, state: true, updated_at: true },
       });
-      // Person has no `archived_at` (D-S9-2 bucket i: "where the model has one").
+      // Person has no `archived_at`; S8-D1 (contract §5.1 step 4) reads
+      // `state = Deleted` as removed (D-S9-2 bucket i), stamped with the row's
+      // last update so `checkNative` sees a non-null marker. Any other state,
+      // including Suspended, is present.
       for (const row of rows)
-        out.set(row.id, { id: row.id, coach_id: row.coach_id, archived_at: null });
+        out.set(row.id, {
+          id: row.id,
+          coach_id: row.coach_id,
+          archived_at: row.state === PersonState.Deleted ? row.updated_at : null,
+        });
     }
     return out;
   }

@@ -14,15 +14,18 @@
  * `clients` stays provable through the first source alone and J10 discriminates the families a
  * missing declaration leaves unknown from the one it does not.
  *
- * NATIVE-CLEAN SHAPE (binding; s10d2/d2_diagnose_fix.md, the S10-D D2 learning). Until S8-D
- * lands, a run that stages ANY `clients` row cannot settle `complete`: the legacy Person handoff
- * ledgers `target_kind NULL`, the S9-A classifier puts it in bucket (f) `unresolved`, and the
- * run-level condition `unresolved_identities` holds regardless of coverage. J09 therefore stages
- * the native-clean shape for BOTH platforms — no `clients` row on either; `clients` is DECLARED
- * (the first source's manifest names it) and source-signed as the EMPTY enumeration; every staged
- * identity is native (coach-owned program / workout templates) — exactly the shape the D2 live
- * proof (test/scout/s10/s10-unseen.pg.spec.ts, r2 case (a)) settled `complete` with. This is a
- * proof-shape constraint, not a product statement: the roster path is S8-D's.
+ * NATIVE-CLEAN SHAPE (s10d2/d2_diagnose_fix.md, the S10-D D2 learning). When this file was
+ * written, a run that staged ANY `clients` row could not settle `complete`: the legacy Person
+ * handoff ledgered `target_kind NULL`, the S9-A classifier put it in bucket (f) `unresolved`, and
+ * the run-level condition `unresolved_identities` held regardless of coverage. J09 therefore
+ * stages the native-clean shape for BOTH platforms — no `clients` row on either; `clients` is
+ * DECLARED (the first source's manifest names it) and source-signed as the EMPTY enumeration;
+ * every staged identity is native (coach-owned program / workout templates) — exactly the shape
+ * the D2 live proof (test/scout/s10/s10-unseen.pg.spec.ts, r2 case (a)) settled `complete` with.
+ * S8-D1 (docs/decisions/2026-09-26-s8d-person-link.md §5.1) has since landed the typed `person`
+ * handoff, so a roster-bearing run CAN settle `complete` (pinned live by s10-unseen case (h) and
+ * the S11 full journey's leg B). This file keeps its native-clean shape on purpose: J09–J11 prove
+ * the induction / declaration / barrier mechanics, and no assertion here depends on the roster path.
  *
  * Statements are signed as the D2 proof signs them (test/fixtures/scout/s11/s11-sources.ts): the
  * identity-set digest is the INDEPENDENT reference implementation, the spec digest the service's

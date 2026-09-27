@@ -120,7 +120,8 @@ function stagedRows(family: string): StagedRow[] {
 // ---------------------------------------------------------------------------
 // In-memory Prisma fake driving the REAL ScoutReconstructService. Same shape and
 // double-cast-free wrapping as scout-reconstruct.service.spec.ts, extended with
-// the generic-entity upsert so the non-person families can reconstruct too. All
+// the generic-entity upsert so the non-person families can reconstruct too, and
+// the S8-D1 Person/provenance primitives the create-only clients writer uses. All
 // where-clauses (count / findMany / groupBy) are honoured so multiple families
 // and tenants can share one fake without cross-talk.
 // ---------------------------------------------------------------------------
@@ -148,13 +149,40 @@ interface Scope {
   intent_id: string;
   entity_type: string;
 }
+interface ProvenanceIdentity {
+  coach_id: string;
+  source_namespace: string;
+  entity_type: string;
+  source_id: string;
+}
+interface ProvenanceRow extends ProvenanceIdentity {
+  id: string;
+  native_kind: string;
+  native_id: string | null;
+  outcome: string;
+  reason: string | null;
+}
+const provKey = (k: ProvenanceIdentity) =>
+  `${k.coach_id}|${k.source_namespace}|${k.entity_type}|${k.source_id}`;
+function p2002(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('unique violation', {
+    code: 'P2002',
+    clientVersion: 'test',
+  });
+}
 
 class FakePrisma {
   terminalStatus: string | null = 'success';
   readonly staged: StagedRecord[] = [];
-  /** source_person_ids whose person.upsert throws once (poison-isolation proof). */
+  /** source_person_ids whose person.create throws (poison-isolation proof). */
   readonly poison = new Set<string>();
-  readonly persons = new Map<string, { id: string; display_name: string | null }>();
+  /** Persons keyed by the external ref `coach|platform|source_person_id`. */
+  readonly persons = new Map<
+    string,
+    { id: string; coach_id: string; display_name: string | null; state: string }
+  >();
+  /** S8-D1 provenance keyed by the D-S8-3 identity `coach|namespace|entity_type|source_id`. */
+  readonly provenance = new Map<string, ProvenanceRow>();
   readonly entities = new Map<string, { id: string; label: string | null }>();
   readonly ledger = new Map<string, LedgerRow>();
 
@@ -195,32 +223,72 @@ class FakePrisma {
     },
   };
 
+  /**
+   * S8-D1 create-only writer primitives (no upsert/update exists to hide a
+   * display_name overwrite); a duplicate external ref on create is P2002 as on
+   * PostgreSQL. Poison fires on the create (first write) of the named row.
+   */
   person = {
-    upsert: async (args: {
-      where: {
-        coach_id_source_platform_source_person_id: {
-          coach_id: string;
-          source_platform: string;
-          source_person_id: string;
-        };
-      };
-      create: { display_name: string | null };
-      update: { display_name: string | null };
+    findUnique: async (args: {
+      where:
+        | { id: string }
+        | {
+            coach_id_source_platform_source_person_id: {
+              coach_id: string;
+              source_platform: string;
+              source_person_id: string;
+            };
+          };
     }) => {
-      const w = args.where.coach_id_source_platform_source_person_id;
-      if (this.poison.has(w.source_person_id)) throw new Error('poison person upsert');
-      const key = `${w.coach_id}|${w.source_platform}|${w.source_person_id}`;
-      const existing = this.persons.get(key);
-      if (existing) {
-        existing.display_name = args.update.display_name;
-        return { id: existing.id };
+      if ('id' in args.where) {
+        const wantedId = args.where.id;
+        return [...this.persons.values()].find((p) => p.id === wantedId) ?? null;
       }
+      const w = args.where.coach_id_source_platform_source_person_id;
+      return this.persons.get(`${w.coach_id}|${w.source_platform}|${w.source_person_id}`) ?? null;
+    },
+    create: async (args: {
+      data: {
+        coach_id: string;
+        source_platform: string;
+        source_person_id: string;
+        display_name: string | null;
+      };
+    }) => {
+      const d = args.data;
+      if (this.poison.has(d.source_person_id)) throw new Error('poison person create');
+      const key = `${d.coach_id}|${d.source_platform}|${d.source_person_id}`;
+      if (this.persons.has(key)) throw p2002();
       const created = {
         id: `person-${this.persons.size + 1}`,
-        display_name: args.create.display_name,
+        coach_id: d.coach_id,
+        display_name: d.display_name,
+        state: 'InvitePending',
       };
       this.persons.set(key, created);
       return { id: created.id };
+    },
+  };
+
+  importNativeProvenance = {
+    findUnique: async (args: {
+      where: { coach_id_source_namespace_entity_type_source_id: ProvenanceIdentity };
+    }) =>
+      this.provenance.get(provKey(args.where.coach_id_source_namespace_entity_type_source_id)) ??
+      null,
+    create: async (args: { data: ProvenanceIdentity & Omit<ProvenanceRow, 'id'> }) => {
+      const key = provKey(args.data);
+      if (this.provenance.has(key)) throw p2002();
+      const row = { id: `prov-${this.provenance.size + 1}`, ...args.data };
+      this.provenance.set(key, row);
+      return row;
+    },
+    update: async (args: { where: { id: string }; data: Partial<ProvenanceRow> }) => {
+      const wantedId = args.where.id;
+      const row = [...this.provenance.values()].find((r) => r.id === wantedId);
+      if (row === undefined) throw new Error('not found');
+      Object.assign(row, args.data);
+      return row;
     },
   };
 
@@ -424,6 +492,14 @@ describe('conformance_alpha e2e — members reconstruct into canonical clients',
 
     expect(second).toEqual(first);
     expect(prisma.persons.size).toBe(mintedAfterFirst);
+    // S8-D1: one `person/created` provenance row per minted Person, none added on replay.
+    expect(prisma.provenance.size).toBe(mintedAfterFirst);
+    for (const row of prisma.provenance.values())
+      expect(row).toMatchObject({
+        entity_type: 'clients',
+        native_kind: 'person',
+        outcome: 'created',
+      });
   });
 });
 

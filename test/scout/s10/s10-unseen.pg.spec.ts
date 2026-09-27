@@ -24,15 +24,19 @@
  * Guard: without G2_S10B_DATABASE_URL the whole file is `describe.skip` and imports nothing from
  * the PG lane (the default jest suite picks up test/scout/**; it must not hard-fail there).
  *
- * SHAPES (proof v1 finding, s10d2/d2_diagnose_fix.md). The `complete` cases stage the NATIVE-CLEAN
+ * SHAPES (proof v1 finding, s10d2/d2_diagnose_fix.md). Cases (a)-(g) stage the NATIVE-CLEAN
  * subset of the fixture (the two workouts rows; `clients` and `programs` declared, source-signed
- * as EMPTY enumerations — the R33 unit shape, facts.service.coverage.spec `cleanRun`). A staged
- * `clients` row can NOT be part of a `complete` run at this head: `clientsFamily.persist`
- * (src/scout/reconstruct/families.ts L83-101) returns the legacy string id, so the engine writes
- * the ledger row with `target_kind` NULL (scout-reconstruct.service.ts L510-520) and no provenance;
- * S9-A classifies it bucket f `unresolved:evidence_only` (reconcile.ts L136-146; S9-DOC D-S9-2 f)
- * → C-ID `unresolved_identities`. The typed `person` handoff is S8-D, blocked on D-S8-2 (owner).
- * Case (h) pins that truth live instead of hiding it; nothing here injects around it.
+ * as EMPTY enumerations — the R33 unit shape, facts.service.coverage.spec `cleanRun`). Case (h)
+ * stages the roster rows too. Before S8-D1 that run could only settle `partial /
+ * unresolved_identities` (legacy string id → ledger kind NULL, no provenance → S9 bucket f
+ * `evidence_only`), and (h) pinned that truth live. S8-D1 (contract
+ * docs/decisions/2026-09-26-s8d-person-link.md §5.1; owner decision D-S8-2 (a)) replaced the
+ * handoff: `clientsFamily.persist` → `persistPerson` (src/scout/reconstruct/native/person-writer.ts)
+ * creates the Person and a `person/created` provenance row in one transaction and returns the
+ * typed outcome, the engine stamps ledger `target_kind = person`, and S9 verifies the Person
+ * through the join (bucket j). Case (h) now pins THAT truth: the roster-bearing run is `complete`
+ * and the Persons are still InvitePending with no User minted. `roster_bridge_pending` is still
+ * carried (retiring it is S8-D2). Nothing here injects around the repository-default registries.
  */
 import { createHash, createPrivateKey, sign } from 'crypto';
 import { readFileSync } from 'fs';
@@ -53,7 +57,7 @@ const SET = ROWS.sets as Record<
   'base' | 'client_linked' | 'undeclared_family' | 'canonical_token',
   Row[]
 >;
-/** The roster rows (`clients`, legacy Person handoff) and the native-clean rest of `base`. */
+/** The roster rows (`clients`, S8-D1 typed Person handoff) and the native-clean rest of `base`. */
 const ROSTER: Row[] = SET.base.filter((r) => r.token === 'u10-members');
 const NATIVE_CLEAN: Row[] = SET.base.filter((r) => r.token !== 'u10-members');
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -426,18 +430,22 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
     expect(nativeCounts('s10u-g').programs).toBe(0);
   });
 
-  it('(h) staged clients rows → partial / unresolved_identities: Person rows exist, but the legacy handoff (ledger kind NULL, no provenance) is bucket f evidence_only until S8-D', async () => {
+  it('(h) staged clients rows → complete: the S8-D1 typed person handoff lets S9 verify the roster Persons (InvitePending, no User; roster_bridge_pending still carried)', async () => {
+    // Flipped by S8-D1 (contract §5.1). Before D1 this exact staged shape settled
+    // `partial / unresolved_identities` with clients bucket f `evidence_only` ×2: the Persons were
+    // written, but with a NULL ledger kind and no provenance S9 could not verify them. D1's writer
+    // records `person/created` provenance and the typed ledger kind, so the same two Persons now
+    // verify (bucket j) and — every other family being clean and source-signed — the run is complete.
     const coach = 's10u-h';
     const { run, basis } = await chain(coach, [...ROSTER, ...NATIVE_CLEAN]);
-    expect(run.terminal_status).toBe('partial');
-    expect(run.reason_code).toBe('unresolved_identities');
-    // C-ID alone: coverage is known for every family (the source signed all three sets).
-    expect(basis.report.conditions).toEqual(['unresolved_identities']);
+    expect(run.terminal_status).toBe('complete');
+    expect(run.reason_code).toBeNull();
+    expect(basis.report.conditions).toEqual([]);
     expect(familyOf(basis, 'clients')).toMatchObject({
       staged_unique: 2,
-      native_present_verified: 0,
-      unresolved: 2,
-      reasons: [{ code: 'unresolved:evidence_only', count: 2 }],
+      native_present_verified: 2,
+      unresolved: 0,
+      reasons: [],
       qualifiers: ['roster_bridge_pending'],
       completeness_basis: 'source_signed_enumeration',
       observed_unique: 2,
@@ -446,9 +454,37 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
       native_present_verified: 2,
       unresolved: 0,
     });
-    // The roster Persons ARE written (S8-DOC §4.1) — the run is partial because S9 cannot verify
-    // them through the ledger/provenance join, not because anything is missing natively.
     expect(nativeCounts(coach)).toEqual({ persons: 2, plans: 2, programs: 0 });
     expect(evidenceRows(coach)).toBe(0);
+    // One `person/created` provenance row per roster identity, keyed by the canonical family.
+    expect(
+      Number(
+        lane.sql(
+          `SELECT count(*) FROM "ImportNativeProvenance" WHERE coach_id=${lane.quote(coach)}
+             AND entity_type='clients' AND native_kind='person' AND outcome='created'`,
+        ),
+      ),
+    ).toBe(2);
+    // D-S8-2 (a): no login User is minted for an imported person; the Person stays InvitePending.
+    expect(
+      Number(
+        lane.sql(
+          `SELECT count(*) FROM "Person" WHERE coach_id=${lane.quote(coach)} AND state='InvitePending'`,
+        ),
+      ),
+    ).toBe(2);
+    // Every reconstructed clients ledger row carries the typed kind and points at a provenance target.
+    expect(
+      Number(
+        lane.sql(
+          `SELECT count(*) FROM "ScoutReconstructionLedger" l
+             WHERE l.coach_id=${lane.quote(coach)} AND l.entity_type='u10-members'
+               AND l.status='reconstructed' AND l.target_kind='person'
+               AND EXISTS (SELECT 1 FROM "ImportNativeProvenance" p
+                            WHERE p.coach_id=l.coach_id AND p.entity_type='clients'
+                              AND p.source_id=l.source_id AND p.native_id=l.target_id)`,
+        ),
+      ),
+    ).toBe(2);
   });
 });

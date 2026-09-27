@@ -88,6 +88,33 @@ export async function promoteToCreated(
 }
 
 /**
+ * Record an ALREADY_PRESENT identity for a native row that existed before its
+ * provenance did (S8-D1 step 2: a pre-D1 `Person` adopted at the external ref).
+ * The caller has already established in this transaction that no CREATED or
+ * ALREADY_PRESENT row exists for the identity, so `existing` can only be an
+ * UNRESOLVED row, which is promoted in place — one provenance row per identity.
+ */
+export async function recordAlreadyPresent(
+  tx: Tx,
+  key: ProvenanceKey,
+  existing: ProvenanceRow | null,
+  nativeKind: NativeKind,
+  nativeId: string,
+): Promise<void> {
+  const data = {
+    native_kind: nativeKind,
+    native_id: nativeId,
+    outcome: PROVENANCE_OUTCOME.already_present,
+    reason: null,
+  };
+  if (existing === null) {
+    await tx.importNativeProvenance.create({ data: { ...identity(key), ...data } });
+    return;
+  }
+  await tx.importNativeProvenance.update({ where: { id: existing.id }, data });
+}
+
+/**
  * Record (or refresh the reason of) an UNRESOLVED identity. The caller has
  * already established in this transaction that no CREATED row exists for the
  * identity, so the update branch can only touch an unresolved row.

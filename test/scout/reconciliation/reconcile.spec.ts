@@ -1490,6 +1490,57 @@ const cases: readonly VerdictCase[] = [
     reason: S9_REASON_CODE.relationship_unverified,
     conditions: [S9_REASON_CODE.relationship_unverified, S9_REASON_CODE.coverage_basis_unknown],
   },
+  // S8-D1 (contract 2026-09-26-s8d-person-link §5.1): the typed `person` handoff lets `clients`
+  // verify; the RUN is complete only when EVERY family is (C6) — another unresolved family
+  // still keeps it partial, and the roster qualifier rides either way (retiring it is S8-D2).
+  {
+    label:
+      'S8-D1/C6 verified clients (person, roster_bridge_pending) + a client-owned evidence family → partial / unresolved_identities',
+    input: covered([
+      fam('clients', [id('clients-0', verifiedRow()), id('clients-1', verifiedRow())], {
+        qualifiers: ['roster_bridge_pending'],
+      }),
+      fam('client_history', [id('client_history-0', evidenceRow(null))], { client_owned: true }),
+    ]),
+    outcome: 'partial',
+    reason: S9_REASON_CODE.unresolved_identities,
+    conditions: [S9_REASON_CODE.unresolved_identities],
+    check: (r) => {
+      expect(row(r, 'clients')).toMatchObject({
+        staged_unique: 2,
+        native_present_verified: 2,
+        unresolved: 0,
+        reasons: [],
+        qualifiers: ['roster_bridge_pending'],
+      });
+      expect(row(r, 'client_history')).toMatchObject({
+        unresolved: 1,
+        reasons: counts({ [WRITER_CODE.no_native_client_principal]: 1 }),
+      });
+    },
+  },
+  {
+    label:
+      'S8-D1/C6 verified clients (person, roster_bridge_pending) + verified workouts, basis known → complete / null with the qualifier carried',
+    input: covered([
+      fam('clients', [id('clients-0', verifiedRow()), id('clients-1', verifiedRow())], {
+        qualifiers: ['roster_bridge_pending'],
+      }),
+      cleanFamily('workouts', 1, 'workout_plan'),
+    ]),
+    outcome: 'complete',
+    reason: null,
+    conditions: [],
+    check: (r) => {
+      expect(row(r, 'clients')).toMatchObject({
+        native_present_verified: 2,
+        unresolved: 0,
+        qualifiers: ['roster_bridge_pending'],
+        completeness_basis: 's10-observation',
+        observed_unique: 2,
+      });
+    },
+  },
 ];
 
 describe('S9-A reconcile — verdict table', () => {
