@@ -4,6 +4,7 @@ import { type MappedClient, type MappedEntity } from './mapping-spec';
 import { buildNativeFamilies } from './native/native-families';
 import { buildNativeRuleRegistry, type NativeRuleRegistry } from './native/native-rule-registry';
 import { type PersistResult } from './native/persist-outcome';
+import { persistPerson } from './native/person-writer';
 import { buildSourceMapperRegistry, type SourceMapper } from './source-mapper-registry';
 
 export {
@@ -68,9 +69,14 @@ function unsupportedPlatform(row: StagedRow): { readonly ok: false; readonly rea
 }
 
 /**
- * `clients` — byte-identical to IMPORTER-F: reconstruct into an invite-pending,
- * non-login, tenant-owned roster `Person`. Identity/idempotency is the
- * tenant-scoped external_ref (coach_id, source_platform, source_person_id).
+ * `clients` — reconstruct into an invite-pending, non-login, tenant-owned roster
+ * `Person` (IMPORTER-F target) through the S8-D1 typed `person` handoff: the
+ * S8-C writer shape (provenance → verify → adopt a pre-D1 row → create), a
+ * create-only target, and a typed outcome the engine ledgers as
+ * `target_kind = person` (or `skipped` with the exact database-determined
+ * `unresolved:*` reason). Identity is the provenance row keyed by the raw staged
+ * source_id; the Person external_ref (coach_id, source_platform,
+ * source_person_id) remains the unique key that makes a create race converge.
  */
 const clientsFamily: FamilyReconstructor<MappedClient> = {
   entityType: RECONSTRUCT_FAMILY.clients,
@@ -80,25 +86,14 @@ const clientsFamily: FamilyReconstructor<MappedClient> = {
     const result = mapper.mapClient(row);
     return result.ok ? { ok: true, mapped: result.client } : result;
   },
-  async persist(tx, coachId, _sourceId, client) {
-    const person = await tx.person.upsert({
-      where: {
-        coach_id_source_platform_source_person_id: {
-          coach_id: coachId,
-          source_platform: client.sourcePlatform,
-          source_person_id: client.sourcePersonId,
-        },
-      },
-      create: {
-        coach_id: coachId,
-        source_platform: client.sourcePlatform,
-        source_person_id: client.sourcePersonId,
-        display_name: client.displayName,
-      },
-      update: { display_name: client.displayName },
-      select: { id: true },
-    });
-    return person.id;
+  persist(tx, coachId, sourceId, client) {
+    return persistPerson(
+      tx,
+      coachId,
+      { source_platform: client.sourcePlatform, source_id: sourceId },
+      RECONSTRUCT_FAMILY.clients,
+      client,
+    );
   },
 };
 
@@ -155,10 +150,10 @@ export interface FamilyRegistryOptions {
 
 /**
  * Build the entity_type → reconstructor registry. `clients` targets `Person`
- * (legacy result, ledger kind NULL); `client_history` shares the generic
- * canonical table (legacy result, kind NULL). `workouts` and `programs` are the
- * S8-C native families: the same map/persist seam, but their persist returns a
- * typed outcome — `workouts` keeps the accepted evidence write (typed
+ * (S8-D1 typed result, ledger kind `person`); `client_history` shares the
+ * generic canonical table (legacy result, kind NULL). `workouts` and `programs`
+ * are the S8-C native families: the same map/persist seam, but their persist
+ * returns a typed outcome — `workouts` keeps the accepted evidence write (typed
  * `scout_entity`) unless the source declares native workout rules, and
  * `programs` targets WorkoutProgram templates. Billing is deliberately absent —
  * an unregistered family fails closed at the engine boundary, so billing can

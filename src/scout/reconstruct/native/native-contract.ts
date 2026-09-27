@@ -8,8 +8,13 @@
  * `./sources/*.json`, never a branch here.
  */
 
-/** Closed `ImportNativeProvenance.native_kind` set (S8-B CHECK). */
+/**
+ * Closed `ImportNativeProvenance.native_kind` set (S8-B CHECK). `person` is the
+ * S8-D1 roster kind (`clients` → `Person`, contract 2026-09-26-s8d-person-link
+ * §5.1): the CHECK admitted it since S8-B; the writer that records it is D1's.
+ */
 export const NATIVE_KIND = {
+  person: 'person',
   workout_program: 'workout_program',
   workout_plan: 'workout_plan',
   workout_plan_exercise: 'workout_plan_exercise',
