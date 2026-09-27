@@ -1,5 +1,10 @@
 [
   {
+    "glob": ".vendor-name-guard.json",
+    "reason": "Guard configuration names the quarantined oracle path.",
+    "retire": "V1 learned-path parity"
+  },
+  {
     "glob": "test/**",
     "reason": "Tests and fixtures preserve legacy source-contract evidence.",
     "retire": "V1 learned-path parity"
@@ -18,6 +23,11 @@
     "glob": "docs/decisions/**",
     "reason": "Historical decision records are retained for auditability.",
     "retire": "Historical records retained"
+  },
+  {
+    "glob": "docs/importer/NORTH_STAR.md",
+    "reason": "Current importer governance record states the retired legacy oracle.",
+    "retire": "V1 learned-path parity"
   },
   {
     "glob": "src/scout/reconstruct/sources/truecoach.json",
