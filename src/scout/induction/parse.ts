@@ -291,9 +291,35 @@ function assertKeys(
   }
 }
 
-function parseVerifier(raw: unknown, origin: string, where: string): InductionVerifierV1 {
+// S12-B2 — optional TEST-ONLY data marker (closes D2 C1). A manifest may carry `"testOnly": true`
+// and a verifier `"test_only": true` (each in its own object's key casing). When present the marker
+// must be literally `true`; it is removed before the strict V1/V5 key check, so `MANIFEST_KEYS` and
+// `VERIFIER_KEYS` are unchanged and every other rule still applies. The marker is data, never a
+// source list in code: the loader decides per runtime whether marked artifacts are refused.
+const MANIFEST_TEST_ONLY_KEY = 'testOnly';
+const VERIFIER_TEST_ONLY_KEY = 'test_only';
+
+function takeTestOnly(
+  obj: Record<string, unknown>,
+  key: string,
+  origin: string,
+  where: string,
+): boolean {
+  if (!hasOwn(obj, key)) return false;
+  if (obj[key] !== true) throw invalid(origin, `${where}.${key} must be true when present`);
+  delete obj[key];
+  return true;
+}
+
+interface ParsedVerifier {
+  readonly verifier: InductionVerifierV1;
+  readonly testOnly: boolean;
+}
+
+function parseVerifier(raw: unknown, origin: string, where: string): ParsedVerifier {
   const obj = asObject(raw);
   if (obj === null) throw invalid(origin, `${where} must be an object`);
+  const testOnly = takeTestOnly(obj, VERIFIER_TEST_ONLY_KEY, origin, where);
   assertKeys(obj, VERIFIER_KEYS, origin, where);
   const { key_id, alg, public_key_b64 } = obj;
   if (typeof key_id !== 'string' || !KEY_ID_PATTERN.test(key_id)) {
@@ -304,18 +330,55 @@ function parseVerifier(raw: unknown, origin: string, where: string): InductionVe
   if (typeof public_key_b64 !== 'string' || bytes === null || ed25519PublicKey(bytes) === null) {
     throw invalid(origin, `${where}.public_key_b64 must be a canonical base64 32-byte key`);
   }
-  return Object.freeze({ key_id, alg: VERIFIER_ALGORITHM, public_key_b64 });
+  return {
+    verifier: Object.freeze({ key_id, alg: VERIFIER_ALGORITHM, public_key_b64 }),
+    testOnly,
+  };
+}
+
+interface ParsedManifest {
+  readonly manifest: InductionManifestV1;
+  readonly testOnly: boolean;
+  readonly testOnlyKeyIds: ReadonlySet<string>;
 }
 
 /**
  * Validate an opaque JSON value as an `InductionManifestV1`: V1 strict keys, version 1, canonical
  * slug; V4 `basisKinds` keys equal `expectedFamilies`, values unique proving kinds; V5 verifiers
  * valid with unique `key_id`s and at least one when any family lists a kind. The file-name and
- * cross-artifact rules (V1 name, V2, V3, V6) live in `manifest-registry.ts`.
+ * cross-artifact rules (V1 name, V2, V3, V6) live in `manifest-registry.ts`. A TEST-ONLY marker
+ * (S12-B2) is validated and removed; the result is the same manifest without it.
  */
 export function parseInductionManifest(raw: unknown, origin: string): InductionManifestV1 {
+  return parseManifest(raw, origin).manifest;
+}
+
+/**
+ * S12-B2 — the runtime-aware parse used by the loader. Every artifact is fully validated first, so a
+ * defective TEST-ONLY manifest still fails loudly. With `refuseTestOnly` false the result equals
+ * `parseInductionManifest`. With it true a manifest marked `testOnly` is refused (`null`: its
+ * platform has no induction package, so it is never provable) and verifiers marked `test_only` are
+ * dropped (evidence signed under them never proves).
+ */
+export function parseInductionManifestForRuntime(
+  raw: unknown,
+  origin: string,
+  refuseTestOnly: boolean,
+): InductionManifestV1 | null {
+  const { manifest, testOnly, testOnlyKeyIds } = parseManifest(raw, origin);
+  if (!refuseTestOnly) return manifest;
+  if (testOnly) return null;
+  if (testOnlyKeyIds.size === 0) return manifest;
+  return Object.freeze({
+    ...manifest,
+    verifiers: Object.freeze(manifest.verifiers.filter((v) => !testOnlyKeyIds.has(v.key_id))),
+  });
+}
+
+function parseManifest(raw: unknown, origin: string): ParsedManifest {
   const obj = asObject(raw);
   if (obj === null) throw invalid(origin, 'manifest must be an object');
+  const testOnly = takeTestOnly(obj, MANIFEST_TEST_ONLY_KEY, origin, 'manifest');
   assertKeys(obj, MANIFEST_KEYS, origin, 'manifest');
   if (obj.manifestVersion !== 1) throw invalid(origin, 'manifestVersion must be 1');
   const sourcePlatform = obj.sourcePlatform;
@@ -357,7 +420,9 @@ export function parseInductionManifest(raw: unknown, origin: string): InductionM
   }
 
   if (!Array.isArray(obj.verifiers)) throw invalid(origin, 'verifiers must be an array');
-  const verifiers = obj.verifiers.map((v, i) => parseVerifier(v, origin, `verifiers[${i}]`));
+  const parsed = obj.verifiers.map((v, i) => parseVerifier(v, origin, `verifiers[${i}]`));
+  const verifiers = parsed.map((p) => p.verifier);
+  const testOnlyKeyIds = new Set(parsed.filter((p) => p.testOnly).map((p) => p.verifier.key_id));
   const ids = new Set(verifiers.map((v) => v.key_id));
   if (ids.size !== verifiers.length) throw invalid(origin, 'verifiers key_id must be unique');
   if (anyKind && verifiers.length === 0) {
@@ -372,7 +437,7 @@ export function parseInductionManifest(raw: unknown, origin: string): InductionM
     throw invalid(origin, 'nativeRules must be declared|absent');
   }
 
-  return Object.freeze({
+  const manifest = Object.freeze({
     manifestVersion: 1,
     sourcePlatform,
     expectedFamilies: Object.freeze(expectedFamilies),
@@ -380,4 +445,5 @@ export function parseInductionManifest(raw: unknown, origin: string): InductionM
     verifiers: Object.freeze(verifiers),
     nativeRules: nativeRules === 'declared' ? 'declared' : 'absent',
   } satisfies InductionManifestV1);
+  return { manifest, testOnly, testOnlyKeyIds };
 }
