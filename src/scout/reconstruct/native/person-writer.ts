@@ -2,6 +2,7 @@ import { PersonState } from '@prisma/client';
 import type { MappedClient } from '../mapping-spec';
 import { NATIVE_KIND, PROVENANCE_OUTCOME, UNRESOLVED_CODE, unresolved } from './native-contract';
 import {
+  findOtherClaim,
   findProvenance,
   promoteToCreated,
   recordAlreadyPresent,
@@ -24,6 +25,14 @@ import { LEDGER_TARGET_KIND, type PersistOutcome } from './persist-outcome';
  * email or name is ever an identity key; identity is the provenance row
  * (coach, staged namespace, `clients`, raw staged source_id) and — for rows
  * that predate D1 — the Person external ref (coach, platform, source_person_id).
+ *
+ * One native Person per accepted source identity (A1): the external ref is
+ * keyed by the mapper's trimmed `sourcePersonId`, the provenance by the RAW
+ * staged id, so two raw ids that trim alike would both find one Person. Step 2
+ * therefore adopts a Person only while no other raw id of the family has a
+ * resolved claim on it, and takes a `FOR UPDATE` row lock on the Person first
+ * so a concurrent adopter or creator of the same Person is serialised inside
+ * the engine transaction (the sanctioned lock pattern, regimes.service.ts).
  *
  * This module imports Prisma types and the provenance helpers only: no invite,
  * notification, email or linking path can be reached from an import.
@@ -57,10 +66,25 @@ const fail = (reason: string): PersistOutcome => ({ ok: false, reason });
  * `identity_conflict`. Nothing is written on any branch.
  */
 function verifyPerson(coachId: string, person: PersonTarget | null): PersistOutcome {
-  if (person === null || person.state === PersonState.Deleted)
-    return fail(unresolved(UNRESOLVED_CODE.native_target_removed));
+  if (person === null) return fail(unresolved(UNRESOLVED_CODE.native_target_removed));
+  // Ownership before state (C1): another coach's Person is a conflict whatever its state.
   if (person.coach_id !== coachId) return fail(unresolved(UNRESOLVED_CODE.identity_conflict));
+  if (person.state === PersonState.Deleted)
+    return fail(unresolved(UNRESOLVED_CODE.native_target_removed));
   return ok(person.id);
+}
+
+/**
+ * Step 2 lock: re-read the located Person `FOR UPDATE` on the engine transaction.
+ * The second of two concurrent adopters (or an adopter racing the creator) blocks
+ * here until the first commits and then sees its claim. Parameterised, never
+ * interpolated. An empty result means the row vanished since it was located.
+ */
+async function lockPerson(tx: Tx, personId: string): Promise<PersonTarget | null> {
+  const locked = await tx.$queryRaw<PersonTarget[]>`
+    SELECT "id", "coach_id", "state" FROM "Person" WHERE "id" = ${personId} FOR UPDATE
+  `;
+  return locked[0] ?? null;
 }
 
 /** Step 1: a resolved provenance row is the identity; its target must be a live Person of this coach. */
@@ -103,9 +127,10 @@ export async function persistPerson(
   if (existing !== null && existing.outcome !== PROVENANCE_OUTCOME.unresolved) {
     return verifyProvenanceTarget(tx, coachId, existing);
   }
-  // Step 2 — a Person written before D1 (no provenance) is adopted once at its
-  // external ref: verified like step 1, provenance `already_present`, name untouched.
-  const legacy = await tx.person.findUnique({
+  // Step 2 — a Person written before D1 (no provenance) is adopted ONCE at its
+  // external ref: locked, verified like step 1, refused if another raw id of this
+  // family already resolved to it (A1), else provenance `already_present`, name untouched.
+  const located = await tx.person.findUnique({
     where: {
       coach_id_source_platform_source_person_id: {
         coach_id: coachId,
@@ -113,12 +138,14 @@ export async function persistPerson(
         source_person_id: client.sourcePersonId,
       },
     },
-    select: PERSON_SELECT,
+    select: { id: true },
   });
-  if (legacy !== null) {
-    const verified = verifyPerson(coachId, legacy);
+  if (located !== null) {
+    const verified = verifyPerson(coachId, await lockPerson(tx, located.id));
     if (!verified.ok) return verified;
-    await recordAlreadyPresent(tx, provenance, existing, NATIVE_KIND.person, legacy.id);
+    const claim = await findOtherClaim(tx, provenance, NATIVE_KIND.person, located.id);
+    if (claim !== null) return fail(unresolved(UNRESOLVED_CODE.identity_conflict));
+    await recordAlreadyPresent(tx, provenance, existing, NATIVE_KIND.person, located.id);
     return verified;
   }
   // Step 3 — create: state defaults to InvitePending; no User, no email, no name key.

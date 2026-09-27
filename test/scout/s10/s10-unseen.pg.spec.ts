@@ -487,4 +487,42 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
       ),
     ).toBe(2);
   });
+
+  it('(i) A1 rail: a second raw client id that trims to the same person is refused → partial / unresolved_identities, ONE Person, one verified row', async () => {
+    // Round 2 (review A1). `u10-m-1` and `u10-m-1 ` are two staged identities (the ledger and
+    // provenance key the RAW id) but one mapper `sourcePersonId`. The pass orders by source_id, so
+    // the first creates the Person; the second must NOT adopt it as a second verified row —
+    // persistPerson's claim check (under the Person row lock) returns identity_conflict and the
+    // run is an honest partial, never a `complete` that certified two identities as one person.
+    const coach = 's10u-i';
+    const alias: Row = { ...ROSTER[0], source_id: `${ROSTER[0].source_id} ` };
+    const { run, basis } = await chain(coach, [...ROSTER, alias, ...NATIVE_CLEAN]);
+    expect(run.terminal_status).toBe('partial');
+    expect(run.reason_code).toBe('unresolved_identities');
+    expect(basis.report.conditions).toEqual(['unresolved_identities']);
+    expect(familyOf(basis, 'clients')).toMatchObject({
+      staged_unique: 3,
+      native_present_verified: 2,
+      unresolved: 1,
+      reasons: [{ code: 'unresolved:identity_conflict', count: 1 }],
+      completeness_basis: 'source_signed_enumeration',
+      observed_unique: 3,
+    });
+    expect(nativeCounts(coach)).toEqual({ persons: 2, plans: 2, programs: 0 });
+    expect(
+      Number(
+        lane.sql(
+          `SELECT count(*) FROM "ImportNativeProvenance" WHERE coach_id=${lane.quote(coach)}
+             AND entity_type='clients' AND native_kind='person'`,
+        ),
+      ),
+    ).toBe(2);
+    expect(
+      lane.sql(
+        `SELECT status || ':' || COALESCE(reason, '-') FROM "ScoutReconstructionLedger"
+           WHERE coach_id=${lane.quote(coach)} AND entity_type='u10-members'
+             AND source_id=${lane.quote(alias.source_id)}`,
+      ),
+    ).toBe('skipped:unresolved:identity_conflict');
+  });
 });
