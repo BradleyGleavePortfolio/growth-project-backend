@@ -159,9 +159,12 @@ describe('persistPerson — step 2 adopt a pre-D1 Person', () => {
     const row = legacy(tx);
     const first = await run(tx, client('Mapped Name'));
     expect(first).toEqual(okOutcome(row.id));
+    // Locate → lock the row (`FOR UPDATE`) → A1 claim check → adopt.
     expect(tx.calls).toEqual([
       'importNativeProvenance.findUnique',
       'person.findUnique',
+      '$queryRaw',
+      'importNativeProvenance.findFirst',
       'importNativeProvenance.create',
     ]);
     expect([...tx.provenance.values()]).toEqual([
@@ -187,7 +190,11 @@ describe('persistPerson — step 2 adopt a pre-D1 Person', () => {
     const tx = new FakeNativeTx();
     const row = legacy(tx, 'Deleted');
     expect(await run(tx)).toEqual({ ok: false, reason: 'unresolved:native_target_removed' });
-    expect(tx.calls).toEqual(['importNativeProvenance.findUnique', 'person.findUnique']);
+    expect(tx.calls).toEqual([
+      'importNativeProvenance.findUnique',
+      'person.findUnique',
+      '$queryRaw',
+    ]);
     expect(tx.provenance.size).toBe(0);
     expect(tx.persons.size).toBe(1);
     expect(row.state).toBe('Deleted');
@@ -213,11 +220,180 @@ describe('persistPerson — step 2 adopt a pre-D1 Person', () => {
     expect(tx.calls).toEqual([
       'importNativeProvenance.findUnique',
       'person.findUnique',
+      '$queryRaw',
+      'importNativeProvenance.findFirst',
       'importNativeProvenance.update',
     ]);
     expect([...tx.provenance.values()]).toEqual([
       expect.objectContaining({ native_id: row.id, outcome: 'already_present', reason: null }),
     ]);
+  });
+});
+
+describe('persistPerson — A1: one Person per accepted source identity', () => {
+  /** A second staged row whose RAW id differs from ROW's but trims to the same external ref. */
+  const ALIAS = { source_platform: PLATFORM, source_id: 'c-1' };
+  const runAlias = (tx: FakeNativeTx) =>
+    persistPerson(tx.asTx(), COACH, ALIAS, 'clients', client());
+  const provenanceOf = (tx: FakeNativeTx) =>
+    [...tx.provenance.values()].map((r) => [r.source_id, r.outcome, r.native_id]);
+
+  it('sequential: the second raw id that maps to an already-claimed Person is identity_conflict — no adoption, no second provenance row, first row untouched', async () => {
+    const tx = new FakeNativeTx();
+    const first = await run(tx);
+    const person = [...tx.persons.values()][0];
+    const before = JSON.stringify([...tx.provenance.values()]);
+    tx.calls = [];
+    expect(await runAlias(tx)).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+    expect(tx.calls).toEqual([
+      'importNativeProvenance.findUnique',
+      'person.findUnique',
+      '$queryRaw',
+      'importNativeProvenance.findFirst',
+    ]);
+    expect(tx.persons.size).toBe(1);
+    expect(JSON.stringify([...tx.provenance.values()])).toBe(before);
+    expect(provenanceOf(tx)).toEqual([[' c-1 ', 'created', person.id]]);
+    // The first identity keeps verifying; the alias keeps being refused, replay after replay.
+    expect(await run(tx)).toEqual(first);
+    expect(await runAlias(tx)).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+    expect(tx.provenance.size).toBe(1);
+  });
+
+  it('the refusal also holds when the claim is an adoption (already_present) rather than a create', async () => {
+    const tx = new FakeNativeTx();
+    const row = tx.seedPerson({
+      coach_id: COACH,
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Legacy',
+      state: 'InvitePending',
+    });
+    expect(await runAlias(tx)).toEqual(okOutcome(row.id));
+    expect(await run(tx)).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+    expect(provenanceOf(tx)).toEqual([['c-1', 'already_present', row.id]]);
+  });
+
+  it('an UNRESOLVED row for the other raw id is not a claim: the Person is still adoptable once', async () => {
+    const tx = new FakeNativeTx();
+    const row = tx.seedPerson({
+      coach_id: COACH,
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Legacy',
+      state: 'InvitePending',
+    });
+    await tx.importNativeProvenance.create({
+      data: {
+        coach_id: COACH,
+        source_namespace: PLATFORM,
+        entity_type: 'clients',
+        source_id: 'c-1',
+        native_kind: 'person',
+        native_id: null,
+        outcome: 'unresolved',
+        reason: 'unresolved:native_target_removed',
+      },
+    });
+    expect(await run(tx)).toEqual(okOutcome(row.id));
+    expect(await runAlias(tx)).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+  });
+
+  it('a claim under another family, namespace or coach does not block adoption', async () => {
+    const tx = new FakeNativeTx();
+    const row = tx.seedPerson({
+      coach_id: COACH,
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Legacy',
+      state: 'InvitePending',
+    });
+    for (const [coach_id, source_namespace, entity_type] of [
+      [COACH, PLATFORM, 'workouts'],
+      [COACH, 'other-ns', 'clients'],
+      ['coach-b', PLATFORM, 'clients'],
+    ]) {
+      await tx.importNativeProvenance.create({
+        data: {
+          coach_id,
+          source_namespace,
+          entity_type,
+          source_id: 'c-1',
+          native_kind: 'person',
+          native_id: row.id,
+          outcome: 'created',
+          reason: null,
+        },
+      });
+    }
+    expect(await run(tx)).toEqual(okOutcome(row.id));
+  });
+
+  it('concurrent adopters of one unclaimed Person: the row lock serialises them, exactly one adopts, the other is identity_conflict', async () => {
+    const tx = new FakeNativeTx();
+    const row = tx.seedPerson({
+      coach_id: COACH,
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Legacy',
+      state: 'InvitePending',
+    });
+    const outcomes = await Promise.all([
+      tx.$transaction((t) => persistPerson(t.asTx(), COACH, ROW, 'clients', client())),
+      tx.$transaction((t) => persistPerson(t.asTx(), COACH, ALIAS, 'clients', client())),
+    ]);
+    expect(outcomes).toEqual([
+      okOutcome(row.id),
+      { ok: false, reason: 'unresolved:identity_conflict' },
+    ]);
+    expect(provenanceOf(tx)).toEqual([[' c-1 ', 'already_present', row.id]]);
+    // Both located the Person and both asked for the lock before either claim check ran; the
+    // loser's claim check ran only after the holder's adoption was written (its transaction end).
+    expect(tx.calls).toEqual([
+      'importNativeProvenance.findUnique',
+      'importNativeProvenance.findUnique',
+      'person.findUnique',
+      'person.findUnique',
+      '$queryRaw',
+      '$queryRaw',
+      'importNativeProvenance.findFirst',
+      'importNativeProvenance.create',
+      'importNativeProvenance.findFirst',
+    ]);
+  });
+
+  it("C1: another coach's Deleted Person is identity_conflict (ownership before state), on both the provenance and the external-ref path", async () => {
+    const tx = new FakeNativeTx();
+    const foreign = tx.seedPerson({
+      coach_id: 'coach-b',
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Theirs',
+      state: 'Deleted',
+    });
+    await tx.importNativeProvenance.create({
+      data: {
+        coach_id: COACH,
+        source_namespace: PLATFORM,
+        entity_type: 'clients',
+        source_id: ' c-1 ',
+        native_kind: 'person',
+        native_id: foreign.id,
+        outcome: 'created',
+        reason: null,
+      },
+    });
+    expect(await run(tx)).toEqual({ ok: false, reason: 'unresolved:identity_conflict' });
+    // External-ref path: the ref includes coach_id, so a foreign row is never located there;
+    // seed a same-coach Deleted row to pin that state still yields native_target_removed.
+    tx.seedPerson({
+      coach_id: COACH,
+      source_platform: PLATFORM,
+      source_person_id: 'c-1',
+      display_name: 'Mine',
+      state: 'Deleted',
+    });
+    expect(await runAlias(tx)).toEqual({ ok: false, reason: 'unresolved:native_target_removed' });
   });
 });
 

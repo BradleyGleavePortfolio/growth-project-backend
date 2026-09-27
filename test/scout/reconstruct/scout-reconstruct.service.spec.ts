@@ -223,8 +223,47 @@ class FakePrisma {
     },
   };
 
-  /** `ImportNativeProvenance` primitives the S8-D1 writer uses: findUnique / create / update. */
+  /**
+   * The S8-D1 writer's one raw statement: the `FOR UPDATE` re-read of a located Person. The
+   * engine fake is single-writer, so this is a plain read; the lock protocol itself is pinned by
+   * test/scout/reconstruct/native/person-writer.spec.ts on the transaction fake.
+   */
+  $queryRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (!/FOR UPDATE/.test(strings.join(''))) throw new Error('unexpected raw statement');
+    const wantedId = String(values[0]);
+    const found = [...this.persons.values()].find((p) => p.id === wantedId);
+    return found === undefined
+      ? []
+      : [{ id: found.id, coach_id: found.coach_id, state: found.state }];
+  };
+
+  /** `ImportNativeProvenance` primitives the S8-D1 writer uses: findUnique / findFirst / create / update. */
   importNativeProvenance = {
+    /** A1 claim check: a RESOLVED row of another raw source_id targeting the same native row. */
+    findFirst: async (args: {
+      where: {
+        coach_id: string;
+        source_namespace: string;
+        entity_type: string;
+        native_kind: string;
+        native_id: string;
+        outcome: { not: string };
+        source_id: { not: string };
+      };
+    }) => {
+      const w = args.where;
+      const row = [...this.provenance.values()].find(
+        (r) =>
+          r.coach_id === w.coach_id &&
+          r.source_namespace === w.source_namespace &&
+          r.entity_type === w.entity_type &&
+          r.native_kind === w.native_kind &&
+          r.native_id === w.native_id &&
+          r.outcome !== w.outcome.not &&
+          r.source_id !== w.source_id.not,
+      );
+      return row === undefined ? null : { source_id: row.source_id };
+    },
     findUnique: async (args: {
       where: {
         coach_id_source_namespace_entity_type_source_id: {
@@ -852,6 +891,39 @@ describe('ScoutReconstructService', () => {
     expect(prisma.persons.size).toBe(1);
     expect(prisma.provenance.size).toBe(1);
     expect(prisma.persons.get('coach-1|truecoach|1')?.display_name).toBe('Legacy Name');
+  });
+
+  it('S8-D1/A1: two staged raw ids that trim to one external ref yield ONE Person; the second is skipped unresolved:identity_conflict, never a second verified row', async () => {
+    const prisma = new FakePrisma();
+    // '1' and '1 ' are two staged identities (S9 joins on the raw id) but one mapper sourcePersonId;
+    // the pass orders by source_id, so '1' is written first and '1 ' meets the claimed Person.
+    prisma.staged = [stagedClient('1', 'Ada'), stagedClient('1 ', 'Ada Alias')];
+    const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+    const first = await service.reconstruct('coach-1', 'intent-1');
+    expect(first).toMatchObject({ staged: 2, reconstructed: 1, skipped: 1, failed: 0 });
+    expect(prisma.persons.size).toBe(1);
+    const person = [...prisma.persons.values()][0];
+    expect(person.display_name).toBe('Ada');
+    expect(
+      [...prisma.ledger.values()].map((l) => [
+        l.source_id,
+        l.status,
+        l.target_kind ?? null,
+        l.reason,
+      ]),
+    ).toEqual([
+      ['1', 'reconstructed', 'person', null],
+      ['1 ', 'skipped', null, 'unresolved:identity_conflict'],
+    ]);
+    // Exactly one provenance row, and it targets the Person under the first raw id.
+    expect(
+      [...prisma.provenance.values()].map((r) => [r.source_id, r.outcome, r.native_id]),
+    ).toEqual([['1', 'created', person.id]]);
+    // Replay converges: same counts, no new Person, the alias is never adopted later.
+    prisma.ledger.clear();
+    expect(await service.reconstruct('coach-1', 'intent-1')).toEqual(first);
+    expect(prisma.persons.size).toBe(1);
+    expect(prisma.provenance.size).toBe(1);
   });
 
   it('keeps two coaches isolated even when they share a source_id', async () => {

@@ -115,6 +115,32 @@ export async function recordAlreadyPresent(
 }
 
 /**
+ * S8-D1 (A1): is `nativeId` already the RESOLVED target of another raw staged
+ * `source_id` in the same (coach, namespace, family)? Two staged rows whose raw
+ * ids differ are two source identities; the writer refuses to certify both as
+ * one native row. Only resolved rows claim — an unresolved row targets nothing.
+ */
+export async function findOtherClaim(
+  tx: Tx,
+  key: ProvenanceKey,
+  nativeKind: NativeKind,
+  nativeId: string,
+): Promise<{ source_id: string } | null> {
+  return tx.importNativeProvenance.findFirst({
+    where: {
+      coach_id: key.coachId,
+      source_namespace: key.sourceNamespace,
+      entity_type: key.entityType,
+      native_kind: nativeKind,
+      native_id: nativeId,
+      outcome: { not: PROVENANCE_OUTCOME.unresolved },
+      source_id: { not: key.sourceId },
+    },
+    select: { source_id: true },
+  });
+}
+
+/**
  * Record (or refresh the reason of) an UNRESOLVED identity. The caller has
  * already established in this transaction that no CREATED row exists for the
  * identity, so the update branch can only touch an unresolved row.

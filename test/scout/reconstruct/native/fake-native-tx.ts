@@ -85,6 +85,33 @@ export class FakeNativeTx {
         null
       );
     },
+    /** S8-D1 A1 claim check: exactly the `findOtherClaim` filter shape. */
+    findFirst: async (args: {
+      where: {
+        coach_id: string;
+        source_namespace: string;
+        entity_type: string;
+        native_kind: string;
+        native_id: string;
+        outcome: { not: string };
+        source_id: { not: string };
+      };
+      select: { source_id: true };
+    }) => {
+      this.hit('importNativeProvenance.findFirst');
+      const w = args.where;
+      const row = [...this.provenance.values()].find(
+        (r) =>
+          r.coach_id === w.coach_id &&
+          r.source_namespace === w.source_namespace &&
+          r.entity_type === w.entity_type &&
+          r.native_kind === w.native_kind &&
+          r.native_id === w.native_id &&
+          r.outcome !== w.outcome.not &&
+          r.source_id !== w.source_id.not,
+      );
+      return row === undefined ? null : { source_id: row.source_id };
+    },
     create: async (args: { data: Omit<ProvenanceRecord, 'id'> }) => {
       this.hit('importNativeProvenance.create');
       const k = this.key(args.data);
@@ -218,6 +245,26 @@ export class FakeNativeTx {
     },
   };
 
+  /**
+   * The one raw statement the S8-D1 writer issues: `SELECT … FROM "Person" WHERE "id" = $1
+   * FOR UPDATE`. Outside `$transaction` it is a plain locked read (no holder to release).
+   * Inside `$transaction` the per-transaction view below models the row lock: a second
+   * transaction asking for the same Person id waits until the holder commits or rolls back,
+   * and only then reads — the PostgreSQL READ COMMITTED shape the writer relies on.
+   */
+  $queryRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    this.hit('$queryRaw');
+    return this.lockedRead(strings, values);
+  };
+  private readonly locks = new Map<string, Promise<void>>();
+  private lockedRead(strings: TemplateStringsArray, values: unknown[]) {
+    const sql = strings.join('$');
+    if (!/FROM "Person" WHERE "id" = \$ FOR UPDATE/.test(sql))
+      throw new Error(`unexpected raw statement: ${sql}`);
+    const row = this.persons.get(String(values[0]));
+    return row === undefined ? [] : [{ id: row.id, coach_id: row.coach_id, state: row.state }];
+  }
+
   /** Seed a Person directly (a pre-D1 row, another coach's row, a Deleted row). */
   seedPerson(fields: Omit<PersonRecord, 'id'> & { id?: string }): PersonRecord {
     const row: PersonRecord = { id: fields.id ?? nextId('person'), ...fields };
@@ -261,8 +308,32 @@ export class FakeNativeTx {
     },
   };
 
-  /** Snapshot-and-restore transaction: a throw leaves no partial state behind. */
+  /**
+   * Snapshot-and-restore transaction: a throw leaves no partial state behind. The
+   * callback receives a per-transaction view whose `$queryRaw` holds the Person row
+   * lock until this transaction ends (see `$queryRaw`); everything else is shared.
+   */
   async $transaction<T>(fn: (tx: FakeNativeTx) => Promise<T>): Promise<T> {
+    const held: Array<() => void> = [];
+    const view: FakeNativeTx = Object.create(this);
+    view.$queryRaw = async (strings, ...values) => {
+      this.hit('$queryRaw');
+      const id = String(values[0]);
+      // Wait for the current holder (loop: another waiter may take it first).
+      while (this.locks.has(id)) await this.locks.get(id);
+      let release: () => void = () => undefined;
+      this.locks.set(
+        id,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+      held.push(() => {
+        this.locks.delete(id);
+        release();
+      });
+      return this.lockedRead(strings, values);
+    };
     const clone = <V extends object>(m: Map<string, V>): Map<string, V> =>
       new Map([...m].map(([k, v]) => [k, { ...v }]));
     const snapshot = {
@@ -275,7 +346,7 @@ export class FakeNativeTx {
       persons: clone(this.persons),
     };
     try {
-      return await fn(this);
+      return await fn(view);
     } catch (err) {
       this.provenance = snapshot.provenance;
       this.programs = snapshot.programs;
@@ -285,6 +356,8 @@ export class FakeNativeTx {
       this.entities = snapshot.entities;
       this.persons = snapshot.persons;
       throw err;
+    } finally {
+      for (const release of held) release();
     }
   }
 
