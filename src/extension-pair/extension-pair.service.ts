@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma.service';
 import { AuthService } from '../auth/auth.service';
 import type {
   PairInitResult,
+  PairReadiness,
   PairSessionResult,
   PairRedeemErrorCode,
   PairRedeemResult,
@@ -203,7 +204,7 @@ export class ExtensionPairService {
     if (!row) {
       throw new NotFoundException('Pairing session not found. Create a new pairing code.');
     }
-    return {
+    const result: PairSessionResult = {
       status: row.paired_at
         ? 'paired'
         : !row.superseded_at &&
@@ -215,6 +216,36 @@ export class ExtensionPairService {
       import_intent_id: row.id,
       chosen_platform: row.chosen_platform,
     };
+    const readiness = await this.readReadiness(coachId, row.id);
+    if (readiness) result.readiness = readiness;
+    return result;
+  }
+
+  // S11-C (D-S11-5): advisory readiness of the run bound to an owned setup. Read-only (one
+  // SELECT; no fence, no write), scoped by the caller's coach_id, counts only: no scope digest,
+  // challenge, platform name or terminal detail leaves here. `source_declared` means only that
+  // a declaration row exists, never that a source is authorized. Any read failure omits the
+  // block (unknown stays unknown) and never fails setup recovery.
+  private async readReadiness(
+    coachId: string,
+    intentId: string,
+  ): Promise<PairReadiness | undefined> {
+    try {
+      const run = await this.prisma.scoutImport.findFirst({
+        where: { coach_id: coachId, import_intent_id: intentId, mode: 'server' },
+        select: { terminal_status: true, declarations: { select: { source_platform: true } } },
+      });
+      if (!run) return { run: 'none', source_declared: false, declared_platforms: null };
+      const platforms = new Set(run.declarations.map((d) => d.source_platform)).size;
+      return {
+        run: run.terminal_status === null ? 'open' : 'terminal',
+        source_declared: platforms > 0,
+        declared_platforms: platforms,
+      };
+    } catch {
+      this.logger.warn('setup readiness read failed; readiness omitted (unknown)');
+      return undefined;
+    }
   }
 
   private async lockOwner(tx: Prisma.TransactionClient, coachId: string): Promise<void> {

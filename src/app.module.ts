@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ExtensionPairModule } from './extension-pair/extension-pair.module';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
+import { PilotCoachAllowlistGuard } from './common/feature-flag/pilot-coach-allowlist.guard';
 import { ProfileModule } from './profile/profile.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
@@ -394,6 +395,18 @@ import { WearablesModule } from './wearables/wearables.module';
     // signup / password-reset and bucketizes them by IP (the desired
     // behaviour for unauthenticated routes).
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+
+    // S12-B1: pilot-coach allowlist for the importer surface (the routes in
+    // FEATURE_GATED_ROUTES). Runs directly AFTER JwtAuthGuard so `req.user.id`
+    // is the verified caller, and BEFORE UserThrottlerGuard so an off-list
+    // caller's uniform 404 carries no X-RateLimit-* headers (the flag-off and
+    // unmounted 404s carry none — R-DARK-1 forbids a distinguishing signal),
+    // and before RolesGuard so an off-list caller of any role sees 404, never
+    // 403. Fails closed: with the flags on and FEATURE_SCOUT_PILOT_COACH_IDS
+    // absent, empty or malformed, nobody reaches the importer. Non-importer
+    // routes are untouched. Order is pinned by
+    // test/common/pilot-coach-allowlist.bootstrap.spec.ts.
+    { provide: APP_GUARD, useClass: PilotCoachAllowlistGuard },
 
     // SECURITY: register UserThrottlerGuard as a global APP_GUARD so that @Throttle(...)
     // decorators (e.g. on /auth/login, /auth/register, /ai/chat) are actually enforced.

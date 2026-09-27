@@ -1,0 +1,413 @@
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, relative } from 'path';
+import type { InductionManifestV1 } from '../../../src/scout/induction/contract';
+import { stagedFamilyDigests } from '../../../src/scout/induction/digest';
+import {
+  buildInductionRegistry,
+  INDUCTION_MANIFESTS_DIR,
+  loadInductionManifests,
+  testOnlyArtifactsAllowed,
+  type InductionRegistry,
+} from '../../../src/scout/induction/manifest-registry';
+import {
+  parseInductionManifest,
+  parseInductionManifestForRuntime,
+} from '../../../src/scout/induction/parse';
+import {
+  evaluateCoverage,
+  type CoverageEvaluationInput,
+  type StoredObservation,
+} from '../../../src/scout/induction/verify';
+import { parseSourceMappingSpec } from '../../../src/scout/reconstruct/mapping-spec';
+import { loadNativeRuleSets } from '../../../src/scout/reconstruct/native/native-rule-registry';
+import { loadSourceMappingSpecs } from '../../../src/scout/reconstruct/source-mapper-registry';
+import {
+  evidenceFor,
+  referenceIdDigest,
+  S10_PURE_MANIFESTS_DIR,
+  S10_PURE_SPEC_PATH,
+  sha256,
+  TEST_KEYS,
+} from '../../fixtures/scout/s10_pure/s10-pure-signer';
+
+/**
+ * S12-B2 — TEST-ONLY induction artifacts are refused outside an explicit development/test runtime
+ * (closes S10-D D2 review C1). The marker is data (`"testOnly": true` on a manifest,
+ * `"test_only": true` on a verifier); the loader refuses marked artifacts unless NODE_ENV is
+ * exactly development|test (trimmed, case-insensitive), so an unset NODE_ENV fails closed. The
+ * refusing cases are discriminating: the same signed evidence proves three known families when the
+ * artifact is allowed and none when it is refused.
+ */
+
+type Family = 'clients' | 'programs' | 'workouts';
+const FAMILIES: readonly Family[] = ['clients', 'programs', 'workouts'];
+const IDS: Record<Family, string[]> = {
+  clients: ['c1', 'c2'],
+  programs: ['p1'],
+  workouts: ['w1', 'w2', 'w3'],
+};
+const SLUG = 's10_unseen';
+const SCOPE = sha256('workspace-1');
+const CHALLENGE = Buffer.alloc(32, 9);
+const RUN = {
+  coach_id: 'coach-a',
+  intent_id: 'intent-1',
+  execution_epoch: 3,
+  accepted_start_at: new Date('2026-09-26T09:00:00Z'),
+};
+const RECEIVED = new Date('2026-09-26T11:00:00Z');
+
+const SPEC = parseSourceMappingSpec(
+  JSON.parse(readFileSync(S10_PURE_SPEC_PATH, 'utf8')),
+  `${SLUG}.json`,
+);
+const FIXTURE_RAW: Record<string, unknown> = JSON.parse(
+  readFileSync(join(S10_PURE_MANIFESTS_DIR, `${SLUG}.json`), 'utf8'),
+);
+const FIXTURE_VERIFIER = (FIXTURE_RAW.verifiers as Record<string, unknown>[])[0];
+const OTHER_VERIFIER = {
+  key_id: 's12b2.other.key',
+  alg: 'ed25519',
+  public_key_b64: TEST_KEYS.observer.public_key_b64,
+};
+
+/** The fixture manifest marked at manifest level. */
+const markedManifest = (): Record<string, unknown> => ({ ...FIXTURE_RAW, testOnly: true });
+/** The fixture manifest whose signing verifier is marked, plus an unmarked other key. */
+const markedVerifier = (): Record<string, unknown> => ({
+  ...FIXTURE_RAW,
+  verifiers: [{ ...FIXTURE_VERIFIER, test_only: true }, OTHER_VERIFIER],
+});
+
+function dirWith(raw: Record<string, unknown>): string {
+  const dir = mkdtempSync(join(tmpdir(), 's12b2-manifests-'));
+  writeFileSync(join(dir, `${SLUG}.json`), JSON.stringify(raw));
+  return dir;
+}
+
+function registry(manifests: readonly InductionManifestV1[]): InductionRegistry {
+  return buildInductionRegistry({ manifests, specs: [SPEC], nativeRuleSets: [] });
+}
+
+function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
+  // The spec digest does not depend on the manifest, so the evidence is identical in every mode.
+  const specDigest = registry([parseInductionManifest(FIXTURE_RAW, 'digest')]).packages.get(
+    SLUG,
+  )!.specDigest;
+  const observations: StoredObservation[] = FAMILIES.map((family) => ({
+    coach_id: RUN.coach_id,
+    intent_id: RUN.intent_id,
+    execution_epoch: RUN.execution_epoch,
+    received_at: RECEIVED,
+    evidence: evidenceFor(
+      {
+        statement_version: 1,
+        source_platform: SLUG,
+        account_scope_id_digest: SCOPE,
+        family,
+        challenge_b64: CHALLENGE.toString('base64'),
+        snapshot_ref_digest: sha256(`snapshot-${family}`),
+        date_window: null,
+        terminal: 'end_of_list',
+        observed_unique: IDS[family].length,
+        id_set_digest: referenceIdDigest(IDS[family]),
+        issued_at: '2026-09-26T10:00:00Z',
+      },
+      specDigest,
+    ),
+  }));
+  const input: CoverageEvaluationInput = {
+    run: RUN,
+    declaration: {
+      challenge: CHALLENGE,
+      platforms: [{ source_platform: SLUG, account_scope_id_digests: [SCOPE] }],
+    },
+    registry: reg,
+    observations,
+    staged: [
+      {
+        source_platform: SLUG,
+        grouped_families: FAMILIES,
+        families: stagedFamilyDigests(Object.entries(IDS)),
+      },
+    ],
+  };
+  return evaluateCoverage(input);
+}
+
+const KNOWN = (n: number) => ({
+  known: true,
+  basis_kind: 'source_signed_enumeration',
+  observed_unique: n,
+  covers_staged_identities: true,
+});
+const PROVEN = { clients: KNOWN(2), programs: KNOWN(1), workouts: KNOWN(3) };
+const UNPROVEN = {
+  clients: { known: false },
+  programs: { known: false },
+  workouts: { known: false },
+};
+
+function withNodeEnv<T>(value: string | undefined, run: () => T): T {
+  const saved = process.env.NODE_ENV;
+  if (value === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = value;
+  try {
+    return run();
+  } finally {
+    if (saved === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = saved;
+  }
+}
+
+const REFUSING_ENVS: readonly (string | undefined)[] = [
+  undefined,
+  '',
+  '   ',
+  'production',
+  'PRODUCTION',
+  'Production ',
+  'staging',
+  'Staging',
+  'prod',
+  'qa',
+  'ci',
+  'develop',
+  'testing',
+];
+const ALLOWING_ENVS: readonly string[] = ['test', 'development', 'TEST', ' Development '];
+const label = (v: string | undefined): string => (v === undefined ? 'unset' : JSON.stringify(v));
+
+describe('positive control — the unmarked package proves in every mode', () => {
+  it('an unmarked manifest is byte-for-byte the same manifest when refusing or allowing', () => {
+    const plain = parseInductionManifest(FIXTURE_RAW, 'plain');
+    expect(parseInductionManifestForRuntime(FIXTURE_RAW, 'plain', true)).toEqual(plain);
+    expect(parseInductionManifestForRuntime(FIXTURE_RAW, 'plain', false)).toEqual(plain);
+  });
+
+  it('with refusal on, an unmarked manifest still yields three known families', () => {
+    expect(evaluate(registry(loadInductionManifests(dirWith(FIXTURE_RAW), true)))).toEqual(PROVEN);
+  });
+});
+
+describe('refusal of each TEST-ONLY artifact kind (explicit refuseTestOnly)', () => {
+  it('manifest: allowed → loaded and proves; refused → not loaded, every family unknown', () => {
+    const dir = dirWith(markedManifest());
+    const allowed = loadInductionManifests(dir, false);
+    expect(allowed.map((m) => m.sourcePlatform)).toEqual([SLUG]);
+    expect(evaluate(registry(allowed))).toEqual(PROVEN);
+
+    const refused = loadInductionManifests(dir, true);
+    expect(refused).toEqual([]);
+    expect(evaluate(registry(refused))).toEqual(UNPROVEN);
+  });
+
+  it('verifier (key): allowed → both keys kept and proves; refused → key dropped, unknown', () => {
+    const dir = dirWith(markedVerifier());
+    const allowed = loadInductionManifests(dir, false);
+    expect(allowed[0].verifiers.map((v) => v.key_id)).toEqual([
+      FIXTURE_VERIFIER.key_id,
+      OTHER_VERIFIER.key_id,
+    ]);
+    expect(evaluate(registry(allowed))).toEqual(PROVEN);
+
+    const refused = loadInductionManifests(dir, true);
+    expect(refused.map((m) => m.sourcePlatform)).toEqual([SLUG]);
+    expect(refused[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
+    expect(Object.isFrozen(refused[0].verifiers)).toBe(true);
+    expect(evaluate(registry(refused))).toEqual(UNPROVEN);
+  });
+
+  it('allowed mode strips the marker: the result equals the unmarked manifest', () => {
+    const plain = parseInductionManifest(FIXTURE_RAW, 'plain');
+    expect(parseInductionManifestForRuntime(markedManifest(), 'm', false)).toEqual(plain);
+    expect(parseInductionManifest(markedManifest(), 'm')).toEqual(plain);
+    expect(parseInductionManifest(markedManifest(), 'm')).not.toHaveProperty('testOnly');
+    const verifiers = parseInductionManifest(markedVerifier(), 'v').verifiers;
+    expect(verifiers[0]).toEqual(plain.verifiers[0]);
+    expect(verifiers[0]).not.toHaveProperty('test_only');
+  });
+
+  it('the caller-supplied raw object is never mutated', () => {
+    const raw = markedVerifier();
+    const before = JSON.stringify(raw);
+    parseInductionManifestForRuntime(raw, 'r', true);
+    parseInductionManifestForRuntime(raw, 'r', false);
+    expect(JSON.stringify(raw)).toBe(before);
+  });
+});
+
+describe('default loader — refuses unless NODE_ENV is explicitly development|test', () => {
+  it.each(REFUSING_ENVS.map((v) => [label(v), v]))('NODE_ENV %s refuses', (_name, value) => {
+    const manifestDir = dirWith(markedManifest());
+    const verifierDir = dirWith(markedVerifier());
+    withNodeEnv(value, () => {
+      expect(testOnlyArtifactsAllowed(process.env.NODE_ENV)).toBe(false);
+      expect(loadInductionManifests(manifestDir)).toEqual([]);
+      const mixed = loadInductionManifests(verifierDir);
+      expect(mixed[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
+      expect(evaluate(registry(mixed))).toEqual(UNPROVEN);
+    });
+  });
+
+  it.each(ALLOWING_ENVS.map((v) => [label(v), v]))('NODE_ENV %s loads', (_name, value) => {
+    const manifestDir = dirWith(markedManifest());
+    const verifierDir = dirWith(markedVerifier());
+    withNodeEnv(value, () => {
+      expect(testOnlyArtifactsAllowed(process.env.NODE_ENV)).toBe(true);
+      const loaded = loadInductionManifests(manifestDir);
+      expect(loaded.map((m) => m.sourcePlatform)).toEqual([SLUG]);
+      expect(evaluate(registry(loaded))).toEqual(PROVEN);
+      expect(loadInductionManifests(verifierDir)[0].verifiers).toHaveLength(2);
+    });
+  });
+
+  it('this jest process runs with NODE_ENV=test (every landed no-DB/PG proof keeps its package)', () => {
+    expect(process.env.NODE_ENV).toBe('test');
+  });
+});
+
+describe('the marker is strict data', () => {
+  it.each([false, 'true', 1, null, 0])('testOnly %p throws in both modes', (value) => {
+    const raw = { ...FIXTURE_RAW, testOnly: value };
+    expect(() => parseInductionManifestForRuntime(raw, 'x', true)).toThrow(
+      /manifest\.testOnly must be true when present/,
+    );
+    expect(() => parseInductionManifestForRuntime(raw, 'x', false)).toThrow(
+      /manifest\.testOnly must be true when present/,
+    );
+  });
+
+  it.each([false, 'true', 1, null])('verifier test_only %p throws in both modes', (value) => {
+    const raw = { ...FIXTURE_RAW, verifiers: [{ ...FIXTURE_VERIFIER, test_only: value }] };
+    for (const refuse of [true, false]) {
+      expect(() => parseInductionManifestForRuntime(raw, 'x', refuse)).toThrow(
+        /verifiers\[0\]\.test_only must be true when present/,
+      );
+    }
+  });
+
+  it('markers are per object: the other casing is an unknown key', () => {
+    expect(() => parseInductionManifest({ ...FIXTURE_RAW, test_only: true }, 'x')).toThrow(
+      /unknown key manifest\.test_only/,
+    );
+    const raw = { ...FIXTURE_RAW, verifiers: [{ ...FIXTURE_VERIFIER, testOnly: true }] };
+    expect(() => parseInductionManifest(raw, 'x')).toThrow(/unknown key verifiers\[0\]\.testOnly/);
+  });
+
+  it('a defective TEST-ONLY manifest fails loudly when refusing (validated before refusal)', () => {
+    const bad = { ...markedManifest(), manifestVersion: 2 };
+    expect(() => parseInductionManifestForRuntime(bad, 'x', true)).toThrow(/manifestVersion/);
+    expect(() => loadInductionManifests(dirWith(bad), true)).toThrow(/manifestVersion/);
+    const dir = mkdtempSync(join(tmpdir(), 's12b2-name-'));
+    writeFileSync(join(dir, 'wrong_name.json'), JSON.stringify(markedManifest()));
+    expect(() => loadInductionManifests(dir, true)).toThrow(/must be named <sourcePlatform>\.json/);
+    const badKey = {
+      ...FIXTURE_RAW,
+      verifiers: [{ ...FIXTURE_VERIFIER, test_only: true, alg: 'x' }],
+    };
+    expect(() => loadInductionManifests(dirWith(badKey), true)).toThrow(/alg must be ed25519/);
+  });
+});
+
+/** Every committed fixture public key (`signer-test-key.json` anywhere under test/fixtures). */
+function committedTestPublicKeys(): Set<string> {
+  const keys = new Set<string>();
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (name === 'signer-test-key.json') {
+        for (const pair of Object.values(JSON.parse(readFileSync(path, 'utf8')))) {
+          if (pair !== null && typeof pair === 'object' && 'public_key_b64' in pair) {
+            keys.add(String((pair as { public_key_b64: unknown }).public_key_b64));
+          }
+        }
+      }
+    }
+  };
+  walk(join(__dirname, '../../fixtures'));
+  return keys;
+}
+
+describe('shipped data', () => {
+  const committed = committedTestPublicKeys();
+  const shippedRaw = readdirSync(INDUCTION_MANIFESTS_DIR)
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => JSON.parse(readFileSync(join(INDUCTION_MANIFESTS_DIR, n), 'utf8')));
+
+  it('every shipped verifier whose public key is committed under test/fixtures is marked', () => {
+    let trusting = 0;
+    for (const raw of shippedRaw) {
+      for (const v of raw.verifiers as Record<string, unknown>[]) {
+        if (committed.has(String(v.public_key_b64))) {
+          trusting += 1;
+          expect(raw.testOnly === true || v.test_only === true).toBe(true);
+        }
+      }
+    }
+    expect(committed.size).toBeGreaterThan(0);
+    expect(trusting).toBeGreaterThan(0);
+  });
+
+  it('refusing, the shipped loader trusts no committed key and the registry still builds', () => {
+    const refused = loadInductionManifests(INDUCTION_MANIFESTS_DIR, true);
+    for (const m of refused) {
+      for (const v of m.verifiers) expect(committed.has(v.public_key_b64)).toBe(false);
+    }
+    expect(refused.length).toBeLessThan(shippedRaw.length);
+    expect(() =>
+      buildInductionRegistry({
+        manifests: refused,
+        specs: loadSourceMappingSpecs(),
+        nativeRuleSets: loadNativeRuleSets(),
+      }),
+    ).not.toThrow();
+  });
+
+  it('allowing (this jest runtime), the shipped loader keeps every shipped manifest', () => {
+    expect(loadInductionManifests().length).toBe(shippedRaw.length);
+    expect(loadInductionManifests(INDUCTION_MANIFESTS_DIR, false).length).toBe(shippedRaw.length);
+  });
+});
+
+describe('no source slug in the touched src; PG harness env stays inherited', () => {
+  const root = join(__dirname, '../../..');
+
+  it('parse.ts and manifest-registry.ts carry no platform slug literal', () => {
+    for (const file of ['parse.ts', 'manifest-registry.ts']) {
+      const text = readFileSync(join(root, 'src/scout/induction', file), 'utf8');
+      for (const slug of ['s10_unseen', 's11_second', 'truecoach', 'conformance_']) {
+        expect(text.includes(slug)).toBe(false);
+      }
+    }
+  });
+
+  it('the S10-B/S11 harness and worker sources never set NODE_ENV and forks spread process.env', () => {
+    const files = [
+      'g2-s10b-pg-harness.ts',
+      'g2-s10b-worker.cjs',
+      'g2-s10b-db.ts',
+      'g2-s10b-harness.ts',
+      'g2-s10b-bootstrap.sh',
+      'g2-s11-pg-harness.ts',
+      'g2-s11-worker.cjs',
+      'g2-s11-db.ts',
+      'g2-s11-harness.ts',
+      'g2-s11-bootstrap.sh',
+    ].map((f) => join(root, 'test/utils', f));
+    for (const path of files) {
+      expect([relative(root, path), readFileSync(path, 'utf8').includes('NODE_ENV')]).toEqual([
+        relative(root, path),
+        false,
+      ]);
+    }
+    for (const harness of ['g2-s10b-pg-harness.ts', 'g2-s11-pg-harness.ts']) {
+      const text = readFileSync(join(root, 'test/utils', harness), 'utf8');
+      expect(text).toMatch(
+        /fork\([^)]*worker\.cjs'\), \[\], \{[\s\S]*?env: \{\s*\.\.\.process\.env,/,
+      );
+    }
+  });
+});

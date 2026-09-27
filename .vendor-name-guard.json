@@ -1,0 +1,234 @@
+{
+  "allowlist": [
+    {
+      "glob": ".vendor-name-guard.json",
+      "reason": "Guard configuration names the quarantined oracle path.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/scout/**/*.spec.ts",
+      "reason": "Importer unit tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/extension-pair/**/__tests__/**",
+      "reason": "Importer pairing tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/scout/**",
+      "reason": "Importer tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "docs/importer/NORTH_STAR.md",
+      "reason": "Current importer governance record states the retired legacy oracle.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/scout/reconstruct/sources/truecoach.json",
+      "reason": "Quarantined legacy oracle.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "README.md",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "prisma/migrations/20260513000000_food_logger_trainerize_floor/migration.sql",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "src/common/env-validation.ts",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "src/food/food-density.ts",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "src/food/food-query-parser.ts",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "src/log/log.dto.ts",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "docs/decisions/2026-07-16-importer-f-scout-reconstruct.md",
+      "reason": "Historical importer decision record.",
+      "retire": "Historical record retained"
+    },
+    {
+      "glob": "docs/decisions/2026-07-19-importer-h-multi-family-reconstruction.md",
+      "reason": "Historical importer decision record.",
+      "retire": "Historical record retained"
+    },
+    {
+      "glob": "docs/decisions/2026-09-18-g2-transition-writer-cursors.md",
+      "reason": "Historical importer decision record.",
+      "retire": "Historical record retained"
+    },
+    {
+      "glob": "docs/decisions/2026-09-24-s8-native-contract.md",
+      "reason": "Historical importer decision record.",
+      "retire": "Historical record retained"
+    },
+    {
+      "glob": "test/env-validation.spec.ts",
+      "reason": "non-importer domain",
+      "retire": "n/a (other domain)"
+    },
+    {
+      "glob": "test/fixtures/conformance/conformance-alpha.json.raw",
+      "reason": "Importer fixture.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/fixtures/truecoach/client-history.golden.json",
+      "reason": "Importer fixture.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/fixtures/truecoach/clients.golden.json",
+      "reason": "Importer fixture.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/fixtures/truecoach/workouts.golden.json",
+      "reason": "Importer fixture.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-c1-setup.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-b-drain.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-c-contract.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-ledger-expand.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-nq1.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-pg17-etq0.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-r-ready.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-s8b.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-s8c.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-s8f.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/rls-g2-tq0.spec.ts",
+      "reason": "Importer RLS test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/truecoach-golden-fixture.spec.ts",
+      "reason": "Importer fixture test.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-b-drain-pg-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-c-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-c-pg-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-nq1-pg-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-pg17-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-r-ready-pg-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s10b-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s7l-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s7l-worker.cjs",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s8b-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s8f-pg-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s8g-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/utils/g2-s9c-harness.ts",
+      "reason": "Importer test harness.",
+      "retire": "V1 learned-path parity"
+    }
+  ]
+}

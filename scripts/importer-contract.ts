@@ -33,6 +33,11 @@ export const IMPORTER_BARE_PATHS = [
   '/scout/reconstruct/roster',
   '/scout/runs/start',
   '/scout/runs/cancel',
+  // S10-C2 (D-S10-4, D-S10-7): the two S10-B induction routes ObservationModule mounts. Same
+  // posture as runs/start|cancel: bearer, coach/owner, and the uniform FEATURE_SCOUT_INGEST
+  // (R-DARK-1) 404 from the /api/scout prefix gate before any guard runs.
+  '/scout/runs/declaration',
+  '/scout/runs/observation',
 ] as const;
 
 // Applied to every selected path so the artifact presents the real,
@@ -50,6 +55,8 @@ export const API_PREFIX = '/api';
 // run lifecycle (s2.0: /scout/runs/start + /scout/runs/cancel, the widened
 // import/status vocabulary and its additive lifecycle + families fields, the
 // 409 lifecycle codes). Not consumer-frozen; reconcile before consumers.
+// Additive S8-F, S9-C and S10-C2 changes (S10-C2: the two induction routes) keep this value
+// (S8-F precedent e1ec2fec; S10-DOC L470 leaves any bump to the generator owner).
 export const CONTRACT_VERSION = '2.0.0-c1-s2.0';
 
 /** Recursively sort object keys so JSON.stringify is byte-stable across runs. */

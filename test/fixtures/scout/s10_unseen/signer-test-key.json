@@ -1,0 +1,15 @@
+{
+  "note": "TEST-ONLY synthetic ed25519 keys for the s10_unseen D2 proof. Never a real source key; the source key stands in for a source signer, the observer key for an extension/observer signer.",
+  "source": {
+    "key_id": "s10_unseen.source.d2",
+    "purpose": "source",
+    "public_key_b64": "vK4m1Rfe07ym9fFGlefuxGwWnrjVvEm0FnAweXPPJP8=",
+    "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEINe7LevDqWE6bdM4jnA02R/PSl9rp/q3ciWd6FkUzn+r"
+  },
+  "observer": {
+    "key_id": "s10_unseen.observer.d2",
+    "purpose": "observer",
+    "public_key_b64": "Kj+kJsO7tgsjKNP3dcvnU0d/Vv0msv+CeZwYKhTL3ik=",
+    "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEIOHjzU43qzg5ByEACsFRQkDDoCEhZa6TbMXpdkL8NMBA"
+  }
+}

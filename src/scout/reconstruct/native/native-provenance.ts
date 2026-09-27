@@ -88,6 +88,59 @@ export async function promoteToCreated(
 }
 
 /**
+ * Record an ALREADY_PRESENT identity for a native row that existed before its
+ * provenance did (S8-D1 step 2: a pre-D1 `Person` adopted at the external ref).
+ * The caller has already established in this transaction that no CREATED or
+ * ALREADY_PRESENT row exists for the identity, so `existing` can only be an
+ * UNRESOLVED row, which is promoted in place — one provenance row per identity.
+ */
+export async function recordAlreadyPresent(
+  tx: Tx,
+  key: ProvenanceKey,
+  existing: ProvenanceRow | null,
+  nativeKind: NativeKind,
+  nativeId: string,
+): Promise<void> {
+  const data = {
+    native_kind: nativeKind,
+    native_id: nativeId,
+    outcome: PROVENANCE_OUTCOME.already_present,
+    reason: null,
+  };
+  if (existing === null) {
+    await tx.importNativeProvenance.create({ data: { ...identity(key), ...data } });
+    return;
+  }
+  await tx.importNativeProvenance.update({ where: { id: existing.id }, data });
+}
+
+/**
+ * S8-D1 (A1): is `nativeId` already the RESOLVED target of another raw staged
+ * `source_id` in the same (coach, namespace, family)? Two staged rows whose raw
+ * ids differ are two source identities; the writer refuses to certify both as
+ * one native row. Only resolved rows claim — an unresolved row targets nothing.
+ */
+export async function findOtherClaim(
+  tx: Tx,
+  key: ProvenanceKey,
+  nativeKind: NativeKind,
+  nativeId: string,
+): Promise<{ source_id: string } | null> {
+  return tx.importNativeProvenance.findFirst({
+    where: {
+      coach_id: key.coachId,
+      source_namespace: key.sourceNamespace,
+      entity_type: key.entityType,
+      native_kind: nativeKind,
+      native_id: nativeId,
+      outcome: { not: PROVENANCE_OUTCOME.unresolved },
+      source_id: { not: key.sourceId },
+    },
+    select: { source_id: true },
+  });
+}
+
+/**
  * Record (or refresh the reason of) an UNRESOLVED identity. The caller has
  * already established in this transaction that no CREATED row exists for the
  * identity, so the update branch can only touch an unresolved row.

@@ -1,0 +1,13 @@
+{
+  "note": "TEST-ONLY statement templates for the s10_unseen D2 proof. The run-bound fields (`challenge_b64`, `issued_at`) and the identity fields (`id_set_digest`, `observed_unique`, computed from the staged ids of the family by the independent reference digest in the spec) are filled at test time; everything else is fixed here. `signer` names the key in signer-test-key.json: `source` is the manifest verifier, `observer` stands in for an extension-held key and is never a verifier.",
+  "evidence_version": 1,
+  "basis_kind": "source_signed_enumeration",
+  "template": {
+    "date_window": null,
+    "snapshot_ref_seed": "s10-unseen-synthetic-snapshot-1",
+    "statement_version": 1,
+    "terminal": "end_of_list"
+  },
+  "families": ["clients", "programs", "workouts"],
+  "signers": { "verified": "source", "extension": "observer" }
+}

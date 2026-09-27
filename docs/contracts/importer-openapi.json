@@ -112,8 +112,8 @@
       "PairInitDto": {
         "properties": {
           "chosen_platform": {
-            "description": "Source coaching platform the coach is migrating from. Lowercase slug driven by the extension ROADMAP matrix (truecoach, trainerize, mypthub, …).",
-            "example": "truecoach",
+            "description": "Source coaching platform the coach is migrating from. Lowercase slug provided by the authorized source site.",
+            "example": "example-site",
             "type": "string"
           },
           "setup_nonce": {
@@ -152,6 +152,34 @@
         ],
         "type": "object"
       },
+      "PairReadiness": {
+        "properties": {
+          "declared_platforms": {
+            "description": "Count of distinct declared source platforms; null when run is none.",
+            "nullable": true,
+            "type": "number"
+          },
+          "run": {
+            "description": "Server run of this setup: none (no Start accepted), open (no terminal recorded yet; not a liveness claim), terminal (a terminal is recorded; read it from GET /api/scout/import/status, the single read of run truth).",
+            "enum": [
+              "none",
+              "open",
+              "terminal"
+            ],
+            "type": "string"
+          },
+          "source_declared": {
+            "description": "True only when at least one run declaration has been received. Display as \"declaration received\"; never as source authorized, ready or connected. This read does not verify source authorization, which stays unknown.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run",
+          "source_declared",
+          "declared_platforms"
+        ],
+        "type": "object"
+      },
       "PairRedeemDto": {
         "properties": {
           "code": {
@@ -173,7 +201,7 @@
           },
           "chosen_platform": {
             "description": "Source platform the code was minted for (echoed to the extension).",
-            "example": "truecoach",
+            "example": "example-site",
             "type": "string"
           },
           "import_intent_id": {
@@ -216,6 +244,14 @@
             "description": "Persisted server-issued setup correlation.",
             "format": "uuid",
             "type": "string"
+          },
+          "readiness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PairReadiness"
+              }
+            ],
+            "description": "Advisory readiness of the run bound to this setup. Absent means not known, never \"no\"."
           },
           "status": {
             "description": "Lifecycle state of the polled code.",
@@ -321,13 +357,19 @@
             "type": "string"
           },
           "id": {
-            "description": "Opaque server-issued canonical entity id.",
+            "description": "Opaque server-issued canonical id: the ScoutReconstructedEntity id for `scout_entity` rows, or the owned native record id for native target kinds.",
             "format": "uuid",
             "type": "string"
           },
           "label": {
             "description": "Best-effort PII-minimal display label (a title/name), if the source provided one.",
             "example": "Upper Body — Week 3",
+            "nullable": true,
+            "type": "string"
+          },
+          "native_id": {
+            "description": "The owned native record id when `target_kind` is a native kind (equal to `id`); null for `scout_entity` evidence rows.",
+            "format": "uuid",
             "nullable": true,
             "type": "string"
           },
@@ -338,7 +380,17 @@
           },
           "source_platform": {
             "description": "Source platform slug (provenance).",
-            "example": "truecoach",
+            "example": "example-site",
+            "type": "string"
+          },
+          "target_kind": {
+            "description": "What `id` references. `scout_entity` is generic canonical evidence (also the effective kind of legacy rows); `workout_program` / `workout_plan` are tenant-owned native records. Rows of any other kind are never served.",
+            "enum": [
+              "scout_entity",
+              "workout_program",
+              "workout_plan"
+            ],
+            "example": "scout_entity",
             "type": "string"
           },
           "updated_at": {
@@ -349,6 +401,8 @@
         },
         "required": [
           "id",
+          "target_kind",
+          "native_id",
           "source_platform",
           "entity_type",
           "source_id",
@@ -441,6 +495,11 @@
             "description": "Number of rows returned in THIS page (entities.length). Deliberately NOT a full-collection total — this endpoint issues no unbounded count scan.",
             "example": 50,
             "type": "number"
+          },
+          "unclassified_staged": {
+            "description": "Staged entities of this intent whose (source_platform, step token) no source mapping spec classifies to ANY family (unregistered platform or unmapped token). Counted so an unreadable staged row is never a silent absence; such rows are never listed. Not a collection total: it is an aggregate over the run's few (platform, token) groups. Staged rows of other families are not counted here.",
+            "example": 0,
+            "type": "number"
           }
         },
         "required": [
@@ -448,7 +507,8 @@
           "family",
           "entities",
           "page_count",
-          "next_cursor"
+          "next_cursor",
+          "unclassified_staged"
         ],
         "type": "object"
       },
@@ -474,7 +534,7 @@
           },
           "sourcePlatform": {
             "description": "Slug of the platform the record was captured from (camelCase, top-level).",
-            "example": "truecoach",
+            "example": "example-site",
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
@@ -514,6 +574,17 @@
             "nullable": true,
             "type": "number"
           },
+          "canonical_family": {
+            "description": "Canonical family the staged token resolves to (S9); null when unmapped or when the token resolves to different families across platforms. Present only when a report applies.",
+            "example": "workouts",
+            "nullable": true,
+            "type": "string"
+          },
+          "completeness_basis": {
+            "description": "Completeness basis for the family (S9 D-S9-3): 'none' until a basis is recorded. Present only when a report applies.",
+            "example": "none",
+            "type": "string"
+          },
           "created_native": {
             "description": "Native rows created (S9); null until known.",
             "nullable": true,
@@ -532,15 +603,46 @@
             ],
             "description": "Reconstruction ledger tally."
           },
+          "native_present_verified": {
+            "description": "Verified natively present (created or already present) identities (S9 D-S9-4). Present only when a report applies.",
+            "minimum": 0,
+            "type": "number"
+          },
           "observed_unique": {
             "description": "Observed by the extension (S10); null until known.",
             "nullable": true,
             "type": "number"
           },
+          "qualifiers": {
+            "description": "Family qualifiers (D-S9-5, closed enum, append-only); present only when a report applies.",
+            "items": {
+              "enum": [
+                "roster_bridge_pending"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reasons": {
+            "description": "Closed-catalogue reason histogram over the staged identities (S9 D-S9-7), sorted by code. Present only when a report applies.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutImportReasonCountDto"
+            },
+            "type": "array"
+          },
           "rejected": {
             "description": "Rejected by reconciliation (S9); null until known.",
             "nullable": true,
             "type": "number"
+          },
+          "relationship_closure": {
+            "description": "Relationship closure over the verified identities (S9 D-S9-5): not_applicable = no verified identity carries a declared edge. Present only when a report applies.",
+            "enum": [
+              "verified",
+              "unverified",
+              "not_applicable"
+            ],
+            "type": "string"
           },
           "staged_unique": {
             "description": "Distinct staged source identities for the family.",
@@ -584,6 +686,25 @@
           "reconstructed",
           "skipped",
           "failed"
+        ],
+        "type": "object"
+      },
+      "ScoutImportReasonCountDto": {
+        "properties": {
+          "code": {
+            "description": "Reason code from the closed S9 catalogue (never free text).",
+            "example": "unresolved:no_native_client_principal",
+            "type": "string"
+          },
+          "count": {
+            "description": "Identities of the family carrying this code.",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "count"
         ],
         "type": "object"
       },
@@ -672,7 +793,10 @@
               "deadline_exceeded",
               "transfer_failed",
               "unresolved_family",
-              "revoked"
+              "revoked",
+              "unresolved_identities",
+              "relationship_unverified",
+              "coverage_basis_unknown"
             ],
             "nullable": true,
             "type": "string"
@@ -914,8 +1038,13 @@
             "type": "number"
           },
           "staged": {
-            "description": "Staged client entities considered for this intent.",
+            "description": "Staged entities of this intent that classify to the roster (clients) family by their source's own (source_platform, step token) pair through the source mapping registry (legacy token == family included).",
             "example": 5,
+            "type": "number"
+          },
+          "unclassified": {
+            "description": "Staged entities of this intent whose (source_platform, step token) no source mapping spec classifies to ANY family (unregistered platform or unmapped token). Counted here so an unreadable staged row is never a silent zero; such rows are never listed. Staged rows of other families are not counted here.",
+            "example": 0,
             "type": "number"
           }
         },
@@ -923,7 +1052,8 @@
           "staged",
           "reconstructed",
           "skipped",
-          "failed"
+          "failed",
+          "unclassified"
         ],
         "type": "object"
       },
@@ -977,7 +1107,7 @@
           },
           "source_platform": {
             "description": "Source platform slug (provenance).",
-            "example": "truecoach",
+            "example": "example-site",
             "type": "string"
           },
           "state": {
@@ -1038,13 +1168,19 @@
               "$ref": "#/components/schemas/ScoutRosterPersonDto"
             },
             "type": "array"
+          },
+          "roster_bridge_pending": {
+            "description": "Always true for now: these rows are the interim reconstructed Person bridge, not native coach-roster clients or principals. Imported clients stay absent from the User-based roster until the S8-D bridge is accepted. Present on empty pages too.",
+            "example": true,
+            "type": "boolean"
           }
         },
         "required": [
           "intent_id",
           "accounting",
           "persons",
-          "page"
+          "page",
+          "roster_bridge_pending"
         ],
         "type": "object"
       },
@@ -1085,6 +1221,196 @@
           "intent_id",
           "status",
           "execution_epoch"
+        ],
+        "type": "object"
+      },
+      "ScoutRunDeclarationDto": {
+        "properties": {
+          "intent_id": {
+            "description": "Intent id of the open server run (the text form of the server setup intent).",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "platforms": {
+            "description": "The run’s authorized platform set: non-empty, unique canonical slugs, each with its non-empty expected scope set. Immutable once recorded.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunDeclarationPlatformDto"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "platforms"
+        ],
+        "type": "object"
+      },
+      "ScoutRunDeclarationPlatformDto": {
+        "properties": {
+          "account_scope_id_digests": {
+            "description": "The source accounts/workspaces authorized for this import, each as sha256 hex of the source's scope id (never the raw id). Non-empty and unique.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "source_platform": {
+            "description": "Canonical source platform slug (never normalised).",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_platform",
+          "account_scope_id_digests"
+        ],
+        "type": "object"
+      },
+      "ScoutRunDeclarationResult": {
+        "properties": {
+          "challenge_b64": {
+            "description": "The run’s ONE server-generated 32-byte challenge (RFC 4648 §4 base64) that every source statement must embed. An exact replay returns the original challenge.",
+            "maxLength": 44,
+            "minLength": 44,
+            "type": "string"
+          },
+          "declared_at": {
+            "description": "Server-owned; set once.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "intent_id": {
+            "description": "The run key: the intent id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "challenge_b64",
+          "declared_at"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationDto": {
+        "properties": {
+          "intent_id": {
+            "description": "Intent id of the open, declared server run.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "observations": {
+            "description": "One ObservationEvidenceV1 per (platform, scope, family): at most 4 families × the declared scopes, one entry per unit; the whole body is ≤ 32 KiB.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunObservationEvidenceSchema"
+            },
+            "maxItems": 1024,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent_id",
+          "observations"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationEvidenceSchema": {
+        "properties": {
+          "account_scope_id_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "basis_kind": {
+            "enum": [
+              "source_signed_enumeration"
+            ],
+            "type": "string"
+          },
+          "evidence_version": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "family": {
+            "enum": [
+              "clients",
+              "workouts",
+              "client_history",
+              "programs"
+            ],
+            "type": "string"
+          },
+          "key_id": {
+            "pattern": "^[a-z0-9._-]{1,64}$",
+            "type": "string"
+          },
+          "mapping_spec_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "signature_b64": {
+            "description": "Canonical base64 of the 64-byte Ed25519 source signature.",
+            "type": "string"
+          },
+          "source_platform": {
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          },
+          "statement_b64": {
+            "description": "Canonical base64 of the strict canonical JSON source statement.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_version",
+          "source_platform",
+          "account_scope_id_digest",
+          "family",
+          "basis_kind",
+          "mapping_spec_digest",
+          "statement_b64",
+          "key_id",
+          "signature_b64"
+        ],
+        "type": "object"
+      },
+      "ScoutRunObservationResult": {
+        "properties": {
+          "execution_epoch": {
+            "description": "Epoch read under the run row lock and bound to every row.",
+            "minimum": 1,
+            "type": "number"
+          },
+          "intent_id": {
+            "description": "The run key: the intent id.",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "Entries identical to an already stored row (no row written).",
+            "minimum": 0,
+            "type": "number"
+          },
+          "stored": {
+            "description": "Evidence rows inserted by this request.",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "intent_id",
+          "execution_epoch",
+          "stored",
+          "replayed"
         ],
         "type": "object"
       },
@@ -2290,7 +2616,7 @@
     },
     "/api/scout/reconstruct/entities": {
       "get": {
-        "description": "Returns the reconstructed non-person canonical rows (workouts / client_history) for one settled crawl intent and family, joined to the reconstruction ledger, with honest per-page metadata (page_count + an opaque forward-only cursor) and deterministic bounded pagination. Issues no full-collection total scan and is not a second progress system. Excludes cross-tenant rows and cascade-erased rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "description": "Returns the reconstructed non-person canonical rows (workouts / client_history) for one settled crawl intent and family, joined to the reconstruction ledger, with honest per-page metadata (page_count + an opaque forward-only cursor) and deterministic bounded pagination. Issues no full-collection total scan and is not a second progress system. Excludes cross-tenant rows and cascade-erased rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off. Each row reports its materialized target_kind: generic scout_entity evidence (native_id null, the effective kind of every legacy row) or an owned native workout_program / workout_plan row (native_id set), the latter served only when the coach owns a live native row backed by matching import provenance; anything else is dropped from the page.",
         "operationId": "ScoutEntitiesController_getEntities",
         "parameters": [
           {
@@ -2321,7 +2647,7 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Accepts legacy and scoped v2 tokens; emits scoped v2. Omit for the first page. A malformed or mismatched cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
+            "description": "Opaque forward-only page cursor returned as `next_cursor` by a prior call for the SAME intent + family. Accepts legacy, scoped v2 and scoped v3 tokens; emits scoped v3 (row-precise). Omit for the first page. A malformed or mismatched cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -2419,7 +2745,7 @@
     },
     "/api/scout/reconstruct/roster": {
       "get": {
-        "description": "Returns the invite-pending roster Person records reconstructed from one settled crawl intent, joined to the reconstruction ledger, with honest accounting { staged, reconstructed, skipped, failed } and deterministic, bounded cursor pagination. Excludes deleted and cross-tenant rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off.",
+        "description": "Returns the invite-pending roster Person records reconstructed from one settled crawl intent, joined to the reconstruction ledger, with honest accounting { staged, reconstructed, skipped, failed, unclassified } and deterministic, bounded cursor pagination. Excludes deleted and cross-tenant rows; never returns email or billing fields. Returns 404 when the intent is unknown for the caller or when the scout flags are off. The response carries roster_bridge_pending: true (also on empty pages): these are interim Person bridge rows, not native roster clients or principals, until the S8-D bridge is accepted. Only person-kind ledger rows are materialized here.",
         "operationId": "ScoutRosterController_getRoster",
         "parameters": [
           {
@@ -2435,7 +2761,7 @@
             }
           },
           {
-            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits scoped v2. A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
+            "description": "Opaque forward-only page cursor returned as `page.next_cursor` by a prior call. Omit for the first page. Accepts legacy, scoped v2 and scoped v3 tokens; emits scoped v3 (row-precise). A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed row, is a 400 (fail closed): restart pagination from the first page.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -2643,6 +2969,250 @@
           }
         ],
         "summary": "Cancel an open server-owned run",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/runs/declaration": {
+      "post": {
+        "description": "Before the run’s first staged row: records the immutable authorized platform set and, per platform, the expected account scope set (sha256 digests), in one transaction under the run lock, and returns the run’s ONE server-generated 32-byte challenge. An exact replay (order ignored) returns the original challenge and writes nothing.",
+        "operationId": "ObservationController_postDeclaration",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutRunDeclarationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutRunDeclarationResult"
+                }
+              }
+            },
+            "description": "Declared (or exact replay)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted, or the S10 envelope/evidence grammar, or a body over 32 KiB). Standard HttpExceptionFilter envelope; no row is written."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: FEATURE_SCOUT_INGEST off (R-DARK-1) OR the intent is unknown to the calling coach. Deliberately indistinguishable — no existence oracle."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "declaration_conflict",
+                            "declaration_after_ingest",
+                            "run_not_started",
+                            "run_fenced",
+                            "run_terminal",
+                            "legacy_run"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Refused. `code` is `declaration_conflict` (a different set is already declared), `declaration_after_ingest` (first declaration after a staged row or claim), or a run lifecycle code: `run_not_started`, `run_fenced`, `run_terminal`, `legacy_run`."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Declare the run’s authorized platforms and expected account scopes",
+        "tags": [
+          "scout"
+        ]
+      }
+    },
+    "/api/scout/runs/observation": {
+      "post": {
+        "description": "Only after a declaration and before the claim. Stores one validated ObservationEvidenceV1 per (platform, scope, family), bound to the epoch read under the run lock. The server records the evidence; it proves nothing until the settle-time evaluator verifies it. An identical replay writes nothing. The body is at most 32 KiB.",
+        "operationId": "ObservationController_postObservation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoutRunObservationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoutRunObservationResult"
+                }
+              }
+            },
+            "description": "Stored (or identical replay)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Malformed body (global ValidationPipe: whitelist + forbidNonWhitelisted, or the S10 envelope/evidence grammar, or a body over 32 KiB). Standard HttpExceptionFilter envelope; no row is written."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not a coach or owner."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Uniform not-found: FEATURE_SCOUT_INGEST off (R-DARK-1) OR the intent is unknown to the calling coach. Deliberately indistinguishable — no existence oracle."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "declaration_missing",
+                            "observation_conflict",
+                            "observation_after_claim",
+                            "observation_not_declared",
+                            "run_not_started",
+                            "run_fenced",
+                            "run_terminal",
+                            "legacy_run"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Refused (nothing stored). `code` is `declaration_missing`, `observation_conflict` (a different evidence is stored for the unit), `observation_after_claim`, `observation_not_declared` (undeclared platform/scope, no induction manifest, or a family outside it), or a run lifecycle code: `run_not_started`, `run_fenced`, `run_terminal`, `legacy_run`."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            },
+            "description": "Rate limit exceeded."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Upload source-signed observation evidence for a declared run",
         "tags": [
           "scout"
         ]

@@ -233,9 +233,76 @@ describe('family registry (owned wiring)', () => {
     );
   });
 
-  it('ships no repository native rule set yet (absent directory → empty registry, nothing native is guessed)', () => {
-    expect(loadNativeRuleSets(NATIVE_RULES_DIR)).toEqual([]);
-    expect(buildNativeRuleRegistry().size).toBe(0);
+  // S10-D P: invariants over WHATEVER ships (a new data-only source adds a rule set without
+  // touching this spec), never "the directory is absent". A shipped rule set must be a declared,
+  // consistent artifact of a shipped mapping spec; the positive guard stays: the production
+  // TrueCoach source ships no guessed native rules (its exercise payload shape is not established).
+  const PRODUCTION_WITHOUT_NATIVE_RULES = ['truecoach'] as const;
+  const guessedProduction = (registry: ReadonlyMap<string, unknown>) =>
+    PRODUCTION_WITHOUT_NATIVE_RULES.filter((platform) => registry.has(platform));
+  /** Every shipped rule set pairs with exactly one shipped spec and names only its families. */
+  const nativeRuleViolations = (
+    sets: readonly { sourcePlatform: string; families: object }[],
+    specs: ReadonlyMap<string, { spec: { families: object } }>,
+  ): string[] => {
+    const out: string[] = [];
+    for (const set of sets) {
+      const mapper = specs.get(set.sourcePlatform);
+      if (mapper === undefined) {
+        out.push(`${set.sourcePlatform}: no shipped mapping spec`);
+        continue;
+      }
+      for (const family of Object.keys(set.families)) {
+        if (!Object.prototype.hasOwnProperty.call(mapper.spec.families, family))
+          out.push(`${set.sourcePlatform}: ${family} is not a family of its spec`);
+      }
+    }
+    return out;
+  };
+
+  it('every shipped native rule set is declared data for a shipped spec (none guessed)', () => {
+    const sets = loadNativeRuleSets(NATIVE_RULES_DIR);
+    const registry = buildNativeRuleRegistry();
+    // Loader and default registry agree on exactly the shipped files, one per platform.
+    expect([...registry.keys()].sort()).toEqual(sets.map((s) => s.sourcePlatform).sort());
+    if (sets.length > 0) {
+      const files = readdirSync(NATIVE_RULES_DIR).filter((name) => name.endsWith('.json'));
+      expect(files.sort()).toEqual(sets.map((s) => `${s.sourcePlatform}.json`).sort());
+    }
+    expect(nativeRuleViolations(sets, buildSourceMapperRegistry())).toEqual([]);
+    // Positive guard: no production source ships guessed native rules.
+    expect(guessedProduction(registry)).toEqual([]);
+  });
+
+  it('the invariant still fails on a real defect (a rule set with no spec, or a foreign family)', () => {
+    const specs = buildSourceMapperRegistry([
+      parseSourceMappingSpec(
+        {
+          specVersion: 1,
+          sourcePlatform: 'p-defect',
+          steps: { people: 'clients' },
+          families: { clients: { displayName: { paths: [['name']], coerce: 'string' } } },
+        },
+        'p-defect',
+      ),
+    ]);
+    const orphan = { sourcePlatform: 'p-orphan', families: { programs: {} } };
+    const foreign = { sourcePlatform: 'p-defect', families: { workouts: {} } };
+    expect(nativeRuleViolations([orphan, foreign], specs)).toEqual([
+      'p-orphan: no shipped mapping spec',
+      'p-defect: workouts is not a family of its spec',
+    ]);
+    // A production source that ever shipped rules would trip the positive guard above.
+    const guessed = buildNativeRuleRegistry([
+      parseNativeRuleSet({ specVersion: 1, sourcePlatform: 'truecoach', families: {} }, 'guess'),
+    ]);
+    expect(guessedProduction(guessed)).toEqual(['truecoach']);
+  });
+
+  it('absent directory → empty; present-but-empty directory fails closed', () => {
+    expect(loadNativeRuleSets(join(mkdtempSync(join(tmpdir(), 's8c-absent-')), 'absent'))).toEqual(
+      [],
+    );
     expect(() => loadNativeRuleSets(mkdtempSync(join(tmpdir(), 's8c-empty-')))).toThrow(
       /no \*\.json/,
     );

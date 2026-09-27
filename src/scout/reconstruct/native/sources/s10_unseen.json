@@ -1,0 +1,18 @@
+{
+  "specVersion": 1,
+  "sourcePlatform": "s10_unseen",
+  "families": {
+    "programs": {
+      "weeks": { "kind": "integer", "paths": [["u10_span_weeks"]] },
+      "daysPerWeek": { "kind": "integer", "paths": [["u10_span_days"]] }
+    },
+    "workouts": {
+      "type": {
+        "kind": "enum",
+        "paths": [["u10_modality"]],
+        "map": { "lift": "strength", "run": "cardio" },
+        "default": "strength"
+      }
+    }
+  }
+}

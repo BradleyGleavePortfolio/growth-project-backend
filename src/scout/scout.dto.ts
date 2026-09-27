@@ -1,6 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  FAMILY_QUALIFIERS,
+  type FamilyQualifierCode,
+  RELATIONSHIP_CLOSURES,
+  type RelationshipClosureCode,
   RUN_MODES,
   RUN_PHASES,
   RUN_REASON_CODES,
@@ -210,11 +214,28 @@ export class ScoutImportFamilyLedgerDto {
   failed!: number;
 }
 
+/** S9 D-S9-7 histogram entry: one closed-catalogue reason code and how many identities carry it. */
+export class ScoutImportReasonCountDto {
+  @ApiProperty({
+    description: 'Reason code from the closed S9 catalogue (never free text).',
+    example: 'unresolved:no_native_client_principal',
+  })
+  code!: string;
+
+  @ApiProperty({ minimum: 0, description: 'Identities of the family carrying this code.' })
+  count!: number;
+}
+
 /**
  * S7-L §5 `families[]` entry. `staged_unique` is the distinct (source_platform, source_id)
  * count of staged rows for the family — the staged row count, because that wide identity is
  * the staging table's only key. Every native bucket is null until the slice that proves it
  * (S8-B provenance / S9 reconciliation / S10 observation) exists; null means "not yet known".
+ *
+ * S9-C (D-S9-5): when a reconciliation report applies to the run (a settled server run whose
+ * reason code is not `reconciliation_not_performed`), `rejected` / `unresolved` are counted facts
+ * and the optional fields below are present; otherwise they are absent and the entry is exactly
+ * the S7-L shape. `created_native` / `already_present_verified` stay null in v1 (D-S9-4).
  */
 export class ScoutImportFamilyDto {
   @ApiProperty({ description: 'Entity family.', example: 'clients' })
@@ -260,6 +281,56 @@ export class ScoutImportFamilyDto {
 
   @ApiProperty({ type: ScoutImportFamilyLedgerDto, description: 'Reconstruction ledger tally.' })
   ledger!: ScoutImportFamilyLedgerDto;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Canonical family the staged token resolves to (S9); null when unmapped or when the token ' +
+      'resolves to different families across platforms. Present only when a report applies.',
+    example: 'workouts',
+  })
+  canonical_family?: string | null;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    description:
+      'Verified natively present (created or already present) identities (S9 D-S9-4). Present ' +
+      'only when a report applies.',
+  })
+  native_present_verified?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Completeness basis for the family (S9 D-S9-3): 'none' until a basis is recorded. Present " +
+      'only when a report applies.',
+    example: 'none',
+  })
+  completeness_basis?: string;
+
+  @ApiPropertyOptional({
+    enum: RELATIONSHIP_CLOSURES,
+    description:
+      'Relationship closure over the verified identities (S9 D-S9-5): not_applicable = no ' +
+      'verified identity carries a declared edge. Present only when a report applies.',
+  })
+  relationship_closure?: RelationshipClosureCode;
+
+  @ApiPropertyOptional({
+    type: [ScoutImportReasonCountDto],
+    description:
+      'Closed-catalogue reason histogram over the staged identities (S9 D-S9-7), sorted by code. ' +
+      'Present only when a report applies.',
+  })
+  reasons?: ScoutImportReasonCountDto[];
+
+  @ApiPropertyOptional({
+    isArray: true,
+    enum: FAMILY_QUALIFIERS,
+    description:
+      'Family qualifiers (D-S9-5, closed enum, append-only); present only when a report applies.',
+  })
+  qualifiers?: FamilyQualifierCode[];
 }
 
 // 200 body for GET /api/scout/import/status. Evidence-only: `entity_counts` are

@@ -25,6 +25,23 @@ export const ROSTER_DEFAULT_PAGE_SIZE = 50;
 export const ROSTER_MAX_PAGE_SIZE = 200;
 
 /**
+ * S8-F — the only ledger `target_kind` the roster materializes (besides the
+ * legacy NULL kind, which means the same pre-S8-B Person target). Mirrors the
+ * ledger's person kind value written by the clients writer; any other kind is
+ * never joined to Person here.
+ */
+export const ROSTER_TARGET_KIND = 'person';
+
+/**
+ * S8-F — response-level qualifier. The roster remains the interim accepted
+ * Person bridge (native contract §4.1): imported clients are NOT yet visible in
+ * the User-based coach roster and no principal is minted here. Fixed `true`
+ * until the accepted S8-D bridge lands and this reader is revised; it is never
+ * derived from row contents or counts.
+ */
+export const ROSTER_BRIDGE_PENDING = true as const;
+
+/**
  * GET /api/scout/reconstruct/roster query. coach_id is taken from the bearer
  * identity (never a query/body field); the only inputs are which settled intent
  * to read and an opaque forward-only page cursor.
@@ -44,7 +61,7 @@ export class ScoutRosterQueryDto {
   @ApiPropertyOptional({
     description:
       'Opaque forward-only page cursor returned as `page.next_cursor` by a prior ' +
-      'call. Omit for the first page. Accepts legacy and scoped v2 tokens; emits scoped v2. ' +
+      'call. Omit for the first page. Accepts legacy, scoped v2 and scoped v3 tokens; emits scoped v3 (row-precise). ' +
       'A malformed cursor, or a legacy cursor that no longer resolves to one reconstructed ' +
       'row, is a 400 (fail closed): restart pagination from the first page.',
     maxLength: SCOUT_CURSOR_MAX_LENGTH,
@@ -77,7 +94,13 @@ export class ScoutRosterQueryDto {
  * `staged > reconstructed + skipped + failed`.
  */
 export class ScoutRosterAccountingDto {
-  @ApiProperty({ description: 'Staged client entities considered for this intent.', example: 5 })
+  @ApiProperty({
+    description:
+      'Staged entities of this intent that classify to the roster (clients) family by their ' +
+      "source's own (source_platform, step token) pair through the source mapping registry " +
+      '(legacy token == family included).',
+    example: 5,
+  })
   staged!: number;
 
   @ApiProperty({ description: 'Entities mapped to a roster Person.', example: 3 })
@@ -88,6 +111,16 @@ export class ScoutRosterAccountingDto {
 
   @ApiProperty({ description: 'Entities that errored during reconstruction.', example: 1 })
   failed!: number;
+
+  @ApiProperty({
+    description:
+      'Staged entities of this intent whose (source_platform, step token) no source mapping ' +
+      'spec classifies to ANY family (unregistered platform or unmapped token). Counted here ' +
+      'so an unreadable staged row is never a silent zero; such rows are never listed. Staged ' +
+      'rows of other families are not counted here.',
+    example: 0,
+  })
+  unclassified!: number;
 }
 
 /**
@@ -107,7 +140,7 @@ export class ScoutRosterPersonDto {
   })
   state!: PersonState;
 
-  @ApiProperty({ description: 'Source platform slug (provenance).', example: 'truecoach' })
+  @ApiProperty({ description: 'Source platform slug (provenance).', example: 'example-site' })
   source_platform!: string;
 
   @ApiProperty({
@@ -163,4 +196,14 @@ export class ScoutRosterResult {
 
   @ApiProperty({ type: ScoutRosterPageDto, description: 'Pagination envelope.' })
   page!: ScoutRosterPageDto;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Always true for now: these rows are the interim reconstructed Person bridge, ' +
+      'not native coach-roster clients or principals. Imported clients stay absent from ' +
+      'the User-based roster until the S8-D bridge is accepted. Present on empty pages too.',
+    example: true,
+  })
+  roster_bridge_pending!: boolean;
 }

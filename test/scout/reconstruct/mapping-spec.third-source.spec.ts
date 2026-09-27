@@ -174,6 +174,17 @@ interface PersonRow {
   source_person_id: string;
   display_name: string | null;
 }
+interface ProvenanceRow {
+  id: string;
+  coach_id: string;
+  source_namespace: string;
+  entity_type: string;
+  source_id: string;
+  native_kind: string;
+  native_id: string | null;
+  outcome: string;
+  reason: string | null;
+}
 interface Where {
   entity_type: string;
 }
@@ -181,6 +192,7 @@ interface Where {
 class FakePrisma {
   readonly staged: Staged[] = [];
   readonly persons = new Map<string, PersonRow>();
+  readonly provenance = new Map<string, ProvenanceRow>();
   readonly entities = new Map<
     string,
     { id: string; client_source_id: string | null; label: string | null }
@@ -204,24 +216,55 @@ class FakePrisma {
         })),
   };
 
+  // S8-D1: the clients writer is create-only — findUnique (by id / external ref)
+  // and create only; no upsert exists here, so a replay cannot silently rewrite a
+  // display_name. Provenance rows are the D-S8-3 identity.
   person = {
-    upsert: async (args: {
-      where: {
-        coach_id_source_platform_source_person_id: Record<string, string>;
-      };
-      create: Omit<PersonRow, 'id'>;
-      update: { display_name: string | null };
+    findUnique: async (args: {
+      where: { id: string } | { coach_id_source_platform_source_person_id: Record<string, string> };
     }) => {
-      const w = args.where.coach_id_source_platform_source_person_id;
-      const key = `${w.coach_id}|${w.source_platform}|${w.source_person_id}`;
-      const existing = this.persons.get(key);
-      if (existing) {
-        existing.display_name = args.update.display_name;
-        return { id: existing.id };
+      if ('id' in args.where) {
+        const wantedId = args.where.id;
+        return [...this.persons.values()].find((p) => p.id === wantedId) ?? null;
       }
-      const created = { id: `person-${this.persons.size + 1}`, ...args.create };
+      const w = args.where.coach_id_source_platform_source_person_id;
+      return this.persons.get(`${w.coach_id}|${w.source_platform}|${w.source_person_id}`) ?? null;
+    },
+    create: async (args: { data: Omit<PersonRow, 'id'> }) => {
+      const d = args.data;
+      const key = `${d.coach_id}|${d.source_platform}|${d.source_person_id}`;
+      if (this.persons.has(key)) throw new Error('P2002 unique violation');
+      const created = { id: `person-${this.persons.size + 1}`, ...d };
       this.persons.set(key, created);
       return { id: created.id };
+    },
+  };
+
+  importNativeProvenance = {
+    findUnique: async (args: {
+      where: { coach_id_source_namespace_entity_type_source_id: Record<string, string> };
+    }) => {
+      const w = args.where.coach_id_source_namespace_entity_type_source_id;
+      return (
+        this.provenance.get(
+          `${w.coach_id}|${w.source_namespace}|${w.entity_type}|${w.source_id}`,
+        ) ?? null
+      );
+    },
+    create: async (args: { data: Omit<ProvenanceRow, 'id'> }) => {
+      const d = args.data;
+      const key = `${d.coach_id}|${d.source_namespace}|${d.entity_type}|${d.source_id}`;
+      if (this.provenance.has(key)) throw new Error('P2002 unique violation');
+      const row = { id: `prov-${this.provenance.size + 1}`, ...d };
+      this.provenance.set(key, row);
+      return row;
+    },
+    update: async (args: { where: { id: string }; data: Partial<ProvenanceRow> }) => {
+      const wantedId = args.where.id;
+      const row = [...this.provenance.values()].find((r) => r.id === wantedId);
+      if (row === undefined) throw new Error('not found');
+      Object.assign(row, args.data);
+      return row;
     },
   };
 
@@ -359,8 +402,17 @@ describe('conformance_beta — the unmodified engine reconstructs it end to end'
       reason: 'missing_source_id',
     });
 
+    // S8-D1: `created` provenance for the two minted Persons; none for the skipped blank id.
+    expect(
+      [...prisma.provenance.values()].map((r) => [r.source_id, r.native_kind, r.outcome]),
+    ).toEqual([
+      ['ath-1', 'person', 'created'],
+      ['ath-2', 'person', 'created'],
+    ]);
+
     const replay = await service.reconstruct('coach-1', 'intent-1', RECONSTRUCT_FAMILY.clients);
     expect(replay).toEqual(first.clients);
     expect(prisma.persons.size).toBe(2);
+    expect(prisma.provenance.size).toBe(2);
   });
 });

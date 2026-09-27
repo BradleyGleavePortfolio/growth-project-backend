@@ -13,7 +13,7 @@ import {
 /**
  * ScoutReconstructService unit tests.
  *
- * The Prisma dependency is a small in-memory fake with REAL upsert + groupBy
+ * The Prisma dependency is a small in-memory fake with REAL unique-key + groupBy
  * semantics (keyed on the same unique tuples as the schema), so accounting,
  * idempotent replay, and poison-row isolation are proven by behaviour — not by
  * a mock that hands back a pre-decided count (a tautology the codebase
@@ -33,6 +33,27 @@ interface LedgerRow {
   source_id: string;
   status: string;
   target_id: string | null;
+  /** S8-B closed kind; written only by a typed persist (S8-D1: `person`). */
+  target_kind?: string;
+  reason: string | null;
+}
+interface PersonRow {
+  id: string;
+  coach_id: string;
+  source_platform: string;
+  source_person_id: string;
+  display_name: string | null;
+  state: 'InvitePending' | 'Deleted';
+}
+interface ProvenanceRow {
+  id: string;
+  coach_id: string;
+  source_namespace: string;
+  entity_type: string;
+  source_id: string;
+  native_kind: string;
+  native_id: string | null;
+  outcome: string;
   reason: string | null;
 }
 /** The five-field ledger identity the N writer addresses. */
@@ -60,23 +81,30 @@ class FakePrisma {
    * over-ceiling fail-closed path can be exercised deterministically.
    */
   stagedCountOverride: number | null = null;
-  /** source_ids whose person.upsert should throw, to simulate poison rows. */
+  /** source_ids whose Person access (create, or a read that finds it) throws, to simulate poison rows. */
   poison = new Set<string>();
   /**
-   * source_person_ids for which the FIRST person.upsert simulates losing a
-   * concurrent insert race: it materializes the row (as the winning writer
-   * would) and then throws a Prisma P2002 unique violation exactly once. The
-   * service's retry-once path must then converge to `reconstructed`.
+   * source_person_ids for which the FIRST person.create simulates losing a
+   * concurrent insert race: it materializes the row and its provenance (as the
+   * winning writer would) and then throws a Prisma P2002 unique violation
+   * exactly once. The service's retry-once path must then converge to
+   * `reconstructed` through the winner's provenance (S8-D1 step 1).
    */
   p2002Once = new Set<string>();
   /** Records skip/take pairs passed to findMany, to prove deterministic paging. */
   readonly pages: Array<{ skip: number; take: number }> = [];
 
-  readonly persons = new Map<string, { id: string; display_name: string | null }>();
+  /** Persons keyed by the external ref `coach|platform|source_person_id` (the schema's unique key). */
+  readonly persons = new Map<string, PersonRow>();
+  /** Provenance keyed by the D-S8-3 identity `coach|namespace|entity_type|source_id`. */
+  readonly provenance = new Map<string, ProvenanceRow>();
   readonly ledger = new Map<string, LedgerRow>();
 
   private personKey(coach: string, platform: string, personId: string): string {
     return `${coach}|${platform}|${personId}`;
+  }
+  private provenanceKey(coach: string, ns: string, entityType: string, sourceId: string): string {
+    return `${coach}|${ns}|${entityType}|${sourceId}`;
   }
   /**
    * The ledger is keyed by the five-field WIDE identity (coach, intent, entity,
@@ -109,47 +137,164 @@ class FakePrisma {
     },
   };
 
+  /**
+   * S8-D1: the `clients` writer is create-only (`person-writer.ts`), so the
+   * fake offers exactly `findUnique` (by id or by the external ref) and
+   * `create` — no upsert/update exists to hide a display_name overwrite. A
+   * duplicate external ref on create is a real Prisma P2002, as on PostgreSQL.
+   * A POISON row's Person access throws (its create, or any read that finds
+   * it), simulating a persist failure on first write and on replay alike.
+   */
   person = {
-    upsert: async (args: {
+    findUnique: async (args: {
+      where:
+        | { id: string }
+        | {
+            coach_id_source_platform_source_person_id: {
+              coach_id: string;
+              source_platform: string;
+              source_person_id: string;
+            };
+          };
+    }) => {
+      let found: PersonRow | undefined;
+      if ('id' in args.where) {
+        const wantedId = args.where.id;
+        found = [...this.persons.values()].find((p) => p.id === wantedId);
+      } else {
+        const w = args.where.coach_id_source_platform_source_person_id;
+        found = this.persons.get(this.personKey(w.coach_id, w.source_platform, w.source_person_id));
+      }
+      if (found !== undefined && this.poison.has(found.source_person_id))
+        throw new Error('poison person read');
+      return found ?? null;
+    },
+    create: async (args: {
+      data: {
+        coach_id: string;
+        source_platform: string;
+        source_person_id: string;
+        display_name: string | null;
+      };
+    }) => {
+      const d = args.data;
+      const key = this.personKey(d.coach_id, d.source_platform, d.source_person_id);
+      const materialize = () => {
+        const row: PersonRow = {
+          id: `person-${this.persons.size + 1}`,
+          coach_id: d.coach_id,
+          source_platform: d.source_platform,
+          source_person_id: d.source_person_id,
+          display_name: d.display_name,
+          state: 'InvitePending',
+        };
+        this.persons.set(key, row);
+        return row;
+      };
+      if (this.p2002Once.has(d.source_person_id)) {
+        // Simulate the concurrent winner: it committed the Person AND its
+        // provenance (one transaction, `target before provenance`), then this
+        // writer's insert surfaces the unique violation exactly once. The
+        // fixtures' staged source_id equals the mapped source_person_id, so the
+        // winner's provenance key can be derived here.
+        this.p2002Once.delete(d.source_person_id);
+        if (!this.persons.has(key)) {
+          const winner = materialize();
+          this.provenance.set(
+            this.provenanceKey(d.coach_id, d.source_platform, 'clients', d.source_person_id),
+            {
+              id: `prov-${this.provenance.size + 1}`,
+              coach_id: d.coach_id,
+              source_namespace: d.source_platform,
+              entity_type: 'clients',
+              source_id: d.source_person_id,
+              native_kind: 'person',
+              native_id: winner.id,
+              outcome: 'created',
+              reason: null,
+            },
+          );
+        }
+        throw p2002();
+      }
+      if (this.poison.has(d.source_person_id)) throw new Error('poison person create');
+      if (this.persons.has(key)) throw p2002();
+      return { id: materialize().id };
+    },
+  };
+
+  /**
+   * The S8-D1 writer's one raw statement: the `FOR UPDATE` re-read of a located Person. The
+   * engine fake is single-writer, so this is a plain read; the lock protocol itself is pinned by
+   * test/scout/reconstruct/native/person-writer.spec.ts on the transaction fake.
+   */
+  $queryRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (!/FOR UPDATE/.test(strings.join(''))) throw new Error('unexpected raw statement');
+    const wantedId = String(values[0]);
+    const found = [...this.persons.values()].find((p) => p.id === wantedId);
+    return found === undefined
+      ? []
+      : [{ id: found.id, coach_id: found.coach_id, state: found.state }];
+  };
+
+  /** `ImportNativeProvenance` primitives the S8-D1 writer uses: findUnique / findFirst / create / update. */
+  importNativeProvenance = {
+    /** A1 claim check: a RESOLVED row of another raw source_id targeting the same native row. */
+    findFirst: async (args: {
       where: {
-        coach_id_source_platform_source_person_id: {
+        coach_id: string;
+        source_namespace: string;
+        entity_type: string;
+        native_kind: string;
+        native_id: string;
+        outcome: { not: string };
+        source_id: { not: string };
+      };
+    }) => {
+      const w = args.where;
+      const row = [...this.provenance.values()].find(
+        (r) =>
+          r.coach_id === w.coach_id &&
+          r.source_namespace === w.source_namespace &&
+          r.entity_type === w.entity_type &&
+          r.native_kind === w.native_kind &&
+          r.native_id === w.native_id &&
+          r.outcome !== w.outcome.not &&
+          r.source_id !== w.source_id.not,
+      );
+      return row === undefined ? null : { source_id: row.source_id };
+    },
+    findUnique: async (args: {
+      where: {
+        coach_id_source_namespace_entity_type_source_id: {
           coach_id: string;
-          source_platform: string;
-          source_person_id: string;
+          source_namespace: string;
+          entity_type: string;
+          source_id: string;
         };
       };
-      create: { display_name: string | null };
-      update: { display_name: string | null };
     }) => {
-      const w = args.where.coach_id_source_platform_source_person_id;
-      if (this.poison.has(w.source_person_id)) throw new Error('poison person upsert');
-      const key = this.personKey(w.coach_id, w.source_platform, w.source_person_id);
-      if (this.p2002Once.has(w.source_person_id)) {
-        // Simulate the concurrent winner: materialize the row as the racing
-        // writer would, then surface the unique violation exactly once.
-        this.p2002Once.delete(w.source_person_id);
-        if (!this.persons.has(key)) {
-          this.persons.set(key, {
-            id: `person-${this.persons.size + 1}`,
-            display_name: args.create.display_name,
-          });
-        }
-        throw new Prisma.PrismaClientKnownRequestError('unique violation', {
-          code: 'P2002',
-          clientVersion: 'test',
-        });
-      }
-      const existing = this.persons.get(key);
-      if (existing) {
-        existing.display_name = args.update.display_name;
-        return { id: existing.id };
-      }
-      const created = {
-        id: `person-${this.persons.size + 1}`,
-        display_name: args.create.display_name,
-      };
-      this.persons.set(key, created);
-      return { id: created.id };
+      const w = args.where.coach_id_source_namespace_entity_type_source_id;
+      return (
+        this.provenance.get(
+          this.provenanceKey(w.coach_id, w.source_namespace, w.entity_type, w.source_id),
+        ) ?? null
+      );
+    },
+    create: async (args: { data: Omit<ProvenanceRow, 'id'> }) => {
+      const d = args.data;
+      const key = this.provenanceKey(d.coach_id, d.source_namespace, d.entity_type, d.source_id);
+      if (this.provenance.has(key)) throw p2002();
+      const row: ProvenanceRow = { id: `prov-${this.provenance.size + 1}`, ...d };
+      this.provenance.set(key, row);
+      return row;
+    },
+    update: async (args: { where: { id: string }; data: Partial<ProvenanceRow> }) => {
+      const wantedId = args.where.id;
+      const row = [...this.provenance.values()].find((r) => r.id === wantedId);
+      if (row === undefined) throw new Error('not found');
+      Object.assign(row, args.data);
+      return row;
     },
   };
 
@@ -273,6 +418,8 @@ describe('ScoutReconstructService', () => {
         jest
           .spyOn(service['families'].get('clients')!, 'map')
           .mockReturnValueOnce({ ok: false, reason: 'synthetic mapper skip' });
+      // S8-D1: the replay never reaches person.create (create-only writer); the
+      // poison fires on the verify read of the committed Person instead.
       else prisma.poison.add('1');
       const result = await service.reconstruct('coach-1', 'intent-1');
       expect(row).toMatchObject({
@@ -280,6 +427,7 @@ describe('ScoutReconstructService', () => {
         status: 'reconstructed',
         reason: 'retained-success-reason',
         target_id: target,
+        target_kind: 'person',
       });
       expect(result).toMatchObject({ reconstructed: 1, failed: 0, skipped: 0 });
     },
@@ -347,7 +495,14 @@ describe('ScoutReconstructService', () => {
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(upsert.mock.calls[0][0]).toEqual({
       where: { coach_id_intent_id_entity_type_source_platform_source_id: identity },
-      create: { ...identity, status: 'reconstructed', target_id: expect.any(String), reason: null },
+      // S8-D1: `clients` is a typed persist, so the closed `target_kind` rides with the target.
+      create: {
+        ...identity,
+        status: 'reconstructed',
+        target_id: expect.any(String),
+        reason: null,
+        target_kind: 'person',
+      },
       update: {},
     });
     expect(precedence).toHaveBeenCalledTimes(1);
@@ -659,18 +814,116 @@ describe('ScoutReconstructService', () => {
     expect(healed?.reason).toBeNull();
   });
 
-  it('updates the display name on replay without minting a new Person', async () => {
+  it('keeps the accepted display name on replay without minting a new Person (S8-D1 create-only)', async () => {
+    // Flipped from IMPORTER-F "updates the display name on replay": contract
+    // 2026-09-26-s8d-person-link §5.1 step 1 / D-S8-4 — a later pass never
+    // overwrites an accepted roster row, so a coach's edit survives every replay.
     const prisma = new FakePrisma();
     prisma.staged = [stagedClient('1', 'Old Name')];
     const capture = jest.fn();
     const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(capture));
 
     await service.reconstruct('coach-1', 'intent-1');
+    [...prisma.persons.values()][0].display_name = 'Coach Edited';
     prisma.staged = [stagedClient('1', 'New Name')];
-    await service.reconstruct('coach-1', 'intent-1');
+    const replay = await service.reconstruct('coach-1', 'intent-1');
 
+    expect(replay).toMatchObject({ reconstructed: 1, skipped: 0, failed: 0 });
     expect(prisma.persons.size).toBe(1);
-    expect([...prisma.persons.values()][0].display_name).toBe('New Name');
+    expect(prisma.provenance.size).toBe(1);
+    expect([...prisma.persons.values()][0].display_name).toBe('Coach Edited');
+  });
+
+  it('S8-D1: a Deleted Person is ledgered skipped unresolved:native_target_removed — stays Deleted, no new Person', async () => {
+    const prisma = new FakePrisma();
+    prisma.staged = [stagedClient('1')];
+    const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+    await service.reconstruct('coach-1', 'intent-1');
+    const person = [...prisma.persons.values()][0];
+    person.state = 'Deleted';
+    // A fresh pass over the same identity (success precedence would keep the
+    // earlier `reconstructed` row on the same intent; S9 reads the Deleted
+    // state itself there — facts.service.spec). Model the fresh pass by clearing
+    // this intent's ledger, exactly what a new intent over the same rows sees.
+    prisma.ledger.clear();
+    const result = await service.reconstruct('coach-1', 'intent-1');
+    expect(result).toMatchObject({ staged: 1, reconstructed: 0, skipped: 1, failed: 0 });
+    expect([...prisma.ledger.values()][0]).toMatchObject({
+      status: 'skipped',
+      reason: 'unresolved:native_target_removed',
+      target_id: null,
+    });
+    expect(prisma.persons.size).toBe(1);
+    expect(person.state).toBe('Deleted');
+    expect(prisma.provenance.size).toBe(1);
+  });
+
+  it('S8-D1: a pre-D1 Person (no provenance) is adopted once — ledger kind person, legacy id, one provenance row over two runs', async () => {
+    const prisma = new FakePrisma();
+    prisma.staged = [stagedClient('1', 'Mapped Name')];
+    prisma.persons.set('coach-1|truecoach|1', {
+      id: 'legacy-person',
+      coach_id: 'coach-1',
+      source_platform: 'truecoach',
+      source_person_id: '1',
+      display_name: 'Legacy Name',
+      state: 'InvitePending',
+    });
+    const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+    const first = await service.reconstruct('coach-1', 'intent-1');
+    expect(first).toMatchObject({ reconstructed: 1, skipped: 0, failed: 0 });
+    expect([...prisma.ledger.values()][0]).toMatchObject({
+      status: 'reconstructed',
+      target_id: 'legacy-person',
+      target_kind: 'person',
+    });
+    expect([...prisma.provenance.values()]).toEqual([
+      expect.objectContaining({
+        entity_type: 'clients',
+        source_id: '1',
+        native_kind: 'person',
+        native_id: 'legacy-person',
+        outcome: 'already_present',
+      }),
+    ]);
+    const second = await service.reconstruct('coach-1', 'intent-1');
+    expect(second).toEqual(first);
+    expect(prisma.persons.size).toBe(1);
+    expect(prisma.provenance.size).toBe(1);
+    expect(prisma.persons.get('coach-1|truecoach|1')?.display_name).toBe('Legacy Name');
+  });
+
+  it('S8-D1/A1: two staged raw ids that trim to one external ref yield ONE Person; the second is skipped unresolved:identity_conflict, never a second verified row', async () => {
+    const prisma = new FakePrisma();
+    // '1' and '1 ' are two staged identities (S9 joins on the raw id) but one mapper sourcePersonId;
+    // the pass orders by source_id, so '1' is written first and '1 ' meets the claimed Person.
+    prisma.staged = [stagedClient('1', 'Ada'), stagedClient('1 ', 'Ada Alias')];
+    const service = new ScoutReconstructService(asPrisma(prisma), makeAnalytics(jest.fn()));
+    const first = await service.reconstruct('coach-1', 'intent-1');
+    expect(first).toMatchObject({ staged: 2, reconstructed: 1, skipped: 1, failed: 0 });
+    expect(prisma.persons.size).toBe(1);
+    const person = [...prisma.persons.values()][0];
+    expect(person.display_name).toBe('Ada');
+    expect(
+      [...prisma.ledger.values()].map((l) => [
+        l.source_id,
+        l.status,
+        l.target_kind ?? null,
+        l.reason,
+      ]),
+    ).toEqual([
+      ['1', 'reconstructed', 'person', null],
+      ['1 ', 'skipped', null, 'unresolved:identity_conflict'],
+    ]);
+    // Exactly one provenance row, and it targets the Person under the first raw id.
+    expect(
+      [...prisma.provenance.values()].map((r) => [r.source_id, r.outcome, r.native_id]),
+    ).toEqual([['1', 'created', person.id]]);
+    // Replay converges: same counts, no new Person, the alias is never adopted later.
+    prisma.ledger.clear();
+    expect(await service.reconstruct('coach-1', 'intent-1')).toEqual(first);
+    expect(prisma.persons.size).toBe(1);
+    expect(prisma.provenance.size).toBe(1);
   });
 
   it('keeps two coaches isolated even when they share a source_id', async () => {
@@ -852,7 +1105,7 @@ describe('ScoutReconstructService', () => {
     it('retries once on a lost insert race and converges to reconstructed', async () => {
       const { service, prisma } = build((p) => {
         p.staged = [stagedClient('1')];
-        p.p2002Once.add('1'); // first person.upsert throws P2002, retry succeeds
+        p.p2002Once.add('1'); // first person.create throws P2002, retry succeeds
       });
       const result = await service.reconstruct('coach-1', 'intent-1');
       expect(result).toEqual({
@@ -862,12 +1115,16 @@ describe('ScoutReconstructService', () => {
         skipped: 0,
         failed: 0,
       });
-      // Exactly one Person and one ledger row — the race did not double-count.
+      // Exactly one Person, one provenance row and one ledger row — the race did
+      // not double-count; the retry converged on the winner's provenance (S8-D1 step 1).
       expect(prisma.persons.size).toBe(1);
+      expect(prisma.provenance.size).toBe(1);
       expect(prisma.ledger.size).toBe(1);
       const row = [...prisma.ledger.values()][0];
       expect(row.status).toBe(RECONSTRUCT_STATUS.reconstructed);
       expect(row.reason).toBeNull();
+      expect(row.target_kind).toBe('person');
+      expect(row.target_id).toBe([...prisma.persons.values()][0].id);
     });
 
     it('records failed (not a 500) when the retry also loses', async () => {

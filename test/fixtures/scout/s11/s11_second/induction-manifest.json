@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "sourcePlatform": "s11_second",
+  "expectedFamilies": ["programs", "workouts"],
+  "basisKinds": {
+    "programs": ["source_signed_enumeration"],
+    "workouts": ["source_signed_enumeration"]
+  },
+  "verifiers": [
+    {
+      "key_id": "s11_second.source.a2",
+      "alg": "ed25519",
+      "public_key_b64": "5XZTR/nVuQqTC0oa4cxakqW68XKD0+1T7iCS++Hus/s="
+    }
+  ],
+  "nativeRules": "declared"
+}

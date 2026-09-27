@@ -73,6 +73,7 @@ const emptyResult: ScoutEntitiesResult = {
   entities: [],
   page_count: 0,
   next_cursor: null,
+  unclassified_staged: 0,
 };
 
 describe('ScoutEntitiesQueryDto validation', () => {

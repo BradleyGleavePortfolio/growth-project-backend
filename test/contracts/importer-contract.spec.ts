@@ -219,13 +219,17 @@ describe('importer contract (R80 freeze)', () => {
         'transferring',
       ]);
       expect(rec(en.phase).nullable).toBe(true);
+      // S7-L's six codes plus the three S9 reconciliation codes (S9-C, D-S9-7; append-only).
       expect((rec(en.reason_code).enum as string[]).sort()).toEqual([
         'cancelled_by_coach',
+        'coverage_basis_unknown',
         'deadline_exceeded',
         'reconciliation_not_performed',
+        'relationship_unverified',
         'revoked',
         'transfer_failed',
         'unresolved_family',
+        'unresolved_identities',
       ]);
       expect((rec(en.claimed_status).enum as string[]).sort()).toEqual([
         'failed',
@@ -243,7 +247,30 @@ describe('importer contract (R80 freeze)', () => {
       expect(dig(en, 'families', 'items', '$ref')).toBe(
         '#/components/schemas/ScoutImportFamilyDto',
       );
+      // The eight S7-L keys plus the six S9-C additive (optional) keys of D-S9-5.
       expect(props('ScoutImportFamilyDto')).toEqual([
+        'already_present_verified',
+        'canonical_family',
+        'completeness_basis',
+        'created_native',
+        'family',
+        'ledger',
+        'native_present_verified',
+        'observed_unique',
+        'qualifiers',
+        'reasons',
+        'rejected',
+        'relationship_closure',
+        'staged_unique',
+        'unresolved',
+      ]);
+      expect(props('ScoutImportFamilyLedgerDto')).toEqual(['failed', 'reconstructed', 'skipped']);
+    });
+
+    it('S9-C: the additive family fields are optional, closed where the doc closes them, and additive only', () => {
+      const family = rec(dig(contract, 'components', 'schemas', 'ScoutImportFamilyDto'));
+      // The S7-L required set is unchanged: none of the S9 fields is required (R13/R15 absence).
+      expect((family.required as string[]).slice().sort()).toEqual([
         'already_present_verified',
         'created_native',
         'family',
@@ -253,7 +280,22 @@ describe('importer contract (R80 freeze)', () => {
         'staged_unique',
         'unresolved',
       ]);
-      expect(props('ScoutImportFamilyLedgerDto')).toEqual(['failed', 'reconstructed', 'skipped']);
+      const fp = rec(family.properties);
+      expect(rec(fp.canonical_family)).toMatchObject({ type: 'string', nullable: true });
+      expect(rec(fp.native_present_verified)).toMatchObject({ type: 'number', minimum: 0 });
+      expect(rec(fp.completeness_basis)).toMatchObject({ type: 'string' });
+      expect((rec(fp.relationship_closure).enum as string[]).sort()).toEqual([
+        'not_applicable',
+        'unverified',
+        'verified',
+      ]);
+      expect(dig(fp, 'reasons', 'items', '$ref')).toBe(
+        '#/components/schemas/ScoutImportReasonCountDto',
+      );
+      expect(props('ScoutImportReasonCountDto')).toEqual(['code', 'count']);
+      // Addendum C-7: `qualifiers[]` is a closed enum, never string[].
+      expect(rec(fp.qualifiers).type).toBe('array');
+      expect(dig(fp, 'qualifiers', 'items', 'enum')).toEqual(['roster_bridge_pending']);
     });
 
     it('reports committed counts as proof — the two-field DTO omits total_estimated', () => {
@@ -301,26 +343,33 @@ describe('importer contract (R80 freeze)', () => {
       expect(dig(res, 'application/json', 'schema', '$ref')).toBe(
         '#/components/schemas/ScoutEntitiesResult',
       );
-      // page metadata only — deliberately NOT a full-collection total.
+      // page metadata only — deliberately NOT a full-collection total. S11-E adds
+      // `unclassified_staged` (staged rows no spec classifies; an honesty aggregate over the
+      // run's (platform, token) groups, not a row total).
       expect(props('ScoutEntitiesResult')).toEqual([
         'entities',
         'family',
         'intent_id',
         'next_cursor',
         'page_count',
+        'unclassified_staged',
       ]);
     });
 
     it('advertises a PII-minimal ReconstructedEntityDto row (no email/billing/coach_id)', () => {
       const row = props('ReconstructedEntityDto');
+      // S8-F adds exactly two additive fields: the materialized `target_kind` and the
+      // nullable owned `native_id`. Every legacy field keeps its meaning.
       expect(row).toEqual([
         'client_source_id',
         'created_at',
         'entity_type',
         'id',
         'label',
+        'native_id',
         'source_id',
         'source_platform',
+        'target_kind',
         'updated_at',
       ]);
       for (const banned of ['email', 'price', 'billing', 'coach_id', 'payload']) {
@@ -481,9 +530,15 @@ describe('importer contract (R80 freeze)', () => {
       expect(Object.keys(rec(result.properties)).sort()).toEqual([
         'chosen_platform',
         'import_intent_id',
+        'readiness',
         'status',
       ]);
       expect(result.required).toContain('import_intent_id');
+      // S11-C (D-S11-5): optional advisory readiness block, a $ref to PairReadiness.
+      expect(result.required).not.toContain('readiness');
+      expect(dig(result, 'properties', 'readiness', 'allOf')).toEqual([
+        { $ref: '#/components/schemas/PairReadiness' },
+      ]);
       expect(Object.keys(rec(route.responses)).sort()).toEqual([
         '200',
         '400',
@@ -1043,6 +1098,136 @@ describe('importer contract (R80 freeze)', () => {
 
     it('both routes share the uniform FEATURE_SCOUT_INGEST / not-found 404 wording', () => {
       for (const op of [start(), cancel()]) {
+        const notFound = rec(dig(op, 'responses', '404')).description as string;
+        expect(notFound).toMatch(/FEATURE_SCOUT_INGEST/);
+        expect(notFound).toMatch(/R-DARK-1/);
+      }
+    });
+  });
+
+  describe('S10-B induction: POST /api/scout/runs/declaration + /runs/observation', () => {
+    const declaration = () => rec(dig(contract, 'paths', '/api/scout/runs/declaration', 'post'));
+    const observation = () => rec(dig(contract, 'paths', '/api/scout/runs/observation', 'post'));
+    const schema = (name: string) => rec(dig(contract, 'components', 'schemas', name));
+    const props = (name: string) => rec(schema(name).properties);
+    const codes = (op: Record<string, unknown>): string[] => {
+      const body = rec(dig(op, 'responses', '409', 'content', 'application/json', 'schema'));
+      const all = (body.allOf as unknown[]).map(rec);
+      const withCode = all.find((s) => dig(s, 'properties', 'code', 'enum') !== undefined);
+      return (dig(withCode, 'properties', 'code', 'enum') as string[]).slice().sort();
+    };
+
+    it('both routes are bearer-guarded POSTs taking and answering their typed bodies', () => {
+      for (const [op, dto, result] of [
+        [declaration(), 'ScoutRunDeclarationDto', 'ScoutRunDeclarationResult'],
+        [observation(), 'ScoutRunObservationDto', 'ScoutRunObservationResult'],
+      ] as const) {
+        expect(op.security).toEqual([{ bearer: [] }]);
+        expect(dig(op, 'requestBody', 'content', 'application/json', 'schema', '$ref')).toBe(
+          `#/components/schemas/${dto}`,
+        );
+        expect(dig(op, 'responses', '200', 'content', 'application/json', 'schema', '$ref')).toBe(
+          `#/components/schemas/${result}`,
+        );
+        expect(Object.keys(rec(op.responses)).sort()).toEqual([
+          '200',
+          '400',
+          '401',
+          '403',
+          '404',
+          '409',
+          '429',
+        ]);
+      }
+    });
+
+    it('declaration: intent_id + platforms of digest scopes; returns the ONE challenge', () => {
+      expect(Object.keys(props('ScoutRunDeclarationDto')).sort()).toEqual([
+        'intent_id',
+        'platforms',
+      ]);
+      expect([...(schema('ScoutRunDeclarationDto').required as string[])].sort()).toEqual([
+        'intent_id',
+        'platforms',
+      ]);
+      expect(rec(props('ScoutRunDeclarationDto').platforms)).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        items: { $ref: '#/components/schemas/ScoutRunDeclarationPlatformDto' },
+      });
+      const platform = props('ScoutRunDeclarationPlatformDto');
+      expect(Object.keys(platform).sort()).toEqual(['account_scope_id_digests', 'source_platform']);
+      expect(rec(platform.account_scope_id_digests)).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        uniqueItems: true,
+        items: { type: 'string' },
+      });
+      const result = props('ScoutRunDeclarationResult');
+      expect(Object.keys(result).sort()).toEqual(['challenge_b64', 'declared_at', 'intent_id']);
+      expect(rec(result.challenge_b64)).toMatchObject({ minLength: 44, maxLength: 44 });
+      expect(rec(result.declared_at)).toMatchObject({ type: 'string', format: 'date-time' });
+    });
+
+    it('observation: intent_id + ObservationEvidenceV1 entries; stored/replayed counts', () => {
+      expect(Object.keys(props('ScoutRunObservationDto')).sort()).toEqual([
+        'intent_id',
+        'observations',
+      ]);
+      expect(rec(props('ScoutRunObservationDto').observations)).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        items: { $ref: '#/components/schemas/ScoutRunObservationEvidenceSchema' },
+      });
+      expect(Object.keys(props('ScoutRunObservationEvidenceSchema')).sort()).toEqual([
+        'account_scope_id_digest',
+        'basis_kind',
+        'evidence_version',
+        'family',
+        'key_id',
+        'mapping_spec_digest',
+        'signature_b64',
+        'source_platform',
+        'statement_b64',
+      ]);
+      expect(rec(props('ScoutRunObservationEvidenceSchema').basis_kind).enum).toEqual([
+        'source_signed_enumeration',
+      ]);
+      const result = props('ScoutRunObservationResult');
+      expect(Object.keys(result).sort()).toEqual([
+        'execution_epoch',
+        'intent_id',
+        'replayed',
+        'stored',
+      ]);
+      expect(rec(result.execution_epoch)).toMatchObject({ minimum: 1 });
+      expect(rec(result.stored)).toMatchObject({ minimum: 0 });
+      expect(rec(result.replayed)).toMatchObject({ minimum: 0 });
+    });
+
+    it('409 bodies pin the D-S10-4 refusal codes plus the run lifecycle codes as enums', () => {
+      expect(codes(declaration())).toEqual([
+        'declaration_after_ingest',
+        'declaration_conflict',
+        'legacy_run',
+        'run_fenced',
+        'run_not_started',
+        'run_terminal',
+      ]);
+      expect(codes(observation())).toEqual([
+        'declaration_missing',
+        'legacy_run',
+        'observation_after_claim',
+        'observation_conflict',
+        'observation_not_declared',
+        'run_fenced',
+        'run_not_started',
+        'run_terminal',
+      ]);
+    });
+
+    it('both routes share the uniform FEATURE_SCOUT_INGEST / not-found 404 wording', () => {
+      for (const op of [declaration(), observation()]) {
         const notFound = rec(dig(op, 'responses', '404')).description as string;
         expect(notFound).toMatch(/FEATURE_SCOUT_INGEST/);
         expect(notFound).toMatch(/R-DARK-1/);

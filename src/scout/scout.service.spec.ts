@@ -7,6 +7,9 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { ScoutService, SCOUT_PROGRESS_FLUSH_MS } from './scout.service';
 import { ScoutCompleteDto, ScoutProgressDto } from './scout.dto';
+import { ScoutLifecycleService } from './lifecycle/lifecycle.service';
+import { reconcile } from './reconciliation/reconcile';
+import type { FamilyFacts, ReconciliationFacts } from './reconciliation/types';
 
 // ── Typed test doubles ────────────────────────────────────────────────────────
 // Built with Object.create(<Class>.prototype) + Object.assign so each double is
@@ -785,6 +788,287 @@ describe('ScoutService', () => {
           ledger: { reconstructed: 0, skipped: 0, failed: 0 },
         },
       ]);
+    });
+  });
+
+  describe('getImportStatus — S9-C reconciliation report composition (D-S9-5, R13, R15)', () => {
+    const SERVER_INTENT = '3f2b9c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
+    const STARTED = new Date('2026-09-25T10:00:00.000Z');
+    const DONE = new Date('2026-09-25T10:30:00.000Z');
+    const serverRow = (terminal_status: string | null, reason_code: string | null) => ({
+      mode: 'server',
+      import_intent_id: SERVER_INTENT,
+      phase: 'reconciling',
+      accepted_start_at: STARTED,
+      deadline_at: new Date(STARTED.getTime() + 300_000),
+      last_observed_at: STARTED,
+      execution_epoch: 1,
+      fenced_at: null,
+      fence_reason: null,
+      reason_code,
+      terminal_status,
+      completed_at: terminal_status ? DONE : null,
+      started_at: STARTED,
+    });
+    const family = (
+      name: string,
+      token: string,
+      n: number,
+      over: Partial<FamilyFacts> = {},
+    ): FamilyFacts => ({
+      family: name,
+      mapped: true,
+      resolution_reason: null,
+      client_owned: false,
+      ceiling_exceeded: false,
+      identities: Array.from({ length: n }, (_, i) => ({
+        token,
+        identity: `p\u001f${token}-${i}`,
+        ledger:
+          i % 2 === 0
+            ? {
+                status: 'reconstructed' as const,
+                target_kind: 'workout_plan' as const,
+                provenance: {
+                  outcome: 'created' as const,
+                  native: 'present_owned' as const,
+                  reason: null,
+                  unresolved_children: {},
+                },
+              }
+            : { status: 'skipped' as const, reason: 'unresolved:missing_required_field:name' },
+        client_linked: false,
+      })),
+      ledger_without_staged: 0,
+      qualifiers: [],
+      ...over,
+    });
+    const factsOf = (families: FamilyFacts[]): ReconciliationFacts => ({
+      claim: 'success',
+      families,
+      relationships: [],
+      spec_families: families.filter((f) => f.mapped).map((f) => f.family),
+      ledger_without_staged: 0,
+      coverage: null,
+    });
+
+    /**
+     * A lifecycle double: the real static projections, the instance reads stubbed. `readReport`
+     * is the seam under test — the service must call it with the run row and hand the report to
+     * `projectFamilies` (R15), and never call it for a legacy row (R13).
+     */
+    const lifecycleDouble = (
+      row: ReturnType<typeof serverRow> | null,
+      report: unknown,
+      ledger: Record<string, { reconstructed: number; skipped: number; failed: number }> = {
+        routines: { reconstructed: 1, skipped: 1, failed: 0 },
+      },
+    ) => {
+      const readReport = jest.fn().mockResolvedValue(report);
+      const lifecycle = Object.assign(
+        Object.create(ScoutLifecycleService.prototype) as ScoutLifecycleService,
+        {
+          resolve: jest
+            .fn()
+            .mockResolvedValue(
+              row ? { mode: 'server', intent: { id: SERVER_INTENT } } : { mode: 'legacy' },
+            ),
+          readRun: jest.fn().mockResolvedValue(row),
+          enforceDeadline: jest.fn().mockResolvedValue(row),
+          readClaim: jest.fn().mockResolvedValue('success'),
+          readLedger: jest.fn().mockResolvedValue(ledger),
+          readReport,
+        },
+      );
+      return { lifecycle, readReport };
+    };
+
+    it('R15: a settled server run with a live S9 code carries the recomputed report in families[]', async () => {
+      const row = serverRow('partial', 'unresolved_identities');
+      const facts = factsOf([family('workouts', 'routines', 2)]);
+      const report = reconcile(facts).report;
+      const { lifecycle, readReport } = lifecycleDouble(row, report);
+      importFindUnique.mockResolvedValue(row);
+      ingestGroupBy.mockResolvedValue([
+        { entity_type: 'routines', _count: { _all: 2 }, _min: { created_at: STARTED } },
+      ]);
+      const svc = new ScoutService(prisma, notifications, analytics, lifecycle);
+      const res = await svc.getImportStatus('coach-1', SERVER_INTENT);
+      expect(readReport).toHaveBeenCalledTimes(1);
+      expect(readReport).toHaveBeenCalledWith('coach-1', SERVER_INTENT, row);
+      expect(res).toMatchObject({
+        status: 'partial',
+        mode: 'server',
+        reason_code: 'unresolved_identities',
+        claimed_status: 'success',
+      });
+      expect(res.families).toEqual(
+        ScoutLifecycleService.projectFamilies(
+          [{ entity_type: 'routines', _count: { _all: 2 } }],
+          { routines: { reconstructed: 1, skipped: 1, failed: 0 } },
+          report,
+        ),
+      );
+      expect(res.families[0]).toMatchObject({
+        family: 'routines',
+        canonical_family: 'workouts',
+        staged_unique: 2,
+        native_present_verified: 1,
+        unresolved: 1,
+        rejected: 0,
+        created_native: null,
+        already_present_verified: null,
+        observed_unique: null,
+        completeness_basis: 'none',
+        relationship_closure: 'not_applicable',
+        reasons: [{ code: 'unresolved:missing_required_field:name', count: 1 }],
+        qualifiers: [],
+      });
+      // The top-level key set is unchanged: the S9 fields live inside families[] only.
+      expect(Object.keys(res).sort()).toEqual([
+        'accepted_start_at',
+        'claimed_status',
+        'completed_at',
+        'deadline_at',
+        'entity_counts',
+        'execution_epoch',
+        'families',
+        'intent_id',
+        'last_observed_at',
+        'mode',
+        'phase',
+        'reason_code',
+        'started_at',
+        'status',
+      ]);
+    });
+
+    it('R15: when the lifecycle reports no applicable report (open run / pre-S9 terminal) the entries keep the S7-L shape', async () => {
+      for (const row of [
+        serverRow(null, null),
+        serverRow('partial', 'reconciliation_not_performed'),
+      ]) {
+        const { lifecycle, readReport } = lifecycleDouble(row, null);
+        importFindUnique.mockResolvedValue(row);
+        ingestGroupBy.mockResolvedValue([
+          { entity_type: 'routines', _count: { _all: 2 }, _min: { created_at: STARTED } },
+        ]);
+        const svc = new ScoutService(prisma, notifications, analytics, lifecycle);
+        const res = await svc.getImportStatus('coach-1', SERVER_INTENT);
+        expect(readReport).toHaveBeenCalledWith('coach-1', SERVER_INTENT, row);
+        expect(res.families).toEqual([
+          {
+            family: 'routines',
+            observed_unique: null,
+            staged_unique: 2,
+            created_native: null,
+            already_present_verified: null,
+            rejected: null,
+            unresolved: null,
+            ledger: { reconstructed: 1, skipped: 1, failed: 0 },
+          },
+        ]);
+      }
+    });
+
+    it('R13: a legacy row never asks for a report and its families[] are byte-identical to S7-L', async () => {
+      const { lifecycle, readReport } = lifecycleDouble(null, null);
+      importFindUnique.mockResolvedValue({
+        started_at: STARTED,
+        completed_at: DONE,
+        terminal_status: 'success',
+      });
+      ingestGroupBy.mockResolvedValue([
+        { entity_type: 'routines', _count: { _all: 2 }, _min: { created_at: STARTED } },
+      ]);
+      const svc = new ScoutService(prisma, notifications, analytics, lifecycle);
+      const res = await svc.getImportStatus('coach-1', 'intent-1');
+      expect(readReport).not.toHaveBeenCalled();
+      expect(res.mode).toBe('legacy');
+      expect(res.families).toEqual([
+        {
+          family: 'routines',
+          observed_unique: null,
+          staged_unique: 2,
+          created_native: null,
+          already_present_verified: null,
+          rejected: null,
+          unresolved: null,
+          ledger: { reconstructed: 1, skipped: 1, failed: 0 },
+        },
+      ]);
+    });
+
+    it('R15 / E2 bound: a 32-family status body with full histograms and 128-character tokens stays within 64 KiB', async () => {
+      const row = serverRow('partial', 'unresolved_family');
+      const tokens = Array.from(
+        { length: 32 },
+        (_, i) => `${String(i).padStart(3, '0')}-${'t'.repeat(124)}`,
+      );
+      // Every family carries its own token, a mixed identity set and the widest v1 histogram the
+      // classifier can emit for a mapped family (bucket j, skipped-with-qualifier, failed, evidence,
+      // missing provenance, conflicts) plus the qualifier.
+      const wide = (name: string, token: string): FamilyFacts => {
+        const base = family(name, token, 6, { qualifiers: ['roster_bridge_pending'] });
+        const reasons = [
+          'unresolved:missing_required_field:name',
+          'unresolved:invalid_value:duration_estimate_minutes',
+          'unresolved:enum_unmapped:type',
+          'unresolved:prescription_not_integral:reps',
+          'unresolved:relationship_pending:programs',
+          'unresolved:relationship_missing:programs',
+          'unresolved:native_uniqueness:WorkoutPlan',
+          'unresolved:no_native_client_principal',
+          'unresolved:source_archived',
+          'unresolved:identity_conflict',
+          'unresolved:native_target_removed',
+          'unresolved:exercise_reference',
+        ];
+        return {
+          ...base,
+          identities: [
+            ...base.identities,
+            ...reasons.map((reason, i) => ({
+              token,
+              identity: `p\u001f${token}-r${i}`,
+              ledger: { status: 'skipped' as const, reason },
+              client_linked: false,
+            })),
+            {
+              token,
+              identity: `p\u001f${token}-f`,
+              ledger: { status: 'failed' as const },
+              client_linked: false,
+            },
+          ],
+        };
+      };
+      const facts = factsOf(tokens.map((token, i) => wide(`family_${i}`, token)));
+      const report = reconcile(facts).report;
+      // The ledger is keyed by the SAME 32 tokens: the S7-L projection lists every ledger-only
+      // token as its own entry (ledger_without_staged), so a stray key would add a 33rd row.
+      const { lifecycle } = lifecycleDouble(
+        row,
+        report,
+        Object.fromEntries(tokens.map((t) => [t, { reconstructed: 3, skipped: 15, failed: 1 }])),
+      );
+      importFindUnique.mockResolvedValue(row);
+      ingestGroupBy.mockResolvedValue(
+        tokens.map((token) => ({
+          entity_type: token,
+          _count: { _all: 19 },
+          _min: { created_at: STARTED },
+        })),
+      );
+      const svc = new ScoutService(prisma, notifications, analytics, lifecycle);
+      const res = await svc.getImportStatus('coach-1', SERVER_INTENT);
+      expect(res.families).toHaveLength(32);
+      for (const entry of res.families) {
+        expect(entry.reasons?.length).toBeGreaterThanOrEqual(13);
+        expect(entry.qualifiers).toEqual(['roster_bridge_pending']);
+      }
+      const bytes = Buffer.byteLength(JSON.stringify(res), 'utf8');
+      expect(bytes).toBeLessThanOrEqual(64 * 1024);
     });
   });
 

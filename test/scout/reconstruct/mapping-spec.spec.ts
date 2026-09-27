@@ -161,12 +161,63 @@ describe('parseSourceMappingSpec — one id space per canonical family (A3)', ()
     }
   });
 
-  it('keeps every shipped 1:1 spec valid with no declaration', () => {
-    for (const spec of loadSourceMappingSpecs()) {
-      const families = Object.values(spec.steps);
-      expect(new Set(families).size).toBe(families.length);
-      expect(spec.sharedIdSpaces).toBeUndefined();
+  // S10-D P: an invariant over WHATEVER ships (a new data-only source may declare a shared id
+  // space without touching this spec), never "no shipped spec declares one". Every multi-step
+  // fan-in is declared with exactly its steps; every 1:1 family carries no declaration.
+  const sharedIdViolations = (spec: {
+    sourcePlatform: string;
+    steps: object;
+    sharedIdSpaces?: object;
+  }): string[] => {
+    const fanIn: Record<string, string[]> = {};
+    for (const [step, family] of Object.entries(spec.steps as Record<string, string>)) {
+      (fanIn[family] ??= []).push(step);
     }
+    const declared = (spec.sharedIdSpaces ?? {}) as Record<string, readonly string[] | undefined>;
+    const out: string[] = [];
+    for (const family of new Set([...Object.keys(fanIn), ...Object.keys(declared)])) {
+      const steps = [...(fanIn[family] ?? [])].sort();
+      const shared = declared[family];
+      if (steps.length < 2 && shared !== undefined) {
+        out.push(`${spec.sourcePlatform}:${family} 1:1`);
+      }
+      if (steps.length >= 2 && JSON.stringify([...(shared ?? [])].sort()) !== JSON.stringify(steps))
+        out.push(`${spec.sourcePlatform}:${family} undeclared fan-in`);
+    }
+    return out;
+  };
+
+  it('every shipped spec declares exactly its multi-step fan-ins (and nothing for 1:1 families)', () => {
+    const specs = loadSourceMappingSpecs();
+    expect(specs.length).toBeGreaterThan(0);
+    for (const spec of specs) expect(sharedIdViolations(spec)).toEqual([]);
+    // Positive guard: the production TrueCoach spec stays 1:1 with no declaration.
+    const truecoach = specs.find((spec) => spec.sourcePlatform === 'truecoach');
+    if (truecoach === undefined) throw new Error('the truecoach spec is not shipped');
+    const families = Object.values(truecoach.steps);
+    expect(new Set(families).size).toBe(families.length);
+    expect(truecoach.sharedIdSpaces).toBeUndefined();
+  });
+
+  it('the shipped-spec invariant still fails on a real defect', () => {
+    const steps = { people: 'clients', sessions: 'workouts', routines: 'workouts' };
+    expect(sharedIdViolations({ sourcePlatform: 'd', steps })).toEqual([
+      'd:workouts undeclared fan-in',
+    ]);
+    expect(
+      sharedIdViolations({
+        sourcePlatform: 'd',
+        steps,
+        sharedIdSpaces: { workouts: ['sessions'], clients: ['people'] },
+      }),
+    ).toEqual(['d:clients 1:1', 'd:workouts undeclared fan-in']);
+    expect(
+      sharedIdViolations({
+        sourcePlatform: 'd',
+        steps,
+        sharedIdSpaces: { workouts: ['routines', 'sessions'] },
+      }),
+    ).toEqual([]);
   });
 });
 
