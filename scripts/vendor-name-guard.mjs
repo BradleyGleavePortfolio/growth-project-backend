@@ -49,17 +49,20 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-let allowlist;
+let configuration;
 try {
-  allowlist = JSON.parse(readFileSync(".vendor-name-guard.json", "utf8"));
+  configuration = JSON.parse(readFileSync(".vendor-name-guard.json", "utf8"));
 } catch (error) {
   fail(`could not read .vendor-name-guard.json: ${error.message}`);
   process.exit();
 }
 
 if (
-  !Array.isArray(allowlist) ||
-  allowlist.some(
+  !configuration ||
+  !Array.isArray(configuration.include) ||
+  !Array.isArray(configuration.allowlist) ||
+  configuration.include.some((glob) => typeof glob !== "string") ||
+  configuration.allowlist.some(
     (entry) =>
       !entry ||
       typeof entry.glob !== "string" ||
@@ -67,11 +70,14 @@ if (
       typeof entry.retire !== "string",
   )
 ) {
-  fail("allowlist must be an array of {glob, reason, retire} entries");
+  fail(
+    "configuration must contain include globs and allowlist {glob, reason, retire} entries",
+  );
   process.exit();
 }
 
-const entries = allowlist.map((entry) => ({
+const includes = configuration.include.map(globToRegExp);
+const entries = configuration.allowlist.map((entry) => ({
   ...entry,
   pattern: globToRegExp(entry.glob),
   hits: 0,
@@ -82,6 +88,10 @@ const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer
   .filter(Boolean);
 
 for (const file of trackedFiles) {
+  if (!includes.some((pattern) => pattern.test(file))) {
+    continue;
+  }
+
   const content = readFileSync(file, "utf8");
   const hits = content.match(hitPattern) ?? [];
   if (hits.length === 0) {

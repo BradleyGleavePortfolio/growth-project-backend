@@ -38,7 +38,7 @@ export class LogFoodDto {
   @Max(50)
   quantity_multiplier?: number;
 
-  // Preserve what the user actually typed (e.g. 6 + "oz")
+  // Trainerize-grade floor: persist what the user actually typed (e.g. 6 + "oz")
   // alongside the canonical quantity_multiplier so coach views read like
   // "6 oz chicken" instead of "1.7008x chicken". Both are optional and
   // pre-existing rows have nulls.

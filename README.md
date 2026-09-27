@@ -111,7 +111,7 @@ links into [`docs/README.md`](docs/README.md) and the module READMEs.
 - **USDA FoodData Central** + **OpenFoodFacts** for food lookup.
   `USDA_API_KEY` is **required at boot** (free at
   https://api.data.gov/signup, takes ~1 minute). See
-  [Food logger](#food-logger--quality-floor) below for the
+  [Food logger](#food-logger--trainerize-grade-floor) below for the
   canonical nutrient-basis contract, density table location, and seed
   refresh playbook.
 - **Fly.io** for deploys; `Dockerfile` + `release_command` apply
@@ -133,11 +133,12 @@ under `/api/*` except the unprefixed paths listed in
 [Public, unprefixed routes](#public-unprefixed-routes) below, which
 are excluded from the global prefix in `src/main.ts`.
 
-## Food logger — quality floor
+## Food logger — Trainerize-grade floor
 
 The food logger reads from three sources (USDA FDC, OpenFoodFacts, local
 `FoodItem` table) and persists logs to `LoggedFoodEntry`. The
-Quality-floor change landed five contracts the mobile
+"Trainerize-grade floor" PR
+(`fix/food-logger-trainerize-floor`) landed five contracts the mobile
 client now relies on:
 
 ### Canonical nutrient basis: PER_100G

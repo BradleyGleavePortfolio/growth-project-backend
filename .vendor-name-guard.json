@@ -1,37 +1,44 @@
-[
-  {
-    "glob": ".vendor-name-guard.json",
-    "reason": "Guard configuration names the quarantined oracle path.",
-    "retire": "V1 learned-path parity"
-  },
-  {
-    "glob": "test/**",
-    "reason": "Tests and fixtures preserve legacy source-contract evidence.",
-    "retire": "V1 learned-path parity"
-  },
-  {
-    "glob": "src/**/__tests__/**",
-    "reason": "Tests preserve legacy source-contract evidence.",
-    "retire": "V1 learned-path parity"
-  },
-  {
-    "glob": "src/**/*.spec.ts",
-    "reason": "Tests preserve legacy source-contract evidence.",
-    "retire": "V1 learned-path parity"
-  },
-  {
-    "glob": "docs/decisions/**",
-    "reason": "Historical decision records are retained for auditability.",
-    "retire": "Historical records retained"
-  },
-  {
-    "glob": "docs/importer/NORTH_STAR.md",
-    "reason": "Current importer governance record states the retired legacy oracle.",
-    "retire": "V1 learned-path parity"
-  },
-  {
-    "glob": "src/scout/reconstruct/sources/truecoach.json",
-    "reason": "Quarantined legacy oracle.",
-    "retire": "V1 learned-path parity"
-  }
-]
+{
+  "include": [
+    ".vendor-name-guard.json",
+    "scripts/vendor-name-guard.mjs",
+    "src/scout/**",
+    "src/extension-pair/**",
+    "src/import*/**",
+    "test/scout/**",
+    "docs/importer/**",
+    "docs/contracts/importer-openapi.json"
+  ],
+  "allowlist": [
+    {
+      "glob": ".vendor-name-guard.json",
+      "reason": "Guard configuration names the quarantined oracle path.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/scout/**/*.spec.ts",
+      "reason": "Importer unit tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/extension-pair/**/__tests__/**",
+      "reason": "Importer pairing tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "test/scout/**",
+      "reason": "Importer tests preserve legacy source-contract evidence.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "docs/importer/NORTH_STAR.md",
+      "reason": "Current importer governance record states the retired legacy oracle.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "src/scout/reconstruct/sources/truecoach.json",
+      "reason": "Quarantined legacy oracle.",
+      "retire": "V1 learned-path parity"
+    }
+  ]
+}

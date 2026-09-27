@@ -1,4 +1,4 @@
--- Food logger quality floor.
+-- Food logger Trainerize-grade floor (see PR `fix/food-logger-trainerize-floor`).
 --
 -- 1) FoodItem.nutrient_basis — declares the canonical basis for the macro
 --    columns on each row. Both upstreams (USDA FDC, OpenFoodFacts) return
