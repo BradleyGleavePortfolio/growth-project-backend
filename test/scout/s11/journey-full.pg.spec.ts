@@ -4,14 +4,16 @@
  * cross-check row "CORE DIFF = 0"; D-S11-6 (spec cases only, the ONE S11 harness, unchanged);
  * OWNER_DECISION_S8D_2026-09-26.md (the mandatory honesty rule below).
  *
- * MANDATORY HONESTY (S11D_BUILD_GRANT.md; s10d2/d2_diagnose_fix.md): at this head a run that
- * stages ANY `clients` row cannot settle `complete` — the legacy Person handoff ledgers
- * `target_kind NULL`, S9-A buckets it (f) `unresolved:evidence_only`, and the run-level condition
- * `unresolved_identities` holds regardless of coverage (D2 case (h); S8-D is the owner-decided,
- * not-yet-built fix, OWNER_DECISION_S8D_2026-09-26.md). J19 therefore proves TWO separate legs on
- * TWO separate runs, never claims `complete` for a roster-bearing run, and states here — not just
- * in a comment buried in the assertions — that the roster-bearing leg's terminal is expected to
- * flip from `partial/unresolved_identities` to `complete` only after S8-D lands:
+ * MANDATORY HONESTY (S11D_BUILD_GRANT.md; s10d2/d2_diagnose_fix.md), as it stood at the S11-D
+ * head: a run that staged ANY `clients` row could not settle `complete` — the legacy Person
+ * handoff ledgered `target_kind NULL`, S9-A bucketed it (f) `unresolved:evidence_only`, and the
+ * run-level condition `unresolved_identities` held regardless of coverage (D2 case (h)). S8-D1
+ * (docs/decisions/2026-09-26-s8d-person-link.md §5.1, the owner-decided fix this file said it was
+ * waiting for) has since landed the typed, create-only `person` writer: ledger kind `person` + a
+ * provenance row, verified by S9 as bucket j. J19 still proves TWO separate legs on TWO separate
+ * runs; leg B's terminal is the one this file always said would flip, and it now asserts the
+ * flipped truth (`complete`) with the SAME chain, the same roster read and the still-carried
+ * `roster_bridge_pending` qualifier (retiring that qualifier is S8-D2, not D1):
  *   Leg A (native-clean): J01 (setup/pair/Start across P1+P2, replayed Start) -> J09 (two
  *   platforms declared, transferred and observed across hosts, no `clients` row staged) -> J12
  *   (the settle is interrupted by a real process kill after the claim commits; the replayed claim
@@ -20,10 +22,11 @@
  *   row 11) — not because the read failed or the run is not `complete`.
  *   Leg B (roster-bearing): the SAME declare/transfer/observe/complete chain, but the first
  *   platform's batch ALSO includes its roster token (D2's `u10-members`, family `clients`) beside
- *   the native-clean rows — exactly the D2 case (h) shape. This leg settles `partial` with
- *   `reason_code unresolved_identities` and qualifier `roster_bridge_pending` on the `clients`
- *   family (never `complete`, honestly), and its native roster read lists EXACTLY the staged
- *   people, `state: InvitePending` ("imported, not yet joined"), never a login principal.
+ *   the native-clean rows — exactly the D2 case (h) shape. Since S8-D1 this leg settles
+ *   `complete` (reason_code null, no conditions) with the `clients` family fully verified and
+ *   qualifier `roster_bridge_pending` still carried, and its native roster read lists EXACTLY
+ *   the staged people, `state: InvitePending` ("imported, not yet joined"), never a login
+ *   principal — no User is minted (D-S8-2 (a)).
  *
  * Both legs run the two-process, two-source, cross-host mechanics S11-A1/A2 proved in isolation
  * (H-S, H-O; D-S11-1); this file COMPOSES them into one scenario per leg and adds the terminal
@@ -358,11 +361,25 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
   );
 
   it(
-    'J19 leg B (roster-bearing, MANDATORY HONESTY): the same chain with a staged `clients` ' +
-      'row settles `partial/unresolved_identities` (qualifier roster_bridge_pending) — NEVER ' +
-      '`complete` at this head — and step 11 lists exactly the staged people as imported, not ' +
-      'yet joined',
+    'J19 leg B (roster-bearing, S8-D1): the same chain with a staged `clients` row settles ' +
+      '`complete` (clients verified through the typed person handoff, qualifier ' +
+      'roster_bridge_pending still carried) and step 11 lists exactly the staged people as ' +
+      'imported, not yet joined',
     async () => {
+      // S8-D1 honesty-sweep flip (docs/decisions/2026-09-26-s8d-person-link.md §5.1). This leg
+      // asserted `partial / unresolved_identities` while the `clients` writer was the legacy
+      // string handoff. The chain, the staged rows and the roster read are unchanged; only the
+      // terminal and the clients cell flip, because of the code D1 landed: `clientsFamily.persist`
+      // now calls `persistPerson` (src/scout/reconstruct/families.ts →
+      // src/scout/reconstruct/native/person-writer.ts), which creates the Person and a
+      // `person`/`created` provenance row in the same transaction; the engine's typed branch
+      // ledgers `target_kind: 'person'` beside the target id (src/scout/scout-reconstruct.service.ts);
+      // S9 joins ledger and provenance and reads the Person (src/scout/reconciliation/facts.service.ts
+      // `readPersons`, `state !== Deleted` → live) so S9-A classifies each roster identity bucket (j)
+      // `native_present_verified` (src/scout/reconciliation/reconcile.ts) instead of (f)
+      // `evidence_only`. With the first source's signed enumeration covering the roster ids and
+      // every other family verified exactly as on leg A, the verdict is `complete` (the D2 shape
+      // live-pinned by test/scout/s10/s10-unseen.pg.spec.ts case (h)).
       const first = FIRST();
       const second = SECOND();
       // The first source's batch carries its roster rows ALONGSIDE its native-clean rows —
@@ -391,34 +408,38 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       await observeRows('P1', COACH_B, intentId, second, second.nativeClean, challenge);
 
       // ---- Claim and settle (uninterrupted on this leg — J12's interrupt is proved on leg A;
-      // this leg's own honesty is the point being proved, not a second re-drive).
+      // this leg's roster verification is the point being proved, not a second re-drive).
       const done = await h.induction.complete('P1', COACH_B, intentId);
       expect(done.failure).toBeUndefined();
       expect(done.result).toEqual(ack(intentId));
 
       const run = h.runRow(COACH_B, intentId);
-      // MANDATORY HONESTY: never `complete` for a roster-bearing run at this head.
-      expect(run.terminal_status).toBe('partial');
-      expect(run.reason_code).toBe('unresolved_identities');
-      expect(run.terminal_status).not.toBe('complete');
+      // S8-D1: a roster-bearing run settles honestly `complete` — every family verified, the
+      // basis known for each (source-signed enumeration), no run-level condition left.
+      expect(run.terminal_status).toBe('complete');
+      expect(run.reason_code).toBeNull();
 
       const basis = h.settledBasisRows(COACH_B, intentId)[0];
-      expect(basis.report.conditions).toEqual(['unresolved_identities']);
+      expect(basis.report.conditions).toEqual([]);
       const clientsCell = byFamily(basis.report, 'clients');
-      // D2 case (h) discriminator (test/scout/s10/s10-unseen.pg.spec.ts:429-444): the qualifier
-      // is what actually distinguishes a real roster-bridge-pending settle from any other
-      // `unresolved_identities` cause landing on the same coverage numbers — asserted here, not
-      // just narrated, exactly as D2's own live spec asserts it.
+      // D2 case (h) shape (test/scout/s10/s10-unseen.pg.spec.ts, case (h)): the clients cell is
+      // now bucket j for every staged person, and the qualifier is STILL asserted — unchanged by
+      // D1, descriptive only, never a verdict input (S8-D2 retires it).
       expect(clientsCell).toMatchObject({
+        staged_unique: rosterIds.size,
+        native_present_verified: rosterIds.size,
+        unresolved: 0,
+        reasons: [],
         completeness_basis: 'source_signed_enumeration',
         observed_unique: rosterIds.size,
         qualifiers: ['roster_bridge_pending'],
       });
       // The full identities table lives on the settled basis via the roster read below; the
-      // point proved here is qualifier + honesty, matching D2 case (h) exactly.
+      // point proved here is verification + qualifier, matching D2 case (h) exactly.
 
       // ---- J17 (terminal, roster-bearing): readiness still reads only `terminal`, never leaking
-      // `partial` or the reason code — the same neutral contract as leg A's terminal read.
+      // an outcome or a reason code — the same neutral contract as leg A's terminal read (the
+      // two `not.toContain` checks stay meaningful: nothing about the verdict may surface here).
       const readiness = await h.pairSession('P2', COACH_B, intentId);
       expect(readiness.failure).toBeUndefined();
       expect(readiness.result.readiness).toEqual({
@@ -431,9 +452,9 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
 
       // ---- Step 11 (native review), the roster-bearing leg: the roster read lists EXACTLY the
       // staged people as imported, not yet joined (PersonState.InvitePending) — never a login
-      // principal, and never silently promoted to a client. This is the truth S8-D changes: once
-      // it lands, an otherwise-identical run is expected to settle `complete` and this same read
-      // is expected to keep listing these people, now bridged (owner-decided, not built here).
+      // principal, and never silently promoted to a client. S8-D1 kept this read's promise: the
+      // run above now settles `complete` and this same read keeps listing these people, still
+      // InvitePending (no User minted — D-S8-2 (a); the bridge itself is S8-D2).
       const roster = await rosterVia('P1', COACH_B, intentId);
       expect(roster.failure).toBeUndefined();
       // Response-level bridge-pending qualifier (src/scout/scout-roster.service.ts:178-179,
