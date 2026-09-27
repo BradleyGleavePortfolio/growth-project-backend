@@ -42,9 +42,9 @@ jobs:
       SHA: ${{ needs.preflight.outputs.sha }}
       PKG_LOCK_EXPECT: ${{ needs.preflight.outputs.pkg_lock }}
       TARGET_DIR: ${{ github.workspace }}/target
-      PG_DIST: ${{ runner.temp }}/pg17/dist
       LANE_PSQL: /usr/lib/postgresql/18/bin/psql
     steps:
+      - run: echo "PG_DIST=$RUNNER_TEMP/pg17/dist" >>"$GITHUB_ENV"
       - uses: actions/checkout@v7
         with: { path: harness, persist-credentials: false }
       - name: fetch target (full history, detached, clean)
@@ -63,7 +63,7 @@ jobs:
         run: |
           bash harness/proof/setup-runner.sh pg "$HOME/pg-jar" "$PG_DIST" &
           bash harness/proof/setup-runner.sh psql
-          wait $! 
+          wait $!
       - name: ripgrep
         if: matrix.stage == 'journey-full'
         run: bash harness/proof/setup-runner.sh rg
