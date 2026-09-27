@@ -112,7 +112,7 @@
       "PairInitDto": {
         "properties": {
           "chosen_platform": {
-            "description": "Source coaching platform the coach is migrating from. Use the lowercase slug supplied by the authorized source site.",
+            "description": "Source coaching platform the coach is migrating from. Lowercase slug provided by the authorized source site.",
             "example": "example-site",
             "type": "string"
           },
