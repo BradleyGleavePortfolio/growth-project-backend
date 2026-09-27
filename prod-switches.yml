@@ -1395,3 +1395,9 @@ switches:
     auto_flip_on_in_prod: false
     owner: importer
     description: "Extension pairing feature flag (IMPORTER). Read via process.env[FEATURE_EXTENSION_PAIRING]; default OFF until rollout."
+  - name: FEATURE_SCOUT_PILOT_COACH_IDS
+    tier: feature
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "S12-B1 pilot-coach allowlist (IMPORTER). Comma-separated User.id UUIDs admitted to the flag-gated importer surface; unset/empty/malformed = nobody (fail closed). Value is a list, not a boolean, so STUB_ALLOWED rather than OFF; never auto-flipped."

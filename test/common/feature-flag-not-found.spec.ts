@@ -213,6 +213,49 @@ describe('featureFlagNotFoundMiddleware (R-DARK-1)', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it('matches case-variant spellings (express routes case-insensitively) without widening the gate', () => {
+    // S12-B1 round 2: before the fold, `/API/scout/ingest` slipped past this
+    // pre-auth gate and surfaced 401 (JwtAuthGuard) or 204 (CORS preflight).
+    process.env.FEATURE_SCOUT_INGEST = 'false';
+    process.env.FEATURE_SCOUT_RECONSTRUCT = 'true';
+    process.env.FEATURE_EXTENSION_PAIRING = 'false';
+    for (const [path, method] of [
+      ['/API/scout/ingest', 'POST'],
+      ['/api/SCOUT', 'GET'],
+      ['/Api/Scout/Reconstruct/roster', 'GET'],
+      ['/api/Extension/PAIR/init', 'OPTIONS'],
+    ] as const) {
+      const { res, status, json } = makeRes();
+      const next = jest.fn();
+      featureFlagNotFoundMiddleware(makeReq(path, method), res, next);
+      expect(status).toHaveBeenCalledWith(404);
+      // The envelope echoes the caller's own spelling, like the router would.
+      expect(json).toHaveBeenCalledWith(FILTER_404_BODY(method, path));
+      expect(next).not.toHaveBeenCalled();
+    }
+
+    // Layered row: INGEST on, RECONSTRUCT off darkens the case-variant reconstruct path.
+    process.env.FEATURE_SCOUT_INGEST = 'true';
+    process.env.FEATURE_SCOUT_RECONSTRUCT = 'false';
+    {
+      const { res, status } = makeRes();
+      const next = jest.fn();
+      featureFlagNotFoundMiddleware(makeReq('/api/SCOUT/Reconstruct', 'POST'), res, next);
+      expect(status).toHaveBeenCalledWith(404);
+      expect(next).not.toHaveBeenCalled();
+    }
+
+    // Segment boundaries survive the fold: siblings pass through.
+    process.env.FEATURE_SCOUT_INGEST = 'false';
+    for (const path of ['/API/scouting', '/api/SCOUT-x', '/API/extension/pairing']) {
+      const { res, status } = makeRes();
+      const next = jest.fn();
+      featureFlagNotFoundMiddleware(makeReq(path, 'GET'), res, next);
+      expect(status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('does not match a path that only shares a prefix token (/api/scoutish)', () => {
     delete process.env.FEATURE_SCOUT_INGEST;
     const { res, status } = makeRes();

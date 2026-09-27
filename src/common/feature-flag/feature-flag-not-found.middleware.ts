@@ -35,9 +35,16 @@ export function featureFlagNotFoundMiddleware(
   res: Response,
   next: NextFunction,
 ): void {
-  const path = req.path;
+  // Case-folded on both sides: express routes case-insensitively, so
+  // `/API/scout/ingest` reaches the same handler as `/api/scout/ingest` and
+  // must be exactly as dark (S12-B1 round-2 closure — before this fold a
+  // case-variant URL slipped past the pre-auth gate and surfaced 401 from
+  // JwtAuthGuard or 204 from the CORS preflight instead of the uniform 404).
+  // The segment boundary (`+ '/'`) is kept so `/api/scouting` is not gated.
+  const path = req.path.toLowerCase();
   for (const route of FEATURE_GATED_ROUTES) {
-    if (path === route.pattern || path.startsWith(route.pattern + '/')) {
+    const pattern = route.pattern.toLowerCase();
+    if (path === pattern || path.startsWith(pattern + '/')) {
       // Read env at request time (not cached) so ops can toggle without redeploy.
       if (process.env[route.envVar] !== 'true') {
         // Round-2 hardening: mirror HttpExceptionFilter's normalized 404 for
