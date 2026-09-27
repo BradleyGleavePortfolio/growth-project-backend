@@ -53,8 +53,8 @@ const emptyResult: ScoutRosterResult = {
   accounting: { staged: 0, reconstructed: 0, skipped: 0, failed: 0, unclassified: 0 },
   persons: [],
   page: { limit: 50, next_cursor: null, has_more: false },
-  // S8-F: response-level interim Person bridge qualifier, present on empty pages too.
-  roster_bridge_pending: true,
+  // S8-F response-level qualifier, fixed false since S8-D2; present on empty pages too.
+  roster_bridge_pending: false,
 };
 
 describe('ScoutRosterQueryDto validation', () => {

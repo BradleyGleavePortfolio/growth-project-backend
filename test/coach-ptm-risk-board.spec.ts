@@ -19,6 +19,7 @@ import 'reflect-metadata';
 import { ForbiddenException } from '@nestjs/common';
 import { CoachGuard } from '../src/auth/coach.guard';
 import { CoachController } from '../src/coach/coach.controller';
+import type { ImportedPeopleService } from '../src/coach/imported-people.service';
 import { RiskBoardQueryDto } from '../src/admin/ptm/admin-ptm.dto';
 
 // ---------------------------------------------------------------------------
@@ -35,10 +36,7 @@ function makeContext(role: string | null) {
   } as any;
 }
 
-function buildPtmSvc(
-  rows: any[] = [],
-  nextCursor: string | null = null,
-) {
+function buildPtmSvc(rows: any[] = [], nextCursor: string | null = null) {
   return {
     getRiskBoardForCoach: jest.fn(async () => ({
       data: rows,
@@ -46,6 +44,11 @@ function buildPtmSvc(
       generated_at: new Date().toISOString(),
     })),
   } as any;
+}
+
+// S8-D2: the controller now also takes the imported-people reader; not exercised here.
+function buildImportedPeople(): ImportedPeopleService {
+  return { list: jest.fn() } as object as ImportedPeopleService;
 }
 
 function buildCoachSvc() {
@@ -82,15 +85,11 @@ describe('CoachController — CoachGuard', () => {
   });
 
   it('rejects student with ForbiddenException (403)', () => {
-    expect(() => guard.canActivate(makeContext('student'))).toThrow(
-      ForbiddenException,
-    );
+    expect(() => guard.canActivate(makeContext('student'))).toThrow(ForbiddenException);
   });
 
   it('rejects unauthenticated request with ForbiddenException', () => {
-    expect(() => guard.canActivate(makeContext(null))).toThrow(
-      ForbiddenException,
-    );
+    expect(() => guard.canActivate(makeContext(null))).toThrow(ForbiddenException);
   });
 });
 
@@ -115,7 +114,12 @@ describe('CoachController.getCoachRiskBoard — happy path', () => {
     };
 
     const ptmSvc = buildPtmSvc([redactedRow]);
-    const ctrl = new CoachController(buildCoachSvc(), buildAnalytics(), ptmSvc);
+    const ctrl = new CoachController(
+      buildCoachSvc(),
+      buildAnalytics(),
+      ptmSvc,
+      buildImportedPeople(),
+    );
     const req: any = { user: { id: 'coach-1', role: 'coach', email: 'c@c.test' } };
 
     const result = await ctrl.getCoachRiskBoard(req, {} as RiskBoardQueryDto);
@@ -127,9 +131,14 @@ describe('CoachController.getCoachRiskBoard — happy path', () => {
     expect(result.next_cursor).toBeNull();
   });
 
-  it('passes the caller\'s user id as coachId — caller cannot override scope', async () => {
+  it("passes the caller's user id as coachId — caller cannot override scope", async () => {
     const ptmSvc = buildPtmSvc();
-    const ctrl = new CoachController(buildCoachSvc(), buildAnalytics(), ptmSvc);
+    const ctrl = new CoachController(
+      buildCoachSvc(),
+      buildAnalytics(),
+      ptmSvc,
+      buildImportedPeople(),
+    );
     const req: any = {
       user: { id: 'coach-99', role: 'coach', email: 'c@c.test' },
     };
@@ -147,7 +156,12 @@ describe('CoachController.getCoachRiskBoard — happy path', () => {
 
   it('forwards bucket filter and cursor to the service', async () => {
     const ptmSvc = buildPtmSvc();
-    const ctrl = new CoachController(buildCoachSvc(), buildAnalytics(), ptmSvc);
+    const ctrl = new CoachController(
+      buildCoachSvc(),
+      buildAnalytics(),
+      ptmSvc,
+      buildImportedPeople(),
+    );
     const req: any = { user: { id: 'coach-1', role: 'coach', email: 'c@c.test' } };
     const cursor = '2026-06-01T00:00:00.000Z';
     const query = { bucket: 'amber', cursor, limit: 5 } as RiskBoardQueryDto;
@@ -169,7 +183,12 @@ describe('CoachController.getCoachRiskBoard — happy path', () => {
 describe('CoachController.getCoachRiskBoard — empty roster', () => {
   it('returns empty data array when coach has no assigned clients', async () => {
     const ptmSvc = buildPtmSvc([]);
-    const ctrl = new CoachController(buildCoachSvc(), buildAnalytics(), ptmSvc);
+    const ctrl = new CoachController(
+      buildCoachSvc(),
+      buildAnalytics(),
+      ptmSvc,
+      buildImportedPeople(),
+    );
     const req: any = { user: { id: 'new-coach', role: 'coach', email: 'n@c.test' } };
 
     const result = await ctrl.getCoachRiskBoard(req, {} as RiskBoardQueryDto);
@@ -209,9 +228,7 @@ describe('AdminPtmService.getRiskBoardForCoach — cross-coach isolation', () =>
         findMany: jest.fn(async (args: any) => {
           const filterCoachId = args?.where?.coach_id;
           // Only return clients belonging to the queried coachId.
-          return clientIds
-            .filter(() => filterCoachId === coachId)
-            .map((id) => ({ id }));
+          return clientIds.filter(() => filterCoachId === coachId).map((id) => ({ id }));
         }),
       },
       ptmPrediction: {
@@ -228,9 +245,7 @@ describe('AdminPtmService.getRiskBoardForCoach — cross-coach isolation', () =>
 
   it('coachA cannot read coachB clients', async () => {
     // Dynamic import avoids top-level circular resolution issues in Jest.
-    const { AdminPtmService } = await import(
-      '../src/admin/ptm/admin-ptm.service'
-    );
+    const { AdminPtmService } = await import('../src/admin/ptm/admin-ptm.service');
 
     const prismaA = buildPrisma('coachA', ['clientA1']);
     const svcA = new AdminPtmService(
@@ -265,9 +280,7 @@ describe('AdminPtmService.getRiskBoardForCoach — cross-coach isolation', () =>
 
 describe('AdminPtmService.getRiskBoardForCoach — score redaction', () => {
   it('sets risk_score and success_score to null regardless of the raw prediction', async () => {
-    const { AdminPtmService } = await import(
-      '../src/admin/ptm/admin-ptm.service'
-    );
+    const { AdminPtmService } = await import('../src/admin/ptm/admin-ptm.service');
 
     const prisma = {
       user: {
@@ -280,8 +293,8 @@ describe('AdminPtmService.getRiskBoardForCoach — score redaction', () => {
         findMany: jest.fn(async () => [
           {
             user_id: 'c1',
-            risk_score: 0.85,      // should become null
-            success_score: 0.40,   // should become null
+            risk_score: 0.85, // should become null
+            success_score: 0.4, // should become null
             computed_at: new Date('2026-06-01'),
             factors: [],
             user: {
@@ -320,9 +333,7 @@ describe('AdminPtmService.getRiskBoardForCoach — score redaction', () => {
 
 describe('AdminPtmService.getRiskBoardForCoach — pagination cursor', () => {
   it('excludes rows whose computed_at is >= the cursor', async () => {
-    const { AdminPtmService } = await import(
-      '../src/admin/ptm/admin-ptm.service'
-    );
+    const { AdminPtmService } = await import('../src/admin/ptm/admin-ptm.service');
 
     const cursor = '2026-06-02T00:00:00.000Z';
     const beforeDate = new Date('2026-06-01T12:00:00.000Z');
@@ -342,9 +353,7 @@ describe('AdminPtmService.getRiskBoardForCoach — pagination cursor', () => {
             { user_id: 'c1', _max: { computed_at: beforeDate } },
             { user_id: 'c2', _max: { computed_at: afterDate } },
           ];
-          return lt
-            ? rows.filter((r) => (r._max.computed_at as Date) < lt)
-            : rows;
+          return lt ? rows.filter((r) => (r._max.computed_at as Date) < lt) : rows;
         }),
         findMany: jest.fn(async () => [
           {

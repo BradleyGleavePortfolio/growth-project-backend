@@ -33,13 +33,16 @@ export const ROSTER_MAX_PAGE_SIZE = 200;
 export const ROSTER_TARGET_KIND = 'person';
 
 /**
- * S8-F — response-level qualifier. The roster remains the interim accepted
- * Person bridge (native contract §4.1): imported clients are NOT yet visible in
- * the User-based coach roster and no principal is minted here. Fixed `true`
- * until the accepted S8-D bridge lands and this reader is revised; it is never
- * derived from row contents or counts.
+ * S8-F introduced this response-level qualifier fixed `true`: the roster was the
+ * interim Person bridge and imported clients were NOT visible in the coach
+ * roster (native contract §4.1). S8-D2 (docs/decisions/2026-09-26-s8d-person-link.md
+ * §5.2) landed that visibility — `GET /api/coach/clients/imported` lists the
+ * coach's imported Persons as "imported, not yet joined" — so the qualifier is
+ * now fixed `false`. The field itself stays in the response shape until mobile
+ * no longer reads it (retirement is a later contract regen); it is never derived
+ * from row contents or counts.
  */
-export const ROSTER_BRIDGE_PENDING = true as const;
+export const ROSTER_BRIDGE_PENDING = false as const;
 
 /**
  * GET /api/scout/reconstruct/roster query. coach_id is taken from the bearer
@@ -200,10 +203,11 @@ export class ScoutRosterResult {
   @ApiProperty({
     type: Boolean,
     description:
-      'Always true for now: these rows are the interim reconstructed Person bridge, ' +
-      'not native coach-roster clients or principals. Imported clients stay absent from ' +
-      'the User-based roster until the S8-D bridge is accepted. Present on empty pages too.',
-    example: true,
+      'Always false since S8-D2: imported Persons are visible in the coach roster as ' +
+      '"imported, not yet joined" (GET /api/coach/clients/imported). No principal is minted ' +
+      'here; these rows are still the reconstructed Person records, not User accounts. ' +
+      'Present on empty pages too. Kept only until mobile stops reading it; then retired.',
+    example: false,
   })
   roster_bridge_pending!: boolean;
 }

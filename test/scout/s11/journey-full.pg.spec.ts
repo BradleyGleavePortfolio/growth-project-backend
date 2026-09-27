@@ -12,8 +12,9 @@
  * waiting for) has since landed the typed, create-only `person` writer: ledger kind `person` + a
  * provenance row, verified by S9 as bucket j. J19 still proves TWO separate legs on TWO separate
  * runs; leg B's terminal is the one this file always said would flip, and it now asserts the
- * flipped truth (`complete`) with the SAME chain, the same roster read and the still-carried
- * `roster_bridge_pending` qualifier (retiring that qualifier is S8-D2, not D1):
+ * flipped truth (`complete`) with the SAME chain and the same roster read. S8-D2 then retired
+ * the `roster_bridge_pending` emission (imported Persons are visible in the coach roster), so
+ * the clients cell carries no qualifier and the roster read says `roster_bridge_pending: false`:
  *   Leg A (native-clean): J01 (setup/pair/Start across P1+P2, replayed Start) -> J09 (two
  *   platforms declared, transferred and observed across hosts, no `clients` row staged) -> J12
  *   (the settle is interrupted by a real process kill after the claim commits; the replayed claim
@@ -24,7 +25,7 @@
  *   platform's batch ALSO includes its roster token (D2's `u10-members`, family `clients`) beside
  *   the native-clean rows — exactly the D2 case (h) shape. Since S8-D1 this leg settles
  *   `complete` (reason_code null, no conditions) with the `clients` family fully verified and
- *   qualifier `roster_bridge_pending` still carried, and its native roster read lists EXACTLY
+ *   no qualifier carried (S8-D2), and its native roster read lists EXACTLY
  *   the staged people, `state: InvitePending` ("imported, not yet joined"), never a login
  *   principal — no User is minted (D-S8-2 (a)).
  *
@@ -361,9 +362,9 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
   );
 
   it(
-    'J19 leg B (roster-bearing, S8-D1): the same chain with a staged `clients` row settles ' +
-      '`complete` (clients verified through the typed person handoff, qualifier ' +
-      'roster_bridge_pending still carried) and step 11 lists exactly the staged people as ' +
+    'J19 leg B (roster-bearing, S8-D1/S8-D2): the same chain with a staged `clients` row settles ' +
+      '`complete` (clients verified through the typed person handoff, no qualifier since ' +
+      'S8-D2 retired roster_bridge_pending) and step 11 lists exactly the staged people as ' +
       'imported, not yet joined',
     async () => {
       // S8-D1 honesty-sweep flip (docs/decisions/2026-09-26-s8d-person-link.md §5.1). This leg
@@ -423,8 +424,9 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       expect(basis.report.conditions).toEqual([]);
       const clientsCell = byFamily(basis.report, 'clients');
       // D2 case (h) shape (test/scout/s10/s10-unseen.pg.spec.ts, case (h)): the clients cell is
-      // now bucket j for every staged person, and the qualifier is STILL asserted — unchanged by
-      // D1, descriptive only, never a verdict input (S8-D2 retires it).
+      // bucket j for every staged person. The `roster_bridge_pending` qualifier D1 still carried
+      // is retired by S8-D2 (src/scout/reconciliation/facts.service.ts `FAMILY_QUALIFIERS` is
+      // empty), so `qualifiers` is asserted EMPTY — descriptive only, never a verdict input.
       expect(clientsCell).toMatchObject({
         staged_unique: rosterIds.size,
         native_present_verified: rosterIds.size,
@@ -432,10 +434,10 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
         reasons: [],
         completeness_basis: 'source_signed_enumeration',
         observed_unique: rosterIds.size,
-        qualifiers: ['roster_bridge_pending'],
+        qualifiers: [],
       });
       // The full identities table lives on the settled basis via the roster read below; the
-      // point proved here is verification + qualifier, matching D2 case (h) exactly.
+      // point proved here is verification + the retired qualifier, matching D2 case (h) exactly.
 
       // ---- J17 (terminal, roster-bearing): readiness still reads only `terminal`, never leaking
       // an outcome or a reason code — the same neutral contract as leg A's terminal read (the
@@ -457,12 +459,13 @@ live('S11-D full journey (J19) and core diff (J20)', () => {
       // InvitePending (no User minted — D-S8-2 (a); the bridge itself is S8-D2).
       const roster = await rosterVia('P1', COACH_B, intentId);
       expect(roster.failure).toBeUndefined();
-      // Response-level bridge-pending qualifier (src/scout/scout-roster.service.ts:178-179,
-      // `roster_bridge_pending: ROSTER_BRIDGE_PENDING`; the constant is defined fixed `true` at
-      // src/scout/scout-roster.dto.ts:42, `ROSTER_BRIDGE_PENDING = true as const`) — the native
-      // roster response's own field for "imported, not yet joined," asserted alongside the
+      // Response-level bridge-pending qualifier (src/scout/scout-roster.service.ts,
+      // `roster_bridge_pending: ROSTER_BRIDGE_PENDING`; the constant is fixed `false as const` at
+      // src/scout/scout-roster.dto.ts since S8-D2: imported Persons are visible in the coach
+      // roster through GET /api/coach/clients/imported, so the bridge is no longer pending). The
+      // field is still present (retirement waits for mobile) and asserted alongside the
       // per-person `InvitePending` state below, not merely narrated in a comment.
-      expect(roster.result.roster_bridge_pending).toBe(true);
+      expect(roster.result.roster_bridge_pending).toBe(false);
       // S11-E (src/scout/scout-roster.service.ts, `classifyFamilyScope`): `staged` counts the
       // staged (source_platform, token) groups that classify to the roster family through the
       // engine's registry — so the D2 roster token counts here although it is not literally

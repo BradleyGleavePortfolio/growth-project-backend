@@ -142,10 +142,15 @@ export function identityKey(sourcePlatform: string, sourceId: string): string {
 
 /** D-S8-2 interim: the client-owned family list (S8-DOC L72-74). */
 const CLIENT_OWNED_FAMILIES: ReadonlySet<string> = new Set([RECONSTRUCT_FAMILY.client_history]);
-/** `clients` carries `roster_bridge_pending` until S8-D (S8-DOC L372-374). */
-const FAMILY_QUALIFIERS: Readonly<Record<string, readonly FamilyQualifier[]>> = {
-  [RECONSTRUCT_FAMILY.clients]: ['roster_bridge_pending'],
-};
+/**
+ * Family-level qualifiers the report carries verbatim. `clients` carried
+ * `roster_bridge_pending` from S8-DOC §4.1 (L372-374) until S8-D2 landed the
+ * coach-roster visibility of imported Persons (docs/decisions/2026-09-26-s8d-person-link.md
+ * §1.2, §5.2); since then no family emits a qualifier. The vocabulary itself
+ * (`FamilyQualifier`, `FAMILY_QUALIFIERS` in lifecycle/reason-codes.ts) is
+ * append-only and stays for historical basis rows that still carry the token.
+ */
+const FAMILY_QUALIFIERS: Readonly<Record<string, readonly FamilyQualifier[]>> = {};
 /** Upper bound of ids per `IN (...)` native lookup; keeps every query bounded without a per-row read. */
 const LOOKUP_CHUNK = 1000;
 /** `#ord:<n>` child identity form (S8-DOC L174-181; C-5 notation). */

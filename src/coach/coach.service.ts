@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { personLinkMarker } from './person-link-markers';
 
 // Concrete payload shapes for the timeline/summary slices below. These
 // derive their structure from the Prisma findMany calls so adding columns
@@ -86,7 +87,12 @@ export class CoachService {
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_WORKOUTS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_FOOD_MACROS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole),
-      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, callerRole),
+      this.consent.coachCanAccess(
+        coachId,
+        clientId,
+        ConsentScope.FITNESS_HABITS_PROGRESS,
+        callerRole,
+      ),
     ]);
     return { workouts, food, bodyMetrics, habitsProgress };
   }
@@ -144,7 +150,7 @@ export class CoachService {
       archiveFilter = { archived_at: { not: null } };
     }
     const scope = await this.scopeClientsBy(coachId, callerRole);
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where: {
         ...scope,
         role: 'student',
@@ -155,6 +161,12 @@ export class CoachService {
       take: take ?? 20,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+    // S8-D2 (docs/decisions/2026-09-26-s8d-person-link.md §5.2): each client
+    // row carries `person_link` — the active imported-Person link while its
+    // undo window is open, else null. Additive; the array shape is unchanged.
+    // Null for every row until the PersonLink table exists (S8-D3) and the
+    // link transaction writes it (S8-D4b); never derived from anything else.
+    return rows.map((row) => ({ ...row, person_link: personLinkMarker(row.id) }));
   }
 
   async archiveClient(
@@ -458,7 +470,10 @@ export class CoachService {
         : Promise.resolve([]),
     ]);
 
-    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    let total_calories = 0,
+      total_protein_g = 0,
+      total_carbs_g = 0,
+      total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
       const fi = entry.food_item;
@@ -580,7 +595,8 @@ export class CoachService {
       weightLogsByUser.set(wl.user_id, arr);
     }
 
-    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> = [];
+    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> =
+      [];
 
     for (const client of clients) {
       const weightLogs = weightLogsByUser.get(client.id) ?? [];
@@ -674,11 +690,11 @@ export class CoachService {
 
     // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
     const [
-      foodLogGroups,      // clients who logged food today
-      workoutGroups,      // clients who worked out in the last 5 days
-      pendingCheckIns,    // check-ins submitted but not reviewed
-      unreadMsgCount,     // messages not yet read by the coach
-      recentWeightLogs,   // weight logs for trend detection (last 30 days)
+      foodLogGroups, // clients who logged food today
+      workoutGroups, // clients who worked out in the last 5 days
+      pendingCheckIns, // check-ins submitted but not reviewed
+      unreadMsgCount, // messages not yet read by the coach
+      recentWeightLogs, // weight logs for trend detection (last 30 days)
       unreviewedCheckins, // per-client unreviewed check-in groupBy (for no_checkin flag)
     ] = await Promise.all([
       // Active today: clients with at least one food log entry today.

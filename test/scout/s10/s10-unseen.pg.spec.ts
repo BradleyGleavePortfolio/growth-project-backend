@@ -35,8 +35,9 @@
  * creates the Person and a `person/created` provenance row in one transaction and returns the
  * typed outcome, the engine stamps ledger `target_kind = person`, and S9 verifies the Person
  * through the join (bucket j). Case (h) now pins THAT truth: the roster-bearing run is `complete`
- * and the Persons are still InvitePending with no User minted. `roster_bridge_pending` is still
- * carried (retiring it is S8-D2). Nothing here injects around the repository-default registries.
+ * and the Persons are still InvitePending with no User minted. S8-D2 retired the
+ * `roster_bridge_pending` emission (the coach roster now lists imported Persons), so the clients
+ * cell carries no qualifier. Nothing here injects around the repository-default registries.
  */
 import { createHash, createPrivateKey, sign } from 'crypto';
 import { readFileSync } from 'fs';
@@ -430,7 +431,7 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
     expect(nativeCounts('s10u-g').programs).toBe(0);
   });
 
-  it('(h) staged clients rows → complete: the S8-D1 typed person handoff lets S9 verify the roster Persons (InvitePending, no User; roster_bridge_pending still carried)', async () => {
+  it('(h) staged clients rows → complete: the S8-D1 typed person handoff lets S9 verify the roster Persons (InvitePending, no User; no qualifier since S8-D2)', async () => {
     // Flipped by S8-D1 (contract §5.1). Before D1 this exact staged shape settled
     // `partial / unresolved_identities` with clients bucket f `evidence_only` ×2: the Persons were
     // written, but with a NULL ledger kind and no provenance S9 could not verify them. D1's writer
@@ -446,7 +447,7 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
       native_present_verified: 2,
       unresolved: 0,
       reasons: [],
-      qualifiers: ['roster_bridge_pending'],
+      qualifiers: [],
       completeness_basis: 'source_signed_enumeration',
       observed_unique: 2,
     });

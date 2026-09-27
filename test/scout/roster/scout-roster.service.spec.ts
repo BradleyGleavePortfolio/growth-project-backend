@@ -928,32 +928,34 @@ describe('ScoutRosterService.getRoster', () => {
 });
 
 /**
- * S8-F — roster qualifier and kind fence (readiness F10). The roster stays the
- * interim accepted Person bridge: every response says so at the top level
- * (`roster_bridge_pending: true`, empty pages included), and only NULL-kind
- * (legacy) or `person`-kind ledger rows are ever joined to Person. A typed
- * non-person row is dropped while the ledger-anchored cursor still advances.
+ * S8-F — roster qualifier and kind fence (readiness F10). S8-F fixed the
+ * response-level qualifier `true` (interim Person bridge); S8-D2 flipped it to
+ * `false` because the coach roster now lists imported Persons
+ * (GET /api/coach/clients/imported). The field stays on every response, empty
+ * pages included, until mobile stops reading it. Only NULL-kind (legacy) or
+ * `person`-kind ledger rows are ever joined to Person. A typed non-person row is
+ * dropped while the ledger-anchored cursor still advances.
  */
-describe('ScoutRosterService S8-F interim bridge qualifier', () => {
-  it('exposes roster_bridge_pending: true on a populated page', async () => {
+describe('ScoutRosterService S8-F bridge qualifier (fixed false since S8-D2)', () => {
+  it('exposes roster_bridge_pending: false on a populated page', async () => {
     const fake = new FakePrisma();
     seed(fake, { reconstructed: 2 });
     const { service } = makeService(fake);
     const res = await service.getRoster(COACH, INTENT, undefined, undefined);
-    expect(res.roster_bridge_pending).toBe(true);
-    expect(ROSTER_BRIDGE_PENDING).toBe(true);
+    expect(res.roster_bridge_pending).toBe(false);
+    expect(ROSTER_BRIDGE_PENDING).toBe(false);
     expect(Object.keys(res).sort()).toEqual(
       ['accounting', 'intent_id', 'page', 'persons', 'roster_bridge_pending'].sort(),
     );
   });
 
-  it('exposes roster_bridge_pending: true on an EMPTY page too (settled, nothing reconstructed)', async () => {
+  it('exposes roster_bridge_pending: false on an EMPTY page too (settled, nothing reconstructed)', async () => {
     const fake = new FakePrisma();
     seed(fake, { reconstructed: 0, skipped: 1 });
     const { service } = makeService(fake);
     const res = await service.getRoster(COACH, INTENT, undefined, undefined);
     expect(res.persons).toEqual([]);
-    expect(res.roster_bridge_pending).toBe(true);
+    expect(res.roster_bridge_pending).toBe(false);
   });
 
   it('is response-level only: no per-row flag is added to a roster row', async () => {
@@ -1021,7 +1023,7 @@ describe('ScoutRosterService S8-F interim bridge qualifier', () => {
     const page1 = await service.getRoster(COACH, INTENT, undefined, 2);
     expect(page1.persons).toEqual([]);
     expect(page1.page.has_more).toBe(true);
-    expect(page1.roster_bridge_pending).toBe(true);
+    expect(page1.roster_bridge_pending).toBe(false);
     expect(decodeScoutCursor(page1.page.next_cursor as string, COACH, INTENT, ET)).toEqual({
       s: 'b-typed',
       p: 'truecoach',
@@ -1032,7 +1034,7 @@ describe('ScoutRosterService S8-F interim bridge qualifier', () => {
     const page2 = await service.getRoster(COACH, INTENT, page1.page.next_cursor ?? undefined, 2);
     expect(page2.persons.map((p) => p.source_person_id)).toEqual(['tc_s000']);
     expect(page2.page.has_more).toBe(false);
-    expect(page2.roster_bridge_pending).toBe(true);
+    expect(page2.roster_bridge_pending).toBe(false);
   });
 });
 
@@ -1209,7 +1211,7 @@ describe('ScoutRosterService S11-E registry-scoped family selection', () => {
         next_cursor: null,
         has_more: false,
       });
-      expect(res.roster_bridge_pending).toBe(true);
+      expect(res.roster_bridge_pending).toBe(false);
       expect(fake.ledgerReads).toEqual([]);
       expect(fake.transactionCalls).toEqual([{ isolationLevel: 'RepeatableRead' }]);
     });

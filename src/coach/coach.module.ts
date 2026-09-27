@@ -1,6 +1,8 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CoachController } from './coach.controller';
 import { CoachService } from './coach.service';
+// S8-D2: reader for the coach roster's "imported, not yet joined" sibling collection.
+import { ImportedPeopleService } from './imported-people.service';
 import { CoachEffectivenessService } from './coach-effectiveness.service';
 import { CoachEffectivenessScheduler } from './coach-effectiveness.scheduler';
 import { CoachAlertsService } from './coach-alerts.service';
@@ -64,12 +66,7 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
 //   * LtvMetricsService — computes the LTV metrics suite from ClientPurchase data
 //   * LtvMetricsController — exposes GET /coach/command-center/ltv-metrics
 @Module({
-  imports: [
-    AuthModule,
-    NotificationsModule,
-    forwardRef(() => AdminModule),
-    SubCoachModule,
-  ],
+  imports: [AuthModule, NotificationsModule, forwardRef(() => AdminModule), SubCoachModule],
   controllers: [
     CoachController,
     CoachAlertsController,
@@ -86,6 +83,8 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
   ],
   providers: [
     CoachService,
+    // S8-D2
+    ImportedPeopleService,
     CoachEffectivenessService,
     CoachEffectivenessScheduler,
     CoachAlertsService,
@@ -100,10 +99,6 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
     CommandCenterService,
     ChurnInterventionService,
   ],
-  exports: [
-    CoachEffectivenessService,
-    CoachAlertsService,
-    CoachOnboardingService,
-  ],
+  exports: [CoachEffectivenessService, CoachAlertsService, CoachOnboardingService],
 })
 export class CoachModule {}
