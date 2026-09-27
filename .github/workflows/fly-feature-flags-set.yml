@@ -6,19 +6,38 @@ name: Fly Feature Flags Set (operator)
 # the existing Fly Secrets Set (operator) workflow.
 #
 # What it does:
-#   1. Pushes FEATURE_SCOUT_INGEST and FEATURE_EXTENSION_PAIRING to Fly
+#   1. Pushes FEATURE_SCOUT_INGEST, FEATURE_SCOUT_RECONSTRUCT,
+#      FEATURE_EXTENSION_PAIRING and FEATURE_SCOUT_PILOT_COACH_IDS to Fly
 #      in one `fly secrets set` invocation so machines restart once.
-#      Both values are non-sensitive booleans read at request time by
-#      src/common/feature-flag/feature-flag-not-found.middleware.ts.
-#   2. Validates by running `fly secrets list` and checking both names
+#      The three flags are non-sensitive booleans read at request time by
+#      src/common/feature-flag/feature-flag-not-found.middleware.ts. The
+#      allowlist is a comma-separated list of coach User.id UUIDs read by
+#      src/common/feature-flag/pilot-coach-allowlist.ts (S12-B1); it is
+#      NOT a secret value in the sensitive sense but is still only ever
+#      echoed as a name/digest below, never printed in full.
+#   2. Validates by running `fly secrets list` and checking all four names
 #      are present. Only names and digests are printed, never values.
+#
+# S12-B6 note on the allowlist input: this workflow does NOT re-implement
+# S12-B1's UUID parser (parsePilotCoachAllowlist in
+# src/common/feature-flag/pilot-coach-allowlist.ts). The value is passed
+# through to Fly unchanged, byte for byte — bash has no equivalent of the
+# app's fail-closed UUID/CSV parsing, and a re-implementation could drift
+# from it. The app is the single source of truth: at request time it FAILS
+# CLOSED (empty allowlist, nobody admitted) on anything malformed, exactly
+# as it does today for a hand-edited Fly secret. This workflow only adds a
+# light shape check (reject obvious non-UUID junk like `*`/`true`/spaces-
+# only segments) so an operator gets fast feedback before machines restart,
+# without duplicating or diverging from the app's parser.
 #
 # How to run (operator):
 #   gh workflow run "Fly Feature Flags Set (operator)" \
 #     -f app=backend-spring-lake-3890 \
 #     -f confirm=SET \
 #     -f feature_scout_ingest=true \
-#     -f feature_extension_pairing=true
+#     -f feature_scout_reconstruct=false \
+#     -f feature_extension_pairing=true \
+#     -f feature_scout_pilot_coach_ids=''
 
 on:
   workflow_dispatch:
@@ -39,6 +58,18 @@ on:
         description: Value for FEATURE_EXTENSION_PAIRING (true/false)
         required: true
         default: 'true'
+      feature_scout_reconstruct:
+        description: Value for FEATURE_SCOUT_RECONSTRUCT (true/false)
+        required: true
+        default: 'false'
+      feature_scout_pilot_coach_ids:
+        description: >-
+          FEATURE_SCOUT_PILOT_COACH_IDS: comma-separated coach User.id UUIDs
+          (S12-B1 allowlist). Leave empty to keep the pilot surface dark for
+          everyone even if the flags above are true. Passed through to Fly
+          unchanged; the app's parser (fail-closed) is the source of truth.
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -79,9 +110,10 @@ jobs:
       - name: Validate flag values
         env:
           SCOUT: ${{ inputs.feature_scout_ingest }}
+          RECONSTRUCT: ${{ inputs.feature_scout_reconstruct }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
         run: |
-          for v in "${SCOUT}" "${PAIRING}"; do
+          for v in "${SCOUT}" "${RECONSTRUCT}" "${PAIRING}"; do
             case "${v}" in
               true|false) ;;
               *)
@@ -91,6 +123,34 @@ jobs:
             esac
           done
           echo "Flag values are valid booleans."
+
+      - name: Validate pilot coach allowlist shape
+        env:
+          COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
+        run: |
+          # Light shape check only — NOT the app's parser. Empty is valid
+          # (dark). Rejects obvious junk (blank segments, non-UUID text) so
+          # an operator gets fast feedback; anything that slips through
+          # still fails closed at request time in
+          # src/common/feature-flag/pilot-coach-allowlist.ts.
+          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          if [ -z "${COACH_IDS}" ]; then
+            echo "Pilot coach allowlist is empty (pilot surface stays dark)."
+          else
+            IFS=',' read -ra entries <<< "${COACH_IDS}"
+            bad=0
+            for raw in "${entries[@]}"; do
+              entry="$(echo "${raw}" | xargs)"
+              if [ -z "${entry}" ] || ! [[ "${entry}" =~ ${uuid_re} ]]; then
+                bad=1
+              fi
+            done
+            if [ "${bad}" -eq 1 ]; then
+              echo "::error::feature_scout_pilot_coach_ids has an entry that is not a UUID. The app's parser fails the WHOLE list closed on any bad entry (S12-B1) — fix it here first so the pilot is not silently locked out."
+              exit 1
+            fi
+            echo "Pilot coach allowlist entries look like UUIDs (app still re-validates at request time)."
+          fi
 
       - name: Check Fly token configuration
         env:
@@ -102,19 +162,23 @@ jobs:
           fi
           echo "FLY_API_TOKEN is configured."
 
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20 (pinned)
 
       - name: Push feature flags to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
           SCOUT: ${{ inputs.feature_scout_ingest }}
+          RECONSTRUCT: ${{ inputs.feature_scout_reconstruct }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
+          COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
         run: |
           set +x
           flyctl secrets set -a "${APP}" \
             FEATURE_SCOUT_INGEST="${SCOUT}" \
-            FEATURE_EXTENSION_PAIRING="${PAIRING}"
+            FEATURE_SCOUT_RECONSTRUCT="${RECONSTRUCT}" \
+            FEATURE_EXTENSION_PAIRING="${PAIRING}" \
+            FEATURE_SCOUT_PILOT_COACH_IDS="${COACH_IDS}"
 
       - name: Validate flag names exist on Fly
         env:
@@ -126,7 +190,7 @@ jobs:
           echo "${listing}"
           names=$(echo "${listing}" | awk '{print $1}')
           missing=""
-          for name in FEATURE_SCOUT_INGEST FEATURE_EXTENSION_PAIRING; do
+          for name in FEATURE_SCOUT_INGEST FEATURE_SCOUT_RECONSTRUCT FEATURE_EXTENSION_PAIRING FEATURE_SCOUT_PILOT_COACH_IDS; do
             if ! echo "${names}" | grep -qx "${name}"; then
               missing="${missing} ${name}"
             fi
@@ -135,4 +199,4 @@ jobs:
             echo "::error::Flags did not appear on Fly after set:${missing}"
             exit 1
           fi
-          echo "Both feature flag names are present on Fly."
+          echo "All four feature flag/allowlist names are present on Fly."
