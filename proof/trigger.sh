@@ -8,7 +8,7 @@
 #   KEYs: EXPECT_TOTAL_s11=N EXPECT_TOTAL_s10b=N EXPECT_<stage>=N PKG_LOCK_SHA256=<64hex>; diagnostic subset: STAGES=a,b PARTIAL=1
 # The label must be new (a run branch is never reused or force-pushed). Prints the run commit.
 set -euo pipefail
-DEFAULT_HARNESS_SHA=""   # set by the launcher commit that follows each reviewed harness commit
+DEFAULT_HARNESS_SHA=0c97a84f1ca833bacdd7c20c2cfabf20430504a9   # set by the launcher commit that follows each reviewed harness commit
 [ $# -ge 2 ] || { sed -n 2,10p "$0"; exit 64; }
 LABEL=$1; SHA=$2; shift 2; REMOTE=${PROOF_REMOTE:-origin}; H=${HARNESS_SHA:-$DEFAULT_HARNESS_SHA}
 [[ "$H" =~ ^[0-9a-f]{40}$ ]] || { echo "HARNESS_SHA (40-hex) required" >&2; exit 64; }
