@@ -1,0 +1,115 @@
+=== 00_find_coach (coach-c@example.test) ===
+               coach_id               | role  | reports_to_coach_id |       created_at        
+--------------------------------------+-------+---------------------+-------------------------
+ 11111111-1111-1111-1111-111111111111 | coach |                     | 2026-09-27 21:56:11.881
+(1 row)
+
+RC=0
+=== 01_run_identity (coach C, settled run) ===
+               coach_id               |              intent_id               |  mode  |  state  | terminal_status |      reason_code       |    phase    | execution_epoch |       started_at        |    accepted_start_at    |       deadline_at       |    last_observed_at     | fenced_at | fence_reason |      completed_at       |           import_intent_id           | extension_claimed_terminal_status |  extension_claimed_final_counts  | extension_claimed_completed_at 
+--------------------------------------+--------------------------------------+--------+---------+-----------------+------------------------+-------------+-----------------+-------------------------+-------------------------+-------------------------+-------------------------+-----------+--------------+-------------------------+--------------------------------------+-----------------------------------+----------------------------------+--------------------------------
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 | server | partial | partial         | coverage_basis_unknown | reconciling |               1 | 2026-09-27 20:26:11.881 | 2026-09-27 20:26:11.881 | 2026-09-27 20:56:11.881 | 2026-09-27 20:58:11.881 |           |              | 2026-09-27 20:58:11.881 | 33333333-3333-3333-3333-333333333333 | partial                           | {"clients": 2, "workouts": null} | 2026-09-27 20:58:11.881
+(1 row)
+
+RC=0
+=== 01_run_identity (coach C, OPEN run) ===
+               coach_id               |              intent_id               |  mode  |    state    | terminal_status | reason_code | phase | execution_epoch |       started_at        | accepted_start_at | deadline_at |    last_observed_at     | fenced_at | fence_reason | completed_at | import_intent_id | extension_claimed_terminal_status | extension_claimed_final_counts | extension_claimed_completed_at 
+--------------------------------------+--------------------------------------+--------+-------------+-----------------+-------------+-------+-----------------+-------------------------+-------------------+-------------+-------------------------+-----------+--------------+--------------+------------------+-----------------------------------+--------------------------------+--------------------------------
+ 11111111-1111-1111-1111-111111111111 | ffffffff-ffff-ffff-ffff-ffffffffffff | legacy | in_progress |                 |             |       |               1 | 2026-09-27 21:16:11.881 |                   |             | 2026-09-27 21:46:11.881 |           |              |              |                  |                                   |                                | 
+(1 row)
+
+RC=0
+=== 02_declarations_and_observations ===
+ source_platform |                     account_scope_id_digest                      |                          challenge_hex                           |       declared_at       
+-----------------+------------------------------------------------------------------+------------------------------------------------------------------+-------------------------
+ truecoach       | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | 0000000000000000000000000000000000000000000000000000000000000000 | 2026-09-27 20:27:11.881
+(1 row)
+
+                  id                  | execution_epoch | source_platform |                     account_scope_id_digest                      |  family  |        basis_kind         |                         evidence_digest                          |                     evidence                      |       received_at       
+--------------------------------------+-----------------+-----------------+------------------------------------------------------------------+----------+---------------------------+------------------------------------------------------------------+---------------------------------------------------+-------------------------
+ 55555555-5555-5555-5555-555555555555 |               1 | truecoach       | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | clients  | source_signed_enumeration | bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb | {"declared_total": 2, "observed_unique": 2}       | 2026-09-27 20:31:11.881
+ 66666666-6666-6666-6666-666666666666 |               1 | truecoach       | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | workouts | source_signed_enumeration | cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc | {"declared_total": null, "observed_unique": null} | 2026-09-27 20:32:11.881
+(2 rows)
+
+RC=0
+=== 03_settled_basis ===
+               coach_id               |              intent_id               | execution_epoch | report_version |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            report                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                                                         observation_digests                                                         |       settled_at        
+--------------------------------------+--------------------------------------+-----------------+----------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------+-------------------------
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 |               1 |              1 | {"basis": "recomputed", "families": [{"failed": 0, "family": "clients", "mapped": true, "tokens": ["clients"], "reasons": [], "rejected": 0, "qualifiers": [], "unresolved": 0, "child_reasons": {}, "staged_unique": 2, "observed_unique": 2, "completeness_basis": "source_signed_enumeration", "unresolved_children": {}, "relationship_closure": "not_applicable", "ledger_without_staged": 0, "native_present_verified": 2, "relationship_unverified": 0}, {"failed": 0, "family": "workouts", "mapped": true, "tokens": ["workouts"], "reasons": ["unresolved:no_native_target"], "rejected": 0, "qualifiers": [], "unresolved": 5, "child_reasons": {}, "staged_unique": 5, "observed_unique": null, "completeness_basis": "none", "unresolved_children": {}, "relationship_closure": "not_applicable", "ledger_without_staged": 0, "native_present_verified": 0, "relationship_unverified": 0}, {"failed": 0, "family": "client_history", "mapped": false, "tokens": ["client_history"], "reasons": ["unresolved_family:client_history"], "rejected": 0, "qualifiers": [], "unresolved": 0, "child_reasons": {}, "staged_unique": 1, "observed_unique": null, "completeness_basis": "none", "unresolved_children": {}, "relationship_closure": "not_applicable", "ledger_without_staged": 0, "native_present_verified": 0, "relationship_unverified": 0}], "conditions": ["coverage_basis_unknown"], "report_version": 1, "required_families": ["clients", "workouts", "client_history"], "ledger_without_staged": 0} | {bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc} | 2026-09-27 20:58:11.881
+(1 row)
+
+               coach_id               |              intent_id               |     family     | mapped |       tokens       | staged_unique | native_present_verified | rejected | unresolved | failed | ledger_without_staged | unresolved_children | relationship_closure | relationship_unverified |               reasons                | child_reasons | qualifiers |    completeness_basis     | observed_unique | coverage_is_unknown 
+--------------------------------------+--------------------------------------+----------------+--------+--------------------+---------------+-------------------------+----------+------------+--------+-----------------------+---------------------+----------------------+-------------------------+--------------------------------------+---------------+------------+---------------------------+-----------------+---------------------
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 | client_history | f      | ["client_history"] |             1 |                       0 |        0 |          0 |      0 |                     0 | {}                  | not_applicable       |                       0 | ["unresolved_family:client_history"] | {}            | []         | none                      |                 | t
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 | clients        | t      | ["clients"]        |             2 |                       2 |        0 |          0 |      0 |                     0 | {}                  | not_applicable       |                       0 | []                                   | {}            | []         | source_signed_enumeration |               2 | f
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 | workouts       | t      | ["workouts"]       |             5 |                       0 |        0 |          5 |      0 |                     0 | {}                  | not_applicable       |                       0 | ["unresolved:no_native_target"]      | {}            | []         | none                      |                 | t
+(3 rows)
+
+               coach_id               |              intent_id               |   basis    |      conditions_held       |             required_families             | ledger_without_staged 
+--------------------------------------+--------------------------------------+------------+----------------------------+-------------------------------------------+-----------------------
+ 11111111-1111-1111-1111-111111111111 | 33333333-3333-3333-3333-333333333333 | recomputed | ["coverage_basis_unknown"] | ["clients", "workouts", "client_history"] |                     0
+(1 row)
+
+RC=0
+=== 04_provenance_and_roster ===
+ entity_type | source_platform |  source_id   |    status     | target_kind |              target_id               | reason |       created_at        
+-------------+-----------------+--------------+---------------+-------------+--------------------------------------+--------+-------------------------
+ clients     | truecoach       | src-person-1 | reconstructed | person      | 88888888-8888-8888-8888-888888888888 |        | 2026-09-27 20:46:11.881
+ clients     | truecoach       | src-person-2 | reconstructed | person      | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa |        | 2026-09-27 20:47:11.881
+(2 rows)
+
+ source_namespace | entity_type |   source_id   |   native_kind   |              native_id               |     outcome     |           reason            |       created_at        
+------------------+-------------+---------------+-----------------+--------------------------------------+-----------------+-----------------------------+-------------------------
+ truecoach        | clients     | src-person-1  | person          | 88888888-8888-8888-8888-888888888888 | created         |                             | 2026-09-27 20:46:11.881
+ truecoach        | clients     | src-person-2  | person          | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa | already_present |                             | 2026-09-27 20:47:11.881
+ truecoach        | workouts    | src-workout-1 | workout_program |                                      | unresolved      | unresolved:no_native_target | 2026-09-27 20:48:11.881
+(3 rows)
+
+   native_kind   |     outcome     | n 
+-----------------+-----------------+---
+ person          | already_present | 1
+ person          | created         | 1
+ workout_program | unresolved      | 1
+(3 rows)
+
+              person_id               | source_platform | source_person_id |     display_name     |     state     |       created_at        |       updated_at        
+--------------------------------------+-----------------+------------------+----------------------+---------------+-------------------------+-------------------------
+ 88888888-8888-8888-8888-888888888888 | truecoach       | src-person-1     | Synthetic Person One | InvitePending | 2026-09-27 20:46:11.881 | 2026-09-27 20:46:11.881
+ aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa | truecoach       | src-person-2     | Synthetic Person Two | InvitePending | 2026-09-27 20:47:11.881 | 2026-09-27 20:47:11.881
+(2 rows)
+
+ coach_id | source_namespace | entity_type | source_id | n 
+----------+------------------+-------------+-----------+---
+(0 rows)
+
+RC=0
+=== 05_tenant_isolation (window covers seed) ===
+     tbl     |               coach_id               |                 key                  |           at            
+-------------+--------------------------------------+--------------------------------------+-------------------------
+ ScoutImport | 22222222-2222-2222-2222-222222222222 | 12121212-1212-1212-1212-121212121212 | 2026-09-27 18:56:11.881
+(1 row)
+
+ source_platform |                     account_scope_id_digest                      | runs_declared_against_this_scope |    first_declared_at    |    last_declared_at     
+-----------------+------------------------------------------------------------------+----------------------------------+-------------------------+-------------------------
+ truecoach       | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |                                1 | 2026-09-27 20:27:11.881 | 2026-09-27 20:27:11.881
+(1 row)
+
+                  id                  | reports_to_coach_id 
+--------------------------------------+---------------------
+ 11111111-1111-1111-1111-111111111111 | 
+(1 row)
+
+RC=0
+=== 06_open_runs (coach C) ===
+               coach_id               |              intent_id               |  mode  |    state    | phase | accepted_start_at | deadline_at | fenced_at | fence_reason | terminal_status | past_deadline_but_unfenced | overdue_by 
+--------------------------------------+--------------------------------------+--------+-------------+-------+-------------------+-------------+-----------+--------------+-----------------+----------------------------+------------
+ 11111111-1111-1111-1111-111111111111 | ffffffff-ffff-ffff-ffff-ffffffffffff | legacy | in_progress |       |                   |             |           |              |                 |                            | 
+(1 row)
+
+RC=0
+=== 07_client_directed_sends (7a; 7b is an environment-specific template, not run) ===
+ person_id | state | created_at | updated_at 
+-----------+-------+------------+------------
+(0 rows)
+
+RC=0
