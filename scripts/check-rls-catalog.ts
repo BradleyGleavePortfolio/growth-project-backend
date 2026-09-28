@@ -24,21 +24,40 @@
  *       - pg_class.relrowsecurity   (RLS enabled for owner-context queries)
  *       - pg_class.relforcerowsecurity (RLS forced for the table owner too)
  *       - pg_policies                (one row per policy defined on the table)
- *   - Compares actual state to EXPECTED_STATE (below) and prints one
- *     explicit PASS/GAP verdict line per table, plus a summary.
+ *   - Computes and prints TWO SEPARATE signals per table, never merged into
+ *     one boolean (S12-B5 review closure, S12B5-SOL-A1): a "RLS security
+ *     PASS/GAP" verdict computed ONLY from the live catalog read (enabled +
+ *     forced + ≥1 policy = PASS; anything else, including a table this
+ *     script cannot find, = GAP), and a separate "matches / differs from
+ *     migration expectation" note that says whether the live state agrees
+ *     with what this repo's migration history predicts. A table whose
+ *     known, expected state IS a gap (WorkoutSession, WeightLog, Habit
+ *     today, pending S8-D3) still prints GAP and still fails the exit code
+ *     — "expected" only explains why the gap is not a surprise, it can
+ *     never launder a missing/disabled RLS state into a security pass.
  *   - Always rolls the transaction back (belt-and-suspenders on top of
  *     READ ONLY; there is nothing to commit).
- *   - Exits 1 if any table's actual state does not match its expected
- *     state, so the invocation's own exit code is a second, independent
- *     signal beyond the printed verdict. Exits 2 on any query/connection
- *     error (fails closed — never reports PASS on a failed read).
+ *   - Exits 1 if any table's live RLS security verdict is GAP (never based
+ *     on the migration-expectation note alone), so the invocation's own
+ *     exit code is a second, independent signal beyond the printed verdict.
+ *     Exits 2 on any query/connection error (fails closed — never reports
+ *     PASS on a failed read).
  *
  * What it deliberately does NOT do:
  *   - No DDL, no DML, no `SET ROLE`, no policy creation/repair. This is a
  *     read of the catalog, nothing else.
- *   - No default DATABASE_URL. The caller must supply one explicitly, so
- *     this can never accidentally fall through to a production connection
- *     string left in the shell environment from something else.
+ *   - No default DATABASE_URL: there is no hard-coded fallback connection
+ *     string in this file, so a bare invocation with no DATABASE_URL set at
+ *     all exits 2 immediately (see "DATABASE_URL is not set" below).
+ *     S12B5-SOL-C1 correction: this is NOT protection against pointing at
+ *     production — if DATABASE_URL is already exported in the caller's
+ *     shell (from an unrelated tool, a sourced .env, etc.) this script uses
+ *     exactly that value, including a production one, with no extra
+ *     confirmation step. The caller is responsible for checking
+ *     `echo $DATABASE_URL` (or equivalent) resolves to the intended target
+ *     BEFORE invoking this script; `maskDatabaseUrl()` below only redacts
+ *     credentials in the PRINTED report, it does not gate which database
+ *     gets queried.
  *   - No retry/loop/schedule. One run, one report, exit.
  *
  * EXPECTED_STATE below encodes what the readiness doc (S12_PILOT_READINESS
@@ -46,10 +65,12 @@
  * Habit are person-owned health/fitness data with no RLS migration on file
  * (expected GAP, pending S8-D3 per the readiness doc §4 item 13); CheckIn
  * and ClientWorkoutAssignment* have RLS migrations on file and are expected
- * enabled+forced with at least one policy (expected OK). The verdict is
- * always computed from the *actual* catalog read, never assumed — this
- * table only supplies what "expected" means so a real out-of-band change
- * (in either direction) shows up as a mismatch instead of silent agreement.
+ * enabled+forced with at least one policy (expected OK). EXPECTED_STATE
+ * never feeds into the security PASS/GAP verdict — it only supplies the
+ * migration-expectation note, computed and printed separately, so a real
+ * out-of-band change (in either direction) is visible as "differs from
+ * expectation" instead of silently agreeing, AND so a known gap is never
+ * reported as a security pass just because it was anticipated.
  *
  * Invocation (never run this against production — see GRANT.md / WORKER_RULES.md,
  * production is an owner-reserved boundary; this script is written and
@@ -61,12 +82,14 @@
  * For Bradley to run the single approved read the readiness doc describes
  * (§4 item 13), point DATABASE_URL at the production database with a
  * READ-ONLY-privileged role if one exists, otherwise the normal application
- * role is sufficient since the script issues no writes; record stdout in
- * evidence alongside the doc that decision closes.
+ * role is sufficient since the script issues no writes; confirm the target
+ * with `maskDatabaseUrl`'s printed host/db line before trusting the run, and
+ * record stdout in evidence alongside the doc that decision closes.
  *
- * Exit codes: 0 = every table matches its expected state. 1 = at least one
- * table's actual state does not match. 2 = could not complete the read
- * (connection/query error) — never conflated with "0 gaps found".
+ * Exit codes: 0 = every table's live RLS security verdict is PASS. 1 = at
+ * least one table's live RLS security verdict is GAP (independent of
+ * whether that GAP matches migration expectation). 2 = could not complete
+ * the read (connection/query error) — never conflated with "0 gaps found".
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -178,8 +201,26 @@ interface TableVerdict {
   actual: { relrowsecurity: boolean; relforcerowsecurity: boolean; policyCount: number };
   expected: ExpectedState;
   policies: PolicyRow[];
-  pass: boolean;
+  // S12B5-SOL-A1 closure: these are two DELIBERATELY SEPARATE signals, never merged into one
+  // boolean again. `matchesMigrationExpectation` says "the live catalog agrees with what this
+  // repo's migration history predicts" — for WorkoutSession/WeightLog/Habit that prediction IS
+  // the known RLS gap, so agreeing with it is NOT a security pass. `securityPass` says "RLS is
+  // actually enabled, forced and policy-backed on this table right now", computed only from the
+  // live catalog read, completely independent of what any migration predicted. A gate that only
+  // reads `securityPass` can never be green because a known gap happened to match a stale
+  // expectation.
+  matchesMigrationExpectation: boolean;
+  securityPass: boolean;
   reason: string;
+}
+
+/** Security truth from the live catalog alone: RLS enabled, forced, and at least one policy. */
+function computeSecurityPass(actual: {
+  relrowsecurity: boolean;
+  relforcerowsecurity: boolean;
+  policyCount: number;
+}): boolean {
+  return actual.relrowsecurity && actual.relforcerowsecurity && actual.policyCount > 0;
 }
 
 function computeVerdict(
@@ -195,8 +236,13 @@ function computeVerdict(
       actual: { relrowsecurity: false, relforcerowsecurity: false, policyCount: policies.length },
       expected,
       policies,
-      pass: false,
-      reason: `table not found in pg_class for schema 'public' — cannot verify (expected: ${expected.note})`,
+      matchesMigrationExpectation: false,
+      // A table this script cannot even find is an unverified GAP, never a pass — fail closed.
+      securityPass: false,
+      reason:
+        `table not found in pg_class for schema 'public' — cannot verify. This is an ` +
+        `UNVERIFIED GAP (fails closed), not a pass, regardless of migration expectation ` +
+        `(${expected.note})`,
     };
   }
 
@@ -223,17 +269,31 @@ function computeVerdict(
     );
   }
 
+  const matchesMigrationExpectation = mismatches.length === 0;
+  const securityPass = computeSecurityPass(actual);
+
+  const reasonParts: string[] = [];
+  reasonParts.push(
+    matchesMigrationExpectation
+      ? `matches migration expectation (${expected.note})`
+      : `DIFFERS FROM migration expectation (${expected.note}): ${mismatches.join('; ')}`,
+  );
+  reasonParts.push(
+    securityPass
+      ? 'RLS security: PASS (enabled + forced + ≥1 policy, from the live catalog)'
+      : 'RLS security: GAP (missing/disabled RLS or zero policies on the live catalog) — ' +
+          'this is a GAP regardless of what was expected',
+  );
+
   return {
     table,
     found: true,
     actual,
     expected,
     policies,
-    pass: mismatches.length === 0,
-    reason:
-      mismatches.length === 0
-        ? `matches expected state (${expected.note})`
-        : `MISMATCH vs expected (${expected.note}): ${mismatches.join('; ')}`,
+    matchesMigrationExpectation,
+    securityPass,
+    reason: reasonParts.join('; '),
   };
 }
 
@@ -298,11 +358,21 @@ async function main(): Promise<number> {
         computeVerdict(table, byTable.get(table), policiesByTable.get(table) ?? []),
       );
 
+      // S12B5-SOL-A1 closure: the printed status and the exit code are both driven ONLY by
+      // `securityPass` (the live catalog's actual RLS state), never by
+      // `matchesMigrationExpectation`. A table whose live state matches a known, expected GAP
+      // (WorkoutSession/WeightLog/Habit today) still prints GAP and still fails the gate —
+      // "expected" only annotates WHY the gap is not a surprise, it never launders it into a
+      // pass.
       for (const v of verdicts) {
-        const status = v.pass ? 'OK  ' : 'GAP ';
+        const status = v.securityPass ? 'OK  ' : 'GAP ';
+        const expectationNote = v.matchesMigrationExpectation
+          ? 'matches migration expectation'
+          : 'DIFFERS FROM migration expectation';
         report(
           `[${status}] ${v.table}: relrowsecurity=${v.actual.relrowsecurity} ` +
-            `relforcerowsecurity=${v.actual.relforcerowsecurity} policies=${v.actual.policyCount}`,
+            `relforcerowsecurity=${v.actual.relforcerowsecurity} policies=${v.actual.policyCount} ` +
+            `(${expectationNote})`,
         );
         report(`        ${v.reason}`);
         if (v.policies.length > 0) {
@@ -310,13 +380,18 @@ async function main(): Promise<number> {
             report(`        policy: ${p.policyname} (${p.cmd}, roles=${p.roles ?? '{}'})`);
           }
         }
-        if (!v.pass) exitCode = 1;
+        if (!v.securityPass) exitCode = 1;
       }
 
       report('');
-      const gapCount = verdicts.filter((v) => !v.pass).length;
+      const gapCount = verdicts.filter((v) => !v.securityPass).length;
+      const expectationMismatchCount = verdicts.filter((v) => !v.matchesMigrationExpectation).length;
       report(
-        `Summary: ${verdicts.length - gapCount}/${verdicts.length} tables match expected state, ${gapCount} mismatch(es).`,
+        `Summary: ${verdicts.length - gapCount}/${verdicts.length} tables PASS live RLS security, ` +
+          `${gapCount} GAP(s). Separately: ${verdicts.length - expectationMismatchCount}/${verdicts.length} ` +
+          `match migration expectation, ${expectationMismatchCount} differ from expectation ` +
+          `(a differ-from-expectation table needs investigation — it is neither this script's ` +
+          `security verdict nor safe to ignore).`,
       );
 
       // Nothing was written; roll back explicitly rather than commit, so
@@ -327,7 +402,7 @@ async function main(): Promise<number> {
   } catch (err) {
     if (!(err instanceof ReadOnlyRollback)) {
       console.error('[check-rls-catalog] query/connection error — failing closed (exit 2).');
-      console.error(err);
+      console.error(safeErrorSummary(err));
       return 2;
     }
   } finally {
@@ -351,10 +426,26 @@ function maskDatabaseUrl(url: string): string {
   }
 }
 
+// S12B5-SOL-C1 closure: never print a raw caught error. A Prisma/pg connection or query error
+// can embed the connection string (including credentials), bind parameters, or raw query text
+// in its message. This prints only the error's constructor name and, if present, a driver error
+// `code` (a short enum like 'ECONNREFUSED' or a Postgres SQLSTATE) — enough to diagnose the
+// failure class without risking a credential or query fragment landing in a captured log.
+function safeErrorSummary(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const name = (err as { constructor?: { name?: string } }).constructor?.name ?? 'Error';
+    const code = (err as { code?: unknown }).code;
+    return typeof code === 'string' || typeof code === 'number'
+      ? `${name} (code=${String(code)})`
+      : name;
+  }
+  return 'unknown error (non-object)';
+}
+
 main()
   .then((code) => process.exit(code))
   .catch((err) => {
     console.error('[check-rls-catalog] unexpected top-level error.');
-    console.error(err);
+    console.error(safeErrorSummary(err));
     process.exit(2);
   });

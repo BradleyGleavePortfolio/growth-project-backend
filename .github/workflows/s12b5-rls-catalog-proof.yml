@@ -1,0 +1,149 @@
+name: S12-B5 RLS catalog check — throwaway PG proof
+
+# S12-B5 review closure (S12B5-SOL-B1): the grant requires a behavioral proof of
+# scripts/check-rls-catalog.ts against a disposable Postgres migrated to this
+# branch's base, exercising BOTH the known-gap case (WorkoutSession / WeightLog /
+# Habit have no RLS migration) and the known-OK case (CheckIn /
+# ClientWorkoutAssignment* do). The builder never ran this and this reviewer's
+# sandbox has no local PG/psql — this job is that missing proof, reusing the
+# `rls-live-tests` job's pattern (ci.yml): a real Postgres service container,
+# the Supabase CI shim (this job needs the full schema, so it uses
+# migration-dry-run's `_supabase_bootstrap.sql` + `prisma migrate deploy`
+# instead of rls-live-tests' scoped single-migration bootstrap), then the
+# script itself, asserting its printed verdict and exit code.
+#
+# This workflow NEVER targets production: the only DATABASE_URL/DIRECT_URL in
+# scope is the postgres: service container below, on localhost, torn down when
+# the job ends. Never dispatch this against anything else.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/check-rls-catalog.ts'
+      - 'scripts/README.md'
+      - '.github/workflows/s12b5-rls-catalog-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rls-catalog-throwaway-pg-proof:
+    name: check-rls-catalog.ts behavioral proof (throwaway PG)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # Same idempotent, CI-only scaffolding migration-dry-run.yml uses:
+        # creates the auth schema + service_role/authenticated/anon roles a
+        # bare postgres:15 image does not have, so the full migration chain
+        # (which this proof needs, unlike rls-live-tests' scoped bootstrap)
+        # applies cleanly.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply the full migration chain
+        run: npx prisma migrate deploy
+
+      - name: Run check-rls-catalog.ts and capture its report + exit code
+        id: run_check
+        # Never fail the step on a nonzero exit — the script is EXPECTED to
+        # exit 1 here (WorkoutSession/WeightLog/Habit are a known, expected
+        # gap at this base). Capture stdout and the real exit code so the
+        # assertions below can check both explicitly instead of trusting a
+        # green step, which is exactly the false-safe-result failure mode
+        # (S12B5-SOL-A1) this proof exists to rule out.
+        run: |
+          set +e
+          npx ts-node scripts/check-rls-catalog.ts > rls-catalog-output.txt 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat rls-catalog-output.txt
+
+      - name: Assert the known-gap tables report GAP (never a laundered PASS)
+        # This is the exact reversal S12B5-SOL-A1 found: before the fix, a
+        # table whose expected state IS the known gap printed OK and the
+        # script exited 0. After the fix, the live-catalog security verdict
+        # is independent of the migration expectation, so these three must
+        # print GAP even though hitting the expected state.
+        run: |
+          set -euo pipefail
+          for t in WorkoutSession WeightLog Habit; do
+            if ! grep -qE "^\[GAP \] ${t}:" rls-catalog-output.txt; then
+              echo "::error::${t} did not report GAP — the known RLS gap must never print as a security PASS."
+              exit 1
+            fi
+          done
+          echo "All three known-gap tables correctly report GAP."
+
+      - name: Assert the known-OK tables report OK (RLS enabled+forced+policy-backed)
+        run: |
+          set -euo pipefail
+          for t in CheckIn ClientWorkoutAssignment ClientWorkoutAssignmentSnapshot; do
+            if ! grep -qE "^\[OK  \] ${t}:" rls-catalog-output.txt; then
+              echo "::error::${t} did not report OK — expected RLS enabled+forced+policy-backed at this base."
+              exit 1
+            fi
+          done
+          echo "All three RLS-protected tables correctly report OK."
+
+      - name: Assert the script's own exit code reflects the live security GAPs
+        # Exit code must be 1 (mismatched security state exists: the three
+        # known gaps), never 0 — 0 would mean the gate went green with real
+        # RLS gaps present, exactly the false-safe-result this proof rules out.
+        run: |
+          set -euo pipefail
+          code="${{ steps.run_check.outputs.exit_code }}"
+          echo "check-rls-catalog.ts exited with code ${code}"
+          if [ "${code}" != "1" ]; then
+            echo "::error::Expected exit code 1 (live RLS security GAPs present at this base) — got ${code}."
+            exit 1
+          fi
+
+      - name: Assert DATABASE_URL is never echoed unmasked
+        run: |
+          set -euo pipefail
+          if grep -q "postgres:postgres@localhost" rls-catalog-output.txt; then
+            echo "::error::The script's report leaked the unmasked connection string."
+            exit 1
+          fi
+          echo "Connection string was masked in the printed report."
+
+      - name: Upload proof output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rls-catalog-throwaway-pg-output
+          path: rls-catalog-output.txt
+          retention-days: 14
