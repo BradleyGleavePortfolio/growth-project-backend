@@ -77,6 +77,24 @@ jobs:
       - name: Apply the full migration chain
         run: npx prisma migrate deploy
 
+      - name: Apply the out-of-band legacy RLS file (production pre-state twin)
+        # prisma/migrations/rls_fitness_backend.sql sits directly under
+        # prisma/migrations/ (not in its own prisma/migrations/<timestamp>/
+        # subdirectory), so `prisma migrate deploy` never applies it -- same
+        # as in a real deploy. CheckIn's and BloodworkPanel's ENABLE ROW LEVEL
+        # SECURITY lives only in this file (their later migration-directory
+        # entries only re-assert FORCE; see the "Keep force enabled on
+        # existing health tables being repaired" comment in
+        # 20260607000000_rls_remaining_gaps); WorkoutSession/WeightLog/Habit's
+        # RLS also lives only here, which is exactly why they are S12-B5's
+        # known, expected GAP -- this repo's migration directories alone never
+        # protect them. Reusing the same out-of-band-apply step
+        # test/db/s1-rls-close-public-exposure.sh and
+        # test/release/s1s2-composition.sh use to rebuild the real
+        # (production-matching) pre-state, so this throwaway DB's RLS catalog
+        # matches a real deploy instead of an incomplete one.
+        run: psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f prisma/migrations/rls_fitness_backend.sql
+
       - name: Run check-rls-catalog.ts and capture its report + exit code
         id: run_check
         # Never fail the step on a nonzero exit — the script is EXPECTED to
