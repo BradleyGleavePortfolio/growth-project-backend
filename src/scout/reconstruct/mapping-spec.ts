@@ -245,7 +245,7 @@ function entityRules(spec: SourceMappingSpec, family: string): EntityFieldRules 
 
 /**
  * Resolve a source step/entity token to its canonical family under a spec. An
- * unmapped token (e.g. TrueCoach `notes`) is the explicit
+ * unmapped token (e.g. a source `notes` token) is the explicit
  * `unresolved_family:<token>` — accounted for, never a silent absence.
  */
 export function resolveStep(spec: SourceMappingSpec, step: string): StepResolution {

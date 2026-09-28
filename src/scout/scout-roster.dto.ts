@@ -140,7 +140,7 @@ export class ScoutRosterPersonDto {
   })
   state!: PersonState;
 
-  @ApiProperty({ description: 'Source platform slug (provenance).', example: 'truecoach' })
+  @ApiProperty({ description: 'Source platform slug (provenance).', example: 'example-site' })
   source_platform!: string;
 
   @ApiProperty({

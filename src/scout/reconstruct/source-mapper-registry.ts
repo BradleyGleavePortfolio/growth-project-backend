@@ -94,7 +94,7 @@ export function buildSourceMapperRegistry(
 /**
  * Resolve a staged row's (platform, step token) to a canonical family. An
  * unregistered platform is `unsupported_platform:<platform>`; a step the
- * platform's spec does not map (e.g. TrueCoach `notes`) is
+ * platform's spec does not map (e.g. a source `notes` token) is
  * `unresolved_family:<token>` — explicit accounting input for the terminal
  * arbiter instead of a silent absence.
  */
