@@ -195,7 +195,14 @@ jobs:
             echo "feature_scout_pilot_coach_ids: __CLEAR__ — will set the allowlist to empty (pilot surface goes dark for everyone)."
           else
             uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-            IFS=',' read -ra entries <<< "${COACH_IDS}"
+            # `read -ra ... <<< "$COACH_IDS"` silently drops a trailing empty
+            # field (bash here-string quirk), so "<uuid>," would pass this
+            # check with only the one good entry ever inspected. Appending a
+            # sentinel before splitting, then stripping it back off the last
+            # field, keeps a real trailing/empty segment visible to the loop.
+            IFS=',' read -ra entries <<< "${COACH_IDS}X_S12B6_SENTINEL_X"
+            last_idx=$((${#entries[@]} - 1))
+            entries[$last_idx]="${entries[$last_idx]%X_S12B6_SENTINEL_X}"
             bad=0
             for raw in "${entries[@]}"; do
               entry="$(echo "${raw}" | xargs)"
