@@ -39,10 +39,10 @@ jobs:
         run: npm ci
 
       - name: Vendor-name guard
-        run: npm run guard:vendors
+        run: node scripts/vendor-name-guard.mjs
 
       - name: Vendor-name guard self-test
-        run: npm run test:guard:vendors
+        run: node scripts/vendor-name-guard.self-test.mjs
 
       - name: Generate Prisma client
         run: npx prisma generate
