@@ -361,11 +361,15 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
       });
     }
 
-    const assignments = await this.prisma.clientWorkoutAssignment.findMany({
-      where: { workout_plan_id: planId },
-      select: { client_id: true },
-      distinct: ['client_id'],
-    });
+    const assignments = (
+      await this.prisma.clientWorkoutAssignment.findMany({
+        // S8-D3: person-owned (imported) assignments have no client user; only
+        // user-owned rows carry a client to authorise against.
+        where: { workout_plan_id: planId, person_id: null },
+        select: { client_id: true },
+        distinct: ['client_id'],
+      })
+    ).flatMap((a) => (a.client_id === null ? [] : [{ client_id: a.client_id }]));
 
     if (assignments.length === 0) {
       // Unassigned plan: scope on tenant ownership. A head coach (coach_id ===

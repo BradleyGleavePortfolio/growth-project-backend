@@ -159,10 +159,16 @@ export class V1CoachService {
       }),
     ]);
 
+    // Both groupBys are scoped to user_id IN clientIds (user-owned rows); the
+    // null guards only narrow the S8-D3 nullable owner column.
     const lastCheckInByClient = new Map<string, Date | null>();
-    for (const r of lastCheckIns) lastCheckInByClient.set(r.user_id, r._max.date);
+    for (const r of lastCheckIns) {
+      if (r.user_id !== null) lastCheckInByClient.set(r.user_id, r._max.date);
+    }
     const lastWorkoutByClient = new Map<string, Date | null>();
-    for (const r of lastWorkouts) lastWorkoutByClient.set(r.user_id, r._max.date);
+    for (const r of lastWorkouts) {
+      if (r.user_id !== null) lastWorkoutByClient.set(r.user_id, r._max.date);
+    }
     const lastCoachReplyByClient = new Map<string, Date | null>();
     for (const r of lastCoachReplies) {
       if (r.client_id !== null) {
@@ -276,7 +282,9 @@ export class V1CoachService {
       _max: { date: true },
     });
     const lastCheckInByClient = new Map<string, Date | null>();
-    for (const r of lastCheckIns) lastCheckInByClient.set(r.user_id, r._max.date);
+    for (const r of lastCheckIns) {
+      if (r.user_id !== null) lastCheckInByClient.set(r.user_id, r._max.date);
+    }
 
     const lastCoachReplies = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],

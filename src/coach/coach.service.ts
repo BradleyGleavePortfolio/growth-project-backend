@@ -577,12 +577,18 @@ export class CoachService {
       }),
     ]);
 
+    // Queries above are scoped to user_id IN clientIds (user-owned rows); the
+    // null guards only narrow the S8-D3 nullable owner column.
     const workedOutRecently = new Set(
-      workoutGroups.filter((g) => g._count._all > 0).map((g) => g.user_id),
+      workoutGroups
+        .filter((g) => g._count._all > 0)
+        .map((g) => g.user_id)
+        .filter((id): id is string => id !== null),
     );
 
     const weightLogsByUser = new Map<string, { date: Date; weight_lbs: number }[]>();
     for (const wl of allRecentWeightLogs) {
+      if (wl.user_id === null) continue;
       const arr = weightLogsByUser.get(wl.user_id) ?? [];
       if (arr.length < 4) arr.push({ date: wl.date, weight_lbs: wl.weight_lbs });
       weightLogsByUser.set(wl.user_id, arr);
@@ -740,17 +746,22 @@ export class CoachService {
     ]);
 
     // ── Step 3: Derive attention_needed list from aggregated data ───────────
-    const workedOutRecently = new Set(workoutGroups.map((g: { user_id: string }) => g.user_id));
+    // All three groupBys are scoped to user_id IN clientIds (user-owned rows);
+    // the null filters only narrow the S8-D3 nullable owner column.
+    const workedOutRecently = new Set(
+      workoutGroups.map((g) => g.user_id).filter((id): id is string => id !== null),
+    );
     const loggedToday = new Set(foodLogGroups.map((g: { user_id: string }) => g.user_id));
     // Clients with at least one unreviewed check-in submitted (no_checkin flag).
     // (Finding 6 — MEDIUM, audit 2026-05-19)
     const hasUnreviewedCheckin = new Set(
-      unreviewedCheckins.map((r: { user_id: string }) => r.user_id),
+      unreviewedCheckins.map((r) => r.user_id).filter((id): id is string => id !== null),
     );
 
     // Group weight logs by client (already sorted desc by date per client).
     const weightLogsByUser = new Map<string, number[]>();
     for (const wl of recentWeightLogs) {
+      if (wl.user_id === null) continue;
       const arr = weightLogsByUser.get(wl.user_id) ?? [];
       if (arr.length < 4) arr.push(wl.weight_lbs);
       weightLogsByUser.set(wl.user_id, arr);

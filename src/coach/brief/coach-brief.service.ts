@@ -948,12 +948,20 @@ export class CoachBriefService {
       delta_lbs: r.delta_lbs,
     }));
 
-    const pendingWorkouts = pendingWorkoutsRaw.map((w) => ({
-      id: w.id,
-      client_id: w.client_id,
-      client_name: w.client?.name ?? 'Client',
-      plan_name: w.workout_plan?.name ?? 'Workout',
-    }));
+    // The query is scoped to client_id IN clientIds, so every row is user-owned;
+    // the flatMap only narrows the S8-D3 nullable column type.
+    const pendingWorkouts = pendingWorkoutsRaw.flatMap((w) =>
+      w.client_id === null
+        ? []
+        : [
+            {
+              id: w.id,
+              client_id: w.client_id,
+              client_name: w.client?.name ?? 'Client',
+              plan_name: w.workout_plan?.name ?? 'Workout',
+            },
+          ],
+    );
 
     const dunningInProgress = Number(dunningInProgressRaw[0]?.count ?? 0);
 

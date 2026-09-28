@@ -762,10 +762,13 @@ export class WorkoutBuilderService {
       // we pass 'workout_plan' since the DripTriggerService matches
       // ScheduledDrop.asset_type+asset_id verbatim against the snapshot
       // — see drip-trigger.service.ts for why both kinds resolve here.
-      if (this.dripTrigger && completed) {
+      // The updateMany above matched client_id = clientId, so `completed` is
+      // user-owned; the null check only narrows the S8-D3 nullable column.
+      if (this.dripTrigger && completed && completed.client_id !== null) {
+        const buyerUserId = completed.client_id;
         try {
           await this.dripTrigger.onContentCompleted({
-            buyerUserId: completed.client_id,
+            buyerUserId,
             assetType: 'workout_plan',
             assetId: completed.workout_plan_id,
           });
@@ -777,7 +780,7 @@ export class WorkoutBuilderService {
           // two emits each scope to their own snapshot type and do not
           // double-fire.
           await this.dripTrigger.onContentCompleted({
-            buyerUserId: completed.client_id,
+            buyerUserId,
             assetType: 'workout_program',
             assetId: completed.workout_plan_id,
           });

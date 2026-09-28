@@ -392,7 +392,10 @@ export class CommunityService {
     });
 
     const countByUser = new Map<string, number>();
-    for (const g of grouped) countByUser.set(g.user_id, g._count._all);
+    for (const g of grouped) {
+      if (g.user_id === null) continue; // S8-D3: query is user-scoped; type narrowing only
+      countByUser.set(g.user_id, g._count._all);
+    }
 
     const leaderboard = students.map((s) => ({
       user_id: s.id,

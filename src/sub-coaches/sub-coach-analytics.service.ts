@@ -126,12 +126,18 @@ export class SubCoachAnalyticsService {
       // For each client, find the most recent CheckIn timestamp, then
       // check whether the sub-coach sent a CoachMessage within 48h of
       // it. We use logged_at (CheckIn) and created_at (CoachMessage).
-      const latestCheckIns = await this.prisma.checkIn.findMany({
-        where: { user_id: { in: clientIds } },
-        orderBy: { logged_at: 'desc' },
-        distinct: ['user_id'],
-        select: { user_id: true, logged_at: true },
-      });
+      // Scoped to user_id IN clientIds (user-owned rows); the flatMap only
+      // narrows the S8-D3 nullable owner column.
+      const latestCheckIns = (
+        await this.prisma.checkIn.findMany({
+          where: { user_id: { in: clientIds } },
+          orderBy: { logged_at: 'desc' },
+          distinct: ['user_id'],
+          select: { user_id: true, logged_at: true },
+        })
+      ).flatMap((c) =>
+        c.user_id === null ? [] : [{ user_id: c.user_id, logged_at: c.logged_at }],
+      );
       if (latestCheckIns.length > 0) {
         const messages = await this.prisma.coachMessage.findMany({
           where: {
@@ -188,6 +194,7 @@ export class SubCoachAnalyticsService {
       });
       const byClient = new Map<string, { total: number; done: number }>();
       for (const a of recent7dAssignments) {
+        if (a.client_id === null) continue; // client-scoped query; S8-D3 type narrowing only
         const cur = byClient.get(a.client_id) ?? { total: 0, done: 0 };
         cur.total += 1;
         if (a.completed_at) cur.done += 1;

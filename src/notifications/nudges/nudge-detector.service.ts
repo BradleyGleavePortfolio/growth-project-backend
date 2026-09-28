@@ -148,11 +148,14 @@ export class NudgeDetectorService {
     // We pull each user's most recent check-in, then filter.
     const rows = await this.prisma.checkIn.groupBy({
       by: ['user_id'],
+      // S8-D3: person-owned (imported) check-ins have no user to nudge.
+      where: { person_id: null },
       _max: { date: true },
     });
 
     const candidates: NudgeCandidate[] = [];
     for (const row of rows) {
+      if (row.user_id === null) continue;
       const lastDate = row._max.date;
       if (!lastDate) continue;
       if (lastDate < minThreshold) continue; // covered by inactivity
@@ -193,13 +196,15 @@ export class NudgeDetectorService {
     // Pull users whose most recent check-in is 1 or 2 days stale —
     // narrow enough to keep the lookback affordable.
     const recent = await this.prisma.checkIn.findMany({
-      where: { date: { gte: lookbackStart } },
+      // S8-D3: person-owned (imported) check-ins have no user to nudge.
+      where: { date: { gte: lookbackStart }, person_id: null },
       orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
       select: { user_id: true, date: true },
     });
 
     const byUser = new Map<string, Date[]>();
     for (const r of recent) {
+      if (r.user_id === null) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
       byUser.get(r.user_id)!.push(r.date);
     }
@@ -335,6 +340,7 @@ export class NudgeDetectorService {
 
     const lastCheckinByUser = new Map<string, Date | null>();
     for (const row of checkinAgg) {
+      if (row.user_id === null) continue; // user-scoped query; S8-D3 type narrowing only
       lastCheckinByUser.set(row.user_id, row._max.logged_at ?? null);
     }
     const lastNotifByUser = new Map<string, Date | null>();

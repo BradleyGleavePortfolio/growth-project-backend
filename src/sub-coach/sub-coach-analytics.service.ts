@@ -81,6 +81,7 @@ export class SubCoachAnalyticsService {
       });
       const lastByClient = new Map<string, Date>();
       for (const ci of checkIns) {
+        if (ci.user_id === null) continue; // user-scoped query; S8-D3 type narrowing only
         if (!lastByClient.has(ci.user_id)) {
           lastByClient.set(ci.user_id, ci.logged_at);
         }

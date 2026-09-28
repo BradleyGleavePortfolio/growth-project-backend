@@ -313,9 +313,11 @@ export class InviteCodesService {
           lastActiveByUser.set(uid, when);
         }
       };
-      for (const r of workouts) bump(r.user_id, r.created_at);
+      // workouts / checkIns are scoped to user_id IN candidateIds (user-owned
+      // rows); the null guards only narrow the S8-D3 nullable owner column.
+      for (const r of workouts) if (r.user_id !== null) bump(r.user_id, r.created_at);
       for (const r of foods) bump(r.user_id, r.logged_at);
-      for (const r of checkIns) bump(r.user_id, r.logged_at);
+      for (const r of checkIns) if (r.user_id !== null) bump(r.user_id, r.logged_at);
     }
 
     return candidates.slice(0, Math.max(1, invite.used_count)).map((u) => ({
