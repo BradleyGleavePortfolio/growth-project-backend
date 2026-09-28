@@ -1,3 +1,5 @@
+> SUPERSEDED — see [NORTH_STAR.md](docs/importer/NORTH_STAR.md) and canonical AGENT_RULES G01–G22 ([tgp-agent-context/AGENT_RULES.md](https://github.com/BradleyGleavePortfolio/tgp-agent-context/blob/main/AGENT_RULES.md)).
+
 # TGP Standing Rules (read at the start of every session)
 
 1. EVERYTHING MUST BE BUILT TO DECACORN QUALITY.
