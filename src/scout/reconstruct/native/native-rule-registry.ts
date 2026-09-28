@@ -12,7 +12,7 @@ import { parseNativeRuleSet, type NativeRuleSet } from './native-rules';
  * not made here.
  *
  * Today no repository rule set exists: no real source has declared typed native
- * fields (TrueCoach's workout exercise payload shape is not established), so an
+ * fields (a legacy workout exercise payload shape is not established), so an
  * ABSENT directory is the truthful "no native rules declared" state and yields an
  * empty registry — every workout keeps its accepted evidence path and no native
  * row is ever guessed. A PRESENT directory must contain at least one valid

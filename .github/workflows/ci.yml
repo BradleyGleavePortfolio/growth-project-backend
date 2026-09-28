@@ -38,6 +38,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Vendor-name guard
+        run: npm run guard:vendors
+
+      - name: Vendor-name guard self-test
+        run: npm run test:guard:vendors
+
       - name: Generate Prisma client
         run: npx prisma generate
 
