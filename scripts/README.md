@@ -11,6 +11,7 @@ release-command step.
 | `release.sh` | Fly `release_command`. Runs `prisma migrate deploy`; falls back to a guarded `db push` only when explicitly authorized. |
 | `bootstrap-owners.ts` | Promote a fixed list of OWNER emails and back-fill `CoachProfile` rows for existing coaches. Idempotent. |
 | `print-required-secrets.ts` | List required / prod-required / optional env vars for a target `NODE_ENV`. Multiple output formats: `table`, `fly`, `env`, `missing`. |
+| `env-gap-report.mjs` | Name-only environment inventory that detects empty/missing keys without printing any values; it also generates `docs/ops/KEYS_NEEDED.md`. |
 | `smoke.ts` | Post-deploy smoke check against a running API. Hits public + 401 paths and exits non-zero on first failure. |
 | `stripe-webhook-smoke.ts` | Replay Stripe fixture events at a running dev server. No real Stripe account required. |
 
@@ -80,6 +81,24 @@ TARGET_ENV=staging FORMAT=missing npx ts-node scripts/print-required-secrets.ts
 
 This is the script the deploy runbook recommends running before
 `fly secrets set`.
+
+## env-gap-report.mjs
+
+Builds its inventory from the runtime `ENV_RULES` registry and `.env.example`;
+there is no separate list of keys to maintain. It never prints a value.
+
+```bash
+# Inspect a local env file. The exit status is non-zero for hard/prod gaps
+# and for a documented key dependency whose feature flag is enabled.
+node scripts/env-gap-report.mjs --env path/to/.env
+
+# Inspect the NAMES-only output from the Fly Secrets List workflow.
+node scripts/env-gap-report.mjs --names fly-secrets-list.txt
+
+# Regenerate / verify the committed empty inventory.
+npm run env:gaps:docs
+npm run env:gaps:docs:check
+```
 
 ## smoke.ts
 
