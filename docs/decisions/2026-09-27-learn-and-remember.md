@@ -2,21 +2,36 @@
 
 - **Status:** T4 cross-repo decision record (backend, extension, mobile). Doc only: it changes no code,
   schema, API or flag, claims nothing has run, and grants no builder, PG slot or review.
-- **Date:** 2026-09-27. **Decision owner:** Bradley Gleave. The executing parent makes D-L0-1 to
-  D-L0-9; §6 lists what stays owner-reserved and is never assumed here.
+- **Date:** 2026-09-27; **r2 amendment 2026-09-28.** **Decision owner:** Bradley Gleave. The
+  executing parent makes D-L0-1 to D-L0-9; §6 lists what stays owner-reserved and is never assumed here.
+- **r2 (2026-09-28), doc-only:** §6 records D1-D3; new D-L0-6.1 defines `complete`; X2 T2 → T4;
+  V1 splits into V1-P/V1-C; spend cap = PLACEHOLDER with a measurement duty; §7 lists V1
+  preconditions; read trees updated; the legacy vendor name is replaced by `LO` (guard, PR #573).
+- **Owner decisions of 2026-09-28 (binding; verbatim except where bracketed):**
+  - **D1, what "complete" means:** _"lets do complete to mean 'All past client and coaching
+    records in this site are now in TGP'"_ → D-L0-6.1; Q-L0-1 decided.
+  - **D2, V1 pilot:** _"Lets do [the owner-chosen V1 pilot platform] as the pilot, my coaching
+    account"_ → the pilot is the owner's own coaching account on that platform. The name is
+    recorded in evidence, not here: this path is outside the guard allowlist. Q-L0-2 decided.
+  - **D3, AI spend cap:** _"$20/day ... lets just leave the cap alone/ placeholder value until we
+    learn the real cost per site"_ → D-L0-7.3; Q-L0-3 decided.
 - **North star:** `private-evidence/execution/42d8c5b5/northstar/NORTH_STAR.md` ("NS"), the only
   importer north star. Every slice grant below cites it. Owner requirement (2026-09-27 20:51Z,
   verbatim): _"This is a new site" → call AI support, decode their data structure, autonomously LEARN
   AND REMEMBER that structure and complete the import in one process to NEVER have to do platform
   specific work again._
-- **Read trees.** `B:` = backend `integration/importer` `9668af6c9a6391dc6a04f27ae79df160b02f3910`.
-  `E:` = extension `main` `a889f4ad`. `E#20:` = extension PR #20 head `93a678a4` (C2b-1).
+- **Read trees (r2).** `B:` = backend `integration/importer` `d84cb7c36cd73168b25594f5312504098a92f555`.
+  `E:` = extension `main` `30e78a293069340f2b2baad6b36ea3c9bb454f92`. `E#20:` = C2b-1 head
+  `607c93e508d59bdd758c413987b480d8c9f94ba7`. `E-X1:` = X1 head `7ac1fe9abf67d0ae65afaaa2f66506471882541e`.
   `E#19:` = PR #19 head `69d35e52` (goal-state amendment to `docs/REAL_GOAL_EXECUTION_PLAN.md`).
-  `M:` = mobile `main` `01dd8a3c`. Unprefixed `path Lx` is `B:`.
+  `M:` = mobile `main` `3f91d58ac4bb887d286ee5898d84bd32eb0bb102`. Unprefixed `path Lx` is `B:`.
+- **`LO` (legacy oracle).** The one quarantined file spec under `src/scout/reconstruct/sources/`
+  and the extension's legacy extractor/blueprint (`E:extractors/`, `E-X1:legacy/`); both are in
+  each repo's `.vendor-name-guard.json`. r1 citations were spot-checked at these heads, not re-derived.
 - **Fixed inputs (already building; this record incorporates and does not redesign them):**
   X1 extension origin authorization (`northstar/X1_GRANT.md`: optional host permission requested on
   the popup Start gesture, one authorized origin per run, vendor-free registry
-  `register(originMatcher, factory)` / `resolveBlueprint(origin)`, TrueCoach quarantined under `legacy/`);
+  `register(originMatcher, factory)` / `resolveBlueprint(origin)`, `LO` quarantined under `legacy/`);
   R1 Roman journey bound to `useImportRunStatus` (`northstar/R1_GRANT.md`); C2b-1 rescue of `E#20`.
 - **Sources:** S7L-DOC, S8-DOC, S9-DOC, S10-DOC (`docs/decisions/2026-09-26-s10-induction.md`),
   S11-DOC (`docs/decisions/2026-09-26-s11-journey.md`), S8D-DOC.
@@ -28,7 +43,7 @@ The backend engine is already data-driven per platform: a generic interpreter ov
 (`src/scout/reconstruct/native/native-rules.ts` L93-100, L794) and the S10 manifest
 (`src/scout/induction/manifest-registry.ts` L44-80). But every spec is a file in `src`, copied as a
 build asset (`source-mapper-registry.ts` L51-76; `nest-cli.json` L11-13): a new platform means a
-person writes JSON and a deploy ships it. The only real spec is `sources/truecoach.json`. No AI
+person writes JSON and a deploy ships it. The only real spec is `LO`'s `sources/*.json`. No AI
 exists in `src/scout`; there is no memory. The extension has capture (`E:shared/capture.js`), the
 C2a inference primitives (`E:shared/blueprint/{input,shapes,url-templates}.js`), a fail-closed
 normalizer (`E:shared/replay/blueprint.js` L393) and a generic replay engine
@@ -64,7 +79,7 @@ phone is the status surface. Steps, in order, with the owner of each:
 Binding to `E#19` (its ordering C2a→…→V1 is superseded by this table; `E#19` L98-121):
 
 - **Survive:** C2a primitives (`E:shared/blueprint/{input,shapes,url-templates}.js`); C2b-1
-  endpoint roles (`E#20:shared/blueprint/roles.js` L263) as deterministic evidence inside the
+  endpoint roles (`E#20:shared/blueprint/roles.js` L289 `inferEndpointRoles`) as deterministic evidence inside the
   digest (so the C2b-1 rescue lands); the normalizer and engine unchanged; capture redaction
   (`E:shared/capture.js` L83, L101, L365).
 - **Merge:** C2c "compiler" becomes `compileLearnedBlueprint` over model hints (≤ 150 LOC) plus
@@ -75,8 +90,8 @@ Binding to `E#19` (its ordering C2a→…→V1 is superseded by this table; `E#1
   deterministic gate (normalizer + validators), never a human.
 - **Delete from the plan:** C2b-2 edges, C2b-3 pagination inference, C2c confidence scoring, C3a
   UI, coach confirmation, D1 DOM/SSR fallback, F1 as a separate memory slice (memory is D-L0-5).
-  Deleting code (`E:extractors/truecoach/*`, `E:extractors/detect.js`, `truecoach.json`) is the
-  parity-gated deletion slice (D-L0-8), not V1 work.
+  Deleting code (`LO`: `E:extractors/*`, `E:extractors/detect.js`, the backend `sources/*.json`) is
+  the parity-gated deletion slice (D-L0-8), not V1 work.
 
 ### D-L0-2: where AI runs, and on what
 
@@ -108,7 +123,7 @@ interface StructureDigestV1 {
     queryKeys: string[]; // names only, sorted
     statuses: number[];
     observations: number; // count in the capture
-    role: 'collection' | 'single' | 'refused'; // roles.js L263 verdict
+    role: 'collection' | 'single' | 'refused'; // roles.js L289 verdict; EVERY collection template is listed (V-L10)
     collectionPaths: string[][]; // candidate array paths, ≤ 4
     shape: ShapeNode; // keys + kinds, depth ≤ 4; NO values
   }[];
@@ -190,9 +205,17 @@ interface LearnedProposalV1 {
   }[];
   mappingSpec: SourceMappingSpec; // mapping-spec.ts L114-125, verbatim grammar
   nativeRules: NativeRuleSet | null; // native-rules.ts L93-100, verbatim grammar
+  unmapped: { templateRef: string; reason: UnmappedReason }[]; // r2: every collection template not in steps (D-L0-6.1 i)
   explore: string[]; // ≤ 8 linkTemplate entries to visit (round 1 only)
   rationale: string; // ≤ 512 chars, logged, never executed or shown
 }
+type UnmappedReason =
+  // closed enum (r2); anything else is a V-L1 failure
+  | 'out_of_scope_billing'
+  | 'out_of_scope_account_settings'
+  | 'out_of_scope_ui_config'
+  | 'unsupported_coaching_data'
+  | 'unknown';
 ```
 
 No `apiBase`, no headers, no absolute URL, no method, no budgets, no manifest, no code, no
@@ -226,6 +249,10 @@ _*Validators that must accept before any source request (V-L*, backend, `src/sco
   (`src/scout/induction/manifest-registry.ts` L116) together with the spec and rules.
 - **V-L8** `explore` ⊆ `linkTemplates`, ≤ 8, same origin by construction.
 - **V-L9** package canonical JSON ≤ 64 KiB; `package_digest` = sha256 over it.
+- **V-L10 (r2, family-set closure)** every digest template with role `collection` appears exactly
+  once across `steps[].templateRef` ∪ `unmapped[].templateRef`; no ref in both, none missing, none
+  that is `single`/`refused`. The AI's `reason` is recorded as a claim; whether an exclusion
+  counts toward `complete` is decided only by the deterministic rule in D-L0-6.1 (i).
 - **Extension gate:** `normalizeBlueprint(compiled, {allowedOrigins:[authorized]})` before the
   first request (`blueprint.js` L393); a throw aborts the run as `failed/transfer_failed` with a
   stable code, zero requests made.
@@ -254,7 +281,7 @@ settle path after the claim):_*
 
 **Slug.** The canonical platform token of a learned source is the authorized origin's hostname,
 lower-case, as authorized (e.g. `app.example.io`); it satisfies `isCanonicalPlatform`
-(`scout-platform.ts` L2-8: `[a-z0-9._:-]`). File specs keep their own slugs (`truecoach`). A
+(`scout-platform.ts` L2-8: `[a-z0-9._:-]`). File specs keep their own slugs (`LO`'s). A
 white-label host is a distinct slug; reuse across hosts is by fingerprint (below).
 
 **Fingerprint.** `structure_fingerprint` = sha256 over the sorted set of
@@ -270,7 +297,7 @@ L168-182 as the copy source):**
 ScoutLearnedPlatform            -- global, tenant-free: structure only
   id uuid PK; source_platform text; structure_fingerprint char(64); version int;
   status text CHECK IN ('candidate','promoted','superseded','invalidated');
-  package jsonb (LearnedPackageV1: blueprint hints, mappingSpec, nativeRules|null, manifest);
+  package jsonb (LearnedPackageV1: blueprint hints, mappingSpec, nativeRules|null, manifest, closure (r2, D-L0-6.1 i));
   package_digest char(64); constant_headers jsonb; learned_at; promoted_at; invalidated_at; invalidation_reason text;
   UNIQUE (source_platform, structure_fingerprint, version); partial UNIQUE (source_platform) WHERE status='promoted'
 ScoutRunLearnedPackage          -- the run's pin: which version interpreted its rows
@@ -333,9 +360,9 @@ S10-D core-diff gate (`scripts/s10-core-diff-gate.sh`) stays green by constructi
 - **`complete`.** The S10 evaluator dispatches on `basis_kind` only (`src/scout/induction/verify.ts`
   L20, L371). The derived manifest has `basisKinds = {}` (never provable), so a learned source
   settles `partial/coverage_basis_unknown` at best, honestly, with every other predicate green.
-- **How a learned source earns a basis (gated on owner Q2, S10-DOC L476-478).** The only V1-viable
-  basis is extension-observed, because real platforms sign nothing and the server never holds
-  source credentials. If Q2 is answered yes, L3 appends `replay_terminal_enumeration` to
+- **How a learned source earns a basis (S10 Q2 = Q-L0-1, decided YES by D1 on 2026-09-28).** The
+  only V1-viable basis is extension-observed, because real platforms sign nothing and the server
+  never holds source credentials. L3 (now unblocked; depends on L2 only) appends `replay_terminal_enumeration` to
   `COMPLETENESS_BASIS_KINDS` (`src/scout/induction/contract.ts` L16; append-only): one evidence row
   per `(platform, scope, family)` uploaded via the existing `runs/observation` route
   (`observation.controller.ts` L137) stating that every collection step feeding the family reached
@@ -344,10 +371,70 @@ S10-D core-diff gate (`scripts/s10-core-diff-gate.sh`) stays green by constructi
   digest and count equal the staged side (E6) ⇒ `known: true, covers_staged_identities: true`;
   any budget stop, refused page, retry exhaustion or fan-out step short of its id set ⇒
   `known: false`. Negative cases: a truncated crawl, a mismatched digest, a family fed by a step
-  that hit `maxPagesPerStep`. Until Q2: `partial/coverage_basis_unknown`, shown by the Roman result
-  view as the server's reason (`M:ImportRunVerdictCard.tsx` L78 copy already exists).
+  that hit `maxPagesPerStep`. Until L3 lands: `partial/coverage_basis_unknown`, shown by the Roman
+  result view as the server's reason (`M:src/components/coach/ImportRunVerdictCard.tsx` L78 copy exists).
 - The Roman `complete` outcome (`M:ImportResultView.tsx` L23) renders only when the server status
   is `complete` (R1 adapter); nothing here adds a client-side path to it.
+
+### D-L0-6.1 (r2): what `complete` means
+
+Owner D1 (2026-09-28, verbatim): _"lets do complete to mean 'All past client and coaching records
+in this site are now in TGP'"_. A run may settle `complete` only when **all** of (i)-(iv) hold,
+read under interpretation (v); the AI never decides any of them. Anything short settles an honest
+`partial` with the gap named (`RUN_REASON_CODES` L50-60 unchanged).
+
+- **(i) Family-set closure.** Every digest template with role `collection` is accounted for
+  exactly once: a mapped step or an `unmapped` entry (V-L10). An `unmapped` entry counts toward
+  `complete` **only** if the deterministic, vendor-free rule below confirms it;
+  `unsupported_coaching_data`, `unknown` and every unconfirmed exclusion block `complete` and are
+  named to the coach via the existing `partial` reason detail (gap `learn_family_set_open`:
+  `templateRef`, claimed `reason`, rule `signals`; no new reason code or status field; R1 owns copy).
+  - **Exclusion rule `confirmExclusion(template, reason) → {confirmed, signals[]}`**: pure function
+    over the digest (`src/scout/learn/exclusion-rule.ts`), computed by the server at learn time
+    while the digest is in hand and stored in the package `closure` record. Inputs are structure
+    only: path tokens (split on `/`, `_`, `-`, camel-case; `:p` dropped), item key tokens and value
+    classes. Three signal classes per reason from a fixed English token table (data; no slug or
+    host; covered by the §3.1 metamorphic test):
+    - `out_of_scope_billing`: **P** a path token in {`billing`, `invoice(s)`, `payment(s)`,
+      `subscription(s)`, `charge(s)`, `refund(s)`, `payout(s)`, `pricing`, `plan(s)` with `price`};
+      **K** a key token in the same set or {`amount`, `currency`, `total`, `price`, `card`, `last4`};
+      **S** an `amount`/`total`/`price`-token key of `number` class **and** a `currency`-token key of
+      `string` class `text` with `lengthBucket ≤8` in the same object.
+    - `out_of_scope_account_settings`: **P** {`settings`, `preferences`, `notifications`,
+      `account`, `profile` with `settings`, `security`, `integrations`, `webhooks`}; **K** {`timezone`,
+      `locale`, `language`, `notification(s)`, `password`, `two_factor`, `api_key`, `webhook`};
+      **S** the collection's `lengthBucket` is `'1'` (a singleton "list") or no key has an id class.
+    - `out_of_scope_ui_config`: **P** {`ui`, `layout`, `theme`, `widget(s)`, `dashboard`,
+      `columns`, `views`, `filters`, `saved_filters`, `onboarding`, `tour`, `feature_flags`};
+      **K** {`theme`, `color`, `position`, `order`, `visible`, `collapsed`, `width`, `sort`, `pinned`};
+      **S** no `iso_date` class key and no `email_like`/`phone_like` class key anywhere in the item.
+    - **Confirmed** ⇔ at least **two** of P, K, S hold **and** the **veto** does not: the item shape
+      contains an `email_like` or `phone_like` class key, or a key token in {`client`, `athlete`,
+      `member`, `trainee`, `workout`, `exercise`, `program`, `session`, `checkin`, `habit`, `weight`,
+      `nutrition`, `message`, `note`, `first_name`, `last_name`, `full_name`} — a roster or coaching
+      family mislabelled as out-of-scope is never excluded. `unsupported_coaching_data` and `unknown`
+      are never confirmed. `signals` records which of P/K/S fired. Fixed data plus ≤ 120 LOC; a
+      token-table change is a reviewed core change, never per-site.
+- **(ii) Per-family coverage.** Every mapped family carries a `replay_terminal_enumeration` basis
+  with `known: true, covers_staged_identities: true` (L3 rule above). One family `known: false`
+  ⇒ `partial/coverage_basis_unknown`.
+- **(iii) Native reconstruction.** Every staged identity, including every child (exercise), is
+  natively present: S9 bucket **j** for the whole staged set (`staged_unique =
+native_present_verified`). Client-owned families therefore need S8-D3 and S8-E1a-d; exercises
+  need EX1 (exercise-reference resolution). Until those land a learned run settles honestly as
+  `partial` (`unresolved_identities` / `relationship_unverified`): expected, not a defect.
+- **(iv) Scope in time and status.** "Past" = records the site exposes to the coach at run time.
+  Archived or inactive client lists are in scope whenever the site exposes them: their collection
+  templates enter the digest like any other and (i) accounts for them. Nothing is back-filled from
+  exports or history the site does not show.
+- **(v) Payments (orchestrator interpretation; the owner may override).** Payments and billing
+  are **not** "coaching records": outside the promise (no canonical family, `families.ts`
+  L158-160), excluded via `out_of_scope_billing` when the rule confirms it, and disclosed in the
+  Roman result copy as "not imported: billing" (R1 owns wording). If the owner overrides, billing
+  becomes `unsupported_coaching_data` (blocks `complete`) until a family exists.
+
+Settle order: S9 reconcile (iii) → S10 evaluator (ii) with the pinned package's closure record (i;
+`null` = not known = blocks `complete`) → arbiter. No source name, no AI text in the evaluator.
 
 ### D-L0-7: the AI step — prompt, injection defence, limits, best model, fallback
 
@@ -380,8 +467,8 @@ rendered structure)`; test **L11** asserts the prompt's structure section equals
    (`proposal.ts` → `SourceMappingSpec` / `NativeRuleSet` / derived-manifest fields, D-L0-4) and
    is used twice: printed here and passed to the provider as the structured-output constraint
    (D-L0-7.2). One generator, one schema, no drift.
-4. **Examples.** ≤ 3 few-shot pairs (digest → proposal), structure only: the TrueCoach oracle
-   pair (`truecoach.json` + its capture fixture), `conformance_alpha`, and — once memory holds
+4. **Examples.** ≤ 3 few-shot pairs (digest → proposal), structure only: the `LO` oracle pair
+   (its `sources/*.json` + its capture fixture), `conformance_alpha`, and — once memory holds
    them — the most recent `promoted` package whose families overlap the current digest. Never a
    value, never client data (every example is itself a validated digest, D-L0-2).
 5. **Rules.** Refer to templates by `ref` only; paths must exist in the shape; targets only from
@@ -425,7 +512,7 @@ the injected bytes only inside part 6.
 | Per-call timeout         | 45 s                        | `SCOUT_LEARN_CALL_TIMEOUT_MS`                                                       | `learn_unavailable`                                               |
 | Learn phase wall clock   | 2:00 of the 5:00 run        | `SCOUT_LEARN_PHASE_MAX_MS`                                                          | `learning_budget_exhausted`                                       |
 | Per-coach daily calls    | 10                          | `SCOUT_LEARN_COACH_DAILY_CALLS`                                                     | `learning_budget_exhausted`                                       |
-| Global daily spend (USD) | 20, provisional (Q-L0-3)    | `SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD`                                                | `learn_unavailable`; alert                                        |
+| Global daily spend (USD) | 20, **PLACEHOLDER** (D3)    | `SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD`                                                | `learn_unavailable`; alert                                        |
 | Kill switch              | off                         | `SCOUT_LEARN_AI_ENABLED` + gateway `AI_GATEWAY_ENABLED` / `AI_GATEWAY_CAPABILITIES` | `learn_unavailable`                                               |
 
 Metering: each call's provider, model, input/output tokens, latency, price estimate and
@@ -437,6 +524,19 @@ zero AI calls** (D-L0-3 step 3): the promoted-package path never reaches the gat
 asserts it. These reason codes are stable strings carried in the terminal `reason_code` detail
 (`RUN_REASON_CODES` unchanged; the terminal code stays `transfer_failed`/`unresolved_family`).
 
+**Spend cap = PLACEHOLDER (owner D3, 2026-09-28) with a measurement duty.** The `=20` default
+stays until the real cost per site is known. Required: (a) every learn call records `usd_estimate`
+(configured model list price) in `AiRequestAudit.metadata`, and every learn run the per-run sum in
+`ScoutRunLearnedPackage.metering.usd_estimate` (D-L0-5; also on the `learned` event); (b) after the
+first real learns the operator reports observed cost per site (calls, tokens, USD, rounds) in the
+evidence repo; only then is a real cap proposed to the owner. **Per-attempt upper bound under the
+caps above:** 3 × 4 096 = 12 288 output tokens; the 60 000-token run cap then leaves ≈ 47 700
+(≈ 48k) input tokens (the 3 × 24 000 per-call input allowance is cut by the run cap). At Claude
+Fable 5.1 list price, $10 / $50 per MTok in / out
+([Claude Platform pricing](https://platform.claude.com/docs/en/about-claude/pricing), read
+2026-09-28): ≈ $0.48 + $0.61 ≈ **$1.10 per learn attempt** worst case, so $20 covers ≥ 18 worst-case
+first-time sites a day, and remembered sites cost nothing. Prices are config (`AI_PRICE_*`), never code.
+
 #### D-L0-7.4 Best model, eval harness, no silent downgrade
 
 - **Model from config.** `AI_MODEL_IMPORTER_MAPPING` names the model for capability
@@ -446,7 +546,7 @@ asserts it. These reason codes are stable strings carried in the terminal `reaso
   (`src/ai/coach/coach-ai.constants.ts` L14; `src/ai/adapters/anthropic.adapter.ts` L98) gains a
   per-request `model` override so the importer's choice is a config change, not a code change.
 - **Eval harness** `scripts/scout-learn-eval.ts` (L1) scores a candidate model on golden
-  fixtures: TrueCoach oracle parity (proposal ⇒ same family/identity set as `truecoach.json`),
+  fixtures: `LO` oracle parity (proposal ⇒ same family/identity set as `LO`'s `sources/*.json`),
   `conformance_alpha`/`beta` (C1-C4 pass), `s10_unseen` (no false native rule), the adversarial
   corpus (L13 outcome), plus token and latency cost. Output: a signed record
   `test/fixtures/scout/learn/eval/<model>.json` with the tuple `(model, promptTemplateVersion,
@@ -471,30 +571,41 @@ out of the route.
 ### D-L0-8: V1 proof and the oracle exit
 
 **V1** = one real coaching platform that no person has ever mapped (no file under
-`src/scout/**/sources/`, no extension registry entry, no host literal anywhere outside `legacy/`
-and tests), imported end to end from one Start press, on pinned SHAs of all three repos, with:
+`src/scout/**/sources/`, no extension registry entry, no host literal outside `legacy/` and tests),
+imported end to end from one Start press, on pinned SHAs of all three repos; per D2 it is the
+owner-chosen V1 pilot platform on the owner's own coaching account (name in evidence). **r2 splits
+V1 in two**: r1 item 4 was unreachable before L3, S8-D3, S8-E1a-d and EX1 land.
+
+**V1-P (partial proof; runs as soon as L2 and X3 land):**
 
 1. exactly one Start gesture after authorization and zero coach actions after it (`E#19` L125);
-2. `learned` event on the first run and `reused` (memory, no model call) on a second coach's run
-   or the same coach's second intent on that site;
-3. every staged family reconstructed to its destination (`clients` → Person; `programs`/`workouts`
-   native when C3 holds, else evidence with the gap named); operator-recorded source-visible
-   counts per family equal the reconstructed counts (and `families[].observed_unique` where known);
-4. terminal `complete` if Q2 is yes, else `partial` with `coverage_basis_unknown` as the **only**
-   reason; elapsed ≤ 5:00 from accepted Start to terminal;
-5. one forced structural failure (a template removed from the digest) settles non-success and
-   invalidates the candidate; replaying the intent creates no second native row;
-6. **oracle parity:** the same learned path on `app.truecoach.co` (its file spec and `legacy/`
-   blueprint disabled for the run) produces the same set of `(family, source_id)` and the same
-   Person `displayName`s as the quarantined oracle (`E:legacy/`, `truecoach.json`), compared by
-   emitted records and terminal counts, not text;
+2. `learned` event on the first run and `reused` (memory, no model call) on the same coach's second
+   intent on that site (a second coach's run where available);
+3. per-family counts: every staged family reconstructed to its destination (`clients` → Person;
+   `programs`/`workouts` native when C3 holds, else evidence with the gap named); operator-recorded
+   source-visible counts per family equal the reconstructed counts (and `families[].observed_unique`);
+4. terminal **`partial`** whose reasons come **only** from not-yet-landed native families or
+   coverage (`coverage_basis_unknown` before L3; `unresolved_identities`/`relationship_unverified`
+   before S8-D3/E1/EX1); never `unresolved_family` or a C1-C4 gap; elapsed ≤ 5:00 Start → terminal;
+5. **invalidation:** one forced structural failure (a template removed from the digest) settles
+   non-success and invalidates the candidate; replaying the intent creates no second native row;
+6. **oracle parity:** the same learned path on `LO`'s host (its file spec and `legacy/` blueprint
+   disabled for the run) produces the same set of `(family, source_id)` and the same Person
+   `displayName`s as `LO`, compared by emitted records and terminal counts, not text;
 7. **AI-step proof:** the configured model holds a passed eval record for the live
    `(promptTemplateVersion, contractHash, outputSchemaHash)` tuple, the adversarial corpus (L13)
-   is green in CI, and every V1 run's provenance names the model used and its token metering.
+   is green in CI, and every V1 run's provenance names the model used, its token metering and
+   `usd_estimate` (D-L0-7.3).
 
-**Exit (deletion slice, after V1):** delete `E:legacy/**` (the TrueCoach extractor, blueprint,
-API base, detect dispatch), `src/scout/reconstruct/sources/truecoach.json`, and shrink the
-vendor-name-guard allowlist to tests only. No deletion before parity is recorded.
+**V1-C (complete proof; after L3, S8-D3, S8-E1a-d and EX1 land):** the pilot platform settles
+**`complete`** under D-L0-6.1 (every exclusion rule-confirmed, every family `known: true`, bucket j
+for every staged identity including exercises, archived clients included where exposed); V1-P items
+1, 2, 5 and 7 re-run on the V1-C SHAs; the operator record names the excluded templates and the
+billing disclosure shown (D-L0-6.1 v).
+
+**Exit (deletion slice, after V1-P item 6 is recorded):** delete `E:legacy/**` (`LO` extractor,
+blueprint, API base, detect dispatch) and `LO`'s `src/scout/reconstruct/sources/*.json`, and shrink
+the vendor-name-guard allowlists to tests only. No deletion before parity is recorded.
 
 ### D-L0-9: slices (ordered; sized for reviewability and consequence; one writer per path)
 
@@ -502,21 +613,25 @@ All start **after** X1, R1 and the C2b-1 rescue land. "Parallel now" = can start
 landed trees, with X1's registry interface taken from its grant. The retired 400-line rule is not
 applied; a slice above ~1 000 hand-written prod LOC gets one structural challenge, noted inline.
 
-| Id  | Repo      | Grade | Scope (owned paths, new unless noted)                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Prod LOC | Depends on           | Parallel now |
-| --- | --------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------- | ------------ |
-| L1  | backend   | T4    | **The AI step.** `src/scout/learn/{digest-contract,proposal,package,fingerprint,prompt,learn-ai.service,learn.controller,learn.dto,learn.module}.ts`: V-L0…V-L9, derived manifest, `describeCanonicalContract` + `description` metadata on canonical definitions, schema generator, gateway capability `importer.mapping` (`responseSchema`, per-request `model`, metering), limits, fallbacks, `runs/learn` against a `LearnedStore` interface; `scripts/scout-learn-eval.ts`; adversarial corpus; OpenAPI regen | ~950     | none                 | yes          |
-| L2  | backend   | T4    | **Memory.** `prisma/schema.prisma` (three additive models), migration + down, `learned-store.service.ts` (implements L1's interface), `source-registry.provider.ts` replacing the seven construction sites (D-L0-5), `conformance.ts` C1-C4 in the settle path, promotion/invalidation in the `writeTerminal` transaction (`lifecycle.service.ts` L401-459 seam only); `test/rls-g2-learn.spec.ts`, `settle-promotion.pg.spec.ts` (parent-run PG)                                                                 | ~900     | L1 types             | after L1     |
-| X2  | extension | T2    | **Digest + compile.** `shared/learn/digest.js` (`StructureDigestV1`, value scrub, constant-header rule, link inventory) and `shared/learn/compile.js` (hints → `PlatformBlueprint` → `normalizeBlueprint`; `learned` factory in X1's registry); fixture tests                                                                                                                                                                                                                                                     | ~460     | C2b-1, X1            | yes          |
-| X3  | extension | T4    | **Server-mode learn path** in `background.js` (`handleStartImport` L835): `runs/start` with `import_intent_id`, `runs/declaration`, attach → reload → idle → inventory → digest → `runs/learn` → explore (≤ 8 URL navigations) → compile → replay → `ingest/complete` (replaces `imp-${Date.now()}` L878); stable error codes; popup status only, no Learn UI                                                                                                                                                     | ~580     | X1, X2, L1           | after L1     |
-| L3  | backend   | T4    | `replay_terminal_enumeration`: `contract.ts` append, `verify.ts` rule, `observation.dto.ts` variant, extension evidence upload (X3 addendum ≤ 80 LOC)                                                                                                                                                                                                                                                                                                                                                             | ~250     | L2, **owner Q2**     | blocked      |
-| V1  | all       | T4    | Proof only (D-L0-8, items 1-7): pinned SHAs, operator record, parity run, eval record; no product code                                                                                                                                                                                                                                                                                                                                                                                                            | 0        | L2, X3; L3 if Q2 yes | blocked      |
-| DEL | ext+back  | T3    | Delete `legacy/**`, `truecoach.json`, shrink guard allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                      | negative | V1 parity recorded   | blocked      |
+| Id   | Repo      | Grade                | Scope (owned paths, new unless noted)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Prod LOC             | Depends on                                 | Parallel now |
+| ---- | --------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------ | ------------ |
+| L1   | backend   | T4                   | **The AI step.** `src/scout/learn/{digest-contract,proposal,package,fingerprint,prompt,learn-ai.service,learn.controller,learn.dto,learn.module}.ts`: V-L0…V-L10 (r2: `unmapped` + closure), derived manifest, `describeCanonicalContract` + `description` metadata on canonical definitions, schema generator, gateway capability `importer.mapping` (`responseSchema`, per-request `model`, metering), limits, fallbacks, `runs/learn` against a `LearnedStore` interface; `scripts/scout-learn-eval.ts`; adversarial corpus; OpenAPI regen | ~950                 | none                                       | yes          |
+| L2   | backend   | T4                   | **Memory.** `prisma/schema.prisma` (three additive models), migration + down, `learned-store.service.ts` (implements L1's interface), `source-registry.provider.ts` replacing the seven construction sites (D-L0-5), `conformance.ts` C1-C4 in the settle path, promotion/invalidation in the `writeTerminal` transaction (`lifecycle.service.ts` L401-459 seam only); `test/rls-g2-learn.spec.ts`, `settle-promotion.pg.spec.ts` (parent-run PG)                                                                                             | ~900                 | L1 types                                   | after L1     |
+| X2   | extension | **T4** (r2; was T2)  | **Digest + compile.** T4 because the digest builder is the device-side PII boundary (D-L0-2): a value that leaks into the digest reaches the model. Lists every collection template (V-L10). `shared/learn/digest.js` (`StructureDigestV1`, value scrub, constant-header rule, link inventory) and `shared/learn/compile.js` (hints → `PlatformBlueprint` → `normalizeBlueprint`; `learned` factory in X1's registry); fixture tests                                                                                                          | ~460                 | C2b-1, X1                                  | yes          |
+| X3   | extension | T4                   | **Server-mode learn path** in `background.js` (`handleStartImport` L835): `runs/start` with `import_intent_id`, `runs/declaration`, attach → reload → idle → inventory → digest → `runs/learn` → explore (≤ 8 URL navigations) → compile → replay → `ingest/complete` (replaces `imp-${Date.now()}` L878); stable error codes; popup status only, no Learn UI                                                                                                                                                                                 | ~580                 | X1, X2, L1                                 | after L1     |
+| L3   | backend   | T4                   | `replay_terminal_enumeration`: `contract.ts` append, `verify.ts` rule, `observation.dto.ts` variant, closure evaluation input (`null` = not known), extension evidence upload (X3 addendum ≤ 80 LOC)                                                                                                                                                                                                                                                                                                                                          | ~250                 | L2 (r2: Q-L0-1 decided by D1)              | after L2     |
+| L1b  | backend   | T4                   | **Exclusion rule** (D-L0-6.1 i): `src/scout/learn/exclusion-rule.ts` token table + `confirmExclusion`, `closure` in `LearnedPackageV1`, gap `learn_family_set_open`; metamorphic and veto tests                                                                                                                                                                                                                                                                                                                                               | ~150                 | L1                                         | after L1     |
+| EX1  | backend   | T3 design → T4 build | **Exercise-reference resolution** (D-L0-6.1 iii): deterministic catalog link or coach-owned custom exercise with provenance; own record `docs/decisions/2026-09-28-ex1-exercise-resolution.md`                                                                                                                                                                                                                                                                                                                                                | design 0 / build TBD | S8-DOC exercise §§; S8-D3 for client-owned | design now   |
+| V1-P | all       | T4                   | **Partial proof** (D-L0-8 V1-P items 1-7): pinned SHAs, operator record, parity run, eval record, `usd_estimate` readings for D3; no product code                                                                                                                                                                                                                                                                                                                                                                                             | 0                    | L1b, L2, X3                                | after L2, X3 |
+| V1-C | all       | T4                   | **Complete proof** (D-L0-8 V1-C): pilot platform settles `complete` under D-L0-6.1                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 0                    | V1-P, L3, S8-D3, S8-E1a-d, EX1 build       | blocked      |
+| DEL  | ext+back  | T3                   | Delete `legacy/**` and `LO`'s `sources/*.json`, shrink guard allowlists                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | negative             | V1-P item 6 recorded                       | blocked      |
 
 Structural challenge, L1 (~950): **PROCEED.** The contract, prompt, schema generator, validators
 and eval harness are one source of truth (D-L0-7.1 item 2); splitting them would create the drift
 the record forbids. L2 (~900): **PROCEED.** Store, provider and promotion share the three tables
 and one transaction. L1's proof includes the adversarial corpus (L13), the eval harness on the
-oracle and conformance fixtures, and the hash-equality tests (L11, L12).
+oracle and conformance fixtures, and the hash-equality tests (L11, L12). X2 (r2) is T4 by
+consequence, not size: a digest that leaks a value defeats D-L0-2 for every later coach on the site.
 
 **Said NO to (not needed for V1):** a new run phase or status field (the phone keeps
 `discovering/transferring/reconciling`, `M:src/types/importRunStatus.ts` L55; the S12-B3 card and R1
@@ -526,14 +641,15 @@ DOM/SSR fallback; export ingestion; a deterministic guess path; value samples in
 coach-facing "learning" copy change (R1 owns copy; `finding` covers it); wiring the `openai` or
 `perplexity` provider stubs (a fallback model must first pass the eval); mobile picker changes
 (`custom` already exists); any change to `reconcile.ts`, `coverage.ts`, `arbiter.ts`,
-`reason-codes.ts` or `RUN_REASON_CODES`.
+`reason-codes.ts` or `RUN_REASON_CODES` (r2: D-L0-6.1 keeps this; closure gaps ride the existing
+`partial` detail); a human review step before promotion (Q-L0-7).
 
 ## 3. Invariants asserted by L-specs (S7-L to S12 invariants unchanged)
 
 1. **NEW SOURCE → CORE DIFF = 0:** after L2, a learned site adds rows only; the S10-D gate over
    `src/` is byte-clean; no slug or host literal enters `src/scout/learn/*.ts` or
    `shared/learn/*.js` (metamorphic test: renaming the fixture slug gives identical output).
-2. **AI returns data only:** every model reply passes V-L1…V-L9 or is refused; no string from a
+2. **AI returns data only:** every model reply passes V-L1…V-L10 or is refused; no string from a
    reply is ever a URL, a header, a selector or code; `apiBase`, method and headers are never
    model output.
 3. **Credentials never learned or sent:** the digest and package fixtures contain no
@@ -554,21 +670,25 @@ coach-facing "learning" copy change (R1 owns copy; `finding` covers it); wiring 
    untrusted block; the prompt's structure section and output schema are byte-derived from the
    contract; the model used, tokens and prompt/contract hashes are in every run's provenance; a
    model without a passed eval record is never called; a remembered site makes zero model calls.
+10. **Closure is deterministic (r2):** no path lets an AI `reason` alone count a template as excluded;
+    `confirmExclusion` is a pure function over the digest with a fixed token table; a `null` or open
+    closure record blocks `complete`; the veto list beats every positive signal.
 
 ## 4. Acceptance cases (fixed; numbering continues S11's J-cases as L-cases)
 
-- **L01 (L1)** valid digest + proposal fixture → package; one refusing case per V-L0…V-L9,
+- **L01 (L1)** valid digest + proposal fixture → package; one refusing case per V-L0…V-L10,
   including a `templateRef` with role `single`, an `idField` of class `text`, a path not in the
-  shape, a step token missing from `steps`, an absolute URL, an extra key, a 65 KiB package.
+  shape, a step token missing from `steps`, an absolute URL, an extra key, a 65 KiB package, a
+  collection template in neither `steps` nor `unmapped`, one in both, an `unmapped` reason outside the enum.
 - **L02 (L1)** fingerprint is order-independent, ignores ids and values, changes when a
   collection template or its item keys change; byte-equal to the extension fixture.
-- **L03 (X2)** digest of the TrueCoach capture fixture and of `conformance_alpha` contains no
+- **L03 (X2)** digest of the `LO` capture fixture and of `conformance_alpha` contains no
   value, id, email, name or header value outside the constant-header rule; link text absent.
-- **L04 (X2)** compiled TrueCoach-learned blueprint passes `normalizeBlueprint` and drives the
+- **L04 (X2)** compiled `LO`-learned blueprint passes `normalizeBlueprint` and drives the
   fixture replay to the same `(entityType, sourceId)` set as `legacy/` (parity in fixtures).
 - **L05 (L2, PG)** RLS/REVOKE posture as R31; `candidate` invisible to another coach's lookup;
   one `promoted` per slug; version uniqueness; down refuses with rows.
-- **L06 (L2)** all seven sites resolve a run-pinned learned slug and still resolve `truecoach`
+- **L06 (L2)** all seven sites resolve a run-pinned learned slug and still resolve `LO`'s slug
   and the synthetic specs; a slug in both file and memory throws at construction; a run with no
   pin sees exactly the file registry (byte-identical S11 lane results, 133/133).
 - **L07 (L1)** memory hit ⇒ no gateway call; provider timeout/500/non-conforming ⇒
@@ -581,49 +701,66 @@ coach-facing "learning" copy change (R1 owns copy; `finding` covers it); wiring 
 - **L09 (X3)** Start with unknown origin → server-mode run → learn → replay → complete, in the
   extension test harness against a fixture server; denial, non-https, `learn_unavailable` and
   normalizer throw each settle truthfully with zero source requests.
-- **L10 (V1)** D-L0-8 items 1-7 recorded on pinned SHAs.
+- **L10a (V1-P)** D-L0-8 V1-P items 1-7 recorded on pinned SHAs; **L10b (V1-C)** `complete` under
+  D-L0-6.1 recorded on pinned SHAs with the closure record and per-family bases attached.
 - **L11 (L1)** prompt structure section == `describeCanonicalContract()` output (hash equality);
   adding a canonical field description changes `contractHash` and the prompt with no other edit.
 - **L12 (L1)** a live tuple without a passed eval record refuses to configure the model; the
   harness on the stub provider produces a deterministic record.
 - **L13 (L1)** adversarial corpus: every item ⇒ refusal or clean-baseline-identical proposal;
   injected bytes appear in the captured prompt only inside the untrusted block.
+- **L14 (L1b)** exclusion rule: a billing-shaped template (P+K+S) is confirmed; a roster template
+  whose path says `billing` but whose items carry `email_like` is vetoed; `unknown` and
+  `unsupported_coaching_data` are never confirmed; renaming the fixture slug and host changes
+  nothing (metamorphic); a package with a `null` closure never evaluates `complete` (with L3).
 
 ## 5. Not decided (deferred; not owner-reserved)
 
 Cross-host fingerprint reuse; multi-scope platforms (S10 E6 attribution); enum value sampling under
-a k-anonymity rule; learning from official exports; DOM/table evidence; a learned-package review
-surface for the owner; retention of `ScoutLearnedPlatformEvent` (follows S10 Q3); canonical family
-expansion (billing stays absent, `families.ts` L158-160).
+a k-anonymity rule; learning from official exports; DOM/table evidence; a read-only owner
+observability view of promoted packages (not a gate, Q-L0-7); canonical family expansion (billing
+stays absent, `families.ts` L158-160; owner may override D-L0-6.1 v); extending the exclusion
+token table (reviewed core change).
 
-## 6. Owner-reserved questions (recorded, never assumed)
+## 6. Owner-reserved questions (r2 status: decided, resolved, defaulted, or still reserved)
 
-- **Q-L0-1 (= S10 Q2, S11 Q-S11-4).** May an extension-observed `replay_terminal_enumeration`
-  basis back a customer-visible `complete` for learned sources? Without it V1 ends `partial`.
-- **Q-L0-2 (live source account).** Which never-hand-mapped platform and whose account is the V1
-  source, with written consent for the coach's client data? `M:constants/importPlatforms.ts`
-  L25-27 lists candidates; this record picks none.
-- **Q-L0-3 (provider account and spend).** Which provider account/key backs `importer.mapping`
-  (today only `ANTHROPIC_API_KEY` is wired), and the default `SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD`
-  cap. A new provider is a new data-processing counterparty for structure digests.
-- **Q-L0-4 (production flags).** `AI_GATEWAY_ENABLED`, `AI_GATEWAY_CAPABILITIES` including
-  `importer.mapping`, `AI_MODEL_IMPORTER_MAPPING`, `SCOUT_LEARN_*` (D-L0-7.3) and the existing
-  `FEATURE_SCOUT_*` and pilot allowlist values in production.
-- **Q-L0-5 (Chrome Web Store).** X1 moves the extension to `optional_host_permissions:
-["https://*/*"]` requested at Start. Web Store review treats broad optional host access as
-  elevated: a justification is required, review time lengthens, and a rejection or a demand for a
-  static host list would reintroduce a vendor list. Publishing, the listing text and the
-  permission justification are owner-reserved.
-- **Q-L0-6 (= S11 Q-S11-2).** NS's "zero routine coach actions" implies the extension automates
-  declaration, claim and (with Q-L0-1) evidence upload (X3). Confirm that NS resolves Q-S11-2.
-- **Q-L0-7 (global memory).** A structure learned from coach A's account is reused for coach B.
-  The stored package holds structure only (D-L0-5). Confirm this cross-tenant reuse of structure is
-  acceptable, and whether the owner wants a review step before a `promoted` package serves others.
-- **Q-L0-8 (retention).** Retention for the learn tables and the `refused` events (structure
-  only), alongside S10 Q3.
+- **Q-L0-1 (= S10 Q2, S11 Q-S11-4) — DECIDED by D1 (2026-09-28).** An extension-observed
+  `replay_terminal_enumeration` basis may back `complete`, under D-L0-6.1. L3 is unblocked.
+- **Q-L0-2 (live source account) — DECIDED by D2 (2026-09-28).** The V1 source is the
+  owner-chosen V1 pilot platform (recorded in evidence) on the owner's own coaching account, so
+  consent is the owner's own. The name appears only where `.vendor-name-guard.json` allows.
+- **Q-L0-3 (provider account and spend) — DECIDED 2026-09-27 and by D3 (2026-09-28).** Provider:
+  Anthropic's top model from config, behind the eval gate, no silent downgrade (D-L0-7.4). Key:
+  `ANTHROPIC_API_KEY` = NEEDED BY USER; none exists, so no paid call is made and every lane uses the
+  stub provider. Cap: `SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD=20` PLACEHOLDER + measurement duty (D-L0-7.3).
+- **Q-L0-4 (production flags) — flags APPROVED pre-user on 2026-09-27** (`AI_GATEWAY_ENABLED`,
+  `AI_GATEWAY_CAPABILITIES` incl. `importer.mapping`, `AI_MODEL_IMPORTER_MAPPING`, `SCOUT_LEARN_*`,
+  `FEATURE_SCOUT_*`, pilot allowlist). **Deploy** still needs separate owner approval (§7).
+- **Q-L0-5 (Chrome Web Store) — STILL OWNER-RESERVED; does not block building.** X1's
+  `optional_host_permissions: ["https://*/*"]` is elevated access for Web Store review
+  (justification, longer review, risk of a static-host-list demand that would reintroduce a vendor
+  list). Publishing, listing text and the permission justification stay with the owner.
+- **Q-L0-6 (= S11 Q-S11-2) — RESOLVED by NS.** One Start and zero routine coach actions: the
+  extension automates declaration, claim and evidence upload (X3). Q-S11-2 is closed by NS.
+- **Q-L0-7 (global memory) — RESOLVED by NS ("Remembers ... The next coach on that site starts
+  instantly"; "No human ever writes platform-specific work again").** Structure-only packages are
+  reused across coaches with **no** human review step before promotion: a per-source review is a
+  one-off support operation NS forbids. Promotion stays the deterministic gate (D-L0-5).
+- **Q-L0-8 (retention) — DEFAULTED (principled, reversible), not owner-decided.**
+  `ScoutLearnedPlatform`: kept while `promoted`; `superseded`/`invalidated` versions kept 180 days
+  after the transition, then deleted, unless still pinned by a run inside its own retention (the
+  pin is the run's interpretation, D-L0-5). `ScoutRunLearnedPackage` follows its parent run (S7-L
+  tombstoning; the FK cascade is referential cleanup only). `ScoutLearnedPlatformEvent`, including
+  `refused` (validator codes only), follows S10 Q3. Rationale: structure only, no personal data, so
+  the default favours auditability of the memory that shaped imports. Reversible by config
+  (`SCOUT_LEARN_RETIRED_VERSION_RETENTION_DAYS`) or a delete-by-status job.
 
-## 7. Release boundary
+## 7. Release boundary and V1 preconditions
 
-A local contract for L1-L3, X2-X3 and the V1 proof. Passing L01-L13 proves candidate behaviour
-only. Grants, PG slots and reviews are parent decisions; deployment, flags, customer enablement,
-Web Store publishing and any `main` merge stay owner-reserved (S7L-DOC L284-286).
+A local contract for L1-L3, L1b, X2-X3, EX1 and the V1-P/V1-C proofs. Passing L01-L14 proves
+candidate behaviour only. Grants, PG slots and reviews are parent decisions; deployment, flags,
+customer enablement, Web Store publishing and any `main` merge stay owner-reserved (S7L-DOC
+L284-286). **V1 preconditions (list only; no action is taken here):** (1) owner deploy approval
+for the Q-L0-4 flags; (2) the provider key provided by the owner (NEEDED BY USER); (3) credential
+rotation before real client data enters production — an accepted pre-user risk that ends at the
+pilot; nothing about the secret is described here.
