@@ -1,7 +1,9 @@
 import type { CanonicalFamily } from '../../src/scout/reconstruct/mapping-spec';
-import type { InductionManifestV1 } from '../../src/scout/induction/contract';
 import { canonicalJson, sha256Hex } from '../../src/scout/induction/digest';
-import type { InductionRegistry } from '../../src/scout/induction/manifest-registry';
+import type {
+  InductionPackage,
+  InductionRegistry,
+} from '../../src/scout/induction/manifest-registry';
 
 // S10-B synthetic fixtures (unit specs + the real-PG worker). Every value is synthetic: platform
 // slugs, scope digests and statements are generated here and name no real source, coach or client.
@@ -61,7 +63,7 @@ export function rawEvidence(spec: EvidenceSpec = {}): Record<string, unknown> {
 export function syntheticRegistry(
   platforms: Readonly<Record<string, readonly CanonicalFamily[]>>,
 ): InductionRegistry {
-  const packages = new Map<string, { manifest: InductionManifestV1; specDigest: string }>();
+  const packages = new Map<string, InductionPackage>();
   const specFamilies = new Map<string, readonly CanonicalFamily[]>();
   for (const [platform, families] of Object.entries(platforms)) {
     const sorted = [...families].sort();
@@ -83,6 +85,8 @@ export function syntheticRegistry(
         nativeRules: 'absent',
       },
       specDigest: SPEC_DIGEST,
+      // Synthetic packages carry no mapping spec, so no family has replay steps.
+      stepsByFamily: new Map(),
     });
     specFamilies.set(platform, sorted);
   }

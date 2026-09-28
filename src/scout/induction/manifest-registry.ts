@@ -84,6 +84,11 @@ export interface InductionPackage {
   readonly manifest: InductionManifestV1;
   /** sha256 of the loaded mapping spec's canonical JSON (E3 `mapping_spec_digest`). */
   readonly specDigest: string;
+  /**
+   * L3: the mapping spec's step keys per canonical family (`spec.steps` inverted, sorted). The
+   * `replay_terminal_enumeration` rule requires a terminal for every step feeding the family.
+   */
+  readonly stepsByFamily: ReadonlyMap<CanonicalFamily, readonly string[]>;
 }
 
 export interface InductionRegistry {
@@ -101,6 +106,21 @@ export interface InductionRegistryInput {
 
 function familyKeys(families: object): CanonicalFamily[] {
   return Object.keys(families).filter(isCanonicalFamily).sort(byteOrder);
+}
+
+/** `spec.steps` inverted: family → its step keys, sorted bytewise (L3 replay step cross-check). */
+export function stepsByFamily(
+  spec: SourceMappingSpec,
+): ReadonlyMap<CanonicalFamily, readonly string[]> {
+  const out = new Map<CanonicalFamily, string[]>();
+  for (const [step, family] of Object.entries(spec.steps)) {
+    if (!isCanonicalFamily(family)) continue;
+    const list = out.get(family) ?? [];
+    list.push(step);
+    out.set(family, list);
+  }
+  for (const list of out.values()) list.sort(byteOrder);
+  return out;
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -168,7 +188,10 @@ export function buildInductionRegistry(input: InductionRegistryInput): Induction
     }
     const specDigest = mappingSpecDigest(spec);
     if (specDigest === null) throw new Error(`mapping spec for ${platform} is not canonical JSON`);
-    packages.set(platform, Object.freeze({ manifest, specDigest }));
+    packages.set(
+      platform,
+      Object.freeze({ manifest, specDigest, stepsByFamily: stepsByFamily(spec) }),
+    );
   }
   return Object.freeze({ packages, specFamilies });
 }

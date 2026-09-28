@@ -37,6 +37,7 @@ import {
   loadInductionManifests,
 } from '../../../src/scout/induction/manifest-registry';
 import { canonicalJson, mappingSpecDigest } from '../../../src/scout/induction/digest';
+import { reviewedPackageClosures } from '../../../src/scout/induction/closure';
 import { evaluateCoverage, type StoredObservation } from '../../../src/scout/induction/verify';
 import {
   ReconciliationFactsService,
@@ -175,6 +176,7 @@ function coverage(
     },
     registry,
     observations,
+    closure: reviewedPackageClosures(registry),
     staged: stagedPlatformFacts(
       mappers,
       rows.map((r) => ({

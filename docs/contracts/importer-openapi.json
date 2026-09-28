@@ -1330,9 +1330,17 @@
             "type": "string"
           },
           "basis_kind": {
+            "description": "Discriminator: selects which of the kind-specific fields below are required.",
             "enum": [
-              "source_signed_enumeration"
+              "source_signed_enumeration",
+              "replay_terminal_enumeration"
             ],
+            "type": "string"
+          },
+          "challenge_b64": {
+            "description": "replay_terminal_enumeration only: the run’s declaration challenge (RFC 4648 §4 base64 of 32 bytes).",
+            "maxLength": 44,
+            "minLength": 44,
             "type": "string"
           },
           "evidence_version": {
@@ -1350,7 +1358,13 @@
             ],
             "type": "string"
           },
+          "id_set_digest": {
+            "description": "replay_terminal_enumeration only: the D-S10-2 identity-set digest of those ids (sha256 over the bytewise-sorted, length-prefixed distinct ids).",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "key_id": {
+            "description": "source_signed_enumeration only.",
             "pattern": "^[a-z0-9._-]{1,64}$",
             "type": "string"
           },
@@ -1358,8 +1372,13 @@
             "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
+          "observed_unique": {
+            "description": "replay_terminal_enumeration only: distinct source ids the crawl observed for the family.",
+            "minimum": 0,
+            "type": "number"
+          },
           "signature_b64": {
-            "description": "Canonical base64 of the 64-byte Ed25519 source signature.",
+            "description": "source_signed_enumeration only: canonical base64 of the 64-byte Ed25519 source signature.",
             "type": "string"
           },
           "source_platform": {
@@ -1367,8 +1386,17 @@
             "type": "string"
           },
           "statement_b64": {
-            "description": "Canonical base64 of the strict canonical JSON source statement.",
+            "description": "source_signed_enumeration only: canonical base64 of the strict canonical JSON source statement.",
             "type": "string"
+          },
+          "steps": {
+            "description": "replay_terminal_enumeration only: one terminal per collection step the pinned spec maps to the family.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunReplayStepTerminalSchema"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
           }
         },
         "required": [
@@ -1377,10 +1405,7 @@
           "account_scope_id_digest",
           "family",
           "basis_kind",
-          "mapping_spec_digest",
-          "statement_b64",
-          "key_id",
-          "signature_b64"
+          "mapping_spec_digest"
         ],
         "type": "object"
       },
@@ -1411,6 +1436,67 @@
           "execution_epoch",
           "stored",
           "replayed"
+        ],
+        "type": "object"
+      },
+      "ScoutRunReplayStepTerminalSchema": {
+        "properties": {
+          "fan_out": {
+            "description": "null for a root collection; a fan-out step reports {expected, fetched} and must have fetched every expected page.",
+            "nullable": true,
+            "properties": {
+              "expected": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "fetched": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "max_pages": {
+            "description": "The maxPagesPerStep budget in force.",
+            "minimum": 1,
+            "type": "number"
+          },
+          "pages_fetched": {
+            "description": "Pages fetched; must stay below max_pages.",
+            "minimum": 0,
+            "type": "number"
+          },
+          "refused_pages": {
+            "description": "Pages the source refused; must be 0.",
+            "minimum": 0,
+            "type": "number"
+          },
+          "step": {
+            "description": "The pinned mapping spec's step key feeding the family (or the family token for a canonical-token collection). Never a URL.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stop": {
+            "description": "How the step stopped. Only short_page and absent_next are pagination terminals; any other stop is a truncated crawl and never proves.",
+            "enum": [
+              "short_page",
+              "absent_next",
+              "budget_stop",
+              "refused_page",
+              "retry_exhausted",
+              "aborted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "stop",
+          "pages_fetched",
+          "max_pages",
+          "refused_pages",
+          "fan_out"
         ],
         "type": "object"
       },

@@ -1179,19 +1179,56 @@ describe('importer contract (R80 freeze)', () => {
         minItems: 1,
         items: { $ref: '#/components/schemas/ScoutRunObservationEvidenceSchema' },
       });
+      // L3: a data-only union discriminated by basis_kind; the six common keys are required, the
+      // kind-specific tails are optional here and enforced strictly by the server parser.
       expect(Object.keys(props('ScoutRunObservationEvidenceSchema')).sort()).toEqual([
         'account_scope_id_digest',
         'basis_kind',
+        'challenge_b64',
         'evidence_version',
         'family',
+        'id_set_digest',
         'key_id',
         'mapping_spec_digest',
+        'observed_unique',
         'signature_b64',
         'source_platform',
         'statement_b64',
+        'steps',
+      ]);
+      expect(schema('ScoutRunObservationEvidenceSchema').required).toEqual([
+        'evidence_version',
+        'source_platform',
+        'account_scope_id_digest',
+        'family',
+        'basis_kind',
+        'mapping_spec_digest',
       ]);
       expect(rec(props('ScoutRunObservationEvidenceSchema').basis_kind).enum).toEqual([
         'source_signed_enumeration',
+        'replay_terminal_enumeration',
+      ]);
+      expect(rec(props('ScoutRunObservationEvidenceSchema').steps)).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        maxItems: 16,
+        items: { $ref: '#/components/schemas/ScoutRunReplayStepTerminalSchema' },
+      });
+      expect(Object.keys(props('ScoutRunReplayStepTerminalSchema')).sort()).toEqual([
+        'fan_out',
+        'max_pages',
+        'pages_fetched',
+        'refused_pages',
+        'step',
+        'stop',
+      ]);
+      expect(rec(props('ScoutRunReplayStepTerminalSchema').stop).enum).toEqual([
+        'short_page',
+        'absent_next',
+        'budget_stop',
+        'refused_page',
+        'retry_exhausted',
+        'aborted',
       ]);
       const result = props('ScoutRunObservationResult');
       expect(Object.keys(result).sort()).toEqual([

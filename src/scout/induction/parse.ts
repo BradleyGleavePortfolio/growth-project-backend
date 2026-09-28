@@ -15,20 +15,31 @@ import {
   OBSERVED_UNIQUE_MAX,
   PROVING_BASIS_KINDS,
   PUBLIC_KEY_BYTES,
+  REPLAY_EVIDENCE_KEYS,
+  REPLAY_FAN_OUT_KEYS,
+  REPLAY_MAX_STEPS,
+  REPLAY_STEP_KEYS,
+  REPLAY_STEP_STOPS,
+  REPLAY_STEP_TOKEN_MAX_BYTES,
   SIGNATURE_BYTES,
   STATEMENT_KEYS,
   STATEMENT_MAX_BYTES,
   VERIFIER_ALGORITHM,
+  VERIFIER_BOUND_BASIS_KINDS,
   VERIFIER_KEYS,
   type ArtifactRejection,
   type InductionManifestV1,
   type InductionVerifierV1,
-  type ObservationEvidenceV1,
   type ParseResult,
   type ProvingBasisKind,
+  type ReplayFanOutV1,
+  type ReplayStepStop,
+  type ReplayStepTerminalV1,
+  type ReplayTerminalEvidenceV1,
   type SourceEnumerationStatementV1,
+  type SourceSignedEvidenceV1,
 } from './contract';
-import { canonicalJson } from './digest';
+import { canonicalJson, isWellFormedString } from './digest';
 
 // S10-A — strict parsers. Untrusted artifacts (statement, evidence) return a
 // `ParseResult` and never throw (D-S10-2 "Signed-artifact encoding"). The repository manifest
@@ -62,7 +73,7 @@ export function isHex64(value: unknown): value is string {
   return typeof value === 'string' && HEX64_PATTERN.test(value);
 }
 
-function isProvingBasisKind(value: unknown): value is ProvingBasisKind {
+export function isProvingBasisKind(value: unknown): value is ProvingBasisKind {
   return typeof value === 'string' && (PROVING_BASIS_KINDS as readonly string[]).includes(value);
 }
 
@@ -185,19 +196,89 @@ export function parseStatementBytes(bytes: Uint8Array): ParseResult<ParsedStatem
 
 // ── ObservationEvidenceV1 ───────────────────────────────────────────────────────────────
 
-export interface ParsedEvidence {
-  readonly evidence: ObservationEvidenceV1;
+/** A parsed `source_signed_enumeration` evidence object (S10-A). */
+export interface ParsedSourceSignedEvidence {
+  readonly basis_kind: 'source_signed_enumeration';
+  readonly evidence: SourceSignedEvidenceV1;
   /** The decoded canonical statement bytes: the exact Ed25519 message (never the base64 text). */
   readonly statementBytes: Buffer;
   readonly parsedStatement: ParsedStatement;
   readonly signature: Buffer;
 }
 
-/** Validate one uploaded or stored evidence object (D-S10-2). Never throws. */
+/** A parsed `replay_terminal_enumeration` evidence object (L3). */
+export interface ParsedReplayTerminalEvidence {
+  readonly basis_kind: 'replay_terminal_enumeration';
+  readonly evidence: ReplayTerminalEvidenceV1;
+  /** The decoded 32-byte declaration challenge the evidence claims to be bound to. */
+  readonly challenge: Buffer;
+}
+
+/** One stored or uploaded evidence object, discriminated by `basis_kind`. */
+export type ParsedEvidence = ParsedSourceSignedEvidence | ParsedReplayTerminalEvidence;
+
+const REPLAY_KIND = 'replay_terminal_enumeration' as const;
+
+function isNonNegativeInt(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= OBSERVED_UNIQUE_MAX
+  );
+}
+
+function isReplayStepStop(value: unknown): value is ReplayStepStop {
+  return typeof value === 'string' && (REPLAY_STEP_STOPS as readonly string[]).includes(value);
+}
+
+/** One `ReplayStepTerminalV1`: strict keys, closed stop, bounded integers, optional fan-out. */
+function parseReplayStep(raw: unknown): ParseResult<ReplayStepTerminalV1> {
+  const obj = asObject(raw);
+  if (obj === null) return reject('bad_step');
+  const keys = keyRejection(obj, REPLAY_STEP_KEYS);
+  if (keys !== null) return reject(keys);
+  const step = obj.step;
+  if (typeof step !== 'string' || step.length === 0 || !isWellFormedString(step)) {
+    return reject('bad_step');
+  }
+  if (Buffer.byteLength(step, 'utf8') > REPLAY_STEP_TOKEN_MAX_BYTES) return reject('too_large');
+  if (!isReplayStepStop(obj.stop)) return reject('bad_terminal');
+  if (!isNonNegativeInt(obj.pages_fetched)) return reject('bad_count');
+  if (!isNonNegativeInt(obj.max_pages) || obj.max_pages < 1) return reject('bad_count');
+  if (!isNonNegativeInt(obj.refused_pages)) return reject('bad_count');
+  let fanOut: ReplayFanOutV1 | null = null;
+  if (obj.fan_out !== null) {
+    const fan = asObject(obj.fan_out);
+    if (fan === null) return reject('bad_step');
+    const fanKeys = keyRejection(fan, REPLAY_FAN_OUT_KEYS);
+    if (fanKeys !== null) return reject(fanKeys);
+    if (!isNonNegativeInt(fan.expected) || !isNonNegativeInt(fan.fetched)) {
+      return reject('bad_count');
+    }
+    fanOut = Object.freeze({ expected: fan.expected, fetched: fan.fetched });
+  }
+  return {
+    ok: true,
+    value: Object.freeze({
+      step,
+      stop: obj.stop,
+      pages_fetched: obj.pages_fetched,
+      max_pages: obj.max_pages,
+      refused_pages: obj.refused_pages,
+      fan_out: fanOut,
+    }),
+  };
+}
+
+/** Validate one uploaded or stored evidence object (D-S10-2; L3 variant). Never throws. */
 export function parseEvidence(raw: unknown): ParseResult<ParsedEvidence> {
   const obj = asObject(raw);
   if (obj === null) return reject('not_object');
-  const keys = keyRejection(obj, EVIDENCE_KEYS);
+  // The key set follows the claimed kind; an unknown kind is checked against the S10-A shape so
+  // the R21 rejection order (keys, version, digests, family, kind) is unchanged.
+  const replay = obj.basis_kind === REPLAY_KIND;
+  const keys = keyRejection(obj, replay ? REPLAY_EVIDENCE_KEYS : EVIDENCE_KEYS);
   if (keys !== null) return reject(keys);
   if (obj.evidence_version !== 1) return reject('bad_version');
   if (!isCanonicalPlatform(obj.source_platform)) return reject('bad_platform');
@@ -205,6 +286,44 @@ export function parseEvidence(raw: unknown): ParseResult<ParsedEvidence> {
   if (!isCanonicalFamily(obj.family)) return reject('bad_family');
   if (!isProvingBasisKind(obj.basis_kind)) return reject('unknown_basis_kind');
   if (!isHex64(obj.mapping_spec_digest)) return reject('bad_digest');
+  const common = {
+    evidence_version: 1 as const,
+    source_platform: obj.source_platform,
+    account_scope_id_digest: obj.account_scope_id_digest,
+    family: obj.family,
+    mapping_spec_digest: obj.mapping_spec_digest,
+  };
+
+  if (obj.basis_kind === REPLAY_KIND) {
+    if (typeof obj.challenge_b64 !== 'string') return reject('bad_base64');
+    const challenge = decodeBase64Strict(obj.challenge_b64);
+    if (challenge === null) return reject('bad_base64');
+    if (challenge.length !== CHALLENGE_BYTES) return reject('bad_length');
+    if (!Array.isArray(obj.steps) || obj.steps.length === 0) return reject('bad_step');
+    if (obj.steps.length > REPLAY_MAX_STEPS) return reject('too_large');
+    const steps: ReplayStepTerminalV1[] = [];
+    const seen = new Set<string>();
+    for (const item of obj.steps as readonly unknown[]) {
+      const parsed = parseReplayStep(item);
+      if (!parsed.ok) return parsed;
+      // A step reported twice is a contradiction, never a stronger statement.
+      if (seen.has(parsed.value.step)) return reject('bad_step');
+      seen.add(parsed.value.step);
+      steps.push(parsed.value);
+    }
+    if (!isNonNegativeInt(obj.observed_unique)) return reject('bad_count');
+    if (!isHex64(obj.id_set_digest)) return reject('bad_digest');
+    const evidence: ReplayTerminalEvidenceV1 = Object.freeze({
+      ...common,
+      basis_kind: REPLAY_KIND,
+      challenge_b64: obj.challenge_b64,
+      steps: Object.freeze(steps),
+      observed_unique: obj.observed_unique,
+      id_set_digest: obj.id_set_digest,
+    });
+    return { ok: true, value: { basis_kind: REPLAY_KIND, evidence, challenge } };
+  }
+
   if (typeof obj.key_id !== 'string' || !KEY_ID_PATTERN.test(obj.key_id)) {
     return reject('bad_key_id');
   }
@@ -219,20 +338,22 @@ export function parseEvidence(raw: unknown): ParseResult<ParsedEvidence> {
   const parsedStatement = parseStatementBytes(statementBytes);
   if (!parsedStatement.ok) return parsedStatement;
 
-  const evidence: ObservationEvidenceV1 = Object.freeze({
-    evidence_version: 1,
-    source_platform: obj.source_platform,
-    account_scope_id_digest: obj.account_scope_id_digest,
-    family: obj.family,
-    basis_kind: obj.basis_kind,
-    mapping_spec_digest: obj.mapping_spec_digest,
+  const evidence: SourceSignedEvidenceV1 = Object.freeze({
+    ...common,
+    basis_kind: 'source_signed_enumeration',
     statement_b64: obj.statement_b64,
     key_id: obj.key_id,
     signature_b64: obj.signature_b64,
   });
   return {
     ok: true,
-    value: { evidence, statementBytes, parsedStatement: parsedStatement.value, signature },
+    value: {
+      basis_kind: 'source_signed_enumeration',
+      evidence,
+      statementBytes,
+      parsedStatement: parsedStatement.value,
+      signature,
+    },
   };
 }
 
@@ -345,7 +466,8 @@ interface ParsedManifest {
 /**
  * Validate an opaque JSON value as an `InductionManifestV1`: V1 strict keys, version 1, canonical
  * slug; V4 `basisKinds` keys equal `expectedFamilies`, values unique proving kinds; V5 verifiers
- * valid with unique `key_id`s and at least one when any family lists a kind. The file-name and
+ * valid with unique `key_id`s and at least one when any family lists a verifier-bound kind. The
+ * file-name and
  * cross-artifact rules (V1 name, V2, V3, V6) live in `manifest-registry.ts`. A TEST-ONLY marker
  * (S12-B2) is validated and removed; the result is the same manifest without it.
  */
@@ -404,7 +526,7 @@ function parseManifest(raw: unknown, origin: string): ParsedManifest {
   if (kindsRaw === null) throw invalid(origin, 'basisKinds must be an object');
   assertKeys(kindsRaw, expectedFamilies, origin, 'basisKinds');
   const basisKinds: Partial<Record<CanonicalFamily, readonly ProvingBasisKind[]>> = {};
-  let anyKind = false;
+  let anyVerifierBoundKind = false;
   for (const family of expectedFamilies) {
     const list = kindsRaw[family];
     if (!Array.isArray(list)) throw invalid(origin, `basisKinds.${family} must be an array`);
@@ -415,7 +537,8 @@ function parseManifest(raw: unknown, origin: string): ParsedManifest {
       }
       kinds.push(kind);
     }
-    anyKind = anyKind || kinds.length > 0;
+    anyVerifierBoundKind =
+      anyVerifierBoundKind || kinds.some((kind) => VERIFIER_BOUND_BASIS_KINDS.includes(kind));
     basisKinds[family] = Object.freeze(kinds);
   }
 
@@ -425,7 +548,9 @@ function parseManifest(raw: unknown, origin: string): ParsedManifest {
   const testOnlyKeyIds = new Set(parsed.filter((p) => p.testOnly).map((p) => p.verifier.key_id));
   const ids = new Set(verifiers.map((v) => v.key_id));
   if (ids.size !== verifiers.length) throw invalid(origin, 'verifiers key_id must be unique');
-  if (anyKind && verifiers.length === 0) {
+  // V5 (L3 reading): only a verifier-bound kind needs a trust anchor; an observer-asserted kind
+  // (`replay_terminal_enumeration`) is bound to the run and the staged set, not to a source key.
+  if (anyVerifierBoundKind && verifiers.length === 0) {
     throw invalid(origin, 'a non-empty basisKinds list requires at least one verifier');
   }
 

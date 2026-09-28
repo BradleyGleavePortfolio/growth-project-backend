@@ -17,6 +17,10 @@ import { isCanonicalPlatform } from '../scout-platform';
 import {
   HEX64_PATTERN,
   OBSERVATION_CONFLICT_CODES,
+  PROVING_BASIS_KINDS,
+  REPLAY_MAX_STEPS,
+  REPLAY_STEP_STOPS,
+  REPLAY_STEP_TOKEN_MAX_BYTES,
   type ArtifactRejection,
   type ObservationConflictCode,
 } from './contract';
@@ -219,7 +223,56 @@ export function declarationPairKeys(declaration: NormalizedDeclaration): string[
 
 // ── POST /api/scout/runs/observation ────────────────────────────────────────────────────
 
-/** OpenAPI shape of one ObservationEvidenceV1 (validated strictly by S10-A `parseEvidence`). */
+/** OpenAPI shape of one `ReplayStepTerminalV1` (L3; validated strictly by `parseEvidence`). */
+export class ScoutRunReplayStepTerminalSchema {
+  @ApiProperty({
+    description:
+      "The pinned mapping spec's step key feeding the family (or the family token for a " +
+      'canonical-token collection). Never a URL.',
+    minLength: 1,
+    maxLength: REPLAY_STEP_TOKEN_MAX_BYTES,
+  })
+  step!: string;
+
+  @ApiProperty({
+    enum: [...REPLAY_STEP_STOPS],
+    description:
+      'How the step stopped. Only short_page and absent_next are pagination terminals; any other ' +
+      'stop is a truncated crawl and never proves.',
+  })
+  stop!: string;
+
+  @ApiProperty({ description: 'Pages fetched; must stay below max_pages.', minimum: 0 })
+  pages_fetched!: number;
+
+  @ApiProperty({ description: 'The maxPagesPerStep budget in force.', minimum: 1 })
+  max_pages!: number;
+
+  @ApiProperty({ description: 'Pages the source refused; must be 0.', minimum: 0 })
+  refused_pages!: number;
+
+  @ApiProperty({
+    description:
+      'null for a root collection; a fan-out step reports {expected, fetched} and must have ' +
+      'fetched every expected page.',
+    type: 'object',
+    nullable: true,
+    // Both keys are mandatory on the wire; the strict server parser enforces that (a nested
+    // `required` list is not expressible through this decorator without a second class).
+    properties: {
+      expected: { type: 'number', minimum: 0 },
+      fetched: { type: 'number', minimum: 0 },
+    },
+  })
+  fan_out!: { expected: number; fetched: number } | null;
+}
+
+/**
+ * OpenAPI shape of one ObservationEvidenceV1 (validated strictly by S10-A `parseEvidence`). A
+ * data-only union discriminated by `basis_kind`: `source_signed_enumeration` carries
+ * statement_b64/key_id/signature_b64; `replay_terminal_enumeration` (L3) carries
+ * challenge_b64/steps/observed_unique/id_set_digest. The server refuses any other key set.
+ */
 export class ScoutRunObservationEvidenceSchema {
   @ApiProperty({ enum: [1] })
   evidence_version!: 1;
@@ -233,20 +286,72 @@ export class ScoutRunObservationEvidenceSchema {
   @ApiProperty({ enum: [...CANONICAL_FAMILIES] })
   family!: string;
 
-  @ApiProperty({ enum: ['source_signed_enumeration'] })
-  basis_kind!: 'source_signed_enumeration';
+  @ApiProperty({
+    enum: [...PROVING_BASIS_KINDS],
+    description: 'Discriminator: selects which of the kind-specific fields below are required.',
+  })
+  basis_kind!: string;
 
   @ApiProperty({ pattern: HEX64_PATTERN.source })
   mapping_spec_digest!: string;
 
-  @ApiProperty({ description: 'Canonical base64 of the strict canonical JSON source statement.' })
-  statement_b64!: string;
+  @ApiProperty({
+    required: false,
+    description:
+      'source_signed_enumeration only: canonical base64 of the strict canonical JSON source statement.',
+  })
+  statement_b64?: string;
 
-  @ApiProperty({ pattern: '^[a-z0-9._-]{1,64}$' })
-  key_id!: string;
+  @ApiProperty({
+    required: false,
+    pattern: '^[a-z0-9._-]{1,64}$',
+    description: 'source_signed_enumeration only.',
+  })
+  key_id?: string;
 
-  @ApiProperty({ description: 'Canonical base64 of the 64-byte Ed25519 source signature.' })
-  signature_b64!: string;
+  @ApiProperty({
+    required: false,
+    description:
+      'source_signed_enumeration only: canonical base64 of the 64-byte Ed25519 source signature.',
+  })
+  signature_b64?: string;
+
+  @ApiProperty({
+    required: false,
+    minLength: 44,
+    maxLength: 44,
+    description:
+      'replay_terminal_enumeration only: the run’s declaration challenge (RFC 4648 §4 base64 of 32 bytes).',
+  })
+  challenge_b64?: string;
+
+  @ApiProperty({
+    required: false,
+    type: [ScoutRunReplayStepTerminalSchema],
+    minItems: 1,
+    maxItems: REPLAY_MAX_STEPS,
+    description:
+      'replay_terminal_enumeration only: one terminal per collection step the pinned spec maps ' +
+      'to the family.',
+  })
+  steps?: ScoutRunReplayStepTerminalSchema[];
+
+  @ApiProperty({
+    required: false,
+    minimum: 0,
+    description:
+      'replay_terminal_enumeration only: distinct source ids the crawl observed for the family.',
+  })
+  observed_unique?: number;
+
+  @ApiProperty({
+    required: false,
+    pattern: HEX64_PATTERN.source,
+    description:
+      'replay_terminal_enumeration only: the D-S10-2 identity-set digest of those ids (sha256 over ' +
+      'the bytewise-sorted, length-prefixed distinct ids).',
+  })
+  id_set_digest?: string;
 }
 
 /**

@@ -6,6 +6,10 @@ import {
   MANIFEST_KEYS,
   OBSERVATION_CONFLICT_CODES,
   PROVING_BASIS_KINDS,
+  REPLAY_EVIDENCE_KEYS,
+  REPLAY_STEP_STOPS,
+  REPLAY_TERMINAL_STOPS,
+  VERIFIER_BOUND_BASIS_KINDS,
   STATEMENT_KEYS,
 } from '../../../src/scout/induction/contract';
 import { RUN_CONFLICT_CODES } from '../../../src/scout/lifecycle/reason-codes';
@@ -19,14 +23,21 @@ import { COMPLETENESS_BASIS_NONE } from '../../../src/scout/reconciliation/types
 const INDUCTION_SRC = join(__dirname, '../../../src/scout/induction');
 
 describe('closed vocabularies', () => {
-  it('COMPLETENESS_BASIS_KINDS is exactly none + source_signed_enumeration, none first', () => {
-    expect([...COMPLETENESS_BASIS_KINDS]).toEqual(['none', 'source_signed_enumeration']);
+  it('COMPLETENESS_BASIS_KINDS is exactly none + source_signed_enumeration + replay_terminal_enumeration (L3 append), none first', () => {
+    expect([...COMPLETENESS_BASIS_KINDS]).toEqual([
+      'none',
+      'source_signed_enumeration',
+      'replay_terminal_enumeration',
+    ]);
     expect(COMPLETENESS_BASIS_KINDS[0]).toBe(COMPLETENESS_BASIS_NONE);
     expect([...PROVING_BASIS_KINDS]).toEqual(
       COMPLETENESS_BASIS_KINDS.filter((kind) => kind !== COMPLETENESS_BASIS_NONE),
     );
     // No page-chain kind in v1 (deferred, §5); no kind names a source.
     expect(COMPLETENESS_BASIS_KINDS.some((kind) => /chain|page|extension/.test(kind))).toBe(false);
+    // L3: only the source-signed kind is verifier-bound; the observer kind never needs a key.
+    expect([...VERIFIER_BOUND_BASIS_KINDS]).toEqual(['source_signed_enumeration']);
+    expect(PROVING_BASIS_KINDS.includes('replay_terminal_enumeration')).toBe(true);
   });
 
   it('OBSERVATION_CONFLICT_CODES is exactly the D-S10-4 list and disjoint from RUN_CONFLICT_CODES', () => {
@@ -46,6 +57,10 @@ describe('closed vocabularies', () => {
     expect([...STATEMENT_KEYS]).toEqual([...STATEMENT_KEYS].sort());
     expect(STATEMENT_KEYS).toHaveLength(11);
     expect(new Set(EVIDENCE_KEYS).size).toBe(9);
+    expect(new Set(REPLAY_EVIDENCE_KEYS).size).toBe(10);
+    // Both evidence shapes share the six common keys and differ only in the kind-specific tail.
+    expect([...REPLAY_EVIDENCE_KEYS].slice(0, 6)).toEqual([...EVIDENCE_KEYS].slice(0, 6));
+    expect([...REPLAY_STEP_STOPS].slice(0, 2)).toEqual([...REPLAY_TERMINAL_STOPS]);
     expect(new Set(MANIFEST_KEYS).size).toBe(6);
   });
 });
@@ -53,9 +68,10 @@ describe('closed vocabularies', () => {
 describe('R28 — no source-name literal in src/scout/induction/*.ts', () => {
   const files = readdirSync(INDUCTION_SRC).filter((name) => name.endsWith('.ts'));
 
-  it('scans the five S10-A modules', () => {
+  it('scans the five S10-A modules and the L3 closure module', () => {
     expect(files).toEqual(
       expect.arrayContaining([
+        'closure.ts',
         'contract.ts',
         'digest.ts',
         'manifest-registry.ts',
