@@ -23,10 +23,10 @@ export class PairCurrentDto {
 
 export class PairInitDto extends PairCurrentDto {
   @ApiProperty({
-    example: 'truecoach',
+    example: 'example-site',
     description:
       'Source coaching platform the coach is migrating from. Lowercase slug ' +
-      'driven by the extension ROADMAP matrix (truecoach, trainerize, mypthub, …).',
+      'provided by the authorized source site.',
   })
   @IsString()
   @MaxLength(64)
@@ -171,7 +171,7 @@ export class PairRedeemResult extends PairIntentResult {
 
   @ApiProperty({
     description: 'Source platform the code was minted for (echoed to the extension).',
-    example: 'truecoach',
+    example: 'example-site',
   })
   chosen_platform!: string;
 }
