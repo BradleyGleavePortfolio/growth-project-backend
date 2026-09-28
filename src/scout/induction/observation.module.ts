@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { JwksVerifierService } from '../../auth/jwks.service';
 import { RolesGuard } from '../../auth/roles.guard';
 import { ScoutLifecycleService } from '../lifecycle/lifecycle.service';
+import { SourceRegistryModule } from '../reconstruct/source-registry.module';
 import { ObservationController } from './observation.controller';
 import { ObservationService } from './observation.service';
 
@@ -17,7 +18,11 @@ import { ObservationService } from './observation.service';
 //
 // Registration: the doc assigns the ScoutModule import of this module to S10-C (D-S10-7);
 // S10-C imports it from ScoutModule, which is what mounts the routes.
+//
+// L2a: the induction registry is the `induction` partition of the one SourceRegistryProvider
+// (D-L0-5), shared through SourceRegistryModule; it imports nothing else.
 @Module({
+  imports: [SourceRegistryModule],
   controllers: [ObservationController],
   providers: [
     ObservationService,

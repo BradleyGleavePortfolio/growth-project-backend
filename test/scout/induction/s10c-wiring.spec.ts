@@ -5,6 +5,7 @@ import { MODULE_METADATA } from '@nestjs/common/constants';
 import { ObservationModule } from '../../../src/scout/induction/observation.module';
 import { ObservationService } from '../../../src/scout/induction/observation.service';
 import { PrismaService } from '../../../src/prisma.service';
+import { SourceRegistryModule } from '../../../src/scout/reconstruct/source-registry.module';
 import { ScoutModule } from '../../../src/scout/scout.module';
 import { S10_PURE_SPEC_PATH } from '../../fixtures/scout/s10_pure/s10-pure-signer';
 
@@ -48,10 +49,15 @@ describe('S10-C module registration', () => {
     expect(imports.filter((m) => m === ObservationModule)).toHaveLength(1);
   });
 
-  it('ObservationModule imports no module at all (self-contained; invariant 5)', () => {
+  it('ObservationModule imports only the L2a SourceRegistryModule (self-contained; invariant 5)', () => {
+    // L2a (D-L0-5): the one registry provider is shared through a module that provides nothing
+    // but the provider — no notification, drip, email, messaging, AI or billing module enters.
     const imports: unknown[] =
       Reflect.getMetadata(MODULE_METADATA.IMPORTS, ObservationModule) ?? [];
-    expect(imports).toEqual([]);
+    expect(imports).toEqual([SourceRegistryModule]);
+    const registryImports: unknown[] =
+      Reflect.getMetadata(MODULE_METADATA.IMPORTS, SourceRegistryModule) ?? [];
+    expect(registryImports).toEqual([]);
   });
 
   it('ObservationModule declares no PrismaService provider: it uses the @Global PrismaModule client (review B A1)', () => {

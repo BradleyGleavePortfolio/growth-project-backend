@@ -10,15 +10,13 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { isFenceReason, runConflict } from '../lifecycle/reason-codes';
 import { ScoutLifecycleService, type Tx } from '../lifecycle/lifecycle.service';
-import { loadNativeRuleSets } from '../reconstruct/native/native-rule-registry';
-import { loadSourceMappingSpecs } from '../reconstruct/source-mapper-registry';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+} from '../reconstruct/source-registry.provider';
 import { CHALLENGE_BYTES, type ObservationEvidenceV1 } from './contract';
 import { canonicalJson, sha256Hex } from './digest';
-import {
-  buildInductionRegistry,
-  loadInductionManifests,
-  type InductionRegistry,
-} from './manifest-registry';
+import { type InductionRegistry } from './manifest-registry';
 import { unitKey, type ParsedEvidence } from './parse';
 import {
   declarationPairKeys,
@@ -34,7 +32,7 @@ import {
 export const OBSERVATION_SERVICE_OPTIONS = Symbol('OBSERVATION_SERVICE_OPTIONS');
 
 export interface ObservationServiceOptions {
-  /** The induction registry; default: the on-disk manifests, mapping specs and native rule sets. */
+  /** The induction registry of a run with no pin; default: the provider's file registries (L2a). */
   readonly registry?: InductionRegistry;
   /** Challenge source; default `crypto.randomBytes(32)`. Must return exactly 32 bytes. */
   readonly challenge?: () => Buffer;
@@ -91,7 +89,9 @@ function evidenceJson(e: ObservationEvidenceV1): Prisma.InputJsonObject {
  */
 @Injectable()
 export class ObservationService {
-  private registryCache: InductionRegistry | undefined;
+  private readonly injectedRegistry: InductionRegistry | undefined;
+  /** L2a: the ONE registry provider (D-L0-5); the induction registry is its `induction` partition. */
+  private readonly registries: SourceRegistryProvider;
   private readonly challenge: () => Buffer;
   private readonly now: () => Date;
 
@@ -99,20 +99,26 @@ export class ObservationService {
     private readonly prisma: PrismaService,
     private readonly lifecycle: ScoutLifecycleService,
     @Optional() @Inject(OBSERVATION_SERVICE_OPTIONS) options?: ObservationServiceOptions,
+    @Optional() registries?: SourceRegistryProvider,
   ) {
-    this.registryCache = options?.registry;
+    this.injectedRegistry = options?.registry;
+    this.registries = registries ?? defaultSourceRegistryProvider();
     this.challenge = options?.challenge ?? (() => randomBytes(CHALLENGE_BYTES));
     this.now = options?.now ?? (() => new Date());
   }
 
-  /** Loaded once, fail loud (D-S10-1 V1-V6), exactly like the mapper and native registries. */
+  /**
+   * The registry of a run with no pin: the injected one, else the provider's file registries —
+   * loaded once, fail loud (D-S10-1 V1-V6), the same cross-checked set the engine reads.
+   */
   get registry(): InductionRegistry {
-    this.registryCache ??= buildInductionRegistry({
-      manifests: loadInductionManifests(),
-      specs: loadSourceMappingSpecs(),
-      nativeRuleSets: loadNativeRuleSets(),
-    });
-    return this.registryCache;
+    return this.injectedRegistry ?? this.registries.files.induction;
+  }
+
+  /** The induction registry THIS run's evidence is checked against (D-L0-5): the pin's, else {@link registry}. */
+  private async registryFor(coachId: string, intentId: string): Promise<InductionRegistry> {
+    const run = await this.registries.forRun(coachId, intentId);
+    return run.pinned === null ? this.registry : run.induction;
   }
 
   // ── POST /api/scout/runs/declaration ─────────────────────────────────────────
@@ -221,7 +227,7 @@ export class ObservationService {
     intentId: string,
     observations: readonly ParsedEvidence[],
   ): Promise<ScoutRunObservationResult> {
-    const registry = this.registry;
+    const registry = await this.registryFor(coachId, intentId);
     return this.underRunLock(coachId, intentId, async (tx, run) => {
       const claim = await tx.scoutImportCompletion.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },

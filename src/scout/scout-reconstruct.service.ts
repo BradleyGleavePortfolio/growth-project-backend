@@ -1,11 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
 import { isCanonicalPlatform } from './scout-platform';
 import {
-  buildFamilyRegistry,
+  buildRunFamilyRegistry,
   isPersistOutcome,
   type FamilyReconstructor,
   type StagedRow,
@@ -23,7 +29,11 @@ import {
   type RunPassResult,
   type ServerRunContext,
 } from './reconstruct/orchestration/run-context';
-import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
+import { type SourceMapper } from './reconstruct/source-mapper-registry';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+} from './reconstruct/source-registry.provider';
 import {
   RECONSTRUCT_ENTITY_TYPE,
   RECONSTRUCT_MAX_ROWS,
@@ -63,17 +73,48 @@ import {
  *    `staged === reconstructed + skipped + failed` always holds.
  *  - No credential is ever minted and email is never used as a key.
  */
+/** The two registries one reconstruction pass resolves families through. */
+interface RunFamilies {
+  readonly families: ReadonlyMap<string, FamilyReconstructor>;
+  /** The planner's `(platform, token) → family` seam (S8-G); the SAME mappers the families read. */
+  readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
+}
+
 @Injectable()
 export class ScoutReconstructService {
   private readonly logger = new Logger(ScoutReconstructService.name);
-  private readonly families = buildFamilyRegistry();
-  /** The planner's `(platform, token) → family` seam (S8-G); same repository specs the families read. */
-  private readonly sourceMappers = buildSourceMapperRegistry();
+  /** L2a: the ONE registry provider (D-L0-5); every run resolves its families through it. */
+  private readonly registries: SourceRegistryProvider;
+  /**
+   * The registries of a run with NO pin: the provider's file registries, built once here. They
+   * stay instance fields because the S8-G/S11 proof workers inject a composed registry into
+   * exactly these two seams (`reconstruct.families = …`, `reconstruct.sourceMappers = …`); a
+   * pinned run never reads them.
+   */
+  private readonly families: ReadonlyMap<string, FamilyReconstructor>;
+  private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    @Optional() registries?: SourceRegistryProvider,
+  ) {
+    this.registries = registries ?? defaultSourceRegistryProvider();
+    const files = this.registries.files;
+    this.families = buildRunFamilyRegistry(files);
+    this.sourceMappers = files.sourceMappers;
+  }
+
+  /**
+   * The families and mappers THIS run's rows are interpreted through (D-L0-5). No pin → the
+   * file-derived (or harness-injected) instance registries, unchanged; a pin → every family
+   * bound to the run's composed registries.
+   */
+  private async familiesFor(coachId: string, intentId: string): Promise<RunFamilies> {
+    const run = await this.registries.forRun(coachId, intentId);
+    if (run.pinned === null) return { families: this.families, sourceMappers: this.sourceMappers };
+    return { families: buildRunFamilyRegistry(run), sourceMappers: run.sourceMappers };
+  }
 
   async reconstruct(
     coachId: string,
@@ -82,7 +123,8 @@ export class ScoutReconstructService {
   ): Promise<ScoutReconstructResult> {
     // Fail closed on an unknown family BEFORE any read or write, so a family the
     // engine cannot map (e.g. billing) can never leave a partial reconciliation.
-    const family = this.families.get(entityType);
+    const { families } = await this.familiesFor(coachId, intentId);
+    const family = families.get(entityType);
     if (!family) {
       throw new BadRequestException(`unsupported reconstruct family: ${entityType}`);
     }
@@ -175,18 +217,19 @@ export class ScoutReconstructService {
     intentId: string,
     ctx: ServerRunContext,
   ): Promise<RunPassResult> {
+    const registries = await this.familiesFor(coachId, intentId);
     const groups = await this.prisma.scoutIngestEntity.groupBy({
       by: ['source_platform', 'entity_type'],
       where: { coach_id: coachId, intent_id: intentId },
       _count: { _all: true },
     });
-    const plan = planRun(groups, this.sourceMappers, this.families);
+    const plan = planRun(groups, registries.sourceMappers, registries.families);
     const unmappedFamilies = [...new Set(plan.unmapped.map((group) => group.token))];
     const families: FamilyPassResult[] = [];
     let stopped: RunPassResult['stopped'] = null;
     try {
       for (const planned of plan.ordered) {
-        const family = this.families.get(planned.family);
+        const family = registries.families.get(planned.family);
         // planRun only plans registered families; fail closed if that ever changes.
         if (!family) throw new Error(`unregistered planned family: ${planned.family}`);
         for (const source of planned.sources) {

@@ -1,9 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
-import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
+import { type SourceMapper } from './reconstruct/source-mapper-registry';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+} from './reconstruct/source-registry.provider';
 import {
   decodeScoutCursor,
   encodeScoutCursor,
@@ -89,19 +93,34 @@ type NativeRecord = { id: string; name: string; created_at: Date; updated_at: Da
  */
 @Injectable()
 export class ScoutEntitiesService {
+  /** L2a: the ONE registry provider (D-L0-5) — the same one the engine resolves through. */
+  private readonly registries: SourceRegistryProvider;
   /**
-   * S11-E: the `(platform, token) → family` registry — the same builder and the
-   * same repository data-only specs the engine reads
+   * S11-E: the `(platform, token) → family` registry of a run with NO pin — the
+   * provider's file registries, the same maps the engine reads
    * (`scout-reconstruct.service.ts` `sourceMappers`). An instance field so a
    * harness that composes an injected registry for the engine can hand the
    * reader the identical one.
    */
-  private readonly sourceMappers = buildSourceMapperRegistry();
+  private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    @Optional() registries?: SourceRegistryProvider,
+  ) {
+    this.registries = registries ?? defaultSourceRegistryProvider();
+    this.sourceMappers = this.registries.files.sourceMappers;
+  }
+
+  /** The mappers THIS run's staged tokens classify through (D-L0-5): the pin's, else the instance's. */
+  private async mappersFor(
+    coachId: string,
+    intentId: string,
+  ): Promise<ReadonlyMap<string, SourceMapper>> {
+    const run = await this.registries.forRun(coachId, intentId);
+    return run.pinned === null ? this.sourceMappers : run.sourceMappers;
+  }
 
   async getEntities(
     coachId: string,
@@ -124,6 +143,7 @@ export class ScoutEntitiesService {
       throw new BadRequestException('limit out of range');
     }
     const after = decodeScoutCursor(cursor, coachId, intentId, family);
+    const sourceMappers = await this.mappersFor(coachId, intentId);
 
     // Tenant scope only. The family is NOT a literal `entity_type` filter on the
     // staged/ledger tables: they carry the source's own step token (S11-E), so the
@@ -164,7 +184,7 @@ export class ScoutEntitiesService {
           where: tenant,
           _count: { _all: true },
         });
-        const scope = classifyFamilyScope(this.sourceMappers, family, stagedGroups, ledgerGroups);
+        const scope = classifyFamilyScope(sourceMappers, family, stagedGroups, ledgerGroups);
 
         if (scope.pairs.length === 0) {
           // Nothing of this family was staged or ledgered for the run. A legacy

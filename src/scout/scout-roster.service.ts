@@ -1,9 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PersonState, Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
-import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
+import { type SourceMapper } from './reconstruct/source-mapper-registry';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+} from './reconstruct/source-registry.provider';
 import {
   decodeScoutCursor,
   encodeScoutCursor,
@@ -56,19 +60,34 @@ type Tx = Prisma.TransactionClient;
  */
 @Injectable()
 export class ScoutRosterService {
+  /** L2a: the ONE registry provider (D-L0-5) — the same one the engine resolves through. */
+  private readonly registries: SourceRegistryProvider;
   /**
-   * S11-E: the `(platform, token) → family` registry — the same builder and the
-   * same repository data-only specs the engine reads
+   * S11-E: the `(platform, token) → family` registry of a run with NO pin — the
+   * provider's file registries, the same maps the engine reads
    * (`scout-reconstruct.service.ts` `sourceMappers`). An instance field so a
    * harness that composes an injected registry for the engine can hand the
    * reader the identical one.
    */
-  private readonly sourceMappers = buildSourceMapperRegistry();
+  private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    @Optional() registries?: SourceRegistryProvider,
+  ) {
+    this.registries = registries ?? defaultSourceRegistryProvider();
+    this.sourceMappers = this.registries.files.sourceMappers;
+  }
+
+  /** The mappers THIS run's staged tokens classify through (D-L0-5): the pin's, else the instance's. */
+  private async mappersFor(
+    coachId: string,
+    intentId: string,
+  ): Promise<ReadonlyMap<string, SourceMapper>> {
+    const run = await this.registries.forRun(coachId, intentId);
+    return run.pinned === null ? this.sourceMappers : run.sourceMappers;
+  }
 
   async getRoster(
     coachId: string,
@@ -84,6 +103,7 @@ export class ScoutRosterService {
       throw new BadRequestException('limit out of range');
     }
     const after = decodeScoutCursor(cursor, coachId, intentId, RECONSTRUCT_ENTITY_TYPE);
+    const sourceMappers = await this.mappersFor(coachId, intentId);
 
     // Tenant scope only. The family is NOT a literal `entity_type` filter: staged
     // and ledger rows carry the source's own step token (S11-E), so the roster
@@ -128,7 +148,7 @@ export class ScoutRosterService {
           _count: { _all: true },
         });
         const scope = classifyFamilyScope(
-          this.sourceMappers,
+          sourceMappers,
           RECONSTRUCT_ENTITY_TYPE,
           stagedGroups,
           ledgerGroups,
