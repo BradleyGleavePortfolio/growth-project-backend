@@ -50,6 +50,7 @@
     "handlebars": "4.7.9",
     "helmet": "8.2.0",
     "ioredis": "5.11.1",
+    "is-number": "^7.0.0",
     "jose": "6.2.3",
     "js-yaml": "4.3.2",
     "openai": "6.39.0",
