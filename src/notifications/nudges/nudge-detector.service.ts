@@ -141,12 +141,8 @@ export class NudgeDetectorService {
    * Owns the 2–6 day window so it does not stomp the 7-day inactivity detector.
    */
   async detectMissedCheckin(now: Date): Promise<NudgeCandidate[]> {
-    const minThreshold = new Date(
-      now.getTime() - DETECTOR_WINDOWS.missedCheckinMaxDays * DAY_MS,
-    );
-    const maxThreshold = new Date(
-      now.getTime() - DETECTOR_WINDOWS.missedCheckinMinDays * DAY_MS,
-    );
+    const minThreshold = new Date(now.getTime() - DETECTOR_WINDOWS.missedCheckinMaxDays * DAY_MS);
+    const maxThreshold = new Date(now.getTime() - DETECTOR_WINDOWS.missedCheckinMinDays * DAY_MS);
 
     // Users whose most-recent check-in date sits within (minThreshold, maxThreshold].
     // We pull each user's most recent check-in, then filter.
@@ -301,12 +297,8 @@ export class NudgeDetectorService {
    * notification groupBy. Merge happens in memory.
    */
   async detectInactive(now: Date): Promise<NudgeCandidate[]> {
-    const oldest = new Date(
-      now.getTime() - DETECTOR_WINDOWS.inactiveMaxDays * DAY_MS,
-    );
-    const newest = new Date(
-      now.getTime() - DETECTOR_WINDOWS.inactiveMinDays * DAY_MS,
-    );
+    const oldest = new Date(now.getTime() - DETECTOR_WINDOWS.inactiveMaxDays * DAY_MS);
+    const newest = new Date(now.getTime() - DETECTOR_WINDOWS.inactiveMinDays * DAY_MS);
 
     // Users with no activity newer than `newest`. We scope to users who
     // have any history at all (created_at older than the inactive window)
@@ -381,27 +373,18 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function floorDays(later: Date, earlier: Date): number {
-  const ms = later.getTime() - earlier.getTime();
-  return Math.floor(ms / DAY_MS);
-}
-
 /**
  * Calendar-day difference in a given IANA timezone.
  *
  * Returns the integer number of local-calendar days between `earlier`
- * and `later` (later - earlier). Unlike `floorDays`, this is immune to
+ * and `later` (later - earlier). Unlike a raw millisecond floor, this is immune to
  * DST transitions because we project both timestamps onto their local
  * YYYY-MM-DD label and difference the labels as UTC midnights — DST
  * doesn't move calendar days, only the clock.
  *
  * Used by detectStreakBroken (audit P2-2). Exported for testing.
  */
-export function calendarDayDiff(
-  later: Date,
-  earlier: Date,
-  timezone: string,
-): number {
+export function calendarDayDiff(later: Date, earlier: Date, timezone: string): number {
   const laterKey = localDateKey(later, timezone);
   const earlierKey = localDateKey(earlier, timezone);
   // Reinterpret the two YYYY-MM-DD strings as UTC midnights so we can

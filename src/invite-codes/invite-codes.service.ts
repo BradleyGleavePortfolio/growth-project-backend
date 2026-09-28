@@ -67,12 +67,9 @@ export class InviteCodesService {
       where: { coach_id: coachId },
       select: { status: true },
     });
-    const allowed =
-      sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
+    const allowed = sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
     if (!allowed) {
-      throw new BadRequestException(
-        'Coach is not currently accepting clients',
-      );
+      throw new BadRequestException('Coach is not currently accepting clients');
     }
   }
 
@@ -406,9 +403,7 @@ export class InviteCodesService {
         throw err;
       }
     }
-    throw new InternalServerErrorException(
-      'Could not generate a unique invite code',
-    );
+    throw new InternalServerErrorException('Could not generate a unique invite code');
   }
 
   async regenerateDefaultForCoach(coachId: string) {
@@ -424,9 +419,7 @@ export class InviteCodesService {
         throw err;
       }
     }
-    throw new InternalServerErrorException(
-      'Could not generate a unique invite code',
-    );
+    throw new InternalServerErrorException('Could not generate a unique invite code');
   }
 
   // ---- Phase 1C: public preview / validation ------------------------
@@ -519,12 +512,8 @@ export class InviteCodesService {
       // to {valid:false}. We log at error level so Sentry still pages on
       // anything actually broken; we just don't blow up the caller.
       const code_class =
-        err instanceof Prisma.PrismaClientKnownRequestError
-          ? `prisma:${err.code}`
-          : 'unknown';
-      this.logger.error(
-        `previewCode failed (${code_class}): ${(err as Error).message}`,
-      );
+        err instanceof Prisma.PrismaClientKnownRequestError ? `prisma:${err.code}` : 'unknown';
+      this.logger.error(`previewCode failed (${code_class}): ${(err as Error).message}`);
       return { valid: false };
     }
   }
@@ -585,9 +574,7 @@ export class InviteCodesService {
           const redeemerEmail = (me?.email ?? '').toLowerCase().trim();
           const intendedEmail = current.intended_email.toLowerCase().trim();
           if (redeemerEmail !== intendedEmail) {
-            throw new BadRequestException(
-              'This invite was sent to a different email address',
-            );
+            throw new BadRequestException('This invite was sent to a different email address');
           }
         }
         const bumped = await tx.inviteCode.updateMany({
@@ -826,9 +813,7 @@ export class InviteCodesService {
         expires_at: expiresAtDisplay,
       },
     });
-    return res.error
-      ? { status: res.status, error: res.error }
-      : { status: res.status };
+    return res.error ? { status: res.status, error: res.error } : { status: res.status };
   }
 
   // ---- C3: public accept-by-token ----------------------------------------
@@ -842,7 +827,12 @@ export class InviteCodesService {
   // (bulk-invite codes always set expires_at; default-link codes never expire
   // server-side, so we treat them as always valid here).
   async acceptByToken(token: string): Promise<
-    | { accepted: true; email: string | null; coachName: string | null; redirectTo: 'signup' | 'app_open' }
+    | {
+        accepted: true;
+        email: string | null;
+        coachName: string | null;
+        redirectTo: 'signup' | 'app_open';
+      }
     | { accepted: false; reason: 'expired' | 'already_accepted' | 'invalid'; message: string }
   > {
     // Input guard — mirrors previewCode().
@@ -867,7 +857,11 @@ export class InviteCodesService {
         try {
           await this.assertCoachCanAcceptClients(profile.user.id);
         } catch {
-          return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
+          return {
+            accepted: false,
+            reason: 'invalid',
+            message: 'This coach is not currently accepting clients.',
+          };
         }
         return {
           accepted: true,
@@ -886,7 +880,11 @@ export class InviteCodesService {
         return { accepted: false, reason: 'invalid', message: 'Invite code not found.' };
       }
       if (record.revoked) {
-        return { accepted: false, reason: 'invalid', message: 'This invite code has been revoked.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This invite code has been revoked.',
+        };
       }
 
       // Apply 14-day TTL from creation when no explicit expires_at is set.
@@ -900,18 +898,30 @@ export class InviteCodesService {
       // max_uses check (single-use codes that are fully consumed are
       // treated as "already_accepted" from the client's perspective).
       if (record.max_uses !== null && record.used_count >= record.max_uses) {
-        return { accepted: false, reason: 'already_accepted', message: 'This invite has already been used.' };
+        return {
+          accepted: false,
+          reason: 'already_accepted',
+          message: 'This invite has already been used.',
+        };
       }
 
       if (record.coach.role !== 'coach') {
-        return { accepted: false, reason: 'invalid', message: 'This invite code is no longer valid.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This invite code is no longer valid.',
+        };
       }
 
       // Verify the coach still has an active subscription before accepting the invite.
       try {
         await this.assertCoachCanAcceptClients(record.coach.id);
       } catch {
-        return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This coach is not currently accepting clients.',
+        };
       }
 
       return {
@@ -922,11 +932,13 @@ export class InviteCodesService {
       };
     } catch (err) {
       const code_class =
-        err instanceof Prisma.PrismaClientKnownRequestError
-          ? `prisma:${err.code}`
-          : 'unknown';
+        err instanceof Prisma.PrismaClientKnownRequestError ? `prisma:${err.code}` : 'unknown';
       this.logger.error(`acceptByToken failed (${code_class}): ${(err as Error).message}`);
-      return { accepted: false, reason: 'invalid', message: 'Unable to validate invite at this time.' };
+      return {
+        accepted: false,
+        reason: 'invalid',
+        message: 'Unable to validate invite at this time.',
+      };
     }
   }
 
@@ -934,7 +946,10 @@ export class InviteCodesService {
   // {email,name?,note?} rows. Liberal accept: comma- or tab-separated,
   // up to 3 fields per line. Emails are validated as a final pass at
   // the DTO layer when the parsed rows are POSTed back.
-  parsePasted(input: string, maxRows = 100): {
+  parsePasted(
+    input: string,
+    maxRows = 100,
+  ): {
     email: string;
     name?: string;
     note?: string;

@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 export interface EngagementBreakdown {
-  logged_in_within_7d: number;              // +20
-  messaged_within_48h_of_checkin: number;   // +30
-  updated_workout_plan_this_week: number;   // +25
-  avg_workout_completion_gte_70: number;    // +25
+  logged_in_within_7d: number; // +20
+  messaged_within_48h_of_checkin: number; // +30
+  updated_workout_plan_this_week: number; // +25
+  avg_workout_completion_gte_70: number; // +25
 }
 
 export interface EngagementScoreResult {
@@ -41,9 +41,7 @@ export class SubCoachAnalyticsService {
       select: { id: true },
     });
     if (!subCoach) {
-      throw new NotFoundException(
-        'Sub-coach not found or does not belong to this team',
-      );
+      throw new NotFoundException('Sub-coach not found or does not belong to this team');
     }
 
     const now = new Date();
@@ -92,8 +90,7 @@ export class SubCoachAnalyticsService {
           Math.min(...Array.from(lastByClient.values()).map((d) => d.getTime())),
         );
         const latestDeadline = new Date(
-          Math.max(...Array.from(lastByClient.values()).map((d) => d.getTime())) +
-            fortyEightH,
+          Math.max(...Array.from(lastByClient.values()).map((d) => d.getTime())) + fortyEightH,
         );
         const responses = await this.prisma.coachMessage.findMany({
           where: {
@@ -106,11 +103,7 @@ export class SubCoachAnalyticsService {
         for (const r of responses) {
           if (!r.client_id) continue;
           const ts = lastByClient.get(r.client_id);
-          if (
-            ts &&
-            r.created_at >= ts &&
-            r.created_at <= new Date(ts.getTime() + fortyEightH)
-          ) {
+          if (ts && r.created_at >= ts && r.created_at <= new Date(ts.getTime() + fortyEightH)) {
             messagedWithin48h = 30;
             break;
           }
@@ -158,10 +151,7 @@ export class SubCoachAnalyticsService {
 
     const score = Math.min(
       100,
-      loggedInWithin7d +
-        messagedWithin48h +
-        updatedWorkoutPlanThisWeek +
-        avgCompletionGte70,
+      loggedInWithin7d + messagedWithin48h + updatedWorkoutPlanThisWeek + avgCompletionGte70,
     );
 
     return {

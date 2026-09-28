@@ -86,7 +86,12 @@ export class CoachService {
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_WORKOUTS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_FOOD_MACROS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole),
-      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, callerRole),
+      this.consent.coachCanAccess(
+        coachId,
+        clientId,
+        ConsentScope.FITNESS_HABITS_PROGRESS,
+        callerRole,
+      ),
     ]);
     return { workouts, food, bodyMetrics, habitsProgress };
   }
@@ -458,7 +463,10 @@ export class CoachService {
         : Promise.resolve([]),
     ]);
 
-    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    let total_calories = 0,
+      total_protein_g = 0,
+      total_carbs_g = 0,
+      total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
       const fi = entry.food_item;
@@ -580,7 +588,8 @@ export class CoachService {
       weightLogsByUser.set(wl.user_id, arr);
     }
 
-    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> = [];
+    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> =
+      [];
 
     for (const client of clients) {
       const weightLogs = weightLogsByUser.get(client.id) ?? [];
@@ -674,11 +683,11 @@ export class CoachService {
 
     // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
     const [
-      foodLogGroups,      // clients who logged food today
-      workoutGroups,      // clients who worked out in the last 5 days
-      pendingCheckIns,    // check-ins submitted but not reviewed
-      unreadMsgCount,     // messages not yet read by the coach
-      recentWeightLogs,   // weight logs for trend detection (last 30 days)
+      foodLogGroups, // clients who logged food today
+      workoutGroups, // clients who worked out in the last 5 days
+      pendingCheckIns, // check-ins submitted but not reviewed
+      unreadMsgCount, // messages not yet read by the coach
+      recentWeightLogs, // weight logs for trend detection (last 30 days)
       unreviewedCheckins, // per-client unreviewed check-in groupBy (for no_checkin flag)
     ] = await Promise.all([
       // Active today: clients with at least one food log entry today.

@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -209,9 +205,7 @@ export class V1CoachService {
     const authorizedClientIds = this.subCoachScope
       ? await this.subCoachScope.getAuthorizedClientIds(coachId)
       : null;
-    const isSubCoach = this.subCoachScope
-      ? await this.subCoachScope.isSubCoach(coachId)
-      : false;
+    const isSubCoach = this.subCoachScope ? await this.subCoachScope.isSubCoach(coachId) : false;
     if (isSubCoach && authorizedClientIds && authorizedClientIds.length === 0) {
       return [];
     }
@@ -222,9 +216,7 @@ export class V1CoachService {
     const messages = await this.prisma.coachMessage.findMany({
       where: {
         coach_id: messagingCoachId,
-        ...(isSubCoach && authorizedClientIds
-          ? { client_id: { in: authorizedClientIds } }
-          : {}),
+        ...(isSubCoach && authorizedClientIds ? { client_id: { in: authorizedClientIds } } : {}),
       },
       orderBy: { created_at: 'desc' },
       select: {
@@ -284,8 +276,7 @@ export class V1CoachService {
       _max: { date: true },
     });
     const lastCheckInByClient = new Map<string, Date | null>();
-    for (const r of lastCheckIns)
-      lastCheckInByClient.set(r.user_id, r._max.date);
+    for (const r of lastCheckIns) lastCheckInByClient.set(r.user_id, r._max.date);
 
     const lastCoachReplies = await this.prisma.coachMessage.groupBy({
       by: ['client_id'],
@@ -406,12 +397,7 @@ export class V1CoachService {
   // POST /v1/coach/me/threads/:clientId/messages — coach sends a message.
   // Coach-scoped with OWNER bypass. Persists message + activity event +
   // clears the draft for that thread, then fires the realtime ping.
-  async sendMessage(
-    caller: Caller,
-    clientId: string,
-    body: string,
-    snippetId?: string,
-  ) {
+  async sendMessage(caller: Caller, clientId: string, body: string, snippetId?: string) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
     const scope = await this.clientScope(caller);
@@ -487,12 +473,7 @@ export class V1CoachService {
   // (coachId, clientId) — re-posting overwrites the body in place. The
   // updated_at timestamp tells the console when the last save landed so it
   // can render the "Draft saved" hint.
-  async saveDraft(
-    caller: Caller,
-    clientId: string,
-    body: string,
-    snippetId?: string,
-  ) {
+  async saveDraft(caller: Caller, clientId: string, body: string, snippetId?: string) {
     const coachId = resolveCoachId(caller);
     const ownerBypass = caller.role === 'owner';
     const scope = await this.clientScope(caller);
@@ -618,11 +599,10 @@ export class V1CoachService {
   }
 }
 
-function computeRisk(input: {
-  now: Date;
-  lastCheckIn: Date | null;
-  lastCoachReply: Date | null;
-}): { bucket: 'healthy' | 'watch' | 'at_risk'; reason: string | null } {
+function computeRisk(input: { now: Date; lastCheckIn: Date | null; lastCoachReply: Date | null }): {
+  bucket: 'healthy' | 'watch' | 'at_risk';
+  reason: string | null;
+} {
   const reasons: string[] = [];
   const daysSince = (d: Date | null) =>
     d ? (input.now.getTime() - d.getTime()) / 86_400_000 : Infinity;
