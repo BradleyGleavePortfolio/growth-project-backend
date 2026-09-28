@@ -505,3 +505,11 @@ native targets and the constraints S8-E must honour are:
 - **S8-F:** native targets resolve by `target_kind` to owned native IDs. The
   `roster_bridge_pending` qualifier is visible.
 - **S8-D / S8-E:** blocked on D-S8-2. §4.1 and §4.5 are their starting contracts.
+
+## 7. Forward pointer (added 2026-09-26; appended so that every `S8-DOC Lx` citation above stays valid)
+
+- **D-S8-2 decided by the owner: option (a).** The end state, the linking rules (D-S8-LINK
+  L1-L8) and the S8-D / S8-E slice plan are in
+  `docs/decisions/2026-09-26-s8d-person-link.md`. The interim (L72-74) stays the truthful
+  reported outcome for a family until its person-owned writer lands; the §4.1 qualifier
+  (L372-374) stays until the roster slice named there lands.
