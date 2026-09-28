@@ -6,38 +6,56 @@ name: Fly Feature Flags Set (operator)
 # the existing Fly Secrets Set (operator) workflow.
 #
 # What it does:
-#   1. Pushes FEATURE_SCOUT_INGEST, FEATURE_SCOUT_RECONSTRUCT,
-#      FEATURE_EXTENSION_PAIRING and FEATURE_SCOUT_PILOT_COACH_IDS to Fly
-#      in one `fly secrets set` invocation so machines restart once.
-#      The three flags are non-sensitive booleans read at request time by
-#      src/common/feature-flag/feature-flag-not-found.middleware.ts. The
-#      allowlist is a comma-separated list of coach User.id UUIDs read by
-#      src/common/feature-flag/pilot-coach-allowlist.ts (S12-B1); it is
-#      NOT a secret value in the sensitive sense but is still only ever
-#      echoed as a name/digest below, never printed in full.
-#   2. Validates by running `fly secrets list` and checking all four names
-#      are present. Only names and digests are printed, never values.
+#   1. Pushes ONLY the flags/allowlist the operator explicitly set this
+#      dispatch — never all four unconditionally (S12-B6 review closure,
+#      S12B6-SOL-B1). Every one of the four inputs below defaults to the
+#      empty string, meaning "leave this one alone" (same convention as
+#      fly-deploy.yml's `migrations` acknowledgement input: an empty
+#      default is not a default-on switch). An input left at its empty
+#      default is OMITTED from the `flyctl secrets set` invocation
+#      entirely, so Fly leaves that secret's current value untouched —
+#      `flyctl secrets set` only ever touches the names you pass it, it is
+#      not a full-replace. An operator who wants only to change the
+#      allowlist, or only flip reconstruct off, can do exactly that without
+#      silently re-asserting (or worse, resetting) the other three.
+#   2. If at least one flag/allowlist was set, pushes those in one
+#      `flyctl secrets set` invocation (so machines restart once for this
+#      dispatch) and validates by running `fly secrets list`, checking
+#      only the names actually pushed this run are present. Only names and
+#      digests are printed, never values.
 #
 # S12-B6 note on the allowlist input: this workflow does NOT re-implement
 # S12-B1's UUID parser (parsePilotCoachAllowlist in
-# src/common/feature-flag/pilot-coach-allowlist.ts). The value is passed
-# through to Fly unchanged, byte for byte — bash has no equivalent of the
-# app's fail-closed UUID/CSV parsing, and a re-implementation could drift
-# from it. The app is the single source of truth: at request time it FAILS
-# CLOSED (empty allowlist, nobody admitted) on anything malformed, exactly
-# as it does today for a hand-edited Fly secret. This workflow only adds a
-# light shape check (reject obvious non-UUID junk like `*`/`true`/spaces-
-# only segments) so an operator gets fast feedback before machines restart,
-# without duplicating or diverging from the app's parser.
+# src/common/feature-flag/pilot-coach-allowlist.ts). An explicitly-set value
+# is passed through to Fly unchanged, byte for byte — bash has no
+# equivalent of the app's fail-closed UUID/CSV parsing, and a
+# re-implementation could drift from it. The app is the single source of
+# truth: at request time it FAILS CLOSED (empty allowlist, nobody admitted)
+# on anything malformed, exactly as it does today for a hand-edited Fly
+# secret. This workflow only adds a light shape check (reject obvious
+# non-UUID junk like `*`/`true`/spaces-only segments) so an operator gets
+# fast feedback before machines restart, without duplicating or diverging
+# from the app's parser. To deliberately go dark, set the allowlist input
+# to the literal string `__CLEAR__` (see the allowlist step below) — the
+# empty-string DEFAULT means "leave alone", so plain emptiness can no
+# longer be used to mean "clear it", and this workflow needs a way to
+# distinguish the two.
 #
-# How to run (operator):
+# How to run (operator) — set only what you mean to change, e.g. just the
+# allowlist:
+#   gh workflow run "Fly Feature Flags Set (operator)" \
+#     -f app=backend-spring-lake-3890 \
+#     -f confirm=SET \
+#     -f feature_scout_pilot_coach_ids=11111111-1111-1111-1111-111111111111
+#
+# ...or set every flag explicitly, as before:
 #   gh workflow run "Fly Feature Flags Set (operator)" \
 #     -f app=backend-spring-lake-3890 \
 #     -f confirm=SET \
 #     -f feature_scout_ingest=true \
 #     -f feature_scout_reconstruct=false \
 #     -f feature_extension_pairing=true \
-#     -f feature_scout_pilot_coach_ids=''
+#     -f feature_scout_pilot_coach_ids=__CLEAR__
 
 on:
   workflow_dispatch:
@@ -51,23 +69,32 @@ on:
         required: true
         default: ''
       feature_scout_ingest:
-        description: Value for FEATURE_SCOUT_INGEST (true/false)
-        required: true
-        default: 'true'
+        description: >-
+          Value for FEATURE_SCOUT_INGEST (true/false). Leave empty to keep
+          its CURRENT Fly value unchanged (no default-on mutation).
+        required: false
+        default: ''
       feature_extension_pairing:
-        description: Value for FEATURE_EXTENSION_PAIRING (true/false)
-        required: true
-        default: 'true'
+        description: >-
+          Value for FEATURE_EXTENSION_PAIRING (true/false). Leave empty to
+          keep its CURRENT Fly value unchanged (no default-on mutation).
+        required: false
+        default: ''
       feature_scout_reconstruct:
-        description: Value for FEATURE_SCOUT_RECONSTRUCT (true/false)
-        required: true
-        default: 'false'
+        description: >-
+          Value for FEATURE_SCOUT_RECONSTRUCT (true/false). Leave empty to
+          keep its CURRENT Fly value unchanged (no default-on mutation).
+        required: false
+        default: ''
       feature_scout_pilot_coach_ids:
         description: >-
-          FEATURE_SCOUT_PILOT_COACH_IDS: comma-separated coach User.id UUIDs
-          (S12-B1 allowlist). Leave empty to keep the pilot surface dark for
-          everyone even if the flags above are true. Passed through to Fly
-          unchanged; the app's parser (fail-closed) is the source of truth.
+          FEATURE_SCOUT_PILOT_COACH_IDS: comma-separated coach User.id
+          UUIDs (S12-B1 allowlist). Leave EMPTY to keep the CURRENT Fly
+          value unchanged (no default-on mutation) — this no longer means
+          "clear the allowlist". To deliberately clear it (go dark for
+          everyone), set the literal string __CLEAR__. Passed through to
+          Fly unchanged; the app's parser (fail-closed) is the source of
+          truth.
         required: false
         default: ''
 
@@ -107,36 +134,67 @@ jobs:
           fi
           echo "Operator confirmed."
 
-      - name: Validate flag values
+      - name: Validate flag values (empty = leave unchanged, S12B6-SOL-B1)
         env:
           SCOUT: ${{ inputs.feature_scout_ingest }}
           RECONSTRUCT: ${{ inputs.feature_scout_reconstruct }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
         run: |
-          for v in "${SCOUT}" "${RECONSTRUCT}" "${PAIRING}"; do
+          # Empty means "not specified this dispatch, leave the current Fly
+          # value alone" — not a value, so it is never checked against
+          # true/false, and it never reaches the flyctl command below. Any
+          # NON-empty value must be exactly 'true' or 'false'.
+          #
+          # S12B6-SOL-B2 closure: on rejection, name the OFFENDING INPUT by
+          # position/name only — never interpolate the invalid value itself
+          # into the log. An operator can paste anything into a
+          # workflow_dispatch text field (including, by mistake, a
+          # credential or other sensitive text); this validator must not
+          # become a way to get that value echoed into Actions logs.
+          check_one() {
+            local input_name="$1" v="$2"
+            if [ -z "${v}" ]; then
+              echo "${input_name}: not specified, leaving current Fly value unchanged."
+              return 0
+            fi
             case "${v}" in
-              true|false) ;;
+              true|false)
+                echo "${input_name}: valid boolean, will be set."
+                ;;
               *)
-                echo "::error::Flag values must be exactly 'true' or 'false' — got '${v}'."
-                exit 1
+                echo "::error::${input_name} must be exactly 'true', 'false', or empty (unchanged) — the supplied value is invalid. Value withheld from this log intentionally."
+                return 1
                 ;;
             esac
-          done
-          echo "Flag values are valid booleans."
+          }
+          ok=0
+          check_one "feature_scout_ingest" "${SCOUT}" || ok=1
+          check_one "feature_scout_reconstruct" "${RECONSTRUCT}" || ok=1
+          check_one "feature_extension_pairing" "${PAIRING}" || ok=1
+          if [ "${ok}" -ne 0 ]; then
+            exit 1
+          fi
 
-      - name: Validate pilot coach allowlist shape
+      - name: Validate pilot coach allowlist shape (empty = leave unchanged, S12B6-SOL-B1)
         env:
           COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
         run: |
-          # Light shape check only — NOT the app's parser. Empty is valid
-          # (dark). Rejects obvious junk (blank segments, non-UUID text) so
-          # an operator gets fast feedback; anything that slips through
-          # still fails closed at request time in
+          # Light shape check only — NOT the app's parser. Anything that
+          # slips through still fails closed at request time in
           # src/common/feature-flag/pilot-coach-allowlist.ts.
-          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          #
+          # Three distinct meanings, S12B6-SOL-B1 closure:
+          #   ''         -> not specified this dispatch; leave the current
+          #                 Fly value unchanged (no default-on mutation).
+          #   '__CLEAR__' -> deliberately go dark for everyone (the old
+          #                 meaning of leaving this field empty).
+          #   anything else -> the new allowlist value, validated below.
           if [ -z "${COACH_IDS}" ]; then
-            echo "Pilot coach allowlist is empty (pilot surface stays dark)."
+            echo "feature_scout_pilot_coach_ids: not specified, leaving current Fly value unchanged."
+          elif [ "${COACH_IDS}" = "__CLEAR__" ]; then
+            echo "feature_scout_pilot_coach_ids: __CLEAR__ — will set the allowlist to empty (pilot surface goes dark for everyone)."
           else
+            uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
             IFS=',' read -ra entries <<< "${COACH_IDS}"
             bad=0
             for raw in "${entries[@]}"; do
@@ -146,10 +204,11 @@ jobs:
               fi
             done
             if [ "${bad}" -eq 1 ]; then
-              echo "::error::feature_scout_pilot_coach_ids has an entry that is not a UUID. The app's parser fails the WHOLE list closed on any bad entry (S12-B1) — fix it here first so the pilot is not silently locked out."
+              # S12B6-SOL-B2: name the input, never echo its value.
+              echo "::error::feature_scout_pilot_coach_ids has an entry that is not a UUID. The app's parser fails the WHOLE list closed on any bad entry (S12-B1) — fix it here first so the pilot is not silently locked out. Value withheld from this log intentionally."
               exit 1
             fi
-            echo "Pilot coach allowlist entries look like UUIDs (app still re-validates at request time)."
+            echo "feature_scout_pilot_coach_ids: entries look like UUIDs (app still re-validates at request time)."
           fi
 
       - name: Check Fly token configuration
@@ -164,7 +223,7 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20 (pinned)
 
-      - name: Push feature flags to Fly
+      - name: Push feature flags to Fly (only inputs explicitly set this dispatch)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
@@ -174,11 +233,40 @@ jobs:
           COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
         run: |
           set +x
-          flyctl secrets set -a "${APP}" \
-            FEATURE_SCOUT_INGEST="${SCOUT}" \
-            FEATURE_SCOUT_RECONSTRUCT="${RECONSTRUCT}" \
-            FEATURE_EXTENSION_PAIRING="${PAIRING}" \
-            FEATURE_SCOUT_PILOT_COACH_IDS="${COACH_IDS}"
+          # S12B6-SOL-B1 closure: build the `flyctl secrets set` argument
+          # list from only the inputs that were explicitly set. `flyctl
+          # secrets set` only ever touches the names it is given — a name
+          # left out keeps its current value on Fly untouched. This is the
+          # update-only mechanism the review asked for: no name, no change.
+          args=()
+          pushed=()
+          if [ -n "${SCOUT}" ]; then
+            args+=("FEATURE_SCOUT_INGEST=${SCOUT}")
+            pushed+=("FEATURE_SCOUT_INGEST")
+          fi
+          if [ -n "${RECONSTRUCT}" ]; then
+            args+=("FEATURE_SCOUT_RECONSTRUCT=${RECONSTRUCT}")
+            pushed+=("FEATURE_SCOUT_RECONSTRUCT")
+          fi
+          if [ -n "${PAIRING}" ]; then
+            args+=("FEATURE_EXTENSION_PAIRING=${PAIRING}")
+            pushed+=("FEATURE_EXTENSION_PAIRING")
+          fi
+          if [ -n "${COACH_IDS}" ]; then
+            if [ "${COACH_IDS}" = "__CLEAR__" ]; then
+              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=")
+            else
+              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=${COACH_IDS}")
+            fi
+            pushed+=("FEATURE_SCOUT_PILOT_COACH_IDS")
+          fi
+          if [ "${#args[@]}" -eq 0 ]; then
+            echo "::error::No flag or allowlist input was set this dispatch — nothing to push. Set at least one input, or use Fly Secrets List to inspect current values without changing anything."
+            exit 1
+          fi
+          echo "Pushing: ${pushed[*]}"
+          flyctl secrets set -a "${APP}" "${args[@]}"
+          echo "PUSHED_NAMES=${pushed[*]}" >> "${GITHUB_ENV}"
 
       - name: Validate flag names exist on Fly
         env:
@@ -190,7 +278,7 @@ jobs:
           echo "${listing}"
           names=$(echo "${listing}" | awk '{print $1}')
           missing=""
-          for name in FEATURE_SCOUT_INGEST FEATURE_SCOUT_RECONSTRUCT FEATURE_EXTENSION_PAIRING FEATURE_SCOUT_PILOT_COACH_IDS; do
+          for name in ${PUSHED_NAMES}; do
             if ! echo "${names}" | grep -qx "${name}"; then
               missing="${missing} ${name}"
             fi
@@ -199,4 +287,4 @@ jobs:
             echo "::error::Flags did not appear on Fly after set:${missing}"
             exit 1
           fi
-          echo "All four feature flag/allowlist names are present on Fly."
+          echo "Every name pushed this run (${PUSHED_NAMES}) is present on Fly."
