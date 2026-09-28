@@ -50,8 +50,20 @@ describe('IMPORTER-F schema + migration structural guard', () => {
       expect(cols).toEqual(['coach_id', 'source_platform', 'source_person_id']);
     });
 
+    // Columns only: comments are prose, not schema. S8-D3 (docs/decisions/
+    // 2026-09-26-s8d-person-link.md §2.3) adds exactly one account reference,
+    // `linked_user_id String?`, written by the link transaction after the client
+    // verified a contact and the coach confirmed — never at import. It is carved
+    // out here by name so the D2 guard keeps biting on anything else.
+    const S8D3_LINK_COLUMN = /\blinked_user_id\b|\blinked_user\b|"PersonLinkedUser"/g;
+    const personColumns = person
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n')
+      .replace(S8D3_LINK_COLUMN, 'S8D3_LINK');
+
     it('has NO email column — email is never stored or keyed (D2)', () => {
-      expect(person.toLowerCase()).not.toContain('email');
+      expect(personColumns.toLowerCase()).not.toContain('email');
     });
 
     it('mints NO auth/credential column at import (invite-pending, non-login)', () => {
@@ -62,8 +74,14 @@ describe('IMPORTER-F schema + migration structural guard', () => {
         'authPrincipal',
         'user_id',
       ]) {
-        expect(person.toLowerCase()).not.toContain(banned.toLowerCase());
+        expect(personColumns.toLowerCase()).not.toContain(banned.toLowerCase());
       }
+    });
+
+    it('carries the S8-D3 account link as a single nullable column, never a key (§2.3)', () => {
+      expect(person).toMatch(/^\s*linked_user_id\s+String\?\s*$/m);
+      expect(person).not.toMatch(/@@unique\(\[[^\]]*linked_user_id/);
+      expect(person).not.toMatch(/@@id\(\[[^\]]*linked_user_id/);
     });
 
     it('defaults new roster records to the InvitePending state', () => {

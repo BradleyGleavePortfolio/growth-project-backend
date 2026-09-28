@@ -1,6 +1,6 @@
--- S8-D3 (4 of 4) rollback: return each constraint to its NOT VALID state (PostgreSQL has no
+-- S8-D3 step 11 of 11 rollback: return each constraint to its NOT VALID state (PostgreSQL has no
 -- "unvalidate", so each is dropped and re-added NOT VALID with the identical definition from
--- 1 of 4 / 3 of 4). Run FIRST in the S8-D3 down chain. Metadata only; no row is touched; the
+-- step 1 / step 10). Run FIRST in the S8-D3 down chain. Metadata only; no row is touched; the
 -- constraints keep enforcing new writes throughout.
 BEGIN;
 SET LOCAL lock_timeout = '5s';

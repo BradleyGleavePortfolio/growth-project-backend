@@ -1134,9 +1134,9 @@ model CheckIn {
   id                String      @id @default(uuid())
   // S8-D3: exactly one owner (User XOR Person). For a person-owned row coach_id is required and
   // pinned to the Person's tenant by the composite FK (person_id, coach_id) -> Person(id, coach_id)
-  // (CHECK + FK hand-written in 20270125000000 / 20270125000002; MATCH SIMPLE skips user-owned
+  // (CHECK + FK hand-written in 20270125000000 / 20270125000009; MATCH SIMPLE skips user-owned
   // rows). One-per-day for person-owned rows: partial unique (person_id, date) WHERE person_id
-  // IS NOT NULL (20270125000001), which Prisma cannot express.
+  // IS NOT NULL (20270125000005), which Prisma cannot express.
   user_id           String?
   user              User?       @relation(fields: [user_id], references: [id])
   person_id         String?
@@ -7010,8 +7010,8 @@ model Person {
   // S8-D3 (docs/decisions/2026-09-26-s8d-person-link.md §2.3): the current active account, NULL
   // unless state = Claimed. Redundant with the active PersonLink (§2.5) so roster reads and the
   // owner flip need no join; the link transaction writes both or neither. Cardinality lives on
-  // PersonLink's partial uniques, not here. Never set by reconstruction replays. Still no contact,
-  // email or credential column (D2 stands).
+  // PersonLink's partial uniques, not here. Never set by reconstruction replays. No contact or
+  // login column is added (D2 stands).
   linked_user_id   String?
   linked_user      User?       @relation("PersonLinkedUser", fields: [linked_user_id], references: [id], onDelete: Restrict)
 
@@ -7032,7 +7032,7 @@ model Person {
   @@unique([coach_id, source_platform, source_person_id])
   // S8-D3 tenant pin: target of the composite FKs (person_id, coach_id) on CheckIn, PersonInvite,
   // PersonLink and PersonLinkProposal, so a person-owned row can never name another tenant.
-  // Built CONCURRENTLY (20270125000001) and promoted to this constraint (20270125000002).
+  // Built CONCURRENTLY (20270125000001) and promoted to this constraint (20270125000009).
   @@unique([id, coach_id])
   @@index([coach_id])
   @@index([linked_user_id])

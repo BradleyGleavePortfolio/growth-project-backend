@@ -1,5 +1,5 @@
--- S8-D3 (1 of 4) rollback: reverse 20270125000000_scout_person_owned_schema exactly.
--- Run ONLY after the down files of 20270125000003, 20270125000002 and 20270125000001 (newest
+-- S8-D3 step 1 of 11 rollback: reverse 20270125000000_scout_person_owned_schema exactly.
+-- Run ONLY after the down files of 20270125000010, 20270125000009 and 20270125000001..08 (newest
 -- first); this file drops no key that a later directory created and refuses to destroy data.
 --
 -- FAIL-CLOSED: refuses (atomically, nothing dropped) while ANY person-owned row exists on the five

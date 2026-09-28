@@ -1,7 +1,7 @@
 /**
  * S8-D3 — person-owned schema: role × owner-state RLS matrix and constraint proofs
  * (docs/decisions/2026-09-26-s8d-person-link.md §2.1, §2.2 items 1-4, §2.5, §2.9; migrations
- * 20270125000000..20270125000003).
+ * 20270125000000..20270125000010).
  *
  * Runs against a REAL PostgreSQL on which the FULL migration chain was deployed
  * (`prisma migrate deploy` after prisma/migrations/_supabase_bootstrap.sql) — the
@@ -25,7 +25,7 @@
  *   E. As service_role-equivalent (BYPASSRLS): the XOR CHECKs, the CheckIn coach CHECK, the
  *      composite tenant FK (a person-owned check-in naming another coach fails the FK, not a
  *      policy), the person-owned one-per-day partial unique, the PersonLink active uniques and the
- *      30-day undo CHECK; and that every S8-D3 constraint is VALIDATED (4 of 4 ran).
+ *      30-day undo CHECK; and that every S8-D3 constraint is VALIDATED (step 11 ran).
  *   F. The five new tables: RLS enabled + forced, service_role permissive + RESTRICTIVE deny-all
  *      policies present, API-role privileges revoked, and a direct authenticated read is refused.
  *
@@ -519,16 +519,23 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
   }, 120_000);
 
   // ── Schema facts ──────────────────────────────────────────────────────────────────────────
-  describe('schema (4 of 4 applied; constraints validated; policies guarded)', () => {
-    it('records the four S8-D3 migrations as applied', async () => {
+  describe('schema (all eleven S8-D3 directories applied; constraints validated; policies guarded)', () => {
+    it('records the eleven S8-D3 migrations as applied', async () => {
       const rows = await q<{ migration_name: string }>(
         `SELECT migration_name FROM "_prisma_migrations" WHERE migration_name LIKE '20270125%' AND finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY 1`,
       );
       expect(rows.map((r) => r.migration_name)).toEqual([
         '20270125000000_scout_person_owned_schema',
-        '20270125000001_scout_person_owned_indexes',
-        '20270125000002_scout_person_owned_keys',
-        '20270125000003_scout_person_owned_validate',
+        '20270125000001_scout_person_owned_index_person_tenant_key',
+        '20270125000002_scout_person_owned_index_workout_session',
+        '20270125000003_scout_person_owned_index_weight_log',
+        '20270125000004_scout_person_owned_index_habit',
+        '20270125000005_scout_person_owned_index_check_in_day_key',
+        '20270125000006_scout_person_owned_index_assignment',
+        '20270125000007_scout_person_owned_index_person_linked_user',
+        '20270125000008_scout_person_owned_index_provenance',
+        '20270125000009_scout_person_owned_keys',
+        '20270125000010_scout_person_owned_validate',
       ]);
     });
 

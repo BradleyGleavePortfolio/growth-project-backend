@@ -1,8 +1,8 @@
--- S8-D3 (4 of 4): validate every NOT VALID constraint from 1 of 4 and 3 of 4
+-- S8-D3 step 11 of 11: validate every NOT VALID constraint from steps 1 and 10
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.9 row D3-4).
 --
--- WHAT: ALTER TABLE ... VALIDATE CONSTRAINT, one statement each, for the six CHECKs (1 of 4) and the
--- ten foreign keys (3 of 4). Every existing row is user-owned with person_id NULL, so every CHECK
+-- WHAT: ALTER TABLE ... VALIDATE CONSTRAINT, one statement each, for the six CHECKs (step 1) and the
+-- ten foreign keys (step 10). Every existing row is user-owned with person_id NULL, so every CHECK
 -- holds trivially and every FK has nothing to match; the scan is a proof, not a repair. If a row
 -- ever violated one, this file fails and nothing is changed (no backfill, no deletion).
 --

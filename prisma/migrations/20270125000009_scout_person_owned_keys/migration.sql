@@ -1,24 +1,24 @@
--- S8-D3 (3 of 4): the Person tenant key and the foreign keys to Person
+-- S8-D3 step 10 of 11: the Person tenant key and the foreign keys to Person
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.2 item 3, §2.5, §2.9 row D3-3).
 --
 -- WHAT:
---   1. Promote the CONCURRENTLY-built unique index Person(id, coach_id) (2 of 4) to the constraint
+--   1. Promote the CONCURRENTLY-built unique index Person(id, coach_id) (step 2) to the constraint
 --      "Person_id_coach_id_key" with ADD CONSTRAINT ... UNIQUE USING INDEX (metadata only).
 --      A FK may only reference columns covered by a non-partial unique constraint or index that
 --      already exists (B7), so this is the FIRST statement.
---   2. Composite tenant FKs, all NOT VALID (no scan; validated in 4 of 4):
+--   2. Composite tenant FKs, all NOT VALID (no scan; validated in step 11):
 --        CheckIn(person_id, coach_id)            -> Person(id, coach_id)
 --        PersonInvite(person_id, coach_id)       -> Person(id, coach_id)
 --        PersonLink(person_id, coach_id)         -> Person(id, coach_id)
 --        PersonLinkProposal(person_id, coach_id) -> Person(id, coach_id)
 --      MATCH SIMPLE: a user-owned row (person_id NULL) is not checked; a person-owned CheckIn
---      must name a coach (CHECK in 1 of 4), so its coach_id is pinned to the Person's tenant.
+--      must name a coach (CHECK in step 1), so its coach_id is pinned to the Person's tenant.
 --   3. Plain person_id -> Person(id) FKs, NOT VALID: WorkoutSession, WeightLog, Habit,
 --      ClientWorkoutAssignment, ImportNativeProvenance; and Person.linked_user_id -> User(id).
 --   All ON DELETE RESTRICT ON UPDATE CASCADE (Prisma's generated shape): a Person with owned rows,
 --   provenance or link history is never silently dropped (erasure is an explicit path, §2.3).
 --
--- ENTRY GATE (refuses, never repairs): the 2 of 4 index must exist, be unique, valid, ready,
+-- ENTRY GATE (refuses, never repairs): the step-2 index must exist, be unique, valid, ready,
 -- non-partial and on exactly (id, coach_id); otherwise the promotion would fail or, worse, adopt
 -- a decoy. Raw reruns are refused by the constraint already existing (fixed text).
 --
@@ -49,7 +49,7 @@ BEGIN
   END IF;
 END $$;
 
--- 1. Promote the index (2 of 4) to the unique constraint the FKs reference.
+-- 1. Promote the index (step 2) to the unique constraint the FKs reference.
 ALTER TABLE public."Person" ADD CONSTRAINT "Person_id_coach_id_key" UNIQUE USING INDEX "Person_id_coach_id_key";
 
 -- 2. Composite tenant FKs (NOT VALID).

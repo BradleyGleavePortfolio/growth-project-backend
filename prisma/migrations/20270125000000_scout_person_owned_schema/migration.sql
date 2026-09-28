@@ -1,4 +1,4 @@
--- S8-D3 (1 of 4): person-owned schema — tables, columns, CHECKs and the RLS rewrite
+-- S8-D3 step 1 of 11: person-owned schema — tables, columns, CHECKs and the RLS rewrite
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.1-2.5, §2.9 row D3-1; owner decision D-S8-2
 -- option (a) and D-S8-LINK L1-L8).
 --
@@ -10,7 +10,7 @@
 --     API-role privileges revoked) — the Person posture (20261223000200) exactly.
 --     PersonLink(id, coach_id, user_id) UNIQUE is created BEFORE the self-referencing anchor FK.
 --   * Person.linked_user_id TEXT NULL and ImportNativeProvenance.person_id TEXT NULL (no FK yet:
---     FKs to Person wait for the Person(id, coach_id) key built in 2 of 4 and promoted in 3 of 4).
+--     FKs to Person wait for the Person(id, coach_id) key built in steps 2-9 and promoted in step 10).
 --   * On the five client-owned parents (WorkoutSession, WeightLog, Habit, CheckIn,
 --     ClientWorkoutAssignment): ADD COLUMN person_id TEXT NULL, DROP NOT NULL on user_id /
 --     client_id, the exactly-one-owner CHECK ((user_id IS NULL) <> (person_id IS NULL)) and, on
@@ -26,8 +26,8 @@
 --     branches on ExerciseSet, HabitLog, CheckIn and ClientWorkoutAssignmentSnapshot are kept
 --     unchanged (stated owner exception, §2.2 item 2).
 --
--- WHAT NOT: no composite FK to Person here (B7 ordering: unique key first, 2 of 4 / 3 of 4); no
--- CONCURRENTLY index here (2 of 4); no VALIDATE here (4 of 4); no writer, no route, no flag, no
+-- WHAT NOT: no composite FK to Person here (B7 ordering: unique key first, steps 2-9 / step 10); no
+-- CONCURRENTLY index here (steps 2-9); no VALIDATE here (step 11); no writer, no route, no flag, no
 -- data movement. Nothing reads or writes the new columns until S8-D4a / S8-E1a.
 --
 -- LOCKS: catalog-only ALTER TABLEs (short ACCESS EXCLUSIVE, no rewrite, no scan because every
@@ -41,7 +41,7 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
 -- ---------------------------------------------------------------------------------------------
--- 1. Person.linked_user_id / ImportNativeProvenance.person_id (columns only; FKs in 3 of 4)
+-- 1. Person.linked_user_id / ImportNativeProvenance.person_id (columns only; FKs in step 10)
 -- ---------------------------------------------------------------------------------------------
 ALTER TABLE public."Person" ADD COLUMN IF NOT EXISTS "linked_user_id" TEXT;
 COMMENT ON COLUMN public."Person"."linked_user_id" IS 'S8-D3 §2.3: current active account (NULL unless state = Claimed); redundant with the active PersonLink so roster reads and the owner flip need no join. Never set by reconstruction replays.';
@@ -75,7 +75,7 @@ ALTER TABLE public."CheckIn" ALTER COLUMN "user_id" DROP NOT NULL;
 ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_owner_xor_check";
 ALTER TABLE public."CheckIn" ADD CONSTRAINT "CheckIn_owner_xor_check"
   CHECK (("user_id" IS NULL) <> ("person_id" IS NULL)) NOT VALID;
--- A person-owned check-in must name a coach: the composite FK (3 of 4) is MATCH SIMPLE and would
+-- A person-owned check-in must name a coach: the composite FK (step 10) is MATCH SIMPLE and would
 -- skip a NULL coach_id, so this CHECK makes the tenant pin unavoidable.
 ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_person_coach_check";
 ALTER TABLE public."CheckIn" ADD CONSTRAINT "CheckIn_person_coach_check"
