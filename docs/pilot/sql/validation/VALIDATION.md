@@ -5,6 +5,20 @@ once against a throwaway local Postgres, migrated to this slice's base, seeded w
 rows, under the canonical heavy-command lock. **Never against production; never against any
 hosted database.**
 
+**Fixer note (S12B-FIX, closing S12B4-SOL-A1/B1/B2):** `00_find_coach.sql`, `01_run_identity.sql`,
+`03_settled_basis.sql`, `06_open_runs.sql` and `07_client_directed_sends.sql` are unchanged from
+the run recorded below and their rows/RC below still stand. `02_declarations_and_observations.sql`
+and `04_provenance_and_roster.sql` had PII/raw-identifier columns redacted to digests/counts
+(A1); `05_tenant_isolation.sql` gained header language separating "activity signal" from a
+read-isolation proof (B1); no query's row-returning behavior or RC changed — the redactions are
+column-level (fewer/hashed columns, same WHERE/JOIN predicates and same row sets), and B1's fix is
+comments-only. This sandbox has no local PG/psql (`psql: command not found`), the same constraint
+the independent reviewer hit, so the redacted queries have not been re-executed against a live
+throwaway Postgres since being edited; the next person with PG tooling should re-run
+`validation/VALIDATION_RUN.sh` and refresh the table below and `validation_output_raw.txt`
+accordingly before this pack is used for a real pilot report. This is an open evidence gap, not a
+claim of a fresh green run.
+
 ## Environment
 
 - Postgres server: embedded PG **17.6** from `execution/42d8c5b5/runtime/pg17/dist` (pinned
@@ -56,9 +70,9 @@ This is exactly what §4 asks this builder to do: validate the pack against the 
 base, not assume it compiles from reading the Prisma file. All three failures were schema facts
 this builder had not confirmed until running them.
 
-## Query-by-query result (seeded fixture, `docs/pilot/sql/VALIDATION_RUN.sh`, full output in
+## Query-by-query result (seeded fixture, `docs/pilot/sql/validation/VALIDATION_RUN.sh`, full output in
 
-`.validation_output_raw.txt` in this directory — not shipped as part of the pack itself, kept
+`validation_output_raw.txt` in this directory — not shipped as part of the pack itself, kept
 only as the evidence trail)
 
 | file                                                                                        | params used                                                                | rows returned                                                                                                                                             | RC  | notable                                                                                                                                                                                                                                                                                                                                                |

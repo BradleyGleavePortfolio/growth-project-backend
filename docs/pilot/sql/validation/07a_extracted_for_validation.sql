@@ -1,6 +1,6 @@
 -- Validation-only extract of 07_client_directed_sends.sql query 7a (the SELECT-only,
 -- table-name-fixed part). NOT part of the shipped pack's public surface — kept only so
--- docs/pilot/sql/VALIDATION_RUN.sh can execute 7a with a plain `-f` and record real output.
+-- docs/pilot/sql/validation/VALIDATION_RUN.sh can execute 7a with a plain `-f` and record real output.
 -- The pack file itself (07_client_directed_sends.sql) is the source of truth; keep this in sync
 -- with its 7a block if that block ever changes.
 SELECT

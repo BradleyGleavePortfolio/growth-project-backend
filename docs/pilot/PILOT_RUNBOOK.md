@@ -26,9 +26,11 @@ The importer flags are **global**; only the S12-B1 allowlist scopes them to one 
    `S12_PILOT_READINESS.md` §4).
 2. Get the pilot coach's `User.id` (UUID) from the database — never from memory or a support
    ticket. `sql/00_find_coach.sql` does this by email, read-only.
-3. Set exactly one id: `fly secrets set FEATURE_SCOUT_PILOT_COACH_IDS=<uuid>` on the target app.
-   This restarts the machines once (`fly-feature-flags-set.yml`). Do **not** add a second id
-   during S12a (§0.3: one coach only).
+3. Set exactly one id: `fly secrets set -a <allowlisted-app> FEATURE_SCOUT_PILOT_COACH_IDS=<uuid>`
+   — always name the target app explicitly with `-a` (S12B4-SOL-C2: never rely on a default/
+   ambient Fly target). This restarts the machines once (`fly-feature-flags-set.yml`, which
+   itself validates `app` against a fixed allowlist — S12-B6). Do **not** add a second id during
+   S12a (§0.3: one coach only).
 4. Set the three importer flags to `'true'` in that order only after step 3 is confirmed (owner
    item 6, `S12_PILOT_READINESS.md` §4): `FEATURE_EXTENSION_PAIRING`, `FEATURE_SCOUT_INGEST`,
    `FEATURE_SCOUT_RECONSTRUCT`. `FEATURE_PERSON_LINK` stays **absent** (S12b only).
@@ -90,14 +92,16 @@ the deadline check has actually run).
 
 ## 4. Validating these queries (what this grant requires before trusting any of them)
 
-Every query in `sql/` was run once, under the canonical heavy-command lock
-(`/home/user/workspace/execution/test-validation.lock`), against a **throwaway local Postgres**
-(embedded PG 17.6 from this exec's runtime, never a shared or persistent instance) migrated with
-`prisma migrate deploy` at this slice's base commit, then seeded with hand-written synthetic rows
-(`sql/seed_synthetic.sql` — fake UUIDs, no real coach, no real source data). Outputs are recorded
-in `sql/VALIDATION.md` alongside the exact commands and their exit codes. **No query here has ever
-been run against any hosted database, staging or production.** Re-running the validation after any
-schema change is required before trusting the pack again.
+Every one of the eight numbered pack queries directly under `sql/` was run once, under the
+canonical heavy-command lock (`/home/user/workspace/execution/test-validation.lock`), against a
+**throwaway local Postgres** (embedded PG 17.6 from this exec's runtime, never a shared or
+persistent instance) migrated with `prisma migrate deploy` at this slice's base commit, then
+seeded with hand-written synthetic rows (`sql/validation/seed_synthetic.sql` — fake UUIDs, no
+real coach, no real source data; kept in its own `validation/` subdirectory, separate from the
+read-only pack, precisely because it contains `INSERT`/`COMMIT` — see §7). Outputs are recorded
+in `sql/validation/VALIDATION.md` alongside the exact commands and their exit codes. **No query
+here has ever been run against any hosted database, staging or production.** Re-running the
+validation after any schema change is required before trusting the pack again.
 
 ## 5. Producing the §3.4 pilot report
 
@@ -131,7 +135,11 @@ Native provenance (incl. S8-D1 person handoff):
 Roster (Person rows this run produced, invite-pending): <n> — "not known yet" if the reconstruct
   read was never made, never "0 people".
 
-Tenant isolation check: <PASS — zero rows/reads for any other coach_id | list any exception>
+Tenant isolation activity signal (05a, time-window, writes only — NOT a read-isolation proof;
+  see sql/05_tenant_isolation.sql header): <no other coach's write observed in the narrowed
+  window | list any hit, with the investigate/narrow-window step taken>
+Other pilot-limit checks (05b/05c): <one workspace confirmed | more than one workspace, describe>
+  / <pilot coach is not a client of another coach | pilot coach IS a client of coach <id>>
 
 Deviations from an honest partial (if any): <describe, or "none observed">
 ```
@@ -161,10 +169,19 @@ entity_type, source_id)` after a replay (duplicate native identity);
 
 ## 7. What this pack intentionally does not do
 
-- It does not run anything. Every file under `sql/` is read-only `SELECT` (enforced by review —
-  no `INSERT`/`UPDATE`/`DELETE`/`COPY`/DDL appears anywhere in this directory), parameterised by
-  `coach_id`/`intent_id`, meant to be run by a human with `psql` against whichever database they
-  have already decided to point at. This runbook and this builder never make that connection.
+- It does not run anything. S12B4-SOL-B2 closure: the pack's operator surface is exactly the
+  eight numbered files directly under `sql/` (`00_find_coach.sql` through
+  `07_client_directed_sends.sql`) plus this runbook — every one of those is read-only `SELECT`
+  (enforced by review — no `INSERT`/`UPDATE`/`DELETE`/`COPY`/DDL appears in any of them),
+  parameterised by `coach_id`/`intent_id`, meant to be run by a human with `psql` against
+  whichever database they have already decided to point at. This runbook and this builder never
+  make that connection. **`sql/validation/` is a separate, clearly-labelled subdirectory that is
+  NOT part of the operator pack** — it holds `seed_synthetic.sql` (which contains `INSERT` and
+  `COMMIT` against fixed, obviously-fake UUIDs) plus the harness and recorded output used only to
+  validate the eight pack queries under §4, against a throwaway local Postgres. Never run
+  anything under `sql/validation/` against any hosted database; never run it at all outside a
+  throwaway local Postgres set up per §4. A wildcard `psql -f sql/*.sql` style execution should
+  never be used regardless — always name the specific pack file being run (see §5).
 - It does not decide the platform, the account, consent, retention, deploy target, or any other
   owner-reserved question in `S12_PILOT_READINESS.md` §2c / §4.
 - It does not touch the RLS check (S12-B5, a different, separately-scoped read-only script) or the

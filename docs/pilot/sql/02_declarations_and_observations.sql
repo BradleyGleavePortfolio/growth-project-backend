@@ -21,11 +21,13 @@ WHERE d.coach_id = :'coach_id'
 ORDER BY d.declared_at;
 
 -- 2b. Observations: one row per (execution_epoch, source_platform, account_scope_id_digest,
--- family) uploaded for this run. `evidence` is the validated ObservationEvidenceV1 payload;
--- shown here in full because this pack is meant for a human deciding whether the pilot's
--- own claims are internally consistent, not for a wider audience — do not forward this
--- specific query's output outside the pilot review without checking it does not carry anything
--- beyond what §3.4 already permits to be examined by the builder/reviewer.
+-- family) uploaded for this run. S12B4-SOL-A1 closure: `evidence` is the validated
+-- ObservationEvidenceV1 payload and is exactly the kind of value this pilot report must not
+-- print (S3.4/S3.6 need counts and state, never the raw payload) — this query surfaces only
+-- `evidence_digest` (already a sha256 digest in the database) and the declared/observed counts
+-- pulled out of the payload as plain integers, never the payload itself. An operator who has an
+-- explicit, separately-scoped need to inspect a specific evidence payload byte-for-byte does
+-- that outside this pack, not by widening this default query.
 SELECT
   o.id,
   o.execution_epoch,
@@ -34,7 +36,8 @@ SELECT
   o.family,
   o.basis_kind,
   o.evidence_digest,
-  o.evidence,
+  (o.evidence ->> 'declared_total')::int AS declared_total,
+  (o.evidence ->> 'observed_unique')::int AS observed_unique,
   o.received_at
 FROM "ScoutRunObservation" o
 WHERE o.coach_id = :'coach_id'

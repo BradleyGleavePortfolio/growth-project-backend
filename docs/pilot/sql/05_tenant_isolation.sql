@@ -11,6 +11,22 @@
 -- 5a. Any Scout/importer row for a DIFFERENT coach created inside the pilot window. Every S8/S10
 -- write is keyed by coach_id (S12_PILOT_READINESS.md §3.1); a non-empty result here for any
 -- table is a stop-immediately finding, not something to summarize away.
+--
+-- S12B4-SOL-B1 closure — read this query for exactly what it is, nothing more:
+--   * It is a TIME-WINDOW ACTIVITY SIGNAL, not a causal audit. A non-empty row proves another
+--     coach's own ordinary activity happened to fall inside [:window_start, :window_end]; it
+--     does NOT by itself prove that activity was caused by, or read during, the pilot run. The
+--     positive control in VALIDATION.md demonstrates exactly this: a second coach's unrelated,
+--     legitimate run inside a wide window flags here even though the pilot run never touched it.
+--     Treat any hit as "investigate", not as a proven cross-tenant leak, and narrow the window
+--     to the pilot run's own accepted_start_at..completed_at (or as tight as the evidence
+--     allows) before drawing a conclusion from a hit.
+--   * Zero rows here is NOT proof of "zero cross-tenant reads". This table only sees WRITES
+--     (created_at/started_at/etc. on rows owned by another coach); it has no way to observe a
+--     READ of another coach's data that left no row of its own to find. "Zero rows" means "no
+--     other coach's write landed in this window", never "reads were verified isolated" — the
+--     pilot report template (§5) must say exactly that and never claim a security "PASS" from
+--     this query alone.
 SELECT 'ScoutImport' AS tbl, coach_id, intent_id::text AS key, started_at AS at
 FROM "ScoutImport"
 WHERE coach_id <> :'coach_id' AND started_at BETWEEN :'window_start' AND :'window_end'
