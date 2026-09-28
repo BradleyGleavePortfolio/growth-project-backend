@@ -74,7 +74,7 @@ export class ScoutEntityDto {
     description: 'Slug of the platform the record was captured from (camelCase, top-level).',
     minLength: 1,
     maxLength: 256,
-    example: 'truecoach',
+    example: 'example-site',
   })
   @IsString()
   @MinLength(1)
