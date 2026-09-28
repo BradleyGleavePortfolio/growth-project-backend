@@ -115,7 +115,7 @@ function person(fake: FakePrisma, over: Partial<PersonRow> = {}): PersonRow {
   const row: PersonRow = {
     id: `p-${String(seq).padStart(3, '0')}`,
     coach_id: COACH,
-    source_platform: 'truecoach',
+    source_platform: 'example-site',
     source_person_id: `tc_${seq}`,
     display_name: `Person ${seq}`,
     state: PersonState.InvitePending,
@@ -217,7 +217,7 @@ describe('ImportedPeopleService — emitted fields (privacy review)', () => {
       person_id: p.id,
       display_name: 'Jordan Ellis',
       state: PersonState.InvitePending,
-      source_platform: 'truecoach',
+      source_platform: 'example-site',
       joined: false,
       invite: null,
       proposal: null,
