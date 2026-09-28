@@ -1,0 +1,282 @@
+{
+  "digest": {
+    "digestVersion": 1,
+    "sourcePlatform": "example_alpha",
+    "round": 1,
+    "templates": [
+      {
+        "ref": "t0",
+        "method": "GET",
+        "template": "/v2/coaches/:s1/members",
+        "structural": [0, 1, 3],
+        "queryKeys": ["after"],
+        "statuses": [200],
+        "observations": 3,
+        "role": "collection",
+        "collectionPaths": [["members"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "members": {
+              "kind": "array",
+              "lengthBucket": "10-99",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "display_name": {
+                    "kind": "string",
+                    "class": "text",
+                    "lengthBucket": "≤32"
+                  },
+                  "email": {
+                    "kind": "string",
+                    "class": "email_like",
+                    "lengthBucket": "≤32"
+                  },
+                  "created_at": {
+                    "kind": "string",
+                    "class": "iso_date",
+                    "lengthBucket": "≤32"
+                  },
+                  "active": {
+                    "kind": "boolean"
+                  }
+                }
+              }
+            },
+            "meta": {
+              "kind": "object",
+              "keys": {
+                "next": {
+                  "kind": "string",
+                  "class": "short_id",
+                  "lengthBucket": "≤32"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ref": "t1",
+        "method": "GET",
+        "template": "/v2/members/:p1/routines",
+        "structural": [0, 1, 3],
+        "queryKeys": ["page"],
+        "statuses": [200],
+        "observations": 4,
+        "role": "collection",
+        "collectionPaths": [["data"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "data": {
+              "kind": "array",
+              "lengthBucket": "2-9",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "uuid",
+                    "lengthBucket": "≤256"
+                  },
+                  "title": {
+                    "kind": "string",
+                    "class": "text",
+                    "lengthBucket": "≤32"
+                  },
+                  "member_id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "blocks": {
+                    "kind": "array",
+                    "lengthBucket": "2-9",
+                    "items": {
+                      "kind": "object",
+                      "keys": {
+                        "name": {
+                          "kind": "string",
+                          "class": "text",
+                          "lengthBucket": "≤32"
+                        },
+                        "sets": {
+                          "kind": "number",
+                          "class": "int"
+                        },
+                        "reps": {
+                          "kind": "number",
+                          "class": "int"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "total": {
+              "kind": "number",
+              "class": "int"
+            }
+          }
+        }
+      },
+      {
+        "ref": "t2",
+        "method": "GET",
+        "template": "/v2/billing/invoices",
+        "structural": [0, 1, 2],
+        "queryKeys": [],
+        "statuses": [200],
+        "observations": 1,
+        "role": "collection",
+        "collectionPaths": [["invoices"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "invoices": {
+              "kind": "array",
+              "lengthBucket": "1",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "amount": {
+                    "kind": "number",
+                    "class": "float"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ref": "t3",
+        "method": "GET",
+        "template": "/v2/me",
+        "structural": [0, 1],
+        "queryKeys": [],
+        "statuses": [200],
+        "observations": 1,
+        "role": "single",
+        "collectionPaths": [],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "id": {
+              "kind": "string",
+              "class": "int_id",
+              "lengthBucket": "≤8"
+            },
+            "plan": {
+              "kind": "string",
+              "class": "text",
+              "lengthBucket": "≤32"
+            }
+          }
+        }
+      }
+    ],
+    "linkTemplates": ["/coach/:p1/programs", "/coach/:p1/settings"],
+    "constantHeaders": {
+      "Accept": "application/json"
+    },
+    "missingFamilies": []
+  },
+  "proposal": {
+    "proposalVersion": 1,
+    "steps": [
+      {
+        "templateRef": "t0",
+        "entityType": "members",
+        "itemsPath": ["members"],
+        "idField": "id",
+        "collectAs": "member_ids",
+        "pagination": {
+          "style": "cursor",
+          "param": "after",
+          "nextPath": ["meta", "next"]
+        }
+      },
+      {
+        "templateRef": "t1",
+        "entityType": "routines",
+        "itemsPath": ["data"],
+        "idField": "id",
+        "forEach": "member_ids",
+        "pagination": {
+          "style": "page",
+          "param": "page",
+          "start": 1
+        }
+      }
+    ],
+    "mappingSpec": {
+      "specVersion": 1,
+      "sourcePlatform": "example_alpha",
+      "steps": {
+        "members": "clients",
+        "routines": "workouts"
+      },
+      "families": {
+        "clients": {
+          "displayName": {
+            "paths": [["display_name"]],
+            "coerce": "string_or_finite_number"
+          }
+        },
+        "workouts": {
+          "clientSourceId": {
+            "paths": [["member_id"]],
+            "coerce": "string_or_finite_number"
+          },
+          "label": {
+            "paths": [["title"]],
+            "coerce": "string_or_finite_number"
+          }
+        }
+      }
+    },
+    "nativeRules": {
+      "specVersion": 1,
+      "sourcePlatform": "example_alpha",
+      "families": {
+        "workouts": {
+          "exercises": {
+            "paths": [["blocks"]],
+            "item": {
+              "sets": {
+                "kind": "integer",
+                "paths": [["sets"]]
+              },
+              "reps": {
+                "kind": "integer",
+                "paths": [["reps"]]
+              }
+            }
+          }
+        }
+      }
+    },
+    "explore": ["/coach/:p1/programs"],
+    "unmapped": [
+      {
+        "templateRef": "t2",
+        "reason": "out_of_scope_billing"
+      }
+    ],
+    "rationale": "Members list is the roster; routines per member are workouts with exercise blocks; invoices are billing."
+  }
+}
