@@ -97,7 +97,9 @@ Findings that shape §3-§7:
   (R590-c7A-03, R590-c7B-11): nullable `person_id`; `person_id IS NULL` guard on every non-owner RLS
   branch; an owner CHECK that matches the table's existing client semantics — **exactly one** owner
   `(<client col> IS NULL) <> (person_id IS NULL)` where the client column is NOT NULL today
-  (`LoggedFoodEntry.user_id`, `WaterLog.user_id`, `MacroTarget.client_id`; the #587 pattern), and
+  (`LoggedFoodEntry.user_id`, `WaterLog.user_id`, `MacroTarget.client_id`; the #587 pattern;
+  dropping NOT NULL widens the Prisma type for their 12, 2 and 2 consumer files — a named item of
+  FAM-N2a/b/c, R590-c7B2-C4), and
   **at most one** owner `NOT (<client col> IS NOT NULL AND person_id IS NOT NULL)` where it is
   nullable today and both-NULL rows are valid (`MealPlan.client_id`: coach template;
   `CoachingSession.client_id`: group session with no lead client; `CoachMessage.client_id`:
