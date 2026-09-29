@@ -6,13 +6,14 @@ release-command step.
 
 ## Inventory
 
-| Script | Purpose |
-|---|---|
-| `release.sh` | Fly `release_command`. Runs `prisma migrate deploy`; falls back to a guarded `db push` only when explicitly authorized. |
-| `bootstrap-owners.ts` | Promote a fixed list of OWNER emails and back-fill `CoachProfile` rows for existing coaches. Idempotent. |
-| `print-required-secrets.ts` | List required / prod-required / optional env vars for a target `NODE_ENV`. Multiple output formats: `table`, `fly`, `env`, `missing`. |
-| `smoke.ts` | Post-deploy smoke check against a running API. Hits public + 401 paths and exits non-zero on first failure. |
-| `stripe-webhook-smoke.ts` | Replay Stripe fixture events at a running dev server. No real Stripe account required. |
+| Script                      | Purpose                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `release.sh`                | Fly `release_command`. Runs `prisma migrate deploy`; falls back to a guarded `db push` only when explicitly authorized.                                                                                                                                                                                  |
+| `bootstrap-owners.ts`       | Promote a fixed list of OWNER emails and back-fill `CoachProfile` rows for existing coaches. Idempotent.                                                                                                                                                                                                 |
+| `print-required-secrets.ts` | List required / prod-required / optional env vars for a target `NODE_ENV`. Multiple output formats: `table`, `fly`, `env`, `missing`.                                                                                                                                                                    |
+| `smoke.ts`                  | Post-deploy smoke check against a running API. Hits public + 401 paths and exits non-zero on first failure.                                                                                                                                                                                              |
+| `stripe-webhook-smoke.ts`   | Replay Stripe fixture events at a running dev server. No real Stripe account required.                                                                                                                                                                                                                   |
+| `check-rls-catalog.ts`      | S12-B5 (owner question 8) — read-only `pg_policies`/`pg_class` RLS catalog check for `WorkoutSession`, `WeightLog`, `Habit`, `CheckIn`, `ClientWorkoutAssignment*`. Prints a live RLS security PASS/GAP per table, computed only from the catalog read (a known/expected gap still prints GAP, never a laundered PASS), plus a separate migration-expectation note. Transaction `READ ONLY`, no DDL/DML. Proven against a throwaway Postgres in CI (`.github/workflows/s12b5-rls-catalog-proof.yml`); written and reviewed, not run against production by any agent — see file header for invocation. |
 
 ## release.sh
 
