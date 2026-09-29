@@ -39,10 +39,11 @@ import {
 import { canonicalJson, mappingSpecDigest } from '../../../src/scout/induction/digest';
 import { evaluateCoverage, type StoredObservation } from '../../../src/scout/induction/verify';
 import {
-  ReconciliationFactsService,
+  partitionInductionRegistry,
   resolveFamily,
   stagedPlatformFacts,
 } from '../../../src/scout/reconciliation/facts.service';
+import { loadSourceArtifacts } from '../../../src/scout/reconstruct/source-registry.provider';
 import type { CoverageFact } from '../../../src/scout/reconciliation/types';
 import type { Prisma } from '@prisma/client';
 
@@ -154,7 +155,11 @@ function coverage(
   signer: 'source' | 'observer' = 'source',
 ) {
   const mappers = buildSourceMapperRegistry();
-  const registry = ReconciliationFactsService.defaultRegistry(mappers, buildNativeRuleRegistry());
+  const registry = partitionInductionRegistry(
+    loadSourceArtifacts(),
+    mappers,
+    buildNativeRuleRegistry(),
+  );
   const ids = idsByFamily(rows);
   const observations: StoredObservation[] = families.map((family) => ({
     coach_id: RUN.coach_id,
@@ -284,7 +289,11 @@ describe('the synthetic spec shape the doc requires', () => {
 
   it('the default induction package binds the loaded spec digest and source key only', () => {
     const mappers = buildSourceMapperRegistry();
-    const registry = ReconciliationFactsService.defaultRegistry(mappers, buildNativeRuleRegistry());
+    const registry = partitionInductionRegistry(
+      loadSourceArtifacts(),
+      mappers,
+      buildNativeRuleRegistry(),
+    );
     const pkg = registry.packages.get(PLATFORM);
     expect(pkg).toBeDefined();
     expect(pkg!.specDigest).toBe(mappingSpecDigest(loadedSpec()));

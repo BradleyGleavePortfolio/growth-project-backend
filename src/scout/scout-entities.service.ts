@@ -3,7 +3,12 @@ import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PrismaService } from '../prisma.service';
-import { buildSourceMapperRegistry } from './reconstruct/source-mapper-registry';
+import { type SourceMapper } from './reconstruct/source-mapper-registry';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+  type RegistryDb,
+} from './reconstruct/source-registry.provider';
 import {
   decodeScoutCursor,
   encodeScoutCursor,
@@ -89,19 +94,40 @@ type NativeRecord = { id: string; name: string; created_at: Date; updated_at: Da
  */
 @Injectable()
 export class ScoutEntitiesService {
+  /** L2a: the ONE registry provider (D-L0-5) — the same one the engine resolves through. */
+  private readonly registries: SourceRegistryProvider;
   /**
-   * S11-E: the `(platform, token) → family` registry — the same builder and the
-   * same repository data-only specs the engine reads
+   * S11-E: the `(platform, token) → family` registry of a run with NO pin — the
+   * provider's file registries, the same maps the engine reads
    * (`scout-reconstruct.service.ts` `sourceMappers`). An instance field so a
    * harness that composes an injected registry for the engine can hand the
    * reader the identical one.
    */
-  private readonly sourceMappers = buildSourceMapperRegistry();
+  private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-  ) {}
+    // REQUIRED under Nest (R588-B-2): SourceRegistryModule provides it, and a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
+  ) {
+    this.registries = registries;
+    this.sourceMappers = this.registries.files.sourceMappers;
+  }
+
+  /**
+   * The mappers THIS run's staged tokens classify through (D-L0-5): the pin's, else the
+   * instance's. The pin is read on `db` — the page's snapshot transaction (R588-B-1).
+   */
+  private async mappersFor(
+    db: RegistryDb,
+    coachId: string,
+    intentId: string,
+  ): Promise<ReadonlyMap<string, SourceMapper>> {
+    const run = await this.registries.forRun(db, coachId, intentId);
+    return run.pinned === null ? this.sourceMappers : run.sourceMappers;
+  }
 
   async getEntities(
     coachId: string,
@@ -147,6 +173,9 @@ export class ScoutEntitiesService {
         if (!importRow || importRow.terminal_status === null) {
           throw new NotFoundException();
         }
+        // The run's registries, read inside this snapshot (after the gate: no pin read for a
+        // run the caller cannot see).
+        const sourceMappers = await this.mappersFor(tx, coachId, intentId);
 
         // S11-E: two bounded, tenant-scoped aggregates over the run's
         // (platform, token) groups — staged (the same groupBy the engine plans
@@ -164,7 +193,7 @@ export class ScoutEntitiesService {
           where: tenant,
           _count: { _all: true },
         });
-        const scope = classifyFamilyScope(this.sourceMappers, family, stagedGroups, ledgerGroups);
+        const scope = classifyFamilyScope(sourceMappers, family, stagedGroups, ledgerGroups);
 
         if (scope.pairs.length === 0) {
           // Nothing of this family was staged or ledgered for the run. A legacy

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AnalyticsService } from '../../analytics/analytics.service';
@@ -19,8 +19,12 @@ import {
   UNRESOLVED_FAMILY_PREFIX,
   UNRESOLVED_PREFIX,
 } from '../reconciliation/types';
-import { buildFamilyRegistry } from '../reconstruct/families';
-import { RECONSTRUCT_STATUS } from '../scout-reconstruct.dto';
+import {
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+  type RunRegistries,
+} from '../reconstruct/source-registry.provider';
+import { RECONSTRUCT_ENTITY_TYPES, RECONSTRUCT_STATUS } from '../scout-reconstruct.dto';
 import { ScoutReconstructService } from '../scout-reconstruct.service';
 import { SCOUT_TERMINAL_STATUSES, type ScoutTerminalStatus } from '../scout.dto';
 import {
@@ -209,21 +213,36 @@ export class RunGateClosed extends Error {
 @Injectable()
 export class ScoutLifecycleService {
   readonly deadlineMs: number;
-  private readonly registry = buildFamilyRegistry();
+  /**
+   * The reconstructable family keys (`unmapped_families` in the step-2 facts). A closed constant
+   * set — the keys `buildFamilyRegistry()` registers — so it needs no registry built here and no
+   * pin can change it (R588-B-C3).
+   */
+  private static readonly FAMILY_KEYS: ReadonlySet<string> = new Set(RECONSTRUCT_ENTITY_TYPES);
   /** S8-G: the engine the settle hook drives one pass through (same seam pattern as ScoutService → this). */
   private readonly reconstruct: ScoutReconstructService;
   /** S9-C read-only facts collector: settle tail and status read reconcile from it (D-S9-1). */
   private readonly facts: ReconciliationFactsService;
+  /** L2a r2 (R588-B-1): the ONE registry provider; a settle resolves the run's registries once. */
+  private readonly registries: SourceRegistryProvider;
 
+  /**
+   * R588-B-2: every interpreter is REQUIRED under Nest — the module that provides this service
+   * must also provide the engine, the facts service and (through SourceRegistryModule) the one
+   * registry provider, or boot fails. The defaults apply only to hand-constructed instances
+   * (unit tests, the PG proof workers) and use the file-only provider; Nest never reaches them.
+   */
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-    @Optional() reconstruct?: ScoutReconstructService,
-    @Optional() facts?: ReconciliationFactsService,
+    reconstruct: ScoutReconstructService = new ScoutReconstructService(prisma, analytics),
+    facts: ReconciliationFactsService = new ReconciliationFactsService(),
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
   ) {
     this.deadlineMs = ScoutLifecycleService.readDeadlineMs(process.env[SCOUT_RUN_DEADLINE_MS_ENV]);
-    this.reconstruct = reconstruct ?? new ScoutReconstructService(prisma, analytics);
-    this.facts = facts ?? new ReconciliationFactsService();
+    this.reconstruct = reconstruct;
+    this.facts = facts;
+    this.registries = registries;
   }
 
   /** A positive integer number of milliseconds, else the parent-frozen default. */
@@ -432,11 +451,21 @@ export class ScoutLifecycleService {
    * read.
    */
   async onTransferSettled(coachId: string, intentId: string, epoch: number): Promise<void> {
-    const pass = await this.reconstruct.reconstructRun(coachId, intentId, {
-      mode: 'server',
-      epoch,
-      gate: (tx) => this.assertRunOpen(tx, coachId, intentId),
-    });
+    // L2a r2 (R588-B-1): ONE resolution of the run's registries per settle. The pass, the facts
+    // collector and the coverage evaluator all interpret the run through this object; the tail
+    // re-reads the pin on its own transaction, under the run-row lock, and refuses to settle if
+    // it is not the pin resolved here — one settle never observes two pins.
+    const registries = await this.registries.forRun(this.prisma, coachId, intentId);
+    const pass = await this.reconstruct.reconstructRun(
+      coachId,
+      intentId,
+      {
+        mode: 'server',
+        epoch,
+        gate: (tx) => this.assertRunOpen(tx, coachId, intentId),
+      },
+      registries,
+    );
     if (pass.stopped === 'gate_closed') {
       await this.classifyClosed(coachId, intentId);
     }
@@ -445,16 +474,25 @@ export class ScoutLifecycleService {
       if (!locked || locked.terminal_status !== null || locked.execution_epoch !== epoch) {
         return null;
       }
+      // Fail closed (nothing terminal is written; the run stays open for the lazy deadline) if
+      // the pin changed since the pass resolved it. Every serialization retry re-verifies.
+      await this.registries.verifyPin(tx, coachId, intentId, registries);
       const facts = await this.collectFacts(tx, coachId, intentId);
       const fence =
         locked.fenced_at !== null && isFenceReason(locked.fence_reason)
           ? locked.fence_reason
           : null;
-      const { verdict: reconciliation, report } = await this.reconcileRun(tx, coachId, intentId, {
-        mode: 'server',
-        execution_epoch: locked.execution_epoch,
-        accepted_start_at: locked.accepted_start_at,
-      });
+      const { verdict: reconciliation, report } = await this.reconcileRun(
+        tx,
+        coachId,
+        intentId,
+        {
+          mode: 'server',
+          execution_epoch: locked.execution_epoch,
+          accepted_start_at: locked.accepted_start_at,
+        },
+        registries,
+      );
       const verdict = arbitrate({ fence, reconciliation, ...facts });
       const written = await this.writeTerminal(tx, coachId, intentId, epoch, verdict);
       if (!written) return null;
@@ -618,7 +656,9 @@ export class ScoutLifecycleService {
       claim: ScoutLifecycleService.isLegacyTerminal(claim) ? claim : null,
       staged_by_family,
       ledger_by_family: ScoutLifecycleService.tallyLedger(ledger),
-      unmapped_families: Object.keys(staged_by_family).filter((f) => !this.registry.has(f)),
+      unmapped_families: Object.keys(staged_by_family).filter(
+        (f) => !ScoutLifecycleService.FAMILY_KEYS.has(f),
+      ),
     };
   }
 
@@ -786,8 +826,9 @@ export class ScoutLifecycleService {
     coachId: string,
     intentId: string,
     run: RunBinding,
+    registries: RunRegistries,
   ): Promise<{ verdict: ReconciliationVerdict; report: ReconciliationReportV1 }> {
-    const facts = await this.facts.collect(tx, coachId, intentId, run);
+    const facts = await this.facts.collect(tx, coachId, intentId, run, registries);
     const { verdict, report } = reconcile(facts);
     const v: ReconciliationVerdictV1 = verdict;
     return { verdict: { outcome: v.outcome, reason_code: v.reason_code }, report };

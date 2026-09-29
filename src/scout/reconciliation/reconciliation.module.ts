@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { SourceRegistryModule } from '../reconstruct/source-registry.module';
 import { ReconciliationFactsService } from './facts.service';
 
 /**
@@ -11,9 +12,11 @@ import { ReconciliationFactsService } from './facts.service';
  * repository-resident source-mapping specs and native rule sets; a consumer that needs another
  * registry provides `RECONCILIATION_FACTS_OPTIONS` (`@Optional()` in the service) alongside this
  * module — the same seam the unit spec and the G2 proof worker use. No controller, no writer, no
- * persistence (D-S9-5, no report table).
+ * persistence (D-S9-5, no report table). L2a: the registries come from the one
+ * `SourceRegistryProvider` (D-L0-5), shared through `SourceRegistryModule`.
  */
 @Module({
+  imports: [SourceRegistryModule],
   providers: [ReconciliationFactsService],
   exports: [ReconciliationFactsService],
 })

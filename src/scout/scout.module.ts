@@ -18,6 +18,7 @@ import { ScoutLifecycleService } from './lifecycle/lifecycle.service';
 import { ScoutRunController } from './lifecycle/run.controller';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { ObservationModule } from './induction/observation.module';
+import { SourceRegistryModule } from './reconstruct/source-registry.module';
 
 // IMPORTER-E + IMPORTER-B — unified scout module (DESIGN.md v0.3 §10 + §2).
 //
@@ -48,8 +49,13 @@ import { ObservationModule } from './induction/observation.module';
 // It is self-contained (its own guards, PrismaService and lifecycle provider)
 // and imports no notification, drip, email or messaging module (D-S10-6
 // invariant 5); this import is the only S10 change to ScoutModule.
+//
+// L2a: SourceRegistryModule provides the ONE SourceRegistryProvider (D-L0-5)
+// the engine, the roster and entities readers, the facts service and the
+// observation service resolve source families through; the same instance is
+// shared with ReconciliationModule and ObservationModule.
 @Module({
-  imports: [NotificationsModule, ReconciliationModule, ObservationModule],
+  imports: [NotificationsModule, ReconciliationModule, ObservationModule, SourceRegistryModule],
   controllers: [
     ScoutController,
     ScoutIngestController,
