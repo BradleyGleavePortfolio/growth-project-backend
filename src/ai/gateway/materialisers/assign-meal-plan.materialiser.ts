@@ -160,7 +160,8 @@ export class AssignMealPlanMaterializer implements CapabilityMaterializer {
     try {
       const created = await this.prisma.$transaction(async (tx) => {
         // D8 coach-client tenancy at approval time, inside the write
-        // transaction, before any row is written (see AssignWorkoutMaterializer).
+        // transaction, before any row is written, with the tenancy facts locked
+        // FOR SHARE through `tx` (R593-c7A2-01; see AssignWorkoutMaterializer).
         const canAct = await this.subCoachScope.canActOnClient(
           tenantCoachId,
           payload.clientId,

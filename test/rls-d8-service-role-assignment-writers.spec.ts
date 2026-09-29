@@ -18,7 +18,14 @@
  *   4. the own-roster path still materialises (row + frozen snapshot, assigned_by = tenant coach);
  *   5. the same for the meal-plan writer (cross-tenant refused, own roster admitted);
  *   6. the application predicate and the RLS predicate (app.actor_coaches_client) agree cell-by-cell on
- *      the same fixtures — ONE tenancy rule (D8).
+ *      the same fixtures — ONE tenancy rule (D8);
+ *   7. (fix round 3, R593-c7A2-01) the authorization is ATOMIC with the write: the tenancy facts are
+ *      read `FOR SHARE` inside the write transaction, so a delegation revocation or a roster
+ *      reassignment started between the check and the COMMIT is BLOCKED until the writer commits (proved
+ *      with a second connection and a gate that pauses the materialiser after its check, before its
+ *      INSERT), and once it lands the next write of the same shape is refused. On the pre-round-3 head
+ *      (plain findUnique/findMany, no lock) the concurrent UPDATE completes inside the pause and the
+ *      "blocked" assertion fails — that is the behavioural discriminator.
  *
  * Fixtures are synthetic, run-prefixed UUIDs and are removed in afterAll. Notifications are a stub
  * (no push is sent). Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL; skipped when neither
@@ -29,6 +36,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import type { AiActionDraft } from '@prisma/client';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { lockTenancyFacts, type LockedTenancyFacts } from '../src/sub-coach/tenancy-lock';
 import { AssignWorkoutMaterializer } from '../src/ai/gateway/materialisers/assign-workout.materialiser';
 import { AssignMealPlanMaterializer } from '../src/ai/gateway/materialisers/assign-meal-plan.materialiser';
 
@@ -288,5 +296,201 @@ describeLive('D8 — service-role assignment writers apply the coach-client tena
       's1->s1': false,
       'coachA->unknown': false,
     } as Record<string, boolean>);
+  });
+  // ─── Round 3 (R593-c7A2-01): authorization atomic with the write ─────────────────────────────
+  describe('R593-c7A2-01 — the tenancy check is atomic with the write (row locks, two connections)', () => {
+    // Second, independent connection (its own pool) for the concurrent reassignment / revocation.
+    const prisma2 = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    /** A one-shot gate: `reached` resolves when the writer is about to INSERT (its check has passed). */
+    function makeGate() {
+      let openGate!: () => void;
+      let markReached!: () => void;
+      const opened = new Promise<void>((r) => (openGate = r));
+      const reached = new Promise<void>((r) => (markReached = r));
+      return { opened, reached, open: openGate, markReached };
+    }
+
+    /**
+     * Wrap the real Prisma client so the materialiser's write transaction pauses at the assignment
+     * INSERT (after its in-transaction tenancy check) until `gate.open()`. Everything else — including
+     * the `$queryRaw ... FOR SHARE` reads — goes straight to the real transaction client.
+     */
+    function gatedPrisma(gate: ReturnType<typeof makeGate>, table: 'clientWorkoutAssignment' | 'dailyMealPlanAssignment') {
+      const gateTable = (delegate: any) =>
+        new Proxy(delegate, {
+          get(d, method) {
+            if (method !== 'create') return d[method];
+            return async (...args: unknown[]) => {
+              gate.markReached();
+              await gate.opened;
+              return d.create(...args);
+            };
+          },
+        });
+      const gateTx = (tx: any) =>
+        new Proxy(tx, {
+          get(t, p) {
+            return p === table ? gateTable(t[p]) : t[p];
+          },
+        });
+      return new Proxy(prisma as any, {
+        get(target, prop) {
+          if (prop !== '$transaction') return target[prop];
+          return (cb: (tx: any) => Promise<unknown>, opts?: unknown) =>
+            target.$transaction((tx: any) => cb(gateTx(tx)), opts);
+        },
+      });
+    }
+
+    /** Start `sql` on the second connection and report whether it settled within `ms`. */
+    function concurrent(sql: string) {
+      let settled = false;
+      const done = prisma2.$executeRawUnsafe(sql).then(
+        () => {
+          settled = true;
+        },
+        (e) => {
+          settled = true;
+          throw e;
+        },
+      );
+      return { done, isSettled: () => settled };
+    }
+
+    beforeAll(async () => {
+      await prisma2.$connect();
+    }, 60_000);
+    afterAll(async () => {
+      await prisma2.$disconnect();
+    }, 60_000);
+
+    it('sub-coach delegation REVOCATION started between the check and the INSERT blocks until the writer commits; the next write is refused (workout writer)', async () => {
+      const gate = makeGate();
+      const gp = gatedPrisma(gate, 'clientWorkoutAssignment');
+      const m = new AssignWorkoutMaterializer(gp, notificationsStub(), new SubCoachScopeService(gp));
+      const d = draft({ requester_id: U.subCoach, tenant_coach_id: U.subCoach, subject_user_id: U.s1, payload: workoutPayload(U.s1, PLAN_SC) });
+      const write = m.materialize(d);
+      let revoke: ReturnType<typeof concurrent> | undefined;
+      try {
+        await gate.reached; // check passed, FOR SHARE locks held, no row yet
+        revoke = concurrent(`UPDATE public."SubCoachAssignment" SET "unassigned_at" = now() WHERE "id" = ${lit(SCA_OPEN)}`);
+        await sleep(750);
+        // THE discriminator: without the row lock the revocation lands here and the assignment is then
+        // committed against a closed delegation.
+        expect(revoke.isSettled()).toBe(false);
+        expect(await cwaCountByDraft(d.id)).toBe(0);
+      } finally {
+        gate.open();
+      }
+      const r = await write;
+      expect(r.status).toBe('sent');
+      await revoke!.done; // released by the writer's COMMIT
+      expect(revoke!.isSettled()).toBe(true);
+      expect(await cwaCountByDraft(d.id)).toBe(1); // serialised as assignment THEN revocation
+
+      try {
+        // Now the revocation is committed: the same shape is refused, no row.
+        const again = draft({ requester_id: U.subCoach, tenant_coach_id: U.subCoach, subject_user_id: U.s1, payload: workoutPayload(U.s1, PLAN_SC) });
+        const err = await workout.materialize(again).catch((e) => e);
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect((err as ForbiddenException).getResponse()).toMatchObject({ error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN' });
+        expect(await cwaCountByDraft(again.id)).toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(`UPDATE public."SubCoachAssignment" SET "unassigned_at" = NULL WHERE "id" = ${lit(SCA_OPEN)}`);
+      }
+    }, 30_000);
+
+    it("roster REASSIGNMENT (User.coach_id A → B) started between the check and the INSERT blocks until the writer commits; the next write is refused (workout writer)", async () => {
+      const gate = makeGate();
+      const gp = gatedPrisma(gate, 'clientWorkoutAssignment');
+      const m = new AssignWorkoutMaterializer(gp, notificationsStub(), new SubCoachScopeService(gp));
+      const d = draft({ subject_user_id: U.s1, payload: workoutPayload(U.s1) });
+      const write = m.materialize(d);
+      let move: ReturnType<typeof concurrent> | undefined;
+      try {
+        await gate.reached;
+        move = concurrent(`UPDATE public."User" SET "coach_id" = ${lit(U.coachB)} WHERE "id" = ${lit(U.s1)}`);
+        await sleep(750);
+        expect(move.isSettled()).toBe(false);
+      } finally {
+        gate.open();
+      }
+      const r = await write;
+      expect(r.status).toBe('sent');
+      await move!.done;
+      expect(await cwaCountByDraft(d.id)).toBe(1);
+      try {
+        const again = draft({ subject_user_id: U.s1, payload: workoutPayload(U.s1) });
+        const err = await workout.materialize(again).catch((e) => e);
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect((err as ForbiddenException).getResponse()).toMatchObject({ error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN' });
+        expect(await cwaCountByDraft(again.id)).toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(`UPDATE public."User" SET "coach_id" = ${lit(U.coachA)} WHERE "id" = ${lit(U.s1)}`);
+      }
+    }, 30_000);
+
+    it('roster REASSIGNMENT started between the check and the INSERT blocks until the writer commits (meal-plan writer)', async () => {
+      const gate = makeGate();
+      const gp = gatedPrisma(gate, 'dailyMealPlanAssignment');
+      const m = new AssignMealPlanMaterializer(gp, notificationsStub(), new SubCoachScopeService(gp));
+      const d = draft({ capability: 'draft.assign_meal_plan', subject_user_id: U.s1, payload: mealPayload(U.s1) });
+      const write = m.materialize(d);
+      let move: ReturnType<typeof concurrent> | undefined;
+      try {
+        await gate.reached;
+        move = concurrent(`UPDATE public."User" SET "coach_id" = ${lit(U.coachB)} WHERE "id" = ${lit(U.s1)}`);
+        await sleep(750);
+        expect(move.isSettled()).toBe(false);
+      } finally {
+        gate.open();
+      }
+      const r = await write;
+      expect(r.status).toBe('sent');
+      await move!.done;
+      expect(await dmpaCountByDraft(d.id)).toBe(1);
+      try {
+        const again = draft({ capability: 'draft.assign_meal_plan', subject_user_id: U.s1, payload: mealPayload(U.s1) });
+        const err = await meal.materialize(again).catch((e) => e);
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect(await dmpaCountByDraft(again.id)).toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(`UPDATE public."User" SET "coach_id" = ${lit(U.coachA)} WHERE "id" = ${lit(U.s1)}`);
+      }
+    }, 30_000);
+
+    it('the protocol itself: lockTenancyFacts inside a transaction holds FOR SHARE on the client row and the open delegation until COMMIT; a revocation that commits FIRST is what the locked read sees', async () => {
+      // (a) locks held for the transaction's lifetime.
+      const gate = makeGate();
+      let facts!: LockedTenancyFacts;
+      const tx = prisma.$transaction(async (t) => {
+        facts = await lockTenancyFacts(t, U.subCoach, U.s1);
+        gate.markReached();
+        await gate.opened;
+      });
+      await gate.reached;
+      expect(facts.openDelegation).toBe(true);
+      const revoke = concurrent(`UPDATE public."SubCoachAssignment" SET "unassigned_at" = now() WHERE "id" = ${lit(SCA_OPEN)}`);
+      const move = concurrent(`UPDATE public."User" SET "coach_id" = ${lit(U.coachB)} WHERE "id" = ${lit(U.s1)}`);
+      await sleep(750);
+      expect(revoke.isSettled()).toBe(false);
+      gate.open();
+      await tx;
+      await revoke.done;
+      await move.done;
+      try {
+        // (b) committed-first: the locked read observes the committed state.
+        const after = await prisma.$transaction((t) => lockTenancyFacts(t, U.subCoach, U.s1));
+        expect(after.openDelegation).toBe(false);
+        expect(after.client?.coach_id).toBe(U.coachB);
+        expect(await scope.canActOnClient(U.subCoach, U.s1)).toBe(false);
+        expect(await scope.canActOnClient(U.coachA, U.s1)).toBe(false);
+      } finally {
+        await prisma.$executeRawUnsafe(`UPDATE public."SubCoachAssignment" SET "unassigned_at" = NULL WHERE "id" = ${lit(SCA_OPEN)}`);
+        await prisma.$executeRawUnsafe(`UPDATE public."User" SET "coach_id" = ${lit(U.coachA)} WHERE "id" = ${lit(U.s1)}`);
+      }
+    }, 30_000);
   });
 });

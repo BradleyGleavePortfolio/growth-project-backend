@@ -44,9 +44,10 @@ import type {
 //     supply a drop id; it is NOT race-safe and the brief explicitly
 //     scopes the race-safety requirement to the drip path.
 //
-// tx-honoring: every read + write uses `input.tx ?? this.prisma`. No nested
-// transaction is opened. The immediate-at-checkout fan-out passes `tx`; the
-// PR-10 cron path passes none.
+// tx-honoring: every read + write uses `input.tx` when supplied (no nested
+// transaction is opened — the immediate-at-checkout fan-out passes `tx`);
+// the PR-10 cron path passes none and the resolver opens its own transaction
+// so the scope check and the INSERT are atomic (D8 round 3, R593-c7A2-01).
 
 @Injectable()
 export class MealPlanAssetResolver implements AssignableAssetResolver {
@@ -65,8 +66,20 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
   async materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
-    const acting = await this.scope.resolve(input.coachId, input.clientId);
-    const db = input.tx ?? this.prisma;
+    // D8 round 3 (R593-c7A2-01): the sub-coach scope check must be atomic with
+    // the assignment INSERT. Run inside the caller's transaction when one is
+    // supplied (immediate-at-checkout fan-out); otherwise (PR-10 cron path)
+    // open one here so the scope facts stay locked FOR SHARE until the row is
+    // committed. Still no NESTED transaction is opened.
+    if (input.tx) return this.materialiseIn(input, input.tx);
+    return this.prisma.$transaction((tx) => this.materialiseIn(input, tx));
+  }
+
+  private async materialiseIn(
+    input: AssignableAssetMaterialiseInput,
+    db: Prisma.TransactionClient,
+  ): Promise<AssignableAssetMaterialiseResult> {
+    const acting = await this.scope.resolve(input.coachId, input.clientId, db);
 
     // Drip path (PR-10): use the schema-enforced unique to make the INSERT
     // atomic. A concurrent retry of the same drop is the failure mode the
@@ -148,10 +161,7 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
       });
       return created.id;
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Loser of the race. Re-read by drop id to return the winner's
         // assignment so ScheduledDrop.materialised_ref converges.
         const winner = await db.dailyMealPlanAssignment.findUnique({
@@ -187,8 +197,6 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
 
   private todayUtcDate(): Date {
     const now = new Date();
-    return new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 }

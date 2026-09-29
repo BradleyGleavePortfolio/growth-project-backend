@@ -538,16 +538,19 @@ export class WorkoutBuilderService {
         // cached success rather than 4xx on a now-stale precondition.
         await this.assertCoach(coachId);
         await this.assertPlanOwnership(coachId, planId);
-        // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
-        // sub-coach. Legacy head-coach behaviour is preserved exactly when
-        // SubCoachScopeService is not wired (unit-test construction).
-        await this.assertCanAccessClient(coachId, dto.client_id);
 
         // MWB-1 (§3.3): the assignment row AND its immutable plan snapshot are
         // written in one transaction so a client can never observe an
         // assignment without its frozen exercise list. Later coach edits to
         // the source plan never mutate the snapshot (read path renders it).
         const created = await this.prisma.$transaction(async (tx) => {
+          // MWB-1 (§7.2): head coach OR open sub-coach. D8 round 3
+          // (R593-c7A2-01): evaluated INSIDE the write transaction with the
+          // tenancy facts locked FOR SHARE, so a roster reassignment or
+          // delegation revocation cannot commit between this check and the
+          // INSERT below. Legacy head-coach behaviour is preserved exactly when
+          // SubCoachScopeService is not wired (unit-test construction).
+          await this.assertCanAccessClient(coachId, dto.client_id, tx);
           const assignment = await tx.clientWorkoutAssignment.create({
             data: {
               workout_plan_id: planId,
@@ -839,20 +842,30 @@ export class WorkoutBuilderService {
    * injected (legacy unit-test construction) we degrade to the original
    * head-coach-only check so existing behaviour is preserved exactly.
    */
-  async assertCanAccessClient(actingUserId: string, clientId: string) {
-    const client = await this.prisma.user.findUnique({
+  async assertCanAccessClient(
+    actingUserId: string,
+    clientId: string,
+    db: Pick<Prisma.TransactionClient, 'user' | '$queryRaw'> = this.prisma,
+  ) {
+    if (this.subCoachScope) {
+      // D8 round 3 (R593-c7A2-01): ONE rule (SubCoachScopeService.canActOnClient
+      // == app.actor_coaches_client), read with the tenancy facts locked FOR
+      // SHARE through `db`. Pass the write transaction's client so the
+      // decision is atomic with the INSERT it guards.
+      const { verdict } = await this.subCoachScope.explainActOnClient(actingUserId, clientId, db);
+      if (verdict === 'client_not_found') throw new NotFoundException('Client not found');
+      if (verdict === 'allowed') return;
+      throw new ForbiddenException('Client does not belong to this coach');
+    }
+    // Legacy head-coach-only path (scope helper not wired — unit-test
+    // construction). Reads through `db` so it still runs inside the caller's
+    // transaction.
+    const client = await db.user.findUnique({
       where: { id: clientId },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
-    // Head coach / owner direct ownership.
     if (client.coach_id === actingUserId) return;
-    // Sub-coach overlay (open SubCoachAssignment). Only consulted when the
-    // service is wired with the scope helper.
-    if (this.subCoachScope) {
-      const ok = await this.subCoachScope.canAccessClient(actingUserId, clientId);
-      if (ok) return;
-    }
     throw new ForbiddenException('Client does not belong to this coach');
   }
 
@@ -1303,6 +1316,9 @@ export class WorkoutBuilderService {
           program.owner_user_id === coachId ||
           (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
         if (!canReach) throw new ForbiddenException('You cannot assign this program');
+        // Cheap pre-check outside the transaction (fast 403/404); the
+        // authoritative, lock-taking check runs again inside the write
+        // transaction below (D8 round 3, R593-c7A2-01).
         await this.assertCanAccessClient(coachId, dto.client_id);
 
         const plans = await this.prisma.workoutPlan.findMany({
@@ -1318,6 +1334,9 @@ export class WorkoutBuilderService {
         const DAY_MS = 24 * 60 * 60 * 1000;
 
         const created = await this.prisma.$transaction(async (tx) => {
+          // D8 round 3 (R593-c7A2-01): tenancy facts locked FOR SHARE inside
+          // the transaction that writes the fan-out rows.
+          await this.assertCanAccessClient(coachId, dto.client_id, tx);
           const out: Array<{ id: string }> = [];
           for (const plan of plans) {
             // Offset = full weeks (7 days each) + day-of-week within the week.

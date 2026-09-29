@@ -3,7 +3,7 @@ import { AuditService } from '../src/audit/audit.service';
 import { CapabilityMaterializerRegistry } from '../src/ai/gateway/materialisers/capability-materialiser.registry';
 import type { CapabilityMaterializer } from '../src/ai/gateway/materialisers/capability-materialiser.interface';
 import { CoachMessageMaterializer } from '../src/ai/gateway/materialisers/coach-message.materialiser';
-import { ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 
 // PR AI-3 (PRODUCT-1) — integration coverage for AiApprovalService.decide
 // + CapabilityMaterializerRegistry. The unit specs cover each piece in
@@ -250,6 +250,53 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     // And we wrote a materialise-failed audit so ops can spot patterns.
     const auditActions = prisma.auditLog.create.mock.calls.map((c: any) => c[0].data.action);
     expect(auditActions).toContain('ai.draft_materialise_failed');
+  });
+
+  // D8 round 3 (PR #593, R593-c7B2-C07): a tenancy refusal by the materialiser
+  // is an authorization outcome. It must surface as the materialiser's 403 (not
+  // a 500 AI_MATERIALISATION_FAILED "retry" envelope), write no row, leave the
+  // draft pending, and be audited as a refusal, not a failure. Fails on the
+  // pre-fix service (which wrapped every non-409 error as a 500).
+  it('R593-c7B2-C07: a ForbiddenException from the materialiser surfaces as 403 (not 500), draft stays pending, audited as ai.draft_materialise_refused', async () => {
+    const draft = {
+      id: 'd-coach-403',
+      status: 'pending',
+      capability: 'draft.assign_workout',
+      requester_id: 'coach-1',
+      subject_user_id: 'client-1',
+      tenant_coach_id: 'coach-1',
+      payload: { clientId: 'client-1' },
+    };
+    const prisma = buildPrisma([draft]);
+    const audit = new AuditService(prisma);
+    const refusing = makeMaterializer('draft.assign_workout', async () => {
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN',
+        capability: 'draft.assign_workout',
+        message: 'Client does not belong to this coach (or the delegation is no longer open).',
+      });
+    }, prisma);
+    const registry = new CapabilityMaterializerRegistry([refusing]);
+    const svc = new AiApprovalService(prisma, audit, registry);
+
+    const err = await svc
+      .decide({
+        draftId: 'd-coach-403',
+        decider: { id: 'owner-1', role: 'owner' },
+        decision: 'approved',
+      })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err).not.toBeInstanceOf(InternalServerErrorException);
+    expect((err as ForbiddenException).getStatus()).toBe(403);
+    expect((err as ForbiddenException).getResponse()).toMatchObject({
+      error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN',
+    });
+
+    expect(prisma.drafts[0].status).toBe('pending');
+    const auditActions = prisma.auditLog.create.mock.calls.map((c: any) => c[0].data.action);
+    expect(auditActions).toContain('ai.draft_materialise_refused');
+    expect(auditActions).not.toContain('ai.draft_materialise_failed');
   });
 
   // -----------------------------------------------------------------

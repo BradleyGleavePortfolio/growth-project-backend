@@ -18,6 +18,7 @@
 
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { tenancyQueryRawMock } from './utils/tenancy-lock-mock';
 
 import {
   AssignWorkoutMaterializer,
@@ -225,6 +226,18 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
       }),
     },
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
+    // D8 round 3: SubCoachScopeService.canActOnClient reads the tenancy facts
+    // with `SELECT ... FOR SHARE` ($queryRaw). Answer those reads from the store.
+    $queryRaw: jest.fn(
+      tenancyQueryRawMock({
+        get users() {
+          return store.users.values();
+        },
+        get subCoachAssignments() {
+          return store.subCoachAssignments;
+        },
+      }),
+    ),
   };
   return prisma;
 }
@@ -527,13 +540,19 @@ describe('Stream 2 §4.2 — AssignWorkoutMaterializer', () => {
       const store = seedStore();
       const prisma = makePrismaMock(store);
       // A distinct tx client: if the materialiser passed `tx`, the reads land here.
-      const tx: any = { ...prisma, user: { ...prisma.user, findUnique: jest.fn(prisma.user.findUnique) } };
+      const tx: any = { ...prisma, $queryRaw: jest.fn(prisma.$queryRaw) };
       prisma.$transaction = jest.fn(async (cb: any) => cb(tx));
       const m = new AssignWorkoutMaterializer(prisma, mockNotifications(), scopeOver(prisma));
       const r = await m.materialize(happyDraft());
       expect(r.status).toBe('sent');
-      expect(tx.user.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: CLIENT_ID } }),
+      // R593-c7A2-01: the locking read (`FOR SHARE`) lands on the tx client,
+      // names the client row, and precedes the INSERT.
+      expect(tx.$queryRaw).toHaveBeenCalled();
+      const lockSql = (tx.$queryRaw as jest.Mock).mock.calls.map((c: any[]) => c[0].strings.join('?'));
+      expect(lockSql.some((q: string) => q.includes('"User"') && q.includes('FOR SHARE'))).toBe(true);
+      expect((tx.$queryRaw as jest.Mock).mock.calls[0][0].values).toContain(CLIENT_ID);
+      expect((tx.$queryRaw as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        (prisma.clientWorkoutAssignment.create as jest.Mock).mock.invocationCallOrder[0],
       );
     });
   });

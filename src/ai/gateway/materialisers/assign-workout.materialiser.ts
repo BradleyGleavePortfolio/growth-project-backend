@@ -202,9 +202,12 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
         // applies on the human path (direct roster, or an OPEN sub-coach
         // delegation to a live student). Evaluated inside the write transaction
         // so a delegation closed between draft and approval is refused, and
-        // BEFORE any row is written. This connection is service-role
-        // (BYPASSRLS); the RLS policy `assignment_coach_manage` cannot be the
-        // gate here, so the application must be.
+        // BEFORE any row is written. Round 3 (R593-c7A2-01): canActOnClient
+        // reads the tenancy facts FOR SHARE through `tx`, so a reassignment or
+        // revocation cannot commit between this check and the COMMIT below.
+        // This connection is the backend's BYPASSRLS role (`postgres`); the
+        // RLS policy `assignment_coach_manage` cannot be the gate here, so the
+        // application must be.
         const canAct = await this.subCoachScope.canActOnClient(
           tenantCoachId,
           payload.clientId,

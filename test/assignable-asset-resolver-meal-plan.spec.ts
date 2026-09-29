@@ -9,6 +9,9 @@ import {
 function makeScope(allowed: boolean, isSub = false, headId: string | null = null) {
   return new ResolverSubCoachScope({
     canAccessClient: jest.fn(async () => allowed),
+    // D8 round 3: the meal-plan resolver resolves scope INSIDE its write
+    // transaction via the locking variant.
+    canAccessClientLocked: jest.fn(async () => allowed),
     getHeadCoachIdForSubCoach: jest.fn(async () => (isSub ? headId : null)),
   } as unknown as ConstructorParameters<typeof ResolverSubCoachScope>[0]);
 }
@@ -50,7 +53,7 @@ function makePrismaStub(opts: PrismaStubOpts) {
       })
     : jest.fn(async (_args: unknown) => opts.createResult ?? { id: 'mpa-new' });
   const planFindFirst = jest.fn(async (_args: unknown) => opts.plan ?? null);
-  return {
+  const stub: any = {
     dailyMealPlan: { findFirst: planFindFirst },
     dailyMealPlanAssignment: {
       findUnique,
@@ -59,6 +62,10 @@ function makePrismaStub(opts: PrismaStubOpts) {
     },
     __mocks: { findFirst, create, planFindFirst },
   };
+  // D8 round 3 (R593-c7A2-01): without an input.tx the resolver opens its own
+  // transaction so the scope check is atomic with the INSERT.
+  stub.$transaction = jest.fn(async (fn: (tx: any) => unknown) => fn(stub));
+  return stub;
 }
 
 describe('MealPlanAssetResolver', () => {
@@ -170,7 +177,9 @@ describe('MealPlanAssetResolver', () => {
     const winnerId = 'mpa-only-one';
     const dropId = 'drop-shared';
     let inserted: string | null = null;
-    const shared = {
+    const shared: any = {
+      // D8 round 3: no input.tx → the resolver opens its own transaction.
+      $transaction: async (fn: (tx: any) => unknown) => fn(shared),
       dailyMealPlan: {
         findFirst: jest.fn(async () => ({ id: 'dmp-1' })),
       },

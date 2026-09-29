@@ -687,8 +687,10 @@ describe('WorkoutBuilderService', () => {
 
     it('allows a sub-coach when the scope helper grants access', async () => {
       // Re-build the service WITH a SubCoachScopeService stub that grants.
+      // D8 round 3 (R593-c7A2-01): when wired, the gate is the ONE locking
+      // rule `explainActOnClient` (== canActOnClient == app.actor_coaches_client).
       const subCoachScope = {
-        canAccessClient: jest.fn().mockResolvedValue(true),
+        explainActOnClient: jest.fn().mockResolvedValue({ verdict: 'allowed' }),
       };
       const mod: TestingModule = await Test.createTestingModule({
         providers: [
@@ -714,10 +716,60 @@ describe('WorkoutBuilderService', () => {
       await expect(
         svc.assertCanAccessClient('sub-coach', CLIENT_ID),
       ).resolves.toBeUndefined();
-      expect(subCoachScope.canAccessClient).toHaveBeenCalledWith(
+      expect(subCoachScope.explainActOnClient).toHaveBeenCalledWith(
         'sub-coach',
         CLIENT_ID,
+        prismaMock,
       );
+    });
+
+    it('R593-c7A2-01: assignPlan evaluates the tenancy rule INSIDE the write transaction (tx client), before the INSERT; 403 writes nothing', async () => {
+      const subCoachScope = {
+        explainActOnClient: jest.fn().mockResolvedValue({ verdict: 'allowed' }),
+      };
+      const mod: TestingModule = await Test.createTestingModule({
+        providers: [
+          WorkoutBuilderService,
+          { provide: PrismaService, useValue: prismaMock },
+          { provide: SubCoachScopeService, useValue: subCoachScope },
+        ],
+      }).compile();
+      const svc = mod.get<WorkoutBuilderService>(WorkoutBuilderService);
+      // A DISTINCT tx client so we can prove the check ran through it.
+      const tx = { ...prismaMock, __isTx: true };
+      prismaMock.$transaction.mockImplementation(
+        async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+      );
+      prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, version: 1, exercises: [] });
+      prismaMock.clientWorkoutAssignment.create.mockResolvedValue({
+        id: 'asgn-lock-1',
+        workout_plan_id: basePlan.id,
+        client_id: CLIENT_ID,
+      });
+
+      await svc.assignPlan(
+        COACH_ID,
+        basePlan.id,
+        { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z' },
+        '77777777-7777-4777-8777-777777777777',
+      );
+      expect(subCoachScope.explainActOnClient).toHaveBeenCalledWith(COACH_ID, CLIENT_ID, tx);
+      expect(subCoachScope.explainActOnClient.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.clientWorkoutAssignment.create.mock.invocationCallOrder[0],
+      );
+
+      // Refused inside the transaction → 403 and no assignment row.
+      prismaMock.clientWorkoutAssignment.create.mockClear();
+      subCoachScope.explainActOnClient.mockResolvedValue({ verdict: 'forbidden' });
+      await expect(
+        svc.assignPlan(
+          COACH_ID,
+          basePlan.id,
+          { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z' },
+          '77777777-7777-4777-8777-777777777778',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prismaMock.clientWorkoutAssignment.create).not.toHaveBeenCalled();
     });
   });
 
