@@ -2,7 +2,6 @@ import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import type { InductionManifestV1 } from '../../../src/scout/induction/contract';
-import { reviewedPackageClosures } from '../../../src/scout/induction/closure';
 import { stagedFamilyDigests } from '../../../src/scout/induction/digest';
 import {
   buildInductionRegistry,
@@ -126,7 +125,6 @@ function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
     },
     registry: reg,
     observations,
-    closure: reviewedPackageClosures(reg),
     staged: [
       {
         source_platform: SLUG,

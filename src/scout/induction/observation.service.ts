@@ -78,13 +78,25 @@ function evidenceJson(e: ObservationEvidenceV1): Prisma.InputJsonObject {
       ...common,
       challenge_b64: e.challenge_b64,
       steps: e.steps.map((s) => ({
-        step: s.step,
-        stop: s.stop,
+        step_key: s.step_key,
         pages_fetched: s.pages_fetched,
-        max_pages: s.max_pages,
+        raw_items: s.raw_items,
+        distinct_raw_ids: s.distinct_raw_ids,
+        duplicate_ids: s.duplicate_ids,
+        synthetic_ids: s.synthetic_ids,
+        missing_id_items: s.missing_id_items,
+        stop: s.stop,
+        advertised_next: s.advertised_next,
         refused_pages: s.refused_pages,
         fan_out:
-          s.fan_out === null ? null : { expected: s.fan_out.expected, fetched: s.fan_out.fetched },
+          s.fan_out === null
+            ? null
+            : {
+                expected: s.fan_out.expected,
+                fetched: s.fan_out.fetched,
+                parent_step: s.fan_out.parent_step,
+              },
+        id_set_digest: s.id_set_digest,
       })),
       observed_unique: e.observed_unique,
       id_set_digest: e.id_set_digest,

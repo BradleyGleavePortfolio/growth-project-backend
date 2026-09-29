@@ -13,14 +13,21 @@ import type { CanonicalFamily } from '../reconstruct/mapping-spec';
  * removed, renamed or named after a source. A page-chain kind is deferred (§5) and absent here,
  * so chain evidence is always an unknown kind.
  *
- * L3 (owner D1, 2026-09-28; L0 D-L0-6 "How a learned source earns a basis") appends
- * `replay_terminal_enumeration`: the extension-observed basis. One evidence row per
- * `(platform, scope, family)` states that every collection step feeding the family reached the
- * replay engine's pagination terminal under budget with zero refused pages, plus the family's
- * `observed_unique` and `id_set_digest`. The evaluator rule lives in `verify.ts`
- * (`proveReplayTerminalEnumeration`): digest AND count equal to the staged side ⇒ `known: true`;
- * any budget stop, refused page, retry exhaustion, fan-out short of its id set, a step set short
- * of the spec's, or a digest/count mismatch ⇒ `known: false`.
+ * L3 (owner D1, 2026-09-28; L0 r4 D-L0-6 "Pagination exhaustion is proven per endpoint,
+ * positively") appends `replay_terminal_enumeration`: the extension-observed evidence. One
+ * evidence row per `(platform, scope, family)` aggregates one `ReplayStepEvidenceV1` per
+ * collection step feeding the family (exhausted: a positive terminal after ≥ 1 page, no
+ * advertised next link, zero refused pages, no synthetic or missing id, fan-out bound to its
+ * parent's proven count), plus the family's `observed_unique` and `id_set_digest`. The evaluator
+ * rule lives in `verify.ts` (`proveReplayTerminalEnumeration`): digest AND count equal to the
+ * staged side ⇒ the family's SOURCE COUNT is `proven`; anything less ⇒ `unknown`, never 0.
+ *
+ * Executive reset 2026-09-29 §1/§8: NO package (file, learned, legacy) has a run-level
+ * completeness closure until a separate closure record lands, so this kind never yields a
+ * `CoverageFact` with `known: true` — it can prove a family's source count ("48 of 48"), never
+ * the run's `complete`. `complete` stays reachable only through `source_signed_enumeration`
+ * (test-only: S12-B2 refuses it outside dev/test). The kind stays in this enum (append-only) and
+ * in `PROVING_BASIS_KINDS` because it proves the count; `familyCoverage` never sees it.
  */
 export const COMPLETENESS_BASIS_KINDS = [
   'none',
@@ -74,17 +81,15 @@ export const OBSERVED_UNIQUE_MAX = 2 ** 31 - 1;
 export const OBSERVATION_BODY_MAX_BYTES = 32 * 1024;
 export const KEY_ID_PATTERN = /^[a-z0-9._-]{1,64}$/;
 export const HEX64_PATTERN = /^[0-9a-f]{64}$/;
-/** L3: at most this many collection steps may feed one family in a replay evidence row. */
-export const REPLAY_MAX_STEPS = 16;
+/**
+ * L3 r2 (L0 r4 D-L0-6 "L3 evidence cardinality"): at most this many step evidences (steps,
+ * `:s`/`:q` variants and probes) may feed one family in a replay evidence row.
+ */
+export const REPLAY_MAX_STEPS = 64;
+/** L3 r2: the body bound for an observation body whose every entry is the replay kind (r4). */
+export const REPLAY_OBSERVATION_BODY_MAX_BYTES = 64 * 1024;
 /** L3: a replay step token is the mapping spec's own step key (UTF-8 bytes, bounded). */
 export const REPLAY_STEP_TOKEN_MAX_BYTES = 256;
-/**
- * L3: an opaque template reference inside a family-set closure record (a digest ref, never a
- * URL, host or path: no `/`, `:` or `?` can appear).
- */
-export const CLOSURE_TEMPLATE_REF_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
-/** L3: at most this many observed collection templates in one closure record. */
-export const CLOSURE_MAX_TEMPLATES = 256;
 /** RFC 3339 UTC (`Z` only); calendar validity is checked separately in `parse.ts`. */
 export const ISSUED_AT_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
@@ -184,55 +189,97 @@ export const EVIDENCE_KEYS = [
 // ── L3: `replay_terminal_enumeration` — the extension-observed evidence ───────────────────
 
 /**
- * How one replay collection step stopped, as the engine reports it. Only `short_page` (a page
- * shorter than the page size) and `absent_next` (no next-page link/cursor) are pagination
- * terminals; every other stop is a truncated crawl and never proves.
+ * How one replay step stopped, as the engine reports it (L0 r4 D-L0-6 `StopReason`). Only
+ * `absent_next` (cursor style: the next path resolved to null/absent), `empty_page` and
+ * `short_page` (page style) are pagination terminals, and only after ≥ 1 page; `none_proven`
+ * (a `style: 'none'` step whose single page could not be proven unpaginated), `budget`, `cycle`,
+ * `error` and `advertised_next` (a next link the step did not follow) are not exhausted.
  */
 export const REPLAY_STEP_STOPS = [
-  'short_page',
   'absent_next',
-  'budget_stop',
-  'refused_page',
-  'retry_exhausted',
-  'aborted',
+  'empty_page',
+  'short_page',
+  'none_proven',
+  'budget',
+  'cycle',
+  'error',
+  'advertised_next',
 ] as const;
 export type ReplayStepStop = (typeof REPLAY_STEP_STOPS)[number];
-export const REPLAY_TERMINAL_STOPS: readonly ReplayStepStop[] = ['short_page', 'absent_next'];
+export const REPLAY_TERMINAL_STOPS: readonly ReplayStepStop[] = [
+  'absent_next',
+  'empty_page',
+  'short_page',
+];
 
-/** The pages a fan-out step had to visit (its parent id set) against the pages it fetched. */
+/**
+ * The parent contexts a fan-out step had to visit (one per identity of its parent step) against
+ * the ones it visited. `parent_step` names the step key the fan-out iterated; the evaluator binds
+ * `expected` to that parent step's PROVEN `distinct_raw_ids` inside a proven family (L3 r2,
+ * R589-A-4 / R589-B-B1; r4 D-L0-6) — a self-reported `expected` never proves on its own.
+ * (`parent_step` is on the evidence because the pinned package carries no `parentEdge` yet; when
+ * L1's package does, the evaluator must also require equality with `parentEdge.toStep`.)
+ */
 export interface ReplayFanOutV1 {
   readonly expected: number;
   readonly fetched: number;
+  readonly parent_step: string;
 }
-export const REPLAY_FAN_OUT_KEYS = ['expected', 'fetched'] as const;
+export const REPLAY_FAN_OUT_KEYS = ['expected', 'fetched', 'parent_step'] as const;
 
-/** One collection step of the pinned mapping spec that feeds the family, and how it ended. */
-export interface ReplayStepTerminalV1 {
+/**
+ * One step evidence of the pinned package that feeds the family (r4 `StepEvidenceV1`, snake_case
+ * on the wire like the rest of the row): a mapped step, a `:s`/`:q` variant or a probe.
+ */
+export interface ReplayStepEvidenceV1 {
   /** The mapping spec's step key (or the family token for a canonical-token collection). */
-  readonly step: string;
-  readonly stop: ReplayStepStop;
-  /** Pages fetched by this step; must stay below `max_pages` (a step at its budget never proves). */
+  readonly step_key: string;
+  /**
+   * Pages fetched by this step. A root step (`fan_out: null`) must have fetched ≥ 1 page (the
+   * parser refuses 0): a crawl that fetched nothing observed no terminal, so an empty collection
+   * is proven only by a positive GET (unknown is never 0).
+   */
   readonly pages_fetched: number;
-  /** The `maxPagesPerStep` budget in force for this step (≥ 1). */
-  readonly max_pages: number;
+  /** Items the pages held, before identity. */
+  readonly raw_items: number;
+  /** Distinct `idField` values among them (never a synthetic id). */
+  readonly distinct_raw_ids: number;
+  /** Items whose id repeated an earlier one. */
+  readonly duplicate_ids: number;
+  /** Items given a synthetic positional id; must be 0 (a fabricated identity never proves). */
+  readonly synthetic_ids: number;
+  /** Items without an id; must be 0. */
+  readonly missing_id_items: number;
+  readonly stop: ReplayStepStop;
+  /** A next link/cursor the last page advertised and the step did not follow; must be false. */
+  readonly advertised_next: boolean;
   /** Pages the source refused (non-2xx, timeout after retries); must be 0. */
   readonly refused_pages: number;
-  /** `null` for a root collection; a fan-out step must have fetched every expected page. */
+  /** `null` for a root collection; a fan-out step must have visited every expected parent page. */
   readonly fan_out: ReplayFanOutV1 | null;
+  /** The D-S10-2 identity-set digest of this step's distinct ids. */
+  readonly id_set_digest: string;
 }
 export const REPLAY_STEP_KEYS = [
-  'step',
-  'stop',
+  'step_key',
   'pages_fetched',
-  'max_pages',
+  'raw_items',
+  'distinct_raw_ids',
+  'duplicate_ids',
+  'synthetic_ids',
+  'missing_id_items',
+  'stop',
+  'advertised_next',
   'refused_pages',
   'fan_out',
+  'id_set_digest',
 ] as const;
 
 /**
  * What the extension uploads for `replay_terminal_enumeration`, one per `(platform, scope,
- * family)`. Digests, counts and step terminals only: no URL, no source id, no free text. The
- * server binds it to the run through `challenge_b64` (the declaration challenge) and the row's
+ * family)` (r4: no schema or unique-key change; the row aggregates the family's step evidences).
+ * Digests, counts and step terminals only: no URL, no source id, no free text. The server binds
+ * it to the run through `challenge_b64` (the declaration challenge) and the row's
  * coach/intent/epoch, and proves it only against the staged identity digest (E6).
  */
 export interface ReplayTerminalEvidenceV1 {
@@ -243,8 +290,10 @@ export interface ReplayTerminalEvidenceV1 {
   readonly basis_kind: 'replay_terminal_enumeration';
   readonly mapping_spec_digest: string;
   readonly challenge_b64: string;
-  readonly steps: readonly ReplayStepTerminalV1[];
+  readonly steps: readonly ReplayStepEvidenceV1[];
+  /** Distinct ids over the union of the steps' id sets. */
   readonly observed_unique: number;
+  /** The D-S10-2 digest of that union. */
   readonly id_set_digest: string;
 }
 export const REPLAY_EVIDENCE_KEYS = [
@@ -263,126 +312,78 @@ export const REPLAY_EVIDENCE_KEYS = [
 /** Every evidence shape the observation route stores (discriminated by `basis_kind`). */
 export type ObservationEvidenceV1 = SourceSignedEvidenceV1 | ReplayTerminalEvidenceV1;
 
-// ── L3: family-set closure (owner D1; L0 D-L0-6.1 (i)) ────────────────────────────────────
+// ── L3 r2: per-family coverage detail (executive reset 2026-09-29 §1, §6, §8) ────────────
 
 /**
- * Why a learned package left an observed collection template unmapped. Closed enum (the L1
- * proposal's `unmapped[].reason`). Only the three `out_of_scope_*` reasons can ever count toward
- * closure, and only when the deterministic structural rule confirmed them; the AI's
- * classification alone never permits `complete`.
+ * How a family's SOURCE COUNT was established. `'proven'`: every declared platform's evidence
+ * for the family verified (E2–E6, one basis kind) and equals the staged identity set, so the
+ * count is the source's. `'unknown'`: anything less (a count is never shown). The projection's
+ * `'observed'` (a count of staged rows without proof) is slice L2's, computed from staged facts,
+ * never here.
  */
-export const CLOSURE_EXCLUSION_REASONS = [
-  'out_of_scope_billing',
-  'out_of_scope_account_settings',
-  'out_of_scope_ui_config',
-  'unsupported_coaching_data',
-  'unknown',
-] as const;
-export type ClosureExclusionReason = (typeof CLOSURE_EXCLUSION_REASONS)[number];
-export const CLOSURE_CONFIRMABLE_REASONS: readonly ClosureExclusionReason[] = [
-  'out_of_scope_billing',
-  'out_of_scope_account_settings',
-  'out_of_scope_ui_config',
-];
+export const FAMILY_COUNT_BASES = ['proven', 'unknown'] as const;
+export type FamilyCountBasis = (typeof FAMILY_COUNT_BASES)[number];
 
 /**
- * The structure-only signals the deterministic exclusion rule (L0 D-L0-6.1 (i)
- * `confirmExclusion`, owned by the learn slice) computed for one excluded template. Stored as
- * signals, never as a verdict: the closure evaluator re-derives "confirmed" from them on every
- * run, so a rule reading is never frozen into a package. `path`/`key`/`shape` are the P/K/S
- * classes; `veto` is true when coaching vocabulary appears in the path tokens OR the item key
- * tokens, or an `email_like`/`phone_like` key exists; `empty_shape` is true when the collection
- * exposed no item shape (an empty collection can never be confirmed out of scope).
+ * L3 r2: why a family is not a run-level completeness basis (`known: false`), or why its source
+ * count is unknown. Closed, append-only, counts only — no source id, URL, token or free text (an
+ * A1 value path). `evaluateCoverageDetailed()` returns them per family so the ONE run-status
+ * projection (executive reset 2026-09-29 §6: `families[]`/`not_moved[]`/`gaps[]`, slice L2) can
+ * consume them; nothing here is persisted or shown yet (see the L3 record §5).
  */
-export interface ExclusionSignalsV1 {
-  readonly path: boolean;
-  readonly key: boolean;
-  readonly shape: boolean;
-  readonly veto: boolean;
-  readonly empty_shape: boolean;
-}
-export const EXCLUSION_SIGNAL_KEYS = ['path', 'key', 'shape', 'veto', 'empty_shape'] as const;
-
-/** One observed collection template of the pinned package and what became of it. */
-export type FamilySetClosureTemplateV1 =
-  | {
-      readonly template_ref: string;
-      readonly disposition: 'mapped';
-      readonly family: CanonicalFamily;
-      /**
-       * Distinct values seen on a non-pagination query key of this template that the replay did
-       * not enumerate (e.g. an archived-status list). A COUNT only, never the values. Must be 0
-       * for the template to close.
-       */
-      readonly unexplored_variants: number;
-    }
-  | {
-      readonly template_ref: string;
-      readonly disposition: 'excluded';
-      readonly reason: ClosureExclusionReason;
-      readonly signals: ExclusionSignalsV1;
-    };
-export const CLOSURE_MAPPED_TEMPLATE_KEYS = [
-  'template_ref',
-  'disposition',
-  'family',
-  'unexplored_variants',
+export const COVERAGE_REASON_CODES = [
+  /** No run declaration, or a malformed one (E1). */
+  'declaration_missing',
+  /** The platform has no induction package in the settling registry (E1). */
+  'package_missing',
+  /** S9-B grouped the platform against a family set the package does not declare (E6). */
+  'partition_disagreement',
+  /** More than one account scope was declared for the platform (multi-scope attribution deferred). */
+  'multi_scope',
+  /**
+   * The family's source count is proven by observed (replay) evidence, but no completeness-closure
+   * record exists for any package yet (executive reset 2026-09-29 §1): the count is known, the
+   * run-level basis is not. Always present on such a family; never on a source-signed one.
+   */
+  'completeness_not_proven',
+  /** The staged platform was never declared for this run (E1). */
+  'platform_undeclared',
+  /** No evidence row for the unit (E2). Unknown, never 0. */
+  'evidence_missing',
+  /** More than one evidence row for the unit (E2). */
+  'evidence_duplicate',
+  /** A row that does not parse poisons its unit (or, nameless, every unit). */
+  'evidence_malformed',
+  /** The row binds to another run, package, kind, scope, challenge or spec digest (E3). */
+  'evidence_unbound',
+  /** The source signature or verifier failed, or the statement is outside the run window (E4). */
+  'signature_unverified',
+  /** The reported replay step set differs from the pinned spec's steps for the family. */
+  'step_set_mismatch',
+  /** A replay step stopped at budget, a refused page, retry exhaustion or an abort. */
+  'crawl_truncated',
+  /** A root replay step fetched zero pages: no terminal was observed (unknown, never 0). */
+  'zero_pages_fetched',
+  /** A replay step counted a synthetic or missing id: a fabricated identity never proves. */
+  'identity_unproven',
+  /** A replay row's step counters or digests contradict its family totals. */
+  'evidence_inconsistent',
+  /** A fan-out step visited fewer parent contexts than expected, or its pages differ from them. */
+  'fan_out_short',
+  /** A fan-out step's parent step is not in a proven unit of this platform and scope. */
+  'fan_out_parent_unproven',
+  /** A fan-out step's `expected` does not equal the parent step's proven `distinct_raw_ids`. */
+  'fan_out_count_mismatch',
+  /** The staged side has no digest for the family (S9-B could not digest it). */
+  'staged_digest_missing',
+  /** The evidence digest or count does not equal the staged identity set (E6). */
+  'staged_mismatch',
+  /** Two basis kinds proved one family: no single truthful `basis_kind`. */
+  'basis_kind_conflict',
+  /** The evaluator hit an unexpected failure and answered unknown for every family. */
+  'evaluator_failure',
 ] as const;
-export const CLOSURE_EXCLUDED_TEMPLATE_KEYS = [
-  'template_ref',
-  'disposition',
-  'reason',
-  'signals',
-] as const;
-
-/**
- * The pinned package's closure record. `reviewed_package`: a repository (file) package whose
- * family set is fixed by reviewed data and has no observed template inventory.
- * `observed_templates`: a learned package (L1/L2), whose every observed collection template must
- * be mapped or confirmed out of scope AND whose discovery left nothing behind: no truncated
- * digest, no refused or withheld collection template, no unexplored navigation target. A missing
- * record (`null`) is NOT known and blocks `complete`.
- */
-export type FamilySetClosureV1 =
-  | {
-      readonly closure_version: 1;
-      readonly source_platform: string;
-      /** Binds the record to the loaded package (must equal the package's `specDigest`). */
-      readonly mapping_spec_digest: string;
-      readonly origin: 'reviewed_package';
-    }
-  | {
-      readonly closure_version: 1;
-      readonly source_platform: string;
-      readonly mapping_spec_digest: string;
-      readonly origin: 'observed_templates';
-      /** Version of the exclusion-rule token table the signals were computed with. */
-      readonly rule_version: 1;
-      /** The structure digest dropped templates at its bound (any drop blocks `complete`). */
-      readonly digest_truncated: boolean;
-      /** Collection-shaped templates refused or withheld from the digest (count only). */
-      readonly refused_collections: number;
-      /** Navigation targets discovery found but never visited (count only). */
-      readonly unexplored_targets: number;
-      readonly templates: readonly FamilySetClosureTemplateV1[];
-    };
-export const CLOSURE_OBSERVED_KEYS = [
-  'closure_version',
-  'source_platform',
-  'mapping_spec_digest',
-  'origin',
-  'rule_version',
-  'digest_truncated',
-  'refused_collections',
-  'unexplored_targets',
-  'templates',
-] as const;
-export const CLOSURE_REVIEWED_KEYS = [
-  'closure_version',
-  'source_platform',
-  'mapping_spec_digest',
-  'origin',
-] as const;
+export type CoverageReasonCode = (typeof COVERAGE_REASON_CODES)[number];
 
 /**
  * Why an artifact failed to parse. Diagnostic only (tests and S10-B's 400 path): the evaluator

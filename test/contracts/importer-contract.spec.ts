@@ -1211,25 +1211,39 @@ describe('importer contract (R80 freeze)', () => {
       expect(rec(props('ScoutRunObservationEvidenceSchema').steps)).toMatchObject({
         type: 'array',
         minItems: 1,
-        maxItems: 16,
-        items: { $ref: '#/components/schemas/ScoutRunReplayStepTerminalSchema' },
+        maxItems: 64,
+        items: { $ref: '#/components/schemas/ScoutRunReplayStepEvidenceSchema' },
       });
-      expect(Object.keys(props('ScoutRunReplayStepTerminalSchema')).sort()).toEqual([
+      // L3 r2 (L0 r4 D-L0-6 StepEvidenceV1): one step evidence per step, variant or probe.
+      expect(Object.keys(props('ScoutRunReplayStepEvidenceSchema')).sort()).toEqual([
+        'advertised_next',
+        'distinct_raw_ids',
+        'duplicate_ids',
         'fan_out',
-        'max_pages',
+        'id_set_digest',
+        'missing_id_items',
         'pages_fetched',
+        'raw_items',
         'refused_pages',
-        'step',
+        'step_key',
         'stop',
+        'synthetic_ids',
       ]);
-      expect(rec(props('ScoutRunReplayStepTerminalSchema').stop).enum).toEqual([
-        'short_page',
+      expect(rec(props('ScoutRunReplayStepEvidenceSchema').stop).enum).toEqual([
         'absent_next',
-        'budget_stop',
-        'refused_page',
-        'retry_exhausted',
-        'aborted',
+        'empty_page',
+        'short_page',
+        'none_proven',
+        'budget',
+        'cycle',
+        'error',
+        'advertised_next',
       ]);
+      expect(rec(rec(props('ScoutRunReplayStepEvidenceSchema').fan_out).properties)).toMatchObject({
+        expected: { type: 'number', minimum: 0 },
+        fetched: { type: 'number', minimum: 0 },
+        parent_step: { type: 'string', minLength: 1, maxLength: 256 },
+      });
       const result = props('ScoutRunObservationResult');
       expect(Object.keys(result).sort()).toEqual([
         'execution_epoch',

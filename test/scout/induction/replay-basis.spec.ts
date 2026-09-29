@@ -1,22 +1,14 @@
-import { readFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
-import {
-  evaluateFamilySetClosure,
-  exclusionConfirmed,
-  reviewedPackageClosures,
-  type ClosureGap,
-} from '../../../src/scout/induction/closure';
-import {
-  CLOSURE_EXCLUSION_REASONS,
-  type ClosureExclusionReason,
-  type ExclusionSignalsV1,
-  type FamilySetClosureTemplateV1,
-  type FamilySetClosureV1,
-  type ReplayStepTerminalV1,
+import type {
+  CoverageReasonCode,
+  ReplayStepEvidenceV1,
 } from '../../../src/scout/induction/contract';
 import { stagedFamilyDigests } from '../../../src/scout/induction/digest';
 import {
   buildInductionRegistry,
+  loadInductionManifests,
   type InductionRegistry,
 } from '../../../src/scout/induction/manifest-registry';
 import { parseEvidence, parseInductionManifest } from '../../../src/scout/induction/parse';
@@ -24,6 +16,7 @@ import {
   evaluateCoverage,
   evaluateCoverageDetailed,
   type CoverageEvaluationInput,
+  type FamilyCoverageDetail,
   type StagedPlatformFacts,
   type StoredObservation,
 } from '../../../src/scout/induction/verify';
@@ -45,21 +38,32 @@ import {
 } from '../../fixtures/scout/s10_pure/s10-pure-signer';
 
 /**
- * L3 — the `replay_terminal_enumeration` completeness basis (owner D1, 2026-09-28: "complete"
- * means "All past client and coaching records in this site are now in TGP"; L0 D-L0-6 "How a
- * learned source earns a basis") and family-set closure (D-L0-6.1 (i)). Positive case, every L0
- * negative case, the closure-null ⇒ not-complete case, and the proof that no path lets the AI's
- * classification alone produce `complete`. Pure tier: no DB, no Nest.
+ * L3 — the `replay_terminal_enumeration` evidence (owner D1, 2026-09-28; L0 r4 D-L0-6
+ * "Pagination exhaustion is proven per endpoint, positively") under the executive reset of
+ * 2026-09-29 (§1, §8): NO package has a run-level completeness closure yet, so this evidence
+ * proves a family's SOURCE COUNT (`evaluateCoverageDetailed().families`, for the run-status
+ * projection) and never a run-level basis — `evaluateCoverage` reports every replay family
+ * `known: false`, the run settles `partial/coverage_basis_unknown`, and `complete` is unreachable
+ * through it for every package type. Positive case, every L0 negative case, and the proof that no
+ * path lets the AI's classification alone produce `complete`. Pure tier: no DB, no Nest. The r2
+ * reviewer negatives (R589-A/B) live in `replay-basis-r2.spec.ts`.
  */
 
 type Family = 'clients' | 'programs' | 'workouts';
 const FAMILIES: readonly Family[] = ['clients', 'programs', 'workouts'];
+/** Ids per STEP (`test/fixtures/scout/s10_pure/mapping`): workouts is the union of two steps. */
+const STEP_IDS: Record<string, string[]> = {
+  members: ['c1', 'c2'],
+  plans: ['p1'],
+  routines: ['w1', 'w2'],
+  sessions: ['w3'],
+};
 const IDS: Record<Family, string[]> = {
   clients: ['c1', 'c2'],
   programs: ['p1'],
   workouts: ['w1', 'w2', 'w3'],
 };
-/** The fixture spec's steps per family (`test/fixtures/scout/s10_pure/mapping`). */
+/** The fixture spec's steps per family. */
 const STEPS: Record<Family, string[]> = {
   clients: ['members'],
   programs: ['plans'],
@@ -84,7 +88,11 @@ const MANIFEST_RAW: Record<string, unknown> = JSON.parse(
   readFileSync(join(S10_PURE_MANIFESTS_DIR, `${SLUG}.json`), 'utf8'),
 );
 
-/** The fixture package with every family provable by the replay kind and NO verifier (a learned package's shape). */
+/**
+ * The fixture package with every family listing the replay kind and NO verifier: the shape a
+ * learned (derived) package has. Whether a package came from a repository file or was composed
+ * makes no difference any more (executive reset §1: no package type has a closure).
+ */
 function replayRegistry(slug = SLUG, kinds: readonly string[] = [REPLAY]): InductionRegistry {
   const spec = parseSourceMappingSpec({ ...SPEC_RAW, sourcePlatform: slug }, `${slug}.json`);
   const manifest = parseInductionManifest(
@@ -103,19 +111,27 @@ const REGISTRY = replayRegistry();
 const specDigest = (registry: InductionRegistry, slug = SLUG): string =>
   registry.packages.get(slug)?.specDigest ?? 'missing';
 
-function step(name: string, over: Partial<ReplayStepTerminalV1> = {}): ReplayStepTerminalV1 {
+/** One exhausted root step evidence with the fixture ids of `step_key`. */
+function step(step_key: string, over: Partial<ReplayStepEvidenceV1> = {}): ReplayStepEvidenceV1 {
+  const ids = STEP_IDS[step_key] ?? [];
   return {
-    step: name,
-    stop: 'short_page',
+    step_key,
     pages_fetched: 3,
-    max_pages: 1000,
+    raw_items: ids.length,
+    distinct_raw_ids: ids.length,
+    duplicate_ids: 0,
+    synthetic_ids: 0,
+    missing_id_items: 0,
+    stop: 'short_page',
+    advertised_next: false,
     refused_pages: 0,
     fan_out: null,
+    id_set_digest: referenceIdDigest(ids),
     ...over,
   };
 }
 
-/** One valid replay evidence object for a family (steps default to the spec's, all terminal-clean). */
+/** One valid replay evidence object for a family (steps default to the spec's, all exhausted). */
 function replayEvidence(
   family: Family,
   over: Record<string, unknown> = {},
@@ -171,27 +187,46 @@ function input(over: Partial<CoverageEvaluationInput> = {}): CoverageEvaluationI
     registry,
     observations: rows(),
     staged: [staged()],
-    closure: reviewedPackageClosures(registry),
     ...over,
   };
 }
 
-const KNOWN = (n: number, kind = REPLAY) => ({
-  known: true,
-  basis_kind: kind,
-  observed_unique: n,
-  covers_staged_identities: true,
-});
 const UNKNOWN: CoverageFact = { known: false };
-const BASELINE = { clients: KNOWN(2), programs: KNOWN(1), workouts: KNOWN(3) };
 const ALL_UNKNOWN = { clients: UNKNOWN, programs: UNKNOWN, workouts: UNKNOWN };
+/** A replay-proven family: the source count is known, the run-level basis is not (reset §1). */
+const COUNTED = (n: number): FamilyCoverageDetail => ({
+  source_count: n,
+  count_basis: 'proven',
+  basis_kind: REPLAY,
+  reasons: [{ code: 'completeness_not_proven', platform: null }],
+});
+const BASELINE_COUNTS = { clients: COUNTED(2), programs: COUNTED(1), workouts: COUNTED(3) };
+const UNCOUNTED = (...codes: CoverageReasonCode[]): FamilyCoverageDetail => ({
+  source_count: null,
+  count_basis: 'unknown',
+  basis_kind: null,
+  reasons: codes.map((code) => ({ code, platform: SLUG })),
+});
+const PARTIAL_UNKNOWN = { outcome: 'partial', reason_code: 'coverage_basis_unknown' };
 
-/** Replace one family's evidence and expect ONLY that family to become unknown (never 0). */
-function expectOnlyUnknown(family: Family, evidence: Record<string, unknown>): void {
-  const facts = evaluateCoverage(input({ observations: rows({ [family]: [stored(evidence)] }) }));
-  expect(facts).toEqual({ ...BASELINE, [family]: UNKNOWN });
-  expect(facts[family]).not.toHaveProperty('observed_unique');
-  expect(familyCoverage(facts[family], 'success')).toEqual({
+/** Replace one family's evidence and expect ONLY that family's count to become unknown (never 0). */
+function expectOnlyUnknown(
+  family: Family,
+  evidence: Record<string, unknown>,
+  ...codes: CoverageReasonCode[]
+): void {
+  const detailed = evaluateCoverageDetailed(
+    input({ observations: rows({ [family]: [stored(evidence)] }) }),
+  );
+  expect(detailed.facts).toEqual(ALL_UNKNOWN);
+  const expected: Record<string, FamilyCoverageDetail> = { ...BASELINE_COUNTS };
+  if (codes.length > 0) expected[family] = UNCOUNTED(...codes);
+  else {
+    expect(detailed.families[family]).toMatchObject({ source_count: null, count_basis: 'unknown' });
+    expected[family] = detailed.families[family];
+  }
+  expect(detailed.families).toEqual(expected);
+  expect(familyCoverage(detailed.facts[family], 'success')).toEqual({
     known: false,
     completeness_basis: 'none',
     observed_unique: null,
@@ -244,10 +279,11 @@ const verdictOf = (coverage: ReturnType<typeof evaluateCoverage>) =>
 
 // ── The kind and its manifest rules ─────────────────────────────────────────────────────
 
-describe('L3 — replay_terminal_enumeration is a proving kind a learned package may list without a verifier', () => {
-  it('a manifest listing only the replay kind loads with verifiers: [] (D-S10-1 V5, L3 reading)', () => {
-    expect(REGISTRY.packages.get(SLUG)?.manifest.verifiers).toEqual([]);
-    expect(REGISTRY.packages.get(SLUG)?.manifest.basisKinds.clients).toEqual([REPLAY]);
+describe('L3 — replay_terminal_enumeration is a proving kind a package may list without a verifier', () => {
+  it('a manifest listing only the replay kind parses with verifiers: [] (D-S10-1 V5, L3 reading)', () => {
+    const pkg = REGISTRY.packages.get(SLUG);
+    expect(pkg?.manifest.verifiers).toEqual([]);
+    expect(pkg?.manifest.basisKinds.clients).toEqual([REPLAY]);
   });
 
   it('the source-signed kind still requires a verifier', () => {
@@ -275,7 +311,7 @@ describe('L3 — replay_terminal_enumeration is a proving kind a learned package
 
 // ── Parser ──────────────────────────────────────────────────────────────────────────────
 
-describe('L3 — parseEvidence: the replay_terminal_enumeration shape', () => {
+describe('L3 — parseEvidence: the replay_terminal_enumeration shape (r4 StepEvidenceV1)', () => {
   const reason = (raw: unknown): string => {
     const r = parseEvidence(raw);
     return r.ok ? 'ok' : r.reason;
@@ -315,19 +351,28 @@ describe('L3 — parseEvidence: the replay_terminal_enumeration shape', () => {
   });
 
   it('refuses malformed challenge, steps, counts and digests without throwing', () => {
+    const fan = { expected: 2, fetched: 2, parent_step: 'members' };
     const cases: [Record<string, unknown>, string][] = [
       [{ challenge_b64: 'not base64!' }, 'bad_base64'],
       [{ challenge_b64: Buffer.alloc(31).toString('base64') }, 'bad_length'],
       [{ steps: [] }, 'bad_step'],
       [{ steps: 'members' }, 'bad_step'],
-      [{ steps: Array.from({ length: 17 }, (_, i) => step(`s${i}`)) }, 'too_large'],
+      [{ steps: Array.from({ length: 65 }, (_, i) => step(`s${i}`)) }, 'too_large'],
       [{ steps: [step('members'), step('members')] }, 'bad_step'],
       [{ steps: [{ ...step('members'), extra: 1 }] }, 'unknown_key'],
+      [{ steps: [{ ...step('members'), step: 'members' }] }, 'unknown_key'],
       [{ steps: [{ ...step('members'), stop: 'end_of_list' }] }, 'bad_terminal'],
+      [{ steps: [{ ...step('members'), advertised_next: 'no' }] }, 'bad_terminal'],
       [{ steps: [step('members', { pages_fetched: -1 })] }, 'bad_count'],
       [{ steps: [step('members', { pages_fetched: 1.5 })] }, 'bad_count'],
-      [{ steps: [step('members', { max_pages: 0 })] }, 'bad_count'],
-      [{ steps: [{ ...step('members'), fan_out: { expected: 2 } }] }, 'missing_key'],
+      // r4 "unknown is never 0": a root step that fetched nothing is not even evidence.
+      [{ steps: [step('members', { pages_fetched: 0 })] }, 'bad_count'],
+      [{ steps: [step('members', { raw_items: -1 })] }, 'bad_count'],
+      [{ steps: [{ ...step('members'), synthetic_ids: '0' }] }, 'bad_count'],
+      [{ steps: [step('members', { id_set_digest: 'zz' })] }, 'bad_digest'],
+      [{ steps: [{ ...step('members'), fan_out: { expected: 2, fetched: 2 } }] }, 'missing_key'],
+      [{ steps: [{ ...step('members'), fan_out: { ...fan, parent_step: '' } }] }, 'bad_step'],
+      [{ steps: [{ ...step('members'), fan_out: { ...fan, extra: 1 } }] }, 'unknown_key'],
       [{ steps: [{ ...step('members'), fan_out: 'all' }] }, 'bad_step'],
       [{ steps: [step('')] }, 'bad_step'],
       [{ steps: [step('x'.repeat(257))] }, 'too_large'],
@@ -340,63 +385,112 @@ describe('L3 — parseEvidence: the replay_terminal_enumeration shape', () => {
       expect([over, reason({ ...replayEvidence('clients'), ...over })]).toEqual([over, expected]);
     }
   });
+
+  it('a fan-out step may report pages_fetched 0 when it had nothing to visit (the parent decides)', () => {
+    const fanned = replayEvidence('workouts', {
+      steps: [
+        step('routines'),
+        step('sessions', {
+          pages_fetched: 0,
+          fan_out: { expected: 0, fetched: 0, parent_step: 'members' },
+        }),
+      ],
+    });
+    expect(reason(fanned)).toBe('ok');
+  });
 });
 
 // ── Evaluator: the positive case and every L0 negative case ────────────────────────────
 
-describe('L3 — positive case: every step terminal-clean, digest AND count equal to staged', () => {
-  it('yields known, replay_terminal_enumeration, the observed count and coverage', () => {
-    const facts = evaluateCoverage(input());
-    expect(facts).toEqual(BASELINE);
-    expect(familyCoverage(facts.workouts, 'success')).toEqual({
-      known: true,
-      completeness_basis: REPLAY,
-      observed_unique: 3,
+describe('L3 — positive case: every step exhausted, digest AND count equal to staged → a PROVEN source count', () => {
+  it('yields count_basis proven with the observed count per family, and NO run-level basis (reset §1)', () => {
+    const detailed = evaluateCoverageDetailed(input());
+    expect(detailed.families).toEqual(BASELINE_COUNTS);
+    expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    expect(evaluateCoverage(input())).toEqual(ALL_UNKNOWN);
+    expect(familyCoverage(detailed.facts.workouts, 'success')).toEqual({
+      known: false,
+      completeness_basis: 'none',
+      observed_unique: null,
     });
   });
 
-  it('composes with the pure S9 reconciler to `complete` (owner D1: the extension-observed basis is approved)', () => {
-    expect(verdictOf(evaluateCoverage(input()))).toEqual({
-      outcome: 'complete',
-      reason_code: null,
-    });
+  it('composes with the pure S9 reconciler to partial / coverage_basis_unknown — never `complete`', () => {
+    expect(verdictOf(evaluateCoverage(input()))).toEqual(PARTIAL_UNKNOWN);
   });
 
-  it('a fan-out step that fetched every expected page proves; a zero-row family with the empty digest proves', () => {
+  it('every r4 terminal stop counts after ≥ 1 page: absent_next, empty_page, short_page (next_url style stops at absent_next)', () => {
+    for (const stop of ['absent_next', 'empty_page', 'short_page'] as const) {
+      const detailed = evaluateCoverageDetailed(
+        input({
+          observations: rows({
+            clients: [stored(replayEvidence('clients', { steps: [step('members', { stop })] }))],
+          }),
+        }),
+      );
+      expect(detailed.families).toEqual(BASELINE_COUNTS);
+    }
+  });
+
+  it('a fan-out step bound to its parent step’s proven count counts; an empty family counts only by a positive probe', () => {
+    // sessions fans out over the members (clients) step: 2 parent contexts, 2 visited, 2 pages.
     const fanned = replayEvidence('workouts', {
       steps: [
         step('routines'),
-        step('sessions', { fan_out: { expected: 2, fetched: 2 }, stop: 'absent_next' }),
+        step('sessions', {
+          pages_fetched: 2,
+          stop: 'absent_next',
+          fan_out: { expected: 2, fetched: 2, parent_step: 'members' },
+        }),
       ],
     });
-    expect(evaluateCoverage(input({ observations: rows({ workouts: [stored(fanned)] }) }))).toEqual(
-      BASELINE,
-    );
-    const zero = replayEvidence('programs', {
+    expect(
+      evaluateCoverageDetailed(input({ observations: rows({ workouts: [stored(fanned)] }) }))
+        .families,
+    ).toEqual(BASELINE_COUNTS);
+    // L0 r4 D-L0-6: an empty collection is closed by ONE GET that returned an empty page.
+    const probe = replayEvidence('programs', {
+      steps: [
+        step('plans', {
+          pages_fetched: 1,
+          raw_items: 0,
+          distinct_raw_ids: 0,
+          stop: 'empty_page',
+          id_set_digest: referenceIdDigest([]),
+        }),
+      ],
       observed_unique: 0,
       id_set_digest: referenceIdDigest([]),
     });
-    const facts = evaluateCoverage(
+    const detailed = evaluateCoverageDetailed(
       input({
-        observations: rows({ programs: [stored(zero)] }),
+        observations: rows({ programs: [stored(probe)] }),
         staged: [staged({ ...IDS, programs: [] })],
       }),
     );
-    expect(facts.programs).toEqual(KNOWN(0));
+    expect(detailed.families.programs).toEqual(COUNTED(0));
+    expect(detailed.facts.programs).toEqual(UNKNOWN);
   });
 
   it('the family token may accompany the spec steps (a canonical-token collection) but never replace them', () => {
-    const withToken = replayEvidence('programs', { steps: [step('plans'), step('programs')] });
+    const withToken = replayEvidence('programs', {
+      steps: [step('plans'), step('programs', { raw_items: 0, distinct_raw_ids: 0 })],
+    });
     expect(
-      evaluateCoverage(input({ observations: rows({ programs: [stored(withToken)] }) })),
-    ).toEqual(BASELINE);
-    expectOnlyUnknown('programs', replayEvidence('programs', { steps: [step('programs')] }));
+      evaluateCoverageDetailed(input({ observations: rows({ programs: [stored(withToken)] }) }))
+        .families,
+    ).toEqual(BASELINE_COUNTS);
+    expectOnlyUnknown(
+      'programs',
+      replayEvidence('programs', { steps: [step('programs')] }),
+      'step_set_mismatch',
+    );
   });
 
-  it('is metamorphic in the slug: a renamed package gives identical facts', () => {
+  it('is metamorphic in the slug: a renamed package gives identical detail', () => {
     const slug = 'zz_renamed_source';
     const registry = replayRegistry(slug);
-    const facts = evaluateCoverage({
+    const detailed = evaluateCoverageDetailed({
       run: RUN,
       declaration: {
         challenge: CHALLENGE,
@@ -405,41 +499,36 @@ describe('L3 — positive case: every step terminal-clean, digest AND count equa
       registry,
       observations: FAMILIES.map((f) => stored(replayEvidence(f, {}, registry, slug))),
       staged: [staged(IDS, slug)],
-      closure: reviewedPackageClosures(registry),
     });
-    expect(facts).toEqual(BASELINE);
+    expect(detailed.families).toEqual(BASELINE_COUNTS);
+    expect(detailed.facts).toEqual(ALL_UNKNOWN);
   });
 });
 
-describe('L3 — negative cases (each alone → known: false, observed_unique: null; never 0)', () => {
-  it('a truncated crawl: any step that stopped at budget_stop, refused_page, retry_exhausted or aborted', () => {
-    for (const stop of ['budget_stop', 'refused_page', 'retry_exhausted', 'aborted'] as const) {
+describe('L3 — negative cases (each alone → source_count null, count_basis unknown; never 0)', () => {
+  it('a non-terminal stop: none_proven, budget, cycle, error or advertised_next (r4 D-L0-6)', () => {
+    for (const stop of ['none_proven', 'budget', 'cycle', 'error', 'advertised_next'] as const) {
       expectOnlyUnknown(
         'clients',
         replayEvidence('clients', { steps: [step('members', { stop })] }),
+        'crawl_truncated',
       );
     }
     // One truncated step among two clean ones truncates the family.
     expectOnlyUnknown(
       'workouts',
       replayEvidence('workouts', {
-        steps: [step('routines'), step('sessions', { stop: 'budget_stop' })],
+        steps: [step('routines'), step('sessions', { stop: 'budget' })],
       }),
+      'crawl_truncated',
     );
   });
 
-  it('a step that hit maxPagesPerStep (pages_fetched ≥ max_pages), even with a terminal stop', () => {
+  it('a terminal stop with an advertised next link the step did not follow (a first page is never certified)', () => {
     expectOnlyUnknown(
       'clients',
-      replayEvidence('clients', {
-        steps: [step('members', { pages_fetched: 1000, max_pages: 1000 })],
-      }),
-    );
-    expectOnlyUnknown(
-      'clients',
-      replayEvidence('clients', {
-        steps: [step('members', { pages_fetched: 1001, max_pages: 1000 })],
-      }),
+      replayEvidence('clients', { steps: [step('members', { advertised_next: true })] }),
+      'crawl_truncated',
     );
   });
 
@@ -447,23 +536,90 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { steps: [step('members', { refused_pages: 1 })] }),
+      'crawl_truncated',
     );
   });
 
-  it('a fan-out step short of its id set', () => {
+  it('a synthetic or missing id (a fabricated identity never proves; r4 D-L0-6)', () => {
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', { steps: [step('members', { synthetic_ids: 1 })] }),
+      'identity_unproven',
+    );
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', { steps: [step('members', { missing_id_items: 1 })] }),
+      'identity_unproven',
+    );
+  });
+
+  it('step counters that contradict the family totals (a single step IS the family)', () => {
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', {
+        steps: [step('members', { distinct_raw_ids: 3, raw_items: 3 })],
+      }),
+      'evidence_inconsistent',
+    );
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', { steps: [step('members', { id_set_digest: sha256('other') })] }),
+      'evidence_inconsistent',
+    );
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', { steps: [step('members', { distinct_raw_ids: 5 })] }), // > raw_items
+      'evidence_inconsistent',
+    );
+    // Two steps whose distinct counts cannot reach the family's union.
     expectOnlyUnknown(
       'workouts',
       replayEvidence('workouts', {
-        steps: [step('routines'), step('sessions', { fan_out: { expected: 3, fetched: 2 } })],
+        steps: [step('routines', { distinct_raw_ids: 1, raw_items: 1 }), step('sessions')],
       }),
+      'evidence_inconsistent',
+    );
+  });
+
+  it('a fan-out step short of its parent set, or whose pages differ from the contexts it visited', () => {
+    expectOnlyUnknown(
+      'workouts',
+      replayEvidence('workouts', {
+        steps: [
+          step('routines'),
+          step('sessions', {
+            pages_fetched: 2,
+            fan_out: { expected: 3, fetched: 2, parent_step: 'members' },
+          }),
+        ],
+      }),
+      'fan_out_short',
+    );
+    expectOnlyUnknown(
+      'workouts',
+      replayEvidence('workouts', {
+        steps: [
+          step('routines'),
+          step('sessions', {
+            pages_fetched: 3,
+            fan_out: { expected: 2, fetched: 2, parent_step: 'members' },
+          }),
+        ],
+      }),
+      'fan_out_short',
     );
   });
 
   it('a step set short of the spec (one of two workouts steps missing) or a step the spec does not map to the family', () => {
-    expectOnlyUnknown('workouts', replayEvidence('workouts', { steps: [step('routines')] }));
+    expectOnlyUnknown(
+      'workouts',
+      replayEvidence('workouts', { steps: [step('routines')] }),
+      'step_set_mismatch',
+    );
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { steps: [step('members'), step('notes')] }),
+      'step_set_mismatch',
     );
     // The clients step reported under the workouts family is not a workouts step.
     expectOnlyUnknown(
@@ -471,21 +627,36 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
       replayEvidence('workouts', {
         steps: [step('routines'), step('sessions'), step('members')],
       }),
+      'step_set_mismatch',
     );
   });
 
   it('a mismatched digest (the count agrees) or a mismatched count (the digest agrees): both unknown, count dropped', () => {
     expectOnlyUnknown(
-      'clients',
-      replayEvidence('clients', { id_set_digest: referenceIdDigest(['c1', 'c-unstaged']) }),
+      'workouts',
+      replayEvidence('workouts', { id_set_digest: referenceIdDigest(['w1', 'w2', 'w-unstaged']) }),
+      'staged_mismatch',
     );
-    expectOnlyUnknown('clients', replayEvidence('clients', { observed_unique: 3 }));
+    expectOnlyUnknown(
+      'workouts',
+      replayEvidence('workouts', { observed_unique: 2 }),
+      'staged_mismatch',
+    );
+    expectOnlyUnknown(
+      'clients',
+      replayEvidence('clients', {
+        observed_unique: 3,
+        steps: [step('members', { raw_items: 3, distinct_raw_ids: 3 })],
+      }),
+      'staged_mismatch',
+    );
   });
 
   it('a challenge that is not this run’s (replay from another run)', () => {
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { challenge_b64: Buffer.alloc(32, 1).toString('base64') }),
+      'evidence_unbound',
     );
   });
 
@@ -495,32 +666,35 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
       { intent_id: 'intent-2' },
       { execution_epoch: 4 },
     ]) {
-      const facts = evaluateCoverage(
+      const detailed = evaluateCoverageDetailed(
         input({ observations: rows({ clients: [stored(replayEvidence('clients'), over)] }) }),
       );
-      expect(facts).toEqual({ ...BASELINE, clients: UNKNOWN });
+      expect(detailed.families).toEqual({
+        ...BASELINE_COUNTS,
+        clients: UNCOUNTED('evidence_unbound'),
+      });
     }
     const twice = [stored(replayEvidence('clients')), stored(replayEvidence('clients'))];
-    expect(evaluateCoverage(input({ observations: rows({ clients: twice }) }))).toEqual({
-      ...BASELINE,
-      clients: UNKNOWN,
-    });
-    expect(evaluateCoverage(input({ observations: rows({ clients: [] }) }))).toEqual({
-      ...BASELINE,
-      clients: UNKNOWN,
-    });
+    expect(
+      evaluateCoverageDetailed(input({ observations: rows({ clients: twice }) })).families,
+    ).toEqual({ ...BASELINE_COUNTS, clients: UNCOUNTED('evidence_duplicate') });
+    expect(
+      evaluateCoverageDetailed(input({ observations: rows({ clients: [] }) })).families,
+    ).toEqual({ ...BASELINE_COUNTS, clients: UNCOUNTED('evidence_missing') });
   });
 
   it('a unit whose evidence names another platform, scope or family; a spec-digest mismatch', () => {
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { account_scope_id_digest: sha256('workspace-2') }),
+      'evidence_missing',
     );
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { mapping_spec_digest: sha256('other spec') }),
+      'evidence_unbound',
     );
-    const facts = evaluateCoverage(
+    const detailed = evaluateCoverageDetailed(
       input({
         observations: rows({
           clients: [stored(replayEvidence('clients', { family: 'workouts' }))],
@@ -528,18 +702,25 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
       }),
     );
     // The row lands on the workouts unit (which now has two rows) and the clients unit has none.
-    expect(facts).toEqual({ ...BASELINE, clients: UNKNOWN, workouts: UNKNOWN });
+    expect(detailed.families).toEqual({
+      ...BASELINE_COUNTS,
+      clients: UNCOUNTED('evidence_missing'),
+      workouts: UNCOUNTED('evidence_duplicate'),
+    });
   });
 
-  it('a manifest that does not list the replay kind for the family (a file package without D1 opt-in)', () => {
+  it('a manifest that does not list the replay kind for the family (no D1 opt-in)', () => {
     const signedOnly = replayRegistry(SLUG, [SIGNED]);
-    const facts = evaluateCoverage(
+    const detailed = evaluateCoverageDetailed(
       input({
         registry: signedOnly,
         observations: FAMILIES.map((f) => stored(replayEvidence(f, {}, signedOnly))),
       }),
     );
-    expect(facts).toEqual(ALL_UNKNOWN);
+    expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    for (const family of FAMILIES) {
+      expect(detailed.families[family]).toEqual(UNCOUNTED('evidence_unbound'));
+    }
   });
 
   it('two basis kinds proving one family across two platforms fail closed (no single truthful basis_kind)', () => {
@@ -589,7 +770,7 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
         ),
       ),
     );
-    const facts = evaluateCoverage({
+    const detailed = evaluateCoverageDetailed({
       run: RUN,
       declaration: {
         challenge: CHALLENGE,
@@ -604,425 +785,137 @@ describe('L3 — negative cases (each alone → known: false, observed_unique: n
         ...signedRows,
       ],
       staged: [staged(), staged(IDS, other)],
-      closure: reviewedPackageClosures(registry),
     });
-    expect(facts).toEqual(ALL_UNKNOWN);
-  });
-});
-
-// ── Family-set closure ──────────────────────────────────────────────────────────────────
-
-const PKG = ((): NonNullable<ReturnType<InductionRegistry['packages']['get']>> => {
-  const pkg = REGISTRY.packages.get(SLUG);
-  if (pkg === undefined) throw new Error('fixture package missing');
-  return pkg;
-})();
-
-/** The rule's signals for a genuinely out-of-scope collection: P, K and S fired, no veto, items present. */
-const CONFIRMING: ExclusionSignalsV1 = {
-  path: true,
-  key: true,
-  shape: true,
-  veto: false,
-  empty_shape: false,
-};
-
-const mapped = (
-  template_ref: string,
-  family: Family,
-  unexplored_variants = 0,
-): FamilySetClosureTemplateV1 => ({
-  template_ref,
-  disposition: 'mapped',
-  family,
-  unexplored_variants,
-});
-const excluded = (
-  template_ref: string,
-  reason: ClosureExclusionReason,
-  signals: Partial<ExclusionSignalsV1> = {},
-): FamilySetClosureTemplateV1 => ({
-  template_ref,
-  disposition: 'excluded',
-  reason,
-  signals: { ...CONFIRMING, ...signals },
-});
-
-/** A closed learned-package inventory: one mapped template per family, one rule-confirmed billing exclusion. */
-const OBSERVED_TEMPLATES: readonly FamilySetClosureTemplateV1[] = [
-  mapped('t.members', 'clients'),
-  mapped('t.programs', 'programs'),
-  mapped('t.routines', 'workouts'),
-  mapped('t.sessions', 'workouts'),
-  excluded('t.invoices', 'out_of_scope_billing'),
-];
-
-type ObservedClosure = Extract<FamilySetClosureV1, { origin: 'observed_templates' }>;
-
-function observed(over: Partial<ObservedClosure> = {}): ObservedClosure {
-  return {
-    closure_version: 1,
-    source_platform: SLUG,
-    mapping_spec_digest: PKG.specDigest,
-    origin: 'observed_templates',
-    rule_version: 1,
-    digest_truncated: false,
-    refused_collections: 0,
-    unexplored_targets: 0,
-    templates: OBSERVED_TEMPLATES,
-    ...over,
-  };
-}
-
-/** The inventory with one template swapped in (same ref replaced, or appended). */
-function withTemplate(template: FamilySetClosureTemplateV1): ObservedClosure {
-  return observed({
-    templates: [
-      ...OBSERVED_TEMPLATES.filter((t) => t.template_ref !== template.template_ref),
-      template,
-    ],
-  });
-}
-
-const PARTIAL_UNKNOWN = { outcome: 'partial', reason_code: 'coverage_basis_unknown' };
-
-describe('L3 — family-set closure: null (the default) is NOT known and blocks `complete`', () => {
-  it('closure: null → every declared family unknown → partial / coverage_basis_unknown', () => {
-    const facts = evaluateCoverage(input({ closure: null }));
-    expect(facts).toEqual(ALL_UNKNOWN);
-    expect(verdictOf(facts)).toEqual(PARTIAL_UNKNOWN);
-  });
-
-  it('closure omitted → identical to null', () => {
-    const base = input();
-    const rest: CoverageEvaluationInput = {
-      run: base.run,
-      declaration: base.declaration,
-      registry: base.registry,
-      observations: base.observations,
-      staged: base.staged,
-    };
-    expect(evaluateCoverage(rest)).toEqual(ALL_UNKNOWN);
-    const detailed = evaluateCoverageDetailed(rest);
-    expect(detailed.closure[SLUG]).toEqual({ closed: false, gaps: [{ code: 'closure_unknown' }] });
-  });
-
-  it('a record for another platform, a stale spec digest, or two records for one platform → unknown', () => {
-    const reviewed = reviewedPackageClosures(REGISTRY)[0];
-    expect(
-      evaluateCoverage(input({ closure: [{ ...reviewed, source_platform: 'zz_other' }] })),
-    ).toEqual(ALL_UNKNOWN);
-    const stale = evaluateCoverageDetailed(
-      input({ closure: [{ ...reviewed, mapping_spec_digest: sha256('v2') }] }),
-    );
-    expect(stale.facts).toEqual(ALL_UNKNOWN);
-    expect(stale.closure[SLUG]).toEqual({
-      closed: false,
-      gaps: [{ code: 'closure_spec_mismatch' }],
-    });
-    expect(evaluateCoverage(input({ closure: [reviewed, reviewed] }))).toEqual(ALL_UNKNOWN);
-  });
-
-  it('the reviewed FILE package record closes; the detailed result names its origin', () => {
-    const detailed = evaluateCoverageDetailed(input());
-    expect(detailed.facts).toEqual(BASELINE);
-    expect(detailed.closure[SLUG]).toEqual({ closed: true, origin: 'reviewed_package' });
-  });
-
-  it('closure alone never proves: a closed record with no evidence rows is still unknown', () => {
-    expect(evaluateCoverage(input({ observations: [] }))).toEqual(ALL_UNKNOWN);
-    expect(evaluateCoverage(input({ observations: [], closure: [observed()] }))).toEqual(
-      ALL_UNKNOWN,
-    );
-  });
-});
-
-describe('L3 — family-set closure of a learned package (observed_templates)', () => {
-  it('closed when discovery left nothing behind, every template is mapped or rule-confirmed, every family has a template → complete', () => {
-    const detailed = evaluateCoverageDetailed(input({ closure: [observed()] }));
-    expect(detailed.facts).toEqual(BASELINE);
-    expect(detailed.closure[SLUG]).toEqual({ closed: true, origin: 'observed_templates' });
-    expect(verdictOf(detailed.facts)).toEqual({ outcome: 'complete', reason_code: null });
-  });
-
-  it('closure is re-evaluated per run from the record: the same record under a new spec digest is not carried over', () => {
-    const detailed = evaluateCoverageDetailed(
-      input({ closure: [observed({ mapping_spec_digest: sha256('re-learned') })] }),
-    );
-    expect(detailed.closure[SLUG]).toEqual({
-      closed: false,
-      gaps: [{ code: 'closure_spec_mismatch' }],
-    });
-  });
-
-  describe('discovery holes (review defaults L0R2-OPUS-A2 / L0R2-SOL-A1): each alone blocks `complete` with a named gap', () => {
-    it.each<[string, Partial<ObservedClosure>, ClosureGap]>([
-      ['a truncated digest', { digest_truncated: true }, { code: 'digest_truncated' }],
-      [
-        'a refused collection template',
-        { refused_collections: 1 },
-        { code: 'collection_refused', count: 1 },
-      ],
-      [
-        'an unexplored navigation target',
-        { unexplored_targets: 3 },
-        { code: 'target_unexplored', count: 3 },
-      ],
-    ])('%s', (_label, over, expected) => {
-      const detailed = evaluateCoverageDetailed(input({ closure: [observed(over)] }));
-      expect(detailed.facts).toEqual(ALL_UNKNOWN);
-      expect(detailed.closure[SLUG]).toEqual({ closed: false, gaps: [expected] });
-      expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
-    });
-
-    it('an unexplored filter/status variant on a mapped template (e.g. an archived list) blocks, even though the family has a template', () => {
-      const detailed = evaluateCoverageDetailed(
-        input({ closure: [withTemplate(mapped('t.members', 'clients', 1))] }),
-      );
-      expect(detailed.facts).toEqual(ALL_UNKNOWN);
-      expect(detailed.closure[SLUG]).toEqual({
-        closed: false,
-        gaps: [{ code: 'variant_unexplored', template_ref: 't.members', count: 1 }],
+    expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    for (const family of FAMILIES) {
+      expect(detailed.families[family]).toEqual({
+        source_count: null,
+        count_basis: 'unknown',
+        basis_kind: null,
+        reasons: [{ code: 'basis_kind_conflict', platform: other }],
       });
-    });
-
-    it('several holes at once are all named (nothing is hidden behind the first)', () => {
-      const verdict = evaluateFamilySetClosure(
-        observed({ digest_truncated: true, refused_collections: 2, unexplored_targets: 1 }),
-        SLUG,
-        PKG,
-      );
-      expect(verdict).toEqual({
-        closed: false,
-        gaps: [
-          { code: 'digest_truncated' },
-          { code: 'collection_refused', count: 2 },
-          { code: 'target_unexplored', count: 1 },
-        ],
-      });
-    });
-  });
-
-  describe('unmapped entries: only a rule-confirmed out_of_scope_* exclusion counts', () => {
-    it.each<[string, FamilySetClosureTemplateV1, ClosureGap]>([
-      [
-        'unsupported_coaching_data',
-        excluded('t.notes', 'unsupported_coaching_data'),
-        { code: 'template_unsupported_coaching_data', template_ref: 't.notes' },
-      ],
-      [
-        'unknown',
-        excluded('t.mystery', 'unknown'),
-        { code: 'template_unknown', template_ref: 't.mystery' },
-      ],
-    ])('%s forces partial with a named gap', (_label, template, expected) => {
-      const detailed = evaluateCoverageDetailed(input({ closure: [withTemplate(template)] }));
-      expect(detailed.facts).toEqual(ALL_UNKNOWN);
-      expect(detailed.closure[SLUG]).toEqual({ closed: false, gaps: [expected] });
-      expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
-    });
-
-    it('unsupported_coaching_data and unknown are never confirmed, whatever the signals say', () => {
-      for (const reason of ['unsupported_coaching_data', 'unknown'] as const) {
-        expect(exclusionConfirmed(reason, CONFIRMING)).toBe(false);
-      }
-    });
-
-    it.each<[string, Partial<ExclusionSignalsV1>]>([
-      ['path evidence missing (key + shape only)', { path: false }],
-      ['key evidence missing (path + shape only)', { key: false }],
-      [
-        'shape evidence missing (path + key only: the L0R2-SOL-A2 /account/profiles case)',
-        { shape: false },
-      ],
-      [
-        'the veto fired on a path token (the L0R2-OPUS-A3 /api/layout/exercises case)',
-        { veto: true },
-      ],
-      ['an empty collection (vacuous shape, nothing for the veto to read)', { empty_shape: true }],
-      [
-        'no evidence at all: the AI said billing and nothing confirmed it',
-        { path: false, key: false, shape: false },
-      ],
-    ])(
-      '%s → exclusion unconfirmed → partial, gap carries reason and signals',
-      (_label, signals) => {
-        const template = excluded('t.invoices', 'out_of_scope_billing', signals);
-        const detailed = evaluateCoverageDetailed(input({ closure: [withTemplate(template)] }));
-        expect(detailed.facts).toEqual(ALL_UNKNOWN);
-        expect(detailed.closure[SLUG]).toEqual({
-          closed: false,
-          gaps: [
-            {
-              code: 'template_exclusion_unconfirmed',
-              template_ref: 't.invoices',
-              reason: 'out_of_scope_billing',
-              signals: { ...CONFIRMING, ...signals },
-            },
-          ],
-        });
-        expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
-      },
-    );
-
-    it('the rule needs all three classes: no two-of-three combination confirms', () => {
-      const classes = ['path', 'key', 'shape'] as const;
-      for (const dropped of classes) {
-        expect(
-          exclusionConfirmed('out_of_scope_ui_config', { ...CONFIRMING, [dropped]: false }),
-        ).toBe(false);
-      }
-      expect(exclusionConfirmed('out_of_scope_ui_config', CONFIRMING)).toBe(true);
-      expect(
-        exclusionConfirmed('out_of_scope_account_settings', { ...CONFIRMING, veto: true }),
-      ).toBe(false);
-      expect(
-        exclusionConfirmed('out_of_scope_account_settings', { ...CONFIRMING, empty_shape: true }),
-      ).toBe(false);
-    });
-  });
-
-  it('a family without any mapped template, a mapped template naming an undeclared family, a duplicate ref', () => {
-    const noWorkouts = observed({
-      templates: OBSERVED_TEMPLATES.filter(
-        (t) => t.disposition !== 'mapped' || t.family !== 'workouts',
-      ),
-    });
-    expect(evaluateFamilySetClosure(noWorkouts, SLUG, PKG)).toEqual({
-      closed: false,
-      gaps: [{ code: 'family_without_template', family: 'workouts' }],
-    });
-    const undeclared = observed({
-      templates: [...OBSERVED_TEMPLATES, mapped('t.history', 'client_history' as Family)],
-    });
-    expect(evaluateFamilySetClosure(undeclared, SLUG, PKG)).toEqual({
-      closed: false,
-      gaps: [
-        { code: 'template_family_undeclared', template_ref: 't.history', family: 'client_history' },
-      ],
-    });
-    const dup = observed({ templates: [...OBSERVED_TEMPLATES, mapped('t.members', 'clients')] });
-    expect(evaluateFamilySetClosure(dup, SLUG, PKG)).toEqual({
-      closed: false,
-      gaps: [{ code: 'template_duplicated', template_ref: 't.members' }],
-    });
-  });
-
-  it('refuses malformed records without throwing: a URL-shaped ref, an unknown reason, extra or missing keys, a bad version', () => {
-    const malformed = { closed: false, gaps: [{ code: 'closure_malformed' }] };
-    const rawObserved = (templates: readonly unknown[]): unknown => ({ ...observed(), templates });
-    const cases: unknown[] = [
-      rawObserved([
-        ...OBSERVED_TEMPLATES,
-        {
-          template_ref: 'https://x/y',
-          disposition: 'mapped',
-          family: 'clients',
-          unexplored_variants: 0,
-        },
-      ]),
-      rawObserved([
-        ...OBSERVED_TEMPLATES,
-        {
-          template_ref: 't.z',
-          disposition: 'excluded',
-          reason: 'out_of_scope_anything',
-          signals: CONFIRMING,
-        },
-      ]),
-      // A stored verdict is not a signal set: a record that says "confirmed" instead of P/K/S
-      // is malformed.
-      rawObserved([
-        ...OBSERVED_TEMPLATES,
-        {
-          template_ref: 't.z',
-          disposition: 'excluded',
-          reason: 'out_of_scope_billing',
-          signals: { confirmed: true },
-        },
-      ]),
-      rawObserved([
-        ...OBSERVED_TEMPLATES,
-        {
-          template_ref: 't.z',
-          disposition: 'excluded',
-          reason: 'out_of_scope_billing',
-          confirmed_by_rule: true,
-        },
-      ]),
-      // A mapped template without its variant count is malformed (the producer must state it).
-      rawObserved([
-        ...OBSERVED_TEMPLATES,
-        { template_ref: 't.extra', disposition: 'mapped', family: 'clients' },
-      ]),
-      { ...observed(), closure_version: 2 },
-      { ...observed(), rule_version: 2 },
-      { ...observed(), digest_truncated: 'no' },
-      { ...observed(), refused_collections: -1 },
-      { ...observed(), unexplored_targets: 1.5 },
-      { ...observed(), extra: true },
-      (() => {
-        const rest: Record<string, unknown> = { ...observed() };
-        delete rest.digest_truncated;
-        return rest;
-      })(),
-      { ...reviewedPackageClosures(REGISTRY)[0], templates: [] },
-    ];
-    for (const raw of cases) {
-      expect([raw, evaluateFamilySetClosure(raw, SLUG, PKG)]).toEqual([raw, malformed]);
     }
-    expect(evaluateFamilySetClosure(observed({ templates: [] }), SLUG, PKG)).toEqual({
-      closed: false,
-      gaps: FAMILIES.map((family) => ({ code: 'family_without_template', family })),
+    expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
+  });
+});
+
+// ── No closure exists: run-level `complete` is unreachable through this evidence ────────
+
+describe('L3 — executive reset §1/§8: no package type has a completeness closure', () => {
+  it('a learned-shaped package (composed, verifiers: []) with fully proven replay evidence settles partial', () => {
+    const detailed = evaluateCoverageDetailed(input());
+    expect(detailed.families).toEqual(BASELINE_COUNTS);
+    expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
+  });
+
+  it('a repository FILE package (loaded by the real file loader) with fully proven replay evidence settles partial too', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'l3-file-package-'));
+    writeFileSync(
+      join(dir, `${SLUG}.json`),
+      JSON.stringify({
+        ...MANIFEST_RAW,
+        basisKinds: { clients: [REPLAY], programs: [REPLAY], workouts: [REPLAY] },
+        verifiers: [],
+      }),
+      'utf8',
+    );
+    const registry = buildInductionRegistry({
+      manifests: loadInductionManifests(dir, false),
+      specs: [parseSourceMappingSpec(SPEC_RAW, `${SLUG}.json`)],
+      nativeRuleSets: [],
     });
-    expect(() => evaluateFamilySetClosure('garbage', SLUG, PKG)).not.toThrow();
+    const detailed = evaluateCoverageDetailed(
+      input({
+        registry,
+        observations: FAMILIES.map((f) => stored(replayEvidence(f, {}, registry))),
+      }),
+    );
+    expect(detailed.families).toEqual(BASELINE_COUNTS);
+    expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
+  });
+
+  it('the evaluator input has no closure field and the induction modules export no closure record', () => {
+    const base = input();
+    expect(Object.keys(base).sort()).toEqual([
+      'declaration',
+      'observations',
+      'registry',
+      'run',
+      'staged',
+    ]);
+    const src = join(__dirname, '../../../src/scout/induction');
+    expect(existsSync(join(src, 'closure.ts'))).toBe(false);
+    for (const file of ['contract.ts', 'verify.ts', 'manifest-registry.ts']) {
+      const text = readFileSync(join(src, file), 'utf8');
+      expect(text).not.toMatch(
+        /FamilySetClosureV1|RunClosureV1|reviewed_package|observed_templates/,
+      );
+      expect(text).not.toMatch(/ExclusionSignals|exclusionConfirmed|repository_file/);
+    }
+  });
+
+  it('the source-signed (test-only) basis alone still reaches `complete`, with count_basis proven and no reason', () => {
+    const registry = replayRegistry(SLUG, [SIGNED]);
+    const signedRows = FAMILIES.map((family) =>
+      stored(
+        evidenceFor(
+          {
+            statement_version: 1,
+            source_platform: SLUG,
+            account_scope_id_digest: SCOPE,
+            family,
+            challenge_b64: CHALLENGE.toString('base64'),
+            snapshot_ref_digest: sha256(`snapshot-${family}`),
+            date_window: null,
+            terminal: 'end_of_list',
+            observed_unique: IDS[family].length,
+            id_set_digest: referenceIdDigest(IDS[family]),
+            issued_at: '2026-09-26T10:00:00Z',
+          },
+          specDigest(registry),
+        ),
+      ),
+    );
+    const detailed = evaluateCoverageDetailed(input({ registry, observations: signedRows }));
+    expect(detailed.families.workouts).toEqual({
+      source_count: 3,
+      count_basis: 'proven',
+      basis_kind: SIGNED,
+      reasons: [],
+    });
+    expect(detailed.facts.workouts).toEqual({
+      known: true,
+      basis_kind: SIGNED,
+      observed_unique: 3,
+      covers_staged_identities: true,
+    });
+    expect(verdictOf(detailed.facts)).toEqual({ outcome: 'complete', reason_code: null });
   });
 });
 
 // ── No path lets the AI's classification alone produce `complete` ───────────────────────
 
 describe('L3 — the AI never decides completeness', () => {
-  it('an exclusion carrying only the AI’s claim (no rule signal) never closes, whatever the reason', () => {
-    const none: ExclusionSignalsV1 = {
-      path: false,
-      key: false,
-      shape: false,
-      veto: false,
-      empty_shape: false,
-    };
-    for (const reason of CLOSURE_EXCLUSION_REASONS) {
-      const closure = observed({
-        templates: [
-          ...OBSERVED_TEMPLATES.slice(0, 4),
-          { template_ref: 't.ai', disposition: 'excluded', reason, signals: none },
-        ],
-      });
-      expect(evaluateFamilySetClosure(closure, SLUG, PKG).closed).toBe(false);
-      expect(evaluateCoverage(input({ closure: [closure] }))).toEqual(ALL_UNKNOWN);
-    }
-  });
-
-  it('the evaluator output carries no field the closure record could set: basis_kind and observed_unique come only from proven evidence rows', () => {
-    // A closed record plus rows that prove nothing (truncated) → every family unknown; the closure
-    // cannot lift a family to `known` on its own.
+  it('the evaluator output carries no field a producer could set to `known`: a proven count is never a basis, a truncated crawl is not even a count', () => {
     const truncated = FAMILIES.map((f) =>
       stored(
         replayEvidence(f, {
-          steps: STEPS[f].map((name) => step(name, { stop: 'budget_stop' })),
+          steps: STEPS[f].map((name) => step(name, { stop: 'budget' })),
         }),
       ),
     );
-    const detailed = evaluateCoverageDetailed(
-      input({ closure: [observed()], observations: truncated }),
-    );
-    expect(detailed.closure[SLUG]).toEqual({ closed: true, origin: 'observed_templates' });
+    const detailed = evaluateCoverageDetailed(input({ observations: truncated }));
     expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    for (const family of FAMILIES) {
+      expect(detailed.families[family]).toEqual(UNCOUNTED('crawl_truncated'));
+    }
     expect(verdictOf(detailed.facts)).toEqual(PARTIAL_UNKNOWN);
   });
 
-  it('the evaluator and closure modules import nothing from an AI, gateway or learn module', () => {
+  it('the evaluator and parser modules import nothing from an AI, gateway or learn module', () => {
     const src = join(__dirname, '../../../src/scout/induction');
-    for (const file of ['closure.ts', 'verify.ts', 'parse.ts', 'contract.ts']) {
+    for (const file of ['verify.ts', 'parse.ts', 'contract.ts']) {
       const text = readFileSync(join(src, file), 'utf8');
       const imports = [...text.matchAll(/from '([^']+)'/g)].map((m) => m[1]);
       expect(imports.filter((i) => /learn|ai-gateway|anthropic|provider|prompt/i.test(i))).toEqual(
@@ -1031,8 +924,33 @@ describe('L3 — the AI never decides completeness', () => {
     }
   });
 
-  it('`complete` requires every predicate at once: closure closed AND every family proven AND the claim success', () => {
-    const proven = evaluateCoverage(input({ closure: [observed()] }));
+  it('`complete` requires every predicate at once: a known covering basis for every family AND the claim success', () => {
+    const registry = replayRegistry(SLUG, [SIGNED]);
+    const proven = evaluateCoverage(
+      input({
+        registry,
+        observations: FAMILIES.map((family) =>
+          stored(
+            evidenceFor(
+              {
+                statement_version: 1,
+                source_platform: SLUG,
+                account_scope_id_digest: SCOPE,
+                family,
+                challenge_b64: CHALLENGE.toString('base64'),
+                snapshot_ref_digest: sha256(`snapshot-${family}`),
+                date_window: null,
+                terminal: 'end_of_list',
+                observed_unique: IDS[family].length,
+                id_set_digest: referenceIdDigest(IDS[family]),
+                issued_at: '2026-09-26T10:00:00Z',
+              },
+              specDigest(registry),
+            ),
+          ),
+        ),
+      }),
+    );
     expect(verdictOf(proven)).toEqual({ outcome: 'complete', reason_code: null });
     expect(reconcile({ ...cleanFacts(proven), claim: 'partial' }).verdict.outcome).toBe('partial');
     expect(reconcile(cleanFacts({ ...proven, programs: UNKNOWN })).verdict).toEqual(

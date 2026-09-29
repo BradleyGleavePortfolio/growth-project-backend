@@ -223,8 +223,11 @@ export function declarationPairKeys(declaration: NormalizedDeclaration): string[
 
 // ── POST /api/scout/runs/observation ────────────────────────────────────────────────────
 
-/** OpenAPI shape of one `ReplayStepTerminalV1` (L3; validated strictly by `parseEvidence`). */
-export class ScoutRunReplayStepTerminalSchema {
+/**
+ * OpenAPI shape of one `ReplayStepEvidenceV1` (L3, L0 r4 `StepEvidenceV1`; validated strictly by
+ * `parseEvidence`). One entry per step, `:s`/`:q` variant or probe feeding the family.
+ */
+export class ScoutRunReplayStepEvidenceSchema {
   @ApiProperty({
     description:
       "The pinned mapping spec's step key feeding the family (or the family token for a " +
@@ -232,39 +235,74 @@ export class ScoutRunReplayStepTerminalSchema {
     minLength: 1,
     maxLength: REPLAY_STEP_TOKEN_MAX_BYTES,
   })
-  step!: string;
+  step_key!: string;
+
+  @ApiProperty({
+    description:
+      'Pages fetched. A root step (fan_out null) must have fetched at least 1 page: a crawl that ' +
+      'fetched nothing observed no terminal and is refused (unknown is never 0).',
+    minimum: 0,
+  })
+  pages_fetched!: number;
+
+  @ApiProperty({ description: 'Items the pages held, before identity.', minimum: 0 })
+  raw_items!: number;
+
+  @ApiProperty({ description: 'Distinct id values among them (never a synthetic id).', minimum: 0 })
+  distinct_raw_ids!: number;
+
+  @ApiProperty({ description: 'Items whose id repeated an earlier one.', minimum: 0 })
+  duplicate_ids!: number;
+
+  @ApiProperty({
+    description: 'Items given a synthetic positional id; must be 0 to prove.',
+    minimum: 0,
+  })
+  synthetic_ids!: number;
+
+  @ApiProperty({ description: 'Items without an id; must be 0 to prove.', minimum: 0 })
+  missing_id_items!: number;
 
   @ApiProperty({
     enum: [...REPLAY_STEP_STOPS],
     description:
-      'How the step stopped. Only short_page and absent_next are pagination terminals; any other ' +
-      'stop is a truncated crawl and never proves.',
+      'How the step stopped. Only absent_next, empty_page and short_page (after ≥ 1 page) are ' +
+      'pagination terminals; none_proven, budget, cycle, error and advertised_next never prove.',
   })
   stop!: string;
 
-  @ApiProperty({ description: 'Pages fetched; must stay below max_pages.', minimum: 0 })
-  pages_fetched!: number;
-
-  @ApiProperty({ description: 'The maxPagesPerStep budget in force.', minimum: 1 })
-  max_pages!: number;
+  @ApiProperty({
+    description:
+      'A next link or cursor the last page advertised and the step did not follow; must be false.',
+  })
+  advertised_next!: boolean;
 
   @ApiProperty({ description: 'Pages the source refused; must be 0.', minimum: 0 })
   refused_pages!: number;
 
   @ApiProperty({
     description:
-      'null for a root collection; a fan-out step reports {expected, fetched} and must have ' +
-      'fetched every expected page.',
+      'null for a root collection; a fan-out step reports {expected, fetched, parent_step} and ' +
+      'must have visited every expected parent context (fetched = expected = pages_fetched). ' +
+      'parent_step names the step whose identities it iterated; the server proves expected only ' +
+      'against that parent step’s verified distinct_raw_ids inside a proven family.',
     type: 'object',
     nullable: true,
-    // Both keys are mandatory on the wire; the strict server parser enforces that (a nested
+    // All three keys are mandatory on the wire; the strict server parser enforces that (a nested
     // `required` list is not expressible through this decorator without a second class).
     properties: {
       expected: { type: 'number', minimum: 0 },
       fetched: { type: 'number', minimum: 0 },
+      parent_step: { type: 'string', minLength: 1, maxLength: REPLAY_STEP_TOKEN_MAX_BYTES },
     },
   })
-  fan_out!: { expected: number; fetched: number } | null;
+  fan_out!: { expected: number; fetched: number; parent_step: string } | null;
+
+  @ApiProperty({
+    pattern: HEX64_PATTERN.source,
+    description: 'The D-S10-2 identity-set digest of this step’s distinct ids.',
+  })
+  id_set_digest!: string;
 }
 
 /**
@@ -327,20 +365,20 @@ export class ScoutRunObservationEvidenceSchema {
 
   @ApiProperty({
     required: false,
-    type: [ScoutRunReplayStepTerminalSchema],
+    type: [ScoutRunReplayStepEvidenceSchema],
     minItems: 1,
     maxItems: REPLAY_MAX_STEPS,
     description:
-      'replay_terminal_enumeration only: one terminal per collection step the pinned spec maps ' +
-      'to the family.',
+      'replay_terminal_enumeration only: one step evidence per collection step (and variant or ' +
+      'probe) the pinned package maps to the family, aggregated in the family’s single row.',
   })
-  steps?: ScoutRunReplayStepTerminalSchema[];
+  steps?: ScoutRunReplayStepEvidenceSchema[];
 
   @ApiProperty({
     required: false,
     minimum: 0,
     description:
-      'replay_terminal_enumeration only: distinct source ids the crawl observed for the family.',
+      'replay_terminal_enumeration only: distinct source ids over the union of the steps’ id sets.',
   })
   observed_unique?: number;
 

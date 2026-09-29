@@ -1373,7 +1373,7 @@
             "type": "string"
           },
           "observed_unique": {
-            "description": "replay_terminal_enumeration only: distinct source ids the crawl observed for the family.",
+            "description": "replay_terminal_enumeration only: distinct source ids over the union of the steps’ id sets.",
             "minimum": 0,
             "type": "number"
           },
@@ -1390,11 +1390,11 @@
             "type": "string"
           },
           "steps": {
-            "description": "replay_terminal_enumeration only: one terminal per collection step the pinned spec maps to the family.",
+            "description": "replay_terminal_enumeration only: one step evidence per collection step (and variant or probe) the pinned package maps to the family, aggregated in the family’s single row.",
             "items": {
-              "$ref": "#/components/schemas/ScoutRunReplayStepTerminalSchema"
+              "$ref": "#/components/schemas/ScoutRunReplayStepEvidenceSchema"
             },
-            "maxItems": 16,
+            "maxItems": 64,
             "minItems": 1,
             "type": "array"
           }
@@ -1439,10 +1439,24 @@
         ],
         "type": "object"
       },
-      "ScoutRunReplayStepTerminalSchema": {
+      "ScoutRunReplayStepEvidenceSchema": {
         "properties": {
+          "advertised_next": {
+            "description": "A next link or cursor the last page advertised and the step did not follow; must be false.",
+            "type": "boolean"
+          },
+          "distinct_raw_ids": {
+            "description": "Distinct id values among them (never a synthetic id).",
+            "minimum": 0,
+            "type": "number"
+          },
+          "duplicate_ids": {
+            "description": "Items whose id repeated an earlier one.",
+            "minimum": 0,
+            "type": "number"
+          },
           "fan_out": {
-            "description": "null for a root collection; a fan-out step reports {expected, fetched} and must have fetched every expected page.",
+            "description": "null for a root collection; a fan-out step reports {expected, fetched, parent_step} and must have visited every expected parent context (fetched = expected = pages_fetched). parent_step names the step whose identities it iterated; the server proves expected only against that parent step’s verified distinct_raw_ids inside a proven family.",
             "nullable": true,
             "properties": {
               "expected": {
@@ -1452,17 +1466,32 @@
               "fetched": {
                 "minimum": 0,
                 "type": "number"
+              },
+              "parent_step": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
               }
             },
             "type": "object"
           },
-          "max_pages": {
-            "description": "The maxPagesPerStep budget in force.",
-            "minimum": 1,
+          "id_set_digest": {
+            "description": "The D-S10-2 identity-set digest of this step’s distinct ids.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "missing_id_items": {
+            "description": "Items without an id; must be 0 to prove.",
+            "minimum": 0,
             "type": "number"
           },
           "pages_fetched": {
-            "description": "Pages fetched; must stay below max_pages.",
+            "description": "Pages fetched. A root step (fan_out null) must have fetched at least 1 page: a crawl that fetched nothing observed no terminal and is refused (unknown is never 0).",
+            "minimum": 0,
+            "type": "number"
+          },
+          "raw_items": {
+            "description": "Items the pages held, before identity.",
             "minimum": 0,
             "type": "number"
           },
@@ -1471,32 +1500,45 @@
             "minimum": 0,
             "type": "number"
           },
-          "step": {
+          "step_key": {
             "description": "The pinned mapping spec's step key feeding the family (or the family token for a canonical-token collection). Never a URL.",
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
           },
           "stop": {
-            "description": "How the step stopped. Only short_page and absent_next are pagination terminals; any other stop is a truncated crawl and never proves.",
+            "description": "How the step stopped. Only absent_next, empty_page and short_page (after ≥ 1 page) are pagination terminals; none_proven, budget, cycle, error and advertised_next never prove.",
             "enum": [
-              "short_page",
               "absent_next",
-              "budget_stop",
-              "refused_page",
-              "retry_exhausted",
-              "aborted"
+              "empty_page",
+              "short_page",
+              "none_proven",
+              "budget",
+              "cycle",
+              "error",
+              "advertised_next"
             ],
             "type": "string"
+          },
+          "synthetic_ids": {
+            "description": "Items given a synthetic positional id; must be 0 to prove.",
+            "minimum": 0,
+            "type": "number"
           }
         },
         "required": [
-          "step",
-          "stop",
+          "step_key",
           "pages_fetched",
-          "max_pages",
+          "raw_items",
+          "distinct_raw_ids",
+          "duplicate_ids",
+          "synthetic_ids",
+          "missing_id_items",
+          "stop",
+          "advertised_next",
           "refused_pages",
-          "fan_out"
+          "fan_out",
+          "id_set_digest"
         ],
         "type": "object"
       },

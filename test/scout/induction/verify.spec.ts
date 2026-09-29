@@ -1,6 +1,5 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { reviewedPackageClosures } from '../../../src/scout/induction/closure';
 import { stagedFamilyDigests } from '../../../src/scout/induction/digest';
 import {
   buildInductionRegistry,
@@ -163,8 +162,6 @@ function input(over: Partial<CoverageEvaluationInput> = {}): CoverageEvaluationI
     registry,
     observations: rows(),
     staged: [staged()],
-    // L3: the fixture package is a reviewed FILE package; its closure record is its spec.
-    closure: reviewedPackageClosures(registry),
     ...over,
   };
 }

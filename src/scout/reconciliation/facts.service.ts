@@ -1,6 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { PersonState, type Prisma } from '@prisma/client';
-import { reviewedPackageClosures } from '../induction/closure';
 import { stagedFamilyDigests } from '../induction/digest';
 import {
   buildInductionRegistry,
@@ -651,11 +650,6 @@ export class ReconciliationFactsService {
       registry: this.registry,
       observations,
       staged: stagedPlatformFacts(this.sourceMappers, staged),
-      // L3 family-set closure: every package in this registry is a reviewed FILE package, whose
-      // closure record is its reviewed spec. When L2 composes a learned package into the run's
-      // registry it must supply that package's `observed_templates` record (or `null`, which
-      // blocks `complete`) instead of this helper.
-      closure: reviewedPackageClosures(this.registry),
     });
   }
 

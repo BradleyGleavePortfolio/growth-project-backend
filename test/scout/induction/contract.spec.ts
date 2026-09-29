@@ -60,7 +60,9 @@ describe('closed vocabularies', () => {
     expect(new Set(REPLAY_EVIDENCE_KEYS).size).toBe(10);
     // Both evidence shapes share the six common keys and differ only in the kind-specific tail.
     expect([...REPLAY_EVIDENCE_KEYS].slice(0, 6)).toEqual([...EVIDENCE_KEYS].slice(0, 6));
-    expect([...REPLAY_STEP_STOPS].slice(0, 2)).toEqual([...REPLAY_TERMINAL_STOPS]);
+    // L0 r4 D-L0-6: the three positive terminals lead the closed stop set.
+    expect([...REPLAY_STEP_STOPS].slice(0, 3)).toEqual([...REPLAY_TERMINAL_STOPS]);
+    expect(REPLAY_STEP_STOPS).toHaveLength(8);
     expect(new Set(MANIFEST_KEYS).size).toBe(6);
   });
 });
@@ -68,10 +70,10 @@ describe('closed vocabularies', () => {
 describe('R28 — no source-name literal in src/scout/induction/*.ts', () => {
   const files = readdirSync(INDUCTION_SRC).filter((name) => name.endsWith('.ts'));
 
-  it('scans the five S10-A modules and the L3 closure module', () => {
+  it('scans the five S10-A modules (L3 r2 removed the closure module: no closure exists yet)', () => {
+    expect(files).not.toContain('closure.ts');
     expect(files).toEqual(
       expect.arrayContaining([
-        'closure.ts',
         'contract.ts',
         'digest.ts',
         'manifest-registry.ts',

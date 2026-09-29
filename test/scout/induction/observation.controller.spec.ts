@@ -3,7 +3,10 @@ import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/comm
 import { BadRequestException, RequestMethod, ValidationPipe } from '@nestjs/common';
 import type { AuthedRequest } from '../../../src/auth/auth-request';
 import { ROLES_KEY } from '../../../src/common/decorators/roles.decorator';
-import { OBSERVATION_BODY_MAX_BYTES } from '../../../src/scout/induction/contract';
+import {
+  OBSERVATION_BODY_MAX_BYTES,
+  REPLAY_OBSERVATION_BODY_MAX_BYTES,
+} from '../../../src/scout/induction/contract';
 import {
   ObservationController,
   type ObservationRequest,
@@ -162,6 +165,52 @@ describe('ObservationController', () => {
       observe.mockClear();
       await expect(
         controller.postObservation(makeReq('c', paddedRaw(32_769)), body),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(observe).not.toHaveBeenCalled();
+    });
+
+    it('L3 r2 (L0 r4 D-L0-6): an all-replay body may reach 64 KiB; a mixed body keeps the 32 KiB cap', async () => {
+      expect(REPLAY_OBSERVATION_BODY_MAX_BYTES).toBe(64 * 1024);
+      const replay = {
+        evidence_version: 1,
+        source_platform: PLATFORM_A,
+        account_scope_id_digest: SCOPE_1,
+        family: 'clients',
+        basis_kind: 'replay_terminal_enumeration',
+        mapping_spec_digest: 'a'.repeat(64),
+        challenge_b64: Buffer.alloc(32, 7).toString('base64'),
+        steps: [
+          {
+            step_key: 'members',
+            pages_fetched: 1,
+            raw_items: 1,
+            distinct_raw_ids: 1,
+            duplicate_ids: 0,
+            synthetic_ids: 0,
+            missing_id_items: 0,
+            stop: 'short_page',
+            advertised_next: false,
+            refused_pages: 0,
+            fan_out: null,
+            id_set_digest: 'b'.repeat(64),
+          },
+        ],
+        observed_unique: 1,
+        id_set_digest: 'b'.repeat(64),
+      };
+      const { body: allReplay } = upload([replay]);
+      await controller.postObservation(
+        makeReq('c', paddedRaw(REPLAY_OBSERVATION_BODY_MAX_BYTES)),
+        allReplay,
+      );
+      expect(observe).toHaveBeenCalledTimes(1);
+      observe.mockClear();
+      await expect(
+        controller.postObservation(makeReq('c', paddedRaw(64 * 1024 + 1)), allReplay),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      const { body: mixed } = upload([replay, rawEvidence({ scope: SCOPE_2 })]);
+      await expect(
+        controller.postObservation(makeReq('c', paddedRaw(32_769)), mixed),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(observe).not.toHaveBeenCalled();
     });

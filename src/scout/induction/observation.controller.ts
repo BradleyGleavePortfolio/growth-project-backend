@@ -8,6 +8,7 @@ import {
   errorEnvelopeSchema,
   rateLimitSchema,
 } from '../../common/errors/importer-error-responses';
+import { REPLAY_OBSERVATION_BODY_MAX_BYTES } from './contract';
 import { checkObservationBodySize } from './parse';
 import {
   observationBodyRejected,
@@ -143,11 +144,21 @@ export class ObservationController {
     @Body() body: ScoutRunObservationDto,
   ): Promise<ScoutRunObservationResult> {
     // R21 "body > 32 KiB": the exact received bytes, never a re-serialisation. A request without
-    // the captured raw body is refused (fail closed), never measured some other way.
-    const size = checkObservationBodySize(Buffer.isBuffer(req.rawBody) ? req.rawBody.length : -1);
+    // the captured raw body is refused (fail closed), never measured some other way. L3 r2 (L0 r4
+    // D-L0-6): a body whose EVERY entry is the aggregate replay kind may reach 64 KiB; the hard
+    // cap is checked before parsing, the 32 KiB cap once the kinds are known.
+    const bytes = Buffer.isBuffer(req.rawBody) ? req.rawBody.length : -1;
+    const size = checkObservationBodySize(bytes, REPLAY_OBSERVATION_BODY_MAX_BYTES);
     if (!size.ok) return Promise.reject(observationBodyRejected(size.reason));
     const envelope = parseObservationEnvelope(body);
     if (!envelope.ok) return Promise.reject(observationBodyRejected(envelope.reason));
+    const allReplay = envelope.observations.every(
+      (o) => o.basis_kind === 'replay_terminal_enumeration',
+    );
+    if (!allReplay) {
+      const strict = checkObservationBodySize(bytes);
+      if (!strict.ok) return Promise.reject(observationBodyRejected(strict.reason));
+    }
     return this.observations.observe(req.user.id, envelope.intent_id, envelope.observations);
   }
 }
