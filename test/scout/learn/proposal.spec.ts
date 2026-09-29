@@ -249,6 +249,55 @@ describe('LearnedProposalV1: validators V-L2 … V-L8, V-L10 over the digest', (
     expectCode(validateRaw(start), 'V-L5', 'start');
   });
 
+  it('V-L5 (reset directive 4): offset, next_url and none styles', () => {
+    const p = basicExample().proposal as Raw;
+    const d = basicExample().digest as Raw;
+    // offset: param must be a query key, start 0
+    d.templates[3].queryKeys = [{ key: 'offset', distinct: '3+' }];
+    p.steps[1].pagination = { style: 'offset', param: 'offset', start: 0 };
+    expect(validateRaw(p, d).ok).toBe(true);
+    p.steps[1].pagination = { style: 'offset', param: 'offset', start: 1 };
+    expectCode(validateRaw(p, d), 'V-L5', 'start');
+    p.steps[1].pagination = { style: 'offset', param: 'page', start: 0 };
+    expectCode(validateRaw(p, d), 'V-L5', 'param');
+    // next_url: nextPath must resolve to a url-class string; no param
+    const u = basicExample().digest as Raw;
+    u.templates[1].shape.keys.meta.keys.next = {
+      kind: 'string',
+      class: 'url',
+      lengthBucket: '≤256',
+    };
+    const q = basicExample().proposal as Raw;
+    q.steps[0].pagination = { style: 'next_url', nextPath: ['meta', 'next'] };
+    expect(validateRaw(q, u).ok).toBe(true);
+    q.steps[0].pagination = { style: 'cursor', param: 'after', nextPath: ['meta', 'next'] };
+    expectCode(validateRaw(q, u), 'V-L5', 'nextPath');
+    q.steps[0].pagination = { style: 'next_url', param: 'after', nextPath: ['meta', 'next'] };
+    expectCode(validateRaw(q, u), 'V-L5', 'param');
+    q.steps[0].pagination = { style: 'next_url', nextPath: ['meta', 'next'] };
+    expectCode(validateRaw(q, basicExample().digest), 'V-L5', 'nextPath');
+    // none: refused while the template shows a pagination signal, accepted when it shows none
+    const n = basicExample().proposal as Raw;
+    n.steps[1].pagination = { style: 'none' };
+    expectCode(validateRaw(n), 'V-L5', 'style');
+    const clean = basicExample().digest as Raw;
+    clean.templates[3].queryKeys = [];
+    expect(validateRaw(n, clean).ok).toBe(true);
+    const nextKey = basicExample().digest as Raw;
+    nextKey.templates[3].queryKeys = [];
+    nextKey.templates[3].shape.keys.paging = {
+      kind: 'object',
+      keys: { total: { kind: 'number', class: 'int' } },
+    };
+    expectCode(validateRaw(n, nextKey), 'V-L5', 'style');
+    n.steps[1].pagination = { style: 'none', param: 'page' };
+    expectCode(validateRaw(n, clean), 'V-L5', 'param');
+    // null is no longer a pagination value
+    const nul = basicExample().proposal as Raw;
+    nul.steps[1].pagination = null;
+    expectCode(validateRaw(nul), 'V-L1', 'pagination');
+  });
+
   it('V-L5: forEach names an earlier collectAs and the template has exactly one :p', () => {
     const p = basicExample().proposal as Raw;
     const unknown = clone(p);

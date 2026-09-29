@@ -1,5 +1,6 @@
 import {
   CREDENTIAL_SUBSTRINGS,
+  DEVICE_ONLY_KEY_REFUSALS,
   KEY_MAX_BYTES,
   STRUCTURAL_KEY_VOCABULARY,
   admissionRules,
@@ -12,6 +13,7 @@ import {
   queryKeyRefusal,
 } from '../../../src/scout/learn/admission';
 import { STRUCTURAL_PATH_VOCABULARY } from '../../../src/scout/learn/contract-vocabulary';
+import { loadJson } from './helpers';
 
 const none = new Set<string>();
 
@@ -19,6 +21,17 @@ describe('learn admission (r4 directives: keys, path literals, query keys, heade
   describe('key grammar', () => {
     it.each(['id', 'display_name', 'createdAt', '_meta', 'a', 'x1'])('accepts %s', (k) => {
       expect(keyGrammarRefusal(k)).toBeNull();
+    });
+    it('names whitespace explicitly (reset directive 3a), for every Unicode space', () => {
+      for (const k of [
+        'display name',
+        'display\tname',
+        'display\u00a0name',
+        'display\u2003name',
+        ' id',
+        'id\n',
+      ])
+        expect(keyGrammarRefusal(k)).toBe('whitespace in a key');
     });
     it.each([
       ['', 'empty'],
@@ -129,8 +142,11 @@ describe('learn admission (r4 directives: keys, path literals, query keys, heade
     });
   });
 
-  it('exposes the rules as data with the grammar and the credential list', () => {
+  it('exposes the rules as data with the grammar, the credential list and the device-only refusals; the fixture mirror matches', () => {
     const rules = admissionRules();
+    expect(rules.deviceOnlyKeyRefusals).toEqual(DEVICE_ONLY_KEY_REFUSALS);
+    expect(rules.deviceOnlyKeyRefusals.some((r) => r.includes('captured value'))).toBe(true);
+    expect(loadJson('admission-rules.json')).toEqual(JSON.parse(JSON.stringify(rules)));
     expect(rules.keyMaxBytes).toBe(KEY_MAX_BYTES);
     expect(rules.credentialSubstrings).toEqual(CREDENTIAL_SUBSTRINGS);
     expect(rules.structuralKeyWords).toEqual(STRUCTURAL_KEY_VOCABULARY);

@@ -3,6 +3,7 @@ import {
   CANONICAL_FAMILY_DESCRIPTIONS,
   ENTITY_FIELD_DESCRIPTIONS,
   EXERCISE_NATIVE_FIELDS,
+  PAGINATION_STYLE_DESCRIPTIONS,
   PERSON_FIELD_DESCRIPTIONS,
   PROGRAM_NATIVE_FIELDS,
   WORKOUT_NATIVE_FIELDS,
@@ -50,6 +51,8 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
         expect(text).toContain(meta.description);
       }
     for (const word of STRUCTURAL_PATH_VOCABULARY) expect(text).toContain(word);
+    for (const [style, meta] of Object.entries(PAGINATION_STYLE_DESCRIPTIONS))
+      expect(text).toContain(`- ${style}: ${meta}`);
     expect(text).not.toMatch(/https?:\/\//);
   });
 

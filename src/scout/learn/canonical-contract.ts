@@ -185,6 +185,59 @@ export const RELATIONSHIP_RULES: readonly string[] = Object.freeze([
   'forEach fans a step out over an earlier step collectAs ids through the template :p1 parameter.',
 ]);
 
+/**
+ * Reset directive 4 (EXEC_RESET_2026-09-29 §1): `page`, `offset`, `cursor`, `next_url` (follow the
+ * response's own next link; the device confines it to contacted origins) and `none`. `none`
+ * needs positive proof: the template shows no pagination query key and the response shape no
+ * next-link key (`PAGINATION_QUERY_KEYS`, `NEXT_LINK_KEYS`). Exhaustion itself is never certified
+ * here — that is L3's replay evidence.
+ */
+export const PAGINATION_STYLES = ['page', 'offset', 'cursor', 'next_url', 'none'] as const;
+export type PaginationStyle = (typeof PAGINATION_STYLES)[number];
+export const PAGINATION_STYLE_DESCRIPTIONS = {
+  page: 'param is the page-number query key; start 0 or 1',
+  offset: 'param is the item-offset query key; start 0',
+  cursor: 'param is the cursor query key; nextPath is the next cursor string in the response',
+  next_url: 'nextPath is the response own next link (url class); no param',
+  none: 'a single response holds the whole collection; only when the template shows no pagination signal',
+} as const satisfies Record<PaginationStyle, string>;
+export const PAGINATION_QUERY_KEYS: readonly string[] = Object.freeze([
+  'after',
+  'before',
+  'cursor',
+  'from',
+  'limit',
+  'next',
+  'offset',
+  'page',
+  'page_size',
+  'pagesize',
+  'per_page',
+  'perpage',
+  'skip',
+  'start',
+]);
+export const NEXT_LINK_KEYS: readonly string[] = Object.freeze([
+  'cursor',
+  'has_more',
+  'hasmore',
+  'links',
+  'next',
+  'next_cursor',
+  'next_page',
+  'next_url',
+  'nextcursor',
+  'nextpage',
+  'nexturl',
+  'offset',
+  'page_count',
+  'pagecount',
+  'pagination',
+  'paging',
+  'total_pages',
+  'totalpages',
+]);
+
 /** The rendered structure (D-L0-7.1 part 2) — `contractHash` is over its canonical JSON. */
 export interface CanonicalContractV1 {
   readonly contractVersion: typeof CANONICAL_CONTRACT_VERSION;
@@ -203,6 +256,11 @@ export interface CanonicalContractV1 {
   readonly nativeRulesDeclarations: readonly string[];
   readonly identityRules: readonly string[];
   readonly relationshipRules: readonly string[];
+  readonly pagination: {
+    readonly styles: Readonly<Record<PaginationStyle, string>>;
+    readonly queryKeys: readonly string[];
+    readonly nextLinkKeys: readonly string[];
+  };
   readonly vocabulary: ContractVocabularyV1;
   readonly admission: AdmissionRulesV1;
 }
@@ -225,6 +283,11 @@ export function canonicalContract(): CanonicalContractV1 {
     nativeRulesDeclarations: NATIVE_RULES_DECLARATIONS,
     identityRules: IDENTITY_RULES,
     relationshipRules: RELATIONSHIP_RULES,
+    pagination: {
+      styles: PAGINATION_STYLE_DESCRIPTIONS,
+      queryKeys: PAGINATION_QUERY_KEYS,
+      nextLinkKeys: NEXT_LINK_KEYS,
+    },
     vocabulary: contractVocabulary(),
     admission: admissionRules(),
   });

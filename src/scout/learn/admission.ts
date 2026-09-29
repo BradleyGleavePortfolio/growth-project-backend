@@ -224,6 +224,7 @@ export function credentialNameRefusal(name: string): string | null {
 export function keyGrammarRefusal(key: string): string | null {
   if (key.length === 0) return 'empty key';
   if (Buffer.byteLength(key, 'utf8') > KEY_MAX_BYTES) return `key over ${KEY_MAX_BYTES} bytes`;
+  if (/\s/u.test(key)) return 'whitespace in a key';
   if (!KEY_IDENTIFIER_PATTERN.test(key)) return 'key outside the structural identifier grammar';
   if (DIGIT_RUN_PATTERN.test(key)) return 'digit run of 4 or more in a key';
   return credentialNameRefusal(key);
@@ -283,11 +284,22 @@ export function headerNameRefusal(name: string): string | null {
 }
 
 /** The admission rules as contract data (fixture mirror for the extension; prompt part 2). */
+/**
+ * Refusals only the device can apply (it alone sees values); listed here as contract data so the
+ * extension fixture asserts them (EXEC_RESET_2026-09-29 §3 b). The server cannot re-check them
+ * — a digest never carries values — so a package is never more trusted than the device's word.
+ */
+export const DEVICE_ONLY_KEY_REFUSALS: readonly string[] = Object.freeze([
+  'key equals (case-insensitive) any captured value in the run payloads',
+  'object with non-corroborated non-vocabulary keys collapses to a map node',
+]);
+
 export interface AdmissionRulesV1 {
   readonly keyIdentifierPattern: string;
   readonly keyMaxBytes: number;
   readonly credentialSubstrings: readonly string[];
   readonly structuralKeyWords: readonly string[];
+  readonly deviceOnlyKeyRefusals: readonly string[];
 }
 
 export function admissionRules(): AdmissionRulesV1 {
@@ -296,5 +308,6 @@ export function admissionRules(): AdmissionRulesV1 {
     keyMaxBytes: KEY_MAX_BYTES,
     credentialSubstrings: CREDENTIAL_SUBSTRINGS,
     structuralKeyWords: STRUCTURAL_KEY_VOCABULARY,
+    deviceOnlyKeyRefusals: DEVICE_ONLY_KEY_REFUSALS,
   });
 }

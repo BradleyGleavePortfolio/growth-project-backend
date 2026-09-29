@@ -23,6 +23,7 @@ import { headerNameRefusal, pathLiteralRefusal } from './admission';
 import { VOCABULARY_VERSION } from './contract-vocabulary';
 import { CANONICAL_CONTRACT_VERSION } from './canonical-contract';
 import {
+  PAGINATION_STYLES,
   PROPOSAL_MAX_STEPS,
   UNMAPPED_REASONS,
   type ProposalPagination,
@@ -32,7 +33,8 @@ import {
 
 /**
  * L1 (D-L0-4 "The package stores steps by template key", D-L0-5, V-L9) — `LearnedPackageV1`:
- * what memory stores and every later coach on the same structure reuses. Steps are keyed by
+ * what per-coach memory stores and the SAME coach's later runs reuse (V1; cross-coach reuse is a
+ * later slice and nothing here assumes a global row). Steps are keyed by
  * `(method, slotted template, shapeSignature)` (never by ref: refs are per digest), and the
  * grammar has no field that can hold a source value — no header value, no slot value, no query
  * value, no path literal outside the vocabulary. `closureInputs` (r3) is L1b's sequential edit.
@@ -55,7 +57,7 @@ export interface PackageStep {
   readonly idField: string;
   readonly collectAs?: string;
   readonly forEach?: string;
-  readonly pagination: ProposalPagination | null;
+  readonly pagination: ProposalPagination;
 }
 
 export interface PackageUnmapped {
@@ -259,7 +261,12 @@ export function parseLearnedPackage(raw: unknown): LearnParseResult<LearnedPacka
       if (!Array.isArray(step.itemsPath) || step.itemsPath.some((k) => typeof k !== 'string'))
         errors.add(`${where}.itemsPath`, 'malformed itemsPath');
       if (typeof step.idField !== 'string') errors.add(`${where}.idField`, 'malformed idField');
-      if (step.pagination !== null && asObject(step.pagination) === null)
+      const pagination = asObject(step.pagination);
+      if (
+        pagination === null ||
+        !(PAGINATION_STYLES as readonly unknown[]).includes(pagination.style) ||
+        Object.keys(pagination).some((k) => !['style', 'param', 'start', 'nextPath'].includes(k))
+      )
         errors.add(`${where}.pagination`, 'malformed pagination');
       if (key !== null && !errors.any)
         steps.push(
@@ -270,7 +277,7 @@ export function parseLearnedPackage(raw: unknown): LearnParseResult<LearnedPacka
             idField: step.idField as string,
             ...(step.collectAs === undefined ? {} : { collectAs: step.collectAs as string }),
             ...(step.forEach === undefined ? {} : { forEach: step.forEach as string }),
-            pagination: step.pagination as ProposalPagination | null,
+            pagination: step.pagination as ProposalPagination,
           }),
         );
     });

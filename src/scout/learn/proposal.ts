@@ -35,6 +35,10 @@ import { KEY_IDENTIFIER_PATTERN, KEY_MAX_BYTES } from './admission';
 import {
   ENTITY_FIELD_DESCRIPTIONS,
   EXERCISE_NATIVE_FIELDS,
+  NEXT_LINK_KEYS,
+  PAGINATION_QUERY_KEYS,
+  PAGINATION_STYLES,
+  type PaginationStyle,
   PERSON_FIELD_DESCRIPTIONS,
   PROGRAM_NATIVE_FIELDS,
   WORKOUT_NATIVE_FIELDS,
@@ -68,8 +72,7 @@ export const UNMAPPED_REASONS = [
   'unknown',
 ] as const;
 export type UnmappedReason = (typeof UNMAPPED_REASONS)[number];
-export const PAGINATION_STYLES = ['page', 'cursor'] as const;
-export type PaginationStyle = (typeof PAGINATION_STYLES)[number];
+export { NEXT_LINK_KEYS, PAGINATION_QUERY_KEYS, PAGINATION_STYLES, type PaginationStyle };
 
 /**
  * Divergence from r3 D-L0-4 (flagged, not silent): r3 names the id classes `int_id|uuid|short_id`
@@ -82,8 +85,11 @@ export const ACCEPT_INTEGER_NUMBER_ID_FIELD = true;
 
 export interface ProposalPagination {
   readonly style: PaginationStyle;
-  readonly param: string;
+  /** Query key carrying the page/offset/cursor (styles page, offset, cursor). */
+  readonly param?: string;
+  /** First page value (style page: 0|1; style offset: 0). */
   readonly start?: number;
+  /** Path to the next cursor (style cursor) or the next link (style next_url). */
   readonly nextPath?: readonly string[];
 }
 
@@ -94,7 +100,7 @@ export interface ProposalStep {
   readonly idField: string;
   readonly collectAs?: string;
   readonly forEach?: string;
-  readonly pagination: ProposalPagination | null;
+  readonly pagination: ProposalPagination;
 }
 
 export interface ProposalUnmapped {
@@ -344,20 +350,15 @@ export function proposalJsonSchema(): JsonSchema {
             collectAs: token,
             forEach: token,
             pagination: {
-              anyOf: [
-                { type: 'null' },
-                {
-                  type: 'object',
-                  required: ['style', 'param'],
-                  additionalProperties: false,
-                  properties: {
-                    style: { type: 'string', enum: PAGINATION_STYLES },
-                    param: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_.[\\]-]{0,63}$' },
-                    start: { type: 'integer', minimum: 0, maximum: 1 },
-                    nextPath: keyPath,
-                  },
-                },
-              ],
+              type: 'object',
+              required: ['style'],
+              additionalProperties: false,
+              properties: {
+                style: { type: 'string', enum: PAGINATION_STYLES },
+                param: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_.[\\]-]{0,63}$' },
+                start: { type: 'integer', minimum: 0, maximum: 1 },
+                nextPath: keyPath,
+              },
             },
           },
         },
@@ -390,6 +391,15 @@ export function proposalJsonSchema(): JsonSchema {
       },
     },
   };
+}
+
+function copyPagination(p: ProposalPagination): ProposalPagination {
+  return Object.freeze({
+    style: p.style,
+    ...(p.param === undefined ? {} : { param: p.param }),
+    ...(p.start === undefined ? {} : { start: p.start }),
+    ...(p.nextPath === undefined ? {} : { nextPath: Object.freeze([...p.nextPath]) }),
+  });
 }
 
 // ── V-L1 ──────────────────────────────────────────────────────────────────────────────────
@@ -437,19 +447,7 @@ export function parseLearnedProposal(raw: unknown): LearnParseResult<LearnedProp
       idField: s.idField as string,
       ...(s.collectAs === undefined ? {} : { collectAs: s.collectAs as string }),
       ...(s.forEach === undefined ? {} : { forEach: s.forEach as string }),
-      pagination:
-        s.pagination === null
-          ? null
-          : Object.freeze({
-              style: (s.pagination as ProposalPagination).style,
-              param: (s.pagination as ProposalPagination).param,
-              ...((s.pagination as ProposalPagination).start === undefined
-                ? {}
-                : { start: (s.pagination as ProposalPagination).start }),
-              ...((s.pagination as ProposalPagination).nextPath === undefined
-                ? {}
-                : { nextPath: Object.freeze([...(s.pagination as ProposalPagination).nextPath!]) }),
-            }),
+      pagination: copyPagination(s.pagination as ProposalPagination),
     }),
   );
   return {
@@ -536,6 +534,33 @@ export function deriveInductionManifest(
   });
 }
 
+function shapeHasKey(node: ShapeNode, names: ReadonlySet<string>, depth = 0): boolean {
+  if (depth > 4) return false;
+  if (node.kind === 'object') {
+    for (const [key, child] of Object.entries(node.keys)) {
+      if (names.has(key.toLowerCase())) return true;
+      if (shapeHasKey(child, names, depth + 1)) return true;
+    }
+    return false;
+  }
+  if (node.kind === 'array') return shapeHasKey(node.items, names, depth + 1);
+  if (node.kind === 'map') return shapeHasKey(node.values, names, depth + 1);
+  return false;
+}
+
+const PAGINATION_QUERY_KEY_SET: ReadonlySet<string> = new Set(PAGINATION_QUERY_KEYS);
+const NEXT_LINK_KEY_SET: ReadonlySet<string> = new Set(NEXT_LINK_KEYS);
+
+/** Reset directive 4: `none` requires positive proof from the digest (no pagination signal). */
+export function paginationNoneRefusal(template: DigestTemplate): string | null {
+  const signal = template.queryKeys.find((q) => PAGINATION_QUERY_KEY_SET.has(q.key.toLowerCase()));
+  if (signal !== undefined)
+    return `pagination none needs positive proof: template has query key "${signal.key}"`;
+  if (shapeHasKey(template.shape, NEXT_LINK_KEY_SET))
+    return 'pagination none needs positive proof: response shape carries a next-link key';
+  return null;
+}
+
 function checkPagination(
   step: ProposalStep,
   template: DigestTemplate,
@@ -543,29 +568,43 @@ function checkPagination(
   errors: Errors,
 ): void {
   const p = step.pagination;
-  if (p === null) return;
-  if (!template.queryKeys.some((q) => q.key === p.param))
-    errors.add(
-      `${where}.pagination.param`,
-      'pagination param is not a query key of the template',
-      'V-L5',
-    );
-  if (p.style === 'cursor') {
-    if (p.nextPath === undefined)
-      errors.add(`${where}.pagination.nextPath`, 'cursor needs nextPath', 'V-L5');
+  const at = `${where}.pagination`;
+  const needsParam = p.style === 'page' || p.style === 'offset' || p.style === 'cursor';
+  const needsNext = p.style === 'cursor' || p.style === 'next_url';
+  if (needsParam) {
+    if (p.param === undefined) errors.add(`${at}.param`, `${p.style} needs param`, 'V-L5');
+    else if (!template.queryKeys.some((q) => q.key === p.param))
+      errors.add(`${at}.param`, 'pagination param is not a query key of the template', 'V-L5');
+  } else if (p.param !== undefined) {
+    errors.add(`${at}.param`, `${p.style} takes no param`, 'V-L5');
+  }
+  if (needsNext) {
+    if (p.nextPath === undefined) errors.add(`${at}.nextPath`, `${p.style} needs nextPath`, 'V-L5');
     else {
       const node = shapeAtPath(template.shape, p.nextPath);
       if (node === null || node.kind !== 'string')
+        errors.add(`${at}.nextPath`, 'nextPath does not resolve to a string in the shape', 'V-L5');
+      else if (p.style === 'next_url' && node.class !== 'url')
         errors.add(
-          `${where}.pagination.nextPath`,
-          'nextPath does not resolve to a string in the shape',
+          `${at}.nextPath`,
+          'next_url nextPath must resolve to a url-class string',
           'V-L5',
         );
+      else if (p.style === 'cursor' && node.class === 'url')
+        errors.add(`${at}.nextPath`, 'a url-class next link needs style next_url', 'V-L5');
     }
-    if (p.start !== undefined)
-      errors.add(`${where}.pagination.start`, 'start is for style page only', 'V-L5');
   } else if (p.nextPath !== undefined) {
-    errors.add(`${where}.pagination.nextPath`, 'nextPath is for style cursor only', 'V-L5');
+    errors.add(`${at}.nextPath`, `${p.style} takes no nextPath`, 'V-L5');
+  }
+  if (p.start !== undefined) {
+    if (p.style === 'offset' && p.start !== 0)
+      errors.add(`${at}.start`, 'offset starts at 0', 'V-L5');
+    else if (p.style !== 'page' && p.style !== 'offset')
+      errors.add(`${at}.start`, `${p.style} takes no start`, 'V-L5');
+  }
+  if (p.style === 'none') {
+    const refusal = paginationNoneRefusal(template);
+    if (refusal !== null) errors.add(`${at}.style`, refusal, 'V-L5');
   }
 }
 

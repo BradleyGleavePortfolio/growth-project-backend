@@ -110,6 +110,15 @@ export function describeCanonicalContract(
   out.push(lines(contract.relationshipRules));
   out.push('');
   out.push(
+    'Pagination styles (one per step; exhaustion is proven later by replay, never assumed):',
+  );
+  for (const [style, text] of Object.entries(contract.pagination.styles))
+    out.push(`- ${style}: ${text}`);
+  out.push(
+    `- pagination signals: query keys ${contract.pagination.queryKeys.join('|')}; next-link keys ${contract.pagination.nextLinkKeys.join('|')}`,
+  );
+  out.push('');
+  out.push(
     `Digest string classes: ${contract.stringClasses.join('|')}; id classes: ${contract.idClasses.join('|')}.`,
   );
   out.push(
