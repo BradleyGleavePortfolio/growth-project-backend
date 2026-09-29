@@ -881,7 +881,9 @@ model WorkoutSession {
   // database carries CHECK ((user_id IS NULL) <> (person_id IS NULL)) (hand-written,
   // 20270125000000_scout_person_owned_schema); a link/unlink flips the pair in one UPDATE.
   user_id          String?
-  user             User?         @relation(fields: [user_id], references: [id])
+  // onDelete: Restrict is the database's action (baseline WorkoutSession_user_id_fkey); it must stay
+  // explicit now that the relation is optional, or Prisma's implied action flips to SetNull (drift).
+  user             User?         @relation(fields: [user_id], references: [id], onDelete: Restrict)
   person_id        String?
   person           Person?       @relation(fields: [person_id], references: [id], onDelete: Restrict)
   date             DateTime      @db.Date
@@ -953,7 +955,9 @@ model WeightLog {
   id         String   @id @default(uuid())
   // S8-D3: exactly one owner (User XOR Person); CHECK in 20270125000000_scout_person_owned_schema.
   user_id    String?
-  user       User?    @relation(fields: [user_id], references: [id])
+  // onDelete: Restrict = the database's action (baseline WeightLog_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: Restrict)
   person_id  String?
   person     Person?  @relation(fields: [person_id], references: [id], onDelete: Restrict)
   date       DateTime @db.Date
@@ -1063,7 +1067,9 @@ model Habit {
   id           String     @id @default(uuid())
   // S8-D3: exactly one owner (User XOR Person); CHECK in 20270125000000_scout_person_owned_schema.
   user_id      String?
-  user         User?      @relation(fields: [user_id], references: [id])
+  // onDelete: Restrict = the database's action (baseline Habit_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user         User?      @relation(fields: [user_id], references: [id], onDelete: Restrict)
   person_id    String?
   person       Person?    @relation(fields: [person_id], references: [id], onDelete: Restrict)
   name         String
@@ -1138,7 +1144,9 @@ model CheckIn {
   // rows). One-per-day for person-owned rows: partial unique (person_id, date) WHERE person_id
   // IS NOT NULL (20270125000005), which Prisma cannot express.
   user_id           String?
-  user              User?       @relation(fields: [user_id], references: [id])
+  // onDelete: Restrict = the database's action (baseline CheckIn_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user              User?       @relation(fields: [user_id], references: [id], onDelete: Restrict)
   person_id         String?
   person            Person?     @relation(fields: [person_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
   coach_id          String?

@@ -180,10 +180,27 @@ exactly what these policies exist to defend.
      to D3-1. Reversible (`down.sql` restores the D3-1 text verbatim). Live-tested in
      `test/rls-s8d3-person-owned-policies.spec.ts` (the 23 formerly-42P17 matrix cells pass as
      written; coach A on coach B's plan → 42501; clients/students/anon cannot write; unlinked
-     Person rows service-role only). **Pre-existing gap left as-is, for the owner:** the policy has
-     never checked the _client's_ tenancy — a coach can assign their own plan to another coach's
-     student through direct access (the application layer guards this today). Tightening that is
-     a semantic change to a base policy (sub-coach semantics), not part of the cycle fix.
+     Person rows service-role only). **Pre-existing gap, decided by the owner (D8, 2026-09-29):** the
+     policy has never checked the _client's_ tenancy — a coach can assign their own plan to another
+     coach's student through direct access (the application layer guards this today). The owner
+     decided that `assignment_coach_manage` MUST apply the same coach-client tenancy check the app
+     applies (D8, a tightening). D8 is implemented in the stacked slice PR #593 (migration
+     `20270125000012_cwa_coach_manage_client_tenancy`, branch `d8/assignment-tenancy`, based on
+     this PR's head), which flips this PR's "coach B assigns own plan to coach A's client → allowed"
+     matrix cell to DENY. Until #593 lands, no SHA containing `20270125000011` is to be deployed
+     (merge is not deploy; backend deploy is a manual SHA-pinned dispatch): the cycle fix turns a
+     dead direct-access write path into a working one, and only D8 closes the tenancy gap on it.
+     **Rollout and rollback on populated data (R587-c7B-04):** the forward chain validates sixteen
+     constraints in `20270125000010` (SHARE UPDATE EXCLUSIVE, no write block) under a 30 s statement
+     timeout; if a VALIDATE times out, `prisma migrate deploy` leaves the directory in the failed
+     state — recover with `prisma migrate resolve --rolled-back 20270125000010_scout_person_owned_validate`
+     and re-run `migrate deploy` (every VALIDATE is idempotent; validating an already-valid constraint
+     is a no-op, so partial progress is kept). The step-1 `down.sql` runs in three transactions so the
+     only full scans of the five hot parents happen under SHARE UPDATE EXCLUSIVE (a temporary
+     `CHECK (owner IS NOT NULL)` validated before `SET NOT NULL`, which PostgreSQL then satisfies
+     without a scan). CI job `person-owned-migration-rehearsal` proves forward → full down chain →
+     forward on populated synthetic fixtures (row counts stated in the job log), asserting row counts
+     and per-table checksums unchanged and every CONCURRENTLY index valid.
    - `WorkoutSession`, `WeightLog`, `Habit`: D3 **recreates** the three out-of-band policies inside
      the migration directory (`ENABLE`/`FORCE` + idempotent `DROP POLICY IF EXISTS` + `CREATE POLICY`)
      with `"user_id" = cur AND "person_id" IS NULL`. This also closes the harness gap and
@@ -532,7 +549,13 @@ against the S11 pin (§6): 173 → 177 at D3, 178 after S8-E1a, 179 after S8-D6.
 _Implementation note (2026-09-29):_ the landed tree is twelve directories (`20270125000000` …
 `20270125000011`): the four planned steps split so that each `CONCURRENTLY` index is its own
 non-transactional directory, plus `20270125000011_cwa_coach_manage_plan_owner_helper` for the
-base policy-cycle fix recorded in §2.2 item 4. The pin arithmetic in §6 counts the landed number.
+base policy-cycle fix recorded in §2.2 item 4. The pin arithmetic in §6 counts the landed number:
+173 → 185 at D3. **S11 harness re-pin (R587-c7B-05, §6 "Migration sequencing" second option):**
+this PR re-pins the S11 proof harness in the same landing — `EXPECTED_MIGRATIONS` 173 → 185, the
+last accepted directory `20270124000000_scout_run_observation_expand` → `20270125000011_…`, and the
+byte-identity base head → this PR's schema commit — in `test/utils/g2-s11-bootstrap.sh`,
+`test/utils/g2-s11-pg-harness.ts`, `test/utils/g2-s11-db.ts` and `test/utils/g2-s11-db-guard.spec.ts`.
+The stacked D8 slice (#593) re-pins again to 186 / `20270125000012_…`.
 
 ## 3. Link flow against the existing machinery
 

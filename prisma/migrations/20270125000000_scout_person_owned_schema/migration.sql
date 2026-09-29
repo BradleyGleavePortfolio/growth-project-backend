@@ -1,4 +1,4 @@
--- S8-D3 step 1 of 11: person-owned schema — tables, columns, CHECKs and the RLS rewrite
+-- S8-D3 step 1 of 12: person-owned schema — tables, columns, CHECKs and the RLS rewrite
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.1-2.5, §2.9 row D3-1; owner decision D-S8-2
 -- option (a) and D-S8-LINK L1-L8).
 --
@@ -14,8 +14,8 @@
 --   * On the five client-owned parents (WorkoutSession, WeightLog, Habit, CheckIn,
 --     ClientWorkoutAssignment): ADD COLUMN person_id TEXT NULL, DROP NOT NULL on user_id /
 --     client_id, the exactly-one-owner CHECK ((user_id IS NULL) <> (person_id IS NULL)) and, on
---     CheckIn, CHECK (person_id IS NULL OR coach_id IS NOT NULL) — all NOT VALID (validated in 4 of
---     4 without a write lock).
+--     CheckIn, CHECK (person_id IS NULL OR coach_id IS NOT NULL) — all NOT VALID (validated in step 11,
+--     20270125000010, without a write lock).
 --   * RLS rewrite for eight tables (§2.2): every NON-owner policy branch gains "person_id IS NULL"
 --     (USING and WITH CHECK), so a person-owned row is reachable only through the service-role code
 --     path that asserts person.coach_id = caller; no permissive policy is added for person_id.
