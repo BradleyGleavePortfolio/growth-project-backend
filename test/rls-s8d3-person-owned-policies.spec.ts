@@ -50,7 +50,10 @@
  * D8 (owner decision 2026-09-29; migration 20270125000012, stacked on #587): `assignment_coach_manage`
  * now applies the application's coach-client tenancy rule (WorkoutBuilderService.assertCanAccessClient:
  * client.coach_id = caller, OR caller is a sub-coach with an OPEN SubCoachAssignment to that live
- * student) in BOTH USING and WITH CHECK. The block "D8 — coach-client tenancy" below proves the
+ * student) in BOTH USING and WITH CHECK, and re-keys the policy and both of its helpers on ONE
+ * identity, the backend GUC app.current_user_id() (the identity every repo tenancy helper and the
+ * other S8-D3 tenant policies use; the 20260702000000 auth.uid() keying was the outlier).
+ * The block "D8 — coach-client tenancy" below proves the
  * positive paths (head coach, owner-as-coach, sub-coach with open delegation), the negative paths
  * (cross-tenant INSERT, UPDATE re-pointing client_id, SELECT, DELETE; closed delegation; non-student
  * target) and that the composed policy still never recurses (42P17). One pre-D8 assertion in the
@@ -965,6 +968,11 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_coaches_client(text)')`,
       );
       expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
+      // The re-keyed plan helper keeps 20270125000011's hardening and ACL.
+      const planFn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
+        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
+      );
+      expect(planFn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
       const pub = await q<{ ok: boolean }>(
         `SELECT has_function_privilege('public', 'app.current_user_coaches_client(text)', 'EXECUTE') AS ok`,
       );
@@ -1029,8 +1037,8 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     });
 
     // (2) negative: another coach's client, or an unrelated user, as the assignee.
-    it("cross-tenant INSERT: coach A cannot assign their own plan to coach B's client (S3), to the owner's client (S4), or to a non-client user (coach B, SC)", async () => {
-      for (const target of [users.s3.id, users.s4.id, users.coachB.id, users.subCoach.id]) {
+    it("cross-tenant INSERT: coach A cannot assign their own plan to coach B's client (S3), to the owner's client (S4), or to a user on nobody's roster of theirs (coach B)", async () => {
+      for (const target of [users.s3.id, users.s4.id, users.coachB.id]) {
         expect({ target, out: await attempt(P.coachA, insertCwa(PLAN, target, users.coachA.id)) }).toEqual({
           target,
           out: DENY,
@@ -1039,6 +1047,45 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       // Coach B, symmetric.
       expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual(DENY);
       expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s3.id, users.coachB.id))).toEqual(ALLOW_1);
+    });
+
+    it("roster branch mirrors the app exactly: a team sub-coach (User.coach_id = A) IS a valid target for head coach A, because assertCanAccessClient's direct branch does not test the target's role (stated, not widened)", async () => {
+      // workout-builder.service.ts:842-849 returns as soon as client.coach_id === actingUserId.
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.subCoach.id, users.coachA.id))).toEqual(ALLOW_1);
+      // ... and coach B, whose roster SC is not on, is denied the same target.
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.subCoach.id, users.coachB.id))).toEqual(DENY);
+    });
+
+    it('ONE identity: the policy is keyed on app.current_user_id() (the backend GUC) — a caller with only a Supabase JWT claim (auth.uid()) is denied, a caller with only the GUC is admitted', async () => {
+      const gucOnly: Principal = { ...P.coachA, supabaseId: undefined };
+      const claimOnly: Principal = { ...P.coachA, userId: undefined, userRole: undefined };
+      expect(await attempt(gucOnly, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(ALLOW_1);
+      expect(await attempt(gucOnly, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
+      expect(await attempt(gucOnly, touch(ROWS.cwa.user))).toEqual(ALLOW_1);
+      expect(await attempt(claimOnly, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(claimOnly, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(claimOnly, touch(ROWS.cwa.user))).toEqual(NONE_0);
+      expect(await attempt(claimOnly, remove(ROWS.cwa.user))).toEqual(NONE_0);
+      // The role gate reads User.role for that id, not the app.current_user_role GUC.
+      const wrongRoleGuc: Principal = { ...P.coachA, userRole: 'student' };
+      expect(await attempt(wrongRoleGuc, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
+      const studentWithCoachRoleGuc: Principal = { ...P.s3, userRole: 'coach' };
+      expect(await attempt(studentWithCoachRoleGuc, insertCwa(PLAN_B, users.s3.id, users.s3.id))).toEqual(DENY);
+      // Neither helper mentions auth.uid() any more; both read the GUC.
+      const bodies = await q<{ proname: string; prosrc: string }>(
+        `SELECT proname, prosrc FROM pg_proc WHERE oid IN (to_regprocedure('app.current_user_owns_workout_plan(text)'), to_regprocedure('app.current_user_coaches_client(text)'))`,
+      );
+      expect(bodies).toHaveLength(2);
+      for (const b of bodies) {
+        expect({ fn: b.proname, usesGuc: /app\.current_user_id\(\)/.test(b.prosrc), usesJwt: /auth\.uid/.test(b.prosrc) }).toEqual({ fn: b.proname, usesGuc: true, usesJwt: false });
+      }
+      const pol = await q<{ qual: string; with_check: string }>(
+        `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
+      );
+      for (const clause of [pol[0].qual, pol[0].with_check]) {
+        expect(clause).toMatch(/app\.current_user_id\(\)/);
+        expect(clause).not.toMatch(/auth\.uid|supabase_id/);
+      }
     });
 
     it("cross-tenant UPDATE: coach A cannot re-point their own assignment at coach B's client (S3) or at a non-student user (WITH CHECK 42501)", async () => {
@@ -1145,9 +1192,16 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         const m = /CREATE POLICY "assignment_coach_manage"[\s\S]*?\);/.exec(sql);
         return m ? m[0].replace(/\s+/g, ' ') : null;
       };
+      const helperOf = (sql: string) => {
+        const m = /CREATE OR REPLACE FUNCTION app\.current_user_owns_workout_plan[\s\S]*?\$\$;/.exec(sql);
+        return m ? m[0] : null;
+      };
+      expect(policyOf(down)).not.toBeNull();
       expect(policyOf(down)).toBe(policyOf(prev));
+      expect(helperOf(down)).not.toBeNull();
+      expect(helperOf(down)).toBe(helperOf(prev));
       expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.current_user_coaches_client\(text\);/);
-      expect(down).not.toMatch(/current_user_owns_workout_plan\(text\)\s*;/);
+      expect(down).not.toMatch(/DROP FUNCTION IF EXISTS app\.current_user_owns_workout_plan/);
     });
   });
 
