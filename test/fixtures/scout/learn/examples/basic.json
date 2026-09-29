@@ -3,13 +3,63 @@
     "digestVersion": 1,
     "sourcePlatform": "example_alpha",
     "round": 1,
+    "truncated": {
+      "templates": false,
+      "linkTemplates": false,
+      "shapes": 0
+    },
     "templates": [
       {
         "ref": "t0",
         "method": "GET",
+        "template": "/v2/billing/invoices",
+        "slots": [],
+        "queryKeys": [],
+        "statuses": [200],
+        "observations": 1,
+        "role": "collection",
+        "collectionPaths": [["invoices"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "invoices": {
+              "kind": "array",
+              "lengthBucket": "1",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "amount": {
+                    "kind": "number",
+                    "class": "float"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ref": "t1",
+        "method": "GET",
         "template": "/v2/coaches/:s1/members",
-        "structural": [0, 1, 3],
-        "queryKeys": ["after"],
+        "slots": [
+          {
+            "slot": ":s1",
+            "class": "slug_like",
+            "distinct": 1
+          }
+        ],
+        "queryKeys": [
+          {
+            "key": "after",
+            "distinct": 1
+          }
+        ],
         "statuses": [200],
         "observations": 3,
         "role": "collection",
@@ -63,11 +113,42 @@
         }
       },
       {
-        "ref": "t1",
+        "ref": "t2",
+        "method": "GET",
+        "template": "/v2/me",
+        "slots": [],
+        "queryKeys": [],
+        "statuses": [200],
+        "observations": 1,
+        "role": "single",
+        "collectionPaths": [],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "id": {
+              "kind": "string",
+              "class": "int_id",
+              "lengthBucket": "≤8"
+            },
+            "plan": {
+              "kind": "string",
+              "class": "text",
+              "lengthBucket": "≤32"
+            }
+          }
+        }
+      },
+      {
+        "ref": "t3",
         "method": "GET",
         "template": "/v2/members/:p1/routines",
-        "structural": [0, 1, 3],
-        "queryKeys": ["page"],
+        "slots": [],
+        "queryKeys": [
+          {
+            "key": "page",
+            "distinct": 1
+          }
+        ],
         "statuses": [200],
         "observations": 4,
         "role": "collection",
@@ -127,79 +208,28 @@
             }
           }
         }
-      },
-      {
-        "ref": "t2",
-        "method": "GET",
-        "template": "/v2/billing/invoices",
-        "structural": [0, 1, 2],
-        "queryKeys": [],
-        "statuses": [200],
-        "observations": 1,
-        "role": "collection",
-        "collectionPaths": [["invoices"]],
-        "shape": {
-          "kind": "object",
-          "keys": {
-            "invoices": {
-              "kind": "array",
-              "lengthBucket": "1",
-              "items": {
-                "kind": "object",
-                "keys": {
-                  "id": {
-                    "kind": "string",
-                    "class": "int_id",
-                    "lengthBucket": "≤8"
-                  },
-                  "amount": {
-                    "kind": "number",
-                    "class": "float"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      {
-        "ref": "t3",
-        "method": "GET",
-        "template": "/v2/me",
-        "structural": [0, 1],
-        "queryKeys": [],
-        "statuses": [200],
-        "observations": 1,
-        "role": "single",
-        "collectionPaths": [],
-        "shape": {
-          "kind": "object",
-          "keys": {
-            "id": {
-              "kind": "string",
-              "class": "int_id",
-              "lengthBucket": "≤8"
-            },
-            "plan": {
-              "kind": "string",
-              "class": "text",
-              "lengthBucket": "≤32"
-            }
-          }
-        }
       }
     ],
-    "linkTemplates": ["/coach/:p1/programs", "/coach/:p1/settings"],
-    "constantHeaders": {
-      "Accept": "application/json"
-    },
+    "linkTemplates": [
+      {
+        "ref": "l0",
+        "template": "/coach/:p1/programs",
+        "captured": false
+      },
+      {
+        "ref": "l1",
+        "template": "/coach/:p1/settings",
+        "captured": false
+      }
+    ],
+    "constantHeaderNames": ["accept"],
     "missingFamilies": []
   },
   "proposal": {
     "proposalVersion": 1,
     "steps": [
       {
-        "templateRef": "t0",
+        "templateRef": "t1",
         "entityType": "members",
         "itemsPath": ["members"],
         "idField": "id",
@@ -211,7 +241,7 @@
         }
       },
       {
-        "templateRef": "t1",
+        "templateRef": "t3",
         "entityType": "routines",
         "itemsPath": ["data"],
         "idField": "id",
@@ -270,10 +300,10 @@
         }
       }
     },
-    "explore": ["/coach/:p1/programs"],
+    "explore": ["l0"],
     "unmapped": [
       {
-        "templateRef": "t2",
+        "templateRef": "t0",
         "reason": "out_of_scope_billing"
       }
     ],

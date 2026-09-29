@@ -1,13 +1,23 @@
 import { isCanonicalPlatform } from '../scout-platform';
 import { CANONICAL_FAMILIES, type CanonicalFamily } from '../reconstruct/mapping-spec';
+import {
+  headerNameRefusal,
+  keyAdmissionRefusal,
+  pathLiteralRefusal,
+  queryKeyRefusal,
+} from './admission';
+import { shapeSignature } from './shape-signature';
 
 /**
- * L1 (docs/decisions/2026-09-27-learn-and-remember.md D-L0-2) — the `StructureDigestV1` the
+ * L1 (docs/decisions/2026-09-27-learn-and-remember.md r3, D-L0-2) — the `StructureDigestV1` the
  * extension builds on the coach's computer and the strict parser (V-L0) the learn route applies
  * before anything else. The digest carries STRUCTURE ONLY: key names, kinds, value classes,
- * counts, URL templates with ids collapsed to `:p1..`, query key names and `Accept`-class constant
- * headers. Every byte of it is hostile input (D-L0-7.2): nothing here is executed, fetched or
- * written, only matched. No source name or host literal appears in this module (§3 invariant 1).
+ * counts, URL templates with ids collapsed to `:p1..` and every non-vocabulary word to a typed
+ * session slot `:s1..`, query key NAMES with a distinct-value bucket, constant request header
+ * NAMES. Every byte of it is hostile input (D-L0-7.2): nothing here is executed, fetched or
+ * written, only matched. The admission rules for site-chosen strings live in `admission.ts` (r4
+ * directives: slot-only paths, corroborated keys, no hash promotion). No source name or host
+ * literal appears in this module (§3 invariant 1).
  */
 
 export const DIGEST_VERSION = 1 as const;
@@ -19,9 +29,9 @@ export const DIGEST_MAX_KEYS_PER_OBJECT = 64;
 export const DIGEST_MAX_KEY_BYTES = 64;
 export const DIGEST_MAX_QUERY_KEYS = 32;
 export const DIGEST_MAX_STATUSES = 8;
-export const DIGEST_MAX_HEADERS = 16;
-export const DIGEST_MAX_HEADER_VALUE_BYTES = 64;
+export const DIGEST_MAX_HEADER_NAMES = 16;
 export const DIGEST_MAX_TEMPLATE_BYTES = 512;
+export const DIGEST_MAX_SLOTS = 16;
 /** Upper bound of the canonical JSON of one digest (D-L0-2 "Bounds": 32 KiB). */
 export const DIGEST_MAX_BYTES = 32 * 1024;
 
@@ -29,6 +39,12 @@ export const DIGEST_METHODS = ['GET', 'HEAD'] as const;
 export type DigestMethod = (typeof DIGEST_METHODS)[number];
 export const TEMPLATE_ROLES = ['collection', 'single', 'refused'] as const;
 export type TemplateRole = (typeof TEMPLATE_ROLES)[number];
+export const REFUSED_KINDS = ['not_collection', 'collection_unproven'] as const;
+export type RefusedKind = (typeof REFUSED_KINDS)[number];
+export const SLOT_CLASSES = ['int_like', 'uuid_like', 'slug_like', 'opaque'] as const;
+export type SlotClass = (typeof SLOT_CLASSES)[number];
+export const DISTINCT_BUCKETS = [1, 2, '3+'] as const;
+export type DistinctBucket = (typeof DISTINCT_BUCKETS)[number];
 export const STRING_CLASSES = [
   'int_id',
   'uuid',
@@ -42,7 +58,11 @@ export const STRING_CLASSES = [
 export type StringClass = (typeof STRING_CLASSES)[number];
 /** The string classes that may name a row identity (`idField`, D-L0-4). */
 export const ID_CLASSES: readonly StringClass[] = ['int_id', 'uuid', 'short_id'];
+/** The string classes the model must never be allowed to target (D-L0-7.1 part 1). */
+export const CONTACT_CLASSES: readonly StringClass[] = ['email_like', 'phone_like'];
 export const NUMBER_CLASSES = ['int', 'float'] as const;
+export const MAP_KEY_CLASSES = ['int_id', 'uuid', 'short_id', 'iso_date', 'text'] as const;
+export const MAP_SIZE_BUCKETS = ['1', '2-9', '10+'] as const;
 export const STRING_LENGTH_BUCKETS = ['≤8', '≤32', '≤256', '>256'] as const;
 export const ARRAY_LENGTH_BUCKETS = ['0', '1', '2-9', '10-99', '100+'] as const;
 
@@ -51,6 +71,19 @@ export type ShapeNode =
       readonly kind: 'object';
       readonly keys: Readonly<Record<string, ShapeNode>>;
       readonly optional?: readonly string[];
+      /**
+       * r4 directive 2: keys the device proved structural by appearance in ≥ 2 sibling objects of
+       * the same array element shape. A key outside the contract vocabulary is admitted only when
+       * listed here; otherwise the device must have collapsed this object to a `map`.
+       */
+      readonly corroborated?: readonly string[];
+    }
+  /** An object keyed by DATA (ids, dates, names): key class and size bucket only (r3, B6). */
+  | {
+      readonly kind: 'map';
+      readonly values: ShapeNode;
+      readonly keyClass: (typeof MAP_KEY_CLASSES)[number];
+      readonly sizeBucket: (typeof MAP_SIZE_BUCKETS)[number];
     }
   | {
       readonly kind: 'array';
@@ -63,154 +96,117 @@ export type ShapeNode =
       readonly lengthBucket: (typeof STRING_LENGTH_BUCKETS)[number];
     }
   | { readonly kind: 'number'; readonly class: (typeof NUMBER_CLASSES)[number] }
-  /** An object keyed by DATA (ids, dates): only the value shape is structural (X2 / L0R2-OPUS-B6). */
-  | { readonly kind: 'map'; readonly values: ShapeNode }
   | { readonly kind: 'boolean' }
   | { readonly kind: 'null' }
   | { readonly kind: 'mixed' };
 
+/**
+ * One typed session slot (r3): class and distinct-count bucket only, never a value. The r3
+ * `hash` field is deleted with the proven-slot-hash promotion (r4 directive 1): a hash of a
+ * tenant word is a derived source byte and dictionary-testable (R581-A-02).
+ */
+export interface DigestSlot {
+  readonly slot: string;
+  readonly class: SlotClass;
+  readonly distinct: DistinctBucket;
+}
+
+export interface DigestQueryKey {
+  readonly key: string;
+  readonly distinct: DistinctBucket;
+}
+
 export interface DigestTemplate {
-  /** `t0`..`t63`; the model refers to templates by ref only. */
+  /** `t0`..`t63` = position in canonical order; the model refers to templates by ref only. */
   readonly ref: string;
   readonly method: DigestMethod;
-  /** Root-relative, ids collapsed to `:p1..`; never a host or scheme. */
+  /** Root-relative; C2a ids → `:p1..`; unproven literals → `:s1..`; never a host or scheme. */
   readonly template: string;
-  /**
-   * Zero-based indices of the template's LITERAL segments the extension proved structural (route
-   * vocabulary observed with variation elsewhere in the path or across templates, C2b-1 A1
-   * closure). V-L0 refuses a literal segment that is not listed and any listed index that is a
-   * `:p` parameter; a value-like literal is refused even when listed. Route vocabulary cannot
-   * hide a per-coach slug (`/coaches/<name>/clients/:p1`) behind one varied position.
-   */
-  readonly structural?: readonly number[];
-  readonly queryKeys: readonly string[];
-  /**
-   * Distinct observed values per transmitted query NAME (X2 `queryVariants`): a key with 2+
-   * variants is a filter (`status`), so the crawl may have seen a filtered subset. Closure marker.
-   */
-  readonly queryVariants?: Readonly<Record<string, number>>;
-  /** Query names the extension withheld (not structural); closure marker. */
-  readonly withheldQueryKeys?: number;
+  readonly slots: readonly DigestSlot[];
+  readonly queryKeys: readonly DigestQueryKey[];
   readonly statuses: readonly number[];
   readonly observations: number;
   readonly role: TemplateRole;
-  /** The extension's refusal reason for a `refused` template (a closed token, never a value). */
-  readonly refusal?: string | null;
+  /** Role `refused` only; `collection_unproven` leaves the closure open (D-L0-6.1 i-e). */
+  readonly refusedKind?: RefusedKind;
   readonly collectionPaths: readonly (readonly string[])[];
   readonly shape: ShapeNode;
 }
 
-/** One withheld-count entry (X2 `withheld`): why the extension dropped something, and how many. */
-export interface DigestWithheld {
-  readonly reason: string;
-  readonly count: number;
+export interface DigestLinkTemplate {
+  /** `l0`..`l63`. */
+  readonly ref: string;
+  readonly template: string;
+  /** True when the link matches a captured template above; false = explore obligation. */
+  readonly captured: boolean;
+}
+
+export interface DigestTruncation {
+  readonly templates: boolean;
+  readonly linkTemplates: boolean;
+  readonly shapes: number;
 }
 
 export interface StructureDigestV1 {
   readonly digestVersion: typeof DIGEST_VERSION;
   readonly sourcePlatform: string;
   readonly round: 1 | 2;
+  readonly truncated: DigestTruncation;
   readonly templates: readonly DigestTemplate[];
-  readonly linkTemplates: readonly string[];
-  readonly constantHeaders: Readonly<Record<string, string>>;
+  readonly linkTemplates: readonly DigestLinkTemplate[];
+  /** Header NAMES only (r3); values are rebound on the device. */
+  readonly constantHeaderNames: readonly string[];
+  /** Round 2 only: families still unmapped. */
   readonly missingFamilies: readonly CanonicalFamily[];
-  /** Version of the extension's structural vocabulary the literal segments were proven against. */
-  readonly vocabularyVersion?: number;
-  /** Leading host labels withheld from `sourcePlatform` (X2: `alice.` in `alice.site.example`). */
-  readonly originLabelsWithheld?: number;
-  /** Link templates the extension visited; unexplored = linkTemplates − exploredLinkTemplates. */
-  readonly exploredLinkTemplates?: readonly string[];
-  /** Closure markers (L0 r3 defaults): the digest dropped templates at the 64 / 32 KiB bound. */
-  readonly truncated?: boolean;
-  /** Withheld counts by reason (X2): what the digest does not show, so L3 can hold `complete` open. */
-  readonly withheld?: readonly DigestWithheld[];
-  /** Salted per-run hashes proving slotted words structural (X2 seam); opaque here, bounded. */
-  readonly slotProofs?: Readonly<Record<string, readonly string[]>>;
 }
 
 const DIGEST_KEYS = [
   'digestVersion',
   'sourcePlatform',
   'round',
+  'truncated',
   'templates',
   'linkTemplates',
-  'constantHeaders',
+  'constantHeaderNames',
   'missingFamilies',
-  'vocabularyVersion',
-  'originLabelsWithheld',
-  'exploredLinkTemplates',
-  'truncated',
-  'withheld',
-  'slotProofs',
 ] as const;
-const DIGEST_OPTIONAL_KEYS: readonly string[] = [
-  'vocabularyVersion',
-  'originLabelsWithheld',
-  'exploredLinkTemplates',
-  'truncated',
-  'withheld',
-  'slotProofs',
-];
-const DIGEST_REQUIRED_KEYS = DIGEST_KEYS.filter((k) => !DIGEST_OPTIONAL_KEYS.includes(k));
+const TRUNCATED_KEYS = ['templates', 'linkTemplates', 'shapes'] as const;
 const TEMPLATE_KEYS = [
   'ref',
   'method',
   'template',
-  'structural',
+  'slots',
   'queryKeys',
-  'queryVariants',
-  'withheldQueryKeys',
   'statuses',
   'observations',
   'role',
-  'refusal',
+  'refusedKind',
   'collectionPaths',
   'shape',
 ] as const;
-const TEMPLATE_OPTIONAL_KEYS: readonly string[] = [
-  'structural',
-  'queryVariants',
-  'withheldQueryKeys',
-  'refusal',
-];
-const TEMPLATE_REQUIRED_KEYS = TEMPLATE_KEYS.filter((k) => !TEMPLATE_OPTIONAL_KEYS.includes(k));
-/** Closed-token pattern for refusal / withheld reasons (X2 emits snake_case tokens). */
-const REASON_TOKEN_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
-const SLOT_PROOF_PATTERN = /^[0-9a-f]{16,128}$/;
-const DIGEST_MAX_WITHHELD = 32;
-const DIGEST_MAX_SLOT_PROOFS = 16;
-const REF_PATTERN = /^t(0|[1-9][0-9]?)$/;
-/** Root-relative path segments: unreserved characters or a `:pN` parameter; no scheme, host or `//`. */
-/**
- * Segments are unreserved literals, `:pN` row-id parameters or `:sN` session slots (L0 r3: a
- * literal the extension could not prove structural travels as a typed slot, never as a value).
- */
+const TEMPLATE_REQUIRED_KEYS = TEMPLATE_KEYS.filter((k) => k !== 'refusedKind');
+const SLOT_KEYS = ['slot', 'class', 'distinct'] as const;
+const QUERY_KEY_KEYS = ['key', 'distinct'] as const;
+const LINK_KEYS = ['ref', 'template', 'captured'] as const;
+
+export const TEMPLATE_REF_PATTERN = /^t(0|[1-9][0-9]?)$/;
+export const LINK_REF_PATTERN = /^l(0|[1-9][0-9]?)$/;
+/** Segments: unreserved literals, `:pN` row-id parameters or `:sN` session slots. */
 const TEMPLATE_PATTERN = /^(\/(?:[A-Za-z0-9._~%-]+|:p[1-9][0-9]?|:s[1-9][0-9]?))*\/?$/;
 const PARAM_PATTERN = /:p[1-9][0-9]?/g;
 const SLOT_PATTERN = /:s[1-9][0-9]?/g;
 const MARKER_SEGMENT = /^:[ps][1-9][0-9]?$/;
-/** A constant-header value must be a header slot marker (`:hN`, X2) or match this structural grammar. */
-const HEADER_SLOT_PATTERN = /^:[hs][1-9][0-9]?$/;
-const STRUCTURAL_HEADER_VALUE_PATTERNS: readonly RegExp[] = [
-  /^\*\/\*$/,
-  /^(application|text|multipart)\/[a-z0-9.+-]{1,40}(\s*;\s*(charset|q|v|version)=[A-Za-z0-9.-]{1,16}){0,2}(\s*,\s*(application|text)\/[a-z0-9.+-]{1,40}(\s*;\s*q=[0-9.]{1,4})?){0,3}$/,
-  /^[a-z]{2,3}(-[A-Za-z]{2,4})?(\s*,\s*[a-z]{2,3}(-[A-Za-z]{2,4})?(\s*;\s*q=[0-9.]{1,4})?){0,4}$/,
-  /^(XMLHttpRequest|fetch|same-origin|cors|no-cors|empty|no-cache|no-store|1|true|false|gzip|deflate|br|identity)$/,
-  /^(gzip|deflate|br|identity|zstd)(\s*,\s*(gzip|deflate|br|identity|zstd)){0,4}$/,
-  /^(no-cache|no-store|must-revalidate|private|public|max-age=[0-9]{1,3})(\s*,\s*(no-cache|no-store|must-revalidate|private|public|max-age=[0-9]{1,3})){0,4}$/,
-];
-const QUERY_KEY_PATTERN = /^[A-Za-z0-9._[\]-]{1,64}$/;
-const HEADER_NAME_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
-/** Printable ASCII, ≤ 64 bytes, no digit run of 4 or more (D-L0-2 constant-header rule). */
-const HEADER_VALUE_PATTERN = /^[\x20-\x7e]{1,64}$/;
-const DIGIT_RUN_PATTERN = /[0-9]{4}/;
+export const DIGIT_RUN_PATTERN = /[0-9]{4}/;
+/** Control, bidi, zero-width and other format characters: never in a key or literal. */
+const FORBIDDEN_TEXT_PATTERN =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/;
 /**
- * Credential-pattern names refused anywhere in a digest (header names and shape keys). A digest
- * that names a credential is refused outright (D-L0-7.2 "Redaction"; §3 invariant 3).
+ * Credential-pattern names refused anywhere in a digest beside the r4 substring rule
+ * (`admission.ts`): a digest that names a credential is refused outright (D-L0-7.2; §3 inv. 3).
  */
 export const CREDENTIAL_KEY_PATTERN =
-  /^(authorization|proxy-authorization|cookie|set-cookie|x-csrf[-_a-z0-9]*|x-xsrf[-_a-z0-9]*|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|bearer|password|passwd|secret|client[-_]?secret|private[-_]?key)$/i;
-const SEC_HEADER_PATTERN = /^sec-/i;
+  /^(authorization|proxy-authorization|cookie|set-cookie|x-csrf[-_a-z0-9]*|x-xsrf[-_a-z0-9]*|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|auth[-_]?token|bearer|password|passwd|secret|client[-_]?secret|private[-_]?key)$/i;
 
 /** One V-L* refusal: a stable validator code, a JSON-pointer-like location and a fixed detail. */
 export interface LearnValidationError {
@@ -233,15 +229,19 @@ export function utf8Bytes(text: string): number {
   return Buffer.byteLength(text, 'utf8');
 }
 
-/** Collects V-L0 refusals; the parse is total and reports every error it can, never throws. */
-class Errors {
+/** Collects validator refusals; every parse is total and reports what it can, never throws. */
+export class Errors {
   readonly list: LearnValidationError[] = [];
-  add(path: string, detail: string, code = 'V-L0'): void {
+  constructor(private readonly code: string) {}
+  add(path: string, detail: string, code = this.code): void {
     if (this.list.length < 64) this.list.push({ code, path, detail });
+  }
+  get any(): boolean {
+    return this.list.length > 0;
   }
 }
 
-function checkKeys(
+export function checkKeys(
   obj: Record<string, unknown>,
   allowed: readonly string[],
   required: readonly string[],
@@ -268,13 +268,33 @@ function isStringList(value: unknown, max: number): value is string[] {
   return Array.isArray(value) && value.length <= max && value.every((v) => typeof v === 'string');
 }
 
-function checkKeyName(key: string, where: string, errors: Errors): void {
-  if (key.length === 0) errors.add(where, 'empty key');
-  else if (utf8Bytes(key) > DIGEST_MAX_KEY_BYTES) errors.add(where, 'key over 64 bytes');
-  else if (CREDENTIAL_KEY_PATTERN.test(key)) errors.add(where, 'credential-pattern key');
+function isDistinctBucket(value: unknown): value is DistinctBucket {
+  return (DISTINCT_BUCKETS as readonly unknown[]).includes(value);
 }
 
-/** Parse one shape node; depth counts container nesting from 0 at the template root (≤ 4 below it). */
+/** Text that may stand as a site-chosen name: ≤ 64 bytes, no control/format characters. */
+export function isBoundedText(text: string, maxBytes = DIGEST_MAX_KEY_BYTES): boolean {
+  return (
+    text.length > 0 &&
+    utf8Bytes(text) <= maxBytes &&
+    !FORBIDDEN_TEXT_PATTERN.test(text) &&
+    text.trim() === text
+  );
+}
+
+function checkKeyName(
+  key: string,
+  corroborated: ReadonlySet<string>,
+  where: string,
+  errors: Errors,
+): void {
+  const refusal = CREDENTIAL_KEY_PATTERN.test(key)
+    ? 'credential-pattern key'
+    : keyAdmissionRefusal(key, corroborated);
+  if (refusal !== null) errors.add(where, refusal);
+}
+
+/** Parse one shape node; depth counts container nesting from 0 at the template root (≤ 4). */
 function parseShape(raw: unknown, where: string, depth: number, errors: Errors): ShapeNode | null {
   const obj = asObject(raw);
   if (obj === null) {
@@ -332,16 +352,40 @@ function parseShape(raw: unknown, where: string, depth: number, errors: Errors):
       };
     }
     case 'map': {
-      if (!checkKeys(obj, ['kind', 'values'], ['kind', 'values'], where, errors)) return null;
+      const keys = ['kind', 'values', 'keyClass', 'sizeBucket'];
+      if (!checkKeys(obj, keys, keys, where, errors)) return null;
       if (depth > DIGEST_MAX_SHAPE_DEPTH) {
         errors.add(where, 'shape deeper than 4');
         return null;
       }
+      if (!(MAP_KEY_CLASSES as readonly unknown[]).includes(obj.keyClass)) {
+        errors.add(`${where}.keyClass`, 'unknown map key class');
+        return null;
+      }
+      if (!(MAP_SIZE_BUCKETS as readonly unknown[]).includes(obj.sizeBucket)) {
+        errors.add(`${where}.sizeBucket`, 'unknown map size bucket');
+        return null;
+      }
       const values = parseShape(obj.values, `${where}.values`, depth + 1, errors);
-      return values === null ? null : { kind, values };
+      return values === null
+        ? null
+        : {
+            kind,
+            values,
+            keyClass: obj.keyClass as (typeof MAP_KEY_CLASSES)[number],
+            sizeBucket: obj.sizeBucket as (typeof MAP_SIZE_BUCKETS)[number],
+          };
     }
     case 'object': {
-      if (!checkKeys(obj, ['kind', 'keys', 'optional'], ['kind', 'keys'], where, errors))
+      if (
+        !checkKeys(
+          obj,
+          ['kind', 'keys', 'optional', 'corroborated'],
+          ['kind', 'keys'],
+          where,
+          errors,
+        )
+      )
         return null;
       if (depth > DIGEST_MAX_SHAPE_DEPTH) {
         errors.add(where, 'shape deeper than 4');
@@ -357,9 +401,25 @@ function parseShape(raw: unknown, where: string, depth: number, errors: Errors):
         errors.add(`${where}.keys`, 'more than 64 keys');
         return null;
       }
+      let corroborated: string[] | undefined;
+      if (obj.corroborated !== undefined) {
+        if (
+          !isStringList(obj.corroborated, DIGEST_MAX_KEYS_PER_OBJECT) ||
+          obj.corroborated.some((k) => !names.includes(k)) ||
+          new Set(obj.corroborated).size !== obj.corroborated.length
+        ) {
+          errors.add(
+            `${where}.corroborated`,
+            'corroborated must list distinct keys of this object',
+          );
+          return null;
+        }
+        corroborated = [...obj.corroborated];
+      }
+      const attested: ReadonlySet<string> = new Set(corroborated ?? []);
       const keys: Record<string, ShapeNode> = {};
       for (const name of names) {
-        checkKeyName(name, `${where}.keys.${name}`, errors);
+        checkKeyName(name, attested, `${where}.keys.${name}`, errors);
         const child = parseShape(rawKeys[name], `${where}.keys.${name}`, depth + 1, errors);
         if (child === null) return null;
         keys[name] = child;
@@ -368,14 +428,20 @@ function parseShape(raw: unknown, where: string, depth: number, errors: Errors):
       if (obj.optional !== undefined) {
         if (
           !isStringList(obj.optional, DIGEST_MAX_KEYS_PER_OBJECT) ||
-          obj.optional.some((k) => !(k in keys))
+          obj.optional.some((k) => !Object.prototype.hasOwnProperty.call(keys, k)) ||
+          new Set(obj.optional).size !== obj.optional.length
         ) {
-          errors.add(`${where}.optional`, 'optional must list keys of this object');
+          errors.add(`${where}.optional`, 'optional must list distinct keys of this object');
           return null;
         }
         optional = [...obj.optional];
       }
-      return optional === undefined ? { kind, keys } : { kind, keys, optional };
+      return {
+        kind,
+        keys,
+        ...(optional === undefined ? {} : { optional }),
+        ...(corroborated === undefined ? {} : { corroborated }),
+      };
     }
     default:
       errors.add(`${where}.kind`, 'unknown shape kind');
@@ -383,7 +449,7 @@ function parseShape(raw: unknown, where: string, depth: number, errors: Errors):
   }
 }
 
-/** Walk `path` through object keys from `root`; `null` when a level is not an object with that key. */
+/** Walk `path` through OBJECT keys from `root`; a `map` is never walkable (V-L6). */
 export function shapeAtPath(root: ShapeNode, path: readonly string[]): ShapeNode | null {
   let node: ShapeNode = root;
   for (const key of path) {
@@ -394,19 +460,28 @@ export function shapeAtPath(root: ShapeNode, path: readonly string[]): ShapeNode
   return node;
 }
 
-/** The item shape a collection path denotes: the array's `items` node, or `null` if it is not an array. */
+/** The item shape a collection path denotes: the array's `items` node, or `null`. */
 export function itemShapeAt(root: ShapeNode, collectionPath: readonly string[]): ShapeNode | null {
   const node = shapeAtPath(root, collectionPath);
   return node !== null && node.kind === 'array' ? node.items : null;
 }
 
-/** Root-relative and `:p`-parameterised only; the parameters must be `:p1`, `:p2`, … in order. */
+/** Root-relative, `:p`/`:s`-parameterised only; markers numbered 1.. left to right. */
 export function isWellFormedTemplate(template: string): boolean {
-  if (utf8Bytes(template) > DIGEST_MAX_TEMPLATE_BYTES || !TEMPLATE_PATTERN.test(template))
+  if (
+    template.length === 0 ||
+    utf8Bytes(template) > DIGEST_MAX_TEMPLATE_BYTES ||
+    !TEMPLATE_PATTERN.test(template) ||
+    FORBIDDEN_TEXT_PATTERN.test(template)
+  )
     return false;
   const params = template.match(PARAM_PATTERN) ?? [];
   const slots = template.match(SLOT_PATTERN) ?? [];
-  return params.every((p, i) => p === `:p${i + 1}`) && slots.every((p, i) => p === `:s${i + 1}`);
+  return (
+    slots.length <= DIGEST_MAX_SLOTS &&
+    params.every((p, i) => p === `:p${i + 1}`) &&
+    slots.every((p, i) => p === `:s${i + 1}`)
+  );
 }
 
 /** Path segments of a well-formed template (leading slash dropped, trailing slash ignored). */
@@ -414,66 +489,113 @@ export function templateSegments(template: string): string[] {
   return template.split('/').filter((seg) => seg.length > 0);
 }
 
-/**
- * A literal segment that looks like DATA, not route vocabulary: digits, hex or base64-ish runs,
- * uuids, e-mail or phone shapes, an `@`, a 4+ digit run, letter+digit mixes of 8+ chars, or
- * anything over 40 chars. Never accepted in a template, whatever the extension marks
- * (C2b-1 A1: a per-coach slug next to a legitimately varied `:p` must not reach the model or
- * the memory).
- */
-export function isValueLikeSegment(segment: string): boolean {
-  const seg = decodeURIComponentSafe(segment);
-  if (seg.length > 40) return true;
-  if (/^[0-9]+$/.test(seg)) return true;
-  if (/[0-9]{4}/.test(seg)) return true;
-  if (/^[0-9a-f]{8,}$/i.test(seg)) return true;
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return true;
-  if (/[@+]/.test(seg) || /%40/i.test(segment)) return true;
-  if (/^[A-Za-z0-9_-]{8,}$/.test(seg) && /[0-9]/.test(seg) && /[A-Za-z]/.test(seg)) return true;
-  if (/^[A-Za-z0-9_-]{16,}$/.test(seg) && /[A-Z]/.test(seg) && /[a-z]/.test(seg)) return true;
-  return false;
-}
-
-function decodeURIComponentSafe(segment: string): string {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
-}
-
-/**
- * Per-segment provenance (C2b-1 A1): every literal segment index is listed in `structural`, no
- * `:p` index is, and no literal segment is value-like. Returns a fixed detail or null.
- */
-export function templateSegmentRefusal(template: string, structural: unknown): string | null {
-  const segments = templateSegments(template);
-  let marked: Set<number> | null = null;
-  if (structural !== undefined) {
-    if (
-      !Array.isArray(structural) ||
-      structural.some((i) => !Number.isInteger(i) || (i as number) < 0)
-    ) {
-      return 'structural must be a list of non-negative segment indices';
-    }
-    marked = new Set(structural as number[]);
-    if (marked.size !== structural.length) return 'structural indices must be distinct';
-    for (const i of marked)
-      if (i >= segments.length) return 'structural index outside the template';
-  }
-  for (const [i, seg] of segments.entries()) {
-    const isParam = MARKER_SEGMENT.test(seg);
-    if (marked !== null && isParam && marked.has(i))
-      return 'a :p parameter or :s slot cannot be marked structural';
-    if (marked !== null && !isParam && !marked.has(i))
-      return 'literal segment without structural provenance';
-    if (!isParam && isValueLikeSegment(seg)) return 'value-like literal segment in template';
-  }
-  return null;
-}
-
 export function templateParamCount(template: string): number {
   return (template.match(PARAM_PATTERN) ?? []).length;
+}
+
+export function templateSlotNames(template: string): string[] {
+  return template.match(SLOT_PATTERN) ?? [];
+}
+
+/**
+ * V-L0 literal rule (r4 directive 1): a literal segment is admitted only under the closed
+ * structural vocabulary; every other word is a session slot on the device. No hash promotion.
+ */
+export function literalSegmentRefusal(segment: string): string | null {
+  return pathLiteralRefusal(segment);
+}
+
+function checkTemplateLiterals(template: string, where: string, errors: Errors): void {
+  templateSegments(template).forEach((seg, i) => {
+    if (MARKER_SEGMENT.test(seg)) return;
+    const refusal = literalSegmentRefusal(seg);
+    if (refusal !== null) errors.add(`${where}[${i}]`, refusal);
+  });
+}
+
+function parseSlots(
+  raw: unknown,
+  template: string,
+  where: string,
+  errors: Errors,
+): DigestSlot[] | null {
+  if (!Array.isArray(raw) || raw.length > DIGEST_MAX_SLOTS) {
+    errors.add(where, 'slots must be a list of at most 16');
+    return null;
+  }
+  const expected = templateSlotNames(template);
+  if (raw.length !== expected.length) {
+    errors.add(where, 'slots must describe exactly the :s markers of the template');
+    return null;
+  }
+  const out: DigestSlot[] = [];
+  let ok = true;
+  raw.forEach((s, i) => {
+    const obj = asObject(s);
+    const at = `${where}[${i}]`;
+    if (obj === null || !checkKeys(obj, SLOT_KEYS, SLOT_KEYS, at, errors)) {
+      ok = false;
+      return;
+    }
+    if (obj.slot !== expected[i]) {
+      errors.add(`${at}.slot`, `slot must be ${expected[i]}`);
+      ok = false;
+    }
+    if (!(SLOT_CLASSES as readonly unknown[]).includes(obj.class)) {
+      errors.add(`${at}.class`, 'unknown slot class');
+      ok = false;
+    }
+    if (!isDistinctBucket(obj.distinct)) {
+      errors.add(`${at}.distinct`, 'distinct must be 1, 2 or "3+"');
+      ok = false;
+    }
+    if (ok)
+      out.push(
+        Object.freeze({
+          slot: obj.slot as string,
+          class: obj.class as SlotClass,
+          distinct: obj.distinct as DistinctBucket,
+        }),
+      );
+  });
+  return ok ? out : null;
+}
+
+function parseQueryKeys(raw: unknown, where: string, errors: Errors): DigestQueryKey[] | null {
+  if (!Array.isArray(raw) || raw.length > DIGEST_MAX_QUERY_KEYS) {
+    errors.add(where, 'queryKeys must be a list of at most 32');
+    return null;
+  }
+  const out: DigestQueryKey[] = [];
+  const seen = new Set<string>();
+  let ok = true;
+  raw.forEach((q, i) => {
+    const obj = asObject(q);
+    const at = `${where}[${i}]`;
+    if (obj === null || !checkKeys(obj, QUERY_KEY_KEYS, QUERY_KEY_KEYS, at, errors)) {
+      ok = false;
+      return;
+    }
+    const keyRefusal =
+      typeof obj.key !== 'string'
+        ? 'query key must be a string'
+        : CREDENTIAL_KEY_PATTERN.test(obj.key)
+          ? 'credential-pattern query key'
+          : queryKeyRefusal(obj.key);
+    if (keyRefusal !== null) {
+      errors.add(`${at}.key`, keyRefusal);
+      ok = false;
+    } else if (seen.has(obj.key as string)) {
+      errors.add(`${at}.key`, 'duplicate query key');
+      ok = false;
+    } else seen.add(obj.key as string);
+    if (!isDistinctBucket(obj.distinct)) {
+      errors.add(`${at}.distinct`, 'distinct must be 1, 2 or "3+"');
+      ok = false;
+    }
+    if (ok) out.push(Object.freeze({ key: obj.key as string, distinct: obj.distinct as 1 }));
+  });
+  return ok ? out : null;
 }
 
 function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTemplate | null {
@@ -485,72 +607,58 @@ function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTempl
   }
   if (!checkKeys(obj, TEMPLATE_KEYS, TEMPLATE_REQUIRED_KEYS, where, errors)) return null;
   let ok = true;
-  if (typeof obj.ref !== 'string' || !REF_PATTERN.test(obj.ref)) {
+  if (typeof obj.ref !== 'string' || !TEMPLATE_REF_PATTERN.test(obj.ref)) {
     errors.add(`${where}.ref`, 'ref must be t0..t63');
     ok = false;
   }
-  if (!(DIGEST_METHODS as readonly unknown[]).includes(obj.method)) {
+  const method = (DIGEST_METHODS as readonly unknown[]).includes(obj.method)
+    ? (obj.method as DigestMethod)
+    : null;
+  if (method === null) {
     errors.add(`${where}.method`, 'method must be GET or HEAD');
     ok = false;
   }
+  let slots: DigestSlot[] | null = null;
   if (typeof obj.template !== 'string' || !isWellFormedTemplate(obj.template)) {
-    errors.add(`${where}.template`, 'template must be root-relative and :p-parameterised only');
+    errors.add(
+      `${where}.template`,
+      'template must be root-relative and parameterised only by :p and :s',
+    );
     ok = false;
   } else {
-    const refusal = templateSegmentRefusal(obj.template, obj.structural);
-    if (refusal !== null) {
-      errors.add(`${where}.structural`, refusal);
-      ok = false;
-    }
+    checkTemplateLiterals(obj.template, `${where}.template`, errors);
+    slots = parseSlots(obj.slots, obj.template, `${where}.slots`, errors);
+    if (slots === null) ok = false;
   }
-  if (
-    !isStringList(obj.queryKeys, DIGEST_MAX_QUERY_KEYS) ||
-    obj.queryKeys.some((k) => !QUERY_KEY_PATTERN.test(k) || CREDENTIAL_KEY_PATTERN.test(k)) ||
-    new Set(obj.queryKeys).size !== obj.queryKeys.length
-  ) {
-    errors.add(`${where}.queryKeys`, 'queryKeys must be distinct, credential-free names');
-    ok = false;
-  }
-  const variants = obj.queryVariants === undefined ? null : asObject(obj.queryVariants);
-  if (
-    obj.queryVariants !== undefined &&
-    (variants === null ||
-      !Array.isArray(obj.queryKeys) ||
-      Object.keys(variants).some((k) => !(obj.queryKeys as unknown[]).includes(k)) ||
-      Object.values(variants).some((n) => !Number.isInteger(n) || (n as number) < 0))
-  ) {
-    errors.add(`${where}.queryVariants`, 'queryVariants must count query keys of this template');
-    ok = false;
-  }
-  if (
-    obj.withheldQueryKeys !== undefined &&
-    (!Number.isInteger(obj.withheldQueryKeys) || (obj.withheldQueryKeys as number) < 0)
-  ) {
-    errors.add(`${where}.withheldQueryKeys`, 'withheldQueryKeys must be a non-negative integer');
-    ok = false;
-  }
-  if (
-    obj.refusal !== undefined &&
-    obj.refusal !== null &&
-    (typeof obj.refusal !== 'string' || !REASON_TOKEN_PATTERN.test(obj.refusal))
-  ) {
-    errors.add(`${where}.refusal`, 'refusal must be null or a closed reason token');
-    ok = false;
-  }
+  const queryKeys = parseQueryKeys(obj.queryKeys, `${where}.queryKeys`, errors);
+  if (queryKeys === null) ok = false;
   if (
     !Array.isArray(obj.statuses) ||
     obj.statuses.length > DIGEST_MAX_STATUSES ||
-    obj.statuses.some((s) => !Number.isInteger(s) || (s as number) < 100 || (s as number) > 599)
+    obj.statuses.some((s) => !Number.isInteger(s) || (s as number) < 100 || (s as number) > 599) ||
+    new Set(obj.statuses).size !== obj.statuses.length
   ) {
-    errors.add(`${where}.statuses`, 'statuses must be HTTP status integers');
+    errors.add(`${where}.statuses`, 'statuses must be distinct HTTP status integers');
     ok = false;
   }
-  if (!Number.isInteger(obj.observations) || (obj.observations as number) < 0) {
-    errors.add(`${where}.observations`, 'observations must be a non-negative integer');
+  if (
+    !Number.isInteger(obj.observations) ||
+    (obj.observations as number) < 0 ||
+    (obj.observations as number) > 1_000_000
+  ) {
+    errors.add(`${where}.observations`, 'observations must be a bounded non-negative integer');
     ok = false;
   }
   if (!(TEMPLATE_ROLES as readonly unknown[]).includes(obj.role)) {
     errors.add(`${where}.role`, 'role must be collection|single|refused');
+    ok = false;
+  } else if (obj.role === 'refused') {
+    if (!(REFUSED_KINDS as readonly unknown[]).includes(obj.refusedKind)) {
+      errors.add(`${where}.refusedKind`, 'a refused template needs refusedKind');
+      ok = false;
+    }
+  } else if (obj.refusedKind !== undefined) {
+    errors.add(`${where}.refusedKind`, 'refusedKind is for role refused only');
     ok = false;
   }
   const shape = parseShape(obj.shape, `${where}.shape`, 0, errors);
@@ -559,9 +667,12 @@ function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTempl
   if (
     !Array.isArray(paths) ||
     paths.length > DIGEST_MAX_COLLECTION_PATHS ||
-    paths.some((p) => !isStringList(p, DIGEST_MAX_SHAPE_DEPTH) || p.some((k) => k.length === 0))
+    paths.some(
+      (p) => !isStringList(p, DIGEST_MAX_SHAPE_DEPTH) || p.some((k) => !isBoundedText(k)),
+    ) ||
+    new Set(paths.map((p) => JSON.stringify(p))).size !== paths.length
   ) {
-    errors.add(`${where}.collectionPaths`, 'collectionPaths must be at most 4 key paths');
+    errors.add(`${where}.collectionPaths`, 'collectionPaths must be at most 4 distinct key paths');
     ok = false;
   } else if (shape !== null) {
     paths.forEach((p: string[], i) => {
@@ -574,103 +685,178 @@ function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTempl
       errors.add(`${where}.collectionPaths`, 'a collection template needs a collection path');
       ok = false;
     }
+    if (obj.role !== 'collection' && paths.length > 0) {
+      errors.add(`${where}.collectionPaths`, 'only a collection template lists collection paths');
+      ok = false;
+    }
   }
-  if (!ok || shape === null) return null;
+  if (!ok || shape === null || slots === null || queryKeys === null || method === null) return null;
   return Object.freeze({
     ref: obj.ref as string,
-    method: obj.method as DigestMethod,
+    method,
     template: obj.template as string,
-    ...(obj.structural === undefined
-      ? {}
-      : { structural: Object.freeze([...(obj.structural as number[])].sort((a, b) => a - b)) }),
-    queryKeys: Object.freeze([...(obj.queryKeys as string[])]),
-    ...(variants === null
-      ? {}
-      : { queryVariants: Object.freeze({ ...(variants as Record<string, number>) }) }),
-    ...(obj.withheldQueryKeys === undefined
-      ? {}
-      : { withheldQueryKeys: obj.withheldQueryKeys as number }),
+    slots: Object.freeze(slots),
+    queryKeys: Object.freeze(queryKeys),
     statuses: Object.freeze([...(obj.statuses as number[])]),
     observations: obj.observations as number,
     role: obj.role as TemplateRole,
-    ...(obj.refusal === undefined ? {} : { refusal: obj.refusal as string | null }),
+    ...(obj.refusedKind === undefined ? {} : { refusedKind: obj.refusedKind as RefusedKind }),
     collectionPaths: Object.freeze((paths as string[][]).map((p) => Object.freeze([...p]))),
     shape,
   });
 }
 
-/** A slot marker or a value of the fixed structural grammar (media types, languages, encodings). */
-export function isStructuralHeaderValue(value: string): boolean {
-  return (
-    HEADER_SLOT_PATTERN.test(value) || STRUCTURAL_HEADER_VALUE_PATTERNS.some((p) => p.test(value))
-  );
+function parseTruncated(raw: unknown, errors: Errors): DigestTruncation | null {
+  const obj = asObject(raw);
+  if (obj === null || !checkKeys(obj, TRUNCATED_KEYS, TRUNCATED_KEYS, 'truncated', errors)) {
+    if (obj === null) errors.add('truncated', 'truncated must be an object');
+    return null;
+  }
+  if (
+    typeof obj.templates !== 'boolean' ||
+    typeof obj.linkTemplates !== 'boolean' ||
+    !Number.isInteger(obj.shapes) ||
+    (obj.shapes as number) < 0
+  ) {
+    errors.add('truncated', 'truncated must be {templates, linkTemplates: boolean; shapes: int}');
+    return null;
+  }
+  return Object.freeze({
+    templates: obj.templates,
+    linkTemplates: obj.linkTemplates,
+    shapes: obj.shapes as number,
+  });
 }
 
-function parseHeaders(raw: unknown, errors: Errors): Record<string, string> | null {
-  const obj = asObject(raw);
-  if (obj === null) {
-    errors.add('constantHeaders', 'constantHeaders must be an object');
+function parseLinkTemplates(raw: unknown, errors: Errors): DigestLinkTemplate[] | null {
+  if (!Array.isArray(raw) || raw.length > DIGEST_MAX_LINK_TEMPLATES) {
+    errors.add('linkTemplates', 'linkTemplates must be a list of at most 64');
     return null;
   }
-  const names = Object.keys(obj);
-  if (names.length > DIGEST_MAX_HEADERS) {
-    errors.add('constantHeaders', 'more than 16 headers');
-    return null;
-  }
-  const out: Record<string, string> = {};
+  const out: DigestLinkTemplate[] = [];
+  const templates = new Set<string>();
   let ok = true;
-  for (const name of names) {
-    const value = obj[name];
-    if (
-      !HEADER_NAME_PATTERN.test(name) ||
-      CREDENTIAL_KEY_PATTERN.test(name) ||
-      SEC_HEADER_PATTERN.test(name)
-    ) {
-      errors.add(`constantHeaders.${name}`, 'credential or non-constant header name');
+  raw.forEach((l, i) => {
+    const where = `linkTemplates[${i}]`;
+    const obj = asObject(l);
+    if (obj === null || !checkKeys(obj, LINK_KEYS, LINK_KEYS, where, errors)) {
       ok = false;
-    } else if (
-      typeof value !== 'string' ||
-      !HEADER_VALUE_PATTERN.test(value) ||
-      DIGIT_RUN_PATTERN.test(value)
-    ) {
-      errors.add(`constantHeaders.${name}`, 'header value fails the constant-header rule');
+      return;
+    }
+    if (obj.ref !== `l${i}`) {
+      errors.add(`${where}.ref`, `ref must be l${i} (position in canonical order)`);
       ok = false;
-    } else if (!isStructuralHeaderValue(value)) {
-      // L0 r3: a value the extension could not prove structural travels as a session slot
-      // (`:s1`), never as bytes; a tenant marker or build token never reaches the model.
-      errors.add(
-        `constantHeaders.${name}`,
-        'header value without structural provenance; send a session slot',
+    }
+    if (typeof obj.template !== 'string' || !isWellFormedTemplate(obj.template)) {
+      errors.add(`${where}.template`, 'link template must be root-relative and :p/:s only');
+      ok = false;
+    } else {
+      checkTemplateLiterals(obj.template, `${where}.template`, errors);
+      if (templates.has(obj.template)) {
+        errors.add(`${where}.template`, 'duplicate link template');
+        ok = false;
+      }
+      templates.add(obj.template);
+    }
+    if (typeof obj.captured !== 'boolean') {
+      errors.add(`${where}.captured`, 'captured must be a boolean');
+      ok = false;
+    }
+    if (ok)
+      out.push(
+        Object.freeze({
+          ref: obj.ref as string,
+          template: obj.template as string,
+          captured: obj.captured as boolean,
+        }),
       );
+  });
+  if (ok) {
+    const sorted = [...out].sort((a, b) => compareText(a.template, b.template));
+    if (sorted.some((l, i) => l !== out[i])) {
+      errors.add('linkTemplates', 'link templates must be in canonical (code-unit) order');
       ok = false;
-    } else out[name] = value;
+    }
   }
   return ok ? out : null;
 }
 
+function parseHeaderNames(raw: unknown, errors: Errors): string[] | null {
+  if (!isStringList(raw, DIGEST_MAX_HEADER_NAMES)) {
+    errors.add('constantHeaderNames', 'constantHeaderNames must be a list of at most 16 names');
+    return null;
+  }
+  let ok = true;
+  const seen = new Set<string>();
+  raw.forEach((name, i) => {
+    const refusal = CREDENTIAL_KEY_PATTERN.test(name)
+      ? 'credential header name'
+      : headerNameRefusal(name);
+    if (refusal !== null) {
+      errors.add(`constantHeaderNames[${i}]`, refusal);
+      ok = false;
+    } else if (seen.has(name.toLowerCase())) {
+      errors.add(`constantHeaderNames[${i}]`, 'duplicate header name');
+      ok = false;
+    } else seen.add(name.toLowerCase());
+  });
+  return ok ? [...raw] : null;
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /**
- * V-L0: strict keys, bounds, canonical slug, root-relative `:p`-only templates, distinct refs,
- * credential-free names, collection paths that reach arrays. Total: every refusal is reported
- * with a stable path, nothing throws.
+ * The template key of D-L0-3/D-L0-5 in its canonical string form:
+ * `JSON.stringify([method, slotted template, shapeSignature])`, byte-equal to one fingerprint
+ * material line. `shapeSignature` is supplied by `fingerprint.ts` (one function over ShapeNode).
+ */
+export function templateKeyString(method: string, template: string, signature: string): string {
+  return JSON.stringify([method, template, signature]);
+}
+
+/**
+ * The shape signature that enters a template's key: the item shape at `collectionPaths[0]`
+ * (depth 2), or `unsupported` when no collection path reaches an array (single/refused).
+ */
+export function templateShapeSignature(template: {
+  readonly collectionPaths: readonly (readonly string[])[];
+  readonly shape: ShapeNode;
+}): string {
+  const first = template.collectionPaths[0];
+  const item = first === undefined ? null : itemShapeAt(template.shape, first);
+  return item === null ? 'unsupported' : shapeSignature(item);
+}
+
+export function templateKey(template: DigestTemplate): string {
+  return templateKeyString(template.method, template.template, templateShapeSignature(template));
+}
+
+/**
+ * V-L0: strict keys at every level, bounds, canonical slug, root-relative `:p`/`:s` templates
+ * whose literals are closed-vocabulary words only, typed slots matching the template, query key NAMES with
+ * distinct buckets, header NAMES only, refs in canonical order, collection paths that reach
+ * arrays, `refusedKind` for refused templates only, `missingFamilies` in round 2 only, and the
+ * 32 KiB canonical-JSON bound. Total: every refusal is reported with a stable path.
  */
 export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDigestV1> {
-  const errors = new Errors();
+  const errors = new Errors('V-L0');
   const obj = asObject(raw);
   if (obj === null) {
     errors.add('', 'digest must be an object');
     return { ok: false, errors: errors.list };
   }
-  if (!checkKeys(obj, DIGEST_KEYS, DIGEST_REQUIRED_KEYS, 'digest', errors)) {
+  if (!checkKeys(obj, DIGEST_KEYS, DIGEST_KEYS, 'digest', errors)) {
     return { ok: false, errors: errors.list };
   }
   if (obj.digestVersion !== DIGEST_VERSION) errors.add('digestVersion', 'digestVersion must be 1');
-  if (!isCanonicalPlatform(obj.sourcePlatform)) {
+  const slug = isCanonicalPlatform(obj.sourcePlatform) ? obj.sourcePlatform : null;
+  if (slug === null || DIGIT_RUN_PATTERN.test(slug)) {
     errors.add('sourcePlatform', 'sourcePlatform must be a canonical platform token');
   }
   if (obj.round !== 1 && obj.round !== 2) errors.add('round', 'round must be 1 or 2');
-  if (obj.truncated !== undefined && typeof obj.truncated !== 'boolean') {
-    errors.add('truncated', 'truncated must be a boolean');
-  }
+  const truncated = parseTruncated(obj.truncated, errors);
 
   const templates: DigestTemplate[] = [];
   if (!Array.isArray(obj.templates) || obj.templates.length > DIGEST_MAX_TEMPLATES) {
@@ -680,47 +866,29 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
     obj.templates.forEach((t, i) => {
       const parsed = parseTemplate(t, i, errors);
       if (parsed === null) return;
+      if (parsed.ref !== `t${i}`)
+        errors.add(`templates[${i}].ref`, `ref must be t${i} (position in canonical order)`);
       if (refs.has(parsed.ref)) errors.add(`templates[${i}].ref`, 'duplicate ref');
       refs.add(parsed.ref);
       templates.push(parsed);
     });
+    // Canonical order (D-L0-3): sorted by the template key; one template per key.
+    const keys = templates.map((t) =>
+      templateKeyString(t.method, t.template, templateShapeSignature(t)),
+    );
+    keys.forEach((key, i) => {
+      if (i > 0 && !(keys[i - 1] < key))
+        errors.add(
+          `templates[${i}]`,
+          keys[i - 1] === key
+            ? 'duplicate template key'
+            : 'templates must be in canonical order (method, template, shapeSignature)',
+        );
+    });
   }
 
-  if (
-    !isStringList(obj.linkTemplates, DIGEST_MAX_LINK_TEMPLATES) ||
-    obj.linkTemplates.some(
-      (t) =>
-        !isWellFormedTemplate(t) ||
-        templateSegments(t).some((seg) => !MARKER_SEGMENT.test(seg) && isValueLikeSegment(seg)),
-    ) ||
-    new Set(obj.linkTemplates).size !== obj.linkTemplates.length
-  ) {
-    errors.add('linkTemplates', 'linkTemplates must be distinct root-relative :p-only paths');
-  }
-  if (
-    obj.exploredLinkTemplates !== undefined &&
-    (!isStringList(obj.exploredLinkTemplates, DIGEST_MAX_LINK_TEMPLATES) ||
-      !Array.isArray(obj.linkTemplates) ||
-      obj.exploredLinkTemplates.some((t) => !(obj.linkTemplates as unknown[]).includes(t)) ||
-      new Set(obj.exploredLinkTemplates).size !== obj.exploredLinkTemplates.length)
-  ) {
-    errors.add('exploredLinkTemplates', 'exploredLinkTemplates must be distinct linkTemplates');
-  }
-  if (
-    obj.vocabularyVersion !== undefined &&
-    (!Number.isInteger(obj.vocabularyVersion) || (obj.vocabularyVersion as number) < 1)
-  ) {
-    errors.add('vocabularyVersion', 'vocabularyVersion must be a positive integer');
-  }
-  if (
-    obj.originLabelsWithheld !== undefined &&
-    (!Number.isInteger(obj.originLabelsWithheld) || (obj.originLabelsWithheld as number) < 0)
-  ) {
-    errors.add('originLabelsWithheld', 'originLabelsWithheld must be a non-negative integer');
-  }
-  const withheld = parseWithheld(obj.withheld, errors);
-  const slotProofs = parseSlotProofs(obj.slotProofs, errors);
-  const headers = parseHeaders(obj.constantHeaders, errors);
+  const linkTemplates = parseLinkTemplates(obj.linkTemplates, errors);
+  const headerNames = parseHeaderNames(obj.constantHeaderNames, errors);
   if (
     !isStringList(obj.missingFamilies, CANONICAL_FAMILIES.length) ||
     obj.missingFamilies.some((f) => !(CANONICAL_FAMILIES as readonly string[]).includes(f)) ||
@@ -731,96 +899,46 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
     errors.add('missingFamilies', 'missingFamilies is round 2 only');
   }
 
-  if (errors.list.length > 0 || headers === null) return { ok: false, errors: errors.list };
+  if (
+    errors.any ||
+    truncated === null ||
+    linkTemplates === null ||
+    headerNames === null ||
+    slug === null
+  )
+    return { ok: false, errors: errors.list };
   const digest: StructureDigestV1 = Object.freeze({
     digestVersion: DIGEST_VERSION,
-    sourcePlatform: obj.sourcePlatform as string,
+    sourcePlatform: slug,
     round: obj.round as 1 | 2,
+    truncated,
     templates: Object.freeze(templates),
-    linkTemplates: Object.freeze([...(obj.linkTemplates as string[])]),
-    constantHeaders: Object.freeze(headers),
+    linkTemplates: Object.freeze(linkTemplates),
+    constantHeaderNames: Object.freeze(headerNames),
     missingFamilies: Object.freeze([...(obj.missingFamilies as CanonicalFamily[])]),
-    ...(obj.vocabularyVersion === undefined
-      ? {}
-      : { vocabularyVersion: obj.vocabularyVersion as number }),
-    ...(obj.originLabelsWithheld === undefined
-      ? {}
-      : { originLabelsWithheld: obj.originLabelsWithheld as number }),
-    ...(obj.exploredLinkTemplates === undefined
-      ? {}
-      : { exploredLinkTemplates: Object.freeze([...(obj.exploredLinkTemplates as string[])]) }),
-    ...(obj.truncated === undefined ? {} : { truncated: obj.truncated as boolean }),
-    ...(withheld === null ? {} : { withheld }),
-    ...(slotProofs === null ? {} : { slotProofs }),
   });
+  const bytes = utf8Bytes(JSON.stringify(digest));
+  if (bytes > DIGEST_MAX_BYTES) {
+    errors.add('digest', `digest over ${DIGEST_MAX_BYTES} bytes`);
+    return { ok: false, errors: errors.list };
+  }
   return { ok: true, value: digest };
 }
 
-/** `withheld`: at most 32 `{reason, count}` entries with closed reason tokens (absent ⇒ null). */
-function parseWithheld(raw: unknown, errors: Errors): readonly DigestWithheld[] | null {
-  if (raw === undefined) return null;
-  if (
-    !Array.isArray(raw) ||
-    raw.length > DIGEST_MAX_WITHHELD ||
-    raw.some((w) => {
-      const o = asObject(w);
-      return (
-        o === null ||
-        Object.keys(o).some((k) => k !== 'reason' && k !== 'count') ||
-        typeof o.reason !== 'string' ||
-        !REASON_TOKEN_PATTERN.test(o.reason) ||
-        !Number.isInteger(o.count) ||
-        (o.count as number) < 0
-      );
-    })
-  ) {
-    errors.add('withheld', 'withheld must list {reason, count} with closed reason tokens');
-    return null;
-  }
-  return Object.freeze(
-    (raw as { reason: string; count: number }[]).map((w) =>
-      Object.freeze({ reason: w.reason, count: w.count }),
-    ),
-  );
+/** Any truncation leaves the closure open (D-L0-6.1 i-b); exposed for L1b's `closure.ts`. */
+export function isTruncated(digest: StructureDigestV1): boolean {
+  const t = digest.truncated;
+  return t.templates || t.linkTemplates || t.shapes > 0;
 }
 
-/** `slotProofs`: ref → ≤ 16 lower-case hex strings of 16..128 chars (opaque salted hashes). */
-function parseSlotProofs(
-  raw: unknown,
-  errors: Errors,
-): Readonly<Record<string, readonly string[]>> | null {
-  if (raw === undefined) return null;
-  const obj = asObject(raw);
-  if (
-    obj === null ||
-    Object.keys(obj).length > DIGEST_MAX_TEMPLATES ||
-    Object.entries(obj).some(
-      ([ref, proofs]) =>
-        !REF_PATTERN.test(ref) ||
-        !isStringList(proofs, DIGEST_MAX_SLOT_PROOFS) ||
-        proofs.some((p) => !SLOT_PROOF_PATTERN.test(p)),
-    )
-  ) {
-    errors.add('slotProofs', 'slotProofs must map refs to bounded hex proofs');
-    return null;
-  }
-  const out: Record<string, readonly string[]> = {};
-  for (const [ref, proofs] of Object.entries(obj))
-    out[ref] = Object.freeze([...(proofs as string[])]);
-  return Object.freeze(out);
+/** Link templates not matching a captured template: the device's explore obligation (i-c). */
+export function uncapturedLinkTemplates(digest: StructureDigestV1): readonly DigestLinkTemplate[] {
+  return digest.linkTemplates.filter((l) => !l.captured);
 }
 
-/** Link templates the extension saw but did not visit (closure marker for L3). */
-export function unexploredLinkTemplates(digest: StructureDigestV1): readonly string[] {
-  const explored = new Set(digest.exploredLinkTemplates ?? []);
-  return digest.linkTemplates.filter((t) => !explored.has(t));
-}
-
-/** Query keys observed with 2+ distinct values on a template (a filter may hide rows). */
+/** Query keys observed with 2+ distinct values on a template (a filter may hide rows; i-d). */
 export function filterVariantKeys(template: DigestTemplate): readonly string[] {
-  return Object.entries(template.queryVariants ?? {})
-    .filter(([, n]) => n >= 2)
-    .map(([k]) => k);
+  return template.queryKeys.filter((q) => q.distinct !== 1).map((q) => q.key);
 }
 
 /** The templates the model may build steps on (role `collection`), keyed by ref. */

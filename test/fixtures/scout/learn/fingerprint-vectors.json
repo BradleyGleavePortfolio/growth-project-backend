@@ -1,26 +1,28 @@
 {
-  "description": "Canonical structure-fingerprint vectors (L0 D-L0-5). fingerprint = lower-case hex sha256 over material.join('\\n') encoded as UTF-8; material = sorted, de-duplicated JSON tuples [method, template, itemShapeSignature(itemShape, depth 2)] for every template with role 'collection'. itemShape = the `items` node of the array at collectionPaths[0] (a missing or non-array node signs as 'unsupported'). itemShapeSignature follows shared/blueprint/shapes.js: object{child*count,...} with children sorted, array[items], map[values] for objects keyed by data, scalars by kind, and object(*)/array(*)/map(*) once depth 2 is reached. Vectors 'two-collections' and 'two-collections-reordered-refs' must hash identically; the backend copy (test/fixtures/scout/learn/fingerprint-vectors.json) is byte-equal except that sourcePlatform is neutralised to site.example in every vector (vendor names are not allowed in backend fixtures; sourcePlatform never enters the material).",
+  "description": "Canonical structure-fingerprint vectors (L0 r3 D-L0-5), digests in StructureDigestV1 r3 form (typed slots, queryKeys with distinct buckets, header names, truncated object, link template refs). fingerprint = lower-case hex sha256 over material.join('\\n') encoded as UTF-8; material = sorted, de-duplicated JSON tuples [method, slotted template, shapeSignature(itemShape, depth 2)] for every template with role 'collection'. itemShape = the `items` node of the array at collectionPaths[0] (a missing or non-array node signs as 'unsupported'). shapeSignature: object{child*count,...} with children sorted, array[items], map[values], scalars by kind, and object(*)/array(*)/map(*) once depth 2 is reached. fingerprint_r1 and fingerprint_full are this function over the round-1 and the union digest. 'two-collections', 'two-collections-reordered-refs' and 'single-and-refused-ignored' hash identically; 'two-collections-reordered-refs' and 'depth-two-cutoff-and-bare-array' are deliberately NOT valid V-L0 digests (non-canonical ref order; a container beyond depth 4) and are computed over the raw form. sourcePlatform is neutralised to site.example (it never enters the material).",
   "vectors": [
     {
       "name": "legacy-parity-fixture",
       "digest": {
         "digestVersion": 1,
-        "vocabularyVersion": 1,
         "sourcePlatform": "site.example",
-        "originLabelsWithheld": 1,
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
             "template": "/proxy/api/auth/session",
+            "slots": [],
             "queryKeys": [],
-            "queryVariants": {},
-            "withheldQueryKeys": 0,
             "statuses": [200],
             "observations": 1,
             "role": "refused",
-            "refusal": "unsafe_path_key",
+            "refusedKind": "not_collection",
             "collectionPaths": [],
             "shape": {
               "kind": "map",
@@ -28,23 +30,29 @@
                 "kind": "string",
                 "class": "text",
                 "lengthBucket": "≤32"
-              }
+              },
+              "keyClass": "text",
+              "sizeBucket": "2-9"
             }
           },
           {
             "ref": "t1",
             "method": "GET",
             "template": "/proxy/api/clients",
-            "queryKeys": ["page", "per_page"],
-            "queryVariants": {
-              "page": 2,
-              "per_page": 1
-            },
-            "withheldQueryKeys": 1,
+            "slots": [],
+            "queryKeys": [
+              {
+                "key": "page",
+                "distinct": 2
+              },
+              {
+                "key": "per_page",
+                "distinct": 1
+              }
+            ],
             "statuses": [200],
             "observations": 2,
             "role": "collection",
-            "refusal": null,
             "collectionPaths": [["clients"]],
             "shape": {
               "kind": "object",
@@ -87,13 +95,11 @@
             "ref": "t2",
             "method": "GET",
             "template": "/proxy/api/clients/:p1/notes",
+            "slots": [],
             "queryKeys": [],
-            "queryVariants": {},
-            "withheldQueryKeys": 0,
             "statuses": [200],
             "observations": 2,
             "role": "collection",
-            "refusal": null,
             "collectionPaths": [["notes"]],
             "shape": {
               "kind": "object",
@@ -128,13 +134,12 @@
             "ref": "t3",
             "method": "GET",
             "template": "/proxy/api/trainers/me",
+            "slots": [],
             "queryKeys": [],
-            "queryVariants": {},
-            "withheldQueryKeys": 0,
             "statuses": [200],
             "observations": 1,
             "role": "refused",
-            "refusal": "metadata_only",
+            "refusedKind": "not_collection",
             "collectionPaths": [],
             "shape": {
               "kind": "object",
@@ -172,25 +177,34 @@
           }
         ],
         "linkTemplates": [
-          "/clients",
-          "/clients/:p1",
-          "/clients/:p1/notes",
-          "/dashboard",
-          "/trainers/me/settings"
-        ],
-        "exploredLinkTemplates": [],
-        "constantHeaders": {
-          "accept": "application/json, text/html",
-          "role": ":h1"
-        },
-        "missingFamilies": [],
-        "truncated": false,
-        "withheld": [
           {
-            "reason": "foreign_link",
-            "count": 1
+            "ref": "l0",
+            "template": "/clients",
+            "captured": false
+          },
+          {
+            "ref": "l1",
+            "template": "/clients/:p1",
+            "captured": false
+          },
+          {
+            "ref": "l2",
+            "template": "/clients/:p1/notes",
+            "captured": false
+          },
+          {
+            "ref": "l3",
+            "template": "/dashboard",
+            "captured": false
+          },
+          {
+            "ref": "l4",
+            "template": "/trainers/me/settings",
+            "captured": false
           }
-        ]
+        ],
+        "constantHeaderNames": ["accept", "role"],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/proxy/api/clients\",\"object{number*1,string*2}\"]",
@@ -204,11 +218,23 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
             "template": "/:s1/clients",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -251,6 +277,13 @@
             "ref": "t1",
             "method": "GET",
             "template": "/:s1/clients/:p1/notes",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -291,9 +324,8 @@
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/clients\",\"object{number*1,string*2}\"]",
@@ -307,11 +339,23 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
             "template": "/:s1/clients/:p1/notes",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -354,6 +398,13 @@
             "ref": "t1",
             "method": "GET",
             "template": "/:s1/clients",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -394,9 +445,8 @@
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/clients\",\"object{number*1,string*2}\"]",
@@ -410,95 +460,28 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
-            "template": "/:s1/clients",
-            "queryKeys": [],
-            "statuses": [200],
-            "observations": 2,
-            "role": "collection",
-            "collectionPaths": [["rows"]],
-            "shape": {
-              "kind": "object",
-              "keys": {
-                "rows": {
-                  "kind": "array",
-                  "items": {
-                    "kind": "object",
-                    "keys": {
-                      "id": {
-                        "kind": "number",
-                        "class": "int"
-                      },
-                      "name": {
-                        "kind": "string",
-                        "class": "text",
-                        "lengthBucket": "≤32"
-                      },
-                      "email": {
-                        "kind": "string",
-                        "class": "email_like",
-                        "lengthBucket": "≤32"
-                      }
-                    }
-                  },
-                  "lengthBucket": "2-9"
-                },
-                "total": {
-                  "kind": "number",
-                  "class": "int"
-                }
-              }
-            }
-          },
-          {
-            "ref": "t1",
-            "method": "GET",
-            "template": "/:s1/clients/:p1/notes",
-            "queryKeys": [],
-            "statuses": [200],
-            "observations": 2,
-            "role": "collection",
-            "collectionPaths": [["rows"]],
-            "shape": {
-              "kind": "object",
-              "keys": {
-                "rows": {
-                  "kind": "array",
-                  "items": {
-                    "kind": "object",
-                    "keys": {
-                      "id": {
-                        "kind": "number",
-                        "class": "int"
-                      },
-                      "body": {
-                        "kind": "string",
-                        "class": "text",
-                        "lengthBucket": "≤256"
-                      },
-                      "created_at": {
-                        "kind": "string",
-                        "class": "iso_date",
-                        "lengthBucket": "≤32"
-                      }
-                    }
-                  },
-                  "lengthBucket": "2-9"
-                },
-                "total": {
-                  "kind": "number",
-                  "class": "int"
-                }
-              }
-            }
-          },
-          {
-            "ref": "t2",
-            "method": "GET",
             "template": "/:s1/:s2",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s2",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -520,13 +503,31 @@
             }
           },
           {
-            "ref": "t3",
+            "ref": "t1",
             "method": "GET",
             "template": "/:s1/:s2/:s3",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s2",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s3",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
             "role": "refused",
+            "refusedKind": "not_collection",
             "collectionPaths": [],
             "shape": {
               "kind": "object",
@@ -550,12 +551,109 @@
                 }
               }
             }
+          },
+          {
+            "ref": "t2",
+            "method": "GET",
+            "template": "/:s1/clients",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
+            "queryKeys": [],
+            "statuses": [200],
+            "observations": 2,
+            "role": "collection",
+            "collectionPaths": [["rows"]],
+            "shape": {
+              "kind": "object",
+              "keys": {
+                "rows": {
+                  "kind": "array",
+                  "items": {
+                    "kind": "object",
+                    "keys": {
+                      "id": {
+                        "kind": "number",
+                        "class": "int"
+                      },
+                      "name": {
+                        "kind": "string",
+                        "class": "text",
+                        "lengthBucket": "≤32"
+                      },
+                      "email": {
+                        "kind": "string",
+                        "class": "email_like",
+                        "lengthBucket": "≤32"
+                      }
+                    }
+                  },
+                  "lengthBucket": "2-9"
+                },
+                "total": {
+                  "kind": "number",
+                  "class": "int"
+                }
+              }
+            }
+          },
+          {
+            "ref": "t3",
+            "method": "GET",
+            "template": "/:s1/clients/:p1/notes",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
+            "queryKeys": [],
+            "statuses": [200],
+            "observations": 2,
+            "role": "collection",
+            "collectionPaths": [["rows"]],
+            "shape": {
+              "kind": "object",
+              "keys": {
+                "rows": {
+                  "kind": "array",
+                  "items": {
+                    "kind": "object",
+                    "keys": {
+                      "id": {
+                        "kind": "number",
+                        "class": "int"
+                      },
+                      "body": {
+                        "kind": "string",
+                        "class": "text",
+                        "lengthBucket": "≤256"
+                      },
+                      "created_at": {
+                        "kind": "string",
+                        "class": "iso_date",
+                        "lengthBucket": "≤32"
+                      }
+                    }
+                  },
+                  "lengthBucket": "2-9"
+                },
+                "total": {
+                  "kind": "number",
+                  "class": "int"
+                }
+              }
+            }
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/clients\",\"object{number*1,string*2}\"]",
@@ -569,11 +667,23 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
             "template": "/:s1/clients",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -616,6 +726,13 @@
             "ref": "t1",
             "method": "GET",
             "template": "/:s1/clients/:p1/notes",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -659,9 +776,8 @@
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/clients\",\"object{number*1,string*2}\"]",
@@ -675,11 +791,23 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
             "template": "/:s1/clients",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -722,6 +850,13 @@
             "ref": "t1",
             "method": "GET",
             "template": "/:s1/clients/:p1/comments",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -762,9 +897,8 @@
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/clients\",\"object{number*1,string*2}\"]",
@@ -778,11 +912,63 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
             "ref": "t0",
             "method": "GET",
+            "template": "/:s1/exercises",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
+            "queryKeys": [
+              {
+                "key": "page",
+                "distinct": 1
+              }
+            ],
+            "statuses": [200],
+            "observations": 1,
+            "role": "collection",
+            "collectionPaths": [[]],
+            "shape": {
+              "kind": "array",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "number",
+                    "class": "int"
+                  },
+                  "name": {
+                    "kind": "string",
+                    "class": "text",
+                    "lengthBucket": "≤32"
+                  }
+                }
+              },
+              "lengthBucket": "10-99"
+            }
+          },
+          {
+            "ref": "t1",
+            "method": "GET",
             "template": "/:s1/programs",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -860,7 +1046,9 @@
                         "values": {
                           "kind": "number",
                           "class": "int"
-                        }
+                        },
+                        "keyClass": "text",
+                        "sizeBucket": "2-9"
                       },
                       "byWeek": {
                         "kind": "map",
@@ -868,8 +1056,12 @@
                           "kind": "map",
                           "values": {
                             "kind": "boolean"
-                          }
-                        }
+                          },
+                          "keyClass": "text",
+                          "sizeBucket": "2-9"
+                        },
+                        "keyClass": "text",
+                        "sizeBucket": "2-9"
                       }
                     }
                   },
@@ -881,40 +1073,11 @@
                 }
               }
             }
-          },
-          {
-            "ref": "t1",
-            "method": "GET",
-            "template": "/:s1/exercises",
-            "queryKeys": ["page"],
-            "statuses": [200],
-            "observations": 1,
-            "role": "collection",
-            "collectionPaths": [[]],
-            "shape": {
-              "kind": "array",
-              "items": {
-                "kind": "object",
-                "keys": {
-                  "id": {
-                    "kind": "number",
-                    "class": "int"
-                  },
-                  "name": {
-                    "kind": "string",
-                    "class": "text",
-                    "lengthBucket": "≤32"
-                  }
-                }
-              },
-              "lengthBucket": "10-99"
-            }
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [
         "[\"GET\",\"/:s1/exercises\",\"object{number*1,string*1}\"]",
@@ -928,11 +1091,28 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [
           {
-            "ref": "t2",
+            "ref": "t0",
             "method": "GET",
             "template": "/:s1/:s2",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s2",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
@@ -954,13 +1134,31 @@
             }
           },
           {
-            "ref": "t3",
+            "ref": "t1",
             "method": "GET",
             "template": "/:s1/:s2/:s3",
+            "slots": [
+              {
+                "slot": ":s1",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s2",
+                "class": "slug_like",
+                "distinct": 1
+              },
+              {
+                "slot": ":s3",
+                "class": "slug_like",
+                "distinct": 1
+              }
+            ],
             "queryKeys": [],
             "statuses": [200],
             "observations": 2,
             "role": "refused",
+            "refusedKind": "not_collection",
             "collectionPaths": [],
             "shape": {
               "kind": "object",
@@ -987,9 +1185,8 @@
           }
         ],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [],
       "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -1000,11 +1197,15 @@
         "digestVersion": 1,
         "sourcePlatform": "site.example",
         "round": 1,
+        "truncated": {
+          "templates": false,
+          "linkTemplates": false,
+          "shapes": 0
+        },
         "templates": [],
         "linkTemplates": [],
-        "constantHeaders": {},
-        "missingFamilies": [],
-        "truncated": false
+        "constantHeaderNames": [],
+        "missingFamilies": []
       },
       "material": [],
       "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

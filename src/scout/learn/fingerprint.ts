@@ -1,59 +1,35 @@
 import { createHash } from 'crypto';
-import { itemShapeAt, type ShapeNode, type StructureDigestV1 } from './digest-contract';
+import {
+  templateKey,
+  templateKeyString,
+  templateShapeSignature,
+  type StructureDigestV1,
+} from './digest-contract';
+import { shapeSignature } from './shape-signature';
 
 /**
- * L1 (D-L0-5 "Fingerprint") — `structure_fingerprint` = sha256 over the sorted set of
- * `(method, template, itemShapeSignature(itemShape, depth 2))` for the digest's `collection`
- * templates. Byte-compatible with the extension (X2 `shared/learn/fingerprint.js`, PR #38); both
- * repos assert equality against the shared vectors (`fingerprint-vectors.json`, L02). Fixed:
+ * L1 (D-L0-5 "Fingerprint", r3) — two sha256 fingerprints over the SLOTTED form: the sorted set
+ * of `(method, slotted template, shapeSignature(itemShape, depth 2))` for templates with role
+ * `collection`. The slotted template keeps vocabulary literals and `:p`/`:s` markers only, so
+ * every coach on a site with the same structure hashes the same whatever their tenant words,
+ * ids and header values were (L02).
  *
- * - `itemShape` of a template = the `items` node of the array its FIRST `collectionPaths` entry
- *   reaches in `shape`; a template whose first path reaches no array signs as `unsupported`.
- * - `itemShapeSignature(node, depth)`: kinds only — never key names, classes or values
- *   (L0R2-OPUS-C4). `object` → `object{child*count,…}` with children signatures sorted by code
- *   unit and counted; `array` → `array[items]`; `map` → `map[values]`; scalars → their kind;
- *   `object(*)` / `array(*)` / `map(*)` once depth 2 is reached.
- * - Entry = `JSON.stringify([method, template, signature])`; entries are de-duplicated, sorted by
- *   code-unit order, joined with `\n` (no trailing newline) and hashed as UTF-8.
+ * - `fingerprint_r1` is computed over the ROUND-1 digest: the memory lookup key at Start.
+ * - `fingerprint_full` is computed over the UNION digest after explore: the drift check.
  *
- * Order-independent (sorted), value-free (shapes carry no values, templates carry no ids, keys do
- * not enter), computed over the slotted template form (`:sN` included).
+ * Both are the same function over different digests (`structureFingerprint`). Byte-compatible
+ * with the extension (X2 `shared/learn/fingerprint.js`): entry = `JSON.stringify([method,
+ * template, signature])`, entries de-duplicated, sorted by code unit, joined with `\n` (no
+ * trailing newline) and hashed as UTF-8. Shared vectors: `fingerprint-vectors.json`.
  */
-export const FINGERPRINT_SHAPE_DEPTH = 2;
+export { FINGERPRINT_SHAPE_DEPTH, shapeSignature } from './shape-signature';
+export { templateKey, templateKeyString, templateShapeSignature };
+
+/** Name kept for the r2 callers and the extension mirror; the same function as `shapeSignature`. */
+export const itemShapeSignature = shapeSignature;
 
 function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
-}
-
-export function itemShapeSignature(
-  node: ShapeNode,
-  depth = 0,
-  maxDepth: number = FINGERPRINT_SHAPE_DEPTH,
-): string {
-  switch (node.kind) {
-    case 'object': {
-      if (depth >= maxDepth) return 'object(*)';
-      const counts = new Map<string, number>();
-      for (const key of Object.keys(node.keys)) {
-        const child = itemShapeSignature(node.keys[key], depth + 1, maxDepth);
-        counts.set(child, (counts.get(child) ?? 0) + 1);
-      }
-      return `object{${[...counts]
-        .sort(([a], [b]) => compareText(a, b))
-        .map(([child, count]) => `${child}*${count}`)
-        .join(',')}}`;
-    }
-    case 'array':
-      return depth >= maxDepth
-        ? 'array(*)'
-        : `array[${itemShapeSignature(node.items, depth + 1, maxDepth)}]`;
-    case 'map':
-      return depth >= maxDepth
-        ? 'map(*)'
-        : `map[${itemShapeSignature(node.values, depth + 1, maxDepth)}]`;
-    default:
-      return node.kind;
-  }
 }
 
 /** The sorted, distinct material lines the fingerprint hashes (the shared vectors pin these). */
@@ -61,22 +37,30 @@ export function fingerprintMaterial(digest: StructureDigestV1): string[] {
   const tuples = new Set<string>();
   for (const t of digest.templates) {
     if (t.role !== 'collection') continue;
-    const first = t.collectionPaths[0];
-    const item = first === undefined ? null : itemShapeAt(t.shape, first);
-    tuples.add(
-      JSON.stringify([
-        t.method,
-        t.template,
-        item === null ? 'unsupported' : itemShapeSignature(item),
-      ]),
-    );
+    tuples.add(templateKeyString(t.method, t.template, templateShapeSignature(t)));
   }
   return [...tuples].sort(compareText);
 }
 
-/** @deprecated name kept for the first milestone's callers; same bytes as `fingerprintMaterial`. */
-export const fingerprintEntries = fingerprintMaterial;
-
 export function structureFingerprint(digest: StructureDigestV1): string {
   return createHash('sha256').update(fingerprintMaterial(digest).join('\n'), 'utf8').digest('hex');
+}
+
+/** `fingerprint_r1`: over the round-1 digest (memory lookup key). Refuses a round-2 digest. */
+export function fingerprintR1(digest: StructureDigestV1): string {
+  if (digest.round !== 1) throw new Error('fingerprint_r1 is computed over a round-1 digest');
+  return structureFingerprint(digest);
+}
+
+/** `fingerprint_full`: over the union digest (drift check); a round-1 digest is its own union. */
+export function fingerprintFull(digest: StructureDigestV1): string {
+  return structureFingerprint(digest);
+}
+
+/** The sorted template keys of the collection templates: the domain of V-L10 and the package. */
+export function collectionTemplateKeys(digest: StructureDigestV1): readonly string[] {
+  return digest.templates
+    .filter((t) => t.role === 'collection')
+    .map(templateKey)
+    .sort(compareText);
 }
