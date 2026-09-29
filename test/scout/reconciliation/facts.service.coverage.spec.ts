@@ -14,12 +14,14 @@ import {
 } from '../../../src/scout/reconstruct/native/native-rule-registry';
 import { buildSourceMapperRegistry } from '../../../src/scout/reconstruct/source-mapper-registry';
 import {
+  partitionInductionRegistry,
   ReconciliationFactsService,
   resolveFamily,
   stagedPlatformFacts,
   type FactsDb,
   type RunBinding,
 } from '../../../src/scout/reconciliation/facts.service';
+import { loadSourceArtifacts } from '../../../src/scout/reconstruct/source-registry.provider';
 import { reconcile } from '../../../src/scout/reconciliation/reconcile';
 import { coverageConditionHolds, familyCoverage } from '../../../src/scout/reconciliation/coverage';
 import { S9_REASON_CODES } from '../../../src/scout/reconciliation/types';
@@ -652,7 +654,8 @@ describe("S10-C default induction registry (over this service's mapper partition
     );
     // The shipped rule sets ride along (S10-D P: a shipped `nativeRules: 'declared'` manifest
     // for this partition's slug stays V6-consistent); only the foreign one is dropped.
-    const registry = ReconciliationFactsService.defaultRegistry(
+    const registry = partitionInductionRegistry(
+      loadSourceArtifacts(),
       MAPPERS,
       buildNativeRuleRegistry([...loadNativeRuleSets(), foreignRules]),
     );
