@@ -36,6 +36,14 @@ import { SendNotificationMaterializer } from './materialisers/send-notification.
 // re-registered here.
 import { CreateWorkoutPlanMaterializer } from './materialisers/create-workout-plan.materialiser';
 import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.materialiser';
+// L1-gw — fail-closed structured gateway for capability `importer.mapping`.
+// Additive: a separate service + provider seam so every existing capability
+// keeps its current behaviour through AiGatewayService.
+import { ImporterMappingConfig } from './structured/importer-mapping.config';
+import { StubStructuredProviderAdapter } from './structured/stub-structured-provider.adapter';
+import { AnthropicStructuredProviderAdapter } from './structured/anthropic-structured-provider.adapter';
+import { AiStructuredProviderRegistry } from './structured/structured-provider.registry';
+import { ImporterMappingGatewayService } from './structured/importer-mapping-gateway.service';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -118,6 +126,15 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
       ],
     },
     CapabilityMaterializerRegistry,
+    // L1-gw — importer.mapping fail-closed path (structured JSON, typed
+    // errors, ordered models, daily spend cap). ConfigModule is global
+    // (app.module) and ANTHROPIC_CLIENT_TOKEN is optional, so the adapter
+    // resolves without a local ConfigModule import.
+    ImporterMappingConfig,
+    StubStructuredProviderAdapter,
+    AnthropicStructuredProviderAdapter,
+    AiStructuredProviderRegistry,
+    ImporterMappingGatewayService,
   ],
   exports: [
     AiGatewayService,
@@ -126,6 +143,8 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
     AiRedactionService,
     PrivateContextService,
     CapabilityMaterializerRegistry,
+    ImporterMappingGatewayService,
+    ImporterMappingConfig,
   ],
 })
 export class AiGatewayModule {}
