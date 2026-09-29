@@ -4,6 +4,7 @@ import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { Events } from '../../../src/analytics/events';
 import { PrismaService } from '../../../src/prisma.service';
 import { ScoutEntitiesService } from '../../../src/scout/scout-entities.service';
+import { SourceRegistryModule } from '../../../src/scout/reconstruct/source-registry.module';
 import {
   ENTITIES_DEFAULT_PAGE_SIZE,
   ENTITIES_MAX_PAGE_SIZE,
@@ -381,6 +382,8 @@ async function makeService(fake: FakePrisma): Promise<{
 }> {
   const capture = jest.fn();
   const moduleRef = await Test.createTestingModule({
+    // L2a r2 (R588-B-2): the one registry provider is a REQUIRED dependency under Nest.
+    imports: [SourceRegistryModule],
     providers: [
       ScoutEntitiesService,
       { provide: PrismaService, useValue: fake },

@@ -170,7 +170,10 @@ describe('onTransferSettled — S8-G body', () => {
       COACH,
       INTENT,
       expect.objectContaining({ mode: 'server', execution_epoch: 1 }), // S10-C run context
+      // L2a r2 (R588-B-1): the same registries object the pass was handed (one per settle).
+      d.reconstructRun.mock.calls[0][3],
     );
+    expect(d.reconstructRun.mock.calls[0][3]).toMatchObject({ pinned: null, pinDigest: null });
     expect(terminalCall(d)?.slice(1)).toEqual(
       expect.arrayContaining(['partial', 'partial', 'coverage_basis_unknown', COACH, INTENT, 1]),
     );
