@@ -406,12 +406,16 @@ const TABLES: TableCase[] = [
     table: 'ClientWorkoutAssignmentSnapshot',
     rows: ROWS.snap,
     set: `SET "plan_name" = 'x'`,
-    // owner; the assigned client (select); the assigning coach / current coach; and the client's
-    // sub-coach with an OPEN delegation (app.is_subcoach_of) — SC yes, SCX (no delegation) no.
+    // owner; the assigned client (select); the assigning coach / current coach. The policy also names
+    // the client's sub-coach (app.is_subcoach_of), but its EXISTS subquery on ClientWorkoutAssignment
+    // is itself RLS-filtered for the invoking role, and pre-D8 `assignment_coach_manage` does not
+    // admit SC (assigned_by = A) — so SC sees NO parent row and the branch is unreachable here.
+    // #593 (D8, migration 000012) admits SC on the parent and flips these three cells to allow
+    // (proved live there). SCX (no delegation) stays denied in both.
     userAllow: {
-      select: ['s1', 'coachA', 'owner', 'subCoach'],
-      update: ['coachA', 'owner', 'subCoach'],
-      delete: ['coachA', 'owner', 'subCoach'],
+      select: ['s1', 'coachA', 'owner'],
+      update: ['coachA', 'owner'],
+      delete: ['coachA', 'owner'],
     },
     personAllow: { select: OWNER, update: OWNER, delete: OWNER },
     insertPersonOwned: `INSERT INTO public."ClientWorkoutAssignmentSnapshot" ("id","assignment_id","plan_name","plan_type","exercises_json","source_plan_id","source_version") VALUES (${lit(id('snap-new'))}, ${lit(ROWS.cwa.personBare)}, 'p', 'strength', '[]'::jsonb, ${lit(PLAN)}, 1)`,

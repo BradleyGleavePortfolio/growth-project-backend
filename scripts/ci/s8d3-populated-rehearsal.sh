@@ -105,8 +105,10 @@ FROM generate_series(1, 100000 * (SELECT k FROM sc)) g;
 INSERT INTO public."ClientWorkoutAssignmentSnapshot" ("id","assignment_id","plan_name","plan_type","exercises_json","source_plan_id","source_version")
 SELECT 'reh-snap-'||g, 'reh-cwa-'||g, 'p', 'strength', '[]'::jsonb, 'reh-plan-'||(1 + (g % (2000 * (SELECT k FROM sc)))), 1
 FROM generate_series(1, 20000 * (SELECT k FROM sc)) g;
-INSERT INTO public."ImportNativeProvenance" ("id","coach_id","source_namespace","entity_type","source_id","native_kind","outcome")
-SELECT 'reh-prov-'||g, 'reh-coach-'||(1 + (g % (40 * (SELECT k FROM sc)))), 'ns', 'workout', 'src-'||g, 'WorkoutSession', 'created'
+-- native_kind is a closed vocabulary and native_id is NOT NULL exactly when outcome <> 'unresolved'
+-- (20270122000000 CHECKs); 'person' rows point at the synthetic Person rows above.
+INSERT INTO public."ImportNativeProvenance" ("id","coach_id","source_namespace","entity_type","source_id","native_kind","native_id","outcome")
+SELECT 'reh-prov-'||g, 'reh-coach-'||(1 + (g % (40 * (SELECT k FROM sc)))), 'ns', 'person', 'src-'||g, 'person', 'reh-person-'||(1 + (g % (20000 * (SELECT k FROM sc)))), 'created'
 FROM generate_series(1, 20000 * (SELECT k FROM sc)) g;
 ANALYZE;
 SQL
@@ -123,7 +125,7 @@ declare -A COLS=(
   [ClientWorkoutAssignment]='"id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for"'
   [ClientWorkoutAssignmentSnapshot]='"id","assignment_id","plan_name","source_plan_id","source_version"'
   [Person]='"id","coach_id","source_platform","source_person_id"'
-  [ImportNativeProvenance]='"id","coach_id","source_namespace","entity_type","source_id","native_kind","outcome"'
+  [ImportNativeProvenance]='"id","coach_id","source_namespace","entity_type","source_id","native_kind","native_id","outcome"'
   [User]='"id","role","coach_id"'
 )
 TABLES=(WorkoutSession ExerciseSet WeightLog Habit HabitLog CheckIn WorkoutPlan ClientWorkoutAssignment ClientWorkoutAssignmentSnapshot Person ImportNativeProvenance User)
