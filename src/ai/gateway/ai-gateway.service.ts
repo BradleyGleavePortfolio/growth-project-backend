@@ -40,6 +40,7 @@ import {
 } from './materialisers/edit-workout-plan.materialiser';
 import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
 import { AuditService } from '../../audit/audit.service';
+import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
 import {
@@ -119,7 +120,71 @@ export class AiGatewayService {
     // refused because the requester role is not coach/owner — primary
     // defence for the spec §3 hard role boundary.
     @Optional() private audit?: AuditService,
+    // D8 (PR #593, R593-c7A-01 / R593-c7B-01) — coach-client tenancy for the
+    // assignment draft capabilities at DRAFT time. SubCoachModule is @Global,
+    // so the real container always supplies it. @Optional() only so legacy
+    // unit tests that construct the gateway positionally still compile; when
+    // it is absent the assignment capabilities FAIL CLOSED (see
+    // assertAssignmentClientScope) rather than skipping the check.
+    @Optional() private subCoachScope?: SubCoachScopeService,
   ) {}
+
+  /**
+   * D8 draft-time tenancy gate for `draft.assign_workout` / `draft.assign_meal_plan`.
+   *
+   *  1. Binds the proposed `clientId` to the authorised `subjectUserId`
+   *     (`/ai/gateway/invoke` loads permissioned context for the subject but
+   *     accepted `proposed_action.clientId` independently — R593-c7A-01).
+   *  2. Requires the acting coach (`tenantCoachId`, the id the materialiser will
+   *     record as `assigned_by_coach_id`; the requester when no tenant is set) to
+   *     be allowed to act on that client under the SAME rule the human assign
+   *     path applies (`SubCoachScopeService.canActOnClient` ==
+   *     `WorkoutBuilderService.assertCanAccessClient`).
+   *
+   * The approval-time re-check inside the materialiser's write transaction is
+   * the trust boundary; this gate refuses early so a cross-tenant draft never
+   * reaches the inbox.
+   */
+  private async assertAssignmentClientScope(
+    req: AiGatewayRequest,
+    clientId: string,
+  ): Promise<void> {
+    if (req.subjectUserId && req.subjectUserId !== clientId) {
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_CLIENT_SUBJECT_MISMATCH',
+        capability: req.capability,
+        message:
+          'proposed_action.clientId must be the subject_user_id this request was authorised for.',
+      });
+    }
+    if (!this.subCoachScope) {
+      // Fail closed: never persist an assignment draft whose tenancy was not
+      // checked. (Only reachable when the gateway is constructed without the
+      // global SubCoachScopeService, i.e. outside the Nest container.)
+      throw new Error(
+        'AiGatewayService: SubCoachScopeService is not wired; refusing to draft an assignment without a tenancy check',
+      );
+    }
+    const actingCoachId = req.tenantCoachId ?? req.requester.id;
+    const ok = await this.subCoachScope.canActOnClient(actingCoachId, clientId);
+    if (!ok) {
+      this.logger.warn(
+        {
+          event: 'AI_GATEWAY_DRAFT_CLIENT_SCOPE_REJECTED',
+          capability: req.capability,
+          requesterId: req.requester.id,
+          actingCoachId,
+          clientId,
+        },
+        `draft capability ${req.capability} refused: acting coach may not act on client`,
+      );
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN',
+        capability: req.capability,
+        message: 'Client does not belong to this coach.',
+      });
+    }
+  }
 
   async invoke(req: AiGatewayRequest): Promise<AiGatewayResult> {
     if (!req.requester || !req.requester.id) {
@@ -185,6 +250,21 @@ export class AiGatewayService {
 
     const requestId = randomUUID();
     const resolved = this.config.resolve(req.capability);
+
+    // D8 (PR #593) — assignment drafts: bind proposed clientId to the
+    // authorised subject and apply the coach-client tenancy rule BEFORE the
+    // provider is called or budget is spent, so a cross-tenant proposal is
+    // refused with 403 and never becomes a draft. (A non-string clientId is
+    // left to the Zod validator below, which rejects it as 400.)
+    if (
+      req.capability === ASSIGN_WORKOUT_CAPABILITY ||
+      req.capability === ASSIGN_MEAL_PLAN_CAPABILITY
+    ) {
+      const proposedClientId = req.proposedActionPayload?.clientId;
+      if (typeof proposedClientId === 'string') {
+        await this.assertAssignmentClientScope(req, proposedClientId);
+      }
+    }
 
     // MWB-5 — live-create capabilities are rejected at the capability
     // allow-list BEFORE any AiActionDraft row is created when they are not

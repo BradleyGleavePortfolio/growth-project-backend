@@ -8,6 +8,7 @@ import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { NotificationKind } from '../../../notifications/notification-kind';
+import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import {
   CapabilityMaterializer,
   MaterializeResult,
@@ -46,7 +47,10 @@ export const ASSIGN_WORKOUT_CAPABILITY = 'draft.assign_workout';
  *     must belong to `draft.tenant_coach_id` — we re-check here even
  *     though the controller's resolveContext already filtered, because
  *     the materialiser is the trust boundary on approval.
- *   - `clientId` (UUID): subject. Must be a client of the tenant coach.
+ *   - `clientId` (UUID): subject. Must be a client of the tenant coach —
+ *     enforced at approval time by `SubCoachScopeService.canActOnClient`
+ *     inside the write transaction (D8; PR #593 R593-c7A-01 / R593-c7B-01),
+ *     and bound to `draft.subject_user_id` when the draft carries one.
  *   - `scheduledFor` (ISO date-time): when the workout is due. ISO 8601
  *     so the JSON column stays serializable; we parse to Date at
  *     create-time.
@@ -88,6 +92,11 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // D8 — the same coach-client tenancy rule the human assign path applies
+    // (WorkoutBuilderService.assertCanAccessClient), evaluated at approval
+    // time. Required, not @Optional: a materialiser that cannot check
+    // tenancy must not exist.
+    private readonly subCoachScope: SubCoachScopeService,
   ) {}
 
   canHandle(capability: string): boolean {
@@ -151,17 +160,75 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
       throw err;
     }
 
+    // D8 (R593-c7A-01): the payload's client must be the draft's authorised
+    // subject. `/ai/gateway/invoke` loads permissioned context for
+    // `subject_user_id` but accepts `proposed_action.clientId` independently;
+    // the gateway now binds them at draft time and this is the approval-time
+    // re-check for drafts persisted before that, or hand-edited rows.
+    if (draft.subject_user_id && draft.subject_user_id !== payload.clientId) {
+      this.logger.warn(
+        {
+          event: 'AI_MATERIALISER_SUBJECT_MISMATCH',
+          capability: this.capability,
+          draftId: draft.id,
+          subjectUserId: draft.subject_user_id,
+          payloadClientId: payload.clientId,
+        },
+        'assign_workout refused: payload.clientId differs from draft.subject_user_id',
+      );
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_CLIENT_SUBJECT_MISMATCH',
+        capability: this.capability,
+        message:
+          'The proposed clientId is not the subject this draft was authorised for.',
+      });
+    }
+
     // Idempotency: schema-level @unique on ai_draft_id. We optimistically
     // attempt the INSERT inside a transaction and catch P2002. If P2002
     // fires, a prior approval already materialised this draft (or a
     // concurrent approver beat us); re-query and return the existing
     // row's id. This is the spec §4.2 race path.
     let assignmentId: string;
+    const tenantCoachId = draft.tenant_coach_id;
     try {
       // Read the workout plan to validate ownership + capture coach id
       // for the assignment FK. Inside the tx so the plan-existence check
       // is consistent with the create.
       const created = await this.prisma.$transaction(async (tx) => {
+        // D8 coach-client tenancy (R593-c7A-01 / R593-c7B-01): the coach who
+        // will be recorded as `assigned_by_coach_id` must be allowed to act on
+        // the client NOW — the same rule WorkoutBuilderService.assertCanAccessClient
+        // applies on the human path (direct roster, or an OPEN sub-coach
+        // delegation to a live student). Evaluated inside the write transaction
+        // so a delegation closed between draft and approval is refused, and
+        // BEFORE any row is written. This connection is service-role
+        // (BYPASSRLS); the RLS policy `assignment_coach_manage` cannot be the
+        // gate here, so the application must be.
+        const canAct = await this.subCoachScope.canActOnClient(
+          tenantCoachId,
+          payload.clientId,
+          tx,
+        );
+        if (!canAct) {
+          this.logger.warn(
+            {
+              event: 'AI_MATERIALISER_CLIENT_SCOPE_REJECTED',
+              capability: this.capability,
+              draftId: draft.id,
+              tenantCoachId,
+              requesterId: draft.requester_id,
+              clientId: payload.clientId,
+            },
+            'assign_workout refused: tenant coach may not act on this client at approval time',
+          );
+          throw new ForbiddenException({
+            error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN',
+            capability: this.capability,
+            message:
+              'Client does not belong to this coach (or the delegation is no longer open).',
+          });
+        }
         // MWB-1 (§3.3): read the plan WITH its live exercise rows so we can
         // freeze an immutable snapshot into the assignment, exactly like the
         // human assign path (WorkoutBuilderService.writeAssignmentSnapshot).
@@ -199,19 +266,19 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
         // Plan-tenant check: the AI cannot assign a plan from another
         // coach. The draft's tenant_coach_id was pinned at invoke time;
         // the plan's coach_id must match.
-        if (plan.coach_id !== draft.tenant_coach_id) {
+        if (plan.coach_id !== tenantCoachId) {
           throw new ForbiddenException({
             error: 'AI_DRAFT_WORKOUT_PLAN_TENANT_MISMATCH',
             capability: this.capability,
             planCoachId: plan.coach_id,
-            tenantCoachId: draft.tenant_coach_id,
+            tenantCoachId,
           });
         }
         const assignment = await tx.clientWorkoutAssignment.create({
           data: {
             workout_plan_id: payload.workoutPlanId,
             client_id: payload.clientId,
-            assigned_by_coach_id: draft.tenant_coach_id ?? requester.id,
+            assigned_by_coach_id: tenantCoachId,
             scheduled_for: new Date(payload.scheduledFor),
             ai_draft_id: draft.id,
           },

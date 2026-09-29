@@ -47,18 +47,23 @@
  * (Supabase's classic auth.uid() reads that claim; the CI bootstrap stub returns NULL, so this spec
  * installs the claim-reading form on the disposable database — test environment only).
  *
- * D8 (owner decision 2026-09-29; migration 20270125000012, stacked on #587): `assignment_coach_manage`
- * now applies the application's coach-client tenancy rule (WorkoutBuilderService.assertCanAccessClient:
- * client.coach_id = caller, OR caller is a sub-coach with an OPEN SubCoachAssignment to that live
- * student) in BOTH USING and WITH CHECK, and re-keys the policy and both of its helpers on ONE
- * identity, the backend GUC app.current_user_id() (the identity every repo tenancy helper and the
- * other S8-D3 tenant policies use; the 20260702000000 auth.uid() keying was the outlier).
- * The block "D8 — coach-client tenancy" below proves the
- * positive paths (head coach, owner-as-coach, sub-coach with open delegation), the negative paths
- * (cross-tenant INSERT, UPDATE re-pointing client_id, SELECT, DELETE; closed delegation; non-student
- * target) and that the composed policy still never recurses (42P17). One pre-D8 assertion in the
- * 20270125000011 block flipped from allow to deny: coach B assigning their own plan to coach A's
- * client — that was the gap D8 closes.
+ * D8 (owner decision 2026-09-29; migration 20270125000012, stacked on #587; PR #593 fix round 2):
+ * `assignment_coach_manage` now applies the application's coach-client tenancy rule
+ * (WorkoutBuilderService.assertCanAccessClient == SubCoachScopeService.canActOnClient: client.coach_id =
+ * actor, OR actor is a sub-coach with an OPEN SubCoachAssignment to that live student) in BOTH USING and
+ * WITH CHECK, narrows the role gate to coach/owner (the app's assertCoach), and resolves the ACTOR by
+ * SQL-principal class through app.rls_actor_id(): anon/authenticated (the PostgREST JWT roles) are
+ * identified ONLY by auth.uid() -> User.supabase_id — the backend GUC app.current_user_id is ignored
+ * for them because any such session can set_config() it; every other non-BYPASSRLS role (backend
+ * database credentials) is identified ONLY by the GUC. The block "D8 — coach-client tenancy" below
+ * proves the positive paths (head coach, owner-as-coach, sub-coach with open delegation), the negative
+ * paths (cross-tenant INSERT, UPDATE re-pointing client_id, SELECT, DELETE; closed delegation;
+ * non-student target), the identity boundary (a JWT student or anon with a FORGED coach GUC is denied;
+ * a GUC-only caller under `authenticated` is denied; a claim-only caller under a backend-class role is
+ * denied; each class is admitted on its own evidence), that the composed policy still never recurses
+ * (42P17), and — live, in a rolled-back transaction — that down.sql restores the 20270125000011 policy
+ * semantics. One pre-D8 assertion in the 20270125000011 block flipped from allow to deny: coach B
+ * assigning their own plan to coach A's client — that was the gap D8 closes.
  *
  * Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL. Skipped when neither is set (the
  * default jest lane never selects this file); HARD-FAILS when set but unreachable.
@@ -85,7 +90,8 @@ class Rollback extends Error {}
 
 type Principal = {
   label: string;
-  role: 'anon' | 'authenticated';
+  /** anon / authenticated (Supabase's PostgREST JWT roles) or the run's backend-class role (BACKEND_ROLE). */
+  role: 'anon' | 'authenticated' | string;
   userId?: string;
   userRole?: 'student' | 'coach' | 'owner';
   supabaseId?: string;
@@ -118,7 +124,7 @@ async function attempt(
     await prisma.$transaction(
       async (tx) => {
         for (const s of bypassSetup) await tx.$executeRawUnsafe(s);
-        await tx.$executeRawUnsafe(`SET LOCAL ROLE ${p.role}`);
+        await tx.$executeRawUnsafe(`SET LOCAL ROLE "${p.role}"`);
         await tx.$executeRawUnsafe(
           `SELECT set_config('app.current_user_id', ${lit(p.userId ?? '')}, true)`,
         );
@@ -183,6 +189,23 @@ async function q<T = Record<string, unknown>>(sql: string): Promise<T[]> {
 // ─── Fixtures (synthetic; ids carry a run-unique prefix; removed in afterAll) ─────────────────
 const RUN = `s8d3-${randomUUID().slice(0, 8)}`;
 const id = (s: string) => `${RUN}-${s}`;
+/**
+ * D8: a NOLOGIN, non-BYPASSRLS role standing in for a backend that connects with its own database
+ * credentials (no JWT). Created in beforeAll, dropped in afterAll. app.rls_actor_id() must identify it
+ * by the app.current_user_id GUC only.
+ */
+const BACKEND_ROLE = `${RUN.replace(/-/g, '_')}_backend`;
+/**
+ * D8 (R593-c7B-05): EXECUTE privileges on the D8 functions exactly as the MIGRATION left them, read
+ * BEFORE the harness's blanket `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app` below. The ACL assertions
+ * in the D8 block read this, so they prove the migration's GRANT/REVOKE, not the harness's.
+ */
+const migrationAcl: Record<string, Record<string, boolean>> = {};
+const D8_FUNCTIONS = [
+  'app.rls_actor_id()',
+  'app.actor_owns_workout_plan(text, text)',
+  'app.actor_coaches_client(text, text)',
+];
 
 const users = {
   coachA: {
@@ -573,19 +596,34 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     await prisma.$executeRawUnsafe(
       `CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$`,
     );
+    // D8 (R593-c7B-05): record the D8 functions' ACL as the migration left it, BEFORE any harness grant.
+    for (const fn of D8_FUNCTIONS) {
+      migrationAcl[fn] = {};
+      for (const grantee of ['public', 'anon', 'authenticated', 'service_role']) {
+        const r = await q<{ ok: boolean }>(
+          `SELECT has_function_privilege(${lit(grantee)}, ${lit(fn)}, 'EXECUTE') AS ok`,
+        );
+        migrationAcl[fn][grantee] = r[0]?.ok ?? false;
+      }
+    }
+    // D8: the backend-class principal (database credentials, no JWT; NOT BYPASSRLS).
+    await prisma.$executeRawUnsafe(`CREATE ROLE "${BACKEND_ROLE}" NOLOGIN`);
+    await prisma.$executeRawUnsafe(`GRANT "${BACKEND_ROLE}" TO CURRENT_USER`);
     // Supabase's default privileges grant the API roles table access; a bare Postgres does not.
     // Grant on the tables under test (NOT on the five new tables: their REVOKE is part of the proof)
     // so every denial below is a POLICY denial, never a missing privilege.
     await prisma.$executeRawUnsafe(
-      `GRANT USAGE ON SCHEMA public, app, auth TO anon, authenticated`,
+      `GRANT USAGE ON SCHEMA public, app, auth TO anon, authenticated, "${BACKEND_ROLE}"`,
     );
     await prisma.$executeRawUnsafe(
-      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO anon, authenticated`,
+      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO anon, authenticated, "${BACKEND_ROLE}"`,
     );
-    await prisma.$executeRawUnsafe(`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`);
+    await prisma.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, "${BACKEND_ROLE}"`,
+    );
     for (const t of [...TABLES.map((c) => c.table), 'User', 'WorkoutPlan', 'Person']) {
       await prisma.$executeRawUnsafe(
-        `GRANT SELECT, INSERT, UPDATE, DELETE ON public."${t}" TO anon, authenticated`,
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON public."${t}" TO anon, authenticated, "${BACKEND_ROLE}"`,
       );
     }
     await insertFixtures();
@@ -594,6 +632,8 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
   afterAll(async () => {
     try {
       await removeFixtures();
+      await prisma.$executeRawUnsafe(`DROP OWNED BY "${BACKEND_ROLE}"`);
+      await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${BACKEND_ROLE}"`);
     } finally {
       await prisma.$disconnect();
     }
@@ -808,26 +848,30 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       `INSERT INTO public."${CWA}" ("id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-x'))}, ${lit(planId)}, ${lit(clientId)}, ${lit(assignedBy)}, TIMESTAMP '2024-01-05 00:00:00')`;
     const DENY = { ok: false, sqlstate: '42501', message: expect.any(String) };
 
-    it('the helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and the WITH CHECK uses it instead of an inline WorkoutPlan read', async () => {
+    it('the plan-ownership helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and the WITH CHECK uses it instead of an inline WorkoutPlan read (D8 renamed it app.actor_owns_workout_plan(actor, plan))', async () => {
+      // 20270125000012 (D8) replaced app.current_user_owns_workout_plan(text) with the actor-keyed
+      // app.actor_owns_workout_plan(text, text); the 42P17-breaking property (no inline WorkoutPlan
+      // read in the policy) is what this test pins, unchanged.
+      const gone = await q<{ n: bigint | number }>(
+        `SELECT count(*)::bigint AS n FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
+      );
+      expect(Number(gone[0].n)).toBe(0);
       const fn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
-        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
+        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.actor_owns_workout_plan(text, text)')`,
       );
       expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
-      const pub = await q<{ ok: boolean }>(
-        `SELECT has_function_privilege('public', 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
-      );
-      expect(pub).toEqual([{ ok: false }]);
-      for (const role of ['anon', 'authenticated', 'service_role']) {
-        const r = await q<{ ok: boolean }>(
-          `SELECT has_function_privilege(${lit(role)}, 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
-        );
-        expect({ role, ...r[0] }).toEqual({ role, ok: true });
-      }
+      // ACL as the MIGRATION left it (captured before the harness's blanket grant; R593-c7B-05).
+      expect(migrationAcl['app.actor_owns_workout_plan(text, text)']).toEqual({
+        public: false,
+        anon: true,
+        authenticated: true,
+        service_role: true,
+      });
       const pol = await q<{ qual: string; with_check: string }>(
         `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
       );
       expect(pol).toHaveLength(1);
-      expect(pol[0].with_check).toMatch(/app\.current_user_owns_workout_plan\(workout_plan_id\)/);
+      expect(pol[0].with_check).toMatch(/app\.actor_owns_workout_plan\(app\.rls_actor_id\(\), workout_plan_id\)/);
       expect(pol[0].with_check).not.toMatch(/"WorkoutPlan"/);
       expect(pol[0].qual).not.toMatch(/"WorkoutPlan"/);
       // The other direction of the former cycle is untouched: WorkoutPlan's client read still
@@ -963,25 +1007,24 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     const ALLOW_1 = { ok: true, count: 1 };
     const NONE_0 = { ok: true, count: 0 };
 
-    it('the tenancy helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and BOTH USING and WITH CHECK call it (no inline User/SubCoachAssignment read; plan helper kept)', async () => {
-      const fn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
-        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_coaches_client(text)')`,
+    it('the D8 functions: app.rls_actor_id() is SECURITY INVOKER (it must see the invoking role); both tenancy helpers are SECURITY DEFINER, STABLE, search_path-pinned; the MIGRATION revoked PUBLIC and granted anon/authenticated/service_role; BOTH USING and WITH CHECK call the tenancy helper with the resolved actor (no inline User/SubCoachAssignment read; plan helper in WITH CHECK only)', async () => {
+      const shape = async (fn: string) =>
+        (
+          await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
+            `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure(${lit(fn)})`,
+          )
+        )[0];
+      expect(await shape('app.rls_actor_id()')).toEqual({ prosecdef: false, provolatile: 's', proconfig: ['search_path=""'] });
+      expect(await shape('app.actor_coaches_client(text, text)')).toEqual({ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] });
+      expect(await shape('app.actor_owns_workout_plan(text, text)')).toEqual({ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] });
+      // Round-1 helper of this migration must not exist on the chain.
+      const r1 = await q<{ n: bigint | number }>(
+        `SELECT count(*)::bigint AS n FROM pg_proc WHERE oid = to_regprocedure('app.current_user_coaches_client(text)')`,
       );
-      expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
-      // The re-keyed plan helper keeps 20270125000011's hardening and ACL.
-      const planFn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
-        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
-      );
-      expect(planFn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
-      const pub = await q<{ ok: boolean }>(
-        `SELECT has_function_privilege('public', 'app.current_user_coaches_client(text)', 'EXECUTE') AS ok`,
-      );
-      expect(pub).toEqual([{ ok: false }]);
-      for (const role of ['anon', 'authenticated', 'service_role']) {
-        const r = await q<{ ok: boolean }>(
-          `SELECT has_function_privilege(${lit(role)}, 'app.current_user_coaches_client(text)', 'EXECUTE') AS ok`,
-        );
-        expect({ role, ...r[0] }).toEqual({ role, ok: true });
+      expect(Number(r1[0].n)).toBe(0);
+      // ACL exactly as the migration left it (captured BEFORE the harness grant; R593-c7B-05).
+      for (const fn of D8_FUNCTIONS) {
+        expect({ fn, ...migrationAcl[fn] }).toEqual({ fn, public: false, anon: true, authenticated: true, service_role: true });
       }
       const pol = await q<{ qual: string; with_check: string; cmd: string; permissive: string }>(
         `SELECT qual, with_check, cmd, permissive FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
@@ -990,15 +1033,18 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       expect(pol[0].cmd).toBe('ALL');
       expect(pol[0].permissive).toBe('PERMISSIVE');
       for (const clause of [pol[0].qual, pol[0].with_check]) {
-        expect(clause).toMatch(/app\.current_user_coaches_client\(client_id\)/);
+        expect(clause).toMatch(/app\.actor_coaches_client\(app\.rls_actor_id\(\), client_id\)/);
         expect(clause).toMatch(/person_id IS NULL/);
-        expect(clause).toMatch(/assigned_by_coach_id = /);
-        expect(clause).toMatch(/sub_coach/);
+        expect(clause).toMatch(/assigned_by_coach_id = app\.rls_actor_id\(\)/);
+        // R593-c7B-03: the role gate is the app's assertCoach gate — coach / owner, no sub_coach.
+        expect(clause).toMatch(/'coach'/);
+        expect(clause).toMatch(/'owner'/);
+        expect(clause).not.toMatch(/sub_coach/);
         expect(clause).not.toMatch(/"SubCoachAssignment"/);
       }
       // #587's plan-ownership condition is preserved in WITH CHECK (and only there, as before).
-      expect(pol[0].with_check).toMatch(/app\.current_user_owns_workout_plan\(workout_plan_id\)/);
-      expect(pol[0].qual).not.toMatch(/current_user_owns_workout_plan/);
+      expect(pol[0].with_check).toMatch(/app\.actor_owns_workout_plan\(app\.rls_actor_id\(\), workout_plan_id\)/);
+      expect(pol[0].qual).not.toMatch(/actor_owns_workout_plan/);
       // No other policy on the table changed: the client read branch is still present.
       const names = await q<{ policyname: string }>(
         `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} ORDER BY 1`,
@@ -1006,6 +1052,16 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       expect(names.map((r) => r.policyname)).toEqual(
         expect.arrayContaining(['assignment_client_read', 'assignment_coach_manage']),
       );
+    });
+
+    it('a user carrying Role.sub_coach is outside the coach-manage gate (R593-c7B-03), even as the roster coach of the target', async () => {
+      // Promote a throwaway coach to role sub_coach inside the rolled-back transaction: the app's
+      // assertCoach refuses that role, and so does the policy now.
+      const asSubCoachRole = [
+        `UPDATE public."User" SET "role" = 'sub_coach' WHERE "id" = ${lit(users.coachA.id)}`,
+      ];
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachA.id), 'exec', asSubCoachRole)).toEqual(DENY);
+      expect(await attempt(P.coachA, count(ROWS.cwa.user), 'count', asSubCoachRole)).toEqual(NONE_0);
     });
 
     it('no principal (including the sub-coach) sees 42P17 on any ClientWorkoutAssignment statement with the composed policy', async () => {
@@ -1056,36 +1112,98 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       expect(await attempt(P.coachB, insertCwa(PLAN_B, users.subCoach.id, users.coachB.id))).toEqual(DENY);
     });
 
-    it('ONE identity: the policy is keyed on app.current_user_id() (the backend GUC) — a caller with only a Supabase JWT claim (auth.uid()) is denied, a caller with only the GUC is admitted', async () => {
-      const gucOnly: Principal = { ...P.coachA, supabaseId: undefined };
-      const claimOnly: Principal = { ...P.coachA, userId: undefined, userRole: undefined };
-      expect(await attempt(gucOnly, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(ALLOW_1);
-      expect(await attempt(gucOnly, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
-      expect(await attempt(gucOnly, touch(ROWS.cwa.user))).toEqual(ALLOW_1);
-      expect(await attempt(claimOnly, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
-      expect(await attempt(claimOnly, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
-      expect(await attempt(claimOnly, touch(ROWS.cwa.user))).toEqual(NONE_0);
-      expect(await attempt(claimOnly, remove(ROWS.cwa.user))).toEqual(NONE_0);
-      // The role gate reads User.role for that id, not the app.current_user_role GUC.
+    it('IDENTITY BY PRINCIPAL CLASS (R593-c7A-02): under `authenticated` only auth.uid() identifies the actor — a GUC-only caller is denied, a claim-only caller is admitted, and a FORGED coach GUC on a student or anon session changes nothing', async () => {
+      const gucOnlyA: Principal = { ...P.coachA, supabaseId: undefined };
+      const claimOnlyA: Principal = { ...P.coachA, userId: undefined, userRole: undefined };
+      // JWT class, GUC only: not an identity → denied everywhere (was ALLOWED at round 1 of #593).
+      expect(await attempt(gucOnlyA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(gucOnlyA, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(gucOnlyA, touch(ROWS.cwa.user))).toEqual(NONE_0);
+      expect(await attempt(gucOnlyA, remove(ROWS.cwa.user))).toEqual(NONE_0);
+      // JWT class, claim only: the JWT subject IS the identity → the app rule applies to it.
+      expect(await attempt(claimOnlyA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(ALLOW_1);
+      expect(await attempt(claimOnlyA, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
+      expect(await attempt(claimOnlyA, touch(ROWS.cwa.user))).toEqual(ALLOW_1);
+      expect(await attempt(claimOnlyA, remove(ROWS.cwa.user))).toEqual(ALLOW_1);
+      expect(await attempt(claimOnlyA, insertCwa(PLAN, users.s3.id, users.coachA.id))).toEqual(DENY);
+      // FORGED GUC: an authenticated student (JWT = S3) sets app.current_user_id to coach A (and the
+      // role GUC to coach). Nothing coach A can do becomes available to them.
+      const forgedS3: Principal = { ...P.s3, userId: users.coachA.id, userRole: 'coach' };
+      expect(await attempt(forgedS3, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(forgedS3, insertCwa(PLAN, users.s3.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(forgedS3, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(forgedS3, touch(ROWS.cwa.user))).toEqual(NONE_0);
+      expect(await attempt(forgedS3, repoint(ROWS.cwa.user, users.s3.id))).toEqual(NONE_0);
+      expect(await attempt(forgedS3, remove(ROWS.cwa.user))).toEqual(NONE_0);
+      // FORGED GUC on the anonymous role (no JWT at all).
+      const forgedAnon: Principal = { ...P.anon, userId: users.coachA.id, userRole: 'coach' };
+      expect(await attempt(forgedAnon, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(forgedAnon, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(forgedAnon, touch(ROWS.cwa.user))).toEqual(NONE_0);
+      // A JWT coach forging a DIFFERENT coach's GUC still acts only as themselves.
+      const bForgingA: Principal = { ...P.coachB, userId: users.coachA.id };
+      expect(await attempt(bForgingA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(bForgingA, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(bForgingA, insertCwa(PLAN_B, users.s3.id, users.coachB.id))).toEqual(ALLOW_1);
+      // The role gate reads User.role for the resolved actor, never the app.current_user_role GUC.
       const wrongRoleGuc: Principal = { ...P.coachA, userRole: 'student' };
       expect(await attempt(wrongRoleGuc, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
       const studentWithCoachRoleGuc: Principal = { ...P.s3, userRole: 'coach' };
       expect(await attempt(studentWithCoachRoleGuc, insertCwa(PLAN_B, users.s3.id, users.s3.id))).toEqual(DENY);
-      // Neither helper mentions auth.uid() any more; both read the GUC.
+    });
+
+    it('IDENTITY BY PRINCIPAL CLASS (R593-c7A-02): under a backend-class role (database credentials, no JWT) only app.current_user_id() identifies the actor — GUC-only admitted under the same tenancy rule, claim-only denied', async () => {
+      const backendA: Principal = { label: 'backend role as coach A (GUC)', role: BACKEND_ROLE, userId: users.coachA.id, userRole: 'coach' };
+      const backendClaimOnlyA: Principal = { label: 'backend role with only a JWT claim', role: BACKEND_ROLE, supabaseId: users.coachA.supabase };
+      const backendB: Principal = { label: 'backend role as coach B (GUC)', role: BACKEND_ROLE, userId: users.coachB.id, userRole: 'coach' };
+      const backendS3: Principal = { label: 'backend role as student S3 (GUC)', role: BACKEND_ROLE, userId: users.s3.id, userRole: 'student' };
+      // The role is RLS-bound (not BYPASSRLS): nothing is visible without an identity.
+      const noIdentity: Principal = { label: 'backend role, no context', role: BACKEND_ROLE };
+      expect(await attempt(noIdentity, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(noIdentity, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      // GUC identity is honoured for this class, under the tenancy rule.
+      expect(await attempt(backendA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(ALLOW_1);
+      expect(await attempt(backendA, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
+      expect(await attempt(backendA, touch(ROWS.cwa.user))).toEqual(ALLOW_1);
+      expect(await attempt(backendA, insertCwa(PLAN, users.s3.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(backendA, repoint(ROWS.cwa.user, users.s3.id))).toEqual(DENY);
+      expect(await attempt(backendB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(backendB, count(ROWS.cwa.crossTenant), 'count')).toEqual(NONE_0);
+      expect(await attempt(backendS3, insertCwa(PLAN, users.s3.id, users.s3.id))).toEqual(DENY);
+      expect(await attempt(backendS3, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      // A JWT claim is not an identity for this class.
+      expect(await attempt(backendClaimOnlyA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+      expect(await attempt(backendClaimOnlyA, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(backendClaimOnlyA, touch(ROWS.cwa.user))).toEqual(NONE_0);
+    });
+
+    it('identity plumbing is pinned in the catalog: app.rls_actor_id() branches on CURRENT_USER between auth.uid() and app.current_user_id(); the definer helpers read neither; the policy names only app.rls_actor_id()', async () => {
       const bodies = await q<{ proname: string; prosrc: string }>(
-        `SELECT proname, prosrc FROM pg_proc WHERE oid IN (to_regprocedure('app.current_user_owns_workout_plan(text)'), to_regprocedure('app.current_user_coaches_client(text)'))`,
+        `SELECT proname, prosrc FROM pg_proc WHERE oid IN (to_regprocedure('app.rls_actor_id()'), to_regprocedure('app.actor_owns_workout_plan(text, text)'), to_regprocedure('app.actor_coaches_client(text, text)'))`,
       );
-      expect(bodies).toHaveLength(2);
-      for (const b of bodies) {
-        expect({ fn: b.proname, usesGuc: /app\.current_user_id\(\)/.test(b.prosrc), usesJwt: /auth\.uid/.test(b.prosrc) }).toEqual({ fn: b.proname, usesGuc: true, usesJwt: false });
+      expect(bodies).toHaveLength(3);
+      const by = Object.fromEntries(bodies.map((b) => [b.proname, b.prosrc]));
+      expect(by.rls_actor_id).toMatch(/CURRENT_USER IN \('anon', 'authenticated'\)/);
+      expect(by.rls_actor_id).toMatch(/auth\.uid\(\)/);
+      expect(by.rls_actor_id).toMatch(/app\.current_user_id\(\)/);
+      for (const fn of ['actor_owns_workout_plan', 'actor_coaches_client']) {
+        expect({ fn, jwt: /auth\.uid/.test(by[fn]), guc: /current_user_id|current_setting/.test(by[fn]) }).toEqual({ fn, jwt: false, guc: false });
       }
       const pol = await q<{ qual: string; with_check: string }>(
         `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
       );
       for (const clause of [pol[0].qual, pol[0].with_check]) {
-        expect(clause).toMatch(/app\.current_user_id\(\)/);
-        expect(clause).not.toMatch(/auth\.uid|supabase_id/);
+        expect(clause).toMatch(/app\.rls_actor_id\(\)/);
+        expect(clause).not.toMatch(/auth\.uid|supabase_id|current_user_id|current_setting/);
       }
+      // Live: the resolver answers per class for the SAME session context (both GUC and claim set).
+      const asAuth = await attempt(P.coachA, `SELECT count(*)::bigint AS n FROM (SELECT 1 WHERE app.rls_actor_id() = ${lit(users.coachA.id)}) x`, 'count');
+      expect(asAuth).toEqual(ALLOW_1);
+      const gucOnlyAuth = await attempt({ ...P.coachA, supabaseId: undefined }, `SELECT count(*)::bigint AS n FROM (SELECT 1 WHERE app.rls_actor_id() IS NULL) x`, 'count');
+      expect(gucOnlyAuth).toEqual(ALLOW_1);
+      const backend: Principal = { label: 'backend', role: BACKEND_ROLE, userId: users.coachA.id, supabaseId: users.coachB.supabase };
+      const asBackend = await attempt(backend, `SELECT count(*)::bigint AS n FROM (SELECT 1 WHERE app.rls_actor_id() = ${lit(users.coachA.id)}) x`, 'count');
+      expect(asBackend).toEqual(ALLOW_1);
     });
 
     it("cross-tenant UPDATE: coach A cannot re-point their own assignment at coach B's client (S3) or at a non-student user (WITH CHECK 42501)", async () => {
@@ -1176,8 +1294,8 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       }
     });
 
-    it('down.sql text restores the 20270125000011 policy and drops only the D8 helper (reversibility contract, static)', async () => {
-      // The live forward → down → forward parity proof runs in the Migration Dry-Run workflow; here we
+    it('down.sql text restores the 20270125000011 policy, helper body, comment and ACL verbatim and drops only the three D8 functions (reversibility contract, static)', async () => {
+      // The forward → down → forward pg_dump parity proof runs in the Migration Dry-Run workflow; here we
       // pin the contract so a future edit to either file cannot silently diverge.
       const migrations = path.join(__dirname, '..', 'prisma', 'migrations');
       const down = fs.readFileSync(
@@ -1196,12 +1314,74 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         const m = /CREATE OR REPLACE FUNCTION app\.current_user_owns_workout_plan[\s\S]*?\$\$;/.exec(sql);
         return m ? m[0] : null;
       };
+      const commentOf = (sql: string) => {
+        const m = /COMMENT ON FUNCTION app\.current_user_owns_workout_plan\(text\) IS\s+'(?:[^']|'')*';/.exec(sql);
+        return m ? m[0].replace(/\s+/g, ' ') : null;
+      };
+      const aclOf = (sql: string) =>
+        sql.split('\n').filter((l) => /^(GRANT|REVOKE) .*current_user_owns_workout_plan\(text\)/.test(l));
       expect(policyOf(down)).not.toBeNull();
       expect(policyOf(down)).toBe(policyOf(prev));
       expect(helperOf(down)).not.toBeNull();
       expect(helperOf(down)).toBe(helperOf(prev));
-      expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.current_user_coaches_client\(text\);/);
+      expect(commentOf(down)).not.toBeNull();
+      expect(commentOf(down)).toBe(commentOf(prev));
+      expect(aclOf(down)).toEqual(aclOf(prev));
+      expect(aclOf(down)).toHaveLength(2);
+      expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.actor_coaches_client\(text, text\);/);
+      expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.actor_owns_workout_plan\(text, text\);/);
+      expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.rls_actor_id\(\);/);
       expect(down).not.toMatch(/DROP FUNCTION IF EXISTS app\.current_user_owns_workout_plan/);
+      expect(down.match(/DROP FUNCTION/g)).toHaveLength(3);
+    });
+
+    it('down.sql applied LIVE (rolled back) restores the 20270125000011 state: the D8 functions are gone, the auth.uid()-keyed helper and policy are back, and the pre-D8 cross-tenant allow re-appears for a JWT coach (R593-c7B-07)', async () => {
+      const downSql = fs.readFileSync(
+        path.join(__dirname, '..', 'prisma', 'migrations', '20270125000012_cwa_coach_manage_client_tenancy', 'down.sql'),
+        'utf8',
+      );
+      // Split on top-level semicolons (outside $$ bodies and quoted strings); drop BEGIN/COMMIT so the
+      // whole down runs inside attempt()'s rolled-back transaction as the BYPASSRLS connection owner.
+      const stmts: string[] = [];
+      let cur = '';
+      let inDollar = false;
+      let inQuote = false;
+      for (let i = 0; i < downSql.length; i++) {
+        const ch = downSql[i];
+        if (!inQuote && downSql.startsWith('$$', i)) {
+          inDollar = !inDollar;
+          cur += '$$';
+          i++;
+          continue;
+        }
+        if (!inDollar && ch === "'") inQuote = !inQuote;
+        if (ch === ';' && !inDollar && !inQuote) {
+          const t = cur.trim();
+          if (t) stmts.push(t);
+          cur = '';
+          continue;
+        }
+        cur += ch;
+      }
+      const downStatements = stmts
+        .map((t) => t.replace(/^(--[^\n]*\n\s*)+/, '').trim())
+        .filter((t) => t && !/^(BEGIN|COMMIT)$/i.test(t));
+      expect(downStatements.length).toBeGreaterThanOrEqual(8);
+      // Catalog after down (read as the JWT coach; pg_catalog is world-readable).
+      const catalog = `SELECT (
+          (SELECT count(*) FROM pg_proc WHERE oid IN (to_regprocedure('app.rls_actor_id()'), to_regprocedure('app.actor_owns_workout_plan(text, text)'), to_regprocedure('app.actor_coaches_client(text, text)'))) = 0
+          AND (SELECT count(*) FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)') AND prosecdef AND provolatile = 's') = 1
+          AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage' AND qual LIKE '%auth.uid()%' AND qual NOT LIKE '%rls_actor_id%' AND qual NOT LIKE '%actor_coaches_client%' AND with_check LIKE '%app.current_user_owns_workout_plan(workout_plan_id)%') = 1
+        )::int::bigint AS n`;
+      expect(await attempt(P.coachA, catalog, 'count', downStatements)).toEqual(ALLOW_1);
+      // Behaviour after down: coach B (JWT) CAN assign their own plan to coach A's client again — the
+      // exact 20270125000011 gap — and a claim-only coach is admitted (auth.uid() keying restored).
+      const claimOnlyB: Principal = { ...P.coachB, userId: undefined, userRole: undefined };
+      expect(await attempt(claimOnlyB, insertCwa(PLAN_B, users.s1.id, users.coachB.id), 'exec', downStatements)).toEqual(ALLOW_1);
+      expect(await attempt(claimOnlyB, count(ROWS.cwa.crossTenant), 'count', downStatements)).toEqual(ALLOW_1);
+      // ... and, back on the D8 head (no down), the same statements are refused: the live chain is intact.
+      expect(await attempt(claimOnlyB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(claimOnlyB, count(ROWS.cwa.crossTenant), 'count')).toEqual(NONE_0);
     });
   });
 

@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+
+/**
+ * The subset of the Prisma client the scope predicates read. Accepting it as a
+ * parameter lets a caller evaluate the predicate INSIDE its own interactive
+ * transaction (`tx`), so the tenancy decision and the write it guards read the
+ * same snapshot (D8, PR #593 fix round 2).
+ */
+type ScopeDb = Pick<Prisma.TransactionClient, 'user' | 'subCoachAssignment'>;
 
 /**
  * SubCoachScopeService
@@ -47,8 +56,11 @@ export class SubCoachScopeService {
    *
    * Returns [] if the user has no clients (or isn't a coach at all).
    */
-  async getAuthorizedClientIds(userId: string): Promise<string[]> {
-    const u = await this.prisma.user.findUnique({
+  async getAuthorizedClientIds(
+    userId: string,
+    db: ScopeDb = this.prisma,
+  ): Promise<string[]> {
+    const u = await db.user.findUnique({
       where: { id: userId },
       select: { role: true, coach_id: true },
     });
@@ -56,14 +68,14 @@ export class SubCoachScopeService {
 
     if (u.coach_id) {
       // Sub-coach: scope through SubCoachAssignment overlay.
-      const open = await this.prisma.subCoachAssignment.findMany({
+      const open = await db.subCoachAssignment.findMany({
         where: { sub_coach_id: userId, unassigned_at: null },
         select: { client_id: true },
       });
       if (open.length === 0) return [];
       const ids = open.map((r) => r.client_id);
       // Filter out soft-deleted clients / non-students at the DB level.
-      const live = await this.prisma.user.findMany({
+      const live = await db.user.findMany({
         where: { id: { in: ids }, role: 'student', deleted_at: null },
         select: { id: true },
       });
@@ -71,7 +83,7 @@ export class SubCoachScopeService {
     }
 
     // Head coach: own roster.
-    const clients = await this.prisma.user.findMany({
+    const clients = await db.user.findMany({
       where: { coach_id: userId, role: 'student', deleted_at: null },
       select: { id: true },
     });
@@ -102,8 +114,45 @@ export class SubCoachScopeService {
    * caller is a head coach who owns the client, OR a sub-coach with an
    * open assignment to that client.
    */
-  async canAccessClient(userId: string, clientId: string): Promise<boolean> {
-    const ids = await this.getAuthorizedClientIds(userId);
+  async canAccessClient(
+    userId: string,
+    clientId: string,
+    db: ScopeDb = this.prisma,
+  ): Promise<boolean> {
+    const ids = await this.getAuthorizedClientIds(userId, db);
     return ids.includes(clientId);
+  }
+
+  /**
+   * THE coach-client tenancy rule for assignment writes (owner decision D8,
+   * 2026-09-29): the acting user may write an assignment naming `clientId`
+   * when EITHER
+   *   (a) the client's `User.coach_id` is the acting user (head coach / owner
+   *       direct roster — no test of the target's role or deletion state, exactly
+   *       as `WorkoutBuilderService.assertCanAccessClient` evaluates it), OR
+   *   (b) `canAccessClient` admits them (a sub-coach with an OPEN
+   *       SubCoachAssignment to that live student).
+   *
+   * This is the predicate `WorkoutBuilderService.assertCanAccessClient` applies on
+   * every human assignment write, expressed as a boolean so the AI approval
+   * materialisers (which write as the service role, where RLS does not run) can
+   * apply the SAME rule at approval time. The RLS helper
+   * `app.actor_coaches_client(actor, client)` (migration 20270125000012) encodes
+   * the same predicate for the direct-access path; the two must not diverge.
+   *
+   * Pass `db` to evaluate inside the caller's transaction. Unknown client → false.
+   */
+  async canActOnClient(
+    actingUserId: string,
+    clientId: string,
+    db: ScopeDb = this.prisma,
+  ): Promise<boolean> {
+    const client = await db.user.findUnique({
+      where: { id: clientId },
+      select: { id: true, coach_id: true },
+    });
+    if (!client) return false;
+    if (client.coach_id === actingUserId) return true;
+    return this.canAccessClient(actingUserId, clientId, db);
   }
 }
