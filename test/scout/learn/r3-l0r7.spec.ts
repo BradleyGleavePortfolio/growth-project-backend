@@ -41,7 +41,7 @@ import {
   validateLearnedProposal,
 } from '../../../src/scout/learn/proposal';
 import {
-  COACH_EXAMPLE_SLUG_PLACEHOLDER,
+  COACH_EXAMPLE_SLUG_REDACTION,
   PROMPT_MAX_EXAMPLES,
   PROMPT_TEMPLATE_VERSION,
   UNTRUSTED_BEGIN,
@@ -549,7 +549,7 @@ describe('owed item 4: the coach-derived few-shot example lives inside the nonce
     const before = prompt.parts.slice(0, 5).join('\n\n');
     expect(before).not.toContain('"keyPaths"');
     expect(prompt.text).not.toContain(COACH_SLUG);
-    expect(block.split(COACH_EXAMPLE_SLUG_PLACEHOLDER).length).toBeGreaterThan(3); // package, spec, rules, manifest
+    expect(block.split(COACH_EXAMPLE_SLUG_REDACTION).length).toBeGreaterThan(3); // package, spec, rules, manifest
     // every marker appears exactly once
     for (const marker of [
       UNTRUSTED_BEGIN,
