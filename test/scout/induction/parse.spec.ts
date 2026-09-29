@@ -194,6 +194,8 @@ describe('R21 — observation evidence', () => {
     const result = parseEvidence(good());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.value.basis_kind).toBe('source_signed_enumeration');
+    if (result.value.basis_kind !== 'source_signed_enumeration') return;
     expect(result.value.statementBytes.equals(canonicalStatementBytes(statement()))).toBe(true);
     expect(result.value.signature.length).toBe(64);
   });

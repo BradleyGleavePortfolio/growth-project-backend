@@ -13,6 +13,8 @@ import {
   serializeContract,
 } from '../../scripts/importer-contract';
 import { contractOutPath } from '../../scripts/export-importer-contract';
+import { parseEvidence } from '../../src/scout/induction/parse';
+import { rawEvidence } from '../utils/g2-s10b-fixtures';
 
 // R80 contract-freeze guard. This suite is the drift check: it re-derives the
 // importer contract from the LIVE @nestjs/swagger document and asserts the
@@ -1169,30 +1171,37 @@ describe('importer contract (R80 freeze)', () => {
       expect(rec(result.declared_at)).toMatchObject({ type: 'string', format: 'date-time' });
     });
 
-    it('observation: intent_id + ObservationEvidenceV1 entries; stored/replayed counts', () => {
+    it('observation: intent_id + a discriminated ObservationEvidenceV1 union; stored/replayed counts', () => {
       expect(Object.keys(props('ScoutRunObservationDto')).sort()).toEqual([
         'intent_id',
         'observations',
       ]);
-      expect(rec(props('ScoutRunObservationDto').observations)).toMatchObject({
+      // L3 r4 (R589-c7A2-02): the wire grammar the strict parser enforces is published as a
+      // discriminated oneOf over two closed component schemas, not a single loose object.
+      expect(rec(props('ScoutRunObservationDto').observations)).toEqual({
         type: 'array',
         minItems: 1,
-        items: { $ref: '#/components/schemas/ScoutRunObservationEvidenceSchema' },
+        maxItems: 1024,
+        description: expect.stringContaining('Discriminated by basis_kind'),
+        items: {
+          oneOf: [
+            { $ref: '#/components/schemas/ScoutRunSourceSignedEvidenceSchema' },
+            { $ref: '#/components/schemas/ScoutRunReplayTerminalEvidenceSchema' },
+          ],
+          discriminator: {
+            propertyName: 'basis_kind',
+            mapping: {
+              source_signed_enumeration: '#/components/schemas/ScoutRunSourceSignedEvidenceSchema',
+              replay_terminal_enumeration:
+                '#/components/schemas/ScoutRunReplayTerminalEvidenceSchema',
+            },
+          },
+        },
       });
-      expect(Object.keys(props('ScoutRunObservationEvidenceSchema')).sort()).toEqual([
-        'account_scope_id_digest',
-        'basis_kind',
-        'evidence_version',
-        'family',
-        'key_id',
-        'mapping_spec_digest',
-        'signature_b64',
-        'source_platform',
-        'statement_b64',
-      ]);
-      expect(rec(props('ScoutRunObservationEvidenceSchema').basis_kind).enum).toEqual([
-        'source_signed_enumeration',
-      ]);
+      // The loose r3 union (common keys required, both tails optional) is gone.
+      expect(
+        dig(contract, 'components', 'schemas', 'ScoutRunObservationEvidenceSchema'),
+      ).toBeUndefined();
       const result = props('ScoutRunObservationResult');
       expect(Object.keys(result).sort()).toEqual([
         'execution_epoch',
@@ -1203,6 +1212,388 @@ describe('importer contract (R80 freeze)', () => {
       expect(rec(result.execution_epoch)).toMatchObject({ minimum: 1 });
       expect(rec(result.stored)).toMatchObject({ minimum: 0 });
       expect(rec(result.replayed)).toMatchObject({ minimum: 0 });
+    });
+
+    it('R589-c7A2-02: each evidence kind is a closed schema — every wire key required, kind pinned by a one-value basis_kind enum, no other key', () => {
+      const COMMON = [
+        'evidence_version',
+        'source_platform',
+        'account_scope_id_digest',
+        'family',
+        'mapping_spec_digest',
+        'basis_kind',
+      ];
+      const signed = schema('ScoutRunSourceSignedEvidenceSchema');
+      expect(signed.type).toBe('object');
+      expect(signed.additionalProperties).toBe(false);
+      expect(Object.keys(rec(signed.properties)).sort()).toEqual(
+        [...COMMON, 'key_id', 'signature_b64', 'statement_b64'].sort(),
+      );
+      expect((signed.required as string[]).slice().sort()).toEqual(
+        [...COMMON, 'key_id', 'signature_b64', 'statement_b64'].sort(),
+      );
+      expect(rec(props('ScoutRunSourceSignedEvidenceSchema').basis_kind)).toEqual({
+        type: 'string',
+        enum: ['source_signed_enumeration'],
+      });
+      expect(rec(props('ScoutRunSourceSignedEvidenceSchema').key_id)).toMatchObject({
+        type: 'string',
+        pattern: '^[a-z0-9._-]{1,64}$',
+      });
+      // Decoded byte lengths (64-byte signature, ≤ 1024-byte statement, 32-byte challenge) are
+      // stated as padded-base64 patterns, since a 33-byte and a 32-byte value share one length.
+      expect(rec(props('ScoutRunSourceSignedEvidenceSchema').signature_b64)).toMatchObject({
+        minLength: 88,
+        maxLength: 88,
+        pattern: '^(?:[A-Za-z0-9+/]{4}){21}[A-Za-z0-9+/]{2}==$',
+      });
+      expect(rec(props('ScoutRunSourceSignedEvidenceSchema').statement_b64)).toMatchObject({
+        minLength: 4,
+        maxLength: 1368,
+        pattern:
+          '^(?:(?:[A-Za-z0-9+/]{4}){0,341}|(?:[A-Za-z0-9+/]{4}){0,341}[A-Za-z0-9+/]{2}==|(?:[A-Za-z0-9+/]{4}){0,340}[A-Za-z0-9+/]{3}=)$',
+      });
+
+      const replay = schema('ScoutRunReplayTerminalEvidenceSchema');
+      expect(replay.type).toBe('object');
+      expect(replay.additionalProperties).toBe(false);
+      expect(Object.keys(rec(replay.properties)).sort()).toEqual(
+        [...COMMON, 'challenge_b64', 'id_set_digest', 'observed_unique', 'steps'].sort(),
+      );
+      expect((replay.required as string[]).slice().sort()).toEqual(
+        [...COMMON, 'challenge_b64', 'id_set_digest', 'observed_unique', 'steps'].sort(),
+      );
+      expect(rec(props('ScoutRunReplayTerminalEvidenceSchema').basis_kind)).toEqual({
+        type: 'string',
+        enum: ['replay_terminal_enumeration'],
+      });
+      expect(rec(props('ScoutRunReplayTerminalEvidenceSchema').challenge_b64)).toMatchObject({
+        minLength: 44,
+        maxLength: 44,
+        pattern: '^(?:[A-Za-z0-9+/]{4}){10}[A-Za-z0-9+/]{3}=$',
+      });
+      expect(rec(props('ScoutRunReplayTerminalEvidenceSchema').observed_unique)).toMatchObject({
+        type: 'integer',
+        minimum: 0,
+      });
+      expect(rec(props('ScoutRunReplayTerminalEvidenceSchema').id_set_digest)).toMatchObject({
+        type: 'string',
+        pattern: '^[0-9a-f]{64}$',
+      });
+      expect(rec(props('ScoutRunReplayTerminalEvidenceSchema').steps)).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        maxItems: 64,
+        items: { $ref: '#/components/schemas/ScoutRunReplayStepEvidenceSchema' },
+      });
+      for (const name of [
+        'ScoutRunSourceSignedEvidenceSchema',
+        'ScoutRunReplayTerminalEvidenceSchema',
+      ]) {
+        const p = props(name);
+        expect(rec(p.evidence_version)).toMatchObject({ enum: [1] });
+        expect(rec(p.source_platform)).toMatchObject({
+          type: 'string',
+          pattern: '^[a-z0-9][a-z0-9._:-]{0,255}$',
+        });
+        expect(rec(p.account_scope_id_digest)).toMatchObject({
+          type: 'string',
+          pattern: '^[0-9a-f]{64}$',
+        });
+        expect(rec(p.mapping_spec_digest)).toMatchObject({
+          type: 'string',
+          pattern: '^[0-9a-f]{64}$',
+        });
+        expect((rec(p.family).enum as string[]).slice().sort()).toEqual([
+          'client_history',
+          'clients',
+          'programs',
+          'workouts',
+        ]);
+      }
+    });
+
+    it('R589-c7A2-02: the step and fan-out schemas are closed, every key required, counters integer ≥ 0, fan_out exactly null or a complete fan-out', () => {
+      // L3 r3 (L0 r5 D-L0-6 StepEvidenceV1): one step evidence per step, variant or probe.
+      const step = schema('ScoutRunReplayStepEvidenceSchema');
+      const STEP_KEYS = [
+        'advertised_next',
+        'distinct_raw_ids',
+        'duplicate_ids',
+        'fan_out',
+        'id_set_digest',
+        'missing_id_items',
+        'pages_fetched',
+        'raw_items',
+        'refused_pages',
+        'step_key',
+        'stop',
+        'synthetic_ids',
+      ];
+      expect(step.additionalProperties).toBe(false);
+      expect(Object.keys(rec(step.properties)).sort()).toEqual(STEP_KEYS);
+      expect((step.required as string[]).slice().sort()).toEqual(STEP_KEYS);
+      const sp = props('ScoutRunReplayStepEvidenceSchema');
+      for (const counter of [
+        'pages_fetched',
+        'raw_items',
+        'distinct_raw_ids',
+        'duplicate_ids',
+        'synthetic_ids',
+        'missing_id_items',
+        'refused_pages',
+      ]) {
+        expect(rec(sp[counter])).toMatchObject({ type: 'integer', minimum: 0 });
+      }
+      expect(rec(sp.step_key)).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 });
+      expect(rec(sp.advertised_next)).toMatchObject({ type: 'boolean' });
+      expect(rec(sp.id_set_digest)).toMatchObject({ type: 'string', pattern: '^[0-9a-f]{64}$' });
+      expect(rec(sp.stop).enum).toEqual([
+        'absent_next',
+        'empty_page',
+        'short_page',
+        'first_page_only',
+        'budget',
+        'cycle',
+        'error',
+        'advertised_next',
+      ]);
+      // r4: the pages_fetched semantics are normative in the published description.
+      expect(String(rec(sp.pages_fetched).description)).toMatch(/terminal page INCLUDED/);
+      expect(String(rec(sp.raw_items).description)).toMatch(
+        /distinct_raw_ids \+ duplicate_ids \+ synthetic_ids \+ missing_id_items exactly/,
+      );
+      expect(rec(sp.fan_out)).toEqual({
+        description: expect.stringContaining('all five keys required'),
+        oneOf: [{ $ref: '#/components/schemas/ScoutRunReplayFanOutSchema' }, { type: 'null' }],
+      });
+      // L0 r5 D-L0-6 fan-out: parent-bound contexts (`parent_step` additive until the pin carries
+      // `forEach`); the r2 `expected`/`fetched` pair is gone; every key required (r4).
+      const fan = schema('ScoutRunReplayFanOutSchema');
+      expect(fan.additionalProperties).toBe(false);
+      expect((fan.required as string[]).slice().sort()).toEqual([
+        'contexts_exhausted',
+        'contexts_expected',
+        'contexts_fetched',
+        'parent_ids_digest',
+        'parent_step',
+      ]);
+      const fp = props('ScoutRunReplayFanOutSchema');
+      expect(rec(fp.parent_step)).toMatchObject({ type: 'string', minLength: 1, maxLength: 256 });
+      expect(rec(fp.parent_ids_digest)).toMatchObject({
+        type: 'string',
+        pattern: '^[0-9a-f]{64}$',
+      });
+      for (const counter of ['contexts_expected', 'contexts_fetched', 'contexts_exhausted']) {
+        expect(rec(fp[counter])).toMatchObject({ type: 'integer', minimum: 0 });
+      }
+    });
+
+    it('R589-c7A2-02: the published union and the runtime parser agree on every syntactic case (a JSON Schema validator vs parseEvidence)', () => {
+      // `ajv` is resolved through @nestjs/cli's dependency tree (a devDependency); it is the
+      // independent validator a generated client would use. The corpus exercises every key of
+      // both kinds, of the step and of the fan-out: dropped, added, wrongly typed, out of range.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Ajv = require('ajv') as new (opts: Record<string, unknown>) => {
+        compile(schema: unknown): ((data: unknown) => boolean) & { errors?: unknown };
+      };
+      const items = dig(
+        contract,
+        'components',
+        'schemas',
+        'ScoutRunObservationDto',
+        'properties',
+        'observations',
+        'items',
+      );
+      const ajv = new Ajv({ strict: false, allErrors: true });
+      const validate = ajv.compile({ ...rec(items), components: contract.components });
+      const schemaAccepts = (value: unknown): boolean => validate(value);
+      const parserAccepts = (value: unknown): boolean => parseEvidence(value).ok;
+
+      const hex = (n: number) => n.toString(16).padStart(64, '0');
+      const fanOut = () => ({
+        parent_step: 'members',
+        parent_ids_digest: hex(3),
+        contexts_expected: 2,
+        contexts_fetched: 2,
+        contexts_exhausted: 2,
+      });
+      const step = (over: Record<string, unknown> = {}) => ({
+        step_key: 'plans',
+        pages_fetched: 3,
+        raw_items: 2,
+        distinct_raw_ids: 1,
+        duplicate_ids: 1,
+        synthetic_ids: 0,
+        missing_id_items: 0,
+        stop: 'empty_page',
+        advertised_next: false,
+        refused_pages: 0,
+        fan_out: null,
+        id_set_digest: hex(1),
+        ...over,
+      });
+      const replay = (over: Record<string, unknown> = {}) => ({
+        evidence_version: 1,
+        source_platform: 'synthetic-src-a',
+        account_scope_id_digest: hex(7),
+        family: 'programs',
+        basis_kind: 'replay_terminal_enumeration',
+        mapping_spec_digest: hex(9),
+        challenge_b64: Buffer.alloc(32, 7).toString('base64'),
+        steps: [step()],
+        observed_unique: 1,
+        id_set_digest: hex(1),
+        ...over,
+      });
+      const signed = (over: Record<string, unknown> = {}) => ({ ...rawEvidence(), ...over });
+      const without = (obj: Record<string, unknown>, key: string) => {
+        const copy = { ...obj };
+        delete copy[key];
+        return copy;
+      };
+      const withStep = (over: Record<string, unknown>) => replay({ steps: [step(over)] });
+      const withFan = (over: Record<string, unknown> | null) => withStep({ fan_out: over });
+
+      // Every case both sides decide the same way (accept or reject).
+      const corpus: [string, unknown][] = [
+        ['signed, valid', signed()],
+        ['replay, root step', replay()],
+        ['replay, fan-out step', withFan(fanOut())],
+        [
+          'replay, two steps',
+          replay({ steps: [step(), step({ step_key: 'routines', fan_out: fanOut() })] }),
+        ],
+        ['signed + replay key', signed({ challenge_b64: 'x' })],
+        ['replay + signed key', replay({ statement_b64: 'x' })],
+        ['replay with unknown key', replay({ extra: 1 })],
+        ['signed with unknown key', signed({ extra: 1 })],
+        ['unknown basis_kind', replay({ basis_kind: 'none' })],
+        [
+          'signed shape with the replay kind label',
+          signed({ basis_kind: 'replay_terminal_enumeration' }),
+        ],
+        [
+          'replay shape with the signed kind label',
+          replay({ basis_kind: 'source_signed_enumeration' }),
+        ],
+        ['evidence_version 2', replay({ evidence_version: 2 })],
+        ['unknown family', replay({ family: 'coaches' })],
+        ['uppercase scope digest', replay({ account_scope_id_digest: hex(7).toUpperCase() })],
+        ['63-hex spec digest', replay({ mapping_spec_digest: hex(9).slice(1) })],
+        ['platform with a space', replay({ source_platform: 'bad slug' })],
+        [
+          'challenge 43 chars',
+          replay({ challenge_b64: Buffer.alloc(32, 7).toString('base64').slice(1) }),
+        ],
+        [
+          'challenge of 33 bytes',
+          replay({ challenge_b64: Buffer.alloc(33, 7).toString('base64') }),
+        ],
+        ['steps empty', replay({ steps: [] })],
+        [
+          'steps 65',
+          replay({ steps: Array.from({ length: 65 }, (_, i) => step({ step_key: `s${i}` })) }),
+        ],
+        ['observed_unique -1', replay({ observed_unique: -1 })],
+        ['observed_unique 1.5', replay({ observed_unique: 1.5 })],
+        ['observed_unique "1"', replay({ observed_unique: '1' })],
+        ['id_set_digest not hex', replay({ id_set_digest: 'g'.repeat(64) })],
+        ['step unknown key', withStep({ extra: true })],
+        ['step_key empty', withStep({ step_key: '' })],
+        ['step_key 257 chars', withStep({ step_key: 'k'.repeat(257) })],
+        ['pages_fetched -1', withStep({ pages_fetched: -1 })],
+        ['pages_fetched 1.5', withStep({ pages_fetched: 1.5 })],
+        ['raw_items "2"', withStep({ raw_items: '2' })],
+        ['distinct_raw_ids null', withStep({ distinct_raw_ids: null })],
+        ['duplicate_ids -1', withStep({ duplicate_ids: -1 })],
+        ['synthetic_ids 0.5', withStep({ synthetic_ids: 0.5 })],
+        ['missing_id_items true', withStep({ missing_id_items: true })],
+        ['refused_pages -2', withStep({ refused_pages: -2 })],
+        ['stop unknown', withStep({ stop: 'done' })],
+        ['advertised_next "true"', withStep({ advertised_next: 'true' })],
+        ['step digest 65 hex', withStep({ id_set_digest: hex(1) + 'a' })],
+        ['fan_out undefined (absent key)', replay({ steps: [without(step(), 'fan_out')] })],
+        ['fan_out {}', withFan({})],
+        ['fan_out unknown key', withFan({ ...fanOut(), expected: 2 })],
+        ['fan_out r2 shape', withFan({ expected: 2, fetched: 2 })],
+        ['fan_out parent_step empty', withFan({ ...fanOut(), parent_step: '' })],
+        ['fan_out parent digest short', withFan({ ...fanOut(), parent_ids_digest: 'ab' })],
+        ['fan_out contexts_expected -1', withFan({ ...fanOut(), contexts_expected: -1 })],
+        ['fan_out contexts_fetched 1.5', withFan({ ...fanOut(), contexts_fetched: 1.5 })],
+        ['fan_out contexts_exhausted "2"', withFan({ ...fanOut(), contexts_exhausted: '2' })],
+        ['signed key_id uppercase', signed({ key_id: 'KEY' })],
+        ['signed key_id 65 chars', signed({ key_id: 'k'.repeat(65) })],
+        [
+          'signed signature 87 chars',
+          signed({ signature_b64: Buffer.alloc(64).toString('base64').slice(1) }),
+        ],
+        [
+          'signed signature of 65 bytes',
+          signed({ signature_b64: Buffer.alloc(65).toString('base64') }),
+        ],
+        [
+          'signed statement over 1024 bytes',
+          signed({ statement_b64: Buffer.alloc(1025, 0x20).toString('base64') }),
+        ],
+        ['signed statement not a string', signed({ statement_b64: 1 })],
+        [
+          'challenge with a non-alphabet char',
+          replay({ challenge_b64: Buffer.alloc(32, 7).toString('base64').replace(/^./, '-') }),
+        ],
+        [
+          'signed signature of 63 bytes',
+          signed({ signature_b64: Buffer.alloc(63).toString('base64') }),
+        ],
+        ['not an object', 'evidence'],
+        ['an array', [replay()]],
+        ['null', null],
+      ];
+      for (const key of Object.keys(replay()))
+        corpus.push([`replay without ${key}`, without(replay(), key)]);
+      for (const key of Object.keys(signed()))
+        corpus.push([`signed without ${key}`, without(signed(), key)]);
+      for (const key of Object.keys(step())) {
+        if (key !== 'fan_out')
+          corpus.push([`step without ${key}`, replay({ steps: [without(step(), key)] })]);
+      }
+      for (const key of Object.keys(fanOut()))
+        corpus.push([`fan_out without ${key}`, withFan(without(fanOut(), key))]);
+
+      const disagreements = corpus
+        .filter(([, value]) => schemaAccepts(value) !== parserAccepts(value))
+        .map(
+          ([name, value]) =>
+            `${name}: schema=${schemaAccepts(value)} parser=${JSON.stringify(parseEvidence(value))}`,
+        );
+      expect(disagreements).toEqual([]);
+      expect(corpus.filter(([, value]) => parserAccepts(value)).length).toBeGreaterThanOrEqual(4);
+
+      // The parser is STRICTER than any JSON Schema can be on these semantic rules; the schema
+      // states them in prose. Every one of them is schema-valid and parser-rejected — never the
+      // other way round (the schema never rejects a row the server would store).
+      const semantic: [string, unknown][] = [
+        ['root step with pages_fetched 0', withStep({ pages_fetched: 0 })],
+        ['self-parent fan-out', withFan({ ...fanOut(), parent_step: 'plans' })],
+        ['duplicate step_key', replay({ steps: [step(), step()] })],
+        [
+          'non-canonical challenge base64 (padding bits)',
+          replay({ challenge_b64: Buffer.alloc(32, 7).toString('base64').slice(0, 42) + 'B=' }),
+        ],
+        [
+          'signed statement that is not canonical JSON',
+          signed({ statement_b64: Buffer.from('{"b":1,"a":2}').toString('base64') }),
+        ],
+        [
+          'signed statement of exactly 1024 bytes (within the byte bound; the content is not a statement)',
+          signed({ statement_b64: Buffer.alloc(1024, 0x20).toString('base64') }),
+        ],
+      ];
+      for (const [name, value] of semantic) {
+        expect([name, schemaAccepts(value)]).toEqual([name, true]);
+        expect([name, parserAccepts(value)]).toEqual([name, false]);
+      }
     });
 
     it('409 bodies pin the D-S10-4 refusal codes plus the run lifecycle codes as enums', () => {

@@ -148,17 +148,19 @@ function staged(
     source_platform: slug,
     grouped_families: grouped,
     families: stagedFamilyDigests(Object.entries(ids).map(([f, list]) => [f, list ?? []])),
+    steps: new Map(),
   };
 }
 
 function input(over: Partial<CoverageEvaluationInput> = {}): CoverageEvaluationInput {
+  const registry = over.registry ?? REGISTRY;
   return {
     run: RUN,
     declaration: {
       challenge: CHALLENGE,
       platforms: [{ source_platform: SLUG, account_scope_id_digests: [SCOPE] }],
     },
-    registry: REGISTRY,
+    registry,
     observations: rows(),
     staged: [staged()],
     ...over,
@@ -692,6 +694,7 @@ describe('R27 (evaluator half) — evaluator family-set agreement given the call
     const stagedFacts: StagedPlatformFacts = {
       source_platform: SLUG,
       grouped_families: FAMILIES,
+      steps: new Map(),
       families: stagedFamilyDigests([...grouped, ['workouts', IDS.workouts]]),
     };
     const programs = [
@@ -796,7 +799,12 @@ describe('totality — hostile input never throws', () => {
       input({ observations: hostile.map((evidence) => stored(evidence)) }),
     );
     expect(facts).toEqual({ clients: UNKNOWN, programs: UNKNOWN, workouts: UNKNOWN });
-    const broken = { source_platform: SLUG, grouped_families: FAMILIES, families: new Map() };
+    const broken = {
+      source_platform: SLUG,
+      grouped_families: FAMILIES,
+      families: new Map(),
+      steps: new Map(),
+    };
     const badDates = { ...RUN, accepted_start_at: new Date('not a date') };
     expect(() => evaluateCoverage(input({ staged: [broken], run: badDates }))).not.toThrow();
     expect(evaluateCoverage(input({ run: badDates }))).toEqual({

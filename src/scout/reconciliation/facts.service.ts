@@ -286,39 +286,51 @@ export function resolveFamily(
  * `EMPTY_IDENTITY_SET_DIGEST`, count 0), never an absence. An unregistered platform has no
  * grouped family and no digest: the evaluator can only leave it unknown. Unmapped tokens of a
  * registered platform belong to no family digest (they surface as `unresolved_family` through
- * the reconciler instead).
+ * the reconciler instead). L3 r3 adds `steps`: the same rows digested per staged `entity_type`
+ * token (every spec step and family token of a registered platform, the empty set when no row),
+ * so the evaluator can verify each replay step's digest and count against the rows staged under
+ * that step (L0 r5 D-L0-6; `R589-c7A-04`, `R589-c7B-02`).
  */
 export function stagedPlatformFacts(
   sourceMappers: ReadonlyMap<string, SourceMapper>,
   rows: Iterable<{ source_platform: string; entity_type: string; source_id: string }>,
 ): StagedPlatformFacts[] {
-  const byPlatform = new Map<string, Map<string, string[]>>();
+  const byPlatform = new Map<string, { families: Map<string, string[]>; steps: Map<string, string[]> }>();
   for (const row of rows) {
-    let groups = byPlatform.get(row.source_platform);
-    if (groups === undefined) {
-      groups = new Map<string, string[]>();
+    let entry = byPlatform.get(row.source_platform);
+    if (entry === undefined) {
+      entry = { families: new Map<string, string[]>(), steps: new Map<string, string[]>() };
       const mapper = sourceMappers.get(row.source_platform);
       if (mapper !== undefined) {
         for (const family of Object.keys(mapper.spec.families).sort(byString)) {
-          groups.set(family, []);
+          entry.families.set(family, []);
+          // L3 r3: the family token is a step token too (a canonical-token collection).
+          entry.steps.set(family, []);
         }
+        for (const step of Object.keys(mapper.spec.steps).sort(byString)) entry.steps.set(step, []);
       }
-      byPlatform.set(row.source_platform, groups);
+      byPlatform.set(row.source_platform, entry);
     }
     const family = resolveFamily(sourceMappers, row.source_platform, row.entity_type);
     if (family === null) continue;
     // `resolveFamily` only names families the platform's spec declares, so the list exists;
     // the fallback merely keeps this total should the two ever disagree.
-    const ids = groups.get(family);
-    if (ids === undefined) groups.set(family, [row.source_id]);
+    const ids = entry.families.get(family);
+    if (ids === undefined) entry.families.set(family, [row.source_id]);
     else ids.push(row.source_id);
+    // L3 r3 (L0 r5 D-L0-6): the same row under its step token, so the evaluator can verify every
+    // replay step's own digest and count (and a fan-out's parent id set) against staging.
+    const stepIds = entry.steps.get(row.entity_type);
+    if (stepIds === undefined) entry.steps.set(row.entity_type, [row.source_id]);
+    else stepIds.push(row.source_id);
   }
   return Array.from(byPlatform.entries())
     .sort(([a], [b]) => byString(a, b))
-    .map(([source_platform, groups]) => ({
+    .map(([source_platform, entry]) => ({
       source_platform,
-      grouped_families: Array.from(groups.keys()),
-      families: stagedFamilyDigests(groups),
+      grouped_families: Array.from(entry.families.keys()),
+      families: stagedFamilyDigests(entry.families),
+      steps: stagedFamilyDigests(entry.steps),
     }));
 }
 

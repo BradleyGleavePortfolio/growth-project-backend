@@ -1308,9 +1308,23 @@
             "type": "string"
           },
           "observations": {
-            "description": "One ObservationEvidenceV1 per (platform, scope, family): at most 4 families × the declared scopes, one entry per unit; the whole body is ≤ 32 KiB.",
+            "description": "One ObservationEvidenceV1 per (platform, scope, family): at most 4 families × the declared scopes, one entry per unit; the whole body is ≤ 32 KiB (≤ 64 KiB when every entry is the replay kind). Discriminated by basis_kind.",
             "items": {
-              "$ref": "#/components/schemas/ScoutRunObservationEvidenceSchema"
+              "discriminator": {
+                "mapping": {
+                  "replay_terminal_enumeration": "#/components/schemas/ScoutRunReplayTerminalEvidenceSchema",
+                  "source_signed_enumeration": "#/components/schemas/ScoutRunSourceSignedEvidenceSchema"
+                },
+                "propertyName": "basis_kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ScoutRunSourceSignedEvidenceSchema"
+                },
+                {
+                  "$ref": "#/components/schemas/ScoutRunReplayTerminalEvidenceSchema"
+                }
+              ]
             },
             "maxItems": 1024,
             "minItems": 1,
@@ -1320,67 +1334,6 @@
         "required": [
           "intent_id",
           "observations"
-        ],
-        "type": "object"
-      },
-      "ScoutRunObservationEvidenceSchema": {
-        "properties": {
-          "account_scope_id_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
-          },
-          "basis_kind": {
-            "enum": [
-              "source_signed_enumeration"
-            ],
-            "type": "string"
-          },
-          "evidence_version": {
-            "enum": [
-              1
-            ],
-            "type": "number"
-          },
-          "family": {
-            "enum": [
-              "clients",
-              "workouts",
-              "client_history",
-              "programs"
-            ],
-            "type": "string"
-          },
-          "key_id": {
-            "pattern": "^[a-z0-9._-]{1,64}$",
-            "type": "string"
-          },
-          "mapping_spec_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
-          },
-          "signature_b64": {
-            "description": "Canonical base64 of the 64-byte Ed25519 source signature.",
-            "type": "string"
-          },
-          "source_platform": {
-            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
-            "type": "string"
-          },
-          "statement_b64": {
-            "description": "Canonical base64 of the strict canonical JSON source statement.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "evidence_version",
-          "source_platform",
-          "account_scope_id_digest",
-          "family",
-          "basis_kind",
-          "mapping_spec_digest",
-          "statement_b64",
-          "key_id",
-          "signature_b64"
         ],
         "type": "object"
       },
@@ -1411,6 +1364,290 @@
           "execution_epoch",
           "stored",
           "replayed"
+        ],
+        "type": "object"
+      },
+      "ScoutRunReplayFanOutSchema": {
+        "additionalProperties": false,
+        "description": "The parent contexts a fan-out step visited. parent_ids_digest must equal the parent step’s verified id_set_digest and contexts_expected its verified distinct_raw_ids; the parent chain must end in a root step (no self-parent, no cycle). Proven only when all three context counts are equal.",
+        "properties": {
+          "contexts_exhausted": {
+            "description": "Contexts positively exhausted (≤ contexts_fetched).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "contexts_expected": {
+            "description": "Parent identities to visit (= the parent’s verified distinct_raw_ids).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "contexts_fetched": {
+            "description": "Distinct parent identities a context was fetched for (≤ contexts_expected).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parent_ids_digest": {
+            "description": "The D-S10-2 digest of the DISTINCT parent identities a context was fetched for (each parent once; visiting A twice and omitting B digests to a different set).",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "parent_step": {
+            "description": "The step whose identities this step iterated; never the step itself.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_step",
+          "parent_ids_digest",
+          "contexts_expected",
+          "contexts_fetched",
+          "contexts_exhausted"
+        ],
+        "type": "object"
+      },
+      "ScoutRunReplayStepEvidenceSchema": {
+        "additionalProperties": false,
+        "description": "One replay step’s evidence (L0 r5 StepEvidenceV1): counts, a stop reason and an identity-set digest; never a URL or an id. Every key is required; the server refuses any other key.",
+        "properties": {
+          "advertised_next": {
+            "description": "A next link or cursor the last page advertised and the step did not follow; true caps the family at observed.",
+            "type": "boolean"
+          },
+          "distinct_raw_ids": {
+            "description": "Items that were the first occurrence of a real staged identity (never a synthetic id).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "duplicate_ids": {
+            "description": "Items whose real identity repeated an earlier one.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fan_out": {
+            "description": "null for a root collection; the parent-bound context claim for a fan-out step (all five keys required).",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScoutRunReplayFanOutSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id_set_digest": {
+            "description": "The D-S10-2 identity-set digest of this step’s distinct staged identities.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "missing_id_items": {
+            "description": "Items without an id; must be 0 to count.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pages_fetched": {
+            "description": "EVERY page this step fetched, the terminal page INCLUDED (normative): two data pages plus the empty page 3 that ended a page-style list is 3. A root step (fan_out null) must have fetched at least 1 page: a crawl that fetched nothing observed no terminal and is refused (unknown is never 0). For a fan-out, the page total across its contexts (at least contexts_fetched). With stop empty_page and raw_items > 0 the server requires at least 2 pages on a root step and more pages than contexts_fetched on a fan-out; otherwise the family is unknown (evidence_inconsistent).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "raw_items": {
+            "description": "Items the pages held, before identity. Must equal distinct_raw_ids + duplicate_ids + synthetic_ids + missing_id_items exactly; otherwise the family is unknown.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refused_pages": {
+            "description": "Pages the source refused; more than 0 caps the family at observed.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_key": {
+            "description": "The pinned mapping spec's step key feeding the family (or the family token, only when the spec maps no step to the family). Never a URL.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stop": {
+            "description": "How the step stopped (L0 r5 StopReason). Only empty_page (page style) and absent_next (cursor / next_url style), after ≥ 1 page, prove exhaustion; short_page and first_page_only yield an observed count; budget, cycle and error yield unknown; advertised_next caps the family at observed.",
+            "enum": [
+              "absent_next",
+              "empty_page",
+              "short_page",
+              "first_page_only",
+              "budget",
+              "cycle",
+              "error",
+              "advertised_next"
+            ],
+            "type": "string"
+          },
+          "synthetic_ids": {
+            "description": "Items given a synthetic positional id; must be 0 to count.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step_key",
+          "pages_fetched",
+          "raw_items",
+          "distinct_raw_ids",
+          "duplicate_ids",
+          "synthetic_ids",
+          "missing_id_items",
+          "stop",
+          "advertised_next",
+          "refused_pages",
+          "fan_out",
+          "id_set_digest"
+        ],
+        "type": "object"
+      },
+      "ScoutRunReplayTerminalEvidenceSchema": {
+        "additionalProperties": false,
+        "description": "ObservationEvidenceV1, kind replay_terminal_enumeration (L3, L0 r5 D-L0-6): the family’s per-step replay evidence, bound to the run’s declaration challenge. Every key is required; the server refuses any other key. Yields a per-family SOURCE COUNT with a basis (proven / observed / unknown), never a run-level completeness basis.",
+        "properties": {
+          "account_scope_id_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "basis_kind": {
+            "enum": [
+              "replay_terminal_enumeration"
+            ],
+            "type": "string"
+          },
+          "challenge_b64": {
+            "description": "The run’s declaration challenge (RFC 4648 §4 base64 of 32 bytes).",
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^(?:[A-Za-z0-9+/]{4}){10}[A-Za-z0-9+/]{3}=$",
+            "type": "string"
+          },
+          "evidence_version": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "family": {
+            "enum": [
+              "clients",
+              "workouts",
+              "client_history",
+              "programs"
+            ],
+            "type": "string"
+          },
+          "id_set_digest": {
+            "description": "The D-S10-2 identity-set digest of those ids (sha256 over the bytewise-sorted, length-prefixed distinct ids).",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "mapping_spec_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "observed_unique": {
+            "description": "Distinct source ids over the union of the steps’ id sets.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source_platform": {
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          },
+          "steps": {
+            "description": "One step evidence per collection step (and variant or probe) the pinned package maps to the family, aggregated in the family’s single row; step_key unique within the row.",
+            "items": {
+              "$ref": "#/components/schemas/ScoutRunReplayStepEvidenceSchema"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "evidence_version",
+          "source_platform",
+          "account_scope_id_digest",
+          "family",
+          "mapping_spec_digest",
+          "basis_kind",
+          "challenge_b64",
+          "steps",
+          "observed_unique",
+          "id_set_digest"
+        ],
+        "type": "object"
+      },
+      "ScoutRunSourceSignedEvidenceSchema": {
+        "additionalProperties": false,
+        "description": "ObservationEvidenceV1, kind source_signed_enumeration: a canonical source statement signed by a manifest verifier. Every key is required; the server refuses any other key. Refused outside an explicit development/test runtime (no completeness closure exists yet).",
+        "properties": {
+          "account_scope_id_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "basis_kind": {
+            "enum": [
+              "source_signed_enumeration"
+            ],
+            "type": "string"
+          },
+          "evidence_version": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "family": {
+            "enum": [
+              "clients",
+              "workouts",
+              "client_history",
+              "programs"
+            ],
+            "type": "string"
+          },
+          "key_id": {
+            "description": "A verifier key_id of the manifest.",
+            "pattern": "^[a-z0-9._-]{1,64}$",
+            "type": "string"
+          },
+          "mapping_spec_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "signature_b64": {
+            "description": "Canonical base64 of the 64-byte Ed25519 source signature.",
+            "maxLength": 88,
+            "minLength": 88,
+            "pattern": "^(?:[A-Za-z0-9+/]{4}){21}[A-Za-z0-9+/]{2}==$",
+            "type": "string"
+          },
+          "source_platform": {
+            "pattern": "^[a-z0-9][a-z0-9._:-]{0,255}$",
+            "type": "string"
+          },
+          "statement_b64": {
+            "description": "Canonical base64 (RFC 4648 §4, padded) of the strict canonical JSON source statement (≤ 1024 bytes).",
+            "maxLength": 1368,
+            "minLength": 4,
+            "pattern": "^(?:(?:[A-Za-z0-9+/]{4}){0,341}|(?:[A-Za-z0-9+/]{4}){0,341}[A-Za-z0-9+/]{2}==|(?:[A-Za-z0-9+/]{4}){0,340}[A-Za-z0-9+/]{3}=)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_version",
+          "source_platform",
+          "account_scope_id_digest",
+          "family",
+          "mapping_spec_digest",
+          "basis_kind",
+          "statement_b64",
+          "key_id",
+          "signature_b64"
         ],
         "type": "object"
       },

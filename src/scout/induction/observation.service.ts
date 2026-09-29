@@ -63,13 +63,48 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** The row JSON of one validated evidence object (a fresh literal: the Prisma JSON input shape). */
 function evidenceJson(e: ObservationEvidenceV1): Prisma.InputJsonObject {
-  return {
+  const common = {
     evidence_version: e.evidence_version,
     source_platform: e.source_platform,
     account_scope_id_digest: e.account_scope_id_digest,
     family: e.family,
     basis_kind: e.basis_kind,
     mapping_spec_digest: e.mapping_spec_digest,
+  };
+  // L3: the row JSON follows the kind; both are the validated upload, key for key.
+  if (e.basis_kind === 'replay_terminal_enumeration') {
+    return {
+      ...common,
+      challenge_b64: e.challenge_b64,
+      steps: e.steps.map((s) => ({
+        step_key: s.step_key,
+        pages_fetched: s.pages_fetched,
+        raw_items: s.raw_items,
+        distinct_raw_ids: s.distinct_raw_ids,
+        duplicate_ids: s.duplicate_ids,
+        synthetic_ids: s.synthetic_ids,
+        missing_id_items: s.missing_id_items,
+        stop: s.stop,
+        advertised_next: s.advertised_next,
+        refused_pages: s.refused_pages,
+        fan_out:
+          s.fan_out === null
+            ? null
+            : {
+                parent_step: s.fan_out.parent_step,
+                parent_ids_digest: s.fan_out.parent_ids_digest,
+                contexts_expected: s.fan_out.contexts_expected,
+                contexts_fetched: s.fan_out.contexts_fetched,
+                contexts_exhausted: s.fan_out.contexts_exhausted,
+              },
+        id_set_digest: s.id_set_digest,
+      })),
+      observed_unique: e.observed_unique,
+      id_set_digest: e.id_set_digest,
+    };
+  }
+  return {
+    ...common,
     statement_b64: e.statement_b64,
     key_id: e.key_id,
     signature_b64: e.signature_b64,
