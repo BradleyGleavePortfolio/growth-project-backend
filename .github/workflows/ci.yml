@@ -400,6 +400,21 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run L1-gw importer.mapping spend-ledger live spec (real advisory lock)
+        # test/ai/importer-mapping-spend-ledger.live.spec.ts (PR #592 r3,
+        # R592-c7B-02 / R592-c7A-04). Runs the REAL AuditSpendLedger against
+        # this job's Postgres through several PrismaClient instances: advisory
+        # lock blocking across connections, N concurrent reservations with a
+        # cap for k<N, committed-row visibility after the lock wait, the
+        # database-clock accounting day and the UTC window, settle/overage.
+        # Gated on its own var (never the app DATABASE_URL); it describe.skips
+        # with a logged reason when unset. It resets `public` like the MWB-3
+        # specs, hence --runInBand on the shared service.
+        run: npx jest test/ai/importer-mapping-spend-ledger.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          L1GW_SPEND_LEDGER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Run MWB-3 RLS + concurrency live spec (rls-lane spec)
         # test/rls-mwb3-autosave-undo.spec.ts lives in the RLS lane
         # (jest.rls.config.js testMatch test/rls-*.spec.ts; the default config

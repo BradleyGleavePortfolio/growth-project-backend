@@ -7,7 +7,12 @@ import {
   AiStructuredProviderRequest,
   AiStructuredProviderResponse,
 } from './structured-provider.types';
-import { AiGatewayError, toAiGatewayError } from './structured-ai.errors';
+import {
+  AiGatewayError,
+  AiGatewayErrorCode,
+  AiProviderUsage,
+  toAiGatewayError,
+} from './structured-ai.errors';
 import { isObjectSchema } from './structured-provider.types';
 
 // L1-gw — structured adapter for the `anthropic` provider slot.
@@ -106,6 +111,18 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
     const responseTokens = resp.usage?.output_tokens ?? 0;
     const modelUsed = resp.model ?? req.model;
     const stopReason = resp.stop_reason ?? null;
+    // r3 (R592-c7A-02, R592-c7B-01): the provider RETURNED — whatever we
+    // decide about the content, the call was billed. Every rejection below
+    // carries this usage so the gateway settles the actual charge.
+    const usage: AiProviderUsage = { promptTokens, responseTokens, model: modelUsed, stopReason };
+    const reject = (code: AiGatewayErrorCode, reason: string): AiGatewayError =>
+      new AiGatewayError(
+        code,
+        { provider: this.name, model: modelUsed, reason },
+        undefined,
+        undefined,
+        usage,
+      );
 
     // r2 (R592-A-B3): the answer must be EXACTLY one tool-use block naming
     // our schema tool, with the stop reason a forced tool call produces. Any
@@ -124,32 +141,19 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
     if (stopReason === 'max_tokens') {
       // Truncated output can never be trusted as a conforming object
       // (record D-L0-7.3: truncated ⇒ non-conforming). Not retryable.
-      throw new AiGatewayError('ai_malformed_output', {
-        provider: this.name,
-        model: modelUsed,
-        reason: 'truncated-at-max-tokens',
-      });
+      throw reject('ai_malformed_output', 'truncated-at-max-tokens');
     }
     if (stopReason === 'refusal') {
-      throw new AiGatewayError('ai_request_rejected', {
-        provider: this.name,
-        model: modelUsed,
-        reason: 'provider-refusal',
-      });
+      throw reject('ai_request_rejected', 'provider-refusal');
     }
     if (stopReason !== 'tool_use') {
-      throw new AiGatewayError('ai_malformed_output', {
-        provider: this.name,
-        model: modelUsed,
-        reason: 'unexpected-stop-reason',
-      });
+      throw reject('ai_malformed_output', 'unexpected-stop-reason');
     }
     if (toolUses.length !== 1 || foreignBlock) {
-      throw new AiGatewayError('ai_malformed_output', {
-        provider: this.name,
-        model: modelUsed,
-        reason: toolUses.length === 0 ? 'no-structured-block' : 'ambiguous-structured-output',
-      });
+      throw reject(
+        'ai_malformed_output',
+        toolUses.length === 0 ? 'no-structured-block' : 'ambiguous-structured-output',
+      );
     }
     const toolUse = toolUses[0];
     if (
@@ -158,11 +162,7 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
       typeof toolUse.input !== 'object' ||
       Array.isArray(toolUse.input)
     ) {
-      throw new AiGatewayError('ai_malformed_output', {
-        provider: this.name,
-        model: modelUsed,
-        reason: 'no-structured-block',
-      });
+      throw reject('ai_malformed_output', 'no-structured-block');
     }
 
     return {

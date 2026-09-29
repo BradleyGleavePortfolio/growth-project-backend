@@ -79,18 +79,38 @@ export interface AiValidationError {
 export const MAX_VALIDATION_ERRORS = 64;
 export const MAX_VALIDATION_FIELD_CHARS = 200;
 
+// r3 (R592-c7A-02, R592-c7B-01): billed usage the provider reported on a
+// response the adapter then REJECTED (truncation, refusal, wrong tool-call
+// count, foreign block, ...). Carried on the error so the gateway settles the
+// ACTUAL charge instead of refunding a paid call to zero.
+export interface AiProviderUsage {
+  promptTokens: number;
+  responseTokens: number;
+  // Model the provider reports it actually used.
+  model: string;
+  // Provider-side stop reason, when known.
+  stopReason: string | null;
+}
+
 export class AiGatewayError extends Error {
   readonly code: AiGatewayErrorCode;
   readonly retryable: boolean;
   readonly detail: AiGatewayErrorDetail;
   // Present only for `ai_malformed_output` raised by schema validation.
-  readonly validation?: AiValidationFailure;
+  // Non-enumerable (R592-c7B-C06): a generic error serializer / logger that
+  // walks own enumerable properties never sees the model's raw object.
+  // `declare` so no class-field initializer can re-create it as enumerable.
+  declare readonly validation?: AiValidationFailure;
+  // Present when the provider returned (and billed) a response that was then
+  // rejected. Absent ⇒ usage unknown (the ledger keeps the reservation).
+  readonly usage?: AiProviderUsage;
 
   constructor(
     code: AiGatewayErrorCode,
     detail: AiGatewayErrorDetail = {},
     message?: string,
     validation?: AiValidationFailure,
+    usage?: AiProviderUsage,
   ) {
     super(message ?? `${code}${detail.reason ? `: ${detail.reason}` : ''}`);
     this.name = 'AiGatewayError';
@@ -98,12 +118,25 @@ export class AiGatewayError extends Error {
     this.retryable = RETRYABLE_AI_ERROR_CODES.has(code);
     this.detail = detail;
     if (validation) {
-      this.validation = {
-        errors: validation.errors.slice(0, MAX_VALIDATION_ERRORS).map((e) => ({
-          path: String(e.path ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
-          detail: String(e.detail ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
-        })),
-        rawOutput: validation.rawOutput,
+      Object.defineProperty(this, 'validation', {
+        value: {
+          errors: validation.errors.slice(0, MAX_VALIDATION_ERRORS).map((e) => ({
+            path: String(e.path ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
+            detail: String(e.detail ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
+          })),
+          rawOutput: validation.rawOutput,
+        },
+        enumerable: false,
+        writable: false,
+        configurable: false,
+      });
+    }
+    if (usage) {
+      this.usage = {
+        promptTokens: nonNegInt(usage.promptTokens),
+        responseTokens: nonNegInt(usage.responseTokens),
+        model: String(usage.model ?? ''),
+        stopReason: usage.stopReason == null ? null : String(usage.stopReason),
       };
     }
   }
@@ -155,6 +188,10 @@ export function toAiGatewayError(
   // Transport-level failure (DNS, socket reset, connection refused) — the
   // provider may be fine on the next model/region, so treat as retryable.
   return new AiGatewayError('ai_provider_error', { ...base, reason: 'transport-error' });
+}
+
+function nonNegInt(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.ceil(v) : 0;
 }
 
 function pickHttpStatus(err: unknown): number | null {

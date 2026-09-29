@@ -16,8 +16,20 @@ import {
   StructuredValidation,
   isObjectSchema,
 } from './structured-provider.types';
-import { AiGatewayError, AiGatewayErrorCode, toAiGatewayError } from './structured-ai.errors';
-import { SPEND_LEDGER, SpendLedger, SpendReservation, errorClass, utcDay } from './spend-ledger';
+import {
+  AiGatewayError,
+  AiGatewayErrorCode,
+  AiProviderUsage,
+  toAiGatewayError,
+} from './structured-ai.errors';
+import {
+  SPEND_LEDGER,
+  SpendLedger,
+  SpendReservation,
+  errorClass,
+  zeroChargeFields,
+} from './spend-ledger';
+import { addMicros, microsToCentsCeil, microsToUsd, tokenCostMicros } from './money';
 
 // L1-gw — fail-closed, observable gateway for capability `importer.mapping`.
 //
@@ -48,10 +60,18 @@ import { SPEND_LEDGER, SpendLedger, SpendReservation, errorClass, utcDay } from 
 //      temperature 0, and a global daily spend cap enforced by
 //      RESERVE-BEFORE-CALL in PostgreSQL through the `SpendLedger` port (see
 //      spend-ledger.ts): the reservation row IS the AiRequestAudit row for the
-//      attempt, charged at the conservative maximum until settled to the
-//      actual charge. Reservation failure ⇒ no call. Hashes only, never
-//      prompt or response content; caller metadata is allow-listed and
-//      nested so it can never overwrite a charge field.
+//      attempt, charged at the conservative maximum until settled. Money is
+//      integer micro-USD (money.ts). Settlement (r3, R592-c7A-02/03,
+//      R592-c7B-01): whenever the provider RETURNED a response — accepted,
+//      truncated, refused, wrong tool-call count, malformed — the ACTUAL
+//      usage is charged; a provider HTTP 4xx (request rejected before any
+//      generation, proven unbilled) settles to 0; every other failure after
+//      the request was sent (timeout, abort, transport error, 5xx) keeps the
+//      full reservation because usage is unknown. A settlement above the
+//      reservation is re-checked under the day lock and recorded.
+//      Reservation failure ⇒ no call. Hashes only, never prompt or response
+//      content; caller metadata is allow-listed and nested so it can never
+//      overwrite a charge field.
 //   5. Structured JSON output against the caller's JSON schema is mandatory:
 //      the adapter demands exactly one tool call matching the schema and the
 //      gateway runs the caller's `validate`; a failure returns the
@@ -125,6 +145,9 @@ export interface ImporterMappingResult<T> {
   promptTokens: number;
   responseTokens: number;
   latencyMs: number;
+  // Charge recorded in the ledger for the successful attempt: integer µUSD
+  // (authoritative) and its USD rendering (display).
+  chargeMicros: number;
   usdEstimate: number;
   // 1-based number of provider attempts made (1 = primary succeeded).
   attempts: number;
@@ -154,9 +177,13 @@ const ID_RE = /^[A-Za-z0-9_:.-]{1,128}$/;
 const VERSION_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const HASH_RE = /^[A-Fa-f0-9]{8,128}$/;
 // Conservative tokenizer bound for JSON-dense text: ~2.5 chars/token, then a
-// safety factor. Actual usage is reconciled at settle time.
+// safety factor, plus a fixed allowance for what the provider adds to the
+// billed input that is not in our bytes (tool-use system prompt and message
+// framing; a few hundred tokens — R592-c7B-C03). Actual usage is reconciled
+// at settle time and an overage is re-checked under the day lock.
 const CHARS_PER_TOKEN = 2.5;
 const INPUT_SAFETY_FACTOR = 1.25;
+export const INPUT_OVERHEAD_TOKENS = 1_024;
 // Kill-switch poll while a provider call is in flight.
 const KILL_SWITCH_POLL_MS = 500;
 
@@ -284,6 +311,7 @@ export class ImporterMappingGatewayService {
         promptTokens: resp.promptTokens,
         responseTokens: resp.responseTokens,
         latencyMs: resp.latencyMs,
+        chargeMicros: 0,
         usdEstimate: 0,
         attempts: 0,
         fallbackUsed: false,
@@ -338,8 +366,7 @@ export class ImporterMappingGatewayService {
       throw err;
     }
 
-    const cap = cfg.dailySpendCapUsd as number; // non-null when cfg.ok && !stub
-    const day = utcDay();
+    const capMicros = cfg.dailySpendCapMicros as number; // non-null when cfg.ok && !stub
     let lastError: AiGatewayError | null = null;
 
     // ── 5. Real provider, ordered models, fallback only on retryable codes ──
@@ -356,7 +383,9 @@ export class ImporterMappingGatewayService {
           reason: 'kill-switch-off',
         });
         await this.writeRefusalAudit({
-          requestId,
+          // Attempt-scoped id (R592-c7B-C05): attempt 0's reservation row
+          // already holds `requestId` (request_id is unique).
+          requestId: attempt > 0 ? `${requestId}:${attempt}` : requestId,
           req,
           cfg,
           provider: adapter.name,
@@ -378,14 +407,15 @@ export class ImporterMappingGatewayService {
       }
 
       // 5b. Reserve the conservative maximum in the ledger BEFORE the call.
-      const reserveUsd = this.estimateUsd(cfg, inputTokenEstimate, maxOutputTokens);
+      //     The ledger derives the accounting day from the database clock
+      //     inside its transaction (R592-c7A-04).
+      const reserveMicros = this.estimateMicros(cfg, inputTokenEstimate, maxOutputTokens);
       let reservation: SpendReservation;
       try {
         reservation = await this.ledger.reserve({
           capability: IMPORTER_MAPPING_CAPABILITY,
-          day,
-          capUsd: cap,
-          maxUsd: reserveUsd,
+          capMicros,
+          maxMicros: reserveMicros,
           audit: {
             requestId: attempt > 0 ? `${requestId}:${attempt}` : requestId,
             requesterId: req.requester.id,
@@ -415,7 +445,7 @@ export class ImporterMappingGatewayService {
               reason: 'ledger-unavailable',
             });
         this.logger.warn(
-          `[importer.mapping] refused before call: code=${err.code} reason=${err.detail.reason ?? 'n/a'} reserve=${reserveUsd} cap=${cap}`,
+          `[importer.mapping] refused before call: code=${err.code} reason=${err.detail.reason ?? 'n/a'} reserve_micros=${reserveMicros} cap_micros=${capMicros}`,
         );
         throw err;
       }
@@ -562,17 +592,48 @@ export class ImporterMappingGatewayService {
         }
       }
 
-      // 5f. Settle the reservation to the actual charge. A timeout or an
-      //     abort keeps the conservative maximum (usage unknown).
-      const usageUnknown = failure?.code === 'ai_timeout' || killed;
-      const promptTokens = resp?.promptTokens ?? (usageUnknown ? inputTokenEstimate : 0);
-      const responseTokens = resp?.responseTokens ?? (usageUnknown ? maxOutputTokens : 0);
-      const actualUsd = this.estimateUsd(cfg, promptTokens, responseTokens);
-      const chargedUsd = usageUnknown ? Math.max(reserveUsd, actualUsd) : actualUsd;
-      const modelUsed = resp?.model ?? model;
+      // 5f. Settle the reservation (r3, R592-c7A-02/03, R592-c7B-01).
+      //     Provider returned (resp, or usage carried on the adapter's
+      //     rejection) ⇒ ACTUAL usage. Provider HTTP 4xx ⇒ the request was
+      //     rejected before generation (proven unbilled) ⇒ 0. Anything else
+      //     after the request was sent (timeout, kill-switch abort, transport
+      //     error, 5xx, unknown) ⇒ usage unknown ⇒ the reservation stands.
+      const usage: AiProviderUsage | null = resp
+        ? {
+            promptTokens: resp.promptTokens,
+            responseTokens: resp.responseTokens,
+            model: resp.model,
+            stopReason: resp.stopReason ?? null,
+          }
+        : (failure?.usage ?? null);
+      const status = failure?.detail.httpStatus ?? null;
+      const providerRejected =
+        !usage && !timedOut && !killed && status != null && status >= 400 && status < 500;
+      let usageBasis: 'provider' | 'provider-rejected-4xx' | 'unknown-kept-reservation';
+      let promptTokens: number;
+      let responseTokens: number;
+      let chargedMicros: number;
+      if (usage) {
+        usageBasis = 'provider';
+        promptTokens = usage.promptTokens;
+        responseTokens = usage.responseTokens;
+        chargedMicros = this.estimateMicros(cfg, promptTokens, responseTokens);
+      } else if (providerRejected) {
+        usageBasis = 'provider-rejected-4xx';
+        promptTokens = 0;
+        responseTokens = 0;
+        chargedMicros = 0;
+      } else {
+        usageBasis = 'unknown-kept-reservation';
+        promptTokens = inputTokenEstimate;
+        responseTokens = maxOutputTokens;
+        chargedMicros = reservation.reservedMicros;
+      }
+      const modelUsed = usage?.model || model;
+      const stopReason = usage?.stopReason ?? null;
       const outcome: AttemptOutcome = failure ? failure.code : 'ok';
-      await this.ledger.settle(reservation, {
-        chargedUsd,
+      const settled = await this.ledger.settle(reservation, {
+        chargedMicros,
         outcome,
         enabled: !failure,
         model: modelUsed,
@@ -588,18 +649,21 @@ export class ImporterMappingGatewayService {
           fallback_from: fallbackFrom,
           models_configured: cfg.models.length,
           latency_ms: latencyMs,
-          http_status: failure?.detail.httpStatus ?? null,
+          http_status: status,
           error_reason: failure?.detail.reason ?? null,
-          stop_reason: resp?.stopReason ?? null,
+          stop_reason: stopReason,
+          usage_basis: usageBasis,
           validation_error_count: failure?.validation?.errors.length ?? null,
         },
       });
+      // A settle failure leaves the row at its reservation: report that.
+      const recordedMicros = settled.ok ? chargedMicros : reservation.reservedMicros;
       await this.writeCallLog(
         req,
         modelUsed,
         promptTokens,
         responseTokens,
-        chargedUsd,
+        recordedMicros,
         latencyMs,
         outcome,
       );
@@ -615,7 +679,8 @@ export class ImporterMappingGatewayService {
           promptTokens,
           responseTokens,
           latencyMs,
-          usdEstimate: chargedUsd,
+          usdEstimate: microsToUsd(recordedMicros),
+          chargeMicros: recordedMicros,
           attempts: attempt + 1,
           fallbackUsed: attempt > 0,
           redactionsApplied: redacted.summary,
@@ -637,15 +702,17 @@ export class ImporterMappingGatewayService {
     throw lastError ?? new AiGatewayError('ai_unavailable', { reason: 'no-model-attempted' });
   }
 
-  estimateUsd(
+  // Integer µUSD, each side rounded UP (money.ts): never 0 for a positive
+  // token count at a positive price.
+  estimateMicros(
     cfg: ImporterMappingResolvedConfig,
     inputTokens: number,
     outputTokens: number,
   ): number {
-    const usd =
-      (Math.max(0, inputTokens) / 1_000_000) * cfg.inputUsdPerMTok +
-      (Math.max(0, outputTokens) / 1_000_000) * cfg.outputUsdPerMTok;
-    return round6(usd);
+    return addMicros(
+      tokenCostMicros(nonNegInt(inputTokens), cfg.inputPriceMicrosPerMTok),
+      tokenCostMicros(nonNegInt(outputTokens), cfg.outputPriceMicrosPerMTok),
+    );
   }
 
   // Zero-charge audit row for refusals and the stub path (NOT a reservation;
@@ -654,9 +721,9 @@ export class ImporterMappingGatewayService {
   private async writeRefusalAudit(a: AuditArgs): Promise<string> {
     const metadata: Record<string, unknown> = {
       ...(a.extra ?? {}),
+      ...zeroChargeFields(),
       outcome: a.outcome,
       latency_ms: a.latencyMs,
-      usd_estimate: 0,
       context_id: a.req.contextId ?? null,
       models_configured: a.cfg?.models.length ?? 0,
     };
@@ -703,7 +770,7 @@ export class ImporterMappingGatewayService {
     model: string,
     tokensIn: number,
     tokensOut: number,
-    usd: number,
+    chargeMicros: number,
     latencyMs: number,
     outcome: AttemptOutcome,
   ): Promise<void> {
@@ -716,7 +783,7 @@ export class ImporterMappingGatewayService {
           model,
           tokensIn,
           tokensOut,
-          costCents: Math.ceil(usd * 100),
+          costCents: microsToCentsCeil(chargeMicros),
           latencyMs,
           success: outcome === 'ok',
           errorMessage: outcome === 'ok' ? null : outcome,
@@ -735,11 +802,21 @@ export class ImporterMappingGatewayService {
 export function estimateInputTokens(...parts: string[]): number {
   let chars = 0;
   for (const p of parts) chars += Buffer.byteLength(p ?? '', 'utf8');
-  return Math.ceil((chars / CHARS_PER_TOKEN) * INPUT_SAFETY_FACTOR);
+  return Math.ceil((chars / CHARS_PER_TOKEN) * INPUT_SAFETY_FACTOR) + INPUT_OVERHEAD_TOKENS;
 }
 
+function nonNegInt(n: number): number {
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 0;
+}
+
+// A request may only LOWER the configured cap. A supplied value that is not
+// a positive finite number is a caller bug and is refused (R592-c7A-07), not
+// silently replaced by the configured maximum.
 function clampMaxOutput(configured: number, requested: number | undefined): number {
-  if (requested == null || !Number.isFinite(requested) || requested <= 0) return configured;
+  if (requested == null) return configured;
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1) {
+    throw new Error('ImporterMappingGatewayService.invokeStructured: maxOutputTokens invalid');
+  }
   return Math.min(configured, Math.floor(requested));
 }
 
@@ -806,8 +883,4 @@ function stableStringify(v: unknown): string {
     }
     return val;
   });
-}
-
-function round6(n: number): number {
-  return Math.round(n * 1_000_000) / 1_000_000;
 }

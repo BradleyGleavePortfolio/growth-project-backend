@@ -38,8 +38,15 @@ import {
   ImporterMappingGatewayService,
   ImporterMappingRequest,
   IMPORTER_MAPPING_ENV_KEYS,
+  INPUT_OVERHEAD_TOKENS,
   JsonSchemaObject,
+  RESERVE_TX_OPTIONS,
+  addMicros,
+  advisoryLockKey,
   estimateInputTokens,
+  microsToCentsCeil,
+  parseUsdToMicros,
+  tokenCostMicros,
   structuredContractFromZod,
   RETRYABLE_AI_ERROR_CODES,
   StubStructuredProviderAdapter,
@@ -48,6 +55,7 @@ import {
   toAiGatewayError,
 } from '../../src/ai/gateway/structured';
 import { COACH_AI_METERED_CAPABILITIES } from '../../src/ai-credits/ai-credits.constants';
+import { Prisma } from '@prisma/client';
 
 // ── Test doubles ──────────────────────────────────────────────────────────────
 //
@@ -59,10 +67,16 @@ interface PrismaDouble {
   audits: any[];
   callLogs: any[];
   lockCalls: string[];
+  lockKeys: bigint[];
+  txOptions: unknown[];
+  // The database clock the double reports for `SELECT now()` (r3: the ledger
+  // derives the accounting day from it). Tests set it to probe UTC midnight.
+  clock: () => Date;
   aiRequestAudit: { create: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   aICallLog: { create: jest.Mock };
   $transaction: jest.Mock;
   $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
 }
 
 function asPrismaDouble(mock: PrismaDouble): PrismaService {
@@ -145,27 +159,46 @@ class FakeStructuredProvider implements AiStructuredProviderAdapter {
 
 // In-memory Prisma double. `$transaction` hands the SAME double to the callback
 // and serialises transactions through a mutex — the stand-in for the
-// `pg_advisory_xact_lock` the real ledger takes (the raw SQL is recorded so
-// the test can assert it is issued inside the transaction).
+// `pg_advisory_xact_lock` the real ledger takes (the raw SQL, the bound lock
+// key and the transaction options are recorded so tests can assert them).
+// `findMany` honours the `created_at` window and `id.not` filters the ledger
+// uses; rows without a `created_at` (seeded `existingRows`) count as today.
+// The REAL lock/window/visibility proof runs against PostgreSQL in
+// test/ai/importer-mapping-spend-ledger.live.spec.ts.
 function buildPrisma(existingRows: Array<{ metadata: unknown }> = []): PrismaDouble {
   const audits: any[] = [];
   const callLogs: any[] = [];
   const lockCalls: string[] = [];
+  const lockKeys: bigint[] = [];
+  const txOptions: unknown[] = [];
   let mutex: Promise<void> = Promise.resolve();
+  const inWindow = (row: any, where: any): boolean => {
+    const w = where?.created_at;
+    if (!w || !(row.created_at instanceof Date)) return true;
+    const t = row.created_at.getTime();
+    if (w.gte instanceof Date && t < w.gte.getTime()) return false;
+    if (w.lt instanceof Date && t >= w.lt.getTime()) return false;
+    return true;
+  };
   const double: PrismaDouble = {
     audits,
     callLogs,
     lockCalls,
+    lockKeys,
+    txOptions,
+    clock: () => new Date(),
     aiRequestAudit: {
       create: jest.fn(async ({ data }: any) => {
         const row = { id: `audit-${audits.length + 1}`, ...data };
         audits.push(row);
         return row;
       }),
-      findMany: jest.fn(async () => [
-        ...existingRows,
-        ...audits.map((a) => ({ id: a.id, metadata: a.metadata })),
-      ]),
+      findMany: jest.fn(async ({ where }: any = {}) =>
+        [...existingRows.map((r, i) => ({ id: `seed-${i}`, ...r })), ...audits]
+          .filter((a) => inWindow(a, where))
+          .filter((a) => where?.id?.not == null || a.id !== where.id.not)
+          .map((a) => ({ id: a.id, metadata: a.metadata })),
+      ),
       update: jest.fn(async ({ where, data }: any) => {
         const row = audits.find((a) => a.id === where.id);
         if (!row) throw new Error('row not found');
@@ -179,11 +212,14 @@ function buildPrisma(existingRows: Array<{ metadata: unknown }> = []): PrismaDou
         return { id: `call-${callLogs.length}`, ...data };
       }),
     },
-    $executeRaw: jest.fn(async (strings: TemplateStringsArray) => {
+    $executeRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       lockCalls.push(strings.join('?'));
+      for (const v of values) if (typeof v === 'bigint') lockKeys.push(v);
       return 0;
     }),
-    $transaction: jest.fn(async (fn: (tx: PrismaDouble) => Promise<unknown>) => {
+    $queryRaw: jest.fn(async () => [{ now: double.clock() }]),
+    $transaction: jest.fn(async (fn: (tx: PrismaDouble) => Promise<unknown>, options?: unknown) => {
+      txOptions.push(options);
       let release!: () => void;
       const mine = new Promise<void>((r) => (release = r));
       const prev = mutex;
@@ -197,6 +233,12 @@ function buildPrisma(existingRows: Array<{ metadata: unknown }> = []): PrismaDou
     }),
   };
   return double;
+}
+
+// Seed a same-day ledger row charged `usd` (stored as integer µUSD, like the
+// ledger writes it).
+function chargedRow(usd: number): { metadata: unknown } {
+  return { metadata: { charge_micros: Math.round(usd * 1_000_000), usd_estimate: usd } };
 }
 
 function buildSvc(fake: AiStructuredProviderAdapter, prisma = buildPrisma()) {
@@ -250,6 +292,15 @@ function openEnv() {
   delete process.env.AI_GATEWAY_DEV_ALLOW_OFFLINE_PROVIDER;
   delete process.env.AI_PRICE_INPUT_USD_PER_MTOK;
   delete process.env.AI_PRICE_OUTPUT_USD_PER_MTOK;
+}
+
+// Production with EVERY money/model value set explicitly (production has no
+// defaults for them, r3). Tests then unset one value to probe its refusal.
+function productionEnv() {
+  process.env.NODE_ENV = 'production';
+  process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '20';
+  process.env.AI_PRICE_INPUT_USD_PER_MTOK = '10';
+  process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '50';
 }
 
 async function expectCode(p: Promise<unknown>, code: string) {
@@ -341,7 +392,7 @@ describe('G1 — fail closed: refusal, never stub output', () => {
   });
 
   it('production: an unwired provider name (would be stub in the legacy registry) is ai_unavailable', async () => {
-    process.env.NODE_ENV = 'production';
+    productionEnv();
     process.env.AI_GATEWAY_PROVIDER = 'openai';
     process.env.OPENAI_API_KEY = 'k';
     const { svc } = buildSvc(new FakeStructuredProvider([]));
@@ -350,7 +401,7 @@ describe('G1 — fail closed: refusal, never stub output', () => {
   });
 
   it('production: an unset spend cap refuses (default is to refuse, not $20)', async () => {
-    process.env.NODE_ENV = 'production';
+    productionEnv();
     delete process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD;
     const fake = new FakeStructuredProvider([
       { kind: 'ok', output: { families: [], confidence: 1 } },
@@ -361,12 +412,13 @@ describe('G1 — fail closed: refusal, never stub output', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('non-production: an unset spend cap falls back to the owner placeholder ($20)', () => {
+  it('non-production: an unset spend cap falls back to the owner placeholder ($20, as integer µUSD)', () => {
     delete process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD;
     const { config } = buildSvc(new FakeStructuredProvider([]));
     const r = config.resolve();
     expect(r.ok).toBe(true);
-    expect(r.dailySpendCapUsd).toBe(IMPORTER_MAPPING_DEFAULTS.dailySpendUsdPlaceholder);
+    expect(r.dailySpendCapMicros).toBe(IMPORTER_MAPPING_DEFAULTS.dailySpendMicrosPlaceholder);
+    expect(r.dailySpendCapMicros).toBe(20_000_000);
   });
 
   it('refuses with ai_unavailable when no model is configured', async () => {
@@ -644,10 +696,7 @@ describe('G4 — hard timeout, max output tokens, daily spend cap, audit', () =>
 
   it("daily spend cap: refuses with ai_budget_exhausted before the call when today's ledger + reservation exceeds the cap", async () => {
     process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '1';
-    const prisma = buildPrisma([
-      { metadata: { usd_estimate: 0.7 } },
-      { metadata: { usd_estimate: 0.3 } },
-    ]);
+    const prisma = buildPrisma([chargedRow(0.7), chargedRow(0.3)]);
     const fake = new FakeStructuredProvider([
       { kind: 'ok', output: { families: [], confidence: 1 } },
     ]);
@@ -663,7 +712,7 @@ describe('G4 — hard timeout, max output tokens, daily spend cap, audit', () =>
   it('daily spend cap reserves input estimate + max_tokens (a near-cap ledger refuses even with headroom below the reservation)', async () => {
     // Reservation for this request at default prices: ~30 input tokens ($0.0003) + 4096 output tokens ($0.2048).
     process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '1';
-    const prisma = buildPrisma([{ metadata: { usd_estimate: 0.9 } }]);
+    const prisma = buildPrisma([chargedRow(0.9)]);
     const fake = new FakeStructuredProvider([
       { kind: 'ok', output: { families: [], confidence: 1 } },
     ]);
@@ -717,9 +766,12 @@ describe('G4 — hard timeout, max output tokens, daily spend cap, audit', () =>
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     expect(prisma.audits).toHaveLength(1);
     expect(prisma.audits[0].metadata.outcome).toBe('reserved');
-    const p2 = expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    // p2 is refused at reservation time, while p1 is still in flight (the
+    // gate is not released until p2 has been refused — deterministic).
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(prisma.audits).toHaveLength(1);
     release();
-    await Promise.all([p1, p2]);
+    await p1;
     // Settled to the actual charge afterwards.
     expect(prisma.audits[0].metadata.outcome).toBe('ok');
     expect(prisma.audits[0].metadata.usd_estimate).toBeLessThan(
@@ -1118,10 +1170,13 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
       })),
     );
   function tightCap() {
-    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.3';
+    // Reserve per call = 2000 max_tokens × $100/MTok = $0.20, plus the input
+    // estimate (~1.1k tokens incl. the fixed overhead) at $0.001/MTok, which
+    // rounds UP to 2 µUSD (a reservation is never rounded to zero).
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.31';
     process.env.AI_PRICE_INPUT_USD_PER_MTOK = '0.001';
     process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '100';
-    process.env.SCOUT_LEARN_MAX_OUTPUT_TOKENS = '2000'; // reserve ≈ $0.20/call
+    process.env.SCOUT_LEARN_MAX_OUTPUT_TOKENS = '2000';
   }
 
   it('A2/B-B1: when the ledger cannot persist the reservation, sequential calls are ALL refused (no paid call slips through)', async () => {
@@ -1164,16 +1219,22 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     // The reserved row existed when the provider was entered.
     expect(seen).toEqual(['reserved']);
-    // Cap 0.3, reserved 0.2 → a second 0.2 reservation is refused while p1 is in flight.
+    // Cap 0.31, reserved 0.2 → a second 0.2 reservation is refused while p1 is in flight.
     await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
     release();
     const r1 = await p1;
+    // 1000 output tokens × $100/MTok = $0.10 exactly; input: 0 tokens → 0.
+    expect(r1.chargeMicros).toBe(100_000);
     expect(r1.usdEstimate).toBeCloseTo(0.1, 6);
     expect(prisma.audits[0].metadata).toMatchObject({
       outcome: 'ok',
+      charge_micros: 100_000,
       usd_estimate: 0.1,
-      usd_reserved: 0.2,
+      usage_basis: 'provider',
     });
+    // Reserved = 2000 max_tokens × $100/MTok ($0.20) + the input estimate at $0.001/MTok.
+    expect(prisma.audits[0].metadata.reserved_micros).toBeGreaterThanOrEqual(200_000);
+    expect(prisma.audits[0].metadata.reserved_micros).toBeLessThan(201_000);
     // Now 0.1 spent → one more fits, then refused.
     await svc.invokeStructured(baseRequest());
     await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
@@ -1232,11 +1293,16 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
     const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
     expect(err.detail.reason).toBe('ledger-malformed');
     expect(fake.calls).toHaveLength(0);
-    expect(
-      sumCharges([{ metadata: { usd_estimate: 0.1 } }, { metadata: { usd_estimate: 0.2 } }]),
-    ).toBeCloseTo(0.3, 9);
-    expect(sumCharges([{ metadata: { usd_estimate: 'x' } }])).toBeNull();
+    expect(sumCharges([chargedRow(0.1), chargedRow(0.2)])).toBe(300_000);
+    // Only the integer field counts: a float-only row (r2 shape) or a
+    // non-integer / negative / unsafe charge is a defect, never $0.
+    expect(sumCharges([{ metadata: { usd_estimate: 0.1 } }])).toBeNull();
+    expect(sumCharges([{ metadata: { charge_micros: 'x' } }])).toBeNull();
+    expect(sumCharges([{ metadata: { charge_micros: 0.5 } }])).toBeNull();
+    expect(sumCharges([{ metadata: { charge_micros: -1 } }])).toBeNull();
+    expect(sumCharges([{ metadata: { charge_micros: Number.MAX_SAFE_INTEGER } }])).toBeNull();
     expect(sumCharges([{ metadata: null }])).toBeNull();
+    expect(sumCharges([])).toBe(0);
   });
 
   it('a timed-out attempt keeps the conservative maximum charge (usage unknown); a settle failure leaves the reservation at max', async () => {
@@ -1271,7 +1337,7 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
       new ImporterMappingConfig(new AiGatewayConfig()),
       new AiRedactionService(),
       new AiStructuredProviderRegistry(new StubStructuredProviderAdapter(), fake),
-      { reserve, settle: jest.fn(async () => true) },
+      { reserve, settle: jest.fn(async () => ({ ok: true, overage: false, capExceeded: false })) },
     );
     await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
     expect(reserve).toHaveBeenCalledTimes(1);
@@ -1404,14 +1470,14 @@ describe('r2 — strict config (R592-A-B2, R592-B-B5, R592-B-C4, R592-B-C2)', ()
     ]);
     const { svc, config } = buildSvc(fake);
     process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0';
-    for (const price of ['0', '-1', 'NaN', 'abc', '']) {
+    for (const price of ['0', '-1', 'NaN', 'abc', '1e3', '0.0000001', '']) {
       process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = price;
       if (price === '') {
-        expect(config.resolve().ok).toBe(true); // unset → default, then the $0 cap refuses
+        expect(config.resolve().ok).toBe(true); // unset → default (non-production), then the $0 cap refuses
         await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
       } else {
         const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
-        expect(err.detail.reason).toBe('config-invalid:price');
+        expect(err.detail.reason).toBe('config-invalid:AI_PRICE_OUTPUT_USD_PER_MTOK');
       }
     }
     process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '50';
@@ -1453,8 +1519,7 @@ describe('r2 — strict config (R592-A-B2, R592-B-B5, R592-B-C4, R592-B-C2)', ()
     expect(config.resolve().provider).toBe('anthropic');
     process.env.AI_PROVIDER_IMPORTER_MAPPING = 'stub';
     expect(config.resolve()).toMatchObject({ provider: 'stub', stubPermitted: true });
-    process.env.NODE_ENV = 'production';
-    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '20';
+    productionEnv();
     expect(config.resolve()).toMatchObject({
       ok: false,
       refusalReason: 'stub-provider-not-permitted',
@@ -1571,16 +1636,23 @@ describe('r2 — adapter: exactly one tool call (R592-A-B3); conservative input 
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('B4: actual usage above the estimate is charged as actual (reconciled at settle)', async () => {
+  it('B4: actual usage above the estimate is charged as actual, re-checked under the day lock, and recorded as an overage', async () => {
     const fake = new FakeStructuredProvider([
       { kind: 'ok', output: { families: [], confidence: 1 }, tokensIn: 100_000, tokensOut: 10 },
     ]);
     const { svc, prisma } = buildSvc(fake);
     const r = await svc.invokeStructured(baseRequest());
     expect(r.usdEstimate).toBeGreaterThan(1); // 100k × $10/M
-    expect(prisma.audits[0].metadata.usd_estimate).toBeGreaterThan(
-      prisma.audits[0].metadata.usd_reserved,
+    expect(r.chargeMicros).toBe(1_000_000 + 500); // 100k in × $10/MTok + 10 out × $50/MTok
+    expect(prisma.audits[0].metadata.charge_micros).toBeGreaterThan(
+      prisma.audits[0].metadata.reserved_micros,
     );
+    expect(prisma.audits[0].metadata.overage_micros).toBe(
+      prisma.audits[0].metadata.charge_micros - prisma.audits[0].metadata.reserved_micros,
+    );
+    expect(prisma.audits[0].metadata.cap_exceeded).toBe(false); // $1.0005 < $20 cap
+    // The overage settlement took the day lock (second locked transaction).
+    expect(prisma.lockCalls.filter((q) => q.includes('pg_advisory_xact_lock'))).toHaveLength(2);
   });
 });
 
@@ -1628,5 +1700,755 @@ describe('r2 — readonly schema + validator errors for the repair call (R592-B-
     expect(JSON.stringify(err.detail)).not.toContain('$.families');
     expect(JSON.stringify(prisma.audits)).not.toContain('nope');
     expect(prisma.audits[0].metadata.validation_error_count).toBe(1);
+  });
+});
+
+// ── r3: closures for the c7 audits (R592-c7A-01..07, R592-c7B-01..03, C01/C02/C05/C06) ──
+//
+// The r3 blocks below drive the REAL AnthropicStructuredProviderAdapter (mock
+// SDK client, no network) through the real gateway and the real
+// AuditSpendLedger, exactly as auditor B's probe did — and assert the
+// opposite outcome: every billed response settles its actual usage.
+
+function realAdapterSvc(
+  create: jest.Mock<ReturnType<CreateFn>, Parameters<CreateFn>>,
+  prisma = buildPrisma(),
+) {
+  const adapter = new AnthropicStructuredProviderAdapter(
+    asConfigService(() => 'k'),
+    asAnthropicClient(create),
+  );
+  return { ...buildSvc(adapter, prisma), create };
+}
+
+// Default prices ($10 / $50 per MTok) → 20 000 in + 4 096 out = $0.4048 = 404 800 µUSD.
+const BILLED_USAGE = { input_tokens: 20_000, output_tokens: 4_096 };
+const BILLED_MICROS = 20_000 * 10 + 4_096 * 50;
+
+describe('r3 — money is integer µUSD, rounded up; a reservation is never zero (R592-c7A-01, R592-c7B-C02)', () => {
+  it('parseUsdToMicros: decimal strings become exact integers; floats, signs, exponents and >6 decimals are rejected', () => {
+    expect(parseUsdToMicros('20')).toBe(20_000_000);
+    expect(parseUsdToMicros('0.1')).toBe(100_000);
+    expect(parseUsdToMicros('0.2')).toBe(200_000);
+    expect(parseUsdToMicros('3.75')).toBe(3_750_000);
+    expect(parseUsdToMicros('0.000001')).toBe(1);
+    expect(parseUsdToMicros('0')).toBe(0);
+    for (const bad of ['0.0000001', '-1', '1e3', 'NaN', 'abc', '', '.5', '1.', '1_000']) {
+      expect(parseUsdToMicros(bad)).toBeNull();
+    }
+    // 0.1 + 0.2 is exactly 0.3 in µUSD.
+    expect(addMicros(parseUsdToMicros('0.1')!, parseUsdToMicros('0.2')!)).toBe(
+      parseUsdToMicros('0.3'),
+    );
+  });
+
+  it('tokenCostMicros rounds UP: any positive token count at any positive price costs at least 1 µUSD', () => {
+    expect(tokenCostMicros(1, 1)).toBe(1); // 1 token at $0.000001/MTok
+    expect(tokenCostMicros(1_000, 1)).toBe(1);
+    expect(tokenCostMicros(1_000_001, 1)).toBe(2);
+    expect(tokenCostMicros(0, 50_000_000)).toBe(0);
+    expect(tokenCostMicros(4_096, 50_000_000)).toBe(204_800);
+    expect(() => tokenCostMicros(-1, 1)).toThrow(RangeError);
+    expect(() => tokenCostMicros(1.5, 1)).toThrow(RangeError);
+    expect(() => tokenCostMicros(1, -1)).toThrow(RangeError);
+    expect(microsToCentsCeil(35_000)).toBe(4);
+    expect(microsToCentsCeil(1)).toBe(1);
+    expect(microsToCentsCeil(0)).toBe(0);
+  });
+
+  it('A-01: a $0 cap with the smallest accepted positive prices refuses EVERY paid call (r2 rounded the reservation to $0 and admitted it)', async () => {
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0';
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '0.000001';
+    process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '0.000001';
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary',
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 5, output_tokens: 5 },
+      content: [
+        { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 1 } },
+      ],
+    }));
+    const { svc, prisma } = realAdapterSvc(create);
+    for (let i = 0; i < 5; i++) {
+      const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+      expect(err.detail.reason).toBe('daily-spend-cap');
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(prisma.audits).toHaveLength(0);
+  });
+
+  it('A-01: tiny prices accumulate — the reservation is ≥ 1 µUSD per side and the cap is reached', async () => {
+    // $0.000003 cap; each call reserves ≥ 2 µUSD (1 in + 1 out) → the second call cannot fit.
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.000003';
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '0.000001';
+    process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '0.000001';
+    const fake = new FakeStructuredProvider(
+      Array.from({ length: 3 }, () => ({
+        kind: 'ok' as const,
+        output: { families: [], confidence: 1 },
+        tokensIn: 1,
+        tokensOut: 1,
+      })),
+    );
+    const { svc, prisma } = buildSvc(fake);
+    const r1 = await svc.invokeStructured(baseRequest());
+    expect(r1.chargeMicros).toBe(2);
+    expect(prisma.audits[0].metadata.reserved_micros).toBe(2);
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it('the ledger refuses a non-positive or non-integer reservation and never inserts it', async () => {
+    const prisma = buildPrisma();
+    const ledger = new AuditSpendLedger(asPrismaDouble(prisma));
+    const audit = {
+      requestId: 'r',
+      requesterId: 'coach-1',
+      requesterRole: 'coach',
+      tenantCoachId: null,
+      provider: 'anthropic',
+      model: 'm',
+      promptHash: 'h',
+      redactions: null,
+      metadata: {},
+    };
+    for (const maxMicros of [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const err = await expectCode(
+        ledger.reserve({
+          capability: IMPORTER_MAPPING_CAPABILITY,
+          capMicros: 1_000,
+          maxMicros,
+          audit,
+        }),
+        'ai_unavailable',
+      );
+      expect(err.detail.reason).toBe('ledger-invalid-amount');
+    }
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.audits).toHaveLength(0);
+  });
+
+  it('all charge fields on ledger rows are integers (charge_micros / reserved_micros / spend_cap_micros); usd_* are derived for display', async () => {
+    const { svc, prisma } = buildSvc(
+      new FakeStructuredProvider([
+        { kind: 'ok', output: { families: [], confidence: 1 }, tokensIn: 2000, tokensOut: 300 },
+      ]),
+    );
+    await svc.invokeStructured(baseRequest());
+    const m = prisma.audits[0].metadata;
+    expect(Number.isSafeInteger(m.charge_micros)).toBe(true);
+    expect(Number.isSafeInteger(m.reserved_micros)).toBe(true);
+    expect(Number.isSafeInteger(m.spend_cap_micros)).toBe(true);
+    expect(Number.isSafeInteger(m.spent_before_micros)).toBe(true);
+    expect(m.charge_micros).toBe(35_000);
+    expect(m.usd_estimate).toBe(0.035);
+    expect(m.spend_cap_micros).toBe(20_000_000);
+    expect(prisma.callLogs[0].costCents).toBe(4);
+  });
+});
+
+describe('r3 — every billed response settles its ACTUAL usage; unknown usage keeps the reservation (R592-c7A-02, R592-c7B-01)', () => {
+  const settledCharges = (prisma: PrismaDouble) =>
+    prisma.audits.map((a) => a.metadata.charge_micros as number);
+
+  it('B-01 probe, inverted: 10 responses truncated at max_tokens against a $1 cap → each is charged $0.4048 and the cap refuses from the third call', async () => {
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '1';
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary',
+      stop_reason: 'max_tokens',
+      usage: BILLED_USAGE,
+      content: [
+        { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 1 } },
+      ],
+    }));
+    const { svc, prisma } = realAdapterSvc(create);
+    const codes: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      try {
+        await svc.invokeStructured(baseRequest());
+        codes.push('ok');
+      } catch (e) {
+        codes.push(AiGatewayError.is(e) ? e.code : 'other');
+      }
+    }
+    // Two paid calls fit under $1 ($0.4048 each); the reservation for the
+    // third (~$0.42 at default prices) does not.
+    expect(codes.slice(0, 2)).toEqual(['ai_malformed_output', 'ai_malformed_output']);
+    expect(codes.slice(2).every((c) => c === 'ai_budget_exhausted')).toBe(true);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(settledCharges(prisma)).toEqual([BILLED_MICROS, BILLED_MICROS]);
+    for (const a of prisma.audits) {
+      expect(a.metadata).toMatchObject({
+        outcome: 'ai_malformed_output',
+        error_reason: 'truncated-at-max-tokens',
+        stop_reason: 'max_tokens',
+        usage_basis: 'provider',
+      });
+      expect(a.prompt_token_estimate).toBe(20_000);
+      expect(a.response_token_estimate).toBe(4_096);
+      expect(a.error).toBe('ai_malformed_output');
+    }
+    expect(prisma.callLogs.map((c) => c.costCents)).toEqual([41, 41]); // ceil(40.48)
+    expect(prisma.callLogs.map((c) => [c.tokensIn, c.tokensOut])).toEqual([
+      [20_000, 4_096],
+      [20_000, 4_096],
+    ]);
+  });
+
+  it.each([
+    [
+      'provider refusal (stop_reason: refusal)',
+      { stop_reason: 'refusal', content: [] },
+      'ai_request_rejected',
+      'provider-refusal',
+    ],
+    [
+      'unexpected stop reason (end_turn, prose only)',
+      { stop_reason: 'end_turn', content: [{ type: 'text', text: 'prose' }] },
+      'ai_malformed_output',
+      'unexpected-stop-reason',
+    ],
+    [
+      'two tool calls (ambiguous)',
+      {
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 1 } },
+          { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 0 } },
+        ],
+      },
+      'ai_malformed_output',
+      'ambiguous-structured-output',
+    ],
+    [
+      'zero tool calls',
+      { stop_reason: 'tool_use', content: [{ type: 'text', text: 'x' }] },
+      'ai_malformed_output',
+      'no-structured-block',
+    ],
+    [
+      'foreign tool name',
+      {
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', name: 'other_tool', input: { a: 1 } }],
+      },
+      'ai_malformed_output',
+      'no-structured-block',
+    ],
+    [
+      'non-text extra block',
+      {
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 1 } },
+          { type: 'image', source: {} },
+        ],
+      },
+      'ai_malformed_output',
+      'ambiguous-structured-output',
+    ],
+    [
+      'conforming tool call that fails the local validator',
+      {
+        stop_reason: 'tool_use',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mapping_proposal',
+            input: { families: 'nope', confidence: 1 },
+          },
+        ],
+      },
+      'ai_malformed_output',
+      'schema-validation-failed',
+    ],
+  ])(
+    'a billed response rejected as %s settles the provider usage, not $0',
+    async (_label, body, code, reason) => {
+      const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+        model: 'model-primary-2026',
+        usage: BILLED_USAGE,
+        ...body,
+      }));
+      const { svc, prisma } = realAdapterSvc(create);
+      const err = await expectCode(svc.invokeStructured(baseRequest()), code);
+      expect(err.detail.reason).toBe(reason);
+      expect(settledCharges(prisma)).toEqual([BILLED_MICROS]);
+      expect(prisma.audits[0]).toMatchObject({
+        model: 'model-primary-2026',
+        prompt_token_estimate: 20_000,
+        response_token_estimate: 4_096,
+        error: code,
+      });
+      expect(prisma.audits[0].metadata).toMatchObject({
+        outcome: code,
+        usage_basis: 'provider',
+        error_reason: reason,
+        usd_estimate: 0.4048,
+      });
+      expect(prisma.callLogs[0]).toMatchObject({
+        costCents: 41,
+        tokensIn: 20_000,
+        tokensOut: 4_096,
+      });
+    },
+  );
+
+  it('the adapter carries the provider usage on every rejection it raises (unit)', async () => {
+    const adapter = new AnthropicStructuredProviderAdapter(
+      asConfigService(() => 'k'),
+      asAnthropicClient(
+        jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+          model: 'm-used',
+          stop_reason: 'max_tokens',
+          usage: { input_tokens: 7, output_tokens: 9 },
+          content: [],
+        })),
+      ),
+    );
+    const err = await expectCode(
+      adapter.completeStructured({
+        capability: IMPORTER_MAPPING_CAPABILITY,
+        requestId: 'r',
+        model: 'm',
+        systemPrompt: 's',
+        userContent: 'u',
+        responseSchema: schema,
+        schemaName: 'mapping_proposal',
+        maxOutputTokens: 9,
+        temperature: 0,
+        signal: new AbortController().signal,
+        timeoutMs: 1000,
+      }),
+      'ai_malformed_output',
+    );
+    expect(err.usage).toEqual({
+      promptTokens: 7,
+      responseTokens: 9,
+      model: 'm-used',
+      stopReason: 'max_tokens',
+    });
+  });
+
+  it.each([
+    [
+      'transport error after send (socket reset)',
+      () => Object.assign(new Error('socket hang up'), { name: 'APIConnectionError' }),
+      'ai_provider_error',
+    ],
+    ['HTTP 500', () => Object.assign(new Error('boom'), { status: 500 }), 'ai_provider_error'],
+    [
+      'HTTP 529 overloaded',
+      () => Object.assign(new Error('overloaded'), { status: 529 }),
+      'ai_provider_error',
+    ],
+    [
+      'SDK timeout',
+      () => Object.assign(new Error('t/o'), { name: 'APIConnectionTimeoutError' }),
+      'ai_timeout',
+    ],
+  ])(
+    'a failure with UNKNOWN usage (%s) keeps the full reservation — never refunded to zero',
+    async (_label, mkErr, code) => {
+      const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => {
+        throw mkErr();
+      });
+      const { svc, prisma } = realAdapterSvc(create);
+      await expectCode(svc.invokeStructured(baseRequest()), code);
+      const m = prisma.audits[0].metadata;
+      expect(m.charge_micros).toBe(m.reserved_micros);
+      expect(m.charge_micros).toBeGreaterThan(200_000); // ≥ 4096 × $50/MTok
+      expect(m.usage_basis).toBe('unknown-kept-reservation');
+      expect(m.outcome).toBe(code);
+      expect(prisma.callLogs[0].costCents).toBe(Math.ceil(m.charge_micros / 10_000));
+    },
+  );
+
+  it('a provider HTTP 4xx (request rejected before any generation, proven unbilled) settles to 0; a 429 does too', async () => {
+    for (const status of [400, 401, 413, 429]) {
+      const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => {
+        throw Object.assign(new Error('rejected'), { status });
+      });
+      const { svc, prisma } = realAdapterSvc(create);
+      await expectCode(
+        svc.invokeStructured(baseRequest()),
+        status === 429 ? 'ai_rate_limited' : 'ai_request_rejected',
+      );
+      expect(prisma.audits[0].metadata).toMatchObject({
+        charge_micros: 0,
+        usage_basis: 'provider-rejected-4xx',
+        http_status: status,
+      });
+      expect(prisma.audits[0].metadata.reserved_micros).toBeGreaterThan(0);
+    }
+  });
+
+  it('a kill-switch abort in flight keeps the reservation (usage unknown)', async () => {
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(
+      (_p, options) =>
+        new Promise((_, reject) =>
+          (options.signal as AbortSignal).addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'APIUserAbortError' })),
+          ),
+        ),
+    );
+    const { svc, prisma } = realAdapterSvc(create);
+    process.env.SCOUT_LEARN_CALL_TIMEOUT_MS = '5000';
+    const p = expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    process.env.SCOUT_LEARN_AI_ENABLED = 'false';
+    const err = await p;
+    expect(err.detail.reason).toBe('kill-switch-off');
+    const m = prisma.audits[0].metadata;
+    expect(m.charge_micros).toBe(m.reserved_micros);
+    expect(m.usage_basis).toBe('unknown-kept-reservation');
+  });
+
+  it('the truncation charge counts against a later admission: a paid max_tokens response followed by a call at a tight cap is refused', async () => {
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.5';
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary',
+      stop_reason: 'max_tokens',
+      usage: BILLED_USAGE,
+      content: [],
+    }));
+    const { svc, prisma } = realAdapterSvc(create);
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_malformed_output');
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(settledCharges(prisma)).toEqual([BILLED_MICROS]);
+  });
+});
+
+describe('r3 — settlement above the reservation is re-checked under the day lock (R592-c7A-03, R592-c7B-C03)', () => {
+  it('the input estimate carries a fixed overhead allowance for the tool-use framing the provider bills', () => {
+    expect(estimateInputTokens('')).toBe(INPUT_OVERHEAD_TOKENS);
+    expect(estimateInputTokens('a'.repeat(1000))).toBe(500 + INPUT_OVERHEAD_TOKENS);
+  });
+
+  it('an overage that pushes the day over the cap is recorded (cap_exceeded) and closes the gate for the day', async () => {
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.6';
+    const fake = new FakeStructuredProvider([
+      // Reserved ≈ 1.1k in + 4096 out ≈ $0.216; actual 60k in × $10/MTok = $0.60 + out → over the cap.
+      { kind: 'ok', output: { families: [], confidence: 1 }, tokensIn: 60_000, tokensOut: 100 },
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc, prisma } = buildSvc(fake);
+    const r = await svc.invokeStructured(baseRequest());
+    expect(r.chargeMicros).toBe(600_000 + 5_000);
+    expect(prisma.audits[0].metadata).toMatchObject({
+      outcome: 'ok',
+      charge_micros: 605_000,
+      cap_exceeded: true,
+    });
+    expect(prisma.audits[0].metadata.overage_micros).toBe(
+      605_000 - prisma.audits[0].metadata.reserved_micros,
+    );
+    // The overage settlement took the day lock and excluded its own row from the re-sum.
+    expect(prisma.lockCalls.filter((q) => q.includes('pg_advisory_xact_lock'))).toHaveLength(2);
+    expect(prisma.aiRequestAudit.findMany.mock.calls[1][0].where.id).toEqual({ not: 'audit-1' });
+    // Next admission is refused: the recorded truth is above the cap.
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it('a settle failure on the overage path leaves the reservation charged (never below the maximum)', async () => {
+    const prisma = buildPrisma();
+    prisma.aiRequestAudit.update = jest.fn(async () => {
+      throw new Error('settle failed');
+    });
+    const { svc } = buildSvc(
+      new FakeStructuredProvider([
+        { kind: 'ok', output: { families: [], confidence: 1 }, tokensIn: 100_000, tokensOut: 10 },
+      ]),
+      prisma,
+    );
+    const r = await svc.invokeStructured(baseRequest());
+    // The result reports what the ledger actually holds: the reservation.
+    expect(r.chargeMicros).toBe(prisma.audits[0].metadata.reserved_micros);
+    expect(prisma.audits[0].metadata.outcome).toBe('reserved');
+    expect(prisma.callLogs[0].costCents).toBe(Math.ceil(r.chargeMicros / 10_000));
+  });
+});
+
+describe('r3 — UTC-midnight: one database clock read drives day key, lock, window and created_at (R592-c7A-04, R592-c7B-C01)', () => {
+  it('a reservation whose transaction starts at 23:59:59.999Z is dated, locked and summed on THAT day; the next at 00:00:00.001Z on the next day, not counting the first', async () => {
+    // Each call: reserve ≈ $0.216 (1.1k in + 4096 out), settled at ≈ $0.215
+    // (1000 in + 4096 out) → one fits per day under a $0.40 cap, two do not.
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.4';
+    const prisma = buildPrisma();
+    const clocks = [new Date('2026-09-30T23:59:59.999Z'), new Date('2026-10-01T00:00:00.001Z')];
+    prisma.clock = () => clocks.shift() ?? new Date('2026-10-01T00:00:00.002Z');
+    const fake = new FakeStructuredProvider(
+      Array.from({ length: 3 }, () => ({
+        kind: 'ok' as const,
+        output: { families: [], confidence: 1 },
+        tokensOut: 4096,
+      })),
+    );
+    const { svc } = buildSvc(fake, prisma);
+    await svc.invokeStructured(baseRequest());
+    await svc.invokeStructured(baseRequest());
+    // Third call (still 2026-10-01) sees the second and is refused; the first
+    // (2026-09-30) is outside its window.
+    await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+
+    expect(prisma.audits[0].created_at).toEqual(new Date('2026-09-30T23:59:59.999Z'));
+    expect(prisma.audits[0].metadata.accounting_day).toBe('2026-09-30');
+    expect(prisma.audits[1].created_at).toEqual(new Date('2026-10-01T00:00:00.001Z'));
+    expect(prisma.audits[1].metadata.accounting_day).toBe('2026-10-01');
+    expect(prisma.lockKeys.slice(0, 3)).toEqual([
+      advisoryLockKey(IMPORTER_MAPPING_CAPABILITY, '2026-09-30'),
+      advisoryLockKey(IMPORTER_MAPPING_CAPABILITY, '2026-10-01'),
+      advisoryLockKey(IMPORTER_MAPPING_CAPABILITY, '2026-10-01'),
+    ]);
+    expect(advisoryLockKey(IMPORTER_MAPPING_CAPABILITY, '2026-09-30')).not.toBe(
+      advisoryLockKey(IMPORTER_MAPPING_CAPABILITY, '2026-10-01'),
+    );
+    // The window the ledger summed for the second call is the new day.
+    const where = prisma.aiRequestAudit.findMany.mock.calls[1][0].where;
+    expect(where.created_at).toEqual({
+      gte: new Date('2026-10-01T00:00:00.000Z'),
+      lt: new Date('2026-10-02T00:00:00.000Z'),
+    });
+    // Gateway passes no day of its own: the ledger owns it.
+    expect(prisma.audits[1].metadata.spent_before_micros).toBe(0);
+  });
+
+  it('the reserve transaction is pinned to READ COMMITTED with bounded maxWait/timeout (R592-c7B-02, C07)', async () => {
+    const { svc, prisma } = buildSvc(
+      new FakeStructuredProvider([{ kind: 'ok', output: { families: [], confidence: 1 } }]),
+    );
+    await svc.invokeStructured(baseRequest());
+    expect(prisma.txOptions[0]).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 5_000,
+      timeout: 15_000,
+    });
+    expect(RESERVE_TX_OPTIONS.isolationLevel).toBe('ReadCommitted');
+  });
+
+  it('an unreadable transaction clock refuses (ledger-unavailable) — the day is never taken from the app clock', async () => {
+    const prisma = buildPrisma();
+    prisma.$queryRaw = jest.fn(async () => [{ now: 'not a date' }]);
+    const fake = new FakeStructuredProvider([
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc } = buildSvc(fake, prisma);
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('ledger-unavailable');
+    expect(fake.calls).toHaveLength(0);
+  });
+});
+
+describe('r3 — production has no silent defaults for model or prices; boot fails closed (R592-c7A-05, R592-c7B-03)', () => {
+  it('B-03: production refuses when either price is unset (price-unset:<NAME>) — before any call', async () => {
+    productionEnv();
+    const fake = new FakeStructuredProvider([
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc, config } = buildSvc(fake);
+    expect(config.resolve().ok).toBe(true);
+    delete process.env.AI_PRICE_INPUT_USD_PER_MTOK;
+    let err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('price-unset:AI_PRICE_INPUT_USD_PER_MTOK');
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '10';
+    delete process.env.AI_PRICE_OUTPUT_USD_PER_MTOK;
+    err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('price-unset:AI_PRICE_OUTPUT_USD_PER_MTOK');
+    expect(fake.calls).toHaveLength(0);
+    // Non-production keeps the conservative list-price default.
+    process.env.NODE_ENV = 'test';
+    expect(config.resolve()).toMatchObject({
+      ok: true,
+      outputPriceMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.outputPriceMicrosPerMTok,
+    });
+  });
+
+  it('B-03: both prices and the primary model are registered prod / MUST_SET in prod-switches.yml', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const yaml = fs.readFileSync(path.resolve(__dirname, '../../prod-switches.yml'), 'utf8');
+    const row = (name: string) =>
+      yaml
+        .slice(yaml.indexOf(`- name: ${name}\n`))
+        .split('\n')
+        .slice(0, 6)
+        .join('\n');
+    for (const key of [
+      'AI_PRICE_INPUT_USD_PER_MTOK',
+      'AI_PRICE_OUTPUT_USD_PER_MTOK',
+      'AI_MODEL_IMPORTER_MAPPING',
+      'SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD',
+    ]) {
+      expect(row(key)).toContain('tier: prod');
+      expect(row(key)).toContain('prod_default: MUST_SET');
+    }
+    // The operator-keys artifact lists them (regenerated by scripts/gen-operator-keys.ts).
+    const keys = fs.readFileSync(path.resolve(__dirname, '../../OPERATOR_KEYS_NEEDED.md'), 'utf8');
+    for (const key of [
+      'AI_PRICE_INPUT_USD_PER_MTOK',
+      'AI_PRICE_OUTPUT_USD_PER_MTOK',
+      'AI_MODEL_IMPORTER_MAPPING',
+    ]) {
+      expect(keys).toContain(`fly secrets set ${key}=<value>`);
+    }
+  });
+
+  it('A-05: an unset primary with configured fallbacks refuses (model-unset) — a fallback is never promoted to primary', async () => {
+    delete process.env.AI_MODEL_IMPORTER_MAPPING;
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    const fake = new FakeStructuredProvider([
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc, config } = buildSvc(fake);
+    expect(config.models()).toEqual({ ok: false, reason: 'model-unset' });
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('model-unset');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('A-05: a malformed primary or a malformed / empty fallback entry refuses with the offending key (never silently dropped)', () => {
+    const { config } = buildSvc(new FakeStructuredProvider([]));
+    process.env.AI_MODEL_IMPORTER_MAPPING = 'model primary'; // space is not allowed
+    expect(config.resolve()).toMatchObject({
+      ok: false,
+      refusalReason: 'config-invalid:AI_MODEL_IMPORTER_MAPPING',
+    });
+    process.env.AI_MODEL_IMPORTER_MAPPING = 'model-primary';
+    for (const bad of ['model-fallback,', ',model-fallback', 'ok-model,bad model', 'a,,b']) {
+      process.env.SCOUT_LEARN_MODEL_FALLBACKS = bad;
+      expect(config.resolve()).toMatchObject({
+        ok: false,
+        refusalReason: 'config-invalid:SCOUT_LEARN_MODEL_FALLBACKS',
+      });
+    }
+    // Valid list: ordered, primary first; a repeated id is collapsed (each model at most once).
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = ' model-b , model-c, model-primary ';
+    expect(config.models()).toEqual({ ok: true, value: ['model-primary', 'model-b', 'model-c'] });
+    expect(config.resolve()).toMatchObject({
+      ok: true,
+      models: ['model-primary', 'model-b', 'model-c'],
+    });
+  });
+
+  it('boot: production with the kill switch ON and an unset price / cap / model THROWS (fails the boot); switch OFF logs and refuses per call', () => {
+    productionEnv();
+    process.env.AI_MODEL_IMPORTER_MAPPING = 'model-primary';
+    const { config } = buildSvc(new FakeStructuredProvider([]));
+    expect(() => config.assertBootPosture()).not.toThrow();
+    for (const unset of [
+      'AI_PRICE_INPUT_USD_PER_MTOK',
+      'AI_PRICE_OUTPUT_USD_PER_MTOK',
+      'SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD',
+      'AI_MODEL_IMPORTER_MAPPING',
+    ]) {
+      const saved = process.env[unset];
+      delete process.env[unset];
+      expect(() => config.assertBootPosture()).toThrow(/SCOUT_LEARN_AI_ENABLED is on/);
+      expect(() => config.onModuleInit()).toThrow();
+      process.env.SCOUT_LEARN_AI_ENABLED = 'false';
+      expect(() => config.assertBootPosture()).not.toThrow();
+      process.env.SCOUT_LEARN_AI_ENABLED = 'true';
+      process.env[unset] = saved;
+    }
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = 'garbage';
+    expect(() => config.assertBootPosture()).toThrow(/config-invalid:AI_PRICE_INPUT_USD_PER_MTOK/);
+    // A missing provider key is an operations gap, not a defaults problem: logged, not fatal.
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '10';
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => config.assertBootPosture()).not.toThrow();
+    // Outside production nothing throws.
+    process.env.NODE_ENV = 'test';
+    delete process.env.AI_MODEL_IMPORTER_MAPPING;
+    expect(() => config.assertBootPosture()).not.toThrow();
+  });
+
+  it('boot: the Nest module init runs the boot posture check (onModuleInit) and throws in production with the switch on', async () => {
+    productionEnv();
+    delete process.env.AI_PRICE_OUTPUT_USD_PER_MTOK;
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
+      providers: [AiGatewayConfig, ImporterMappingConfig],
+    }).compile();
+    await expect(moduleRef.init()).rejects.toThrow(/price-unset:AI_PRICE_OUTPUT_USD_PER_MTOK/);
+  });
+});
+
+describe('r3 — class C closures (R592-c7B-C05, R592-c7B-C06, R592-c7A-07)', () => {
+  it('C05: a kill-switch refusal on a fallback attempt writes its own audit row (attempt-scoped request_id, no unique collision)', async () => {
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    const provider: AiStructuredProviderAdapter = {
+      name: 'anthropic',
+      completeStructured: async (req) => {
+        process.env.SCOUT_LEARN_AI_ENABLED = 'false';
+        throw toAiGatewayError(Object.assign(new Error('rate limit'), { status: 429 }), {
+          provider: 'anthropic',
+          model: req.model,
+          attempt: 0,
+        });
+      },
+    };
+    const prisma = buildPrisma();
+    // Enforce request_id uniqueness like the real column does.
+    const seen = new Set<string>();
+    const create = prisma.aiRequestAudit.create;
+    prisma.aiRequestAudit.create = jest.fn(async (args: any) => {
+      if (seen.has(args.data.request_id)) throw new Error('unique violation request_id');
+      seen.add(args.data.request_id);
+      return create(args);
+    });
+    const { svc } = buildSvc(provider, prisma);
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('kill-switch-off');
+    expect(prisma.audits).toHaveLength(2);
+    expect(prisma.audits[1].request_id).toBe(`${prisma.audits[0].request_id}:1`);
+    expect(prisma.audits[1].metadata).toMatchObject({
+      outcome: 'ai_unavailable',
+      resolved_reason: 'kill-switch-off',
+      attempt: 1,
+      fallback_from: 'model-primary',
+      charge_micros: 0,
+    });
+  });
+
+  it('C06: AiGatewayError.validation (raw model output) is non-enumerable — a generic serializer never sees it', async () => {
+    const { svc } = buildSvc(
+      new FakeStructuredProvider([
+        { kind: 'ok', output: { families: 'SECRET-MARKER', confidence: 1 } },
+      ]),
+    );
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_malformed_output');
+    expect(err.validation?.rawOutput).toEqual({ families: 'SECRET-MARKER', confidence: 1 });
+    expect(Object.keys(err)).not.toContain('validation');
+    expect(JSON.stringify(err)).not.toContain('SECRET-MARKER');
+    expect(JSON.stringify({ ...err })).not.toContain('SECRET-MARKER');
+    expect(Object.entries(err).map(([k]) => k)).not.toContain('validation');
+    // Usage, by contrast, is plain data and may be serialized.
+    expect(
+      Object.keys(
+        new AiGatewayError('ai_timeout', {}, undefined, undefined, {
+          promptTokens: 1,
+          responseTokens: 2,
+          model: 'm',
+          stopReason: null,
+        }),
+      ),
+    ).toContain('usage');
+  });
+
+  it('A-07: a request-supplied maxOutputTokens that is not a positive number is a caller bug and is refused, not silently raised to the cap', async () => {
+    const fake = new FakeStructuredProvider([
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc } = buildSvc(fake);
+    for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, 0.5]) {
+      await expect(svc.invokeStructured(baseRequest({ maxOutputTokens: bad }))).rejects.toThrow(
+        /maxOutputTokens invalid/,
+      );
+    }
+    expect(fake.calls).toHaveLength(0);
+    await svc.invokeStructured(baseRequest({ maxOutputTokens: 100 }));
+    expect(fake.calls[0].maxOutputTokens).toBe(100);
   });
 });

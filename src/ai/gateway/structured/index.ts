@@ -8,3 +8,4 @@ export { StubStructuredProviderAdapter } from './stub-structured-provider.adapte
 export { AnthropicStructuredProviderAdapter } from './anthropic-structured-provider.adapter';
 export * from './structured-schema';
 export * from './spend-ledger';
+export * from './money';

@@ -1417,17 +1417,17 @@ switches:
     owner: importer
     description: "Provider for importer.mapping only (anthropic|openai|perplexity); defaults to AI_GATEWAY_PROVIDER. 'stub' or unknown = refused in production."
   - name: AI_MODEL_IMPORTER_MAPPING
-    tier: optional
-    prod_default: STUB_ALLOWED
+    tier: prod
+    prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Primary model id for importer.mapping. Unset = refused (model-unset). Value is an id, not a boolean, so STUB_ALLOWED."
+    description: "Primary model id for importer.mapping (record D-L0-7.4). Production has NO default model: unset = every call refused (model-unset); with SCOUT_LEARN_AI_ENABLED on, an unset/invalid value fails the boot. A fallback in SCOUT_LEARN_MODEL_FALLBACKS is never promoted to primary."
   - name: SCOUT_LEARN_MODEL_FALLBACKS
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Comma-separated ordered fallback models for importer.mapping; tried once each ONLY on 429/5xx/timeout. Unset = no fallback (never silently downgrades)."
+    description: "Comma-separated ordered fallback models for importer.mapping; tried once each ONLY on 429/5xx/timeout. Unset = no fallback (never silently downgrades). A malformed or empty entry refuses every call (config-invalid) instead of being dropped."
   - name: SCOUT_LEARN_CALL_TIMEOUT_MS
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1451,19 +1451,19 @@ switches:
     prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Global UTC-daily spend cap (USD) for importer.mapping, enforced by reserve-before-call in PostgreSQL. Production REFUSES every call while unset; outside production the owner placeholder ($20) applies. 0 is a valid cap (refuses all paid calls)."
+    description: "Global UTC-daily spend cap (decimal USD, up to 6 decimals; stored as integer micro-USD) for importer.mapping, enforced by reserve-before-call in PostgreSQL (day derived from the database clock). Production REFUSES every call while unset and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the owner placeholder ($20) applies. 0 is a valid cap (refuses all paid calls — a reservation is never rounded to zero)."
   - name: AI_PRICE_INPUT_USD_PER_MTOK
-    tier: optional
-    prod_default: STUB_ALLOWED
+    tier: prod
+    prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Input price (USD per million tokens) used for importer.mapping spend reservations; default 10. Must be > 0 — zero/negative/garbage = refused."
+    description: "Input price (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for importer.mapping spend reservations. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $10 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
   - name: AI_PRICE_OUTPUT_USD_PER_MTOK
-    tier: optional
-    prod_default: STUB_ALLOWED
+    tier: prod
+    prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Output price (USD per million tokens) used for importer.mapping spend reservations; default 50. Must be > 0 — zero/negative/garbage = refused."
+    description: "Output price (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for importer.mapping spend reservations. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $50 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
   - name: AI_GATEWAY_DEV_ALLOW_OFFLINE_PROVIDER
     tier: feature
     prod_default: OFF
