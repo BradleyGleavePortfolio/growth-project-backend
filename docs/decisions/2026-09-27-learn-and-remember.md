@@ -4,38 +4,30 @@
   schema, API or flag, claims nothing has run, and grants no builder, PG slot or review.
 - **Date:** 2026-09-27; **r2/r3 amendments 2026-09-28; r4 2026-09-29; r5 2026-09-29 (executive
   reset); r6 2026-09-29 (owner decisions D9-D14 applied); r7 2026-09-29 (r6 T4 audit closure,
-  FAM-0 r9 amendments).** **Decision owner:** Bradley Gleave. The executing parent makes D-L0-1 to
-  D-L0-9; §6 lists what stays owner-reserved.
-- **r7 (2026-09-29), doc-only.** Closes the r6 T4 audits `R581-c7A` (3A/4B) and `R581-c7B`
-  (2A/8B) under the operator's binding dispositions (§8 r7 rows). The credential model is restated
-  **per mechanism** — cookies by the browser's own rules under the page's observed credentials mode,
-  never read; only page-set non-cookie credential headers re-attached, same origin only, worker
-  memory only, lost on a service-worker restart (D-L0-6.2). The D14 no-mutation bound is an
-  engineering bound with a named residual (D-L0-6.2). Round 2 is monotone over round-1
-  **observations** and admits sparse accounts (`template_absent`, never a refusal; D-L0-3). C2/C3
-  are per record and C4 runs over the effective parent set (D-L0-4). Coach-derived few-shot
-  packages sit inside the untrusted block (D-L0-7.1). Media has a request authority (D-L0-6.2).
-  Outside origins are canonical `https` origins named one-to-one by hostname, capped with a refusal
-  (D-L0-6.3). L2d's activated projection is separated from FAM-R1's extension; the family
-  catalogue has one owner (FAM-C1) and L1 → X2/X2b edges exist (D-L0-9). #589 and #591 owed changes
-  are listed, not claimed (D-L0-9). FAM-0 r9 amendments L0-A2′, A4′, A5, A6, A7, A8 applied
-  (D-L0-6.3); legacy records have one placement rule. Read trees: FAM-0 r9 `0924fc1`.
-- **r6 (2026-09-29), doc-only.** Owner decisions D9-D14/B2 recorded as decided (none pending);
-  billing and partner-origin data are moving families (D-L0-6.1); the AI proposes a `family` label,
-  never a destination (D-L0-4); round-2 rule, `template_absent`, single-origin base case, per-family
-  conformance; projection gains `template_absent`, `residual_unknown`, `outside_origins[]`, loses
-  `third_party_not_imported` (D-L0-6.3); base `integration/importer` `249fd0d4`. §8 r6 rows.
-- **r5 (2026-09-29), doc-only — the binding executive reset after r4 failed both T4 re-reviews
-  (`R581-A2`, `R581-B2`).** The completeness proof is **decoupled from learning**: until a separate
-  completeness-closure record (**CL**) lands no run has a run-level closure, every run settles
-  `partial` with gap `completeness_not_proven`, and a false `complete` is impossible by construction
-  (D-L0-6); `RunClosureV1`, hidden-surface cases, status probes, the exclusion rule and the
-  `reviewed_package` closure are deleted; per-family counting evidence is kept. Memory is **per
-  coach** in V1 (cross-coach = L2g, invariants in D-L0-5); reuse keys on landing structure and
-  conformance, invalidation is structural only (D-L0-3, D-L0-5); key admission gains a device-side
-  value cross-check (D-L0-2); the **one** `RunStatusProjectionV1` is owned here and referenced by
-  FAM-0 (D-L0-6.3); budgets consistent, L2/L3 split (D-L0-7.3, D-L0-9); §9 lists every closure
-  finding as a required input to CL.
+  FAM-0 r9 amendments); r8 2026-09-29 (scope reduction: contracts, invariants and acceptance tests
+  instead of browser mechanism).** **Decision owner:** Bradley Gleave. The executing parent makes
+  D-L0-1 to D-L0-9; §6 lists what stays owner-reserved.
+- **r8 (2026-09-29), doc-only; operator direction under the T4 doctrine (repeated failure ⇒ reduce
+  scope).** r7 failed both re-audits (`R581-c7A2`, `R581-c7B2`) on browser-mechanism detail a
+  record cannot prove on paper. r8 **deletes mechanism claims** and binds **contracts, invariants
+  and acceptance tests** the owning slices (X2b, X3, FAM-M1, L2b, L2c, L2d) must pass on the real
+  packaged MV3 extension (D-L0-6.2). Dispositions 1-8: credential invariants with an honest
+  transient-exposure bound and frame provenance, worker restart never resumes; origin = scheme +
+  host + port; the no-mutation bound covers explore navigation; round-2 truncation never refuses;
+  media deferred whole to FAM-M1; Person links scoped to coach and platform;
+  `native_target_removed` counts as moved. Shorter than r7; §8 r8 rows, FAM-0 r10 amendments applied.
+- **r7 (2026-09-29).** Closed `R581-c7A`/`R581-c7B`: identity matching and monotone round 2
+  (D-L0-3); per-record C2-C4 (D-L0-4); few-shot inside the untrusted block (D-L0-7.1); L2d
+  activation, FAM-C1 as catalogue owner, #589/#591 owed lists (D-L0-9); FAM-0 r9 amendments
+  (D-L0-6.3). Its credential model and media authority are **superseded by r8**.
+- **r6 (2026-09-29).** Owner decisions D9-D14/B2 recorded; billing and partner-origin data move
+  (D-L0-6.1); the AI proposes a `family` label, never a destination (D-L0-4); base `249fd0d4`.
+- **r5 (2026-09-29) — the binding executive reset after r4 failed both T4 re-reviews.**
+  Completeness is **decoupled from learning**: until the completeness-closure record (**CL**) lands
+  every run settles `partial` with gap `completeness_not_proven` and a false `complete` is
+  impossible by construction (D-L0-6); closure machinery deleted, per-family counting evidence
+  kept; memory is **per coach** in V1 (D-L0-5); the one `RunStatusProjectionV1` is owned here
+  (D-L0-6.3); §9 lists every closure finding as a required input to CL.
 - **Owner decisions of 2026-09-28 (binding; verbatim except where bracketed):**
   - **D1, what "complete" means:** _"lets do complete to mean 'All past client and coaching records
     in this site are now in TGP'"_. Unchanged. Under r5 it **cannot yet be claimed** by any run;
@@ -48,41 +40,35 @@
 - **Owner decisions of 2026-09-29 (binding; recorded as decided):**
   - **D1 reaffirmed, no narrowing.** `complete` means **all** client and coaching records the site
     holds are in TGP; any reachable family that did not land makes the run `partial` and is named.
-  - **D4, no unsupported families.** Anything reachable on the site moves into TGP: native (the
-    canonical contract expanded to every family TGP models) or **preserve** (a universal tenant-scoped
-    preserved-record destination). Preserved records count as "in TGP". Detail: **FAM-0**
-    (`docs/decisions/2026-09-29-fam0-all-families.md`, T3, PR #590); this record holds the principles
-    and slice placement (D-L0-6.1, D-L0-9).
-  - **D5, honesty detail.** When a run is `partial` the coach sees, per family, what came and what did
-    not — unknown shown as unknown, never 0 — in the extension popup result detail and in the Roman
-    mobile result, both fed by the **one** server projection (D-L0-6.3; slices X4, R2).
-  - **D6, backend origin.** The extension talks to `https://backend-spring-lake-3890.fly.dev`;
-    `tgp.coach` is unregistered and must not be used (D-L0-1; slice X0).
-  - **D7, origins.** One Start authorizes only the tab's origin (X1). Cross-origin data APIs are
-    reached **without extra permission** by replaying learned GET/HEAD templates from inside the
-    authorized page's own main world (D-L0-6.2). The registrable-domain wildcard is a later slice
-    (D11).
+  - **D4, no unsupported families.** Anything reachable moves into TGP: native (the canonical
+    contract expanded to every family TGP models) or **preserve** (a universal tenant-scoped
+    preserved-record destination; preserved records count as "in TGP"). Detail: **FAM-0**
+    (`docs/decisions/2026-09-29-fam0-all-families.md`, PR #590); principles and slice placement here
+    (D-L0-6.1, D-L0-9).
+  - **D5, honesty detail.** A `partial` run shows the coach, per family, what came and what did not
+    — unknown as unknown, never 0 — in the popup and the Roman result, both from the **one** server
+    projection (D-L0-6.3; X4, R2).
+  - **D6, backend origin.** `https://backend-spring-lake-3890.fly.dev`; `tgp.coach` is unregistered
+    and must not be used (D-L0-1; X0).
+  - **D7, origins.** One Start authorizes only the tab's origin (X1); cross-origin data APIs are
+    reached **without extra permission** by replaying learned GET/HEAD templates from the authorized
+    page's own main world (D-L0-6.2); the registrable-domain wildcard is later (D11).
 - **Owner decisions of 2026-09-29 09:52-11:00 PDT (binding; recorded as decided in r6; the r5 items
   P1-P6 are closed by them, none pending):**
-  - **D9 (was P1), popup Start.** The extension popup has **exactly one Start button**; everything
-    else in the popup is status (D-L0-1.1; slices X1, X4).
-  - **D10 (was P2), billing.** Billing and payment history **MOVE**: preserved, coach-visible, with a
-    **per-client next payment date** carried; moving the date does **not** move the live charge.
-    FAM-0 **D-FAM-5** owns the detail (`billing_history`, `billing_schedule`); here billing is a
-    moving family, never a gap or an exclusion (D-L0-4, D-L0-6.1).
-  - **D11 (was P3), registrable-domain permission fallback:** later slice, not default (D-L0-6.2).
-  - **D12 (was P4), media storage spend:** approved; reuse the existing S3-compatible storage
-    (D-L0-6.1; FAM-0 FAM-M1).
-  - **D13 (was P5), Chrome Web Store:** later (Q-L0-5).
+  - **D9 (was P1), popup Start:** exactly one Start button; everything else is status (D-L0-1.1).
+  - **D10 (was P2), billing:** billing and payment history **MOVE** (preserved, coach-visible, a
+    **per-client next payment date** carried; the live charge does not move); FAM-0 **D-FAM-5** owns
+    the detail; billing is a moving family, never a gap or exclusion (D-L0-4, D-L0-6.1).
+  - **D11 (was P3), registrable-domain fallback:** later, not default. **D12 (was P4), media storage
+    spend:** approved; existing S3-compatible storage (FAM-M1). **D13 (was P5), Web Store:** later.
   - **D14 / B2 (was P6), partner and third-party data.** Data reachable through the coach's own
     logged-in page **MOVES**. Bounds: read-only GET/HEAD replay of requests the authorized page itself
     made, re-attaching only the credential header the page itself sent to that same origin; no stored
     credential, no new login, no mutation, rate-bounded, **every outside origin named in the result**
     (D-L0-6.1, D-L0-6.2, D-L0-6.3 `outside_origins[]`). FAM-0 D-FAM-1 "Partner-origin rule" owns
-    the capture-time origin rule; this record references it and does not duplicate it. **How the
-    credential bound is realised per browser mechanism** (cookies attach by the browser's rules under
-    the page's observed mode and are never read; only page-set non-cookie headers are re-attached)
-    is D-L0-6.2 (r7); it narrows nothing the owner decided.
+    the capture-time origin rule; this record references it and does not duplicate it. The
+    credential bound is stated as **invariants and acceptance tests** in D-L0-6.2 (r8), not as a
+    browser mechanism; it narrows nothing the owner decided.
 - **North star:** `private-evidence/execution/42d8c5b5/northstar/NORTH_STAR.md` ("NS"). Owner
   requirement (2026-09-27 20:51Z, verbatim): _"This is a new site" → call AI support, decode their
   data structure, autonomously LEARN AND REMEMBER that structure and complete the import in one
@@ -103,8 +89,9 @@
   `df330304`, fail-closed `importer.mapping` gateway, D-L0-7.5); **L1** (PR #591, `cand/x44/l1-core`
   `debce080`, the pure learn contract library, D-L0-9); **L2a** (PR #588, **merged** as
   `249fd0d4`, `SourceRegistryProvider`); **FAM-0 r9** (PR #590 `0924fc1`, D4/D10/D14 detail; it
-  references D-L0-6.3 by name; its §8.1 lists L0-A1..A4 as landed in r6 and L0-A2′/A4′/A5/A6/A7/A8
-  as required — all applied in r7, D-L0-6.3).
+  references D-L0-6.3 by name); **FAM-0 r10** (`61c7c97f`, read for r8: its §8.1 amendments
+  L0-A2′/A4′/A5/A6/A7/A8 and the D-FAM-1 executive interpretation of D14 are applied, D-L0-6.2,
+  D-L0-6.3; r8's asks to FAM-0's next round are in §8).
 - **Sources:** S7L-DOC, S8-DOC, S9-DOC, S10-DOC, S11-DOC, S8D-DOC, S12-B2 (test-only artifacts refused
   outside dev/test, `src/scout/induction/manifest-registry.ts` L29-46), EX1.
 
@@ -133,35 +120,32 @@ are status surfaces. The TGP API origin is `https://backend-spring-lake-3890.fly
 `E:shared/protocol.js` L3 and `E:manifest.json` L33 still name `api.tgp.coach`; slice **X0**
 replaces both before X3.
 
-| #   | Step            | Where    | What happens                                                                                                                                                                                                                                                                                                                                                                     | Roman screen                        | Status read                                                           |
-| --- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
-| 1   | Pick the site   | phone    | Setup creates the `ImportIntent` (`POST extension/pair/init`, `chosen_platform` slug, `src/extension-pair/extension-pair.dto.ts` L26-36; picker `M:src/constants/importPlatforms.ts` L23-28 incl. `custom`). The slug is a label; the run's identity is the authorized origin. A custom URL that does not match the tab origin is refused with a stable code.                    | `ImportSetupView` `source`          | `pair/session` readiness (S11 D-S11-5)                                |
-| 2   | Authorize       | computer | X1: the popup's one gesture requests the optional host permission for the tab origin; granted origin = the run's single authorized origin, revoked at settle (D-L0-1.1).                                                                                                                                                                                                         | `computerHandoff`                   | —                                                                     |
-| 3   | Start once      | computer | `POST scout/runs/start` with `import_intent_id` (`src/scout/lifecycle/run.controller.ts` L88-97); server clock and deadline start (D-S7L-3; D-L0-7.3). `POST scout/runs/declaration` (`observation.controller.ts` L95). Zero coach actions from here.                                                                                                                            | `ImportProgressView` `finding`      | `running` / `discovering` (`M:src/types/importRunStatus.ts` L55)      |
-| 4   | Observe         | computer | Attach capture to the authorized tab (`E:shared/capture.js` L202), reload once, wait for network idle, record the origins the page itself contacted, per origin its observed credentials mode and the non-cookie credential headers the page set (worker memory only, D-L0-6.2), inventory in-app link paths, build `StructureDigestV1` (D-L0-2). Values never leave the device. | `finding`                           | `discovering`                                                         |
-| 5   | Decode, explore | backend  | `POST scout/runs/learn` (D-L0-3): per-coach memory or model call. Model returns data only (D-L0-4). Explore: the extension visits every uncaptured in-app link template by URL, bounded (D-L0-7.3); round 2 re-submits the union digest.                                                                                                                                         | `finding`                           | `discovering`                                                         |
-| 6   | Learn           | backend  | The accepted package is stored as a version of **this coach's** memory for the slug and pinned to this run and round (D-L0-5). A reused package skips the model call after re-validation.                                                                                                                                                                                        | `finding`                           | `discovering`                                                         |
-| 7   | Crawl           | computer | `compileLearnedBlueprint` rebinds slots, `:q` values and header values from this run's own capture (D-L0-2) → `normalizeBlueprint` (`blueprint.js` L393) → `runReplay` (`engine.js` L112) with the per-origin fetch router (credentials mode mirrored, page-set headers re-attached; D-L0-6.2) → `POST scout/ingest` batches. Per-step evidence is uploaded (D-L0-6).            | `transferring`                      | `phase: transferring`, `families[]`                                   |
-| 8   | Map             | backend  | Staged rows resolve through the run's pinned package in the one registry provider: `SourceRegistryProvider.forRun(db, coachId, intentId)` (merged L2a, `source-registry.provider.ts` L262; D-L0-5).                                                                                                                                                                              | `transferring`                      | —                                                                     |
-| 9   | Reconstruct     | backend  | Claim via `POST scout/ingest/complete` (`scout.controller.ts` L110). Conformance C0-C4 (D-L0-4) **per family** in its own locked transaction before `reconstructRun` (`lifecycle.service.ts` L459); a failing family is dropped and disclosed, the others proceed; S8-G reconstruct (native) and the preserve writer (FAM-0 FAM-P2) through `destinationFor`.                    | `checking`                          | `phase: reconciling`                                                  |
-| 10  | Verify, verdict | backend  | S9 reconcile → S10 evaluator with `closure: null` → arbiter → CAS terminal (`lifecycle.service.ts` L453-497, `writeTerminal` L497). The AI has no input. Under r5 the verdict is `partial/coverage_basis_unknown` at best (D-L0-6); the detail is in the projection.                                                                                                             | `ImportResultView` (R1 adapter; R2) | terminal `status`, `reason_code` (`reason-codes.ts` L50-60), D-L0-6.3 |
-| 11  | Remember        | backend  | In the settle transaction after the CAS: this coach's pinned version is marked `accepted` or `suspect` from persisted, server-computed inputs only (D-L0-5). No cross-coach row is written in V1.                                                                                                                                                                                | —                                   | —                                                                     |
+| #   | Step            | Where    | What happens                                                                                                                                                                                                                                                                                                                                                                                                                | Roman screen                        | Status read                                                           |
+| --- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| 1   | Pick the site   | phone    | Setup creates the `ImportIntent` (`POST extension/pair/init`, `chosen_platform` slug, `src/extension-pair/extension-pair.dto.ts` L26-36; picker `M:src/constants/importPlatforms.ts` L23-28 incl. `custom`). The slug is a label; the run's identity is the authorized origin. A custom URL that does not match the tab origin is refused with a stable code.                                                               | `ImportSetupView` `source`          | `pair/session` readiness (S11 D-S11-5)                                |
+| 2   | Authorize       | computer | X1: the popup's one gesture requests the optional host permission for the tab origin; granted origin = the run's single authorized origin, revoked at settle (D-L0-1.1).                                                                                                                                                                                                                                                    | `computerHandoff`                   | —                                                                     |
+| 3   | Start once      | computer | `POST scout/runs/start` with `import_intent_id` (`src/scout/lifecycle/run.controller.ts` L88-97); server clock and deadline start (D-S7L-3; D-L0-7.3). `POST scout/runs/declaration` (`observation.controller.ts` L95). Zero coach actions from here.                                                                                                                                                                       | `ImportProgressView` `finding`      | `running` / `discovering` (`M:src/types/importRunStatus.ts` L55)      |
+| 4   | Observe         | computer | Attach capture to the authorized tab (`E:shared/capture.js` L202), reload once (the reload URL passes the D-L0-6.2 navigation bound), wait for network idle, record the origins the page itself contacted and, per origin and frame, the non-cookie credential headers its requests carried (worker memory only, D-L0-6.2), inventory in-app link paths, build `StructureDigestV1` (D-L0-2). Values never leave the device. | `finding`                           | `discovering`                                                         |
+| 5   | Decode, explore | backend  | `POST scout/runs/learn` (D-L0-3): per-coach memory or model call. Model returns data only (D-L0-4). Explore: the extension visits every uncaptured in-app link template by URL that passes the D-L0-6.2 navigation bound, bounded (D-L0-7.3); round 2 re-submits the union digest.                                                                                                                                          | `finding`                           | `discovering`                                                         |
+| 6   | Learn           | backend  | The accepted package is stored as a version of **this coach's** memory for the slug and pinned to this run and round (D-L0-5). A reused package skips the model call after re-validation.                                                                                                                                                                                                                                   | `finding`                           | `discovering`                                                         |
+| 7   | Crawl           | computer | `compileLearnedBlueprint` rebinds slots, `:q` values and header values from this run's own capture (D-L0-2) → `normalizeBlueprint` (`blueprint.js` L393) → `runReplay` (`engine.js` L112) with the per-origin fetch router under the D-L0-6.2 credential and no-mutation invariants → `POST scout/ingest` batches. Per-step evidence is uploaded (D-L0-6).                                                                  | `transferring`                      | `phase: transferring`, `families[]`                                   |
+| 8   | Map             | backend  | Staged rows resolve through the run's pinned package in the one registry provider: `SourceRegistryProvider.forRun(db, coachId, intentId)` (merged L2a, `source-registry.provider.ts` L262; D-L0-5).                                                                                                                                                                                                                         | `transferring`                      | —                                                                     |
+| 9   | Reconstruct     | backend  | Claim via `POST scout/ingest/complete` (`scout.controller.ts` L110). Conformance C0-C4 (D-L0-4) **per family** in its own locked transaction before `reconstructRun` (`lifecycle.service.ts` L459); a failing family is dropped and disclosed, the others proceed; S8-G reconstruct (native) and the preserve writer (FAM-0 FAM-P2) through `destinationFor`.                                                               | `checking`                          | `phase: reconciling`                                                  |
+| 10  | Verify, verdict | backend  | S9 reconcile → S10 evaluator with `closure: null` → arbiter → CAS terminal (`lifecycle.service.ts` L453-497, `writeTerminal` L497). The AI has no input. Under r5 the verdict is `partial/coverage_basis_unknown` at best (D-L0-6); the detail is in the projection.                                                                                                                                                        | `ImportResultView` (R1 adapter; R2) | terminal `status`, `reason_code` (`reason-codes.ts` L50-60), D-L0-6.3 |
+| 11  | Remember        | backend  | In the settle transaction after the CAS: this coach's pinned version is marked `accepted` or `suspect` from persisted, server-computed inputs only (D-L0-5). No cross-coach row is written in V1.                                                                                                                                                                                                                           | —                                   | —                                                                     |
 
-Binding to `E#19`: C2a/C2b-1 survive as deterministic evidence inside the digest; the normalizer and
-engine survive with the X2b changes; C2c "compiler" → `compileLearnedBlueprint`; A2 → one action,
-_navigate the authorized tab to an observed same-origin path by URL_; C3b "confirm" → the
-deterministic gate, never a human. **Deleted from the plan:** C2b-2 edges, C2b-3 pagination
-inference, confidence scoring, Learn UI, coach confirmation, DOM/SSR fallback, separate memory slice.
+Binding to `E#19`: C2a/C2b-1 survive as digest evidence; the normalizer and engine survive with the
+X2b changes; C2c → `compileLearnedBlueprint`; A2 → one action, _navigate the authorized tab to an
+inventory URL_; C3b → the deterministic gate. **Deleted:** C2b-2 edges, C2b-3 pagination inference,
+confidence scoring, Learn UI, coach confirmation, DOM/SSR fallback, a separate memory slice.
 
-#### D-L0-1.1 Where Start happens (owner D9, decided 2026-09-29; `R581-B-B7`)
+#### D-L0-1.1 Where Start happens (owner D9; `R581-B-B7`)
 
-NS says _pick → authorize → Start → live progress → verdict_ on the phone and _"the extension popup is
-a status surface only"_. Chrome grants an optional host permission only inside a user gesture in the
-extension's own UI, so X1 puts the gesture in the popup. **Decided (D9):** the popup carries
-**exactly one Start button** — _Start = authorize this site_ — and everything else in it is status
-(progress and the result detail, X4); the Roman journey owns pairing, source choice, live progress
-and the verdict; the phone's Start step reads _press Start in the extension on your computer_ (R1
-copy). The NS wording conflict is resolved by D9; no second action or gesture exists.
+NS says the popup is a status surface, but an optional host permission is granted only inside a user
+gesture in the extension's own UI (X1). **Decided (D9):** the popup carries **exactly one Start
+button** — _Start = authorize this site_ — and everything else in it is status (X4); the Roman
+journey owns pairing, source choice, progress and the verdict; the phone's Start step reads _press
+Start in the extension on your computer_ (R1 copy). No second action or gesture exists.
 
 ### D-L0-2: where AI runs, and on what
 
@@ -181,7 +165,7 @@ interface StructureDigestV1 {
   digestVersion: 2; // r5 changes admission before any implementation exists; no shipped version to distinguish
   round: 1 | 2; // round 2 = the UNION digest after explore; refs re-issued in canonical order
   truncated: { templates: boolean; linkTemplates: boolean; shapes: number };
-  origins: { ref: string; template: string; contacted: boolean; credentialed: boolean }[]; // "o0" = tab origin; host labels under the slot rule; contacted = the page fetched JSON from it this run; credentialed = the page's requests to it carried cookies or a non-cookie credential header (informational since r6: scope is FAM-0's partner-origin rule, not this flag; D-L0-6.2)
+  origins: { ref: string; template: string; contacted: boolean; credentialed: boolean }[]; // "o0" = tab origin; r8: an origin is scheme + host + port, so template = `https://` + host labels under the slot rule + `:port` when non-default (D-L0-6.2); contacted = the page fetched JSON from it this run; credentialed = the page's requests to it carried a non-cookie credential header (informational: scope is FAM-0's partner-origin rule, not this flag)
   templates: {
     // one per structure key (D-L0-3), ≤ 64; the model refers to templates only by ref
     ref: string; // "t0".."t63"
@@ -295,12 +279,15 @@ type ShapeNode =
   value was byte-identical on ≥ 90% of observations for that origin. Values are rebound on the
   device at replay (D-L0-6.2 covers credential headers separately).
 - **Rebinding.** `compileLearnedBlueprint` (X2) binds each `:sN`, origin slot, `:q` value and header
-  value from **this run's own capture** for the same structure key. A slot with k observed values
+  value from **this run's own capture** for the same identity. A slot with k observed values
   fans out into k steps; 0 bindings fail closed (`slot_unbound`: zero requests, a named gap). Slot
   values never enter the package, events, `ingest` or a log.
 - **Bounds:** digest ≤ 32 KiB canonical JSON; templates ≤ 64; shape depth ≤ 4, keys ≤ 64 per object;
   link templates ≤ 64; origins ≤ 8. Over-bound digests are truncated deterministically and marked in
-  `truncated` (gap `digest_truncated`), never rejected.
+  `truncated` (gap `digest_truncated`), never rejected. **Truncation order (r8; `R581-c7B2-02`):**
+  in a round-2 union the round-1 templates and their round-1 key paths are reserved first;
+  explore-only templates and explore-only key paths truncate first. Truncation can therefore never
+  make round 2 refuse (D-L0-3 (ii)).
 - **Prompt injection.** Admitted key names and vocabulary words are the only site-chosen strings and
   are attacker-controlled; the validators, not the prompt, are the defence: no key name is ever
   executed, fetched or written, only matched against the digest.
@@ -315,12 +302,12 @@ Same posture as `runs/start` (`run.controller.ts` L88-97: coach = bearer, unifor
 **Template identity, structure key and reuse key (r5; r7 `R581-c7A-01`).** A template's
 **identity** is `(originTemplate, method, slotted template)`; its **structure key** is the identity
 plus `keyPaths`, the sorted set of admitted key paths — names only, no kinds, no length buckets.
-Every match in this record is **by identity with key-path inclusion**, never by exact structure key:
-a digest template **matches** a package template when the identities are equal and the digest's
-`keyPaths` ⊆ the package's (a sparser account observes fewer keys, never more structure; `null` vs
-typed kinds and absent optional keys are compatible). **Key-path growth** (the same identity observed
-with extra admitted keys) is compatible in **both** directions for identity matching: extra digest
-keys bind nothing (the mapping never names them) and are counted on the pin as `keypath_growth`, an
+Every match in this record is **by identity alone** (r8 wording; `R581-c7B2-C-01`): a digest
+template matches a package template when the identities are equal; key paths are compared only by
+V-L5/V-L6 in match mode (a mapped path whose key this digest never observed is compatible and binds
+nothing at crawl; an `idField` absent from the digest's item shape is a **miss** — a collection
+without its id key is another structure) and by the round-2 shrink test. **Key-path growth** (extra
+admitted keys on the same identity) binds nothing, is counted on the pin as `keypath_growth`, an
 audit drift signal that is never a trigger; the preserve path moves such records whole anyway
 (D-L0-6.1). A package's **round-1 fingerprint** is sha256 over the structure keys of its templates
 with `discoveredBy: 'landing'`; explore-only templates never participate. The reuse key is
@@ -353,31 +340,37 @@ for `round = 2` and creates a new pin row exactly once. **Round-2 match rule (r7
 pin only** — never a fresh memory lookup, so one run has one interpretation. The handler:
 
 - (i) requires a round-1 pin for this intent, else `409 learn_round_order`;
-- (ii) **monotone observation rule:** for every template identity of the **round-1 digest** (what
-  this run actually observed; its identities and `keyPaths` are stored on the round-1 pin as
-  `observedIdentities`, names only) the union must contain the same identity with `keyPaths` ⊇ the
-  round-1 key paths. Otherwise the digest is not a union of this run's observations and is refused
-  `digest_not_union` (the device re-submits the true union; a second refusal settles
-  `learn_refused`). Package steps are **never** part of this test: a package step the run did not
-  observe is `template_absent` (below), never a refusal, so a sparse account, an unvisited link or a
-  feature the coach does not use can never fail round 2;
-- (iii) runs the D-L0-3 match of the union against the round-1 package in **full-applicability
-  mode** (every union `collection` template covered by identity by a step or `unmapped` entry;
-  V-L5/V-L6 over the union; key-path growth compatible as above): a hit **re-pins the same version
-  unchanged** with the round-1 pin's `source`. Otherwise (a new collection identity the package does
+- (ii) **monotone observation rule, truncation-safe (r8; `R581-c7B2-02`; operator disposition
+  4):** every template identity of the **round-1 digest** (stored on the round-1 pin as
+  `observed_identities` with its key paths, names only) **carries forward by identity** into round
+  2 whether or not the union digest lists it: the handler's working union is the submitted union ∪
+  the round-1 identities, each with round-1 key paths ∪ union key paths. A union that lists a
+  round-1 identity with **fewer** key paths while `truncated.shapes = 0`, or omits one while
+  `truncated.templates = false`, is not a union of this run's observations and is refused
+  `digest_not_union` (the device re-submits; a second refusal settles `learn_refused`). A round-1
+  identity or key path missing from a **truncated** union is carried forward, never a refusal; its
+  family keeps gap `digest_truncated`. Package steps are **never** part of this test: a package step
+  the run did not observe is `template_absent` (below), never a refusal — so a sparse account, an
+  unvisited link, a feature the coach does not use or an account so rich that its union exceeds the
+  digest budget can never fail round 2;
+- (iii) runs the D-L0-3 match of the **working union** against the round-1 package in
+  **full-applicability mode** (every `collection` template covered by identity by a step or
+  `unmapped` entry; V-L5/V-L6 over it; key-path growth compatible as above): a hit **re-pins the
+  same version unchanged** with the round-1 pin's `source`. Otherwise (a new collection identity the package does
   not cover) the model is called once over the union digest with the round-1 package as a few-shot
   example inside the untrusted block (D-L0-7.1), and the resulting candidate v+1 must keep every
-  round-1 step **whose identity is in the union** (V-L10 union rule) or is refused; a refusal after
+  round-1 step **whose identity is in the working union** (V-L10 union rule) or is refused; a refusal after
   repair settles `learn_refused` as in step 4 — the run never falls back to guessing.
 
 **The version at first `ingest` is frozen:** the ingest gate refuses rows while a learn call is in
 flight; after the first staged row `runs/learn` returns `409 learn_after_ingest`. Both pins are
 audit; the last pin is the run's interpretation. Worked examples (fixtures in L08): _sparse
-account_ — memory hit on a package with a `habits` step; explore visits the habits link, the page
-issues no habits request; round 2 passes (ii) because the round-1 digest never had that identity,
-re-pins the version, `habits` is `template_absent`, everything else moves; _key-path growth_ — the
-roster request observed again in round 2 with two extra optional keys is the same identity with a
-superset of key paths ⇒ (ii) and (iii) pass, `keypath_growth: 2` on the pin, re-pin.
+account_ — a memory hit on a package with a `habits` step; the visited habits page issues no habits
+request; (ii) passes (round 1 never had that identity), the version re-pins, `habits` is
+`template_absent`, everything else moves; _key-path growth_ — the roster re-observed with two extra
+optional keys is the same identity ⇒ re-pin, `keypath_growth: 2`; _large account_ — a union that
+overflows drops explore-only templates first and carries every round-1 identity forward ⇒ re-pin or
+one model call, never `learn_refused`.
 
 **`template_absent` (r6; r7 wording).** A package step whose identity appears in **no** template of
 the round-2 digest (or of the round-1 digest when round 2 is skipped) is _absent this run_.
@@ -497,7 +490,10 @@ proceed. Whole-family effects arise only from structural signals stated below (a
 **every** non-empty row). The package as a whole is never refused at claim, and the verdict
 reflects dropped families and records through the arbiter's existing order. The **effective parent
 set** of a run is the set of staged parent identities whose family passed C0 and whose row passed
-C2, **plus** existing verified Person links (S8-D) for the coach; C4 is defined over it.
+C2, **plus** existing verified Person links (S8-D) for **this coach on this run's
+`source_platform`** (r8; `R581-c7B2-08`; operator disposition 6; `Person` is unique on `(coach_id,
+source_platform, source_person_id)`, `schema.prisma` L6971 — a Person of another platform with the
+same source id never links); C4 is defined over it.
 
 - **C0 identity (r5; `R581-B-A2`, `R581-B2-B2`).** Per **family**, over the union of steps and
   `:q` variants feeding it: Σ engine `raw_items == Σ distinct_raw_ids + Σ duplicate_ids`,
@@ -539,7 +535,9 @@ unresolved_parent` (count 1 each); linked rows of the same family proceed. When 
 
 **Slug.** The canonical platform token of a learned source is the authorized tab origin's hostname,
 lower-case (`isCanonicalPlatform`, `scout-platform.ts` L2-8). It depends on nothing the coach did and
-is, with `coach_id`, the memory key (D-L0-3). It is never in the digest or the prompt.
+is, with `coach_id`, the memory key (D-L0-3). It is never in the digest or the prompt. Persons from
+earlier `LO` runs on the same host carry `LO`'s file slug and do not link to learned runs
+(`R581-c7B2-C-04`); V1-P item 6 records the effect and DEL removes the cause.
 
 **Schema (backend, additive; S10-B posture: RLS ENABLE+FORCE, REVOKE anon/authenticated, one
 `service_role` policy, RESTRICTIVE deny-all; `prisma/migrations/20270122000000_.../migration.sql`
@@ -599,25 +597,26 @@ link_conformance }`: a package step's template absent although its discovering l
   failure with non-zero raw items; native rules failing on **every** non-empty row of a family (C3,
   r7 — one failing row is a preserve, never a trigger); a parent edge linking **no** child row or a
   link template failing conformance (C4). Each is derived by the backend from the persisted
-  conformance record and evidence rows. **Account-sparsity and data-quality conditions never
-  invalidate:** `slot_unbound`, empty collections, unproven pagination, key-path growth, single
-  malformed rows, auth loss, timeouts and cancels are run-local gaps or per-record dispositions only.
+  conformance record and evidence rows. **Account-sparsity, data-quality and interruption
+  conditions never invalidate:** `slot_unbound`, empty collections, unproven pagination, key-path
+  growth, single malformed rows, auth loss, timeouts, cancels and a **worker restart or deadline**
+  (r8; `R581-c7B2-05`: C0 is evaluated only for a family whose evidence row is complete; a family
+  without one is `count_basis: unknown`, never a trigger, and the package state is unchanged) are
+  run-local gaps or per-record dispositions only.
 - **Pins (`R581-B-B3`).** Read first under the run-row lock; one new row per round; frozen at first
   `ingest`. Concurrent first learns for one `(coach, slug)` allocate `version` under `SELECT ... FOR
 UPDATE` on the max row with one retry (`R581-B-C4`).
-- **L2g — cross-coach memory (deferred slice; invariants binding on its record).** The NS promise
-  "the next coach on that site starts instantly" is delivered by L2g, not V1. Its record must
-  satisfy, at minimum: (a) promotion needs a **quorum of ≥ 2 independently provisioned coaches** on
-  distinct `account_scope_id_digest`s; coach accounts are **TGP-provisioned, not self-serve**
-  (`src/auth/auth.service.ts` L36-44, L946-984), and promotion **fails closed** whenever
-  `ALLOW_SELF_SERVICE_BECOME_COACH` is enabled; (b) identical `package_digest` over the **core
-  templates** (structure keys, not full fingerprints); (c) per-run conformance re-validation before
-  a global package drives any write, and the served package never contains a key the served coach's
-  digest lacks; (d) closed-enum server-computed triggers only; a single run marks `suspect`, never
-  invalidates; (e) a global row holds only vocabulary keys or keys corroborated by ≥ 2 distinct
-  coaches' digests, and its key is the registrable domain of a platform proven multi-tenant by the
-  quorum — a hostname with one coach never enters a global row (`R581-A2-01`). L0 states these
-  invariants; it does not design L2g.
+- **L2g — cross-coach memory (deferred slice; invariants binding on its record).** "The next coach
+  on that site starts instantly" is L2g's, not V1's. Its record must satisfy at minimum: (a)
+  promotion needs a quorum of ≥ 2 independently provisioned coaches on distinct
+  `account_scope_id_digest`s; coach accounts are TGP-provisioned (`src/auth/auth.service.ts`
+  L36-44, L946-984) and promotion fails closed whenever `ALLOW_SELF_SERVICE_BECOME_COACH` is on;
+  (b) identical `package_digest` over the core templates; (c) per-run conformance re-validation
+  before a global package drives any write, and the served package never contains a key the served
+  coach's digest lacks; (d) closed-enum server-computed triggers; one run marks `suspect`, never
+  invalidates; (e) a global row holds only vocabulary keys or keys corroborated by ≥ 2 coaches'
+  digests, keyed by a quorum-proven registrable domain — a one-coach hostname never enters a global
+  row (`R581-A2-01`). L0 states these invariants; it does not design L2g.
 
 **Runtime loading — one registry provider (L2a, PR #588, merged as `249fd0d4`; CORE DIFF = 0 for a
 new site).** `SourceRegistryProvider.forRun(db, coachId, intentId) → RunRegistries =
@@ -662,15 +661,21 @@ fan_out: { parent_ids_digest, contexts_expected, contexts_fetched, contexts_exha
 advertised_next }`. **Positive exhaustion per step:**
   - `page`: `stop = empty_page` after ≥ 1 page (a short page is **not** proof: `short_page` = observed);
   - `cursor` / `next_url`: `stop = absent_next` (the next path resolves to null/absent) after ≥ 1
-    page; `next_url` targets are followed only when same origin and same structure key, checked on
-    the device before each fetch;
+    page; `next_url` targets are followed only when same origin, same identity and every query key
+    and value passes the D-L0-6.2 token check, checked on the device before each fetch (keys
+    admitted as served, `R581-c7B2-06`);
   - `none`: **never proven** (`first_page_only` = observed) — a first page is never certified;
   - `advertised_next`, `budget`, `cycle`, `error` or `refused_pages > 0` ⇒ not exhausted.
   - **Fan-out (`R581-A2-06`):** `parent_ids_digest` must equal the parent step's `id_set_digest`
     (server-checked), `contexts_expected` = parent `distinct_raw_ids`, `contexts_fetched` = distinct
     parent ids actually fetched (each parent once), and the fan-out counts as exhausted only if
     `contexts_exhausted = contexts_expected` with every context positively exhausted; `pages_fetched`
-    is the page total across contexts. `expected: 0` with a non-empty parent is refused.
+    is the page total across contexts. `expected: 0` with a non-empty parent is refused. **Fan-out
+    shortfall (r8; `R589-c7B2` class C; one rule, stated here only):** `contexts_fetched <
+contexts_expected` or a context not positively exhausted, with no `error`/`budget`/`cycle`
+    stop, leaves the family **`observed`** (never `proven`) with gap `list_not_exhausted`; only a
+    missing, extra or duplicate step, a zero-page root step or an `error`/`budget`/`cycle` stop
+    makes it `unknown`. #589 already follows this rule.
   - **Unknown is never 0:** `pages_fetched = 0` on a root step is refused by the parser.
 - **Family count basis (consumed by D-L0-6.3):** `count_basis = 'proven'` iff every step and variant
   feeding the family is positively exhausted, the union id-set digest and count equal the staged side
@@ -698,11 +703,13 @@ advertised_next }`. **Positive exhaustion per step:**
   first); preserve is one universal tenant-scoped destination, idempotent by `(coach_id,
 source_platform, family label, source_id)`, linked to its parent through the learned `parentEdge`,
   readable and exportable, and **never visible to the AI or to any memory row**; a family graduates
-  from preserve to native by a deterministic backfill on the same identity (FAM-G1). Media bytes are
-  fetched by the device under the **media request authority** of D-L0-6.2 (r7) and uploaded through
-  the existing S3-compatible storage (**D12**, approved; FAM-M1 owns per-hop confinement, caps and
-  the scan gate); until FAM-M1 lands no media is fetched and media is `not_moved:
-destination_gate_closed`. Until the preserve writer is viewable
+  from preserve to native by a deterministic backfill on the same identity (FAM-G1). **Media is
+  deferred whole to FAM-M1 (r8; `R581-c7A2-03`, `R581-c7B2-10`; operator disposition 5):** no L0
+  slice fetches a media byte; every media reference in a staged record is `not_moved:
+destination_gate_closed` (count = distinct media references where the staged rows carry them,
+  else `null`) until FAM-M1 lands — a **disclosed gap**, not a mechanism. FAM-M1 uploads through
+  the existing S3-compatible storage (**D12**) under the media invariants of D-L0-6.2 and owns
+  every mechanism (fetch context, redirects, CORS, caps, dedup, scan). Until the preserve writer is viewable
   (FAM-P2 + FAM-P3 `PRESERVE_VIEWABLE`) or a family's native writer slice lands, its staged records
   are disclosed as `not_moved: destination_gate_closed` (count known; FAM-0 §6.3 mapping).
 - **Scope in time and status.** "Past" = records the site exposes to the coach at run time. Archived
@@ -728,136 +735,168 @@ destination_gate_closed`. Until the preserve writer is viewable
   `origin_rejected` counter **per category** (count only, never an origin string), carried in the
   projection as `excluded_origins[]` (D-L0-6.3, FAM-0 L0-A5). This record does not restate that
   rule. The r5 exclude-by-default and gap `third_party_not_imported` are **deleted**. Bounds that
-  stay L0's: GET/HEAD only, no body, learned templates only, the no-mutation bound with its named
-  residual, per-origin rate bounds, the per-mechanism credential model, canonical `https` origins
-  only (D-L0-6.2), and **every outside origin the run read from is named in the result** (D-L0-6.3
-  `outside_origins[]`).
+  stay L0's: GET/HEAD only, no body, learned templates only, the no-mutation and navigation bounds
+  with their named residual, per-origin rate bounds, the credential invariants, `https` origins
+  identified by scheme + host + port (D-L0-6.2), and **every outside origin the run read from is
+  named in the result** (D-L0-6.3 `outside_origins[]`).
 
-### D-L0-6.2: origins — one Start, the tab origin, MAIN-world replay (D7, D14; `R581-A-06`, `R35-B C1`)
+### D-L0-6.2: origins, credentials and the read-only bound — contracts, invariants, acceptance tests (D7, D14; r8)
+
+r8 states **what must hold** and **what test proves it**; how a slice realises it in Chrome is the
+slice's design, reviewed at its own T4 with the tests below green on a real packaged MV3 extension.
 
 - **Authorization is exactly X1:** one Start authorizes the tab origin only; revoked at settle.
-- **Base case — a single-origin site (r6; item e).** The page contacts only its own origin:
-  `origins = [o0]` (`contacted: true`), every template has `originRef: 'o0'`, `allowedOrigins =
-{tab origin}`, the router uses the background fetch only, **no MAIN-world injection happens**, the
-  credential table holds the tab origin's entry only, and the projection carries no
-  `outside_origins` entry and no `cross_origin_*` gap. Everything below is additive to this base;
-  X3 and L09 prove the base case first, and every multi-origin rule degrades to it when the foreign
-  set is empty.
-- **Cross-origin data APIs are replayed from the authorized page's own main world.** X3 injects a
-  bounded fetch helper with `chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func,
-args })` (`E-X1:manifest.json` L29 declares `scripting`). The engine (X2b) takes a **per-origin fetch
-  router**: the tab origin uses the background fetch (`E:background.js` L753, `redirect: 'error'`);
-  every other in-scope origin uses the main-world helper, also `redirect: 'error'`. **The real
-  guarantee (`R581-B2-C1`):** confinement is enforced in the worker before injection (the helper is
-  handed only URLs, and the header set below, that the worker already admitted); the page can patch
-  `fetch` but the site is the data source anyway. `navigator.serviceWorker.controller` presence is
-  recorded as a run qualifier.
-- **Admissible origins are canonical `https` origins (r7; `R581-c7A-06`).** An in-scope foreign
-  origin must be scheme `https` on the default port, so a **hostname names exactly one origin** and
-  `outside_origins[].host` is a one-to-one, verifiable name. A page-issued data request to any other
-  scheme or port is not captured (no template, no package step, no family attribution) and is
-  counted once in `excluded_origins[]` under L0's own category `non_canonical_origin` (D-L0-6.3).
-  The tab origin is whatever X1 authorized and is never an outside origin.
-- **Credential model for learned runs — stated per browser mechanism (r7; `R581-c7A-02`,
-  `R581-c7B-01`; operator disposition 1; replaces the r5 wording).** Device-only, run-scoped,
-  worker-memory-only. Three mechanisms, three rules:
-  - **Cookies: mirrored mode, never read.** The extension never reads, copies, stores or re-injects a
-    `Cookie` value (the header is browser-managed and forbidden to `fetch` anyway). During the Start
-    reload the capture records, **per origin, one boolean**: whether the page's own JSON data
-    requests to that origin carried cookies (from `Network.requestWillBeSentExtraInfo`
-    `associatedCookies` with any cookie included; values are not read). Replay uses the **same fetch
-    `credentials` mode the page effectively used for that origin**, one rule for every origin:
-    `credentials: 'include'` only when **every** observed page request to that origin carried
-    cookies, else `credentials: 'omit'` — applied by the background fetch for the tab origin (today's
-    unconditional `include`, `E:background.js` L776, becomes conditional in learned runs) and by the
-    MAIN-world helper for a foreign origin. The browser then attaches cookies by its own rules (SameSite, path,
-    secure) — exactly what the page's own request received, never a widening: an origin the page
-    called without cookies gets none even if the jar holds some. HttpOnly cookie values therefore
-    never enter worker memory, the MAIN world, capture buffers, the digest, the package, `ingest`,
-    a log or any message to TGP or a model.
-  - **Non-cookie credential headers: page-set only, same origin only.** The worker keeps, per
-    origin, the **request headers the page's own script set** (`Network.requestWillBeSent`
-    `request.headers`, `E:shared/capture.js` L263-277) that match the credential-policy set
-    (`Authorization`, `X-CSRF*`, `E:shared/credential-policy.js`; `Cookie` and every browser-managed
-    header excluded by name). At replay the router re-attaches exactly those headers to learned
-    GET/HEAD requests to **that same origin only**; an origin the page called without them gets
-    none. For a foreign origin the header set is passed to the MAIN-world helper as `executeScript`
-    args — the page realm **already holds** these values (its own script set them), so nothing
-    credential-bearing is handed to page scripts beyond what the page had. For the tab origin this
-    replaces the storage-JWT heuristic of `E:content/main.js` L16-33 in learned runs (`LO` keeps
-    it); a JWT found in storage is never sent anywhere in a learned run.
-  - **Loss and rotation.** A 401/403 where the page's own request succeeded triggers **one**
-    re-observation (reload the authorized tab, re-capture the table) and then gap
-    `source_auth_unavailable` (tab origin) or `cross_origin_auth_unavailable` (foreign), zero
-    further requests to that origin. **Service-worker restart:** the table lives only in the worker's
-    memory; when the worker restarts mid-run (run state rehydrates from disk, `E:background.js` L20)
-    the table is empty and the run performs the same **one** re-observation, else the gap above —
-    it is **never** persisted, not in `storage.local`, `storage.session`, IndexedDB or a message.
-    Everything is discarded at settle, cancel or tab loss.
-- **No-mutation bound (engineering bound inside D14; r7 `R581-c7A-03`, `R581-c7B-07`; operator
-  disposition 2 — not a new owner question).** A replay request is admitted only if **all** hold:
-  GET or HEAD; no request body; origin ∈ `allowedOrigins` = `{tab origin} ∪ {canonical in-scope
-foreign origins under FAM-0's partner-origin rule that the package's steps need}`; the path matches
-  a **learned template of the pinned package that the page itself issued this run** (identity in
-  this run's final digest — `template_absent` steps emit nothing); the request's **query-key set
-  equals** the key set of an observation of that template this run (never a subset, superset or
-  synthesized combination), with values rebound from this run's own observed values (`:q`),
-  pagination params or a same-origin same-identity `next_url`; and **no token** (split on `-`,
-  `_`, `.`, camel-case) of the path segments **or of any query key or rebound query value** is in
-  `MUTATING_VERB_VOCABULARY` — closed, versioned, vendor-neutral, in shared contract code, mirrored
-  by fixture in the extension: `logout`, `signout`, `delete`, `remove`, `destroy`, `cancel`,
-  `send`, `create`, `update`, `archive`, `unarchive`, `unsubscribe`, `subscribe`, `reset`,
-  `revoke`, `accept`, `decline`, `approve`, `reject`, `assign`, `complete`, `confirm`, `submit`,
-  `dismiss`, `toggle`, `set`, `mark`, `read`, `unread`, `seen`, `ack`, `acknowledge`, `view`,
-  `viewed`, `open`, `opened`, `track`, `visit`, `notify`, `action`, `operation`, `op`, `command`,
-  `cmd`, `event`. A template or `:q` variant that hits the vocabulary is refused
-  (`mutating_template_refused`, zero requests) on the device **and** at V-L5 on the server, so
-  `GET /api/action?operation=cancel` and `GET /api/items?mark_read=1` never fetch. Rate: ≤ 2
-  concurrent requests per origin, ≥ 250 ms spacing (`SCOUT_LEARN_REPLAY_MIN_SPACING_MS`), engine
-  `DEFAULT_BUDGETS` otherwise; a request is retried at most once, on network error only, never a
-  refused one; fan-out issues each admitted template **once per parent id** (`contexts_fetched`,
-  D-L0-6). No status probes, no synthesized key/value combinations (deleted in r5). **Residual risk,
-  stated honestly:** a source GET with hidden side effects that leave no lexical trace (a detail
-  read that flips a read receipt or a "last viewed" stamp) is not detectable by this bound; the
-  bound limits the blast radius to requests the page itself issued, once per parent, and **V1-P item
-  9 must observe it** on the pilot account (read/unread and last-viewed indicators recorded before
-  and after the run, per family). What V1-P observes decides whether a further bound is needed; it
-  is recorded as evidence, not decided here.
-- **Media request authority (r7; `R581-c7B-08`; operator disposition 6).** Media URLs are response
-  **values** (shape class `media_url`), so they never match a learned template and never enter the
-  digest, the package or a prompt. A media fetch is admitted only if **all** hold: GET, no body;
-  the URL's origin is the tab origin or an origin the page itself loaded media bytes from this run
-  (the capture records the set of origins that answered the page with `image/*`, `video/*`,
-  `audio/*` or `application/pdf` this run — worker memory only, hostnames never uploaded except as
-  below), canonical `https`; the same cookie-mode and header rules as above (no non-cookie header
-  unless the page sent it to that origin for media); `redirect: 'manual'` with FAM-M1's per-hop
-  check (an unconfined hop is `not_moved: excluded_by_policy`, FAM-0 §5.2); the URL is used
-  **verbatim as observed in the response value** (signed query strings included, nothing
-  synthesized) and its path and query keys pass the mutating vocabulary; every media host read is
-  an `outside_origins[]` entry with its `requests` count, inside the same ≤ 8 cap (a media host
-  beyond the cap is unconfined ⇒ `excluded_by_policy`). FAM-M1 owns caps, dedup, scan and the
-  upload; nothing before FAM-M1 fetches media.
-- **Outside-origin cap with refusal (FAM-0 L0-A4′).** The router **refuses (never fetches) a ninth
-  outside origin** in a run; a refused origin is gap `cross_origin_unobserved` for the families its
-  templates feed, so the ≤ 8 cap never hides an origin the run read from.
-- **Feasibility risks are named gaps:** an origin the package needs that the page did not contact this
-  run ⇒ `cross_origin_unobserved`; CORS-denied/opaque ⇒ `cross_origin_cors_denied`; injection or
-  fetch blocked by policy ⇒ `cross_origin_csp_blocked`; the coach navigates away or closes the tab
-  ⇒ `tab_lost` (R1 copy: "keep this tab open"; `R581-B2-C5`). Zero replayable collection templates
-  ⇒ `failed/transfer_failed`, `failure_code: no_collections_observed`.
-- **Capture (X3 adds; `R581-B2-C2`).** Today `E:shared/capture.js` L246-290 checks the origin before
-  header reads and counts `origin_rejected` without the origin string. X3 adds: JSON responses from
-  in-scope canonical foreign origins (same redaction path, L83-95, L101, L365), the contacted-origin
-  list with `credentialed` flags, the per-origin cookie-mode booleans, page-set header table and
-  media-origin set above (all worker memory). Non-JSON foreign responses, non-canonical origins,
-  FAM-0 excluded-category origins (counted per category, no origin string) and any TGP origin
-  remain `origin_rejected`. Nothing about any **credential** persists past the run; the only origin
-  fact that persists is the `outside_origins[]` evidence of D-L0-6.3 (hostnames the run actually
-  read from, D14 bound), uploaded once with the evidence, never in a memory row or a prompt.
-- **Fallback — later slice, not default (D11; was P3):** the tab origin plus the registrable
-  domain's https subdomains in the one `permissions.request` (public-suffix data). Cross-origin APIs
-  are served by the credential model above, so D11 is about reach, not credentials; it is not
-  scheduled in D-L0-9.
+- **Base case — a single-origin site.** The page contacts only its own origin: `origins = [o0]`,
+  every template has `originRef: 'o0'`, `allowedOrigins = {tab origin}`, replay uses today's
+  background fetch only (`E:background.js` L753-776, unchanged), **no MAIN-world injection**, the
+  projection carries no `outside_origins` entry and no `cross_origin_*` gap. Every multi-origin rule
+  below degrades to it when the foreign set is empty; X3 proves it first (T-01).
+- **Cross-origin data APIs are replayed from the authorized page's own top-frame main world**
+  (`chrome.scripting.executeScript`, `world: 'MAIN'`; `E-X1:manifest.json` L29 declares `scripting`)
+  by a helper that receives only URLs and headers the worker already admitted; no replay follows a
+  redirect (`redirect: 'error'`); `navigator.serviceWorker.controller` is recorded as a run qualifier.
+- **Origins (r8; `R581-c7A2-02`; operator disposition 2).** An **origin is scheme + host + port**.
+  A foreign origin is admissible iff its scheme is `https` (any port) and FAM-0's partner-origin
+  rule admits it; it is named in `outside_origins[].origin` as `https://host[:port]` (port omitted
+  when 443) and attributed to families like any other. A page-issued data request to a non-`https`
+  origin is never replayed and its families carry gap `cross_origin_insecure` (D-L0-6.3). The r7
+  category `non_canonical_origin` is deleted. The tab origin is whatever X1 authorized and is never
+  an outside origin.
+- **Credential invariants (r8; `R581-c7A2-01`, `-04`, `-06`, `R581-c7B2-03`, `-04`, `-05`, `-09`;
+  operator dispositions 1 and 8). Binding on X2b and X3; each has a test below.**
+  - **I-C1 Never persisted, logged, transmitted or handed on.** No cookie value and no credential
+    header value is ever written to `chrome.storage.*`, IndexedDB or a file; appears in a log, the
+    capture buffer, `inflight`, the digest, the package, an `ingest` batch, an evidence upload or a
+    message to TGP or a model; or is handed to a page script beyond what that realm sent (T-02, T-06).
+  - **I-C2 Cookies are attached only by the browser.** The extension never reads the cookie jar,
+    never sets, copies or re-injects a `Cookie` header. **Honest exposure bound:** the capture
+    mechanism the slice chooses may deliver cookie values to the worker transiently inside a browser
+    event; if so the handler retains no part of the event, serialises nothing from it, and the values
+    are unreachable once it returns. The record does **not** claim "never enters worker memory"; it
+    binds "never retained, never serialised, never leaves", measured by T-02 with a planted sentinel.
+  - **I-C3 No widening.** A replayed request to a foreign origin carries cookies only where the
+    page's own request to that template did; where the slice cannot establish that for a template,
+    it sends **none** and the family settles with the auth gap — never `include` by default, never
+    a new login (T-03, T-04). The tab origin keeps today's background path (`credentials:
+'include'`, `E:background.js` L776): a page's same-origin requests carry its cookies by default,
+    so this matches the page's own behaviour except for a page that deliberately omits them — an
+    in-origin over-send on the site the coach is logged into, accepted and stated here (T-05).
+  - **I-C4 Non-cookie credential headers: page-carried, exact origin, same frame.** The worker
+    holds, in memory only, the credential-policy headers (`Authorization`, `X-CSRF*`;
+    `E:shared/credential-policy.js`; `Cookie` and browser-managed headers excluded) that the page's
+    own requests carried, keyed by **exact origin (scheme + host + port) and frame provenance**
+    (`frameId`, recorded with every observation; disposition 8). A header is re-attached only to a
+    learned GET/HEAD request to that exact origin issued from the same frame context; V1 replays
+    only from the top frame and the background fetch, so a header observed only on a subframe's or
+    a worker's request is **never** re-attached and never handed to any realm — the family gets the
+    auth gap (T-06). The storage-JWT heuristic of `E:content/main.js` L16-33 is not used in learned
+    runs (`LO` keeps it); a JWT found in storage is never sent (T-16).
+  - **I-C5 Loss.** A 401/403 where the page's own request succeeded triggers at most **one**
+    re-observation (reload of the authorized tab; the reload URL passes the navigation bound), then
+    gap `source_auth_unavailable` (tab origin) or `cross_origin_auth_unavailable` (foreign) with
+    zero further requests to that origin. A session lost mid-run lands on whatever the site serves;
+    the extension **never fills or submits a form** and the run settles `partial` with the gap
+    (T-08).
+  - **I-C6 Worker restart.** The credential table dies with the worker. A restarted worker **does
+    not resume** the run (`E:background.js` L20-22: rehydrate the snapshot, do not resume); its only
+    action for an in-flight learned run is to claim what has been staged with run-level gap
+    `worker_restarted` (the claim body carries it; else the server deadline settles the run). No
+    re-observation, no re-attach, no
+    resumed counters; C0 never fires from a family whose evidence row is incomplete (D-L0-5), so a
+    restart can never produce `suspect` (T-07).
+- **No-mutation bound — replay and navigation (r8; `R581-c7A2-05`, `R581-c7B2-01`, `-06`,
+  `R581-c7B2-C-02`; operator disposition 3; an engineering bound inside D14).**
+  - **Vocabulary and token semantics.** `MUTATING_VERB_VOCABULARY` — closed, versioned,
+    vendor-neutral, shared contract code mirrored by fixture in the extension: `logout`, `signout`,
+    `sign_out`, `signoff`, `logoff`, `log_off`, `login`, `signin`, `auth`, `sso`, `oauth`, `password`,
+    `delete`, `remove`, `destroy`, `cancel`, `unsubscribe`, `subscribe`, `deactivate`, `activate`,
+    `send`, `create`, `update`, `archive`, `unarchive`, `reset`, `revoke`, `accept`, `decline`,
+    `approve`, `reject`, `assign`, `complete`, `confirm`, `submit`, `dismiss`, `toggle`, `set`, `mark`,
+    `read`, `unread`, `seen`, `ack`, `acknowledge`, `view`, `viewed`, `open`, `opened`, `track`,
+    `visit`, `notify`, `action`, `operation`, `op`, `command`, `cmd`, `event`. A URL **hits** when any
+    token (lower-cased; split on `-`, `_`, `.`, camel-case; exact whole token, no stemming — `events`
+    and `sets` do not hit) of a path segment, query key or query value is listed. Over-refusal of a
+    read-only surface is an honest, disclosed gap; V1-P item 9 records refusals per token.
+  - **Replay (FAM-0 D-FAM-1 executive interpretation of D14: the page's own learned templates
+    with other ids and pages, values rebound from observed values, pagination and a same-origin
+    `next_url`; nothing else is ever synthesized).** A request is admitted only if **all** hold: GET or HEAD; no body; origin ∈
+    `allowedOrigins` = `{tab origin} ∪ {admissible foreign origins the package's steps need}`; the
+    path matches a learned template of the pinned package that the page itself issued this run
+    (identity in the working union; `template_absent` steps emit nothing); its query-key set equals
+    an observed key set of that identity this run **∪ {the step's V-L5-validated pagination
+    `param`}**, or it is a `next_url` served by the previous page of the same origin and identity
+    with keys admitted as served; values are rebound from this run's observed values or the
+    pagination rule; the URL does not hit the vocabulary (a hit ⇒ `mutating_template_refused`, zero
+    requests, on the device **and** at V-L5). Each admitted `(template, parent id, page)` is issued
+    **at most once**; any failure after send is terminal for that request (`error` stop, `list_not_exhausted`)
+    — there is no retry, so the worst case is exactly one request per page (`R581-c7A2-05`). Rate:
+    ≤ 2 concurrent per origin, ≥ 250 ms spacing (`SCOUT_LEARN_REPLAY_MIN_SPACING_MS`).
+  - **Navigation (explore and the Start reload).** The device holds the literal URL; before every
+    navigation it checks: same origin as the tab; path from the run's link inventory; the URL does
+    not hit the vocabulary. A hit is **never visited** and counted as gap `navigation_refused` for
+    the run; a Start reload URL that hits refuses the run (`failure_code: start_page_refused`, zero
+    requests). Explore is **navigation only**: the extension never clicks, fills, submits a form or
+    dispatches an event; a visited page's own scripts run as they would for the coach (T-09).
+  - **Residual, stated honestly.** Two effects are outside any lexical bound: a source GET with a
+    hidden side effect (a read receipt, a "last viewed" stamp), and requests a visited page's own
+    scripts issue. The bound limits them to requests the page itself issued, once per page, and to
+    pages reachable by the coach's own links; **V1-P item 9 observes both** on the pilot account and
+    records what changed, per template and per page. That reading decides whether a further bound
+    is needed; nothing is decided here.
+- **Media invariants (r8; operator disposition 5) — binding on FAM-M1, which owns every mechanism.**
+  (a) Nothing before FAM-M1 fetches media (D-L0-6.1). (b) A media fetch is GET without body, to the
+  tab origin or an `https` origin the page itself loaded media bytes from this run (a set the
+  capture holds in worker memory); every such origin is named in `outside_origins[]` inside the
+  same ≤ 8 cap. (c) The URL is a response value used verbatim and does not hit the vocabulary. (d)
+  The credential invariants apply unchanged. (e) A redirect, an opaque or unreadable response and a
+  cap breach are counted `not_moved` outcomes (`excluded_by_policy`, `source_refused`,
+  `over_limit`), never silent. (f) **Open for FAM-M1's record (`R581-c7A2-03`), not decided here:**
+  whether a JSON-supplied URL on an authorized media origin whose path the page never requested (a
+  signed export URL) stays inside D14; FAM-M1 states its rule and carries the negative fixture
+  (T-17). FAM-0 §5.2's `redirect: 'manual'` wording is likewise FAM-M1's to prove (`R581-c7B2-10`).
+- **Outside-origin cap with refusal (FAM-0 r10 L0-A4′).** The router **refuses (never fetches) a
+  ninth outside origin** in a run; a refused origin is gap `outside_origin_refused` for the families
+  its templates feed (distinct from `cross_origin_unobserved`, which means the page did not contact
+  it), so the ≤ 8 cap never hides an origin the run read from (T-14). Lifting the cap is FAM-0
+  OQ-14.
+- **Feasibility risks are named gaps:** an origin the package needs that the page did not contact
+  ⇒ `cross_origin_unobserved`; CORS-denied/opaque ⇒ `cross_origin_cors_denied`; injection or fetch
+  blocked by policy ⇒ `cross_origin_csp_blocked`; non-`https` ⇒ `cross_origin_insecure`; tab closed
+  or navigated away ⇒ `tab_lost` (R1 copy: "keep this tab open"). Zero replayable collection
+  templates ⇒ `failed/transfer_failed`, `failure_code: no_collections_observed`.
+- **Capture (X3 adds).** To today's `E:shared/capture.js` (origin check before header reads,
+  `origin_rejected` without the origin string, L246-290): JSON responses from admissible foreign
+  origins on the same redaction path, the contacted-origin list, the credential-header table with
+  frame provenance and the media-origin set — all worker memory. Non-JSON foreign responses, FAM-0
+  excluded-category origins (counted per category) and any TGP origin stay `origin_rejected`. The
+  only origin fact that persists is `outside_origins[]` (D-L0-6.3).
+- **Fallback — later slice, not default (D11):** tab origin plus the registrable domain's https
+  subdomains in one `permissions.request`; about reach, not credentials; not scheduled in D-L0-9.
+
+**Required acceptance tests (r8).** Each runs the **packaged MV3 extension loaded into Chromium**
+(Playwright Chromium, labelled as such, not branded Chrome) against a local fixture server. A CDP
+probe of a plain page is evidence about the protocol, not about the extension, and discharges no
+test. The owning slice's PR is not merge-eligible until its tests are green on its exact head.
+
+| Id   | Owner  | Fixture and assertion                                                                                                                                                                                                                                                                              |
+| ---- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T-01 | X3     | Single-origin site: `origins = [o0]`, zero injections, `outside_origins: []`, `excluded_origins: []`, records moved.                                                                                                                                                                               |
+| T-02 | X3     | Planted HttpOnly sentinel cookie on the tab and a foreign origin: the sentinel is absent from the capture buffer, `inflight`, every log line, every `chrome.storage` area, IndexedDB, every message, every `executeScript` argument and every upload; the run still moves records.                 |
+| T-03 | X3     | Foreign origin the page called **without** cookies while the jar holds one for it: the fixture records no `Cookie` header on replay; the family moves.                                                                                                                                             |
+| T-04 | X3     | Cookie-authenticated foreign origin with a **mixed** public + credentialed endpoint pair, plus a `SameSite`/partitioned-cookie variant: each template either replays with the page's own outcome or settles `cross_origin_auth_unavailable`; never a widened send, never a login page interaction. |
+| T-05 | X3     | Cookie-session tab origin whose data requests are served through the page's **own service worker**: tab-origin replay succeeds via today's background path.                                                                                                                                        |
+| T-06 | X3     | Credential header set only by a **subframe** (different origin) and one by a page worker: neither is re-attached to any replay nor passed to any `executeScript` argument; the family gets the auth gap; frame provenance recorded.                                                                |
+| T-07 | X3     | Worker terminated mid-crawl: the run is not resumed, no re-observation, nothing credential-like in any storage, the run settles `partial` with `worker_restarted`, no structural trigger, package state unchanged.                                                                                 |
+| T-08 | X3     | Fixture invalidates the session mid-run: at most one reload, zero form fills or submissions, `source_auth_unavailable`, `partial`, records already staged kept.                                                                                                                                    |
+| T-09 | X3     | Inventory containing `/logout`, `/items/:id/delete`, `/settings?action=unsubscribe` links: none is visited, zero requests to them, session survives, `navigation_refused` counted; `/api/events` and `/api/sets` pages **are** visited.                                                            |
+| T-10 | X2b/L1 | Templates and variants hitting the vocabulary (`/api/action?operation=cancel`, `?mark_read=1`, a rebound value `read`) refused on the device and at V-L5; `/api/events`, `/api/sets` admitted.                                                                                                     |
+| T-11 | X2b    | Page 2 with an unobserved `page` key (validated pagination `param`) admitted; a `next_url` with a new cursor key on the same origin and identity admitted; a `next_url` to another origin or with a hitting key refused.                                                                           |
+| T-12 | X2b    | Fixture processes the GET then drops the response: exactly **one** request reaches the source, the step stops `error`, family `list_not_exhausted`.                                                                                                                                                |
+| T-13 | X3     | Partner origin on a non-default port (`https://api.example.test:8443`) captured, replayed and named exactly so in `outside_origins[]`; an `http://` partner origin never replayed, `cross_origin_insecure`.                                                                                        |
+| T-14 | X3     | Ninth outside origin refused: `outside_origin_refused` for its family, the eight named.                                                                                                                                                                                                            |
+| T-15 | X3     | Excluded-category origins (telemetry beacon, IdP token response) not captured, counted in `excluded_origins[]`; a CORS-denied origin ⇒ `cross_origin_cors_denied`; closed tab ⇒ `tab_lost`.                                                                                                        |
+| T-16 | X3     | A JWT planted in `localStorage` of the tab origin is never sent by a learned run; a bearer-authenticated foreign API the page called with `Authorization` is served by header re-attachment to that exact origin only.                                                                             |
+| T-17 | FAM-M1 | Media: a redirecting media URL, a CORS-less image, a JSON-supplied URL on an authorized media origin with an unrequested path — each yields the counted `not_moved` outcome FAM-M1's record states; no media byte is fetched before FAM-M1.                                                        |
 
 ### D-L0-6.3: `RunStatusProjectionV1` — the ONE run-status projection (D5; owned by L0; FAM-0 §6.3 cites this section by name and restates nothing)
 
@@ -871,12 +910,12 @@ interface RunStatusProjectionV1 {
   families: FamilyRowV1[]; // one row per family seen, INCLUDING preserved families
   not_moved: NotMovedV1[]; // records known to exist that did not land
   gaps: GapV1[]; // things we could not determine; never counts
-  outside_origins: OutsideOriginV1[]; // r6 (D14 bound): every origin other than the tab origin the run read from (data and media); empty in the single-origin base case
+  outside_origins: OutsideOriginV1[]; // r6 (D14 bound): every origin other than the tab origin the run read from (data; media once FAM-M1 lands); empty in the single-origin base case
   excluded_origins: ExcludedOriginV1[]; // r7 (FAM-0 L0-A5): capture-time origin_rejected counts per category; never an origin string
-  failure_code?: FailureCode; // set only when the server settled a learn failure (D-L0-7.5) or refused ingest (extension_update_required)
+  failure_code?: FailureCode; // FAM-0 r10 L0-A6: set when the server settled a learn failure (D-L0-7.5) or refused an ingest (extension_update_required); r8 also the refused Start page (start_page_refused)
 }
 interface OutsideOriginV1 {
-  host: string; // hostname only (lower-case, ≤ 253 bytes, `^[a-z0-9.-]+$`); r7: names exactly one origin because only canonical https default-port origins are admissible (D-L0-6.2); never a path, query, header or credential
+  origin: string; // r8 (was `host`): scheme + host + port, `^https://[a-z0-9.-]+(:[0-9]{1,5})?$`, port omitted when 443, ≤ 262 bytes; never a path, query, header or credential
   requests: number; // int ≥ 1; GET/HEAD requests the router admitted to it this run
 }
 interface ExcludedOriginV1 {
@@ -889,13 +928,12 @@ type ExcludedOriginCategory =
   | 'ads'
   | 'error_reporting'
   | 'identity_provider'
-  | 'payment_card_entry' // FAM-0 rules-file categories (L0-A5)
-  | 'non_canonical_origin'; // r7, L0-owned: a page-issued data request to a non-https or non-default-port origin (D-L0-6.2)
+  | 'payment_card_entry'; // FAM-0 rules-file categories (L0-A5); r8 deletes r7's `non_canonical_origin` (non-default ports are admissible; non-https is gap `cross_origin_insecure`)
 interface FamilyRowV1 {
   family: FamilyLabel; // closed vocabulary (below); no destination field: a family may be partly native and partly preserved, which moved_native and preserved express
   source_count: number | null; // int; null = unknown, never 0
   count_basis: 'proven' | 'observed' | 'unknown'; // D-L0-6 family count basis
-  moved_native: number; // int: bucket j native_present_verified + bucket i rows the coach removed or archived after import (FAM-0 §6.2; L0-A7)
+  moved_native: number; // int: bucket j native_present_verified + bucket i rows removed or archived after import, by the coach or the linked client (FAM-0 §6.2; r10 L0-A7; neutral copy "removed after import")
   preserved: number; // int; bucket j-p rows (0 until FAM-P2 writes any — a true zero, nothing exists to count)
   not_moved: number | null; // Σ not_moved[].count for this family when every entry has a count; else null
 }
@@ -910,14 +948,15 @@ interface GapV1 {
 }
 type FamilyLabel = string; // the FAM-0 D-FAM-1 catalogue (native and preserve-only families incl. billing_history, billing_schedule) ∪ 'unclassified' (the only catch-all)
 type NotMovedReason =
-  // FAM-0's closed list; FAM-0 §6.3 maps every S9 histogram key and FAM state onto it (FAM-R1)
+  // closed, L0-owned (`reason-codes.ts`); FAM-0 §6.3 maps its FAM states onto it (FAM-R1); the L2d table below places every base key
   | 'excluded_by_policy' // owner-confirmed exclusion with a device-side count (none in the catalogue today); FAM-0 also maps media from an unconfined origin, scan-rejected media and an erased Person here
   | 'source_refused' // the source refused or errored on fetches for known identities (4xx/5xx, refused pages)
   | 'unresolved_parent' // C4: the parent/person edge could not be resolved (S8-D link missing)
   | 'identity_conflict' // C0 failure for the family (r6: per family), missing/duplicate/conflicting ids
   | 'destination_gate_closed' // a deterministic gate before the write was closed: C2 drop, preserved before PRESERVE_VIEWABLE, native writer slice not landed, media before FAM-M1
-  | 'over_limit' // records beyond a configured bound (size, count, media caps)
-  | 'write_failed'; // deterministic writer error, rows staged
+  | 'over_limit' // records beyond a configured bound (size, count, media caps, RECONSTRUCT_MAX_ROWS)
+  | 'write_failed' // deterministic writer error, rows staged
+  | 'cause_unknown'; // r8 (L0-owned append; `R581-c7B2-07`): the identity was staged and did not land, and the histogram key records no cause (`unresolved:not_reconstructed`, `unresolved:reason_unrecognised`, bucket k); count known, cause honestly unknown; R1 copy "did not move (reason not recorded)"
 type GapCode =
   | 'completeness_not_proven' // every run until CL (family: null)
   | 'list_not_exhausted' // a feeding step is not positively exhausted (budget, error, advertised_next, cycle, refused pages)
@@ -927,12 +966,16 @@ type GapCode =
   | 'slot_unbound'
   | 'template_absent' // r6: a package step's template not observed this run; zero requests, never synthesized (D-L0-3)
   | 'non_get_data_unobserved'
-  | 'cross_origin_unobserved'
+  | 'cross_origin_unobserved' // the page did not contact an origin the package needs
+  | 'outside_origin_refused' // FAM-0 r10 L0-A4′: a contacted outside origin refused because the run already named eight; family-attributed
   | 'cross_origin_cors_denied'
   | 'cross_origin_auth_unavailable'
   | 'cross_origin_csp_blocked'
+  | 'cross_origin_insecure' // r8: a page-issued data request to a non-https origin; never replayed (D-L0-6.2)
   | 'source_auth_unavailable'
   | 'mutating_template_refused'
+  | 'navigation_refused' // r8 (run-level): explore links never visited because their URL hits the vocabulary (D-L0-6.2)
+  | 'worker_restarted' // r8 (run-level): the extension worker restarted mid-run; the run was not resumed and settled with what was staged (D-L0-6.2 I-C6)
   | 'residual_unknown' // FAM-0 §6.3 (L0-A2′): residual content of some identities of this family is unknown — version-0 native identities whose staged payload is gone, payload-less legacy conversions, or rows captured at device_rules_version 0; identities are counted once in moved_native/preserved; no count here
   | 'tab_lost';
 // r6: `third_party_not_imported` deleted (D14). `GapV1` carries no count; FAM-0 r9 §6.3 agrees (the identity count is an S9 histogram key for the history detail).
@@ -942,7 +985,8 @@ type FailureCode =
   | 'learning_budget_exhausted'
   | 'no_collections_observed'
   | 'origin_mismatch'
-  | 'extension_update_required'; // r7 (FAM-0 L0-A6): ingest refused, batch device_rules_version below SCOUT_MIN_RULES_VERSION (FAM-0 §4.3); R1/X4 copy: "update the extension and start again"
+  | 'extension_update_required' // r7 (FAM-0 L0-A6): ingest refused, batch device_rules_version below SCOUT_MIN_RULES_VERSION (FAM-0 §4.3); R1/X4 copy: "update the extension and start again"
+  | 'start_page_refused'; // r8: the tab's URL at Start hits the navigation vocabulary (a logout or auth page); zero requests; R1 copy: "open the site's main page and start again"
 ```
 
 **Rules (normative; `R581-B2-B7`, `R590-B-A1`; orchestrator amendment to reset §6, 2026-09-29:
@@ -956,50 +1000,60 @@ type FailureCode =
 - Under `count_basis: 'proven'`: `source_count = moved_native + preserved + not_moved`
   (`R590-B-C5`; owner-confirmed exclusions are counted inside `not_moved` as `excluded_by_policy`).
 - Counts and closed codes only; no path, ref, token, host or model text — with **one** additive
-  exception (r6, D14 bound): `outside_origins[].host`, a hostname the run actually read from, uploaded
-  by X3 as one run-level evidence unit (`kind: outside_origins`, ≤ 8 entries), rendered verbatim by
-  X4 and R2. It is **device-attested** (r7, `R581-c7B-C-01`): the server never sees hostnames (the
-  digest carries slot templates), so it checks grammar, `requests ≥ 1`, ≤ 8 entries and that the
-  entry count does not exceed the final digest's contacted foreign origins plus the media-origin
-  count the same unit declares; the router's refusal of a ninth origin (D-L0-6.2) is what keeps the
+  exception (r6, D14 bound): `outside_origins[].origin`, an origin the run actually read from,
+  uploaded by X3 as one run-level evidence unit (`kind: outside_origins`, ≤ 8 entries), rendered
+  verbatim by X4 and R2. It is **device-attested** (r7, `R581-c7B-C-01`): the server never sees
+  origins (the digest carries slot templates), so it checks grammar, `requests ≥ 1`, ≤ 8 entries
+  and that the entry count does not exceed the working union's contacted foreign origins (FAM-M1
+  extends the bound for media origins); the router's refusal of a ninth origin (D-L0-6.2) keeps the
   list complete.
-- **Legacy records have one placement (r7; `R581-c7B-10`; operator disposition 9; FAM-0 r9
-  R590-c7B-06 agrees).** A legacy **evidence** row (`ScoutReconstructedEntity`, bucket f) not yet
-  converted by FAM-P2 is `not_moved: destination_gate_closed` and **nothing else**. A **version-0
-  native** identity is counted in `moved_native` and **nothing else** for that identity; if its
-  staged payload is gone its family carries gap `residual_unknown`, which is a statement about
-  residual content, not about the identity. No legacy identity ever appears in both `not_moved` and
-  a gap.
+- **Legacy records have one placement (r7; `R581-c7B-10`; FAM-0 r9 R590-c7B-06 agrees).** A legacy
+  **evidence** row (`ScoutReconstructedEntity`, bucket f) not yet converted by FAM-P2 is `not_moved:
+destination_gate_closed` and nothing else. A **version-0 native** identity is counted in
+  `moved_native` and nothing else; if its staged payload is gone its family carries gap
+  `residual_unknown` — a statement about residual content, not about the identity.
 - `families[]` has a row for every family with any staged, moved, preserved or not-moved record
   (label from the D-FAM-1 catalogue; `unclassified` is the only catch-all). `NotMovedReason` is
   the single closed list; r4 names (`no_destination_yet`, `native_destination_pending`, ...) do not
   exist.
-- **Activated at L2d, extended by FAM-R1 (r7; `R581-c7A-04`).** L2d ships a **truthful** projection,
-  not a scaffold: verdict fields, `gaps[]`, `outside_origins[]`, `excluded_origins[]`,
-  `failure_code`, `count_basis`/`source_count` (from L3b), `moved_native` = bucket j
-  `native_present_verified` per family from the settled S9 report, `preserved` = j-p rows (0 until
-  FAM-P2 exists), and `not_moved[]` from a mapping that is **total** over the sources existing at
-  L2d's base: `pin.conformance` (C0 ⇒ `identity_conflict`; C2 rows ⇒ `destination_gate_closed`; C4
-  rows ⇒ `unresolved_parent`), the D-S9-7 histogram keys at `249fd0d4` (`rejected`, `unresolved`
-  codes incl. `identity_conflict`, `native_target_removed`, `provenance_missing`, `failed`) and
-  refused fetches (`source_refused`); an exhaustiveness test fails the build on an unmapped key, so
-  `source_count = moved_native + preserved + not_moved` holds under `proven` **at L2d**. FAM-R1
-  then **extends** the same table (j-p first, bucket i into `moved_native`, `preserved_missing`/
-  `ledger_stale` ⇒ `write_failed`, media and quarantine states, `report_version`) without changing
-  a field or an L2d row's meaning; each slice is acceptance-tested (L14) at its own landing point.
+- **Activated at L2d, extended by FAM-R1 (r7 `R581-c7A-04`; r8 `R581-c7B2-07`, operator
+  disposition 7).** L2d ships a **truthful** projection: verdict fields, `gaps[]`,
+  `outside_origins[]`, `excluded_origins[]`, `failure_code`, `count_basis`/`source_count` (L3b) and
+  the **total placement table** below over every source that exists at `249fd0d4` (`reconcile.ts`
+  `classifyIdentity`, `types.ts` `S9_REPORT_CODE`, `native-contract.ts` `UNRESOLVED_CODE`,
+  `pin.conformance`); an exhaustiveness test fails the build on an unplaced key (L14), so
+  `source_count = moved_native + preserved + not_moved` holds under `proven` at L2d. FAM-R1
+  **extends** the table (j-p ⇒ `preserved`, `preserved_missing`/`ledger_stale` ⇒ `write_failed`,
+  media and quarantine states, `report_version`) and changes no row below.
+
+  | Source at `249fd0d4`                                                                                                                                                                                                                                                       | Placement                                                        |
+  | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+  | bucket j `native_present_verified`                                                                                                                                                                                                                                         | `moved_native`                                                   |
+  | bucket i `unresolved:native_target_removed` (row removed or archived after import by the coach or the linked client; FAM-0 §6.2)                                                                                                                                           | `moved_native` — **from L2d onward**, never `not_moved`          |
+  | `pin.conformance` C0 family drop; bucket h `identity_conflict`; `native_uniqueness`; `rejected:missing_source_id`                                                                                                                                                          | `not_moved: identity_conflict`                                   |
+  | `pin.conformance` C2 row; bucket a `unresolved:<family>` (C1); bucket f `unresolved:evidence_only`; native-rule row codes (`missing_required_field`, `invalid_value`, `enum_unmapped`, `prescription_not_integral`, `exercise_reference`, `source_archived`) before FAM-P2 | `not_moved: destination_gate_closed`                             |
+  | `pin.conformance` C4 row; `no_native_client_principal`; `relationship_pending`; `relationship_missing`                                                                                                                                                                     | `not_moved: unresolved_parent`                                   |
+  | bucket c `failed`; bucket g `unresolved:provenance_missing`; other `rejected:*`                                                                                                                                                                                            | `not_moved: write_failed`                                        |
+  | `unresolved:pass_ceiling_exceeded`                                                                                                                                                                                                                                         | `not_moved: over_limit`                                          |
+  | refused fetches (`refused_pages`, 4xx/5xx on known identities)                                                                                                                                                                                                             | `not_moved: source_refused`                                      |
+  | `unresolved:not_reconstructed`; `unresolved:reason_unrecognised`; bucket k                                                                                                                                                                                                 | `not_moved: cause_unknown` (count known, cause honestly unknown) |
+
 - `excluded_by_policy` is the only reason for an owner-confirmed exclusion: the collection is counted
   on the device (distinct ids of its observed pages; nothing staged, no value leaves), so it is a fact
   with a count, never a gap. A model-claimed exclusion the owner has not confirmed stays gap
   `collection_unmapped`. No family is excluded by policy today; billing moves (D10).
-- **Wiring:** the projection (slice L2d) reads the pin's `conformance`, the L3b family evidence, the
-  settled S9 report (once FAM-R1 lands: when its `report_version ≥ 2`, else FAM-R1's live read-only
-  recompute for `moved_native`/`preserved`/`not_moved`; verdict fields always from the settled
-  basis; FAM-0 L0-A8), and the D-S9-7 histogram; nothing in `reconcile.ts`, `coverage.ts` or `arbiter.ts`
+- **Wiring (FAM-0 r10 L0-A8):** the projection (slice L2d) reads the pin's `conformance`, the L3b
+  family evidence and, for the **verdict fields** (`status`, `reason_code`, `completed_at`,
+  `source_count`, coverage basis), the settled S9 report; `moved_native`/`preserved`/`not_moved[]`/
+  `residual_unknown` come from the settled report and the D-S9-7 histogram through the placement
+  table at L2d and, once FAM-R1 lands, from **FAM-R1's live read-only recompute for every intent**
+  (FAM-0 §6.3); nothing in `reconcile.ts`, `coverage.ts` or `arbiter.ts`
   changes; `RUN_REASON_CODES` unchanged. `NotMovedReason`, `GapCode`, `FailureCode` and
   `ExcludedOriginCategory` are closed, append-only exports in `reason-codes.ts` (r6 appends
-  `template_absent` and `residual_unknown`; r7 appends `extension_update_required` and the category
-  enum; nothing has shipped, so dropping `third_party_not_imported` before L2d removes no live
-  code). **X4** renders it in the popup result detail;
+  `template_absent` and `residual_unknown`; r7 `extension_update_required` and the category enum;
+  r8 `cause_unknown`, `cross_origin_insecure`, `navigation_refused`, `worker_restarted`,
+  `start_page_refused`; nothing has shipped, so deleting `third_party_not_imported` and
+  `non_canonical_origin` before L2d removes no live code). **X4** renders it in the popup result detail;
   **R2** renders it in `ImportResultView` from R1-owned copy (`ImportRunVerdictCard` retired by R1),
   keyed on `failure_code` first (`R581-B2-C6`); the mobile decoder (`M:src/types/importRunStatus.ts`
   L119) tolerates unknown fields and maps an unknown code to `'unknown'`. Nothing else renders run
@@ -1069,13 +1123,13 @@ A roster of N clients with H history pages each needs ≈ N × (1 + H) requests;
 ≈ 1 200 requests ≈ 6-20 min sequential.
 
 **One shared deadline.** The learned-run deadline is a **config value**, `SCOUT_LEARN_RUN_DEADLINE_MS`
-(default 1 800 000 = 30 min), set by the server at `runs/start` (D-S7L-3, `schema.prisma` L6878)
-for every intent whose canonical platform token (the authorized origin's hostname, D-L0-5; the
-`chosen_platform` label is not consulted, `R581-c7B-C-06`) resolves to **no repository file spec**
-in `SourceRegistryProvider` — known at Start, so the parent-frozen `SCOUT_RUN_DEADLINE_MS_DEFAULT =
-300_000` (`lifecycle.service.ts` L74) stays for `LO` runs. Owned by slice L2b. **Decision point DP-1 (named):** after the first ten V1-P runs the operator
-re-sizes the default from the recorded p95 phase timings; until then 30 min stands. The device
-stops work at `deadline_at − 60 s` and claims what it has (`list_not_exhausted` gaps).
+(default 1 800 000 = 30 min), set by the server at `runs/start` (D-S7L-3, `schema.prisma` L6878) for
+every intent whose canonical platform token (the authorized origin's hostname, D-L0-5; the
+`chosen_platform` label is not consulted, `R581-c7B-C-06`) resolves to **no repository file spec** in
+`SourceRegistryProvider`; the parent-frozen `SCOUT_RUN_DEADLINE_MS_DEFAULT = 300_000`
+(`lifecycle.service.ts` L74) stays for `LO` runs. Owned by L2b. **DP-1:** after the first ten V1-P
+runs the operator re-sizes the default from recorded p95 phase timings. The device stops work at
+`deadline_at − 60 s` and claims what it has (`list_not_exhausted` gaps).
 
 **Learn phase priority (Start → crawl), worst case = 20 s reload + 4 × 90 s calls + 24 × 8 s
 visits = 572 s ⇒ cap 600 s.** Inside `SCOUT_LEARN_PHASE_MAX_MS` (default **600 000**): the round-1
@@ -1112,10 +1166,8 @@ to the same port** and adds the per-coach scope: one atomic conditional update p
 $cap RETURNING`; a missing row is inserted first, `ON CONFLICT DO NOTHING`); zero rows updated ⇒
 the cap is hit before any call is made; a failure while reserving the second scope releases the
 first (**no call has started**); once a call has started, a failed or crashed settle leaves the
-maximum charged, as #592 (`R581-c7B-C-04`). Whichever
-implementation is bound is authoritative for caps; `AiRequestAudit` and `pin.metering` are audit
-copies. Not
-charged to the coach's Coach-AI budget. **Remembered sites use zero AI calls** (L07). Worst case per
+maximum charged, as #592 (`R581-c7B-C-04`). Whichever implementation is bound is authoritative for
+caps; `AiRequestAudit` and `pin.metering` are audit copies. Not charged to the coach's Coach-AI budget. **Remembered sites use zero AI calls** (L07). Worst case per
 attempt ≈ 4 × 4 096 output + ≈ 63k input tokens ≈ **$1.50** at a $10/$50 per-MTok list price; $20
 covers ≥ 13 worst-case first-time sites a day. **Measurement duty (V1-P):** elapsed time per phase,
 request and page counts per step, `usd_estimate` per call, recorded on every run.
@@ -1192,16 +1244,14 @@ proof, V1-P (partial proof); V1-C is blocked on CL** (§9) and is not scheduled 
    tokens and `usd_estimate` per run;
 8. **timing, origin and credential readings:** phase timings and request/page counts (DP-1 input);
    `origins[]` with `contacted`/`credentialed` flags; which D-L0-6.2 path served each cross-origin
-   template or which gap it produced; zero credential bytes in any upload (leak test); **cookie-mode
-   proof** on a cookie-authenticated multi-origin fixture in the extension harness (Playwright
-   Chromium, labelled as such): an origin the page called without cookies receives none at replay
-   although the jar holds one, no HttpOnly value reaches the MAIN world, and a service-worker
-   restart mid-crawl yields one re-observation then the gap;
-9. **side-effect observation (r7; D-L0-6.2 residual):** for every family the run read, the pilot
-   account's read/unread, "seen" and last-viewed indicators recorded before and after the run; any
-   change attributable to replay is recorded against the template that caused it. This reading
-   decides whether the no-mutation bound needs a further engineering bound; it is evidence, not a
-   decision taken here.
+   template or which gap it produced; zero credential bytes in any upload (leak test); the D-L0-6.2
+   acceptance tests T-01..T-16 green on the pinned extension SHA (packaged MV3 in Playwright
+   Chromium, labelled as such) recorded as evidence;
+9. **side-effect observation (D-L0-6.2 residual):** for every family the run read and every page
+   explore visited, the pilot account's read/unread, "seen" and last-viewed indicators recorded
+   before and after the run; any change attributable to replay or navigation is recorded against
+   the template or page that caused it; refusal counts per vocabulary token recorded. This reading
+   decides whether the bound needs re-tuning; it is evidence, not a decision taken here.
 
 **Exit (DEL, after item 6 is recorded):** delete `E:legacy/**` and `LO`'s
 `src/scout/reconstruct/sources/*.json`; shrink the vendor-name-guard allowlists to tests only.
@@ -1218,16 +1268,16 @@ All start after X1 and R1 land. "Deps" are hard prerequisites.
 | L2a    | backend   | T4   | `SourceRegistryProvider.forRun(db, coachId, intentId)`, `RunPackageSource` / `RUN_PACKAGE_SOURCE` (`NO_RUN_PACKAGE` until L2b), `pinned` + `pinDigest`, `verifyPin` (D-L0-5). **Merged:** PR #588 → `integration/importer` `249fd0d4`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ~300                  | none                                                                             |
 | L2b    | backend   | T4   | Store + route + pins: `prisma/schema.prisma` (four additive coach-scoped models incl. the spend ledger), migration + down, `learned-store.service.ts`, `runs/learn` controller/DTO (D-L0-3 incl. the round-2 match rule and `template_absent`), per-coach match, binds `RUN_PACKAGE_SOURCE` to the pin read and `SPEND_LEDGER` to `ScoutLearnSpendLedger` (per-coach + global), maps `AiGatewayError` → `failure_code`, learned-run deadline config + DP-1, server-settled learn failures; `test/rls-g2-learn.spec.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | ~450                  | L1, L1-gw, L2a                                                                   |
 | L2c    | backend   | T4   | Conformance + per-coach lifecycle: `conformance.ts` C0/C1 **per family**, C2-C4 **per record** over the effective parent set, in the pre-reconstruct locked transaction with write-once persistence (D-L0-4); `accepted`/`suspect`/`superseded`/`invalidated` in the settle transaction (`lifecycle.service.ts` L472-497); `INVALIDATION_TRIGGERS`; `settle-acceptance.pg.spec.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | ~300                  | L2b                                                                              |
-| L2d    | backend   | T4   | `RunStatusProjectionV1` (D-L0-6.3) **activated**: `families[]`/`not_moved[]`/`gaps[]`/`outside_origins[]`/`excluded_origins[]`/`failure_code`, closed enums in `reason-codes.ts` (incl. `template_absent`, `residual_unknown`, `extension_update_required`, `ExcludedOriginCategory`), total `not_moved` mapping over the base's sources with an exhaustiveness test, `outside_origins` evidence kind, OpenAPI regen; **prerequisite of X4, R2, X3 and FAM-R1** (which extends the mapping).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | ~300                  | L2c, L3b                                                                         |
+| L2d    | backend   | T4   | `RunStatusProjectionV1` (D-L0-6.3) **activated**: `families[]`/`not_moved[]`/`gaps[]`/`outside_origins[]`/`excluded_origins[]`/`failure_code`, closed enums in `reason-codes.ts` (incl. `template_absent`, `residual_unknown`, `extension_update_required`, `ExcludedOriginCategory`), the D-L0-6.3 placement table (total over the base's sources, exhaustiveness test, `native_target_removed` ⇒ `moved_native`), `outside_origins` evidence kind (`origin` field), OpenAPI regen; **prerequisite of X4, R2, X3 and FAM-R1** (which extends the mapping).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | ~300                  | L2c, L3b                                                                         |
 | L3a    | backend   | T4   | Reshape PR #589 for safety: delete `observed_templates`/`ExclusionSignalsV1` and the `reviewed_package` closure (closure is `null` for every package), `pages_fetched ≥ 1`, fan-out bound to the parent id-set digest; negatives from R589-A/B. **In flight in #589 (`61b0d251` read); owed by #589 before it is r7-conformant:** drop `short_page` from `REPLAY_TERMINAL_STOPS` (`contract.ts` L209-212: a short page is **observed**, never proof), rename `none_proven` → `first_page_only`, add `'observed'` to `FAMILY_COUNT_BASES` (L324) computed per D-L0-6 or state in code that L3b supplies it, L15 early-short-page negative. #589 already carries per-family `count_basis`/`source_count` (L3b scope), so the two rows below describe one PR plus a follow-up, not two PRs.                                                                                                                                                                                                                                                                                                                                                   | ~200                  | none                                                                             |
 | L3b    | backend   | T4   | Per-family evidence grammar + evaluator: aggregate `steps: StepEvidenceV1[]`, `count_basis` (incl. `observed`) and `source_count` per family, typed per-family reason structure for L2d; `next_url`, `idScope` and fan-out context semantics. Partly present in #589; the remainder lands after L2b (pin).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | ~300                  | L3a, L2b (pin)                                                                   |
 | L2g    | backend   | T4   | **Deferred.** Cross-coach memory under the D-L0-5 L2g invariants; its own record first.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | TBD                   | L2c, CL                                                                          |
-| FAM-\* | backend   | T4   | FAM-0's slices, in FAM-0 r9 §7 order, each graded alone under FAM-0: **FAM-C1** (the **one owner** of the family catalogue module — tokens incl. `billing_history`/`billing_schedule` (D10), spec grammar, `destinationFor`, proposal validator; needs L2a and this record; **L1 imports it**), **FAM-P1** (preserve schema, rules file + corpus, `SCOUT_MIN_RULES_VERSION`), **X-RED1**, **FAM-E1a**, **FAM-P2**, **FAM-B1**, **FAM-P3**/**UX-P3**, **FAM-G1**, **FAM-R1** (j-p, `not_moved[]` extension, bucket i, `report_version` + live recompute; needs **L2d** and L3b), W slices **S8-E1a/b/c**, **FAM-N1/N2a/N2b/N2c/N6**, **FAM-E1b**, **FAM-M1** (media, D12; per-hop confinement under the D-L0-6.2 media authority).                                                                                                                                                                                                                                                                                                                                                                                                          | per FAM-0             | FAM-0, S8-D3, L0 r7, L2d (FAM-R1)                                                |
+| FAM-\* | backend   | T4   | FAM-0's slices, in FAM-0 r10 §7 order, each graded alone under FAM-0: **FAM-C1** (the **one owner** of the family catalogue module — tokens incl. `billing_history`/`billing_schedule` (D10), spec grammar, `destinationFor`, proposal validator; needs L2a and this record; **L1 imports it**), **FAM-P1** (preserve schema, rules file + corpus, `SCOUT_MIN_RULES_VERSION`), **X-RED1**, **FAM-E1a**, **FAM-P2**, **FAM-B1**, **FAM-P3**/**UX-P3**, **FAM-G1**, **FAM-R1** (j-p, `not_moved[]` extension, bucket i, `report_version` + live recompute; needs **L2d** and L3b), W slices **S8-E1a/b/c**, **FAM-N1/N2a/N2b/N2c/N6**, **FAM-E1b**, **FAM-M1** (media, D12; every media mechanism, under the D-L0-6.2 media invariants; test T-17; its record decides the open item (f)).                                                                                                                                                                                                                                                                                                                                                    | per FAM-0             | FAM-0, S8-D3, L0 r8, L2d (FAM-R1)                                                |
 | EX1    | backend   | T4   | Exercise-reference resolution (own record, PR #578).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | TBD                   | S8-D3                                                                            |
 | X0     | extension | T2   | Backend origin (D6): `shared/protocol.js`, `manifest.json` `host_permissions`, TGP-origin refusals.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | ~30                   | none                                                                             |
-| X2     | extension | T4   | Digest + compile (D-L0-2): `shared/learn/digest.js` (slot rule, key admission incl. value cross-check, `map` collapse, `paginationSignals`, `origins[]` with `credentialed`, `discoveredBy`, truncation, link inventory) and `shared/learn/compile.js` (identity match with key-path inclusion → rebinding → `normalizeBlueprint`); leak tests. Mirrors L1's `admission-rules.json`, `fingerprint-vectors.json` and the structural vocabularies byte-for-byte, so it lands after L1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ~700                  | X1, `E:` #32, **L1 (fixture owner)**                                             |
-| X2b    | extension | T4   | Engine evidence (D-L0-6): per-step `StepEvidenceV1`, fan-out contexts, `next_url`, `idScope` composition, learned-mode refusal of synthetic ids, per-origin fetch router with the per-mechanism credential model, no-mutation bound and media authority (D-L0-6.2); `LO` unchanged. Mirrors L1's `MUTATING_VERB_VOCABULARY` fixture.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ~400                  | **L1 (vocabulary fixture)**                                                      |
-| X3     | extension | T4   | Server-mode learn path in `background.js` (`handleStartImport` L835): start → declaration → attach/reload/idle → contacted origins + per-origin cookie-mode booleans + page-set header table + media-origin set (worker memory) → digest → learn → explore → round 2 → compile → replay → evidence upload (incl. the `outside_origins` unit) → `ingest/complete`; capture additions; canonical-origin rule; FAM-0 partner-origin rule with per-category `origin_rejected` counts; ninth-origin refusal; service-worker-restart re-observation; single-origin base case first (D-L0-6.2); `tab_lost`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ~750                  | X0, X2, X2b, L2b (route), **L3b (evidence shape)**, L2d (`outside_origins` kind) |
+| X2     | extension | T4   | Digest + compile (D-L0-2): `shared/learn/digest.js` (slot rule, key admission incl. value cross-check, `map` collapse, `paginationSignals`, `origins[]` with `credentialed`, `discoveredBy`, truncation, link inventory) and `shared/learn/compile.js` (identity match → rebinding → `normalizeBlueprint`); leak tests. Mirrors L1's `admission-rules.json`, `fingerprint-vectors.json` and the structural vocabularies byte-for-byte, so it lands after L1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | ~700                  | X1, `E:` #32, **L1 (fixture owner)**                                             |
+| X2b    | extension | T4   | Engine evidence (D-L0-6): per-step `StepEvidenceV1`, fan-out contexts, `next_url`, `idScope` composition, learned-mode refusal of synthetic ids, per-origin fetch router under the D-L0-6.2 credential invariants and no-mutation bound (at-most-once requests, pagination key rule); tests T-10..T-12; `LO` unchanged. Mirrors L1's `MUTATING_VERB_VOCABULARY` fixture.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | ~400                  | **L1 (vocabulary fixture)**                                                      |
+| X3     | extension | T4   | Server-mode learn path in `background.js` (`handleStartImport` L835): start → declaration → attach/reload/idle → contacted origins + credential-header table with frame provenance + media-origin set (worker memory) → digest → learn → explore under the navigation bound → round 2 → compile → replay → evidence upload (incl. the `outside_origins` unit) → `ingest/complete`; capture additions; origin = scheme + host + port; FAM-0 partner-origin rule with per-category `origin_rejected` counts; ninth-origin refusal; worker-restart claim without resume; `tab_lost`. **Its own design decides the browser mechanisms; the D-L0-6.2 tests T-01..T-09, T-13..T-16 on the packaged MV3 extension are its merge gate.**                                                                                                                                                                                                                                                                                                                                                                                                           | ~750                  | X0, X2, X2b, L2b (route), **L3b (evidence shape)**, L2d (`outside_origins` kind) |
 | X4     | extension | T2   | Popup result detail over `RunStatusProjectionV1` incl. `outside_origins[]`; exactly one Start button, otherwise status-only (D9).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | ~200                  | L2d (OpenAPI)                                                                    |
 | R2     | mobile    | T3   | Roman result detail over `RunStatusProjectionV1` (incl. `outside_origins[]`) in `ImportResultView` from R1 copy; `failure_code` first.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ~150                  | L2d (OpenAPI)                                                                    |
 | V1-P   | all       | T4   | Partial proof (D-L0-8 items 1-9); no product code.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0                     | L1e, L2d, L3b, X3, X4, R2                                                        |
@@ -1235,7 +1285,7 @@ All start after X1 and R1 land. "Deps" are hard prerequisites.
 | DEL    | ext+back  | T3   | Delete `legacy/**` and `LO`'s `sources/*.json`; shrink guard allowlists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | neg.                  | V1-P item 6                                                                      |
 
 Graph: FAM-C1 → L1 (implemented catalogue, hard); L1-gw → L1 → L1e; L1 → X2 and L1 → X2b
-(fixture owner: L1, the extension mirrors); L0 r7 + L2a → FAM-C1; L2a merged; L3a ∥ X0 now; X2 and
+(fixture owner: L1, the extension mirrors); L0 r8 + L2a → FAM-C1; L2a merged; L3a ∥ X0 now; X2 and
 X2b after L1; L1 + L1-gw + L2a → L2b → L2c; L3a + L2b → L3b; L2c + L3b → L2d → {X4, R2, FAM-R1};
 X0 + X2 + X2b + L2b + L3b + L2d → X3; V1-P needs L1e, L2d, L3b, X3, X4, R2; FAM-C1 → FAM-P1 → … →
 FAM-M1 per FAM-0 §7; CL after V1-P readings; L2g after L2c and CL. No slice edits another's path;
@@ -1243,15 +1293,17 @@ every slice lands alone. The ~900 LOC guide is exceeded by the in-flight L1 (#59
 (#592), both pure contract/gateway code with their own T4 reviews — recorded here, not re-split.
 
 **Said NO to:** `RunClosureV1`, hidden-surface machinery, status probes, `confirmExclusion`,
-`reviewed_package` closure, `observed_templates`; a model-proposed destination; an exclude-by-default
+`reviewed_package` closure, `observed_templates`; a model-proposed destination; exclude-by-default
 for partner origins; billing as a gap or exclusion; reading, copying or re-injecting cookie values;
-persisting the credential table across a service-worker restart; a second family catalogue; GET as
-proof of no side effects; a global memory table in V1; hash promotion and
-`slotHash`; free-text `error_summary` as input; synthetic ids for learned packages; a second
-permission gesture; a new phase or terminal status; DOM/SSR fallback; export ingestion; a
-deterministic guess path; value samples in the digest; storing digests, slot values, header values or
-credentials; stub providers as fallbacks; any change to `reconcile.ts`, `coverage.ts`, `arbiter.ts`
-or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocabulary or threshold.
+persisting the credential table or resuming a run across a worker restart; retrying a request that
+may have reached the source; visiting a link or submitting a form whose URL hits the vocabulary; a
+media mechanism here; a Chrome-behaviour claim without a packaged-extension test; a second family
+catalogue; GET as proof of no side effects; a global memory table in V1; hash promotion and
+`slotHash`; free-text `error_summary` as input; synthetic ids; a second permission gesture; a new
+phase or terminal status; DOM/SSR fallback; export ingestion; a deterministic guess path; value
+samples in the digest; storing digests, slot values, header values or credentials; stub providers
+as fallbacks; any change to `reconcile.ts`, `coverage.ts`, `arbiter.ts` or `RUN_REASON_CODES`; human
+review before acceptance; any per-site token, vocabulary or threshold.
 
 ## 3. Invariants asserted by L-specs (S7-L to S12 invariants unchanged)
 
@@ -1262,11 +1314,14 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
    exclusion.
 3. **Values, credentials and unproven names never leave the device:** no value, credential-policy
    match, header value, whitespace key, value-equal key, non-vocabulary literal or unadmitted key in
-   any digest or package; the server refuses a digest its own `admitKey` would not admit; cookie
-   values are never read; page-set credential headers live in worker memory for the run, go only
-   to the origin the page sent them to, and die with the worker.
+   any digest or package; the server refuses a digest its own `admitKey` would not admit; no cookie
+   value or credential header is ever persisted, logged, uploaded or handed to a page script
+   (I-C1); cookies attach only by the browser (I-C2); credential headers live in worker memory,
+   keyed by exact origin and frame, go only to that origin from that frame context, and die with
+   the worker (I-C4, I-C6).
 4. **Unknown is never zero:** `source_count` is null without an `observed`/`proven` basis; a first
-   page is never certified; a fan-out shortfall or missing step is `unknown`.
+   page is never certified; a fan-out shortfall is `observed` with gap `list_not_exhausted`; a
+   missing step is `unknown` (D-L0-6).
 5. **No false `complete`:** closure is `null` for every package type until CL; the only `complete`
    path is the test-only basis refused outside dev/test; every run carries `completeness_not_proven`.
 6. **Tenancy and memory safety:** every memory row is coach-scoped in V1; no cross-coach row exists;
@@ -1275,12 +1330,15 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
 7. **Identity is real:** no positional ids; per-parent namespaces are composite; C0 ties the union
    of engine counters to the staged identities per family, and a failing family is dropped alone.
 8. **Read-only source, confined and bounded:** GET/HEAD, no body, templates the page itself issued
-   this run with the same query-key set, no mutating token in path, query key or value, once per
-   parent, rate-limited, with the residual (hidden GET side effects) named and observed by V1-P;
-   origins = tab ∪ the canonical in-scope foreign origins (FAM-0 partner-origin rule) the package
-   needs; cookies by the browser under the page's observed mode, never widened; page-set headers
-   re-attached only to the origin that sent them and never added; every outside origin named in the
-   result, a ninth refused; nothing about any credential persists past the run or the worker.
+   this run with an observed query-key set plus the validated pagination key, no vocabulary hit in
+   path, query key or value, at most one request per `(template, parent, page)`, rate-limited;
+   explore navigates only to inventory URLs that pass the same check, never clicks, fills or
+   submits; session loss settles `partial`, never a login; the residual (hidden GET side effects,
+   visited pages' own scripts) named and observed by V1-P; origins (scheme + host + port) = tab ∪
+   the `https` foreign origins the partner-origin rule admits and the package needs; cookies never
+   widened (I-C3); headers re-attached only to the exact origin and frame context that carried them;
+   every outside origin named in the result, a ninth refused; a worker restart settles the run and
+   never resumes it.
 9. **One registry seam:** every family assertion traces to `SourceRegistryProvider.forRun`.
 10. **Hostile input stays data:** site and coach-derived bytes only inside the nonce-delimited blocks; prompt structure and
     schema are byte-derived from the contract; model, tokens and hashes in every run's provenance; a
@@ -1340,7 +1398,9 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
   other family moves — never `digest_not_union`, never `learn_refused`; **key-path growth:** the
   roster template re-observed with two extra optional keys passes (ii) and (iii) and re-pins with
   `keypath_growth: 2`; a union that drops a round-1 **observed** identity or shrinks its key paths
-  is refused `digest_not_union` and the true union then re-pins; a genuinely new collection identity
+  **without** a truncation flag is refused `digest_not_union` and the true union then re-pins;
+  **large account:** a round-1 digest at the template cap whose union overflows carries every
+  round-1 identity forward and re-pins (or makes one model call), never `learn_refused`; a genuinely new collection identity
   triggers one model call whose candidate must keep every round-1 step present in the union; another
   coach on the same slug is **not** served it and learns separately; `slot_unbound`, an empty
   collection, unproven pagination and key-path growth do **not** trigger; `template_absent` with the
@@ -1358,37 +1418,25 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
   `unresolved_parent` (count each) and writes the children of the remaining clients and every
   coach-owned row; an all-null roster drops `clients` whole (`items_path_missing`), every
   client-owned child is `unresolved_parent`, coach-owned families proceed; a child of a client that
-  exists only as a verified Person link (no staged row) links; CAS miss changes nothing; the round-2
+  exists only as a verified Person link (no staged row) on the **same** platform links, while a
+  Person of another platform with the same source id does **not** (`unresolved_parent`); a worker
+  restart or deadline mid-crawl leaves families without evidence `unknown`, fires no trigger and
+  leaves the package `candidate`; CAS miss changes nothing; the round-2
   pin is a new row and the round-1 pin is byte-identical after settle; `conformance` is written once
   per epoch and re-entry skips.
-- **L09 (X3)** Start with unknown origin → server-mode run → learn → explore → replay (incl. `:q`
-  variants, fan-out, `next_url`, a **bearer-authenticated cross-origin API** served by header
-  rebinding, an **in-memory-token tab origin** served the same way) → evidence → claim, in the
-  extension harness against a fixture server; denial, non-https, `learn_unavailable`, normalizer
-  throw, an uncontacted origin, a CORS-denied origin, a 401 after one re-observation
-  (`source_auth_unavailable`), a **third-party JWT in storage that is never sent**, a
-  **non-credentialed in-scope partner origin** replayed with no header added and named in
-  `outside_origins`, an **excluded-category origin** (telemetry beacon, IdP token response) not
-  captured and counted in `excluded_origins[]`, a **non-default-port https origin** the page fetched
-  JSON from (not captured; `non_canonical_origin` count), a template with a mutating path token
-  (refused, zero requests), `GET /api/action?operation=cancel` and `GET /api/items?mark_read=1`
-  (refused on the device and at V-L5, gap `mutating_template_refused`), a `:q` variant whose
-  rebound **value** is `read` (that variant refused, the others fetched), a POST or body (refused),
-  a `next_url` to another origin (refused), a **ninth outside origin** (refused,
-  `cross_origin_unobserved` for its family, the eight named), and a closed tab (`tab_lost`) each
-  settle or gap truthfully with zero unauthorized requests and zero credential bytes in any upload.
-  **Cookie-mode negatives (r7):** a **cookie-authenticated foreign origin** the page called with
-  cookies is replayed with `credentials: 'include'` and succeeds; a **foreign origin the page called
-  without cookies** while the jar holds a cookie for it is replayed with `omit` and the fixture
-  server records no `Cookie` header; **no HttpOnly value** appears in any `executeScript` argument
-  (harness asserts on the injected args); a **service-worker restart mid-crawl** (harness terminates
-  the worker) yields exactly one re-observation, then `cross_origin_auth_unavailable` when the
-  fixture withholds the header, with zero further requests to that origin and nothing credential-like
-  in `storage.local`/`storage.session`. **Fan-out bound:** a thread detail template fans out exactly
-  once per parent id, with one retry only on a network error; the fixture whose detail GET flips a
-  read flag **without a lexical trace** is fetched once per parent — the documented residual, which
-  the harness bounds (request count) and cannot prevent. **The single-origin fixture runs first:**
-  `origins = [o0]`, zero injections, `outside_origins: []`, `excluded_origins: []`.
+- **L09 (X3, X2b; r8)** Start with unknown origin → server-mode run → learn → explore → replay
+  (incl. `:q` variants, fan-out, `next_url`) → evidence → claim, in the **packaged-MV3 extension
+  harness** against a fixture server; denial, non-https tab, `learn_unavailable`, normalizer throw,
+  an uncontacted origin, a POST or body (refused) and every D-L0-6.2 acceptance test **T-01..T-16**
+  as written there (single-origin first; HttpOnly sentinel; no-widening and mixed-endpoint cookie
+  cases; service-worker-served tab origin; subframe header never handed on; worker restart settles
+  `worker_restarted` without resume; session loss without a login; `/logout` and delete links
+  never visited; vocabulary refusals and must-not-refuse `events`/`sets`; pagination key and
+  `next_url` admission; at-most-once request; non-default-port origin named, `http` origin
+  `cross_origin_insecure`; ninth origin `outside_origin_refused`; excluded categories; storage JWT never sent; `tab_lost`)
+  each settle or gap truthfully with zero unauthorized requests and zero credential bytes in any
+  upload. The fixture whose detail GET flips a read flag without a lexical trace is fetched once —
+  the documented residual the harness bounds and cannot prevent.
 - **L10 (V1-P)** D-L0-8 items 1-9 recorded on pinned SHAs.
 - **L11 (L1)** prompt structure section == `describeCanonicalContract()` (hash equality); adding a
   family or field description changes `contractHash` with no other edit.
@@ -1401,200 +1449,151 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
   `UNTRUSTED_EXAMPLE_PACKAGE_BEGIN/END` and never in parts 1-5.
 - **L14 (L2d)** projection attribution: every `NotMovedReason` and `GapCode` is disjoint; a fact never
   appears in both; `source_count` null under `unknown`; proven rows satisfy `source_count =
-moved_native + preserved + not_moved`; the `not_moved` mapping is total over the base's histogram
-  keys and conformance outcomes (an unmapped key fails the build); a preserve family gets a row;
+moved_native + preserved + not_moved`; the D-L0-6.3 placement table is total over the base's
+  histogram keys, `UNRESOLVED_CODE`s and conformance outcomes (an unplaced key fails the build);
+  `unresolved:native_target_removed` counts in `moved_native` and never in `not_moved`;
+  `not_reconstructed`/`reason_unrecognised` are `cause_unknown`; a preserve family gets a row;
   `collection_unmapped` for each unmapped template; `completeness_not_proven` on every run; a `null`
   closure never evaluates `complete`; a `source_signed_enumeration` manifest is refused outside
   dev/test; a bucket-f legacy row is `not_moved: destination_gate_closed` with no gap and a version-0
   native identity is in `moved_native` with no `not_moved` entry; `excluded_origins[]` carries counts
-  only; an `outside_origins` unit with more entries than the digest's contacted foreign origins plus
-  declared media origins is refused.
+  only; an `outside_origins` unit with more entries than the working union's contacted foreign
+  origins, or an entry that is not `https://host[:port]`, is refused.
 - **L15 (L3a, L3b)** a missing step, a duplicate `stepKey`, `pages_fetched: 0` on a root step,
   `parent_ids_digest` ≠ the parent's digest, duplicate-parent-A/omitted-B contexts, `expected: 0` with
   a non-empty parent, H > 1 pages per context, a `budget` stop, `refused_pages > 0`, a **metadata-free
   17-item first page** (`first_page_only`) and an **early short page** each yield `observed` or
-  `unknown`, never `proven`; a two-page fixture with `empty_page` on page 3 is `proven`; a reviewed
+  `unknown`, never `proven` (the omitted-B shortfall is `observed` + `list_not_exhausted`; the
+  missing step and zero-page root are `unknown`); a two-page fixture with `empty_page` on page 3 is `proven`; a reviewed
   file package and a legacy package both get `closure: null`; a `reviewed_package` record is never
   produced.
 - **L16 (L2d, X4, R2)** counts and closed codes only, no path/ref bytes; every code rendered from
   R1-owned copy; unknown code ⇒ generic line; absent fields ⇒ today's rendering; `failure_code`
-  keyed first; no fact rendered twice; `outside_origins[]` rendered as hostnames only, never a path;
+  keyed first; no fact rendered twice; `outside_origins[].origin` rendered verbatim (scheme, host,
+  port), never a path;
   `excluded_origins[]` rendered as category counts; `extension_update_required` renders the R1 copy
   "update the extension and start again".
 
 ## 5. Not decided (deferred; not owner-reserved)
 
-Cross-host memory reuse; multi-scope platforms (S10 E6 attribution); enum value sampling under a
-k-anonymity rule; learning from official exports; DOM/table evidence; a read-only owner observability
-view of memory versions; extending the vocabularies (reviewed contract changes, never per site);
-resumable exploration across runs (v1.1; V1-P timings decide); non-GET (GraphQL) read replay;
-non-English vocabularies (`R581-B-C6`: such sites degrade safely to slots and gaps); L2g's detailed
-design (D-L0-5 invariants bind it); everything in §9.
+Cross-host memory reuse; multi-scope platforms (S10 E6 attribution); enum value sampling under
+k-anonymity; learning from official exports; DOM/table evidence; an owner observability view of
+memory versions; extending the vocabularies (reviewed contract changes, never per site); resumable
+exploration across runs (V1-P timings decide); non-GET (GraphQL) read replay; non-English
+vocabularies (`R581-B-C6`: such sites degrade to slots and gaps); L2g's design; everything in §9.
 
 ## 6. Owner-reserved questions (status)
 
-- **Q-L0-1 — DECIDED by D1;** unclaimable until CL (D-L0-6).
-- **Q-L0-2 — DECIDED by D2.** **Q-L0-3 — DECIDED and by D3;** provider key NEEDED BY USER; cap `=20`
-  PLACEHOLDER. **Q-L0-4 — flags APPROVED pre-user 2026-09-27;** deploy needs separate approval.
-- **Q-L0-5 (Chrome Web Store) — DECIDED: later (D13); does not block building.** Capture uses
-  `chrome.debugger`, so every run shows Chrome's debugging bar and DevTools detaches capture
-  (`R581-B-C5`); both belong in the Web Store justification and in R1's handoff copy.
-- **Q-L0-6, Q-L0-7 — RESOLVED by NS** (one Start; no human review before acceptance).
-- **Q-L0-8 (retention) — DEFAULTED.** Versions kept while `accepted`; `superseded`/`invalidated` kept
-  180 days unless pinned by a run inside its own retention (`SCOUT_LEARN_RETIRED_VERSION_RETENTION_DAYS`);
-  pins follow the run; events follow S10 Q3.
-- **Q-L0-9 (path words) — CLOSED by r4** (vocabulary-only). **Q-L0-10 (record families) — DECIDED
-  by D1/D4.**
-- **P1-P6 — DECIDED 2026-09-29** as D9, D10, D11, D12, D13, D14/B2 (header). Nothing in this record
-  is owner-pending. Owner questions that gate FAM-0 slices (FAM-0 OQ-2..OQ-12) live in FAM-0, not
-  here. r7 adds no owner item: the no-mutation bound is an engineering bound inside D14 with its
-  residual observed by V1-P item 9, and FAM-0 r9 and this record agree on `residual_unknown` (no
-  count) and on legacy placement.
+- **Q-L0-1 — DECIDED by D1** (unclaimable until CL). **Q-L0-2 — by D2.** **Q-L0-3 — by D3;**
+  provider key NEEDED BY USER; cap `=20` PLACEHOLDER. **Q-L0-4 — flags APPROVED pre-user
+  2026-09-27;** deploy needs separate approval. **Q-L0-5 (Web Store) — later (D13)**; capture uses
+  `chrome.debugger`, so every run shows the debugging bar and DevTools detaches capture — Web Store
+  justification and R1 handoff copy. **Q-L0-6, Q-L0-7 — RESOLVED by NS.** **Q-L0-8 (retention) —
+  DEFAULTED:** versions kept while `accepted`; `superseded`/`invalidated` kept 180 days unless
+  pinned inside a run's retention (`SCOUT_LEARN_RETIRED_VERSION_RETENTION_DAYS`). **Q-L0-9 —
+  CLOSED by r4.** **Q-L0-10 — by D1/D4.** **P1-P6 — DECIDED** as D9-D14/B2 (header).
+- **Nothing in this record is owner-pending.** FAM-0's owner questions live in FAM-0. r7 and r8 add
+  no owner item: the no-mutation and navigation bounds are engineering bounds inside D14 with their
+  residual observed by V1-P item 9; the tab-origin in-origin over-send (D-L0-6.2 I-C3) is stated,
+  not asked; the open media-URL authority item (D-L0-6.2 media (f)) belongs to FAM-M1's record.
 
 ## 7. Release boundary and V1 preconditions
 
-A local contract for L1-gw, L1, L1e, L2a-d, L3a-b, the FAM-0 slices (FAM-\*), EX1, X0, X2, X2b, X3,
-X4, R2 and V1-P.
-Passing L01-L16 proves candidate behaviour only. Grants, PG slots and reviews are parent decisions;
+A local contract for L1-gw, L1, L1e, L2a-d, L3a-b, FAM-\*, EX1, X0, X2, X2b, X3, X4, R2 and V1-P.
+Passing L01-L16 proves candidate behaviour only; grants, PG slots and reviews are parent decisions;
 deployment, flags, customer enablement, Web Store publishing and any `main` merge stay
-owner-reserved. **V1-P preconditions:** (1) owner deploy approval for the Q-L0-4 flags; (2) the
-provider key; (3) credential rotation before real client data enters production; (4) FAM-0 approved.
-**V1-C precondition:** CL landed and reviewed (§9), plus FAM-P2/FAM-P3 and the W slices for the
-families the pilot exposes. Doc alignment recorded here is not implementation closure: #591, #589
-and FAM-C1 are conformant only when their owed lists (D-L0-9) are landed and reviewed.
+owner-reserved. **V1-P preconditions:** owner deploy approval for the Q-L0-4 flags; the provider key;
+credential rotation before real client data enters production; FAM-0 approved. **V1-C:** CL landed
+and reviewed (§9), plus FAM-P2/FAM-P3 and the W slices the pilot exposes. Doc alignment here is not
+implementation closure: #591, #589, FAM-C1 and the extension slices are conformant only when their
+owed lists (D-L0-9) and the D-L0-6.2 tests are landed and reviewed.
 
-## 8. Closure table — r7 rows first, then r6, then r5 (finding → section → closed / deferred)
+## 8. Closure table — r8 rows first, then r7, r6 and r5 in brief (finding → section → status)
 
-**r7.** The r6 T4 audits `R581-c7A` (findings 01-07, C 08) and `R581-c7B` (findings 01-10, C-01..C-06)
-requested changes on `d5bfea98`. Every A and B finding is closed below under the operator's binding
-dispositions (1)-(9); class C items are closed where cheap. "Closed (doc)" means the record now
-states the rule and the L-case; implementation closure belongs to the slice named (#591, #589,
-FAM-C1, L2b-d, X2/X2b/X3) and is not claimed here.
+**r8.** The r7 T4 audits `R581-c7A2` (01-03 A, 04-05 B, 06 C) and `R581-c7B2` (01-02 A, 03-10 B,
+C-01..C-05) requested changes on `e79e6578`. The operator's binding direction: repeated T4 failure
+on browser-mechanism detail ⇒ **reduce scope** — bind contracts, invariants and acceptance tests,
+delete mechanism claims. Every A and B finding is closed below. "Closed (doc)" means the record
+states the rule and names the test; implementation closure belongs to the owning slice and is not
+claimed here.
 
-| Finding (r7)                            | Class | Section                                                                              | Status                                   | How                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------- | ----- | ------------------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| R581-c7A-01, R581-c7B-02                | A     | D-L0-3, D-L0-4 V-L10, D-L0-5 schema, L02, L08                                        | Closed (doc); L2b, L1 implement          | Disposition 3. Template **identity** vs structure key; every match by identity with key-path inclusion; round-2 (ii) is a **monotone observation rule** over the round-1 **digest** identities (stored on the pin as `observed_identities`), package steps never in the test; unobserved steps ⇒ `template_absent`, never a refusal; key-path growth compatible (`keypath_growth` audit, never a trigger); (iii) re-pin vs one model call with V-L10 union rule; retry after round 2 stated; sparse-account and key-path-growth worked examples; L08 fixtures.                                                                                                                                                                                         |
-| R581-c7A-02, R581-c7B-01                | A     | header D14, D-L0-1 steps 4/7, D-L0-6.2, §3 inv. 3/8, D-L0-8 item 8, L09              | Closed (doc); X2b, X3 implement          | Disposition 1. Credential model **per mechanism**: cookies never read/copied/re-injected — replay mirrors the page's observed per-origin credentials mode (`include` only where every page request carried cookies, else `omit`; tab origin keeps today's background `include`), browser attaches by its own rules, never widened, HttpOnly values never reach any realm; only **page-set** non-cookie headers (Authorization, CSRF) re-attached, same origin only, worker memory only, handed to the MAIN world only because the page realm already holds them; 401/403 ⇒ one re-observation then gap; **service-worker restart ⇒ table lost ⇒ one re-observation, else gap; never persisted**. L09 cookie-mode negatives; V1-P item 8 fixture proof. |
-| R581-c7A-03, R581-c7B-07                | A / B | D-L0-6.2, D-L0-4 V-L5, §3 inv. 8, D-L0-8 item 9, L01, L09                            | Closed (doc); X2b, L1 implement          | Disposition 2 (engineering bound inside D14, no owner question). GET/HEAD; only templates the page itself issued this run with the **same query-key set**; refusal when any token of path segments **or query keys or rebound query values** hits the closed vendor-neutral vocabulary, extended with read/seen/ack/mark/view-style terms; enforced on the device and at V-L5; once per parent, one retry on network error only; **residual risk stated honestly** (hidden GET side effects without lexical trace) and **V1-P item 9 observes it**. L09 `?operation=cancel`, `?mark_read=1`, value `read`, read-flag fixture.                                                                                                                          |
-| R581-c7A-04                             | B     | D-L0-6.3 "Activated at L2d", L14, D-L0-9 L2d/FAM-\*                                  | Closed (doc); L2d, FAM-R1 implement      | L2d ships a truthful projection: `moved_native` from bucket j, `preserved` = j-p rows (true zero before FAM-P2), `not_moved[]` from a mapping **total** over `pin.conformance` and the D-S9-7 histogram keys at the base with an exhaustiveness test; equation holds at L2d; FAM-R1 extends rows without changing meaning; L14 at each landing point.                                                                                                                                                                                                                                                                                                                                                                                                  |
-| R581-c7A-05, R581-c7B-05, R581-c7B-09   | B     | D-L0-4 V-L4, D-L0-9 L1/X2/X2b/FAM-\* rows + graph, §7                                | Closed (doc); #591, FAM-C1, X2 implement | Disposition 7. **FAM-C1 is the one owner** of the family catalogue module (incl. `billing_schedule`); L1 imports it and is hard-dependent on the implemented catalogue; #591's owed list is explicit (six items incl. `billing_schedule` via import, `nonGetDataOrigins`, `out_of_scope_billing`, few-shot placement, vocabulary, union rule); edges **L1 → X2** and **L1 → X2b** (L1 owns the fixtures, the extension mirrors after L1 lands); §7 states doc alignment ≠ implementation closure.                                                                                                                                                                                                                                                      |
-| R581-c7A-06                             | B     | D-L0-6.2 canonical origins, D-L0-6.3 `OutsideOriginV1`/`ExcludedOriginCategory`, L09 | Closed (doc); X3, L2d implement          | Only canonical `https` default-port origins are admissible foreign origins, so a hostname names exactly one origin; other scheme/port ⇒ not captured, counted as `non_canonical_origin` in `excluded_origins[]` (L0-owned category); the tab origin is whatever X1 authorized. L09 non-default-port fixture.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| R581-c7A-07, R581-c7B-04, R581-c7B-C-05 | B     | D-L0-4 per-record enforcement, C2/C3/C4, D-L0-5 triggers, L08, D-L0-9 L2c            | Closed (doc); L2c implements             | Disposition 4. C2/C3/C4 **per record**; **effective parent set** = staged parents passing C0 and C2 ∪ verified Person links; C4 defined over it, unlinked children `unresolved_parent` each; C3 per row **is** `destinationFor` (partly native, partly preserved), `native_rules_dropped` only when rules fail on every non-empty row; C2 one failing row disclosed alone, all-null roster structural (`items_path_missing`). L08 cases.                                                                                                                                                                                                                                                                                                               |
-| R581-c7B-03                             | B     | D-L0-7.1, D-L0-7.2, D-L0-3 (iii), D-L0-5, §3 inv. 10, L13, D-L0-9 L1                 | Closed (doc); #591 implements            | Disposition 5. Part 4 holds repository fixtures only; every coach-derived example package (recent `accepted`, round-1 in round 2, `suspect` on relearn) sits inside its own `UNTRUSTED_EXAMPLE_PACKAGE_BEGIN/END` block under the per-call nonce in part 6; L13 covers every block; #591 `prompt.ts` L206-221 owes it.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| R581-c7B-06                             | B     | header read trees, D-L0-9 L3a/L3b, §7                                                | Closed (doc); #589 implements            | Disposition 8. "Applied in #589 r2" withdrawn; `L3:` read as is; #589's owed list explicit: drop `short_page` from `REPLAY_TERMINAL_STOPS` (short page is never proof), `none_proven` → `first_page_only`, `observed` basis or an explicit hand-off to L3b, L15 negative; L3a/L3b mapped to the PR as it stands (one PR plus follow-up).                                                                                                                                                                                                                                                                                                                                                                                                               |
-| R581-c7B-08                             | B     | D-L0-6.1, D-L0-6.2 media authority, D-L0-6.3, D-L0-9 FAM-\*/X2b                      | Closed (doc); FAM-M1, X2b implement      | Disposition 6 (defined, not deferred): media URLs are response values, fetched only from the tab origin or origins the page itself loaded media bytes from this run, canonical `https`, GET, mirrored cookie mode, no header unless the page sent it, URL verbatim as observed, mutating-vocabulary check, `redirect: 'manual'` with FAM-M1 per-hop confinement, every media host in `outside_origins[]` inside the ≤ 8 cap; nothing before FAM-M1 fetches media (`destination_gate_closed`).                                                                                                                                                                                                                                                          |
-| R581-c7B-10                             | B     | D-L0-6.3 "Legacy records have one placement", L14                                    | Closed (aligned)                         | Disposition 9. Bucket-f legacy evidence row ⇒ `not_moved: destination_gate_closed` and nothing else; version-0 native identity ⇒ `moved_native` and nothing else for the identity, family gap `residual_unknown` only when the payload is gone (a content statement). FAM-0 r9 (R590-c7B-06, §4.1) states the same; no divergence remains.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| R581-c7A-08, R581-c7B-C-01..C-04, C-06  | C     | D-L0-6.3, D-L0-3, D-L0-8, D-L0-7.3                                                   | Closed                                   | A-08: FAM-0 r9 converged on `residual_unknown` (no count). C-01: `outside_origins` is device-attested; server checks grammar/count bounds. C-02: `template_absent` trigger also needs ≥ 1 data request from the visit. C-03: L1e in V1-P deps. C-04: release only before a call starts; failed settle leaves the maximum charged. C-06: deadline keyed on the registry's file-spec resolution, not the `chosen_platform` label.                                                                                                                                                                                                                                                                                                                        |
-| FAM-0 r9 §8.1 amendments                | —     | D-L0-6.2, D-L0-6.3, D-L0-7.5, D-L0-6.1                                               | Closed (all applied)                     | L0-A2′ `residual_unknown` comment; L0-A4′ ninth-origin refusal ⇒ `cross_origin_unobserved`; L0-A5 `excluded_origins[]` + `ExcludedOriginCategory` (plus L0's `non_canonical_origin`, flagged to FAM-0); L0-A6 `extension_update_required`; L0-A7 `moved_native` comment; L0-A8 wiring (`report_version ≥ 2` else live recompute). Notes for FAM-0's next round: `outside_origins` is device-attested (its D-FAM-1 says "checked server-side against the admitted origin set"); the category enum gains `non_canonical_origin`.                                                                                                                                                                                                                         |
+| Finding (r8)                                             | Class | Section                                                                                                                   | Status                              | How                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R581-c7A2-01, R581-c7B2-03                               | A / B | D-L0-6.2 I-C1, I-C2, T-02; §3 inv. 3                                                                                      | Closed (doc); X3 implements         | Disposition 1. The "never enters worker memory" claim and the deriving-event mechanism are **deleted**. Invariant: never persisted, logged, transmitted or handed on; cookies attached only by the browser; an **honest transient-exposure bound** (retain nothing, serialise nothing, unreachable after the handler returns); T-02 plants an HttpOnly sentinel and asserts every sink, not only `executeScript` args.                                                                                                                                                                                                                                                                                                                  |
+| R581-c7A2-04, R581-c7B2-04                               | B     | D-L0-6.2 I-C3, T-03, T-04, T-05; §8 row consistency                                                                       | Closed (doc); X3 implements         | The per-origin boolean and its derivation are deleted. Contract: per template, cookies only where the page's own request carried them, else **none** and the auth gap — never `include` by default, never a login; tab origin keeps today's background path with the in-origin over-send stated. Mixed, SameSite/partitioned and service-worker-served fixtures (T-04, T-05). The r7 §8 contradiction is gone with the rule.                                                                                                                                                                                                                                                                                                            |
+| R581-c7B2-05                                             | B     | D-L0-6.2 I-C6, T-07; D-L0-5 triggers; L08                                                                                 | Closed (doc); X3, L2c implement     | Restart semantics chosen: **the run does not resume** (`E:background.js` L20-22); the worker claims what is staged with `worker_restarted`; C0 evaluated only on complete evidence rows; restart/deadline added to the never-invalidate list; package state unchanged. `R581-c7B2-C-05` is moot (no re-observation on restart).                                                                                                                                                                                                                                                                                                                                                                                                         |
+| R581-c7B2-09, R581-c7A2-06                               | B / C | D-L0-6.2 I-C4, T-06; D-L0-1 step 4                                                                                        | Closed (doc); X3 implements         | Disposition 8. Credential headers keyed by **exact origin and `frameId`**; re-attached only from the same frame context; V1 replays only from the top frame and background, so a subframe- or worker-observed header is never re-attached or handed to any realm (T-06).                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| R581-c7A2-02                                             | A     | D-L0-6.2 Origins, T-13; D-L0-6.3 `OutsideOriginV1`; D-L0-2                                                                | Closed (doc); X3, L2d implement     | Disposition 2. An **origin is scheme + host + port**; non-default `https` ports admissible under the same bounds, attributed to families and named as `https://host[:port]` in `outside_origins[].origin` (field renamed from `host`; FAM-0 ask); `non_canonical_origin` deleted; non-`https` ⇒ gap `cross_origin_insecure`, never a silent count.                                                                                                                                                                                                                                                                                                                                                                                      |
+| R581-c7B2-01, R581-c7A2-05, R581-c7B2-06, R581-c7B2-C-02 | A / B | D-L0-6.2 No-mutation bound, T-09..T-12; D-L0-6 `next_url`; §3 inv. 8; D-L0-6.3 `navigation_refused`, `start_page_refused` | Closed (doc); X2b, X3, L1 implement | Disposition 3. The bound now covers **navigation**: every explore target and the Start reload URL pass the vocabulary check (extended with logout/signout/login/auth/oauth/deactivate/… terms; exact whole-token semantics, no stemming) or are never visited (`navigation_refused`); explore never clicks, fills or submits; session loss ⇒ one reload, no login, `partial`. Replay key rule made consistent: observed key set ∪ validated pagination `param`; `next_url` keys admitted as served under the token check; **at most one request** per `(template, parent, page)`, no retry after send. Residual restated (hidden GET effects **and** visited pages' scripts), V1-P item 9 observes both and records per-token refusals. |
+| R581-c7B2-02                                             | A     | D-L0-2 bounds, D-L0-3 (ii)/(iii), L08                                                                                     | Closed (doc); L2b, X2 implement     | Disposition 4. Round-1 observed identities **carry forward by identity** into the working union; refusal only when a union shrinks or omits a round-1 identity **without** a truncation flag; explore-only templates truncate first. A rich account can never reach `learn_refused` through truncation.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| R581-c7A2-03, R581-c7B2-10                               | A / B | D-L0-6.1, D-L0-6.2 Media invariants, T-17; D-L0-9 FAM-\*                                                                  | Closed (doc, by deferral); FAM-M1   | Disposition 5. r7's media authority (`redirect: 'manual'`, per-hop, fetch context) is **deleted**. Nothing before FAM-M1 fetches media; media is a disclosed `not_moved: destination_gate_closed` gap. L0 binds invariants only (origin set the page itself loaded media from, named in `outside_origins[]`; verbatim URL; credential invariants; counted outcomes for redirects/opaque/caps). The unrequested-path question (c7A2-03) is **open for FAM-M1's record** and named as such.                                                                                                                                                                                                                                               |
+| R581-c7B2-08                                             | B     | D-L0-4 effective parent set; L08                                                                                          | Closed (doc); L2c implements        | Disposition 6. Verified Person links scoped to **this coach and this run's `source_platform`** (`Person` unique on `(coach_id, source_platform, source_person_id)`); cross-platform same-id negative in L08.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| R581-c7B2-07                                             | B     | D-L0-6.3 placement table; L14; D-L0-9 L2d                                                                                 | Closed (doc); L2d implements        | Disposition 7. Full **placement table** over every base key (`classifyIdentity`, `S9_REPORT_CODE`, `UNRESOLVED_CODE`, `pin.conformance`): `native_target_removed` ⇒ `moved_native` **from L2d onward** (FAM-0 bucket i); unknown-cause keys (`not_reconstructed`, `reason_unrecognised`, bucket k) ⇒ L0-owned append `cause_unknown` (count known, cause honestly unknown); FAM-R1 changes no row.                                                                                                                                                                                                                                                                                                                                      |
+| R589-c7B2 (class C, via operator)                        | C     | D-L0-6 fan-out; §3 inv. 4; L15                                                                                            | Closed (doc); #589 already conforms | One rule in one place: a fan-out shortfall with no `error`/`budget`/`cycle` stop is **`observed`** with gap `list_not_exhausted`; only a missing/extra/duplicate step, a zero-page root or such a stop is `unknown`. §3 inv. 4 and L15 corrected to match; #589 follows this rule.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| R581-c7B2-C-01, C-03, C-04, C-05; R581-c7A2 notes        | C     | D-L0-3, D-L0-6.3, D-L0-5                                                                                                  | Closed                              | C-01: match is by identity alone; absent `idField` is a miss. C-03: the media-origin self-attestation is gone with media deferral; the server bound is the working union's contacted foreign origins. C-04: `LO`-slug Persons noted under D-L0-5, V1-P item 6 records it. C-05: moot — a restarted worker never re-observes (I-C6). A Playwright CDP probe of a plain page is stated not to discharge any T-test.                                                                                                                                                                                                                                                                                                                       |
 
-**r6.** The r5 T4 reviews (`R581-A3` 2A/3B, `R581-B3` 0A/8B) requested changes; their texts were not
-published, so r6 closes the six items the operator recorded from them (a-f) with the intent derived
-from the record and the in-flight heads, plus the owner decisions D9-D14 and FAM-0 r8's amendment
-list. "Deferred → CL" means the finding is about proving `complete`, which no run can claim under
-r5 (D-L0-6); §9 carries it as a required input to the completeness-closure record.
+**FAM-0 r10 (`61c7c97f`) amendments, applied in r8 (none conflicts with an audit closure):**
+L0-A2′ comment unchanged (already verbatim); L0-A4′ gap `outside_origin_refused` appended and used
+for the ninth origin (D-L0-6.2, D-L0-6.3, T-14, L09); L0-A5 six categories, `non_canonical_origin`
+withdrawn; L0-A6 `failure_code` comment widened; L0-A7 `moved_native` comment (coach or linked
+client) and the placement table; L0-A8 wiring (verdict fields from the settled report, family
+counts from FAM-R1's live recompute for every intent); D-FAM-1's executive interpretation of D14
+referenced in the replay bound.
 
-| Item (r6)                         | Section                                                      | Status                                   | How                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------- | ------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| D9 (P1) popup Start               | header, D-L0-1.1, D-L0-9 X4                                  | Closed (decided)                         | Exactly one Start button; everything else status; no second gesture or action.                                                                                                                                                                                                                                                                                                                                                       |
-| D10 (P2) billing                  | header, D-L0-4, D-L0-6.1, D-L0-6.3                           | Closed (decided)                         | Billing and payment history move as families `billing_history`/`billing_schedule` (FAM-0 D-FAM-5 owns detail; per-client next payment date carried, live charge not moved); `out_of_scope_billing` deleted; never a gap or `excluded_by_policy`; no family excluded by policy today.                                                                                                                                                 |
-| D11 (P3) origin fallback          | header, D-L0-6.2                                             | Closed (decided: later)                  | Registrable-domain permission is a later slice, not default, not scheduled in D-L0-9.                                                                                                                                                                                                                                                                                                                                                |
-| D12 (P4) media spend              | header, D-L0-6.1                                             | Closed (decided)                         | Approved; existing S3-compatible storage; FAM-M1 owns caps and the scan gate.                                                                                                                                                                                                                                                                                                                                                        |
-| D13 (P5) Web Store                | header, §6 Q-L0-5                                            | Closed (decided: later)                  | Later; does not block building.                                                                                                                                                                                                                                                                                                                                                                                                      |
-| D14 / B2 (P6) partner data        | header, D-L0-6.1, D-L0-6.2, D-L0-6.3, §3 inv. 8, L09         | Closed (decided)                         | Exclude-by-default and `third_party_not_imported` deleted; scope = FAM-0 D-FAM-1 "Partner-origin rule" by name (JSON, page-issued, contacted; excluded categories not captured, counted per category); `credentialed` no longer a scope gate; credentials re-attached only where sent, never added; `outside_origins[]` names every outside origin read (hostname only, ≤ 8; r7: device-attested, canonical origins, ninth refused). |
-| a. `destination.kind`             | D-L0-4, D-L0-5, D-L0-6.1, D-L0-7.1, §3 inv. 12               | Closed (doc); #591 owes catalogue import | `family: FamilyLabel` replaces `destination`; V-L4/V-L6 restated; `expectedFamilies` = step families; `destinationFor` per record (FAM-0 D-FAM-1, FAM-C1); package stores family labels. Matches #591 r2.                                                                                                                                                                                                                            |
-| b. slice text vs L2a/#591/#592    | D-L0-5, D-L0-7.3, D-L0-7.4, D-L0-7.5, D-L0-9, L06            | Closed (doc); #591/#589 owed lists in r7 | L2a: `forRun(db, coachId, intentId)`, `RUN_PACKAGE_SOURCE`, `pinned`/`pinDigest`, `verifyPin` (no `origin` field); L1: #591 file set, no service/route/eval (eval → new slice L1e); L1-gw: `ImporterMappingGatewayService`, `SpendLedger` port + `AuditSpendLedger`, `AiGatewayError` codes → `failure_code` mapping, stub gate; base `249fd0d4`, line cites re-read.                                                                |
-| c. round-2 match rule             | D-L0-3, L08                                                  | Superseded by r7 (c7A-01/c7B-02)         | Round 2 matches against the round-1 pin only: pin required (`learn_round_order`), union ⊇ round-1 structure keys (`digest_not_union`), full-applicability match ⇒ same version re-pinned, else one model call with the round-1 package as few-shot and V-L10 union rule.                                                                                                                                                             |
-| d. `template_absent`              | D-L0-3, D-L0-5, D-L0-6.3, L08                                | Closed                                   | Defined: a package step's structure key in no template of this run's final digest; zero requests, never synthesized; gap `template_absent` (appended `GapCode`) and `count_basis: unknown` when nothing else feeds the family; trigger only when the discovering link was visited and the request was still not issued.                                                                                                              |
-| e. origin base case               | D-L0-6.2, L09                                                | Closed                                   | Single-origin site: `origins = [o0]`, `allowedOrigins = {tab}`, background fetch only, zero MAIN-world injections, `outside_origins: []`, no `cross_origin_*` gap; every multi-origin rule degrades to it; X3/L09 prove it first.                                                                                                                                                                                                    |
-| f. C0 per family                  | D-L0-4, D-L0-6.3, §3 inv. 7, L08                             | Closed; C2-C4 per record in r7           | C0-C4 enforced per family; a C0 failure drops that family (`not_moved: identity_conflict`, trigger `conformance_identity`), C2 drops `clients` (`destination_gate_closed`; children `unresolved_parent`); others proceed; package never refused whole.                                                                                                                                                                               |
-| FAM-0 r8 amendment list (D-FAM-1) | D-L0-4, D-L0-6.1, D-L0-6.2, D-L0-6.3, D-L0-9                 | Closed (r7: no divergence)               | `destination.kind` dropped; `third_party_not_imported` and `out_of_scope_billing` deleted; partner origins admitted by FAM-0's rule, `origin_rejected` per category; `residual_unknown` appended; `FamilyLabel` = D-FAM-1 catalogue; FAM-0 slice ids replace `PRES`/`FAM-n`. Divergence stated: `GapV1` carries no count (gaps never count); the `residual_unknown` identity count stays on the S9 report — for FAM-0's next round.  |
-| Base and read trees               | header, D-L0-1, D-L0-4, D-L0-6, D-L0-6.3, D-L0-7.3, D-L0-7.5 | Closed                                   | `B:` = `249fd0d4`; `lifecycle.service.ts` L74/L146-165/L453/L459/L472-497/L497, `scout-ingest.service.ts` L55-72, `observation.service.ts` L282-317 re-read; `L3:` = `61b0d251`.                                                                                                                                                                                                                                                     |
+**Notes for FAM-0's next round (via the operator; the FAM-0 file is not edited here).** (a)
+`OutsideOriginV1.host` → `origin` (`https://host[:port]`); D-FAM-1's "checked server-side against
+the admitted origin set" → device-attested with the D-L0-6.3 bound. (b) `ExcludedOriginCategory`
+does **not** gain `non_canonical_origin` (withdrawn). (c) `NotMovedReason` gains the L0-owned
+`cause_unknown`; bucket i stays `moved_native` as FAM-0 §6.2 says; r8 also appends `cross_origin_insecure`, `navigation_refused`, `worker_restarted`, `start_page_refused`. (d) §5.2's `redirect: 'manual'`
+per-hop wording is a FAM-M1 mechanism to prove on the packaged extension (T-17), with the
+unrequested-path rule (D-L0-6.2 media (f)) decided in FAM-M1's record. (e) D-FAM-1 (a) "the page in
+the authorized tab" means the **top frame** (I-C4). (f) The must-capture `events` corpus case is
+consistent with exact-token semantics (`events` ≠ `event`).
 
-**r5 rows (unchanged unless noted).**
+**r7 (closed on `e79e6578`; rows kept for the audit trail, mechanism parts superseded above).**
+`R581-c7A-01`/`c7B-02` identity matching and the monotone round-2 rule (D-L0-3; extended by r8);
+`c7A-02`/`c7B-01` credential model (D-L0-6.2; **superseded by r8 invariants**); `c7A-03`/`c7B-07`
+no-mutation bound and residual (D-L0-6.2; extended to navigation in r8); `c7A-04` L2d activation
+(D-L0-6.3; table in r8); `c7A-05`/`c7B-05`/`c7B-09` FAM-C1 catalogue owner, L1 → X2/X2b edges,
+#591 owed list (D-L0-4 V-L4, D-L0-9); `c7A-06` origins (**superseded by r8**: scheme + host +
+port); `c7A-07`/`c7B-04`/`c7B-C-05` per-record C2-C4 and the effective parent set (D-L0-4);
+`c7B-03` few-shot inside the untrusted block (D-L0-7.1); `c7B-06` #589 owed list (D-L0-9 L3a);
+`c7B-08` media authority (**superseded by r8**: deferred to FAM-M1); `c7B-10` legacy placement
+(D-L0-6.3); class C items closed; FAM-0 r9 §8.1 amendments L0-A2′/A4′/A5-A8 applied.
 
-| Finding                                                                         | Section                                      | Status                          | How                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R581-A2-01 [A]                                                                  | D-L0-2, D-L0-5                               | Closed                          | Slug removed from the digest/prompt; hosts only as slot templates; value cross-check (2), whitespace refusal, precise sibling definition; per-coach memory ⇒ no key or hostname in any shared row in V1; L2g invariant (e): global rows hold vocabulary or ≥ 2-coach-corroborated keys, keyed by a quorum-proven registrable domain. L03 fixtures. |
-| R581-A2-02 [A]                                                                  | D-L0-6, §9                                   | Deferred → CL                   | SPA-only routes are unobservable by URL navigation; r5 makes `complete` unreachable for every run, so the false-`complete` path is closed by construction; the positive coverage proof is CL's (input C-02).                                                                                                                                       |
-| R581-A2-03 [A]                                                                  | D-L0-6                                       | Closed                          | `style: 'none'` and `short_page` never yield `proven`; only `empty_page`/`absent_next` after ≥ 1 page do; a first page is never certified; L15 metadata-free 17-item and early-short-page negatives.                                                                                                                                               |
-| R581-A2-04 [A]                                                                  | D-L0-6, L3a                                  | Closed                          | `reviewed_package` closure deleted; closure is `null` for file, legacy and learned packages alike (executive reset §8); L15.                                                                                                                                                                                                                       |
-| R581-A2-05 [A]                                                                  | D-L0-6, §9                                   | Closed by deletion; input to CL | `RunClosureV1` deleted, so nothing must be recomputed from an unstored digest at settle; conformance is persisted write-once before reconstruct (L2c). Durable closure inputs are CL input C-05.                                                                                                                                                   |
-| R581-A2-06 [A]                                                                  | D-L0-6                                       | Closed                          | Fan-out binds `parent_ids_digest` to the parent's `id_set_digest`, distinguishes contexts from pages, requires every context positively exhausted; L15 duplicate-A/omitted-B and H > 1 cases.                                                                                                                                                      |
-| R581-A2-07 [A]                                                                  | D-L0-4, D-L0-6.3                             | Closed                          | `confirmExclusion` deleted; an `unmapped` reason is a claim disclosed as gap `collection_unmapped`; it can suppress nothing because `complete` is unreachable and every unmapped collection is shown. Whether an exclusion may ever count is CL input C-07.                                                                                        |
-| R581-A2-08 [B]                                                                  | D-L0-6.2                                     | Closed                          | Request-level authority: GET/HEAD, no body, learned template by structure key, observed query keys/values only, same-origin same-key `next_url`, mutating-verb refusal, rate limit; credentials re-attached only to the origin that received them; probes deleted; L09 negatives.                                                                  |
-| R581-A2-09 [B]                                                                  | D-L0-7.3                                     | Closed                          | Worst case computed (572 s) and the phase cap set above it (600 s) with an explicit priority order; one shared deadline; crawl minimum stated.                                                                                                                                                                                                     |
-| R581-A2-10 [B]                                                                  | D-L0-5, D-L0-7.3                             | Closed                          | `ScoutLearnSpendLedger` with an atomic conditional reservation before every call (first call and repairs included), charge/release on every path; L05/L07.                                                                                                                                                                                         |
-| R581-B2-A1 [A]                                                                  | D-L0-5                                       | Closed                          | One rule: V1 serves a package only to the coach who proved it; no provisional cross-coach serving, no quorum in V1; L2g invariants state TGP-provisioned coaches and fail-closed promotion under self-service; L08 crafted-counter case fails union C0.                                                                                            |
-| R581-B2-A2 [A]                                                                  | D-L0-3, D-L0-2                               | Closed                          | Round-1 match = digest ⊆ package by sparsity-insensitive structure key; absent package steps become explore targets; full applicability on the union; L08 different-landing-page and sparse-account cases with zero calls.                                                                                                                         |
-| R581-B2-A3 [A]                                                                  | D-L0-2, D-L0-5                               | Closed                          | Sibling defined; device-side value cross-check; coach-defined labels admitted only coach-scoped (no tenant-free table in V1); L2g (e) for any future global row; pivot-row and nested-label fixtures.                                                                                                                                              |
-| R581-B2-A4 [A]                                                                  | D-L0-6, §9                                   | Deferred → CL                   | Filtered lists in any family are a completeness question; probes deleted; no run can settle `complete`; CL input C-09.                                                                                                                                                                                                                             |
-| R581-B2-A5 [A]                                                                  | D-L0-6.2                                     | Closed                          | Credential model: per-origin, in-memory rebinding of the page's own credential headers for the tab origin and in-scope foreign origins; one re-observation on 401; `source_auth_unavailable`; storage JWT never sent in learned runs; L09 cases.                                                                                                   |
-| R581-B2-B1 [B]                                                                  | D-L0-5                                       | Closed                          | Triggers structural only; `slot_unbound`, empty collections and unproven pagination never invalidate; L08.                                                                                                                                                                                                                                         |
-| R581-B2-B2 [B]                                                                  | D-L0-4                                       | Closed                          | Union C0 per entity type; `idScope: 'parent'` composite identity in grammar, engine and `sourceId`; L08.                                                                                                                                                                                                                                           |
-| R581-B2-B3 [B]                                                                  | D-L0-4, D-L0-5                               | Closed                          | Closure deleted; conformance computed in its own `lockRun` + epoch-checked transaction, write-once per epoch; pin write-once columns declared.                                                                                                                                                                                                     |
-| R581-B2-B4 [B]                                                                  | D-L0-6                                       | Closed by deletion              | Probes and `SCOUT_LEARN_PROBE_MAX` deleted with the closure machinery; `complete` no longer depends on a probe budget. Filter coverage is CL input C-09.                                                                                                                                                                                           |
-| R581-B2-B5 [B]                                                                  | D-L0-4, D-L0-6                               | Closed                          | `next_url` style (same origin, same structure key, device-checked); `param` from `PAGINATION_VOCABULARY` when the signal is present; L01/L15.                                                                                                                                                                                                      |
-| R581-B2-B6 [B]                                                                  | D-L0-6.1, D-L0-6.2                           | Closed (r6 superseded)          | r5: deterministic credentialed-origin rule with third-party origins excluded and disclosed. r6: the owner decided D14 — partner data moves; scope is FAM-0's partner-origin rule; the exclusion and `third_party_not_imported` are deleted; L09 updated.                                                                                           |
-| R581-B2-B7 [B]                                                                  | D-L0-6.3                                     | Closed                          | One `RunStatusProjectionV1` (`FamilyRowV1`/`NotMovedV1`/`GapV1`); single `NotMovedReason` list disjoint from `GapCode` with the attribution rule; no `destination` field; preserved families get rows; `unclassified` catch-all; L14/L16 no double rendering.                                                                                      |
-| R581-B2-B8 [B]                                                                  | D-L0-9, D-L0-7.3, D-L0-7.4                   | Closed                          | Edges L1←FAM-0 and X3←L3b added; eval re-run is L1's CI job triggered by FAM-n; deadline config owned by L2b with DP-1; L2 split into L2a/b/c/d; L3 split into L3a/L3b.                                                                                                                                                                            |
-| R581-B2-B9 [B]                                                                  | D-L0-6, §9                                   | Deferred → CL                   | The SPA residual cannot produce a false `complete` under r5; a "referenced but unreached" signal is CL input C-02; third-party scope was P6, decided as D14 in r6 (the SPA residual is a CL design input, not an owner decision, because D1 already forbids narrowing).                                                                            |
-| R581-B2-C1..C7 [C]                                                              | D-L0-6.2, D-L0-6.3, D-L0-5                   | Closed                          | Worker-side confinement stated, SW qualifier (C1); "X3 adds" and `verify.ts` closure citation removed (C2); CI note in the PR body (C3); coach-local reuse first, global later (C4); `tab_lost` (C5); `failure_code` first (C6); P6 added in r5, decided as D14 in r6; SPA and bearer routed as above (C7).                                        |
-| R581-A-01 [A]                                                                   | D-L0-2                                       | Closed                          | As A2-01/B2-A3.                                                                                                                                                                                                                                                                                                                                    |
-| R581-A-02 [A]                                                                   | D-L0-2                                       | Closed                          | Path/host slot rule with closed vocabulary, no hash proof (r4, kept); slug out of the prompt (r5).                                                                                                                                                                                                                                                 |
-| R581-A-03 [A]                                                                   | D-L0-6                                       | Closed                          | As A2-03.                                                                                                                                                                                                                                                                                                                                          |
-| R581-A-05 [A]                                                                   | D-L0-6, §9                                   | Deferred → CL                   | Observed navigation ≠ the site's record surface; r5 stops claiming `complete` at all; CL input C-01.                                                                                                                                                                                                                                               |
-| R581-A-06 [A]                                                                   | D-L0-6.2                                     | Closed                          | MAIN-world seam (r4) now with a credential model and side-effect bounds (r5); P3 fallback recorded.                                                                                                                                                                                                                                                |
-| R581-A-07 [B]                                                                   | D-L0-7.3                                     | Closed                          | As A2-09.                                                                                                                                                                                                                                                                                                                                          |
-| R581-B-A1 [A]                                                                   | D-L0-5                                       | Closed                          | As B2-A1: no single coach can influence another coach's import in V1.                                                                                                                                                                                                                                                                              |
-| R581-B-A3 [A]                                                                   | D-L0-2                                       | Closed                          | As B2-A3.                                                                                                                                                                                                                                                                                                                                          |
-| R581-B-A4 [A]                                                                   | D-L0-6, §9                                   | Deferred → CL                   | Hidden past records are a completeness question; CL inputs C-01, C-09.                                                                                                                                                                                                                                                                             |
-| R581-B-B2 [B]                                                                   | D-L0-3                                       | Closed                          | As B2-A2.                                                                                                                                                                                                                                                                                                                                          |
-| R581-B-B4 [B]                                                                   | D-L0-4                                       | Closed                          | As B2-B3.                                                                                                                                                                                                                                                                                                                                          |
-| R581-B-B8 [B]                                                                   | D-L0-7.3                                     | Closed                          | Budgets consistent; V1-C reachability is CL's, not a budget matter.                                                                                                                                                                                                                                                                                |
-| R581-B-B9 [B]                                                                   | D-L0-9                                       | Closed                          | As B2-B8.                                                                                                                                                                                                                                                                                                                                          |
-| R581-B-B10 [B]                                                                  | D-L0-2                                       | Closed                          | Hash proof deleted (r4); per-coach memory removes the global exposure (r5).                                                                                                                                                                                                                                                                        |
-| R589-A1 [A]                                                                     | D-L0-6, L3a                                  | Closed                          | As A2-04.                                                                                                                                                                                                                                                                                                                                          |
-| R589-A2 [A]                                                                     | D-L0-6                                       | Closed                          | `observed_templates`/`ExclusionSignalsV1` deleted; no replacement closure exists to fabricate.                                                                                                                                                                                                                                                     |
-| R589-A4 [B]                                                                     | D-L0-6                                       | Closed                          | As A2-06.                                                                                                                                                                                                                                                                                                                                          |
-| R589-B-A1 [A]                                                                   | D-L0-6                                       | Closed                          | No package-level or run-level closure exists; CL owns the replacement.                                                                                                                                                                                                                                                                             |
-| R589-B-B1 [B]                                                                   | D-L0-6                                       | Closed                          | `pages_fetched ≥ 1`, fan-out bound, `expected: 0` refused; unknown never 0.                                                                                                                                                                                                                                                                        |
-| R590-B-A1 [A]                                                                   | D-L0-6.3                                     | Closed (L0 side)                | One projection, owned here; FAM-0 r2 (PR #590) references D-L0-6.3 verbatim and drops its own definition.                                                                                                                                                                                                                                          |
-| R590-A4-B2, R590-B4-B5, R590-B6-B2, R590-B2-C7, R590-B3-C5 (FAM-0 → L0 r6 asks) | D-L0-4, D-L0-6.1, D-L0-6.2, D-L0-6.3, D-L0-9 | Closed (r6)                     | See the r6 row "FAM-0 r8 amendment list".                                                                                                                                                                                                                                                                                                          |
+**r6 (closed on `d5bfea98`).** Owner decisions D9-D14/B2 recorded (header); r5 review items a-f:
+`destination.kind` → `family` label with `destinationFor` (D-L0-4); slice text aligned with merged
+L2a and in-flight #591/#592 (D-L0-5, D-L0-7, D-L0-9); round-2 rule (superseded by r7/r8);
+`template_absent` (D-L0-3); single-origin base case (D-L0-6.2); C0 per family (D-L0-4); FAM-0 r8
+amendment list applied; base `249fd0d4`.
+
+**r5 (closed on the executive reset; full rows in the record's history at `e79e6578`).** Closed:
+`R581-A2-01/03/04/05/06/07/08/09/10`, `R581-B2-A1/A2/A3/A5`, `R581-B2-B1/B2/B3/B4/B5/B6/B7/B8`,
+`R581-B2-C1..C7`, `R581-A-01/02/03/06/07`, `R581-B-A1/A3`, `R581-B-B2/B4/B8/B9/B10`,
+`R589-A1/A2/A4`, `R589-B-A1/B1`, `R590-B-A1` (L0 side), the FAM-0 → L0 r6 asks. **Deferred → CL**
+(§9 inputs): `R581-A2-02`, `R581-B2-A4`, `R581-B2-B9`, `R581-A-05`, `R581-B-A4` — each is about
+proving `complete`, which no run can claim under r5 (D-L0-6).
 
 ## 9. Deferred: completeness closure — required inputs to the CL record
 
 Until CL lands, every run settles `partial` with gap `completeness_not_proven` (D-L0-6). CL must
-address each of the following, by id, before any package type may settle `complete`. One line each;
-the source report holds the detail.
-
-- **C-01** `R581-A-05`, `R581-B-A4`: observed navigation is not the site's record surface; hidden
-  past records (archived, filtered, paginated-away) need positive coverage evidence.
-- **C-02** `R581-A2-02`, `R581-B2-B9`: SPA-only routes (no `<a href>`) are unobservable; a
-  "referenced but unreached" signal or an independent coverage source is needed.
-- **C-03** `R581-A-03`, `R581-A2-03`: a first page or a short page never proves exhaustion; CL may
-  only build on D-L0-6's positive terminals.
-- **C-04** `R581-A2-04`, `R589-A1`, `R589-B-A2`: reviewed file packages have no closure either;
-  CL decides whether a signed manifest can ever be a closure authority for a run.
-- **C-05** `R581-A2-05`, `R581-B2-B3`, `R589-A2`, `R589-B-A1`: closure inputs must be durable,
-  run/epoch-bound, privacy-safe and available to settle and its recovery path; never
-  producer-asserted booleans.
-- **C-06** `R581-A2-06`, `R589-A4`, `R589-B-B1`: fan-out identity-set binding as in D-L0-6 is the
-  floor; CL states what more a family needs.
-- **C-07** `R581-A2-07`: an `unmapped` exclusion may count only with positive proof that the
-  collection is not a client/coaching record; ambiguous collections are preserved, not excluded.
-- **C-08** `R581-A2-08` (residual): any closure that requires requests beyond observed templates
-  must stay inside D-L0-6.2's side-effect bounds.
-- **C-09** `R581-B2-A4`, `R581-B2-B4`: filter/status variants for every family, with a budget sized
-  from the rule, or an honest gap.
-- **C-10** `R581-B2-B6`, D14: partner data reachable through the coach's page moves (decided); CL
-  states whether and how partner-origin collections count towards `complete`.
-- **C-11** `R589-A3`: empty collections need a probe with a positive empty terminal.
-- **C-12** `R589-A5`, `R589-B-B2`: named gaps must reach the coach; D-L0-6.3 is the channel.
-- **C-13** `R590-A2`, `R590-B-B3`: a native row that lost residual source fields, or a preserved
-  record stripped by secret-class removal, is not "in TGP" for `complete`.
-- **C-14** `R590-A3`, `R590-B-A2`, `R590-B-B1`, `R590-B-B2`: graduation, archived-record handling,
-  the destination window and the legacy evidence table must reconcile under one bucket order before
-  they can count.
-- **C-15** `R590-B-A1`, `R590-B-B9`, `R590-B-C5`: one projection (D-L0-6.3) and one destination
-  authority; `source_count = moved_native + preserved + not_moved` under `proven`.
-- **C-16** `R581-B-B8` (residual): V1-C on a large pilot may need resumable exploration (§5).
+address each input by id before any package type may settle `complete`; the source reports hold the
+detail. **C-01** `R581-A-05`, `R581-B-A4`: observed navigation ≠ the site's record surface (hidden,
+archived, filtered, paginated-away records need positive coverage evidence). **C-02** `R581-A2-02`,
+`R581-B2-B9`: SPA-only routes are unobservable; a "referenced but unreached" signal is needed.
+**C-03** `R581-A-03`, `R581-A2-03`: a first or short page never proves exhaustion. **C-04**
+`R581-A2-04`, `R589-A1`, `R589-B-A2`: reviewed file packages have no closure either. **C-05**
+`R581-A2-05`, `R581-B2-B3`, `R589-A2`, `R589-B-A1`: closure inputs must be durable, epoch-bound,
+privacy-safe, never producer-asserted booleans. **C-06** `R581-A2-06`, `R589-A4`, `R589-B-B1`:
+fan-out identity binding is the floor. **C-07** `R581-A2-07`: an `unmapped` exclusion counts only
+with positive proof; ambiguous collections are preserved. **C-08** `R581-A2-08`: requests beyond
+observed templates must stay inside D-L0-6.2's bounds. **C-09** `R581-B2-A4`, `R581-B2-B4`:
+filter/status variants per family or an honest gap. **C-10** `R581-B2-B6`, D14: whether and how
+partner-origin collections count. **C-11** `R589-A3`: empty collections need a positive empty
+terminal. **C-12** `R589-A5`, `R589-B-B2`: named gaps reach the coach through D-L0-6.3. **C-13**
+`R590-A2`, `R590-B-B3`: a native row that lost residual fields or a secret-stripped preserved record
+is not "in TGP" for `complete`. **C-14** `R590-A3`, `R590-B-A2`, `R590-B-B1`, `R590-B-B2`:
+graduation, archived records, the destination window and the legacy table reconcile under one
+bucket order first. **C-15** `R590-B-A1`, `R590-B-B9`, `R590-B-C5`: one projection and one
+destination authority; `source_count = moved_native + preserved + not_moved` under `proven`.
+**C-16** `R581-B-B8`: V1-C on a large pilot may need resumable exploration (§5).
