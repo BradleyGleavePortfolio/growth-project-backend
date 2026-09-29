@@ -673,11 +673,15 @@ describe('ScoutLifecycleService', () => {
       expect(s9.reconstructRun).toHaveBeenCalledTimes(1);
       expect(s9.collect).toHaveBeenCalledTimes(1);
       // S10-C: the collector receives the locked row's binding (D-S10-3 E1) — no run-row read of its own.
-      expect(s9.collect.mock.calls[0].slice(1)).toEqual([
+      expect(s9.collect.mock.calls[0].slice(1, 4)).toEqual([
         COACH,
         INTENT,
         { mode: 'server', execution_epoch: 1, accepted_start_at: lockedOpen.accepted_start_at },
       ]);
+      // L2a r2 (R588-B-1): the collector interprets the run through the SAME registries object the
+      // pass was handed — one resolution per settle (no pin here: the file registries).
+      expect(s9.collect.mock.calls[0][4]).toBe(s9.reconstructRun.mock.calls[0][3]);
+      expect(s9.collect.mock.calls[0][4]).toMatchObject({ pinned: null, pinDigest: null });
       // The facts service reads on the SAME transaction client the tail holds (D-S9-1), not on prisma.
       expect(s9.collect.mock.calls[0][0]).toHaveProperty('$executeRaw', d.executeRaw);
       const writes = terminalWrites(d);

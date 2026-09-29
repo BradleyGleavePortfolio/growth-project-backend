@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -91,9 +91,11 @@ export class ScoutService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
-    @Optional() lifecycle?: ScoutLifecycleService,
+    // REQUIRED under Nest (R588-B-2): ScoutModule provides the lifecycle, so a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    lifecycle: ScoutLifecycleService = new ScoutLifecycleService(prisma, analytics),
   ) {
-    this.lifecycle = lifecycle ?? new ScoutLifecycleService(prisma, analytics);
+    this.lifecycle = lifecycle;
   }
 
   private static storageKey(coachId: string, intentId: string, deviceId: string): string {
