@@ -13,14 +13,15 @@ import type { CanonicalFamily } from '../reconstruct/mapping-spec';
  * removed, renamed or named after a source. A page-chain kind is deferred (§5) and absent here,
  * so chain evidence is always an unknown kind.
  *
- * L3 (owner D1, 2026-09-28; L0 r4 D-L0-6 "Pagination exhaustion is proven per endpoint,
- * positively") appends `replay_terminal_enumeration`: the extension-observed evidence. One
- * evidence row per `(platform, scope, family)` aggregates one `ReplayStepEvidenceV1` per
- * collection step feeding the family (exhausted: a positive terminal after ≥ 1 page, no
- * advertised next link, zero refused pages, no synthetic or missing id, fan-out bound to its
- * parent's proven count), plus the family's `observed_unique` and `id_set_digest`. The evaluator
- * rule lives in `verify.ts` (`proveReplayTerminalEnumeration`): digest AND count equal to the
- * staged side ⇒ the family's SOURCE COUNT is `proven`; anything less ⇒ `unknown`, never 0.
+ * L3 (owner D1, 2026-09-28; L0 r5 D-L0-6 "Per-family counting evidence is kept") appends
+ * `replay_terminal_enumeration`: the extension-observed evidence. One evidence row per
+ * `(platform, scope, family)` aggregates one `ReplayStepEvidenceV1` per collection step feeding
+ * the family, plus the family's `observed_unique` and `id_set_digest`. The evaluator rule lives
+ * in `verify.ts` (`proveReplayTerminalEnumeration`): every step verified against its own staged
+ * rows, the family digest AND count equal to the staged side, every step positively exhausted
+ * (`empty_page` / `absent_next` after ≥ 1 page, fan-out bound to its parent's verified id set)
+ * ⇒ the family's SOURCE COUNT is `proven`; every step fetched but not all exhausted ⇒
+ * `observed`; anything less ⇒ `unknown`, never 0.
  *
  * Executive reset 2026-09-29 §1/§8: NO package (file, learned, legacy) has a run-level
  * completeness closure until a separate closure record lands, so this kind never yields a
@@ -82,11 +83,11 @@ export const OBSERVATION_BODY_MAX_BYTES = 32 * 1024;
 export const KEY_ID_PATTERN = /^[a-z0-9._-]{1,64}$/;
 export const HEX64_PATTERN = /^[0-9a-f]{64}$/;
 /**
- * L3 r2 (L0 r4 D-L0-6 "L3 evidence cardinality"): at most this many step evidences (steps,
+ * L3 r2 (L0 r5 D-L0-6 "Evidence cardinality"): at most this many step evidences (steps,
  * `:s`/`:q` variants and probes) may feed one family in a replay evidence row.
  */
 export const REPLAY_MAX_STEPS = 64;
-/** L3 r2: the body bound for an observation body whose every entry is the replay kind (r4). */
+/** L3 r2: the body bound for an observation body whose every entry is the replay kind (r5). */
 export const REPLAY_OBSERVATION_BODY_MAX_BYTES = 64 * 1024;
 /** L3: a replay step token is the mapping spec's own step key (UTF-8 bytes, bounded). */
 export const REPLAY_STEP_TOKEN_MAX_BYTES = 256;
@@ -189,75 +190,106 @@ export const EVIDENCE_KEYS = [
 // ── L3: `replay_terminal_enumeration` — the extension-observed evidence ───────────────────
 
 /**
- * How one replay step stopped, as the engine reports it (L0 r4 D-L0-6 `StopReason`). Only
- * `absent_next` (cursor style: the next path resolved to null/absent), `empty_page` and
- * `short_page` (page style) are pagination terminals, and only after ≥ 1 page; `none_proven`
- * (a `style: 'none'` step whose single page could not be proven unpaginated), `budget`, `cycle`,
- * `error` and `advertised_next` (a next link the step did not follow) are not exhausted.
+ * How one replay step stopped, as the engine reports it (L0 r5 D-L0-6 `StopReason`, verbatim).
+ * Three classes, decided by `verify.ts`:
+ * - `REPLAY_EXHAUSTED_STOPS` — positive exhaustion after ≥ 1 page: `empty_page` (page style: the
+ *   page after the last one came back empty) and `absent_next` (cursor / `next_url` style: the
+ *   next path resolved to null/absent). Only these can make a count `proven`.
+ * - `REPLAY_OBSERVED_STOPS` — the list ended without positive proof: `short_page` (a page shorter
+ *   than the page size; r5: "a short page is NOT proof") and `first_page_only` (a `style: 'none'`
+ *   step, whose single page is never certified). The count is at most `observed`.
+ * - `REPLAY_ABORTED_STOPS` — `budget`, `cycle`, `error`: the crawl did not finish; the count is
+ *   `unknown`. `advertised_next` (a next link the step did not follow) is not exhausted either
+ *   and, like `refused_pages > 0` or `advertised_next: true`, caps the family at `observed`.
+ * The package carries no pagination style yet (L2b), so the server cannot check that a step of
+ * page style reports `empty_page` rather than `absent_next`; both are positive terminals in r5,
+ * and the engine (X2b) reports the one its style defines. Never a source-specific value.
  */
 export const REPLAY_STEP_STOPS = [
   'absent_next',
   'empty_page',
   'short_page',
-  'none_proven',
+  'first_page_only',
   'budget',
   'cycle',
   'error',
   'advertised_next',
 ] as const;
 export type ReplayStepStop = (typeof REPLAY_STEP_STOPS)[number];
-export const REPLAY_TERMINAL_STOPS: readonly ReplayStepStop[] = [
-  'absent_next',
-  'empty_page',
-  'short_page',
-];
+export const REPLAY_EXHAUSTED_STOPS: readonly ReplayStepStop[] = ['absent_next', 'empty_page'];
+export const REPLAY_OBSERVED_STOPS: readonly ReplayStepStop[] = ['short_page', 'first_page_only'];
+export const REPLAY_ABORTED_STOPS: readonly ReplayStepStop[] = ['budget', 'cycle', 'error'];
 
 /**
- * The parent contexts a fan-out step had to visit (one per identity of its parent step) against
- * the ones it visited. `parent_step` names the step key the fan-out iterated; the evaluator binds
- * `expected` to that parent step's PROVEN `distinct_raw_ids` inside a proven family (L3 r2,
- * R589-A-4 / R589-B-B1; r4 D-L0-6) — a self-reported `expected` never proves on its own.
- * (`parent_step` is on the evidence because the pinned package carries no `parentEdge` yet; when
- * L1's package does, the evaluator must also require equality with `parentEdge.toStep`.)
+ * The parent contexts a fan-out step visited (L0 r5 D-L0-6 "Fan-out"). The evaluator binds the
+ * claim to the PARENT STEP'S VERIFIED ID SET, never to the step's own numbers:
+ * `parent_ids_digest` must equal the parent step's `id_set_digest` (itself verified against the
+ * staged rows of that step) and `contexts_expected` its `distinct_raw_ids`; the parent must be
+ * another step of this platform whose chain of parents ends in a root step (no self-parent, no
+ * cycle). `parent_ids_digest` is the D-S10-2 digest of the DISTINCT parent identities the step
+ * actually fetched a context for — visiting parent A twice and omitting B digests to a different
+ * set and never proves. The fan-out is exhausted only when `contexts_exhausted ===
+ * contexts_fetched === contexts_expected` with every context positively exhausted;
+ * `pages_fetched` on the step is the page total across contexts (≥ `contexts_fetched`; a context
+ * may take several pages). `contexts_expected: 0` proves only against a parent that verified
+ * empty. `parent_step` names the parent step (additive to r5's shape: the pinned package carries
+ * no `forEach`/`parentEdge` yet; when L2b's pin does, the evaluator must also require equality
+ * with it). Additive fields only; nothing here is a URL or an id.
  */
 export interface ReplayFanOutV1 {
-  readonly expected: number;
-  readonly fetched: number;
   readonly parent_step: string;
+  readonly parent_ids_digest: string;
+  readonly contexts_expected: number;
+  readonly contexts_fetched: number;
+  readonly contexts_exhausted: number;
 }
-export const REPLAY_FAN_OUT_KEYS = ['expected', 'fetched', 'parent_step'] as const;
+export const REPLAY_FAN_OUT_KEYS = [
+  'parent_step',
+  'parent_ids_digest',
+  'contexts_expected',
+  'contexts_fetched',
+  'contexts_exhausted',
+] as const;
 
 /**
- * One step evidence of the pinned package that feeds the family (r4 `StepEvidenceV1`, snake_case
- * on the wire like the rest of the row): a mapped step, a `:s`/`:q` variant or a probe.
+ * One step evidence of the pinned package that feeds the family (L0 r5 D-L0-6 `StepEvidenceV1`,
+ * snake_case on the wire like the rest of the row): a mapped step, a `:s`/`:q` variant or a probe.
+ *
+ * Identity scope (r5 D-L0-6 "Identity", D-L0-4 C0): `distinct_raw_ids`, `duplicate_ids` and
+ * `id_set_digest` are computed over the step's STAGED IDENTITY — the exact `sourceId` string the
+ * engine stages: the raw `idField` value under `idScope: 'global'`, the composed
+ * `${parentId}:${id}` under `idScope: 'parent'`. The server verifies every step's digest and
+ * count against the staged rows of that step (`StagedPlatformFacts.steps`), so a raw digest for
+ * a parent-scoped step, or two parents' children collapsed on a shared raw id, never verifies.
  */
 export interface ReplayStepEvidenceV1 {
-  /** The mapping spec's step key (or the family token for a canonical-token collection). */
+  /** The mapping spec's step key (or the family token when the spec maps no step to the family). */
   readonly step_key: string;
   /**
    * Pages fetched by this step. A root step (`fan_out: null`) must have fetched ≥ 1 page (the
    * parser refuses 0): a crawl that fetched nothing observed no terminal, so an empty collection
-   * is proven only by a positive GET (unknown is never 0).
+   * is proven only by a positive GET (unknown is never 0). For a fan-out step, the total across
+   * its contexts (≥ `contexts_fetched`).
    */
   readonly pages_fetched: number;
   /** Items the pages held, before identity. */
   readonly raw_items: number;
-  /** Distinct `idField` values among them (never a synthetic id). */
+  /** Distinct staged identities among them (never a synthetic id). */
   readonly distinct_raw_ids: number;
-  /** Items whose id repeated an earlier one. */
+  /** Items whose identity repeated an earlier one. */
   readonly duplicate_ids: number;
-  /** Items given a synthetic positional id; must be 0 (a fabricated identity never proves). */
+  /** Items given a synthetic positional id; must be 0 (a fabricated identity never counts). */
   readonly synthetic_ids: number;
   /** Items without an id; must be 0. */
   readonly missing_id_items: number;
   readonly stop: ReplayStepStop;
-  /** A next link/cursor the last page advertised and the step did not follow; must be false. */
+  /** A next link/cursor the last page advertised and the step did not follow; caps at observed. */
   readonly advertised_next: boolean;
-  /** Pages the source refused (non-2xx, timeout after retries); must be 0. */
+  /** Pages the source refused (non-2xx, timeout after retries); > 0 caps at observed. */
   readonly refused_pages: number;
-  /** `null` for a root collection; a fan-out step must have visited every expected parent page. */
+  /** `null` for a root collection; the parent-bound context claim for a fan-out step. */
   readonly fan_out: ReplayFanOutV1 | null;
-  /** The D-S10-2 identity-set digest of this step's distinct ids. */
+  /** The D-S10-2 identity-set digest of this step's distinct staged identities. */
   readonly id_set_digest: string;
 }
 export const REPLAY_STEP_KEYS = [
@@ -277,7 +309,7 @@ export const REPLAY_STEP_KEYS = [
 
 /**
  * What the extension uploads for `replay_terminal_enumeration`, one per `(platform, scope,
- * family)` (r4: no schema or unique-key change; the row aggregates the family's step evidences).
+ * family)` (r5: no schema or unique-key change; the row aggregates the family's step evidences).
  * Digests, counts and step terminals only: no URL, no source id, no free text. The server binds
  * it to the run through `challenge_b64` (the declaration challenge) and the row's
  * coach/intent/epoch, and proves it only against the staged identity digest (E6).
@@ -315,13 +347,17 @@ export type ObservationEvidenceV1 = SourceSignedEvidenceV1 | ReplayTerminalEvide
 // ── L3 r2: per-family coverage detail (executive reset 2026-09-29 §1, §6, §8) ────────────
 
 /**
- * How a family's SOURCE COUNT was established. `'proven'`: every declared platform's evidence
- * for the family verified (E2–E6, one basis kind) and equals the staged identity set, so the
- * count is the source's. `'unknown'`: anything less (a count is never shown). The projection's
- * `'observed'` (a count of staged rows without proof) is slice L2's, computed from staged facts,
- * never here.
+ * How a family's SOURCE COUNT was established (L0 r5 D-L0-6 "Family count basis", consumed by
+ * D-L0-6.3 `FamilyRowV1.count_basis`). `'proven'`: every step feeding the family on every declared
+ * platform is positively exhausted, every step's digest and count equal its staged rows, the
+ * family's union digest and count equal the staged side (E6) and the step set is exactly the
+ * pinned one. `'observed'`: every feeding step fetched ≥ 1 page (or had no context to visit),
+ * verified the same way, with no `budget`/`cycle`/`error` stop, but at least one step is not
+ * positively exhausted (a short or first page, an advertised next link, a refused page, a
+ * fan-out short of its contexts) — the count is what the lists returned, not their end.
+ * `'unknown'`: anything less; no count is shown (`source_count: null`, never 0).
  */
-export const FAMILY_COUNT_BASES = ['proven', 'unknown'] as const;
+export const FAMILY_COUNT_BASES = ['proven', 'observed', 'unknown'] as const;
 export type FamilyCountBasis = (typeof FAMILY_COUNT_BASES)[number];
 
 /**
@@ -368,11 +404,14 @@ export const COVERAGE_REASON_CODES = [
   'identity_unproven',
   /** A replay row's step counters or digests contradict its family totals. */
   'evidence_inconsistent',
-  /** A fan-out step visited fewer parent contexts than expected, or its pages differ from them. */
+  /**
+   * A fan-out step's context counters contradict each other or its pages (`contexts_fetched` >
+   * `contexts_expected`, `contexts_exhausted` > `contexts_fetched`, or fewer pages than contexts).
+   */
   'fan_out_short',
-  /** A fan-out step's parent step is not in a proven unit of this platform and scope. */
+  /** A fan-out step's parent step is not a verified step of this platform (or its family failed). */
   'fan_out_parent_unproven',
-  /** A fan-out step's `expected` does not equal the parent step's proven `distinct_raw_ids`. */
+  /** A fan-out step's `contexts_expected` does not equal the parent step's verified `distinct_raw_ids`. */
   'fan_out_count_mismatch',
   /** The staged side has no digest for the family (S9-B could not digest it). */
   'staged_digest_missing',
@@ -382,6 +421,18 @@ export const COVERAGE_REASON_CODES = [
   'basis_kind_conflict',
   /** The evaluator hit an unexpected failure and answered unknown for every family. */
   'evaluator_failure',
+  /**
+   * L3 r3 (L0 r5 D-L0-6.3 `GapCode` of the same name): a feeding step is not positively exhausted
+   * (short/first page, advertised next link, refused page, fan-out short of its contexts); the
+   * count is `observed`, never `proven`.
+   */
+  'list_not_exhausted',
+  /** A fan-out step's `parent_ids_digest` is not the parent step's verified `id_set_digest`. */
+  'fan_out_parent_mismatch',
+  /** A fan-out step's parent chain does not end in a root step (self-parent or cycle). */
+  'fan_out_cycle',
+  /** A replay step's `id_set_digest` or `distinct_raw_ids` differs from the staged rows of that step. */
+  'step_staged_mismatch',
 ] as const;
 export type CoverageReasonCode = (typeof COVERAGE_REASON_CODES)[number];
 

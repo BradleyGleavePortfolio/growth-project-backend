@@ -144,7 +144,7 @@ export class ObservationController {
     @Body() body: ScoutRunObservationDto,
   ): Promise<ScoutRunObservationResult> {
     // R21 "body > 32 KiB": the exact received bytes, never a re-serialisation. A request without
-    // the captured raw body is refused (fail closed), never measured some other way. L3 r2 (L0 r4
+    // the captured raw body is refused (fail closed), never measured some other way. L3 r2 (L0 r5
     // D-L0-6): a body whose EVERY entry is the aggregate replay kind may reach 64 KiB; the hard
     // cap is checked before parsing, the 32 KiB cap once the kinds are known.
     const bytes = Buffer.isBuffer(req.rawBody) ? req.rawBody.length : -1;

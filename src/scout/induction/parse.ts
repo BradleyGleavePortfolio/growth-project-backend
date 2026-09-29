@@ -233,9 +233,10 @@ function isReplayStepStop(value: unknown): value is ReplayStepStop {
 }
 
 /**
- * One `ReplayStepEvidenceV1` (r4 `StepEvidenceV1`): strict keys, closed stop, bounded integers,
- * optional fan-out. A root step with `pages_fetched: 0` is refused here (L0 r4 D-L0-6 "unknown is
- * never 0"): it observed no terminal and can never prove, so it is not even stored as evidence.
+ * One `ReplayStepEvidenceV1` (L0 r5 `StepEvidenceV1`): strict keys, closed stop, bounded
+ * integers, optional fan-out. A root step with `pages_fetched: 0` is refused here (r5 D-L0-6
+ * "unknown is never 0"): it observed no terminal and can never prove, so it is not even stored
+ * as evidence. A fan-out step naming itself as parent is refused the same way.
  */
 function parseReplayStep(raw: unknown): ParseResult<ReplayStepEvidenceV1> {
   const obj = asObject(raw);
@@ -276,17 +277,31 @@ function parseReplayStep(raw: unknown): ParseResult<ReplayStepEvidenceV1> {
     if (fan === null) return reject('bad_step');
     const fanKeys = keyRejection(fan, REPLAY_FAN_OUT_KEYS);
     if (fanKeys !== null) return reject(fanKeys);
-    if (!isNonNegativeInt(fan.expected) || !isNonNegativeInt(fan.fetched)) {
+    const { contexts_expected, contexts_fetched, contexts_exhausted } = fan;
+    if (
+      !isNonNegativeInt(contexts_expected) ||
+      !isNonNegativeInt(contexts_fetched) ||
+      !isNonNegativeInt(contexts_exhausted)
+    ) {
       return reject('bad_count');
     }
-    // The parent step the fan-out iterated (bound to the parent's proven count by the
-    // evaluator; same token rules as `step_key`).
+    if (!isHex64(fan.parent_ids_digest)) return reject('bad_digest');
+    // The parent step the fan-out iterated (bound to the parent's verified id set by the
+    // evaluator; same token rules as `step_key`). A step is never its own parent: a self-bound
+    // fan-out would certify itself, so it is a contradiction and not even stored.
     const parent = fan.parent_step;
     if (typeof parent !== 'string' || parent.length === 0 || !isWellFormedString(parent)) {
       return reject('bad_step');
     }
     if (Buffer.byteLength(parent, 'utf8') > REPLAY_STEP_TOKEN_MAX_BYTES) return reject('too_large');
-    fanOut = Object.freeze({ expected: fan.expected, fetched: fan.fetched, parent_step: parent });
+    if (parent === stepKey) return reject('bad_step');
+    fanOut = Object.freeze({
+      parent_step: parent,
+      parent_ids_digest: fan.parent_ids_digest,
+      contexts_expected,
+      contexts_fetched,
+      contexts_exhausted,
+    });
   } else if (pages_fetched === 0) {
     return reject('bad_count'); // a root step that fetched nothing observed no terminal
   }
@@ -402,7 +417,7 @@ export function unitKey(platform: string, scope: string, family: string): string
 
 /**
  * The observation body size bound (R21): ≤ 32 KiB of UTF-8, or ≤ 64 KiB when the caller has
- * established that every entry is the aggregate replay kind (L0 r4 D-L0-6, `bound =
+ * established that every entry is the aggregate replay kind (L0 r5 D-L0-6, `bound =
  * REPLAY_OBSERVATION_BODY_MAX_BYTES`). The route envelope, cardinality and one-per-unit checks
  * are S10-B's; this is only the pure byte bound. Never throws.
  */
@@ -524,6 +539,17 @@ export function parseInductionManifest(raw: unknown, origin: string): InductionM
  * `parseInductionManifest`. With it true a manifest marked `testOnly` is refused (`null`: its
  * platform has no induction package, so it is never provable) and verifiers marked `test_only` are
  * dropped (evidence signed under them never proves).
+ *
+ * L3 r3 (executive reset 2026-09-29 §1; L0 r5 D-L0-6 "`complete` is unreachable until CL", L14
+ * "a `source_signed_enumeration` manifest is refused outside dev/test"; closes `R589-c7A-01`):
+ * with `refuseTestOnly` true a manifest that lists ANY verifier-bound kind
+ * (`VERIFIER_BOUND_BASIS_KINDS`, i.e. `source_signed_enumeration`) for any family is refused
+ * too, marker or no marker. That kind is the only one the evaluator turns into a `CoverageFact`
+ * with `known: true` (the one input from which S9 can settle `complete`), and until a
+ * completeness-closure record lands no production package may have it. The rule is on the KIND,
+ * independent of artifact labels, so an unmarked signed manifest committed to `sources/` cannot
+ * reach `complete` in a production runtime; in development/test the kind stays available for
+ * the S10/S11 proof harnesses.
  */
 export function parseInductionManifestForRuntime(
   raw: unknown,
@@ -533,11 +559,19 @@ export function parseInductionManifestForRuntime(
   const { manifest, testOnly, testOnlyKeyIds } = parseManifest(raw, origin);
   if (!refuseTestOnly) return manifest;
   if (testOnly) return null;
+  if (listsVerifierBoundKind(manifest)) return null;
   if (testOnlyKeyIds.size === 0) return manifest;
   return Object.freeze({
     ...manifest,
     verifiers: Object.freeze(manifest.verifiers.filter((v) => !testOnlyKeyIds.has(v.key_id))),
   });
+}
+
+/** Whether any family of the manifest lists a verifier-bound (source-signed) basis kind. */
+export function listsVerifierBoundKind(manifest: InductionManifestV1): boolean {
+  return manifest.expectedFamilies.some((family) =>
+    (manifest.basisKinds[family] ?? []).some((kind) => VERIFIER_BOUND_BASIS_KINDS.includes(kind)),
+  );
 }
 
 function parseManifest(raw: unknown, origin: string): ParsedManifest {

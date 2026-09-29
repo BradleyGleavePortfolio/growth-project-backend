@@ -224,14 +224,16 @@ export function declarationPairKeys(declaration: NormalizedDeclaration): string[
 // ── POST /api/scout/runs/observation ────────────────────────────────────────────────────
 
 /**
- * OpenAPI shape of one `ReplayStepEvidenceV1` (L3, L0 r4 `StepEvidenceV1`; validated strictly by
- * `parseEvidence`). One entry per step, `:s`/`:q` variant or probe feeding the family.
+ * OpenAPI shape of one `ReplayStepEvidenceV1` (L3, L0 r5 `StepEvidenceV1`; validated strictly by
+ * `parseEvidence`). One entry per step, `:s`/`:q` variant or probe feeding the family. Counts
+ * and digests are over the step's STAGED identity (composed `parent:id` under `idScope:
+ * 'parent'`), the same string staged as `sourceId`.
  */
 export class ScoutRunReplayStepEvidenceSchema {
   @ApiProperty({
     description:
-      "The pinned mapping spec's step key feeding the family (or the family token for a " +
-      'canonical-token collection). Never a URL.',
+      "The pinned mapping spec's step key feeding the family (or the family token, only when " +
+      'the spec maps no step to the family). Never a URL.',
     minLength: 1,
     maxLength: REPLAY_STEP_TOKEN_MAX_BYTES,
   })
@@ -240,7 +242,8 @@ export class ScoutRunReplayStepEvidenceSchema {
   @ApiProperty({
     description:
       'Pages fetched. A root step (fan_out null) must have fetched at least 1 page: a crawl that ' +
-      'fetched nothing observed no terminal and is refused (unknown is never 0).',
+      'fetched nothing observed no terminal and is refused (unknown is never 0). For a fan-out, ' +
+      'the page total across its contexts (at least contexts_fetched).',
     minimum: 0,
   })
   pages_fetched!: number;
@@ -248,7 +251,10 @@ export class ScoutRunReplayStepEvidenceSchema {
   @ApiProperty({ description: 'Items the pages held, before identity.', minimum: 0 })
   raw_items!: number;
 
-  @ApiProperty({ description: 'Distinct id values among them (never a synthetic id).', minimum: 0 })
+  @ApiProperty({
+    description: 'Distinct staged identities among them (never a synthetic id).',
+    minimum: 0,
+  })
   distinct_raw_ids!: number;
 
   @ApiProperty({ description: 'Items whose id repeated an earlier one.', minimum: 0 })
@@ -266,41 +272,57 @@ export class ScoutRunReplayStepEvidenceSchema {
   @ApiProperty({
     enum: [...REPLAY_STEP_STOPS],
     description:
-      'How the step stopped. Only absent_next, empty_page and short_page (after ≥ 1 page) are ' +
-      'pagination terminals; none_proven, budget, cycle, error and advertised_next never prove.',
+      'How the step stopped (L0 r5 StopReason). Only empty_page (page style) and absent_next ' +
+      '(cursor / next_url style), after ≥ 1 page, prove exhaustion; short_page and ' +
+      'first_page_only yield an observed count; budget, cycle and error yield unknown; ' +
+      'advertised_next caps the family at observed.',
   })
   stop!: string;
 
   @ApiProperty({
     description:
-      'A next link or cursor the last page advertised and the step did not follow; must be false.',
+      'A next link or cursor the last page advertised and the step did not follow; true caps ' +
+      'the family at observed.',
   })
   advertised_next!: boolean;
 
-  @ApiProperty({ description: 'Pages the source refused; must be 0.', minimum: 0 })
+  @ApiProperty({
+    description: 'Pages the source refused; more than 0 caps the family at observed.',
+    minimum: 0,
+  })
   refused_pages!: number;
 
   @ApiProperty({
     description:
-      'null for a root collection; a fan-out step reports {expected, fetched, parent_step} and ' +
-      'must have visited every expected parent context (fetched = expected = pages_fetched). ' +
-      'parent_step names the step whose identities it iterated; the server proves expected only ' +
-      'against that parent step’s verified distinct_raw_ids inside a proven family.',
+      'null for a root collection. A fan-out step (L0 r5 D-L0-6) reports parent_step (the step ' +
+      'whose identities it iterated; never itself), parent_ids_digest (the D-S10-2 digest of the ' +
+      'DISTINCT parent identities it fetched a context for — the server requires equality with ' +
+      'that parent step’s verified id_set_digest), contexts_expected (= the parent’s verified ' +
+      'distinct_raw_ids), contexts_fetched and contexts_exhausted (each parent once). Proven only ' +
+      'when all three context counts are equal and the parent chain ends in a root step.',
     type: 'object',
     nullable: true,
-    // All three keys are mandatory on the wire; the strict server parser enforces that (a nested
+    // All five keys are mandatory on the wire; the strict server parser enforces that (a nested
     // `required` list is not expressible through this decorator without a second class).
     properties: {
-      expected: { type: 'number', minimum: 0 },
-      fetched: { type: 'number', minimum: 0 },
       parent_step: { type: 'string', minLength: 1, maxLength: REPLAY_STEP_TOKEN_MAX_BYTES },
+      parent_ids_digest: { type: 'string', pattern: HEX64_PATTERN.source },
+      contexts_expected: { type: 'number', minimum: 0 },
+      contexts_fetched: { type: 'number', minimum: 0 },
+      contexts_exhausted: { type: 'number', minimum: 0 },
     },
   })
-  fan_out!: { expected: number; fetched: number; parent_step: string } | null;
+  fan_out!: {
+    parent_step: string;
+    parent_ids_digest: string;
+    contexts_expected: number;
+    contexts_fetched: number;
+    contexts_exhausted: number;
+  } | null;
 
   @ApiProperty({
     pattern: HEX64_PATTERN.source,
-    description: 'The D-S10-2 identity-set digest of this step’s distinct ids.',
+    description: 'The D-S10-2 identity-set digest of this step’s distinct staged identities.',
   })
   id_set_digest!: string;
 }

@@ -1214,7 +1214,7 @@ describe('importer contract (R80 freeze)', () => {
         maxItems: 64,
         items: { $ref: '#/components/schemas/ScoutRunReplayStepEvidenceSchema' },
       });
-      // L3 r2 (L0 r4 D-L0-6 StepEvidenceV1): one step evidence per step, variant or probe.
+      // L3 r3 (L0 r5 D-L0-6 StepEvidenceV1): one step evidence per step, variant or probe.
       expect(Object.keys(props('ScoutRunReplayStepEvidenceSchema')).sort()).toEqual([
         'advertised_next',
         'distinct_raw_ids',
@@ -1233,16 +1233,20 @@ describe('importer contract (R80 freeze)', () => {
         'absent_next',
         'empty_page',
         'short_page',
-        'none_proven',
+        'first_page_only',
         'budget',
         'cycle',
         'error',
         'advertised_next',
       ]);
-      expect(rec(rec(props('ScoutRunReplayStepEvidenceSchema').fan_out).properties)).toMatchObject({
-        expected: { type: 'number', minimum: 0 },
-        fetched: { type: 'number', minimum: 0 },
+      // L0 r5 D-L0-6 fan-out: parent-bound contexts (`parent_step` additive until the pin carries
+      // `forEach`); the r2 `expected`/`fetched` pair is gone.
+      expect(rec(rec(props('ScoutRunReplayStepEvidenceSchema').fan_out).properties)).toEqual({
         parent_step: { type: 'string', minLength: 1, maxLength: 256 },
+        parent_ids_digest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+        contexts_expected: { type: 'number', minimum: 0 },
+        contexts_fetched: { type: 'number', minimum: 0 },
+        contexts_exhausted: { type: 'number', minimum: 0 },
       });
       const result = props('ScoutRunObservationResult');
       expect(Object.keys(result).sort()).toEqual([

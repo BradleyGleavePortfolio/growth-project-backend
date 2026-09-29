@@ -8,7 +8,9 @@ import {
   PROVING_BASIS_KINDS,
   REPLAY_EVIDENCE_KEYS,
   REPLAY_STEP_STOPS,
-  REPLAY_TERMINAL_STOPS,
+  REPLAY_ABORTED_STOPS,
+  REPLAY_EXHAUSTED_STOPS,
+  REPLAY_OBSERVED_STOPS,
   VERIFIER_BOUND_BASIS_KINDS,
   STATEMENT_KEYS,
 } from '../../../src/scout/induction/contract';
@@ -60,9 +62,21 @@ describe('closed vocabularies', () => {
     expect(new Set(REPLAY_EVIDENCE_KEYS).size).toBe(10);
     // Both evidence shapes share the six common keys and differ only in the kind-specific tail.
     expect([...REPLAY_EVIDENCE_KEYS].slice(0, 6)).toEqual([...EVIDENCE_KEYS].slice(0, 6));
-    // L0 r4 D-L0-6: the three positive terminals lead the closed stop set.
-    expect([...REPLAY_STEP_STOPS].slice(0, 3)).toEqual([...REPLAY_TERMINAL_STOPS]);
-    expect(REPLAY_STEP_STOPS).toHaveLength(8);
+    // L0 r5 D-L0-6 `StopReason`, verbatim: two positive terminals, two observed stops, three
+    // aborts and `advertised_next`; the classes partition the set.
+    expect([...REPLAY_STEP_STOPS]).toEqual([
+      'absent_next',
+      'empty_page',
+      'short_page',
+      'first_page_only',
+      'budget',
+      'cycle',
+      'error',
+      'advertised_next',
+    ]);
+    expect(
+      [...REPLAY_EXHAUSTED_STOPS, ...REPLAY_OBSERVED_STOPS, ...REPLAY_ABORTED_STOPS].sort(),
+    ).toEqual([...REPLAY_STEP_STOPS].filter((s) => s !== 'advertised_next').sort());
     expect(new Set(MANIFEST_KEYS).size).toBe(6);
   });
 });

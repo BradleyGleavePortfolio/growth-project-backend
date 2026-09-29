@@ -4,10 +4,12 @@ import type { CoverageFact } from '../reconciliation/types';
 import { isCanonicalPlatform } from '../scout-platform';
 import {
   CHALLENGE_BYTES,
-  REPLAY_TERMINAL_STOPS,
+  REPLAY_ABORTED_STOPS,
+  REPLAY_EXHAUSTED_STOPS,
   type CoverageReasonCode,
   type FamilyCountBasis,
   type ProvingBasisKind,
+  type ReplayFanOutV1,
 } from './contract';
 import { EMPTY_IDENTITY_SET_DIGEST, type IdentitySetDigest } from './digest';
 import type { InductionPackage, InductionRegistry } from './manifest-registry';
@@ -27,20 +29,27 @@ import {
 // `arbiter.ts`): every input it cannot prove yields `{known: false}`, never a count of 0. It
 // dispatches on `basis_kind` only and never on a source name (D-S10-8).
 //
-// L3 (owner D1, 2026-09-28; L0 r4 D-L0-6) adds the `replay_terminal_enumeration` rule
-// (`proveReplayTerminalEnumeration`), fail-closed: the extension's per-step exhaustion evidence,
-// bound to the run's challenge and proven only by digest AND count equality with the staged side
-// (E6); any non-terminal stop, advertised next link, refused page, root step that fetched no
-// page, synthetic or missing id, fan-out short of its parent set or whose `expected` is not the
-// parent step's PROVEN count, step set short of the spec's, or digest/count mismatch is unknown
-// (never 0).
+// L3 (owner D1, 2026-09-28; L0 r5 D-L0-6 "Per-family counting evidence is kept") adds the
+// `replay_terminal_enumeration` rule (`proveReplayTerminalEnumeration`), fail-closed: the
+// extension's per-step evidence, bound to the run's challenge, every step verified against the
+// staged rows of THAT step (digest and count; `StagedPlatformFacts.steps`), the family proven
+// only by digest AND count equality with the staged side (E6). A step is positively exhausted
+// only at `empty_page` / `absent_next` after ≥ 1 page with no advertised next link and no refused
+// page; a fan-out step only when its parent binding (`parent_ids_digest` = the parent step's
+// verified digest, `contexts_expected` = its count, chain ending in a root step) holds and every
+// context is exhausted. Family `count_basis` (r5): `proven` iff every feeding step is exhausted;
+// `observed` iff every step fetched and none aborted (`budget`/`cycle`/`error`) but one is not
+// exhausted (short/first page, advertised next, refused page, fan-out short); `unknown` for
+// anything else — a missing/extra/duplicate step, a synthetic or missing id, an inconsistent
+// row, a fan-out whose parent is unverified, self or cyclic, or a staged mismatch (never 0).
 //
 // Executive reset 2026-09-29 §1/§8: NO package has a run-level completeness closure until a
-// separate closure record lands. So a replay-proven family yields a PROVEN SOURCE COUNT in
-// `CoverageEvaluation.families` (for the one run-status projection, slice L2) but NEVER a
+// separate closure record lands. So a replay-counted family yields a SOURCE COUNT in
+// `CoverageEvaluation.families` (for the one run-status projection, slice L2d) but NEVER a
 // `CoverageFact` with `known: true`: the reconciler cannot see the replay kind at all, and the run
 // settles `partial/coverage_basis_unknown` through the existing reason channel. `complete` stays
-// reachable only through `source_signed_enumeration` (test-only outside dev/test, S12-B2).
+// reachable only through `source_signed_enumeration`, whose manifests the loader refuses outside
+// an explicit development/test runtime (`parseInductionManifestForRuntime`, S12-B2 + L3 r3).
 // `evaluateCoverage` (the S9 facts) is otherwise unchanged; `evaluateCoverageDetailed` adds the
 // typed per-family structure (closed reason codes in `COVERAGE_REASON_CODES`).
 
@@ -81,6 +90,15 @@ export interface StagedPlatformFacts {
    * must be present (zero rows → the empty-set digest); a grouped family absent here is unknown.
    */
   readonly families: ReadonlyMap<string, IdentitySetDigest | null>;
+  /**
+   * L3 r3: per-STEP staged digest, keyed by the staged `entity_type` token (a spec step key or
+   * the family token), over the `source_id`s staged under it — the same rows the family digests
+   * union. Every step of the platform's spec must be present (zero rows → the empty-set digest);
+   * a replay step with no entry here is unknown (`staged_digest_missing`). This is what makes a
+   * multi-step family's per-step digests, and a fan-out's parent id set, verifiable
+   * (`R589-c7A-04`, `R589-c7B-02`).
+   */
+  readonly steps: ReadonlyMap<string, IdentitySetDigest | null>;
 }
 
 /** One staged platform in the evaluator index; supplied twice → `conflict` (E6, fails closed). */
@@ -109,15 +127,18 @@ export interface CoverageReason {
  * present only with `count_basis: 'proven'`; unknown is `null`, never 0.
  */
 export interface FamilyCoverageDetail {
-  /** The proven distinct source ids for the family across its declared platforms, else `null`. */
+  /**
+   * The distinct source ids for the family across its declared platforms under `proven` or
+   * `observed` (L0 r5 D-L0-6: the union distinct id count), else `null` — never 0 for unknown.
+   */
   readonly source_count: number | null;
   readonly count_basis: FamilyCountBasis;
-  /** The single basis kind that proved the count, else `null`. */
+  /** The single basis kind that established the count, else `null`. */
   readonly basis_kind: ProvingBasisKind | null;
   /**
    * Why the family is not a run-level basis. `[]` iff `facts[family]` is `known: true` and covers
-   * the staged set. A replay-proven family always carries `completeness_not_proven` (no
-   * completeness closure exists for any package yet).
+   * the staged set. A replay-counted family always carries `completeness_not_proven` (no
+   * completeness closure exists for any package yet); an `observed` one also `list_not_exhausted`.
    */
   readonly reasons: readonly CoverageReason[];
 }
@@ -136,24 +157,34 @@ export interface CoverageEvaluation {
 const SIGNED_KIND = 'source_signed_enumeration' as const;
 const REPLAY_KIND = 'replay_terminal_enumeration' as const;
 
-/** One fan-out step's binding claim: `expected` parent contexts, iterated over `parentStep`. */
-interface FanOutClaim {
-  readonly parentStep: string;
-  readonly expected: number;
+/** One replay step verified against the staged rows of that step (count and digest equal). */
+interface VerifiedStep {
+  readonly stepKey: string;
+  /** The step's distinct staged identities (= `distinct_raw_ids` = the staged count). */
+  readonly count: number;
+  /** The step's `id_set_digest` (= the staged digest of the step). */
+  readonly digest: string;
+  /**
+   * Positively exhausted on its own terms: `empty_page`/`absent_next`, no advertised next link,
+   * no refused page and, for a fan-out, every expected context fetched and exhausted. The parent
+   * binding of a fan-out is checked by `evaluate` across the platform's units.
+   */
+  readonly exhausted: boolean;
+  readonly fanOut: ReplayFanOutV1 | null;
 }
 
-/** One proven `(platform, scope, family)` unit: its verified count, digest and basis kind. */
+/** One verified `(platform, scope, family)` unit: its count, digest, basis kind and steps. */
 interface ProvenUnit {
   readonly observed: number;
   readonly idSetDigest: string;
   readonly kind: ProvingBasisKind;
-  /** L3 r2: the replay steps' distinct id counts by step key (a fan-out's parent is looked up here). */
-  readonly stepCounts: ReadonlyMap<string, number>;
-  /** L3 r2: fan-out claims still to be bound to their parent step's proven count. */
-  readonly fanOuts: readonly FanOutClaim[];
+  /** Every step exhausted (a signed statement is exhausted by definition: `end_of_list`). */
+  readonly exhausted: boolean;
+  /** L3 r3: the replay steps, verified; `[]` for a signed unit. */
+  readonly steps: readonly VerifiedStep[];
 }
 
-/** A unit either proves or names the ONE reason it does not (the first failing check). */
+/** A unit either verifies or names the ONE reason it does not (the first failing check). */
 type UnitResult =
   | { readonly ok: true; readonly unit: ProvenUnit }
   | { readonly ok: false; readonly code: CoverageReasonCode };
@@ -173,6 +204,8 @@ interface FamilyAccumulator {
   failed: boolean;
   observed: number;
   covers: boolean;
+  /** L3 r3: every counting platform exhausted every step (else the count is `observed`). */
+  exhausted: boolean;
   /** The one basis kind every proven platform used; two kinds in one family fail closed. */
   kind: ProvingBasisKind | null;
   /** L3 r2: why the family is unknown (empty iff known); first occurrence order, deduplicated. */
@@ -258,7 +291,14 @@ function indexObservations(rows: readonly StoredObservation[]): IndexedObservati
   return { byUnit, poisonedUnits, poisonedAll };
 }
 
-/** E2-E5 for one `(platform, scope, family)` unit; the proven unit, or the reason it is not. */
+/**
+ * The staged digest of one step token for the platform. `undefined` when the caller supplied no
+ * staged facts for the platform at all (nothing staged: every step is the empty set); `null`
+ * when the platform was staged but this step has no digest (unknown, never 0).
+ */
+type StagedStepLookup = (stepKey: string) => IdentitySetDigest | null;
+
+/** E2-E5 for one `(platform, scope, family)` unit; the verified unit, or the reason it is not. */
 function proveUnit(
   pkg: InductionPackage,
   platform: string,
@@ -267,6 +307,7 @@ function proveUnit(
   run: RunBinding,
   challenge: Buffer,
   index: IndexedObservations,
+  stagedStep: StagedStepLookup,
 ): UnitResult {
   const key = unitKey(platform, scope, family);
   if (index.poisonedAll || index.poisonedUnits.has(key)) return unproven('evidence_malformed');
@@ -304,7 +345,15 @@ function proveUnit(
         parsed,
       );
     case REPLAY_KIND:
-      return proveReplayTerminalEnumeration(pkg, platform, scope, family, challenge, parsed);
+      return proveReplayTerminalEnumeration(
+        pkg,
+        platform,
+        scope,
+        family,
+        challenge,
+        parsed,
+        stagedStep,
+      );
     default:
       return unproven('evidence_unbound');
   }
@@ -350,26 +399,28 @@ function proveSourceSignedEnumeration(
       observed: statement.observed_unique,
       idSetDigest: statement.id_set_digest,
       kind: SIGNED_KIND,
-      stepCounts: new Map(),
-      fanOuts: [],
+      exhausted: true,
+      steps: [],
     },
   };
 }
 
 /**
- * L3 E4 for `replay_terminal_enumeration` (L0 r4 D-L0-6 "Pagination exhaustion is proven per
- * endpoint, positively"). The evidence must name this unit and the run's declaration challenge,
- * and report a step evidence for every collection step the pinned package maps to the family (a
- * canonical-token collection may appear as the family token); a missing, extra or duplicate step
- * key is unknown. Every step must be exhausted: stopped at `absent_next`, `empty_page` or
- * `short_page` after ≥ 1 page, no advertised next link, zero refused pages, no synthetic or
- * missing id. A fan-out step must have visited every expected parent context (`fetched ===
- * expected === pages_fetched`); its `expected` is bound to the parent step's proven
- * `distinct_raw_ids` by `evaluate` (`fanOuts`). The row's step counters must agree with its
- * family totals (a single-step family's step digest and count ARE the family's). Anything else is
- * a truncated or inconsistent crawl: unknown, never 0. The count and digest are proven against the
- * staged side by the caller (E6, equality only). The package carries no pagination style yet, so
- * the terminal set is style-agnostic (see the L3 record §3).
+ * L3 E4 for `replay_terminal_enumeration` (L0 r5 D-L0-6). The evidence must name this unit and
+ * the run's declaration challenge and report EXACTLY the step set the pinned package maps to the
+ * family (the family token alone when the spec maps no step to it); a missing, extra or
+ * duplicate step key is unknown. Per step, in this order: a synthetic or missing id is
+ * `identity_unproven`; contradictory counters are `evidence_inconsistent`; a `budget`/`cycle`/
+ * `error` stop is `crawl_truncated`; a step that fetched no page (a root step, or a fan-out with
+ * contexts to visit) is `zero_pages_fetched`; fan-out counters that contradict each other or the
+ * pages are `fan_out_short`. The family totals must be consistent with the steps (a single step
+ * IS the family). Then every step's `id_set_digest` and `distinct_raw_ids` must equal the staged
+ * rows of that step (`staged_digest_missing` / `step_staged_mismatch`) — that is what makes a
+ * multi-step union and a fan-out's parent id set verifiable. The unit is `exhausted` iff every step
+ * stopped at `empty_page`/`absent_next`, advertised no next link, had no refused page and, for a
+ * fan-out, fetched and exhausted every expected context; otherwise the count is at most
+ * `observed`. The parent binding of every fan-out (digest, count, no self/cycle, chain to a root
+ * step) and the E6 equality with the staged family are the caller's.
  */
 function proveReplayTerminalEnumeration(
   pkg: InductionPackage,
@@ -378,6 +429,7 @@ function proveReplayTerminalEnumeration(
   family: string,
   challenge: Buffer,
   parsed: ParsedReplayTerminalEvidence,
+  stagedStep: StagedStepLookup,
 ): UnitResult {
   const { evidence } = parsed;
   if (evidence.source_platform !== platform) return unproven('evidence_unbound');
@@ -386,21 +438,16 @@ function proveReplayTerminalEnumeration(
   if (!parsed.challenge.equals(challenge)) return unproven('evidence_unbound');
   if (!isCanonicalFamily(family)) return unproven('evidence_unbound');
 
+  // r5: every step of the pinned package feeding the family, nothing else; the family token is a
+  // step only when the spec maps no other step to the family (a canonical-token collection).
   const specSteps = pkg.stepsByFamily.get(family) ?? [];
-  const reported = new Set(evidence.steps.map((s) => s.step_key));
-  // Every spec step feeding the family needs a terminal; no step outside the spec (or the
-  // family's own token) may be reported.
-  if (!specSteps.every((step) => reported.has(step))) return unproven('step_set_mismatch');
-  for (const step of reported) {
-    if (step !== family && !specSteps.includes(step)) return unproven('step_set_mismatch');
-  }
-  const fanOuts: FanOutClaim[] = [];
-  const stepCounts = new Map<string, number>();
+  const expected = specSteps.length > 0 ? specSteps : [family];
+  const reported = evidence.steps.map((s) => s.step_key);
+  if (!sameSet(reported, expected)) return unproven('step_set_mismatch');
+
+  // The row's own consistency first (no staged data needed), then every step against staging.
   let distinctSum = 0;
   for (const step of evidence.steps) {
-    if (!REPLAY_TERMINAL_STOPS.includes(step.stop)) return unproven('crawl_truncated');
-    if (step.advertised_next) return unproven('crawl_truncated');
-    if (step.refused_pages !== 0) return unproven('crawl_truncated');
     if (step.synthetic_ids !== 0 || step.missing_id_items !== 0) {
       return unproven('identity_unproven');
     }
@@ -408,14 +455,17 @@ function proveReplayTerminalEnumeration(
     if (step.distinct_raw_ids + step.duplicate_ids > step.raw_items) {
       return unproven('evidence_inconsistent');
     }
-    if (step.fan_out === null) {
+    if (REPLAY_ABORTED_STOPS.includes(step.stop)) return unproven('crawl_truncated');
+    const fan = step.fan_out;
+    if (fan === null) {
       if (step.pages_fetched < 1) return unproven('zero_pages_fetched');
     } else {
-      if (step.fan_out.fetched !== step.fan_out.expected) return unproven('fan_out_short');
-      if (step.pages_fetched !== step.fan_out.fetched) return unproven('fan_out_short');
-      fanOuts.push({ parentStep: step.fan_out.parent_step, expected: step.fan_out.expected });
+      if (fan.contexts_fetched > fan.contexts_expected) return unproven('fan_out_short');
+      if (fan.contexts_exhausted > fan.contexts_fetched) return unproven('fan_out_short');
+      if (step.pages_fetched < fan.contexts_fetched) return unproven('fan_out_short');
+      // A fan-out with contexts to visit that fetched no page observed nothing (unknown, never 0).
+      if (fan.contexts_expected > 0 && step.pages_fetched < 1) return unproven('zero_pages_fetched');
     }
-    stepCounts.set(step.step_key, step.distinct_raw_ids);
     distinctSum += step.distinct_raw_ids;
   }
   // The family totals are the union of the steps' id sets: never more than their sum, and for
@@ -428,14 +478,41 @@ function proveReplayTerminalEnumeration(
     }
     if (only.id_set_digest !== evidence.id_set_digest) return unproven('evidence_inconsistent');
   }
+  // L3 r3: every step's own identities against the rows staged under its token — the check
+  // that makes a multi-step union and a fan-out's parent id set verifiable.
+  const steps: VerifiedStep[] = [];
+  let exhausted = true;
+  for (const step of evidence.steps) {
+    const stagedDigest = stagedStep(step.step_key);
+    if (stagedDigest === null) return unproven('staged_digest_missing');
+    if (stagedDigest.digest !== step.id_set_digest || stagedDigest.count !== step.distinct_raw_ids) {
+      return unproven('step_staged_mismatch');
+    }
+    const fan = step.fan_out;
+    const stepExhausted =
+      REPLAY_EXHAUSTED_STOPS.includes(step.stop) &&
+      !step.advertised_next &&
+      step.refused_pages === 0 &&
+      (fan === null ||
+        (fan.contexts_fetched === fan.contexts_expected &&
+          fan.contexts_exhausted === fan.contexts_expected));
+    exhausted = exhausted && stepExhausted;
+    steps.push({
+      stepKey: step.step_key,
+      count: step.distinct_raw_ids,
+      digest: step.id_set_digest,
+      exhausted: stepExhausted,
+      fanOut: fan,
+    });
+  }
   return {
     ok: true,
     unit: {
       observed: evidence.observed_unique,
       idSetDigest: evidence.id_set_digest,
       kind: REPLAY_KIND,
-      stepCounts,
-      fanOuts,
+      exhausted,
+      steps,
     },
   };
 }
@@ -447,23 +524,63 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 
 /** One platform's provisional per-family proof, before fan-out binding and accumulation. */
 interface PlatformFamilyProof {
-  readonly unit: ProvenUnit;
+  unit: ProvenUnit;
   readonly covers: boolean;
 }
 
-/** The proven `distinct_raw_ids` of `stepKey` among this platform's proven units, or `null`. */
-function provenStepCount(
-  proofs: ReadonlyMap<string, PlatformFamilyProof>,
-  stepKey: string,
-): number | null {
-  let found: number | null = null;
-  for (const proof of proofs.values()) {
-    const count = proof.unit.stepCounts.get(stepKey);
-    if (count === undefined) continue;
-    if (found !== null) return null; // the same step key in two proven rows: ambiguous
-    found = count;
+/** A verified step of the platform, with the family whose unit it belongs to. */
+interface IndexedStep {
+  readonly family: string;
+  readonly step: VerifiedStep;
+}
+
+/**
+ * L3 r3: every verified step of the platform by step key. A key verified in two units is
+ * ambiguous and is dropped (no fan-out can bind to it).
+ */
+function indexSteps(proofs: ReadonlyMap<string, PlatformFamilyProof>): Map<string, IndexedStep> {
+  const index = new Map<string, IndexedStep>();
+  const ambiguous = new Set<string>();
+  for (const [family, proof] of proofs) {
+    for (const step of proof.unit.steps) {
+      if (index.has(step.stepKey)) ambiguous.add(step.stepKey);
+      else index.set(step.stepKey, { family, step });
+    }
   }
-  return found;
+  for (const key of ambiguous) index.delete(key);
+  return index;
+}
+
+/**
+ * L3 r3 (L0 r5 D-L0-6 "Fan-out"; `R589-c7A-03`, `R589-c7B-02`): the parent binding of one
+ * fan-out step against the platform's verified steps. The parent must be a verified step of
+ * another family-unit or the same one, its digest must equal `parent_ids_digest` and its count
+ * `contexts_expected`, and following parents must reach a root step without revisiting a step
+ * (no self-parent, no cycle). Returns the reason it does not, or the parent chain's families.
+ */
+function bindFanOut(
+  own: string,
+  step: VerifiedStep,
+  index: ReadonlyMap<string, IndexedStep>,
+): { readonly ok: true; readonly parents: readonly string[] } | { readonly ok: false; readonly code: CoverageReasonCode } {
+  const visited = new Set<string>([step.stepKey]);
+  const parents: string[] = [];
+  let current: VerifiedStep = step;
+  while (current.fanOut !== null) {
+    const parent = index.get(current.fanOut.parent_step);
+    if (parent === undefined) return { ok: false, code: 'fan_out_parent_unproven' };
+    if (visited.has(parent.step.stepKey)) return { ok: false, code: 'fan_out_cycle' };
+    if (current.fanOut.parent_ids_digest !== parent.step.digest) {
+      return { ok: false, code: 'fan_out_parent_mismatch' };
+    }
+    if (current.fanOut.contexts_expected !== parent.step.count) {
+      return { ok: false, code: 'fan_out_count_mismatch' };
+    }
+    visited.add(parent.step.stepKey);
+    if (parent.family !== own) parents.push(parent.family);
+    current = parent.step;
+  }
+  return { ok: true, parents };
 }
 
 function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
@@ -471,7 +588,7 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
   const touch = (family: string): FamilyAccumulator => {
     let entry = acc.get(family);
     if (entry === undefined) {
-      entry = { failed: false, observed: 0, covers: true, kind: null, reasons: [] };
+      entry = { failed: false, observed: 0, covers: true, exhausted: true, kind: null, reasons: [] };
       acc.set(family, entry);
     }
     return entry;
@@ -527,6 +644,15 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
       }
       continue;
     }
+    // L3 r3: the staged rows of one step token. Nothing staged for the platform at all → every
+    // step is the empty set (like the family rule below); staged but no digest for the token →
+    // unknown. A non-Map `steps` (hostile input) reads as "no digest".
+    const stepDigests = stagedFacts?.steps;
+    const stagedStep: StagedStepLookup = (stepKey) => {
+      if (stagedFacts === undefined) return { digest: EMPTY_IDENTITY_SET_DIGEST, count: 0 };
+      if (!(stepDigests instanceof Map)) return null;
+      return stepDigests.get(stepKey) ?? null;
+    };
 
     // Pass 1: per family, the unit proof (E2-E5) and the staged-side equality (E6).
     const proofs = new Map<string, PlatformFamilyProof>();
@@ -536,7 +662,16 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
       let unitDigest: string | null = null;
       let unitCode: CoverageReasonCode | null = null;
       for (const scope of scopes) {
-        const result = proveUnit(pkg, platform, scope, family, run, declaration.challenge, index);
+        const result = proveUnit(
+          pkg,
+          platform,
+          scope,
+          family,
+          run,
+          declaration.challenge,
+          index,
+          stagedStep,
+        );
         if (!result.ok) unitCode = result.code;
         else {
           observed += result.unit.observed;
@@ -580,22 +715,42 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
       proofs.set(family, { unit: { ...unit, observed }, covers });
     }
 
-    // Pass 2 (L3 r2, L0 r4 D-L0-6): bind every fan-out claim to its parent step's PROVEN
-    // `distinct_raw_ids` — a step of a family this platform proved (E6), possibly its own. A
-    // parent whose family is unproven (including through its own fan-out) unproves the child,
-    // so the pass repeats until nothing changes (bounded by the family count).
+    // Pass 2 (L3 r3, L0 r5 D-L0-6 "Fan-out"): bind every fan-out step to its parent step's
+    // VERIFIED id set among this platform's units — digest, count, no self-parent, no cycle, a
+    // chain that ends in a root step. A failed parent family unproves the child, so the pass
+    // repeats until nothing changes (bounded by the family count).
     let changed = true;
     while (changed) {
       changed = false;
+      const stepIndex = indexSteps(proofs);
       for (const [family, proof] of proofs) {
-        for (const claim of proof.unit.fanOuts) {
-          const parentCount = provenStepCount(proofs, claim.parentStep);
-          if (parentCount === null) {
-            fail(family, 'fan_out_parent_unproven', platform);
-          } else if (parentCount !== claim.expected) {
-            fail(family, 'fan_out_count_mismatch', platform);
-          } else continue;
+        for (const step of proof.unit.steps) {
+          if (step.fanOut === null) continue;
+          const bound = bindFanOut(family, step, stepIndex);
+          if (bound.ok) continue;
+          fail(family, bound.code, platform);
           proofs.delete(family);
+          changed = true;
+          break;
+        }
+        if (changed) break;
+      }
+    }
+    // Pass 3: a fan-out over a parent that is only observed (not exhausted) cannot itself be
+    // proven — its context set is the parent's incomplete list. Propagate until stable.
+    const stepIndex = indexSteps(proofs);
+    changed = true;
+    while (changed) {
+      changed = false;
+      for (const [family, proof] of proofs) {
+        if (!proof.unit.exhausted) continue;
+        for (const step of proof.unit.steps) {
+          if (step.fanOut === null) continue;
+          const bound = bindFanOut(family, step, stepIndex);
+          const parentsExhausted =
+            bound.ok && bound.parents.every((p) => proofs.get(p)?.unit.exhausted === true);
+          if (parentsExhausted) continue;
+          proof.unit = { ...proof.unit, exhausted: false };
           changed = true;
           break;
         }
@@ -612,6 +767,8 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
       entry.kind = proof.unit.kind;
       entry.observed += proof.unit.observed;
       entry.covers = entry.covers && proof.covers;
+      entry.exhausted = entry.exhausted && proof.unit.exhausted;
+      if (!proof.unit.exhausted) note(family, 'list_not_exhausted', platform);
       // A signed count that does not equal the staged set is a fact worth showing, not a basis.
       if (!proof.covers) note(family, 'staged_mismatch', platform);
     }
@@ -643,13 +800,15 @@ function evaluate(input: CoverageEvaluationInput): CoverageEvaluation {
       continue;
     }
     if (entry.kind === REPLAY_KIND) {
-      // Executive reset 2026-09-29 §1: a proven SOURCE COUNT, never a run-level basis — no
-      // completeness closure exists for any package, so the reconciler never sees this kind.
+      // Executive reset 2026-09-29 §1: a SOURCE COUNT (r5: `proven` when every list is positively
+      // exhausted, `observed` when every list was fetched but not all exhausted), never a
+      // run-level basis — no completeness closure exists for any package, so the reconciler
+      // never sees this kind.
       out[family] = { known: false };
       note(family, 'completeness_not_proven', null);
       families[family] = Object.freeze({
         source_count: entry.observed,
-        count_basis: 'proven',
+        count_basis: entry.exhausted ? 'proven' : 'observed',
         basis_kind: entry.kind,
         reasons: Object.freeze([...entry.reasons]),
       });

@@ -11,9 +11,12 @@ import {
   type InductionRegistry,
 } from '../../../src/scout/induction/manifest-registry';
 import {
+  listsVerifierBoundKind,
   parseInductionManifest,
   parseInductionManifestForRuntime,
 } from '../../../src/scout/induction/parse';
+import { reconcile } from '../../../src/scout/reconciliation/reconcile';
+import type { FamilyFacts, ReconciliationFacts } from '../../../src/scout/reconciliation/types';
 import {
   evaluateCoverage,
   type CoverageEvaluationInput,
@@ -38,6 +41,15 @@ import {
  * exactly development|test (trimmed, case-insensitive), so an unset NODE_ENV fails closed. The
  * refusing cases are discriminating: the same signed evidence proves three known families when the
  * artifact is allowed and none when it is refused.
+ *
+ * L3 r3 (executive reset 2026-09-29 §1; L0 r5/r6 D-L0-6 "`complete` is unreachable until CL",
+ * L14 "a `source_signed_enumeration` manifest is refused outside dev/test"; closes
+ * `R589-c7A-01`): the refusal is on the KIND as well as on the markers. A manifest listing
+ * `source_signed_enumeration` — the only kind the evaluator turns into `known: true`, from which
+ * S9 settles `complete` — is refused in a refusing runtime whether or not it is marked. The r2
+ * "positive control" (an unmarked signed manifest proves with refusal on) was exactly the path
+ * `R589-c7A-01` reproduced; it is inverted below and the discriminating control moves to the
+ * allowing mode.
  */
 
 type Family = 'clients' | 'programs' | 'workouts';
@@ -79,6 +91,13 @@ const markedVerifier = (): Record<string, unknown> => ({
   ...FIXTURE_RAW,
   verifiers: [{ ...FIXTURE_VERIFIER, test_only: true }, OTHER_VERIFIER],
 });
+/** The same two verifiers on a manifest listing only the replay kind (no verifier-bound kind). */
+const markedVerifierReplayOnly = (): Record<string, unknown> => ({
+  ...markedVerifier(),
+  basisKinds: { clients: [REPLAY], programs: [REPLAY], workouts: [REPLAY] },
+});
+const SIGNED = 'source_signed_enumeration';
+const REPLAY = 'replay_terminal_enumeration';
 
 function dirWith(raw: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 's12b2-manifests-'));
@@ -130,6 +149,7 @@ function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
         source_platform: SLUG,
         grouped_families: FAMILIES,
         families: stagedFamilyDigests(Object.entries(IDS)),
+        steps: new Map(),
       },
     ],
   };
@@ -148,6 +168,41 @@ const UNPROVEN = {
   programs: { known: false },
   workouts: { known: false },
 };
+
+/** Native-clean S9 facts over the fixture ids, so only coverage can block `complete`. */
+function verdictOf(coverage: ReturnType<typeof evaluateCoverage>) {
+  const kinds = { clients: 'person', programs: 'workout_program', workouts: 'workout_plan' } as const;
+  const families = FAMILIES.map(
+    (family): FamilyFacts => ({
+      family,
+      mapped: true,
+      resolution_reason: null,
+      client_owned: false,
+      ceiling_exceeded: false,
+      identities: IDS[family].map((identity): FamilyFacts['identities'][number] => ({
+        token: family,
+        identity,
+        ledger: {
+          status: 'reconstructed',
+          target_kind: kinds[family],
+          provenance: { outcome: 'created', native: 'present_owned', reason: null, unresolved_children: {} },
+        },
+        client_linked: false,
+      })),
+      ledger_without_staged: 0,
+      qualifiers: [],
+    }),
+  );
+  const facts: ReconciliationFacts = {
+    claim: 'success',
+    families,
+    relationships: [],
+    spec_families: FAMILIES,
+    ledger_without_staged: 0,
+    coverage,
+  };
+  return reconcile(facts).verdict;
+}
 
 function withNodeEnv<T>(value: string | undefined, run: () => T): T {
   const saved = process.env.NODE_ENV;
@@ -179,15 +234,46 @@ const REFUSING_ENVS: readonly (string | undefined)[] = [
 const ALLOWING_ENVS: readonly string[] = ['test', 'development', 'TEST', ' Development '];
 const label = (v: string | undefined): string => (v === undefined ? 'unset' : JSON.stringify(v));
 
-describe('positive control — the unmarked package proves in every mode', () => {
-  it('an unmarked manifest is byte-for-byte the same manifest when refusing or allowing', () => {
+describe('positive control — the unmarked signed package proves in the allowing mode only (L3 r3)', () => {
+  it('allowing, an unmarked manifest is byte-for-byte the plain manifest; refusing, it is refused for its kind', () => {
     const plain = parseInductionManifest(FIXTURE_RAW, 'plain');
-    expect(parseInductionManifestForRuntime(FIXTURE_RAW, 'plain', true)).toEqual(plain);
     expect(parseInductionManifestForRuntime(FIXTURE_RAW, 'plain', false)).toEqual(plain);
+    expect(parseInductionManifestForRuntime(FIXTURE_RAW, 'plain', true)).toBeNull();
   });
 
-  it('with refusal on, an unmarked manifest still yields three known families', () => {
-    expect(evaluate(registry(loadInductionManifests(dirWith(FIXTURE_RAW), true)))).toEqual(PROVEN);
+  it('allowing, the unmarked manifest yields three known families (the S10/S11 harness path)', () => {
+    expect(evaluate(registry(loadInductionManifests(dirWith(FIXTURE_RAW), false)))).toEqual(PROVEN);
+  });
+
+  it('R589-c7A-01: refusing, an UNMARKED valid signed manifest with valid signed evidence is not loaded — every family unknown, the run settles partial, never complete', () => {
+    const refused = loadInductionManifests(dirWith(FIXTURE_RAW), true);
+    expect(refused).toEqual([]);
+    const facts = evaluate(registry(refused));
+    expect(facts).toEqual(UNPROVEN);
+    expect(verdictOf(facts)).toEqual({ outcome: 'partial', reason_code: 'coverage_basis_unknown' });
+    // The same package and evidence in the allowing mode DO reach complete: the runtime, not the
+    // evidence, is what closes the path (discriminating control).
+    const allowed = evaluate(registry(loadInductionManifests(dirWith(FIXTURE_RAW), false)));
+    expect(verdictOf(allowed)).toEqual({ outcome: 'complete', reason_code: null });
+  });
+
+  it('R589-c7A-01: the kind rule is independent of labels — a signed kind on ONE family refuses the whole manifest; a replay-only manifest with verifiers is kept, its marked verifier dropped', () => {
+    const oneSigned = {
+      ...FIXTURE_RAW,
+      basisKinds: { clients: [SIGNED], programs: [REPLAY], workouts: [REPLAY] },
+    };
+    expect(parseInductionManifestForRuntime(oneSigned, 'one', true)).toBeNull();
+    expect(parseInductionManifestForRuntime(oneSigned, 'one', false)).not.toBeNull();
+    const replayOnly = {
+      ...FIXTURE_RAW,
+      basisKinds: { clients: [REPLAY], programs: [REPLAY], workouts: [REPLAY] },
+      verifiers: [{ ...FIXTURE_VERIFIER, test_only: true }, OTHER_VERIFIER],
+    };
+    const kept = parseInductionManifestForRuntime(replayOnly, 'replay', true);
+    expect(kept?.verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
+    expect(kept?.basisKinds.clients).toEqual([REPLAY]);
+    expect(listsVerifierBoundKind(parseInductionManifest(replayOnly, 'r'))).toBe(false);
+    expect(listsVerifierBoundKind(parseInductionManifest(oneSigned, 'o'))).toBe(true);
   });
 });
 
@@ -203,7 +289,7 @@ describe('refusal of each TEST-ONLY artifact kind (explicit refuseTestOnly)', ()
     expect(evaluate(registry(refused))).toEqual(UNPROVEN);
   });
 
-  it('verifier (key): allowed → both keys kept and proves; refused → key dropped, unknown', () => {
+  it('verifier (key): allowed → both keys kept and proves; refused → the signed manifest is refused for its kind (L3 r3), and a replay-only manifest drops the marked key', () => {
     const dir = dirWith(markedVerifier());
     const allowed = loadInductionManifests(dir, false);
     expect(allowed[0].verifiers.map((v) => v.key_id)).toEqual([
@@ -213,10 +299,15 @@ describe('refusal of each TEST-ONLY artifact kind (explicit refuseTestOnly)', ()
     expect(evaluate(registry(allowed))).toEqual(PROVEN);
 
     const refused = loadInductionManifests(dir, true);
-    expect(refused.map((m) => m.sourcePlatform)).toEqual([SLUG]);
-    expect(refused[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
-    expect(Object.isFrozen(refused[0].verifiers)).toBe(true);
+    expect(refused).toEqual([]);
     expect(evaluate(registry(refused))).toEqual(UNPROVEN);
+
+    const replayDir = dirWith(markedVerifierReplayOnly());
+    const kept = loadInductionManifests(replayDir, true);
+    expect(kept.map((m) => m.sourcePlatform)).toEqual([SLUG]);
+    expect(kept[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
+    expect(Object.isFrozen(kept[0].verifiers)).toBe(true);
+    expect(evaluate(registry(kept))).toEqual(UNPROVEN); // signed evidence binds to no listed kind
   });
 
   it('allowed mode strips the marker: the result equals the unmarked manifest', () => {
@@ -242,12 +333,17 @@ describe('default loader — refuses unless NODE_ENV is explicitly development|t
   it.each(REFUSING_ENVS.map((v) => [label(v), v]))('NODE_ENV %s refuses', (_name, value) => {
     const manifestDir = dirWith(markedManifest());
     const verifierDir = dirWith(markedVerifier());
+    const unmarkedDir = dirWith(FIXTURE_RAW);
+    const replayDir = dirWith(markedVerifierReplayOnly());
     withNodeEnv(value, () => {
       expect(testOnlyArtifactsAllowed(process.env.NODE_ENV)).toBe(false);
       expect(loadInductionManifests(manifestDir)).toEqual([]);
-      const mixed = loadInductionManifests(verifierDir);
-      expect(mixed[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
-      expect(evaluate(registry(mixed))).toEqual(UNPROVEN);
+      expect(loadInductionManifests(verifierDir)).toEqual([]);
+      // L3 r3 / R589-c7A-01: the unmarked signed manifest is refused by kind in this runtime.
+      expect(loadInductionManifests(unmarkedDir)).toEqual([]);
+      expect(evaluate(registry(loadInductionManifests(unmarkedDir)))).toEqual(UNPROVEN);
+      const kept = loadInductionManifests(replayDir);
+      expect(kept[0].verifiers.map((v) => v.key_id)).toEqual([OTHER_VERIFIER.key_id]);
     });
   });
 

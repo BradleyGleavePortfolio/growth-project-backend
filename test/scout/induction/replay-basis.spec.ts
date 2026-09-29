@@ -38,15 +38,16 @@ import {
 } from '../../fixtures/scout/s10_pure/s10-pure-signer';
 
 /**
- * L3 — the `replay_terminal_enumeration` evidence (owner D1, 2026-09-28; L0 r4 D-L0-6
- * "Pagination exhaustion is proven per endpoint, positively") under the executive reset of
+ * L3 — the `replay_terminal_enumeration` evidence (owner D1, 2026-09-28; L0 r6 D-L0-6
+ * "Per-family counting evidence is kept", r5 text unchanged) under the executive reset of
  * 2026-09-29 (§1, §8): NO package has a run-level completeness closure yet, so this evidence
  * proves a family's SOURCE COUNT (`evaluateCoverageDetailed().families`, for the run-status
  * projection) and never a run-level basis — `evaluateCoverage` reports every replay family
  * `known: false`, the run settles `partial/coverage_basis_unknown`, and `complete` is unreachable
  * through it for every package type. Positive case, every L0 negative case, and the proof that no
  * path lets the AI's classification alone produce `complete`. Pure tier: no DB, no Nest. The r2
- * reviewer negatives (R589-A/B) live in `replay-basis-r2.spec.ts`.
+ * reviewer negatives (R589-A/B) live in `replay-basis-r2.spec.ts`; the r3 ones (R589-c7A/c7B,
+ * L0 r5/r6 L15) in `replay-basis-r3.spec.ts`.
  */
 
 type Family = 'clients' | 'programs' | 'workouts';
@@ -69,6 +70,23 @@ const STEPS: Record<Family, string[]> = {
   programs: ['plans'],
   workouts: ['routines', 'sessions'],
 };
+/** L3 r3: the staged rows per step token (the family token is a step token too: no rows). */
+function stepIdsFor(ids: Partial<Record<string, string[]>>): Record<string, string[]> {
+  const out: Record<string, string[]> = { clients: [], programs: [], workouts: [] };
+  for (const family of FAMILIES) {
+    const list = ids[family] ?? [];
+    const steps = STEPS[family];
+    if (steps.length === 1) out[steps[0]] = list;
+    else {
+      // The fixture's two workouts steps split the family ids as STEP_IDS does; a different
+      // family set is attributed to the first step (tests that need another split pass `steps`).
+      const isDefault = list.join(',') === IDS[family].join(',');
+      for (const step of steps) out[step] = isDefault ? STEP_IDS[step] : [];
+      if (!isDefault) out[steps[0]] = list;
+    }
+  }
+  return out;
+}
 
 const SLUG = 's10_unseen';
 const SCOPE = sha256('workspace-1');
@@ -122,7 +140,8 @@ function step(step_key: string, over: Partial<ReplayStepEvidenceV1> = {}): Repla
     duplicate_ids: 0,
     synthetic_ids: 0,
     missing_id_items: 0,
-    stop: 'short_page',
+    // L0 r5/r6 L15: a two-page list whose page 3 came back empty is positively exhausted.
+    stop: 'empty_page',
     advertised_next: false,
     refused_pages: 0,
     fan_out: null,
@@ -130,6 +149,22 @@ function step(step_key: string, over: Partial<ReplayStepEvidenceV1> = {}): Repla
     ...over,
   };
 }
+
+/** `obj` without `key` (a genuinely absent wire key, not `undefined`). */
+function without(obj: Record<string, unknown>, key: string): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...obj };
+  delete copy[key];
+  return copy;
+}
+
+/** A fan-out claim over the `members` (clients) step, both parents visited and exhausted. */
+const FAN_OVER_MEMBERS = {
+  parent_step: 'members',
+  parent_ids_digest: referenceIdDigest(STEP_IDS.members),
+  contexts_expected: 2,
+  contexts_fetched: 2,
+  contexts_exhausted: 2,
+};
 
 /** One valid replay evidence object for a family (steps default to the spec's, all exhausted). */
 function replayEvidence(
@@ -168,11 +203,16 @@ function rows(replace: Partial<Record<Family, StoredObservation[]>> = {}): Store
   return FAMILIES.flatMap((family) => replace[family] ?? [stored(replayEvidence(family))]);
 }
 
-function staged(ids: Partial<Record<string, string[]>> = IDS, slug = SLUG): StagedPlatformFacts {
+function staged(
+  ids: Partial<Record<string, string[]>> = IDS,
+  slug = SLUG,
+  steps: Record<string, string[]> = stepIdsFor(ids),
+): StagedPlatformFacts {
   return {
     source_platform: slug,
     grouped_families: FAMILIES,
     families: stagedFamilyDigests(Object.entries(ids).map(([f, list]) => [f, list ?? []])),
+    steps: stagedFamilyDigests(Object.entries(steps)),
   };
 }
 
@@ -201,6 +241,16 @@ const COUNTED = (n: number): FamilyCoverageDetail => ({
   reasons: [{ code: 'completeness_not_proven', platform: null }],
 });
 const BASELINE_COUNTS = { clients: COUNTED(2), programs: COUNTED(1), workouts: COUNTED(3) };
+/** L0 r5 D-L0-6 `observed`: every list fetched, at least one not positively exhausted. */
+const OBSERVED = (n: number): FamilyCoverageDetail => ({
+  source_count: n,
+  count_basis: 'observed',
+  basis_kind: REPLAY,
+  reasons: [
+    { code: 'list_not_exhausted', platform: SLUG },
+    { code: 'completeness_not_proven', platform: null },
+  ],
+});
 const UNCOUNTED = (...codes: CoverageReasonCode[]): FamilyCoverageDetail => ({
   source_count: null,
   count_basis: 'unknown',
@@ -231,6 +281,15 @@ function expectOnlyUnknown(
     completeness_basis: 'none',
     observed_unique: null,
   });
+}
+
+/** Replace one family's evidence and expect ONLY that family's count to become observed. */
+function expectOnlyObserved(family: Family, evidence: Record<string, unknown>): void {
+  const detailed = evaluateCoverageDetailed(
+    input({ observations: rows({ [family]: [stored(evidence)] }) }),
+  );
+  expect(detailed.facts).toEqual(ALL_UNKNOWN);
+  expect(detailed.families).toEqual({ ...BASELINE_COUNTS, [family]: OBSERVED(IDS[family].length) });
 }
 
 /** Native-clean S9 facts over the baseline staged ids, so only coverage can block `complete`. */
@@ -311,7 +370,7 @@ describe('L3 — replay_terminal_enumeration is a proving kind a package may lis
 
 // ── Parser ──────────────────────────────────────────────────────────────────────────────
 
-describe('L3 — parseEvidence: the replay_terminal_enumeration shape (r4 StepEvidenceV1)', () => {
+describe('L3 — parseEvidence: the replay_terminal_enumeration shape (L0 r5 StepEvidenceV1)', () => {
   const reason = (raw: unknown): string => {
     const r = parseEvidence(raw);
     return r.ok ? 'ok' : r.reason;
@@ -351,7 +410,7 @@ describe('L3 — parseEvidence: the replay_terminal_enumeration shape (r4 StepEv
   });
 
   it('refuses malformed challenge, steps, counts and digests without throwing', () => {
-    const fan = { expected: 2, fetched: 2, parent_step: 'members' };
+    const fan = FAN_OVER_MEMBERS;
     const cases: [Record<string, unknown>, string][] = [
       [{ challenge_b64: 'not base64!' }, 'bad_base64'],
       [{ challenge_b64: Buffer.alloc(31).toString('base64') }, 'bad_length'],
@@ -365,13 +424,20 @@ describe('L3 — parseEvidence: the replay_terminal_enumeration shape (r4 StepEv
       [{ steps: [{ ...step('members'), advertised_next: 'no' }] }, 'bad_terminal'],
       [{ steps: [step('members', { pages_fetched: -1 })] }, 'bad_count'],
       [{ steps: [step('members', { pages_fetched: 1.5 })] }, 'bad_count'],
-      // r4 "unknown is never 0": a root step that fetched nothing is not even evidence.
+      // r5 "unknown is never 0": a root step that fetched nothing is not even evidence.
       [{ steps: [step('members', { pages_fetched: 0 })] }, 'bad_count'],
       [{ steps: [step('members', { raw_items: -1 })] }, 'bad_count'],
       [{ steps: [{ ...step('members'), synthetic_ids: '0' }] }, 'bad_count'],
       [{ steps: [step('members', { id_set_digest: 'zz' })] }, 'bad_digest'],
-      [{ steps: [{ ...step('members'), fan_out: { expected: 2, fetched: 2 } }] }, 'missing_key'],
+      [{ steps: [{ ...step('members'), fan_out: without(fan, 'parent_step') }] }, 'missing_key'],
+      [{ steps: [{ ...step('members'), fan_out: without(fan, 'parent_ids_digest') }] }, 'missing_key'],
+      [{ steps: [{ ...step('members'), fan_out: { expected: 2, fetched: 2, parent_step: 'x' } }] }, 'unknown_key'],
       [{ steps: [{ ...step('members'), fan_out: { ...fan, parent_step: '' } }] }, 'bad_step'],
+      // L0 r5 D-L0-6 / R589-c7B-02 (a), (c): a step is never its own fan-out parent.
+      [{ steps: [{ ...step('members'), fan_out: { ...fan, parent_step: 'members' } }] }, 'bad_step'],
+      [{ steps: [{ ...step('members'), fan_out: { ...fan, parent_ids_digest: 'zz' } }] }, 'bad_digest'],
+      [{ steps: [{ ...step('members'), fan_out: { ...fan, contexts_exhausted: -1 } }] }, 'bad_count'],
+      [{ steps: [{ ...step('members'), stop: 'none_proven' }] }, 'bad_terminal'],
       [{ steps: [{ ...step('members'), fan_out: { ...fan, extra: 1 } }] }, 'unknown_key'],
       [{ steps: [{ ...step('members'), fan_out: 'all' }] }, 'bad_step'],
       [{ steps: [step('')] }, 'bad_step'],
@@ -392,7 +458,13 @@ describe('L3 — parseEvidence: the replay_terminal_enumeration shape (r4 StepEv
         step('routines'),
         step('sessions', {
           pages_fetched: 0,
-          fan_out: { expected: 0, fetched: 0, parent_step: 'members' },
+          fan_out: {
+            ...FAN_OVER_MEMBERS,
+            parent_ids_digest: referenceIdDigest([]),
+            contexts_expected: 0,
+            contexts_fetched: 0,
+            contexts_exhausted: 0,
+          },
         }),
       ],
     });
@@ -419,8 +491,8 @@ describe('L3 — positive case: every step exhausted, digest AND count equal to 
     expect(verdictOf(evaluateCoverage(input()))).toEqual(PARTIAL_UNKNOWN);
   });
 
-  it('every r4 terminal stop counts after ≥ 1 page: absent_next, empty_page, short_page (next_url style stops at absent_next)', () => {
-    for (const stop of ['absent_next', 'empty_page', 'short_page'] as const) {
+  it('L0 r5 D-L0-6: only empty_page (page style) and absent_next (cursor / next_url style) prove after ≥ 1 page; short_page and first_page_only are observed', () => {
+    for (const stop of ['absent_next', 'empty_page'] as const) {
       const detailed = evaluateCoverageDetailed(
         input({
           observations: rows({
@@ -430,6 +502,17 @@ describe('L3 — positive case: every step exhausted, digest AND count equal to 
       );
       expect(detailed.families).toEqual(BASELINE_COUNTS);
     }
+    for (const stop of ['short_page', 'first_page_only'] as const) {
+      const detailed = evaluateCoverageDetailed(
+        input({
+          observations: rows({
+            clients: [stored(replayEvidence('clients', { steps: [step('members', { stop })] }))],
+          }),
+        }),
+      );
+      expect(detailed.families).toEqual({ ...BASELINE_COUNTS, clients: OBSERVED(2) });
+      expect(detailed.facts).toEqual(ALL_UNKNOWN);
+    }
   });
 
   it('a fan-out step bound to its parent step’s proven count counts; an empty family counts only by a positive probe', () => {
@@ -437,18 +520,14 @@ describe('L3 — positive case: every step exhausted, digest AND count equal to 
     const fanned = replayEvidence('workouts', {
       steps: [
         step('routines'),
-        step('sessions', {
-          pages_fetched: 2,
-          stop: 'absent_next',
-          fan_out: { expected: 2, fetched: 2, parent_step: 'members' },
-        }),
+        step('sessions', { pages_fetched: 2, stop: 'absent_next', fan_out: FAN_OVER_MEMBERS }),
       ],
     });
     expect(
       evaluateCoverageDetailed(input({ observations: rows({ workouts: [stored(fanned)] }) }))
         .families,
     ).toEqual(BASELINE_COUNTS);
-    // L0 r4 D-L0-6: an empty collection is closed by ONE GET that returned an empty page.
+    // L0 r5 D-L0-6: an empty collection is closed by ONE GET that returned an empty page.
     const probe = replayEvidence('programs', {
       steps: [
         step('plans', {
@@ -472,14 +551,16 @@ describe('L3 — positive case: every step exhausted, digest AND count equal to 
     expect(detailed.facts.programs).toEqual(UNKNOWN);
   });
 
-  it('the family token may accompany the spec steps (a canonical-token collection) but never replace them', () => {
-    const withToken = replayEvidence('programs', {
-      steps: [step('plans'), step('programs', { raw_items: 0, distinct_raw_ids: 0 })],
-    });
-    expect(
-      evaluateCoverageDetailed(input({ observations: rows({ programs: [stored(withToken)] }) }))
-        .families,
-    ).toEqual(BASELINE_COUNTS);
+  it('L0 r5 D-L0-6 (R589-B-C7): the family token is a step only when the spec maps no other step to the family', () => {
+    // The fixture spec maps `plans` to programs: the token beside it is an extra step, and the
+    // token alone is a missing step. Either way the reported set is not the pinned one.
+    expectOnlyUnknown(
+      'programs',
+      replayEvidence('programs', {
+        steps: [step('plans'), step('programs', { raw_items: 0, distinct_raw_ids: 0 })],
+      }),
+      'step_set_mismatch',
+    );
     expectOnlyUnknown(
       'programs',
       replayEvidence('programs', { steps: [step('programs')] }),
@@ -506,14 +587,18 @@ describe('L3 — positive case: every step exhausted, digest AND count equal to 
 });
 
 describe('L3 — negative cases (each alone → source_count null, count_basis unknown; never 0)', () => {
-  it('a non-terminal stop: none_proven, budget, cycle, error or advertised_next (r4 D-L0-6)', () => {
-    for (const stop of ['none_proven', 'budget', 'cycle', 'error', 'advertised_next'] as const) {
+  it('an aborted crawl: budget, cycle or error (r5 D-L0-6) → unknown; an advertised_next stop → observed', () => {
+    for (const stop of ['budget', 'cycle', 'error'] as const) {
       expectOnlyUnknown(
         'clients',
         replayEvidence('clients', { steps: [step('members', { stop })] }),
         'crawl_truncated',
       );
     }
+    expectOnlyObserved(
+      'clients',
+      replayEvidence('clients', { steps: [step('members', { stop: 'advertised_next' })] }),
+    );
     // One truncated step among two clean ones truncates the family.
     expectOnlyUnknown(
       'workouts',
@@ -524,23 +609,21 @@ describe('L3 — negative cases (each alone → source_count null, count_basis u
     );
   });
 
-  it('a terminal stop with an advertised next link the step did not follow (a first page is never certified)', () => {
-    expectOnlyUnknown(
+  it('a terminal stop with an advertised next link the step did not follow (a first page is never certified) → observed, never proven', () => {
+    expectOnlyObserved(
       'clients',
       replayEvidence('clients', { steps: [step('members', { advertised_next: true })] }),
-      'crawl_truncated',
     );
   });
 
-  it('a refused page', () => {
-    expectOnlyUnknown(
+  it('a refused page → observed, never proven (r5 D-L0-6: refused_pages > 0 is not exhausted)', () => {
+    expectOnlyObserved(
       'clients',
       replayEvidence('clients', { steps: [step('members', { refused_pages: 1 })] }),
-      'crawl_truncated',
     );
   });
 
-  it('a synthetic or missing id (a fabricated identity never proves; r4 D-L0-6)', () => {
+  it('a synthetic or missing id (a fabricated identity never proves; r5 D-L0-6)', () => {
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', { steps: [step('members', { synthetic_ids: 1 })] }),
@@ -581,33 +664,24 @@ describe('L3 — negative cases (each alone → source_count null, count_basis u
     );
   });
 
-  it('a fan-out step short of its parent set, or whose pages differ from the contexts it visited', () => {
-    expectOnlyUnknown(
-      'workouts',
+  it('a fan-out whose context counters contradict each other or its pages (fan_out_short); one short of its parent set is observed', () => {
+    const sessions = (fan: Partial<typeof FAN_OVER_MEMBERS>, pages = 2) =>
       replayEvidence('workouts', {
         steps: [
           step('routines'),
           step('sessions', {
-            pages_fetched: 2,
-            fan_out: { expected: 3, fetched: 2, parent_step: 'members' },
+            pages_fetched: pages,
+            stop: 'absent_next',
+            fan_out: { ...FAN_OVER_MEMBERS, ...fan },
           }),
         ],
-      }),
-      'fan_out_short',
-    );
-    expectOnlyUnknown(
-      'workouts',
-      replayEvidence('workouts', {
-        steps: [
-          step('routines'),
-          step('sessions', {
-            pages_fetched: 3,
-            fan_out: { expected: 2, fetched: 2, parent_step: 'members' },
-          }),
-        ],
-      }),
-      'fan_out_short',
-    );
+      });
+    expectOnlyUnknown('workouts', sessions({ contexts_fetched: 3, contexts_exhausted: 3 }), 'fan_out_short');
+    expectOnlyUnknown('workouts', sessions({ contexts_exhausted: 3 }), 'fan_out_short');
+    expectOnlyUnknown('workouts', sessions({}, 1), 'fan_out_short'); // 2 contexts, 1 page
+    // r5: a fan-out is exhausted only when every expected context was fetched and exhausted.
+    expectOnlyObserved('workouts', sessions({ contexts_fetched: 1, contexts_exhausted: 1 }, 1));
+    expectOnlyObserved('workouts', sessions({ contexts_exhausted: 1 }));
   });
 
   it('a step set short of the spec (one of two workouts steps missing) or a step the spec does not map to the family', () => {
@@ -642,13 +716,14 @@ describe('L3 — negative cases (each alone → source_count null, count_basis u
       replayEvidence('workouts', { observed_unique: 2 }),
       'staged_mismatch',
     );
+    // L3 r3: an inflated step is caught against its own staged rows before the family check.
     expectOnlyUnknown(
       'clients',
       replayEvidence('clients', {
         observed_unique: 3,
         steps: [step('members', { raw_items: 3, distinct_raw_ids: 3 })],
       }),
-      'staged_mismatch',
+      'step_staged_mismatch',
     );
   });
 

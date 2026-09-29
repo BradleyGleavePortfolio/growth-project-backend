@@ -371,6 +371,7 @@ describe('S10-C stagedPlatformFacts (R27 production-grouping half)', () => {
       source_platform: 'never-registered',
       grouped_families: [],
       families: new Map(),
+      steps: new Map(),
     });
     expect(facts[1].families.get('clients')).toEqual(identitySetDigest(['c1']));
     expect(Array.from(facts[1].families.keys())).toEqual(['clients', 'programs', 'workouts']);
@@ -379,6 +380,37 @@ describe('S10-C stagedPlatformFacts (R27 production-grouping half)', () => {
   it('is total over a lone-surrogate id: that family digests to null (unknown), no throw', () => {
     const [facts] = stagedPlatformFacts(MAPPERS, [row('members', '\ud800')]);
     expect(facts.families.get('clients')).toBeNull();
+    expect(facts.steps.get('members')).toBeNull();
+  });
+
+  it('L3 r3 (L0 r5 D-L0-6; R589-c7A-04): digests every STEP token too — the same rows keyed by entity_type, every spec step and family token present, empty when no row', () => {
+    const [facts] = stagedPlatformFacts(MAPPERS, [
+      row('members', 'c1'),
+      row('members', 'c2'),
+      row('routines', 'w1'),
+      row('routines', 'w1'),
+      row('sessions', 'w3'),
+      row('workouts', 'w2'), // the family token as a step token
+      row('mystery', 'x1'), // unmapped: joins no digest
+    ]);
+    expect(Array.from(facts.steps.keys()).sort()).toEqual([
+      'clients',
+      'members',
+      'plans',
+      'programs',
+      'routines',
+      'sessions',
+      'workouts',
+    ]);
+    expect(facts.steps.get('members')).toEqual(identitySetDigest(['c1', 'c2']));
+    expect(facts.steps.get('routines')).toEqual(identitySetDigest(['w1']));
+    expect(facts.steps.get('sessions')).toEqual(identitySetDigest(['w3']));
+    expect(facts.steps.get('workouts')).toEqual(identitySetDigest(['w2']));
+    expect(facts.steps.get('plans')).toEqual({ digest: EMPTY_IDENTITY_SET_DIGEST, count: 0 });
+    expect(facts.steps.get('clients')).toEqual({ digest: EMPTY_IDENTITY_SET_DIGEST, count: 0 });
+    expect(facts.steps.has('mystery')).toBe(false);
+    // The family digest is the union of its step digests' rows.
+    expect(facts.families.get('workouts')).toEqual(identitySetDigest(['w1', 'w2', 'w3']));
   });
 });
 

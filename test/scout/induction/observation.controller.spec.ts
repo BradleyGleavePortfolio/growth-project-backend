@@ -188,7 +188,7 @@ describe('ObservationController', () => {
             duplicate_ids: 0,
             synthetic_ids: 0,
             missing_id_items: 0,
-            stop: 'short_page',
+            stop: 'empty_page',
             advertised_next: false,
             refused_pages: 0,
             fan_out: null,

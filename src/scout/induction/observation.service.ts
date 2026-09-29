@@ -92,9 +92,11 @@ function evidenceJson(e: ObservationEvidenceV1): Prisma.InputJsonObject {
           s.fan_out === null
             ? null
             : {
-                expected: s.fan_out.expected,
-                fetched: s.fan_out.fetched,
                 parent_step: s.fan_out.parent_step,
+                parent_ids_digest: s.fan_out.parent_ids_digest,
+                contexts_expected: s.fan_out.contexts_expected,
+                contexts_fetched: s.fan_out.contexts_fetched,
+                contexts_exhausted: s.fan_out.contexts_exhausted,
               },
         id_set_digest: s.id_set_digest,
       })),

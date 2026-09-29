@@ -1442,11 +1442,11 @@
       "ScoutRunReplayStepEvidenceSchema": {
         "properties": {
           "advertised_next": {
-            "description": "A next link or cursor the last page advertised and the step did not follow; must be false.",
+            "description": "A next link or cursor the last page advertised and the step did not follow; true caps the family at observed.",
             "type": "boolean"
           },
           "distinct_raw_ids": {
-            "description": "Distinct id values among them (never a synthetic id).",
+            "description": "Distinct staged identities among them (never a synthetic id).",
             "minimum": 0,
             "type": "number"
           },
@@ -1456,16 +1456,24 @@
             "type": "number"
           },
           "fan_out": {
-            "description": "null for a root collection; a fan-out step reports {expected, fetched, parent_step} and must have visited every expected parent context (fetched = expected = pages_fetched). parent_step names the step whose identities it iterated; the server proves expected only against that parent step’s verified distinct_raw_ids inside a proven family.",
+            "description": "null for a root collection. A fan-out step (L0 r5 D-L0-6) reports parent_step (the step whose identities it iterated; never itself), parent_ids_digest (the D-S10-2 digest of the DISTINCT parent identities it fetched a context for — the server requires equality with that parent step’s verified id_set_digest), contexts_expected (= the parent’s verified distinct_raw_ids), contexts_fetched and contexts_exhausted (each parent once). Proven only when all three context counts are equal and the parent chain ends in a root step.",
             "nullable": true,
             "properties": {
-              "expected": {
+              "contexts_exhausted": {
                 "minimum": 0,
                 "type": "number"
               },
-              "fetched": {
+              "contexts_expected": {
                 "minimum": 0,
                 "type": "number"
+              },
+              "contexts_fetched": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "parent_ids_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
               },
               "parent_step": {
                 "maxLength": 256,
@@ -1476,7 +1484,7 @@
             "type": "object"
           },
           "id_set_digest": {
-            "description": "The D-S10-2 identity-set digest of this step’s distinct ids.",
+            "description": "The D-S10-2 identity-set digest of this step’s distinct staged identities.",
             "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
@@ -1486,7 +1494,7 @@
             "type": "number"
           },
           "pages_fetched": {
-            "description": "Pages fetched. A root step (fan_out null) must have fetched at least 1 page: a crawl that fetched nothing observed no terminal and is refused (unknown is never 0).",
+            "description": "Pages fetched. A root step (fan_out null) must have fetched at least 1 page: a crawl that fetched nothing observed no terminal and is refused (unknown is never 0). For a fan-out, the page total across its contexts (at least contexts_fetched).",
             "minimum": 0,
             "type": "number"
           },
@@ -1496,23 +1504,23 @@
             "type": "number"
           },
           "refused_pages": {
-            "description": "Pages the source refused; must be 0.",
+            "description": "Pages the source refused; more than 0 caps the family at observed.",
             "minimum": 0,
             "type": "number"
           },
           "step_key": {
-            "description": "The pinned mapping spec's step key feeding the family (or the family token for a canonical-token collection). Never a URL.",
+            "description": "The pinned mapping spec's step key feeding the family (or the family token, only when the spec maps no step to the family). Never a URL.",
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
           },
           "stop": {
-            "description": "How the step stopped. Only absent_next, empty_page and short_page (after ≥ 1 page) are pagination terminals; none_proven, budget, cycle, error and advertised_next never prove.",
+            "description": "How the step stopped (L0 r5 StopReason). Only empty_page (page style) and absent_next (cursor / next_url style), after ≥ 1 page, prove exhaustion; short_page and first_page_only yield an observed count; budget, cycle and error yield unknown; advertised_next caps the family at observed.",
             "enum": [
               "absent_next",
               "empty_page",
               "short_page",
-              "none_proven",
+              "first_page_only",
               "budget",
               "cycle",
               "error",
