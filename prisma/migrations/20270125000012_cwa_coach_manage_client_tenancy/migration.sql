@@ -51,8 +51,9 @@
 -- and must not decide identity. Repo precedent for a two-id definer helper: app.is_user_coached_by
 -- (20260607000000). Both return one boolean about a (actor, object) pair and grant no row access.
 --
--- Backend note (R593-c7B-02, reported, not fixed here): the backend today connects as service_role
--- (BYPASSRLS) and its RlsContextInterceptor (src/common/interceptors/rls-context.interceptor.ts)
+-- Backend note (R593-c7B-02 / R593-c7B2-C02, reported, not fixed here): the backend today connects
+-- with the database owner credentials (`postgres` per .env.example — superuser/BYPASSRLS, not the
+-- PostgREST `service_role`) and its RlsContextInterceptor (src/common/interceptors/rls-context.interceptor.ts)
 -- guards on `user.sub`, a field the Prisma User row it receives does not carry, so in production no
 -- principal currently carries app.current_user_id on this table. The GUC branch is therefore
 -- defence in depth for a future non-bypass backend role; it is admitted only for that role class.
@@ -75,7 +76,8 @@
 --      actor, actor role IN (coach, owner) read from "User", and the plan-ownership helper in
 --      WITH CHECK.
 --
--- EFFECT (RLS-bound principals; the application's Prisma connection is service_role, BYPASSRLS):
+-- EFFECT (RLS-bound principals; the application's Prisma connection is the `postgres` owner role,
+-- BYPASSRLS — the policy never runs for it, hence the application gate in SubCoachScopeService):
 --   * a JWT coach (authenticated + auth.uid()) can INSERT / SELECT / UPDATE / DELETE assignments only
 --     for clients the app considers theirs; UPDATE cannot re-point client_id to another coach's
 --     client (WITH CHECK). A forged app.current_user_id GUC changes nothing for that principal;

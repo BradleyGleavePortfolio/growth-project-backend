@@ -2,7 +2,7 @@
  * D8 (owner decision 2026-09-29; PR #593 fix round 2, R593-c7A-01 / R593-c7B-01) — the SERVICE-ROLE
  * assignment writers apply the same coach-client tenancy rule the RLS policy applies.
  *
- * The backend's Prisma connection is service_role-equivalent (BYPASSRLS): `assignment_coach_manage`
+ * The backend's Prisma connection is the `postgres` owner role (BYPASSRLS; not the PostgREST service_role): `assignment_coach_manage`
  * never runs for it, so the application must be the gate. Before this round the two AI approval
  * materialisers (`draft.assign_workout` -> AssignWorkoutMaterializer, `draft.assign_meal_plan` ->
  * AssignMealPlanMaterializer) wrote `payload.clientId` with no client-scope check. This spec drives the
