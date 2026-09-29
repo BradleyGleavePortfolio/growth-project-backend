@@ -8,14 +8,26 @@
 // and never swallow errors: they either return a response or throw an
 // `AiGatewayError`.
 
-export type JsonSchemaObject = {
-  type: 'object';
-  properties?: Record<string, unknown>;
-  required?: string[];
-  additionalProperties?: boolean | Record<string, unknown>;
-  // Any other draft-07 / 2020-12 keywords the caller wants forwarded.
-  [k: string]: unknown;
-};
+// A caller-owned JSON schema. Accepted READONLY and structurally loose so a
+// consumer's own closed schema type (e.g. a readonly discriminated union with
+// `readonly required?: readonly string[]`) is assignable without a cast; the
+// gateway checks `type === 'object'` at runtime.
+export type JsonSchemaObject = Readonly<Record<string, unknown>>;
+
+export function isObjectSchema(s: unknown): s is JsonSchemaObject & { readonly type: 'object' } {
+  return (
+    !!s && typeof s === 'object' && !Array.isArray(s) && (s as { type?: unknown }).type === 'object'
+  );
+}
+
+// Result shape of the caller's validator. Validators never throw; a failure
+// carries JSON-pointer paths and fixed detail strings (no content).
+export type StructuredValidation<T> =
+  | { readonly ok: true; readonly value: T }
+  | {
+      readonly ok: false;
+      readonly errors: readonly { readonly path: string; readonly detail: string }[];
+    };
 
 export interface AiStructuredProviderRequest {
   capability: string;

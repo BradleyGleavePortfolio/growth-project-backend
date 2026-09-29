@@ -7,3 +7,4 @@ export { AiStructuredProviderRegistry } from './structured-provider.registry';
 export { StubStructuredProviderAdapter } from './stub-structured-provider.adapter';
 export { AnthropicStructuredProviderAdapter } from './anthropic-structured-provider.adapter';
 export * from './structured-schema';
+export * from './spend-ledger';

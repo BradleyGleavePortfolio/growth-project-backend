@@ -1401,3 +1401,72 @@ switches:
     auto_flip_on_in_prod: false
     owner: importer
     description: "S12-B1 pilot-coach allowlist (IMPORTER). Comma-separated User.id UUIDs admitted to the flag-gated importer surface; unset/empty/malformed = nobody (fail closed). Value is a list, not a boolean, so STUB_ALLOWED rather than OFF; never auto-flipped."
+  # ── L1-gw (importer.mapping AI capability, record D-L0-7.3/7.4). All keys are
+  # read at call time via in-file consts in src/ai/gateway/structured/
+  # importer-mapping.config.ts. Garbage values REFUSE the call (fail closed). ──
+  - name: SCOUT_LEARN_AI_ENABLED
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Kill switch for the importer.mapping AI capability (learn step). Unset/false = every call refused with ai_unavailable; re-read before every attempt and polled while a call is in flight. Never auto-flipped."
+  - name: AI_PROVIDER_IMPORTER_MAPPING
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Provider for importer.mapping only (anthropic|openai|perplexity); defaults to AI_GATEWAY_PROVIDER. 'stub' or unknown = refused in production."
+  - name: AI_MODEL_IMPORTER_MAPPING
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Primary model id for importer.mapping. Unset = refused (model-unset). Value is an id, not a boolean, so STUB_ALLOWED."
+  - name: SCOUT_LEARN_MODEL_FALLBACKS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Comma-separated ordered fallback models for importer.mapping; tried once each ONLY on 429/5xx/timeout. Unset = no fallback (never silently downgrades)."
+  - name: SCOUT_LEARN_CALL_TIMEOUT_MS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Hard per-call timeout for importer.mapping. Integer with optional unit (ms|s|m; bare = ms). Default 90000. Unparseable/zero = refused (config-invalid)."
+  - name: SCOUT_LEARN_MAX_INPUT_TOKENS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Max conservative input-token estimate per importer.mapping call (default 24000); larger requests are refused before any spend (ai_request_rejected)."
+  - name: SCOUT_LEARN_MAX_OUTPUT_TOKENS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Max output tokens per importer.mapping call (default 4096); reserved in the spend ledger before each call. Non-positive/garbage = refused."
+  - name: SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD
+    tier: prod
+    prod_default: MUST_SET
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Global UTC-daily spend cap (USD) for importer.mapping, enforced by reserve-before-call in PostgreSQL. Production REFUSES every call while unset; outside production the owner placeholder ($20) applies. 0 is a valid cap (refuses all paid calls)."
+  - name: AI_PRICE_INPUT_USD_PER_MTOK
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Input price (USD per million tokens) used for importer.mapping spend reservations; default 10. Must be > 0 — zero/negative/garbage = refused."
+  - name: AI_PRICE_OUTPUT_USD_PER_MTOK
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Output price (USD per million tokens) used for importer.mapping spend reservations; default 50. Must be > 0 — zero/negative/garbage = refused."
+  - name: AI_GATEWAY_DEV_ALLOW_OFFLINE_PROVIDER
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Dev-only: lets importer.mapping return the offline stub adapter's enabled:false/null answer outside production and test. Ignored in production (stub is always refused there)."

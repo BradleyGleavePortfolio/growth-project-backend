@@ -15,9 +15,14 @@
 //   ai_timeout           hard per-request timeout fired (retryable → fallback)
 //   ai_rate_limited      provider returned 429            (retryable → fallback)
 //   ai_provider_error    provider returned 5xx / transport (retryable → fallback)
-//   ai_request_rejected  provider returned another 4xx    (not retryable)
-//   ai_malformed_output  provider output was not JSON conforming to the schema,
-//                        or was truncated at max_tokens   (not retryable)
+//   ai_request_rejected  provider returned another 4xx, or the gateway rejected
+//                        the request before sending (input over the token
+//                        limit, provider refusal)          (not retryable)
+//   ai_malformed_output  provider output was not exactly one JSON object
+//                        conforming to the schema, or was truncated at
+//                        max_tokens; `validation` carries the content-free
+//                        validator errors and the raw object so the caller can
+//                        build its one repair prompt      (not retryable)
 
 export const AI_GATEWAY_ERROR_CODES = [
   'ai_unavailable',
@@ -57,17 +62,50 @@ export interface AiGatewayErrorDetail {
   attempt?: number;
 }
 
+// Validator output for `ai_malformed_output`. `errors` are JSON-pointer paths
+// plus fixed detail strings (content-free by the validator's contract);
+// `rawOutput` is the provider's object, returned to the caller ONLY (never
+// logged or persisted by the gateway) so the record's repair call can quote it.
+export interface AiValidationFailure {
+  errors: readonly AiValidationError[];
+  rawOutput: unknown;
+}
+
+export interface AiValidationError {
+  path: string;
+  detail: string;
+}
+
+export const MAX_VALIDATION_ERRORS = 64;
+export const MAX_VALIDATION_FIELD_CHARS = 200;
+
 export class AiGatewayError extends Error {
   readonly code: AiGatewayErrorCode;
   readonly retryable: boolean;
   readonly detail: AiGatewayErrorDetail;
+  // Present only for `ai_malformed_output` raised by schema validation.
+  readonly validation?: AiValidationFailure;
 
-  constructor(code: AiGatewayErrorCode, detail: AiGatewayErrorDetail = {}, message?: string) {
+  constructor(
+    code: AiGatewayErrorCode,
+    detail: AiGatewayErrorDetail = {},
+    message?: string,
+    validation?: AiValidationFailure,
+  ) {
     super(message ?? `${code}${detail.reason ? `: ${detail.reason}` : ''}`);
     this.name = 'AiGatewayError';
     this.code = code;
     this.retryable = RETRYABLE_AI_ERROR_CODES.has(code);
     this.detail = detail;
+    if (validation) {
+      this.validation = {
+        errors: validation.errors.slice(0, MAX_VALIDATION_ERRORS).map((e) => ({
+          path: String(e.path ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
+          detail: String(e.detail ?? '').slice(0, MAX_VALIDATION_FIELD_CHARS),
+        })),
+        rawOutput: validation.rawOutput,
+      };
+    }
   }
 
   static is(e: unknown): e is AiGatewayError {

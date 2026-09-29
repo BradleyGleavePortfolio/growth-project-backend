@@ -44,6 +44,7 @@ import { StubStructuredProviderAdapter } from './structured/stub-structured-prov
 import { AnthropicStructuredProviderAdapter } from './structured/anthropic-structured-provider.adapter';
 import { AiStructuredProviderRegistry } from './structured/structured-provider.registry';
 import { ImporterMappingGatewayService } from './structured/importer-mapping-gateway.service';
+import { AuditSpendLedger, SPEND_LEDGER } from './structured/spend-ledger';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -134,6 +135,9 @@ import { ImporterMappingGatewayService } from './structured/importer-mapping-gat
     StubStructuredProviderAdapter,
     AnthropicStructuredProviderAdapter,
     AiStructuredProviderRegistry,
+    // Spend ledger port: reserve-before-call in PostgreSQL over AiRequestAudit.
+    // L2b replaces this binding with the durable ScoutLearnSpendLedger.
+    { provide: SPEND_LEDGER, useClass: AuditSpendLedger },
     ImporterMappingGatewayService,
   ],
   exports: [

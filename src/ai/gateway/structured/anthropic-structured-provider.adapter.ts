@@ -8,6 +8,7 @@ import {
   AiStructuredProviderResponse,
 } from './structured-provider.types';
 import { AiGatewayError, toAiGatewayError } from './structured-ai.errors';
+import { isObjectSchema } from './structured-provider.types';
 
 // L1-gw — structured adapter for the `anthropic` provider slot.
 //
@@ -58,7 +59,7 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
   async completeStructured(
     req: AiStructuredProviderRequest,
   ): Promise<AiStructuredProviderResponse> {
-    if (!req.responseSchema || req.responseSchema.type !== 'object') {
+    if (!isObjectSchema(req.responseSchema)) {
       throw new AiGatewayError('ai_malformed_output', {
         provider: this.name,
         model: req.model,
@@ -106,12 +107,19 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
     const modelUsed = resp.model ?? req.model;
     const stopReason = resp.stop_reason ?? null;
 
-    const toolUse = Array.isArray(resp.content)
-      ? resp.content.find(
-          (b): b is Anthropic.Messages.ToolUseBlock =>
-            !!b && typeof b === 'object' && (b as { type?: string }).type === 'tool_use',
-        )
-      : undefined;
+    // r2 (R592-A-B3): the answer must be EXACTLY one tool-use block naming
+    // our schema tool, with the stop reason a forced tool call produces. Any
+    // second tool call, a foreign tool name, or an unexpected block type is
+    // ambiguous output and is rejected — `disable_parallel_tool_use` is a
+    // request preference, not response validation.
+    const blocks: unknown[] = Array.isArray(resp.content) ? resp.content : [];
+    const toolUses: Anthropic.Messages.ToolUseBlock[] = [];
+    let foreignBlock = false;
+    for (const b of blocks) {
+      const type = b && typeof b === 'object' ? (b as { type?: unknown }).type : undefined;
+      if (type === 'tool_use') toolUses.push(b as Anthropic.Messages.ToolUseBlock);
+      else if (type !== 'text') foreignBlock = true;
+    }
 
     if (stopReason === 'max_tokens') {
       // Truncated output can never be trusted as a conforming object
@@ -129,11 +137,26 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
         reason: 'provider-refusal',
       });
     }
+    if (stopReason !== 'tool_use') {
+      throw new AiGatewayError('ai_malformed_output', {
+        provider: this.name,
+        model: modelUsed,
+        reason: 'unexpected-stop-reason',
+      });
+    }
+    if (toolUses.length !== 1 || foreignBlock) {
+      throw new AiGatewayError('ai_malformed_output', {
+        provider: this.name,
+        model: modelUsed,
+        reason: toolUses.length === 0 ? 'no-structured-block' : 'ambiguous-structured-output',
+      });
+    }
+    const toolUse = toolUses[0];
     if (
-      !toolUse ||
       toolUse.name !== req.schemaName ||
       toolUse.input == null ||
-      typeof toolUse.input !== 'object'
+      typeof toolUse.input !== 'object' ||
+      Array.isArray(toolUse.input)
     ) {
       throw new AiGatewayError('ai_malformed_output', {
         provider: this.name,

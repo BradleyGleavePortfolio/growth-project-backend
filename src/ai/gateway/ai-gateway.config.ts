@@ -1,8 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  isMwbAiLiveCreateEnabled,
-  isMwbLiveCreateCapability,
-} from './mwb-live-create.feature';
+import { isMwbAiLiveCreateEnabled, isMwbLiveCreateCapability } from './mwb-live-create.feature';
 
 // AI gateway feature gate. Default is FAIL CLOSED: even if a provider key
 // is configured, the gateway only routes to a real provider when the
@@ -113,7 +110,9 @@ export class AiGatewayConfig {
       .includes(capability);
   }
 
-  private providerKeyPresent(provider: AiProviderName): boolean {
+  // Public since L1-gw: the importer.mapping config reuses the same key
+  // check for its per-capability provider choice. Behaviour unchanged.
+  providerKeyPresent(provider: AiProviderName): boolean {
     if (provider === 'perplexity') return !!process.env.PERPLEXITY_API_KEY?.trim();
     if (provider === 'openai') return !!process.env.OPENAI_API_KEY?.trim();
     if (provider === 'anthropic') return !!process.env.ANTHROPIC_API_KEY?.trim();
