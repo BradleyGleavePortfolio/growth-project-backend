@@ -19,7 +19,8 @@
   device-side value cross-check and refuses whitespace (D-L0-2). The MAIN-world replay has a
   credential model and side-effect bounds (D-L0-6.2); third-party service data is out of scope by
   default (P6). The **one** `RunStatusProjectionV1` is owned here and referenced verbatim by FAM-0
-  (D-L0-6.3). Budgets are arithmetically consistent, L2 and L3 are split, missing slice edges are
+  (D-L0-6.3; row schema and the single `NotMovedReason` list per the orchestrator's amendment to reset
+  §6). Budgets are arithmetically consistent, L2 and L3 are split, missing slice edges are
   added (D-L0-7.3, D-L0-9). §8 is the closure table; §9 lists every closure finding as a required
   input to CL. The record is shorter than r4.
 - **Owner decisions of 2026-09-28 (binding; verbatim except where bracketed):**
@@ -50,8 +51,8 @@
     only (P3).
 - **Owner decisions still pending (recommendation recorded; nothing here assumes the answer):**
   - **P1 — Popup Start vs NS "popup is a status surface only"** (D-L0-1.1).
-  - **P2 — Billing under D1** (D-L0-6.1): recommendation: not a client record; disclosed as an
-    unmapped collection (gap `collection_unmapped`).
+  - **P2 — Billing under D1** (D-L0-6.1): recommendation: not a client record; disclosed as gap
+    `collection_unmapped` until decided, then `not_moved: excluded_by_policy`.
   - **P3 — Origin fallback** (D-L0-6.2): registrable-domain permission set if MAIN-world replay proves
     infeasible on the pilot.
   - **P4 — Media storage spend** (D-L0-6.1): an owner spending note, not a design blocker.
@@ -334,7 +335,7 @@ interface LearnedProposalV1 {
     templateRef: string; // a digest template ref with role 'collection'
     entityType: string; // a spec `steps` key; ≤ 64 [a-z0-9_]
     destination:
-      { kind: 'native'; family: CanonicalFamily } | { kind: 'preserve'; group: PreserveGroup }; // FAM-0 vocabulary
+      { kind: 'native'; family: CanonicalFamily } | { kind: 'preserve'; family: FamilyLabel }; // FAM-0 vocabulary; 'unclassified' is the preserve catch-all (D-L0-6.3)
     itemsPath: string[]; // one of that template's collectionPaths
     idField: string; // key of the item shape with class int_id|uuid|short_id; NEVER positional
     idScope: 'global' | 'parent'; // r5: 'parent' ⇒ identity is `${parentId}:${id}` (R581-B2-B2); required when forEach is set
@@ -362,8 +363,8 @@ value. The extension sets each step's origin, header values and every `:s`/`:q` 
 capture (D-L0-2). The package stores steps by structure key, not by ref. The `InductionManifestV1`
 is **derived by the server**: `expectedFamilies` = every step destination, `basisKinds = {}`,
 `verifiers: []`, `nativeRules` declared ⇔ rules accepted. **Every collection gets a destination
-(D4):** a coaching collection with no native family is proposed as `preserve` with a FAM-0 group (or
-`other`). **An `unmapped` reason is a claim, never an exclusion (r5; `R581-A2-07`):** r4's
+(D4):** a coaching collection with no native family is proposed as `preserve` with a FAM-0 preserved-family
+label (or `unclassified`). **An `unmapped` reason is a claim, never an exclusion (r5; `R581-A2-07`):** r4's
 `confirmExclusion` rule is deleted; the reason is recorded on the pin and every `unmapped` collection
 appears in the projection as gap `collection_unmapped` (D-L0-6.3). Whether a claimed exclusion may
 ever count towards `complete` is CL's question (§9); billing stays P2.
@@ -415,7 +416,8 @@ reads it — never the client's free-text `error_summary` (`scout.dto.ts` L156-1
   `(entity_type, source_id)` count. Steps with `idScope: 'parent'` compose `parent:id` in the engine
   **and** in `sourceId`, so per-parent namespaces never collapse in staging (`skipDuplicates`,
   `scout-ingest.service.ts` L53-70, stays). Mismatch refuses the package for this run
-  (`conformance_refused`), the family settles `partial/unresolved_identities`, and the failure is a
+  (`not_moved: destination_gate_closed`), the family settles `partial/unresolved_identities`, and
+  the failure is a
   structural trigger (D-L0-5). Learned packages never emit positional ids: X2b counts a missing
   `item[idField]` (`id_field_missing`) and a duplicate (`duplicate_id`) instead of synthesising
   (`engine.js` L292-307 today).
@@ -427,7 +429,7 @@ reads it — never the client's free-text `error_summary` (`scout.dto.ts` L156-1
   FAM-0 interpreter) `ok` for **every** staged row of the family; otherwise that family's rules are
   dropped for the run and its rows go to **preserve** (D4), disclosed in the projection.
 - **C4** parent edges: ≥ 1 row links to a staged parent when both exist; otherwise the edge is dropped
-  and the family is `relationship_unverified`.
+  and the family's unlinked rows are `not_moved: unresolved_parent`.
 - **C5/C6 (EX1, PR #578):** catalog space all-or-nothing; every custom-exercise row carries a name.
 - C0-C6 add no reason code and no status field; their outcomes appear in the projection and on the
   pin.
@@ -579,18 +581,19 @@ advertised_next }`. **Positive exhaustion per step:**
   family map, preserve schema, media path, reconciliation buckets and slice order; this record fixes
   the principles: native destinations are the models TGP already has (client-owned models key on the
   client's `user_id` and need the S8-D person link, `Person` L6959, resolved first); preserve is one
-  universal tenant-scoped destination, idempotent by `(coach_id, source_platform, family/group,
+  universal tenant-scoped destination, idempotent by `(coach_id, source_platform, family label,
 source_id)`, linked to its parent through the learned `parentEdge`, readable and exportable, and
   **never visible to the AI or to any memory row**; a family graduates from preserve to native by a
   deterministic backfill on the same identity. Media bytes are fetched by the device under D-L0-6.2
   and uploaded through the existing media path (P4). Until a FAM-n or PRES lands, a family's staged
-  records are disclosed as `not_moved` with reason `destination_not_built` (count known).
+  records are disclosed as `not_moved` with reason `destination_gate_closed` (count known).
 - **Scope in time and status.** "Past" = records the site exposes to the coach at run time. Archived
   or inactive lists are in scope when the site exposes them; what a run cannot observe is a CL input
   (§9), never assumed absent. Nothing is back-filled from exports.
-- **Billing (P2).** Recommended not a client record: an `unmapped` claim `out_of_scope_billing` is
-  disclosed as gap `collection_unmapped`; if the owner rules otherwise, billing becomes a preserve
-  group and the reason leaves the enum.
+- **Billing (P2).** Recommended not a client record: until the owner decides, an `unmapped` claim
+  `out_of_scope_billing` is disclosed as gap `collection_unmapped`; once the owner confirms the
+  exclusion it becomes `not_moved: excluded_by_policy` with a device-side count; if the owner rules
+  billing is a record, it becomes a preserved family and the reason leaves the enum.
 - **Third-party service data (P6; `R581-B2-B6`).** Default rule, deterministic and vendor-neutral: a
   request origin outside the tab's registrable domain is in scope only if the page sent it the site's
   own credential header (the same `Authorization`/cookie value the page sent the tab origin or another
@@ -648,7 +651,7 @@ args })` (`E-X1:manifest.json` L29 declares `scripting`). The engine (X2b) takes
   subdomains in the one `permissions.request` (public-suffix data). Bearer-token cross-origin APIs
   are served by the credential model above, so P3 is about reach, not credentials.
 
-### D-L0-6.3: `RunStatusProjectionV1` — the ONE run-status projection (D5; owned by L0; FAM-0 references it verbatim)
+### D-L0-6.3: `RunStatusProjectionV1` — the ONE run-status projection (D5; owned by L0; FAM-0 cites this section by name and copies it verbatim)
 
 `GET scout/import/status` (S7-L §5 additive rule; the existing `families[]` entry,
 `lifecycle.service.ts` L142-160, keeps its keys) returns `RunStatusProjectionV1`: the existing
@@ -657,24 +660,36 @@ verdict fields (`status`, `reason_code`, `completed_at`, ...) plus:
 ```ts
 interface RunStatusProjectionV1 {
   // existing verdict fields unchanged: status, reason_code, completed_at, phase, ...
-  families: {
-    family: string; // closed vocabulary: FAM-0 canonical families ∪ preserve groups ∪ 'other'
-    destination: 'native' | 'preserve';
-    source_count: number | null; // int; null = unknown, never 0
-    count_basis: 'proven' | 'observed' | 'unknown'; // D-L0-6 family count basis
-    moved_native: number; // int (bucket-j native_present_verified)
-    preserved: number; // int
-    not_moved: number | null; // Σ not_moved[].count for this family when every entry has a count; else null
-  }[]; // one row per family seen, INCLUDING preserved families
-  not_moved: { family: string; count: number | null; reason: NotMovedReason }[]; // records known to exist that did not land
-  gaps: { family: string | null; code: GapCode }[]; // things we could not determine; never counts
+  families: FamilyRowV1[]; // one row per family seen, INCLUDING preserved families
+  not_moved: NotMovedV1[]; // records known to exist that did not land
+  gaps: GapV1[]; // things we could not determine; never counts
   failure_code?: FailureCode; // set only when the server settled a learn failure (D-L0-7.5)
 }
+interface FamilyRowV1 {
+  family: FamilyLabel; // closed vocabulary (below); no destination field: a family may be partly native and partly preserved, which moved_native and preserved express
+  source_count: number | null; // int; null = unknown, never 0
+  count_basis: 'proven' | 'observed' | 'unknown'; // D-L0-6 family count basis
+  moved_native: number; // int (bucket-j native_present_verified)
+  preserved: number; // int
+  not_moved: number | null; // Σ not_moved[].count for this family when every entry has a count; else null
+}
+interface NotMovedV1 {
+  family: FamilyLabel;
+  count: number | null; // int; null only when the records are known to exist but could not be counted
+  reason: NotMovedReason;
+}
+interface GapV1 {
+  family: FamilyLabel | null; // null = run-level
+  code: GapCode;
+}
+type FamilyLabel = string; // FAM-0 canonical family names ∪ FAM-0 preserved-family labels ∪ 'unclassified' (the only catch-all)
 type NotMovedReason =
-  | 'destination_not_built' // FAM-n/PRES writer does not exist yet
-  | 'identity_unresolved' // C0 / id_field_missing rows
-  | 'relationship_unverified' // C4 dropped edge
-  | 'conformance_refused' // package refused for this run; rows staged, none written
+  | 'excluded_by_policy' // owner-confirmed exclusion (e.g. billing once P2 is decided); counted
+  | 'source_refused' // the source refused or errored on fetches for known identities (4xx/5xx, refused pages)
+  | 'unresolved_parent' // C4: the parent/person edge could not be resolved (S8-D link missing)
+  | 'identity_conflict' // C0: missing, duplicate or conflicting ids
+  | 'destination_gate_closed' // a deterministic gate before the write was closed: C0-C4 refusal, FAM-n/PRES writer not built, dropped native rules with no preserve path
+  | 'over_limit' // records beyond a configured bound (size, count, media caps)
   | 'write_failed'; // deterministic writer error, rows staged
 type GapCode =
   | 'completeness_not_proven' // every run until CL (family: null)
@@ -700,7 +715,8 @@ type FailureCode =
   | 'origin_mismatch';
 ```
 
-**Rules (normative; `R581-B2-B7`, `R590-B-A1`):**
+**Rules (normative; `R581-B2-B7`, `R590-B-A1`; orchestrator amendment to reset §6, 2026-09-29:
+`destination` dropped from the row, single `NotMovedReason` list, `unclassified` catch-all):**
 
 - **A fact with a count goes to `not_moved`; an unknown goes to `gaps`; never both.** The two enums
   are disjoint. Each fact appears exactly once; a family-attributable unknown carries the family,
@@ -708,10 +724,15 @@ type FailureCode =
 - **Unknown = `null`, never 0.** `source_count` is null under `count_basis: 'unknown'`; `not_moved` is
   null when any entry for the family lacks a count.
 - Under `count_basis: 'proven'`: `source_count = moved_native + preserved + not_moved`
-  (`R590-B-C5`: excluded collections are not families, they are `collection_unmapped` gaps).
+  (`R590-B-C5`; owner-confirmed exclusions are counted inside `not_moved` as `excluded_by_policy`).
 - Counts and closed codes only; no path, ref, token, host or model text.
-- `families[]` has a row for every preserve family (label from the closed vocabulary; `other` is the
-  catch-all group).
+- `families[]` has a row for every preserved family (label from the closed vocabulary;
+  `unclassified` is the only catch-all). `NotMovedReason` is the single closed list; r4 names
+  (`no_destination_yet`, `native_destination_pending`, ...) do not exist.
+- `excluded_by_policy` is the only reason for an owner-confirmed exclusion: the collection is counted
+  on the device (distinct ids of its observed pages; nothing staged, no value leaves), so it is a fact
+  with a count, never a gap. A model-claimed exclusion the owner has not confirmed stays gap
+  `collection_unmapped`.
 - **Wiring:** the projection (slice L2d) reads the pin's `conformance`, the L3b family evidence, the
   settled S9 report and the D-S9-7 histogram; nothing in `reconcile.ts`, `coverage.ts` or
   `arbiter.ts` changes; `RUN_REASON_CODES` unchanged. `NotMovedReason`, `GapCode` and `FailureCode`
@@ -863,7 +884,7 @@ proof, V1-P (partial proof); V1-C is blocked on CL** (§9) and is not scheduled 
    second intent on that site — **from a different landing page** and, where a second source account
    of the same coach exists, on that sparser account (D-L0-3);
 3. per-family: every staged family landed at its destination (native where FAM-n exists, preserved
-   once PRES exists, else `not_moved: destination_not_built`); operator-recorded source-visible
+   once PRES exists, else `not_moved: destination_gate_closed`); operator-recorded source-visible
    counts equal `source_count` where `count_basis: 'proven'`, and are recorded against the projection
    line by line otherwise (the honesty check of D5);
 4. terminal `partial/coverage_basis_unknown` with gap `completeness_not_proven` and no C0-C4 failure,
@@ -997,7 +1018,8 @@ or `RUN_REASON_CODES`; human review before acceptance; any per-site token, vocab
   pagination do **not** trigger; `template_absent` and `items_path_missing` on a non-empty response
   mark `suspect`, a second trigger invalidates, and the next intent learns v+1 with the old row
   `superseded`; a variant step and per-parent child ids pass union C0; a crafted extension whose
-  counters are self-consistent but disagree with staged rows fails C0 and is `conformance_refused`;
+  counters are self-consistent but disagree with staged rows fails C0 and is
+  `destination_gate_closed`;
   C3 failure drops rules, writes zero native rows and preserves them; CAS miss changes nothing;
   the round-2 pin is a new row and the round-1 pin is byte-identical after settle; `conformance` is
   written once per epoch and re-entry skips.
@@ -1098,7 +1120,7 @@ carries it verbatim as a required input to the completeness-closure record.
 | R581-B2-B4 [B]     | D-L0-6                     | Closed by deletion              | Probes and `SCOUT_LEARN_PROBE_MAX` deleted with the closure machinery; `complete` no longer depends on a probe budget. Filter coverage is CL input C-09.                                                                                                                                                                                           |
 | R581-B2-B5 [B]     | D-L0-4, D-L0-6             | Closed                          | `next_url` style (same origin, same structure key, device-checked); `param` from `PAGINATION_VOCABULARY` when the signal is present; L01/L15.                                                                                                                                                                                                      |
 | R581-B2-B6 [B]     | D-L0-6.1, D-L0-6.2         | Closed                          | Deterministic credentialed-origin rule; third-party origins excluded and disclosed as `third_party_not_imported`; recorded as owner item P6; L09.                                                                                                                                                                                                  |
-| R581-B2-B7 [B]     | D-L0-6.3                   | Closed                          | One `RunStatusProjectionV1`; disjoint `NotMovedReason`/`GapCode` with the attribution rule; preserve families get rows; L14/L16 no double rendering.                                                                                                                                                                                               |
+| R581-B2-B7 [B]     | D-L0-6.3                   | Closed                          | One `RunStatusProjectionV1` (`FamilyRowV1`/`NotMovedV1`/`GapV1`); single `NotMovedReason` list disjoint from `GapCode` with the attribution rule; no `destination` field; preserved families get rows; `unclassified` catch-all; L14/L16 no double rendering.                                                                                      |
 | R581-B2-B8 [B]     | D-L0-9, D-L0-7.3, D-L0-7.4 | Closed                          | Edges L1←FAM-0 and X3←L3b added; eval re-run is L1's CI job triggered by FAM-n; deadline config owned by L2b with DP-1; L2 split into L2a/b/c/d; L3 split into L3a/L3b.                                                                                                                                                                            |
 | R581-B2-B9 [B]     | D-L0-6, §9                 | Deferred → CL                   | The SPA residual cannot produce a false `complete` under r5; a "referenced but unreached" signal is CL input C-02; the owner item for third-party scope is P6 (the SPA residual is a CL design input, not an owner decision, because D1 already forbids narrowing).                                                                                |
 | R581-B2-C1..C7 [C] | D-L0-6.2, D-L0-6.3, D-L0-5 | Closed                          | Worker-side confinement stated, SW qualifier (C1); "X3 adds" and `verify.ts` closure citation removed (C2); CI note in the PR body (C3); coach-local reuse first, global later (C4); `tab_lost` (C5); `failure_code` first (C6); P6 added, SPA and bearer routed as above (C7).                                                                    |
