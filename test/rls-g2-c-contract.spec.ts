@@ -27,6 +27,7 @@ import {
   catalog,
   directory,
   E_MIGRATION,
+  encoded,
   expectedVersion,
   gitShow,
   hasColumn,
@@ -96,6 +97,36 @@ const EXPECTED_HISTORY = 169;
 const FENCED = 'G2-B obsolete writer fenced';
 const R_ABSENT = { indexes: [], checks: [], ledgerNotNull: false };
 const MALFORMED = { status: 400, message: 'malformed cursor' };
+/**
+ * S11-E: the candidate's emission is the row-precise v3 envelope — the ledger's unique key
+ * (source_id, source_platform, entity_type), token included — so a merged id space cannot
+ * hide a row at a page boundary. The harness `v2` helper stays: the pair-only v2 form is
+ * still ACCEPTED as input by this head (and is the only scoped form the accepted N/Q1 head
+ * can decode). The cursor is documented opaque (`docs/contracts/importer-openapi.json`,
+ * "Opaque forward-only page cursor"), so changing the envelope is not a client contract
+ * break; only a token carried ACROSS heads mid-rollout is refused, which is the documented
+ * 400 → restart pagination.
+ */
+const v3 = (
+  family: string,
+  source = 'a',
+  platform = 'truecoach',
+  token = family,
+  coach = 'coach',
+  intent = 'intent',
+) =>
+  `v3.${encoded(
+    JSON.stringify({
+      v: 3,
+      c: coach,
+      i: intent,
+      f: family,
+      o: 'source_id:asc,source_platform:asc,entity_type:asc',
+      s: source,
+      p: platform,
+      t: token,
+    }),
+  )}`;
 const CONTRACT_ABSENT = /G2-C contract absent/;
 const NARROW_PREREQUISITE = /G2-C unexpected identity prerequisite/;
 const LOCK_TIMEOUT = /canceling statement due to lock timeout/;
@@ -107,11 +138,19 @@ const actionOf = (family: string) => (family === 'clients' ? 'roster' : 'entitie
 const nextLegacy = (family: string, s: string) =>
   family === 'clients' ? legacyRosterCursor(s) : legacyEntityCursor(family, s);
 /** A page read touched the ledger page (target_id selected) or the staged count. */
+/**
+ * S11-E: the readers' accounting is now a GROUPED aggregate over the run's few
+ * (source_platform, entity_type) pairs, and it runs BEFORE cursor resolution (it is what
+ * produces the classified pair set the resolution predicate needs). It is therefore not a
+ * page read and not the pre-S11-E full-collection `COUNT(*)` this helper was written for:
+ * grouped queries are excluded explicitly, so "no page read" keeps its meaning (no ledger
+ * page, no full staged count) on both heads.
+ */
 const readPage = (queries: string[]) =>
   queries.some(
     (q) =>
       (q.includes('"ScoutReconstructionLedger"') && q.includes('"target_id"')) ||
-      (q.includes('"ScoutIngestEntity"') && q.includes('COUNT')),
+      (q.includes('"ScoutIngestEntity"') && q.includes('COUNT') && !q.includes('GROUP BY')),
   );
 const parsedCatalog = () => JSON.parse(catalog());
 /** Catalog observations with OIDs removed: what down→up must restore identically. */
@@ -839,7 +878,7 @@ describe('stage 4: on C — the wide identity is the identity for the real inges
     ]);
   });
   it.each(['clients', 'workouts'])(
-    'C16: real %s identity ties (one source on three platforms) enumerate every reconstructed row exactly once at limit 1 on both heads; a tied legacy token is 400; an untied one resolves',
+    'C16: real %s identity ties (one source on three platforms) enumerate every reconstructed row exactly once at limit 1 on both heads; emission is the row-precise v3 token; a tied legacy token is 400; an untied one resolves',
     async (family) => {
       resetData();
       // truecoach and conformance_alpha are registered mappers (reconstructed); p3 is canonical but
@@ -855,8 +894,8 @@ describe('stage 4: on C — the wide identity is the identity for the real inges
         const { union, tokens } = await enumerate(family, undefined, old);
         expect(union).toEqual(expected);
         expect(tokens).toEqual([
-          v2(family, 'a', 'conformance_alpha'),
-          v2(family, 'a', 'truecoach'),
+          v3(family, 'a', 'conformance_alpha'),
+          v3(family, 'a', 'truecoach'),
           null,
         ]);
         // The legacy format cannot name a tied boundary: 400, no page read, restart from the top.
@@ -876,13 +915,24 @@ describe('stage 4: on C — the wide identity is the identity for the real inges
         expect(visible(family, untied.result)).toEqual([]);
         expect(cursorOf(family, untied.result)).toBeNull();
       }
-      // The old reader fed the candidate's exact v2 token pages the same next row.
+      // Cross-head, both directions, on the SAME C shape:
+      // (a) the pair-only v2 form both heads decode still pages the same next row on the old
+      //     reader — accepting v2 input is unchanged by S11-E;
       const crossed = await run(
         { action: actionOf(family), family, cursor: v2(family, 'a', 'conformance_alpha') },
         true,
       );
       expect(crossed.failure).toBeUndefined();
       expect(ids(visible(family, crossed.result))).toEqual([expected[1]]);
+      // (b) the candidate's OWN v3 token is not portable to the accepted N/Q1 reader: that head
+      //     has no v3 branch, so it fails closed with the documented 400 (restart pagination),
+      //     never a silently wrong page. The candidate accepts it (the enumeration above).
+      const forward = await run(
+        { action: actionOf(family), family, cursor: v3(family, 'a', 'conformance_alpha') },
+        true,
+      );
+      expect(forward.result).toBeUndefined();
+      expect(forward.failure).toEqual(MALFORMED);
       expect(narrowDuplicates('intent')).toEqual({ staging: 1, ledger: 1 });
     },
   );

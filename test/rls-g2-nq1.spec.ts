@@ -76,8 +76,45 @@ const orderBy = (table: string) =>
   new RegExp(
     `ORDER BY (?:"public"\\.)?"${table}"\\."source_id" ASC, (?:"public"\\.)?"${table}"\\."source_platform" ASC`,
   );
-const LEDGER_ORDER = orderBy('ScoutReconstructionLedger');
+/**
+ * S11-E: the ledger page order is the ledger's UNIQUE KEY
+ * (source_id, source_platform, entity_type) — a total order even where two tokens of one
+ * platform share an id space, which the pair-only order could not decide. The staged
+ * (writer) order is unchanged.
+ */
+const LEDGER_ORDER = new RegExp(
+  'ORDER BY (?:"public"\\.)?"ScoutReconstructionLedger"\\."source_id" ASC, ' +
+    '(?:"public"\\.)?"ScoutReconstructionLedger"\\."source_platform" ASC, ' +
+    '(?:"public"\\.)?"ScoutReconstructionLedger"\\."entity_type" ASC',
+);
 const STAGING_ORDER = orderBy('ScoutIngestEntity');
+/**
+ * S11-E emission: the row-precise v3 envelope (the ledger's unique key, token included).
+ * The pair-only `v2` helper stays because v2 is still ACCEPTED as input by this head and is
+ * the only scoped form the accepted N/Q1 (old) head can decode. The cursor is documented
+ * opaque in the contract, so the envelope change is not a client contract break; an
+ * undecodable token is the documented 400 → restart pagination.
+ */
+const v3 = (
+  family: string,
+  source = 'a',
+  platform = 'truecoach',
+  token = family,
+  coach = 'coach',
+  intent = 'intent',
+) =>
+  `v3.${encoded(
+    JSON.stringify({
+      v: 3,
+      c: coach,
+      i: intent,
+      f: family,
+      o: 'source_id:asc,source_platform:asc,entity_type:asc',
+      s: source,
+      p: platform,
+      t: token,
+    }),
+  )}`;
 const MALFORMED = { status: 400, message: 'malformed cursor' };
 const ids = (rows: any[]) => rows.map((r) => r.id);
 const visible = (family: string, r: any) => (family === 'clients' ? r.persons : r.entities);
@@ -102,11 +139,18 @@ const tally = (result: any) => {
   return rest;
 };
 /** A page read touched the ledger page (target_id selected) or the staged count. */
+/**
+ * S11-E: the readers' accounting is a GROUPED aggregate over the run's few
+ * (source_platform, entity_type) pairs and runs before cursor resolution (it produces the
+ * classified pair set the resolution predicate needs). It is neither a page read nor the
+ * pre-S11-E full-collection `COUNT(*)`, so grouped queries are excluded and "no page read"
+ * keeps its meaning on both heads.
+ */
 const readPage = (queries: string[]) =>
   queries.some(
     (q) =>
       (q.includes('"ScoutReconstructionLedger"') && q.includes('"target_id"')) ||
-      (q.includes('"ScoutIngestEntity"') && q.includes('COUNT')),
+      (q.includes('"ScoutIngestEntity"') && q.includes('COUNT') && !q.includes('GROUP BY')),
   );
 const parsedCatalog = () => JSON.parse(catalog());
 /** Every non-final Q1 page of `family` from `after`, one row at a time; returns visible ids. */
@@ -545,11 +589,11 @@ describe('stage 1: N — the final writer on the accepted R shape', () => {
   });
 });
 
-describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, erasure, bounds', () => {
+describe('stage 2: Q1 — scoped emission, legacy resolution, ties, scope, erasure, bounds', () => {
   beforeEach(() => resetData());
 
   it.each(['clients', 'workouts'])(
-    'Q01: every non-final %s page emits the exact scoped v2 token; every page orders by (source_id, source_platform) under REPEATABLE READ',
+    'Q01: every non-final %s page emits the exact scoped row-precise v3 token; every page orders by (source_id, source_platform, entity_type) under REPEATABLE READ',
     async (family) => {
       for (const id of ['a', 'b', 'c']) stage(id, family);
       await run({ family });
@@ -561,7 +605,7 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
         const page = await run({ action, family, cursor: after });
         expect(page.failure).toBeUndefined();
         union.push(...ids(visible(family, page.result)));
-        const next = id === 'c' ? null : v2(family, id, 'truecoach');
+        const next = id === 'c' ? null : v3(family, id, 'truecoach');
         expect(cursorOf(family, page.result)).toBe(next);
         expect(page.queries.some((q) => q.includes('REPEATABLE READ'))).toBe(true);
         expect(page.queries.some((q) => LEDGER_ORDER.test(q))).toBe(true);
@@ -579,7 +623,7 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       // A first page (no cursor) orders identically and its token is decodable by the same rules.
       const first = await run({ action, family, limit: 2 });
       expect(ids(visible(family, first.result))).toEqual(targetIds.slice(0, 2));
-      expect(cursorOf(family, first.result)).toBe(v2(family, 'b', 'truecoach'));
+      expect(cursorOf(family, first.result)).toBe(v3(family, 'b', 'truecoach'));
     },
   );
 
@@ -590,18 +634,21 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       await run({ family });
       const targetIds = records('coach', 'intent', family).map((r: any) => r.target_id);
       const action = actionOf(family);
-      // Q1 → Q0 → Q1 → Q1
+      // Q1 → Q0 → Q1 → Q1. S11-E: the candidate emits v3, which the OLD head cannot decode,
+      // so the hand-off to Q0 uses the v2 form both heads share (still accepted here) — the
+      // documented mid-rollout path; the candidate's own v3 token on the old reader is the
+      // 400 asserted in Q07.
       let page = await run({ action, family });
       expect(ids(visible(family, page.result))).toEqual([targetIds[0]]);
-      expect(cursorOf(family, page.result)).toBe(v2(family, 'a', 'truecoach'));
-      page = await run({ action, family, cursor: cursorOf(family, page.result) }, true);
+      expect(cursorOf(family, page.result)).toBe(v3(family, 'a', 'truecoach'));
+      page = await run({ action, family, cursor: v2(family, 'a', 'truecoach') }, true);
       expect(page.failure).toBeUndefined();
       expect(ids(visible(family, page.result))).toEqual([targetIds[1]]);
       expect(cursorOf(family, page.result)).toBe(nextLegacy(family, 'b'));
       page = await run({ action, family, cursor: cursorOf(family, page.result) });
       expect(page.failure).toBeUndefined();
       expect(ids(visible(family, page.result))).toEqual([targetIds[2]]);
-      expect(cursorOf(family, page.result)).toBe(v2(family, 'c', 'truecoach'));
+      expect(cursorOf(family, page.result)).toBe(v3(family, 'c', 'truecoach'));
       page = await run({ action, family, cursor: cursorOf(family, page.result) });
       expect(ids(visible(family, page.result))).toEqual([targetIds[3]]);
       expect(cursorOf(family, page.result)).toBeNull();
@@ -612,8 +659,8 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       page = await run({ action, family, cursor: cursorOf(family, page.result) });
       expect(page.failure).toBeUndefined();
       expect(ids(visible(family, page.result))).toEqual([targetIds[1]]);
-      expect(cursorOf(family, page.result)).toBe(v2(family, 'b', 'truecoach'));
-      page = await run({ action, family, cursor: cursorOf(family, page.result) }, true);
+      expect(cursorOf(family, page.result)).toBe(v3(family, 'b', 'truecoach'));
+      page = await run({ action, family, cursor: v2(family, 'b', 'truecoach') }, true);
       expect(page.failure).toBeUndefined();
       expect(ids(visible(family, page.result))).toEqual([targetIds[2]]);
       page = await run({ action, family, cursor: cursorOf(family, page.result) }, true);
@@ -639,13 +686,18 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       expect(ids(visible(family, fromLegacy.result))).toEqual(targetIds.slice(1));
       // Resolution ran inside the snapshot as a scoped, bounded ledger lookup selecting only the
       // platform, before the page read.
+      // S11-E: the legacy lookup now selects (source_platform, entity_type) — it must resolve
+      // the ledger's full unique key, not just the platform — and its scope predicate is the
+      // classified pair set (`entity_type IN (...)` for one pair renders as `= $n`), still
+      // bounded, still inside the snapshot, still before the page read.
       const resolveAt = fromLegacy.queries.findIndex(
         (q) =>
           q.includes('"ScoutReconstructionLedger"') &&
           q.includes('"source_platform"') &&
+          q.includes('"entity_type"') &&
           !q.includes('"target_id"') &&
+          !q.includes('GROUP BY') &&
           /"source_id" = \$\d+/.test(q) &&
-          /"entity_type" = \$\d+/.test(q) &&
           /"status" = \$\d+/.test(q),
       );
       const pageAt = fromLegacy.queries.findIndex(
@@ -670,14 +722,14 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
         expect(refused.failure).toEqual(MALFORMED);
         expect(readPage(refused.queries)).toBe(false);
       }
-      // A resolved legacy token restarts nothing: the Q1 page it yields carries a v2 token onward.
+      // A resolved legacy token restarts nothing: the Q1 page it yields carries a v3 token onward.
       const onward = await run({ action, family, cursor: nextLegacy(family, 'a') });
-      expect(cursorOf(family, onward.result)).toBe(v2(family, 'b', 'truecoach'));
+      expect(cursorOf(family, onward.result)).toBe(v3(family, 'b', 'truecoach'));
     },
   );
 
   it.each(['clients', 'workouts'])(
-    'Q04: identity ties (same source_id, several platforms) enumerate every %s row exactly once at limit 1; Q0 accepts the v2 tokens; a tied legacy token is 400',
+    'Q04: identity ties (same source_id, several platforms) enumerate every %s row exactly once at limit 1; Q0 accepts the shared v2 form; a tied legacy token is 400',
     async (family) => {
       for (const id of ['a', 'b', 'c', 'd']) stage(id, family);
       await run({ family });
@@ -696,12 +748,13 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
         const { union, tokens } = await enumerate(family);
         expect(union).toEqual(original.map((r: any) => r.target_id));
         expect(tokens).toEqual([
-          v2(family, 'a', 'p1'),
-          v2(family, 'a', 'p2'),
-          v2(family, 'a', 'p3'),
+          v3(family, 'a', 'p1'),
+          v3(family, 'a', 'p2'),
+          v3(family, 'a', 'p3'),
           null,
         ]);
-        // Q0 fed Q1's exact v2 tokens pages the same rows.
+        // Q0 fed the v2 form of the same boundary pages the same row (v2 stays the shared
+        // mid-rollout form; the old head has no v3 branch — see Q07).
         const q0 = await run({ action, family, cursor: v2(family, 'a', 'p2') }, true);
         expect(q0.failure).toBeUndefined();
         expect(ids(visible(family, q0.result))).toEqual([original[2].target_id]);
@@ -793,7 +846,7 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       DELETE FROM "${table}" WHERE id=${quote(targetIds[2])}`);
       const hidden = await run({ action, family, cursor: v2(family, 'a'), limit: 1 });
       expect(visible(family, hidden.result)).toEqual([]);
-      expect(cursorOf(family, hidden.result)).toBe(v2(family, 'b', 'truecoach'));
+      expect(cursorOf(family, hidden.result)).toBe(v3(family, 'b', 'truecoach'));
       const final = await run({
         action,
         family,
@@ -818,7 +871,7 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
   );
 
   it.each(['clients', 'workouts'])(
-    'Q07: %s tokens are bounded at 8,192 characters for Q1 and Q0; every malformed shape is a 400 without reflection',
+    'Q07: %s tokens are bounded at 8,192 characters for Q1 and Q0, v2 input is still accepted on both heads, a v3 token is refused by Q0, and every malformed shape is a 400 without reflection',
     async (family) => {
       stage('a', family);
       await run({ family });
@@ -826,12 +879,34 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
       const long = 'x'.repeat(256);
       const longV2 = v2(family, long, 'p'.repeat(256), 'coach', 'intent');
       expect(longV2.length).toBeLessThanOrEqual(8192);
+      // Accepting the pair-only v2 form is UNCHANGED by S11-E: both heads still serve a
+      // maximal v2 token as the empty final page (no boundary row exists for it).
       for (const old of [false, true]) {
         const accepted = await run({ action, family, cursor: longV2 }, old);
         expect(accepted.failure).toBeUndefined();
         expect(visible(family, accepted.result)).toEqual([]);
         expect(cursorOf(family, accepted.result)).toBeNull();
       }
+      // S11-E: the candidate's own maximal v3 token is bounded and accepted by the candidate;
+      // the old head has no v3 branch, so it fails closed with the documented 400 (restart
+      // pagination) instead of serving a wrong page. `t` is the staged entity_type, bounded to
+      // 128 at ingest, so the maximal token still fits the 8,192-character envelope bound.
+      const longV3 = v3(family, long, 'p'.repeat(256), 't'.repeat(128), 'coach', 'intent');
+      expect(longV3.length).toBeLessThanOrEqual(8192);
+      const acceptedV3 = await run({ action, family, cursor: longV3 });
+      expect(acceptedV3.failure).toBeUndefined();
+      expect(visible(family, acceptedV3.result)).toEqual([]);
+      expect(cursorOf(family, acceptedV3.result)).toBeNull();
+      const refusedV3 = await run({ action, family, cursor: longV3 }, true);
+      expect(refusedV3.result).toBeUndefined();
+      expect(refusedV3.failure).toEqual(MALFORMED);
+      // A real v3 boundary of THIS scope is accepted by the candidate and refused by Q0.
+      expect(
+        (await run({ action, family, cursor: v3(family, 'a', 'truecoach') })).failure,
+      ).toBeUndefined();
+      expect(
+        (await run({ action, family, cursor: v3(family, 'a', 'truecoach') }, true)).failure,
+      ).toEqual(MALFORMED);
       const maximal = `v2.${encoded(
         JSON.stringify({
           v: 2,
@@ -869,8 +944,40 @@ describe('stage 2: Q1 — scoped v2 emission, legacy resolution, ties, scope, er
         envelope({ v: 1 }),
         envelope({ i: 'other' }),
       ];
+      const v3Envelope = (patch: Record<string, unknown>) =>
+        'v3.' +
+        encoded(
+          JSON.stringify({
+            v: 3,
+            c: 'coach',
+            i: 'intent',
+            f: family,
+            o: 'source_id:asc,source_platform:asc,entity_type:asc',
+            s: 'a',
+            p: 'truecoach',
+            t: family,
+            ...patch,
+          }),
+        );
       const q1Only = [
         'A'.repeat(8193),
+        // v3 shapes the candidate must refuse: a missing, blank, non-string, oversized or
+        // NUL-bearing token, the v2 order string under a v3 prefix, and a v2 envelope wearing
+        // the v3 prefix (the canonical re-encode check rejects all of them).
+        v3Envelope({ t: undefined }),
+        v3Envelope({ t: '' }),
+        v3Envelope({ t: null }),
+        v3Envelope({ t: 1 }),
+        v3Envelope({ t: 't'.repeat(129) }),
+        v3Envelope({ t: 'a\u0000' }),
+        v3Envelope({ o: 'source_id:asc,source_platform:asc' }),
+        v3Envelope({ v: 2 }),
+        v3Envelope({ c: 'other' }),
+        v3Envelope({ f: family === 'clients' ? 'workouts' : 'clients' }),
+        'v3.' + v2(family, 'a', 'truecoach').slice(3),
+        'v3.' + encoded('[]'),
+        'v3.!!!',
+        'v3.',
         envelope({ s: '' }),
         envelope({ s: 'a\u0000' }),
         envelope({ c: 'other' }),
