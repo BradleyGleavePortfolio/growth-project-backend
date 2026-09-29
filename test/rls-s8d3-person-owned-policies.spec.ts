@@ -47,6 +47,17 @@
  * (Supabase's classic auth.uid() reads that claim; the CI bootstrap stub returns NULL, so this spec
  * installs the claim-reading form on the disposable database — test environment only).
  *
+ * Fix round 2 (PR #587, R587-c7B-06):
+ *   - Two sub-coach principals, modelled exactly as the application models a sub-coach
+ *     (SubCoachScopeService: User.role = coach with coach_id = the head coach; delegation = an OPEN
+ *     SubCoachAssignment row): SC on coach A's team WITH an open delegation to S1 (and a closed one
+ *     to S2), and SCX on coach B's team WITHOUT any delegation. Every matrix row and the CWA write
+ *     block run for both. The only branch that admits a sub-coach today is the snapshot's
+ *     app.is_subcoach_of(cwa.client_id), and only for a user-owned assignment.
+ *   - The helper's EXECUTE ACL is captured BEFORE the harness's blanket
+ *     `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app`, so the ACL assertion proves the MIGRATION's
+ *     REVOKE/GRANT, not the harness's.
+ *
  * Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL. Skipped when neither is set (the
  * default jest lane never selects this file); HARD-FAILS when set but unreachable.
  */
@@ -168,6 +179,12 @@ async function q<T = Record<string, unknown>>(sql: string): Promise<T[]> {
 // ─── Fixtures (synthetic; ids carry a run-unique prefix; removed in afterAll) ─────────────────
 const RUN = `s8d3-${randomUUID().slice(0, 8)}`;
 const id = (s: string) => `${RUN}-${s}`;
+/**
+ * R587-c7B-06(c): EXECUTE privileges on the migration-created helper exactly as the MIGRATION left
+ * them, read BEFORE the harness's blanket `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app` below.
+ */
+const migrationAcl: Record<string, Record<string, boolean>> = {};
+const HELPER_FUNCTIONS = ['app.current_user_owns_workout_plan(text)'];
 
 const users = {
   coachA: {
@@ -191,11 +208,31 @@ const users = {
   s1: { id: id('student-1'), supabase: randomUUID(), role: 'student', coach_id: id('coach-a') },
   s2: { id: id('student-2'), supabase: randomUUID(), role: 'student', coach_id: id('coach-a') },
   s3: { id: id('student-3'), supabase: randomUUID(), role: 'student', coach_id: id('coach-b') },
+  // Sub-coaches, modelled as the app models them (role coach, coach_id = head coach). SC is on coach
+  // A's team with an OPEN delegation to S1 and a CLOSED one to S2; SCX is on coach B's team with no
+  // delegation at all.
+  subCoach: {
+    id: id('sub-coach'),
+    supabase: randomUUID(),
+    role: 'coach',
+    coach_id: id('coach-a') as string | null,
+  },
+  subCoachX: {
+    id: id('sub-coach-x'),
+    supabase: randomUUID(),
+    role: 'coach',
+    coach_id: id('coach-b') as string | null,
+  },
 };
 const PERSON = id('person');
 const PLAN = id('plan');
 /** A plan owned by coach B: proves coach A cannot assign a plan that is not theirs. */
 const PLAN_B = id('plan-b');
+/** Plans owned by the two sub-coaches. */
+const PLAN_SC = id('plan-sc');
+const PLAN_SCX = id('plan-scx');
+/** SubCoachAssignment rows — SC -> S1 OPEN; SC -> S2 CLOSED (unassigned_at set). SCX has none. */
+const SCA = { open: id('sca-open'), closed: id('sca-closed') };
 const ROWS = {
   ws: { user: id('ws-user'), person: id('ws-person') },
   es: { user: id('es-user'), person: id('es-person') },
@@ -250,6 +287,20 @@ const P: Record<string, Principal> = {
     userId: users.owner.id,
     userRole: 'owner',
     supabaseId: users.owner.supabase,
+  },
+  subCoach: {
+    label: 'sub-coach SC (team A; open delegation to S1)',
+    role: 'authenticated',
+    userId: users.subCoach.id,
+    userRole: 'coach',
+    supabaseId: users.subCoach.supabase,
+  },
+  subCoachX: {
+    label: 'sub-coach SCX (team B; no delegation)',
+    role: 'authenticated',
+    userId: users.subCoachX.id,
+    userRole: 'coach',
+    supabaseId: users.subCoachX.supabase,
   },
 };
 
@@ -355,10 +406,12 @@ const TABLES: TableCase[] = [
     table: 'ClientWorkoutAssignmentSnapshot',
     rows: ROWS.snap,
     set: `SET "plan_name" = 'x'`,
+    // owner; the assigned client (select); the assigning coach / current coach; and the client's
+    // sub-coach with an OPEN delegation (app.is_subcoach_of) — SC yes, SCX (no delegation) no.
     userAllow: {
-      select: ['s1', 'coachA', 'owner'],
-      update: ['coachA', 'owner'],
-      delete: ['coachA', 'owner'],
+      select: ['s1', 'coachA', 'owner', 'subCoach'],
+      update: ['coachA', 'owner', 'subCoach'],
+      delete: ['coachA', 'owner', 'subCoach'],
     },
     personAllow: { select: OWNER, update: OWNER, delete: OWNER },
     insertPersonOwned: `INSERT INTO public."ClientWorkoutAssignmentSnapshot" ("id","assignment_id","plan_name","plan_type","exercises_json","source_plan_id","source_version") VALUES (${lit(id('snap-new'))}, ${lit(ROWS.cwa.personBare)}, 'p', 'strength', '[]'::jsonb, ${lit(PLAN)}, 1)`,
@@ -441,7 +494,15 @@ async function insertFixtures(): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES
       (${lit(PLAN)}, ${lit(users.coachA.id)}, 'plan', 'strength', now()),
-      (${lit(PLAN_B)}, ${lit(users.coachB.id)}, 'plan-b', 'strength', now())`,
+      (${lit(PLAN_B)}, ${lit(users.coachB.id)}, 'plan-b', 'strength', now()),
+      (${lit(PLAN_SC)}, ${lit(users.subCoach.id)}, 'plan-sc', 'strength', now()),
+      (${lit(PLAN_SCX)}, ${lit(users.subCoachX.id)}, 'plan-scx', 'strength', now())`,
+  );
+  // Sub-coach delegations — SC: one open (S1), one closed (S2). SCX: none.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO public."SubCoachAssignment" ("id","head_coach_id","sub_coach_id","client_id","assigned_at","unassigned_at") VALUES
+      (${lit(SCA.open)}, ${lit(users.coachA.id)}, ${lit(users.subCoach.id)}, ${lit(users.s1.id)}, now(), NULL),
+      (${lit(SCA.closed)}, ${lit(users.coachA.id)}, ${lit(users.subCoach.id)}, ${lit(users.s2.id)}, now() - interval '2 days', now() - interval '1 day')`,
   );
   // Five parents: one user-owned (S1) and one person-owned (P) row each; CheckIn rows name coach A.
   await prisma.$executeRawUnsafe(
@@ -502,7 +563,8 @@ async function removeFixtures(): Promise<void> {
   await del('WeightLog', 'id', [ROWS.wl.user, ROWS.wl.person]);
   await del('ExerciseSet', 'id', [ROWS.es.user, ROWS.es.person]);
   await del('WorkoutSession', 'id', [ROWS.ws.user, ROWS.ws.person]);
-  await del('WorkoutPlan', 'id', [PLAN, PLAN_B]);
+  await del('WorkoutPlan', 'id', [PLAN, PLAN_B, PLAN_SC, PLAN_SCX]);
+  await del('SubCoachAssignment', 'id', [SCA.open, SCA.closed]);
   await del('Person', 'id', [PERSON]);
   await del(
     'User',
@@ -519,6 +581,16 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     await prisma.$executeRawUnsafe(
       `CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$`,
     );
+    // R587-c7B-06(c): record the helper's ACL as the migration left it, BEFORE any harness grant.
+    for (const fn of HELPER_FUNCTIONS) {
+      migrationAcl[fn] = {};
+      for (const grantee of ['public', 'anon', 'authenticated', 'service_role']) {
+        const r = await q<{ ok: boolean }>(
+          `SELECT has_function_privilege(${lit(grantee)}, ${lit(fn)}, 'EXECUTE') AS ok`,
+        );
+        migrationAcl[fn][grantee] = r[0]?.ok ?? false;
+      }
+    }
     // Supabase's default privileges grant the API roles table access; a bare Postgres does not.
     // Grant on the tables under test (NOT on the five new tables: their REVOKE is part of the proof)
     // so every denial below is a POLICY denial, never a missing privilege.
@@ -529,7 +601,13 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO anon, authenticated`,
     );
     await prisma.$executeRawUnsafe(`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`);
-    for (const t of [...TABLES.map((c) => c.table), 'User', 'WorkoutPlan', 'Person']) {
+    for (const t of [
+      ...TABLES.map((c) => c.table),
+      'User',
+      'WorkoutPlan',
+      'Person',
+      'SubCoachAssignment',
+    ]) {
       await prisma.$executeRawUnsafe(
         `GRANT SELECT, INSERT, UPDATE, DELETE ON public."${t}" TO anon, authenticated`,
       );
@@ -546,8 +624,8 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
   }, 120_000);
 
   // ── Schema facts ──────────────────────────────────────────────────────────────────────────
-  describe('schema (all eleven S8-D3 directories applied; constraints validated; policies guarded)', () => {
-    it('records the eleven S8-D3 migrations and the CWA policy-cycle fix as applied', async () => {
+  describe('schema (all twelve S8-D3 directories applied; constraints validated; policies guarded)', () => {
+    it('records the twelve S8-D3 migrations (eleven schema steps and the CWA policy-cycle fix) as applied', async () => {
       const rows = await q<{ migration_name: string }>(
         `SELECT migration_name FROM "_prisma_migrations" WHERE migration_name LIKE '20270125%' AND finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY 1`,
       );
@@ -758,16 +836,13 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
       );
       expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
-      const pub = await q<{ ok: boolean }>(
-        `SELECT has_function_privilege('public', 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
-      );
-      expect(pub).toEqual([{ ok: false }]);
-      for (const role of ['anon', 'authenticated', 'service_role']) {
-        const r = await q<{ ok: boolean }>(
-          `SELECT has_function_privilege(${lit(role)}, 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
-        );
-        expect({ role, ...r[0] }).toEqual({ role, ok: true });
-      }
+      // ACL as the MIGRATION left it (captured before the harness's blanket grant; R587-c7B-06c).
+      expect(migrationAcl['app.current_user_owns_workout_plan(text)']).toEqual({
+        public: false,
+        anon: true,
+        authenticated: true,
+        service_role: true,
+      });
       const pol = await q<{ qual: string; with_check: string }>(
         `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
       );
@@ -833,10 +908,60 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     it("coach A cannot forge assigned_by as coach B, and coach B cannot write on coach A's plan", async () => {
       expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachB.id))).toEqual(DENY);
       expect(await attempt(P.coachB, insertCwa(PLAN, users.s3.id, users.coachB.id))).toEqual(DENY);
+      // Pre-D8 this cell is ADMITTED (coach B's own plan, but coach A's client): the inherited
+      // client-tenancy gap the owner decided (D8) and the stacked #593 closes (it flips this to DENY).
+      // Never cite this cell as tenancy proof.
       expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual({
         ok: true,
         count: 1,
       });
+    });
+
+    it("sub-coaches (R587-c7B-06b): SC with an open delegation assigns their OWN plan to S1; neither sub-coach can use the head coach's plan or forge assigned_by", async () => {
+      // Positive: the app's sub-coach shape (role coach, coach_id = A, open SCA to S1) writes their
+      // own plan for the delegated client.
+      expect(await attempt(P.subCoach, insertCwa(PLAN_SC, users.s1.id, users.subCoach.id))).toEqual(
+        { ok: true, count: 1 },
+      );
+      // Plan ownership still binds a sub-coach: coach A's plan is not theirs.
+      expect(await attempt(P.subCoach, insertCwa(PLAN, users.s1.id, users.subCoach.id))).toEqual(
+        DENY,
+      );
+      expect(
+        await attempt(P.subCoachX, insertCwa(PLAN_B, users.s3.id, users.subCoachX.id)),
+      ).toEqual(DENY);
+      // assigned_by must be the caller.
+      expect(await attempt(P.subCoach, insertCwa(PLAN_SC, users.s1.id, users.coachA.id))).toEqual(
+        DENY,
+      );
+      // Neither sub-coach can touch the head coach's own assignment row (assigned_by = A).
+      for (const key of ['subCoach', 'subCoachX'] as const) {
+        const upd = await attempt(
+          P[key],
+          `UPDATE public."${CWA}" SET "post_notes" = 'x' WHERE "id" = ${lit(ROWS.cwa.user)}`,
+        );
+        expect({ principal: P[key].label, upd }).toEqual({
+          principal: P[key].label,
+          upd: { ok: true, count: 0 },
+        });
+      }
+    });
+
+    it("sub-coach WITHOUT a delegation, own plan, another team's client: the pre-D8 policy ADMITS it (the client-tenancy gap owner decision D8 closes in the stacked #593, which flips this cell to DENY)", async () => {
+      // This cell documents the inherited gap on THIS head, honestly: 20270125000011 restores the
+      // designed write branch with the pre-existing predicate, which has never checked the client's
+      // tenancy. D8 (20270125000012, PR #593) adds that predicate; the stacked head asserts DENY here.
+      // Never cite this cell as tenancy proof.
+      expect(
+        await attempt(P.subCoachX, insertCwa(PLAN_SCX, users.s1.id, users.subCoachX.id)),
+      ).toEqual({ ok: true, count: 1 });
+      // Same shape for a closed delegation: SC -> S2 is CLOSED, yet the pre-D8 policy admits it.
+      expect(await attempt(P.subCoach, insertCwa(PLAN_SC, users.s2.id, users.subCoach.id))).toEqual(
+        {
+          ok: true,
+          count: 1,
+        },
+      );
     });
 
     it('clients, same-coach students, unrelated students and anon cannot write ClientWorkoutAssignment at all', async () => {

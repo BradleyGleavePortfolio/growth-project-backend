@@ -1,4 +1,4 @@
--- S8-D3 step 10 of 11 rollback: drop the FKs to Person / User and the Person(id, coach_id) constraint,
+-- S8-D3 step 10 of 12 rollback: drop the FKs to Person / User and the Person(id, coach_id) constraint,
 -- then restore the exact pre-step-10 state.
 -- Run AFTER the 20270125000010 down and BEFORE the 20270125000008..01 downs.
 -- Metadata only; no row is touched or checked (the FKs go away, nothing is orphaned by this).

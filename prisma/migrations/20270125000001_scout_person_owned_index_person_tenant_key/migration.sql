@@ -1,4 +1,4 @@
--- S8-D3 step 2 of 11: person-owned index, built CONCURRENTLY
+-- S8-D3 step 2 of 12: person-owned index, built CONCURRENTLY
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.1, §2.9 row D3-2).
 --
 -- WHAT: Person(id, coach_id) UNIQUE — the key the composite tenant FKs (step 10) reference. B7 ordering: this

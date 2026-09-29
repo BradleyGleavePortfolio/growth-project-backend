@@ -373,6 +373,57 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+  person-owned-migration-rehearsal:
+    # S8-D3 populated-data rollout / rollback rehearsal (PR #587 fix round 2, R587-c7B-04; G13).
+    # scripts/ci/s8d3-populated-rehearsal.sh: pre-S8-D3 chain via `prisma migrate deploy`, ~1.0M
+    # synthetic rows across the twelve affected tables, then the twelve S8-D3 directories forward
+    # (`prisma migrate deploy`, timed), the full down chain newest-first (timed; the step-1 down's
+    # fail-closed guard exercised with one person-owned row present), forward again (raw SQL, timed).
+    # Row counts and per-table checksums must be identical at every stage; every S8-D3 constraint
+    # VALIDATED and every index VALID at the end. The job log is the evidence record (timings, counts).
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: s8d3_rehearsal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/s8d3_rehearsal?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/s8d3_rehearsal?schema=public
+      REHEARSAL_SCALE: '1'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        run: |
+          set -euo pipefail
+          PSQL_URL="${DATABASE_URL%%\?*}"
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Populated rehearsal — forward (deploy) → down chain → forward
+        run: bash scripts/ci/s8d3-populated-rehearsal.sh
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization

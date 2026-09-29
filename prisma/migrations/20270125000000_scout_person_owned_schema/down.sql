@@ -1,11 +1,29 @@
--- S8-D3 step 1 of 11 rollback: reverse 20270125000000_scout_person_owned_schema exactly.
--- Run ONLY after the down files of 20270125000010, 20270125000009 and 20270125000001..08 (newest
--- first); this file drops no key that a later directory created and refuses to destroy data.
+-- S8-D3 step 1 of 12 rollback: reverse 20270125000000_scout_person_owned_schema exactly.
+-- Run ONLY after the down files of 20270125000011, 20270125000010, 20270125000009 and
+-- 20270125000001..08 (newest first); this file drops no key that a later directory created and
+-- refuses to destroy data.
 --
 -- FAIL-CLOSED: refuses (atomically, nothing dropped) while ANY person-owned row exists on the five
 -- parents, ANY Person is linked, ANY provenance row names a Person, or ANY link-rail row exists.
 -- Person-owned history and link audit are never erased by a rollback; an operator must first move
 -- or erase them under a separately authorized path. The refusal text is fixed.
+--
+-- POPULATED-DATA SHAPE (PR #587 fix round 2, R587-c7B-04): three transactions, so the only full
+-- scans of the five hot parents run under SHARE UPDATE EXCLUSIVE (reads and writes continue), never
+-- under the ACCESS EXCLUSIVE lock of the destructive step:
+--   A. guard (above) + ADD CONSTRAINT "<Table>_<owner>_rollback_not_null" CHECK (owner IS NOT NULL)
+--      NOT VALID on each parent (catalog-only). From this point a person-owned INSERT/UPDATE fails
+--      the CHECK (23514), so the window between A and C stays closed.
+--   B. VALIDATE CONSTRAINT, one statement each (the scan; SHARE UPDATE EXCLUSIVE).
+--   C. destructive step: link-rail tables, policy restore, DROP the XOR CHECKs, SET NOT NULL — which
+--      PostgreSQL (12+) satisfies from the validated CHECK WITHOUT a table scan — then DROP the
+--      temporary CHECKs and the columns. Short ACCESS EXCLUSIVE, no scan.
+-- Rehearsed on populated fixtures in CI (job person-owned-migration-rehearsal: forward -> down chain
+-- -> forward with row counts and checksums asserted unchanged).
+-- RECOVERY: if B fails with 23514, a person-owned row was written after the guard; the CHECKs stay
+-- NOT VALID and enforce; re-run the WHOLE file after moving that row (A is idempotent: the guard
+-- re-checks, ADD CONSTRAINT is guarded by DROP IF EXISTS). If any phase times out (lock_timeout 5s
+-- / statement_timeout 30s) it fails atomically; re-run the file — every phase is idempotent.
 --
 -- POLICY RESTORE: the rewritten policies on CheckIn, ClientWorkoutAssignment, ExerciseSet,
 -- HabitLog and ClientWorkoutAssignmentSnapshot are recreated with their pre-D3 text verbatim
@@ -17,6 +35,9 @@
 -- WeightLog / WorkoutSession / Habit sections of prisma/migrations/rls_fitness_backend.sql (the
 -- unguarded pre-D3 posture); this file cannot know whether that file was ever applied. The
 -- application path (service_role / BYPASSRLS) is unaffected either way.
+-- ---------------------------------------------------------------------------------------------
+-- A. Guard + temporary NOT NULL CHECKs (NOT VALID; catalog-only)
+-- ---------------------------------------------------------------------------------------------
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
@@ -34,6 +55,57 @@ BEGIN
   THEN
     RAISE EXCEPTION 'S8-D3 refuses removal of person-owned rows';
   END IF;
+  IF EXISTS (SELECT 1 FROM public."Person" WHERE "linked_user_id" IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM public."ImportNativeProvenance" WHERE "person_id" IS NOT NULL)
+  THEN
+    RAISE EXCEPTION 'S8-D3 refuses removal of assigned person provenance';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public."PersonLink")
+    OR EXISTS (SELECT 1 FROM public."PersonInvite")
+    OR EXISTS (SELECT 1 FROM public."PersonInviteChallenge")
+    OR EXISTS (SELECT 1 FROM public."PersonLinkProposal")
+    OR EXISTS (SELECT 1 FROM public."PersonLinkOutbox")
+  THEN
+    RAISE EXCEPTION 'S8-D3 refuses removal of link audit rows';
+  END IF;
+END $$;
+
+ALTER TABLE public."WorkoutSession" DROP CONSTRAINT IF EXISTS "WorkoutSession_user_id_rollback_not_null";
+ALTER TABLE public."WorkoutSession" ADD CONSTRAINT "WorkoutSession_user_id_rollback_not_null" CHECK ("user_id" IS NOT NULL) NOT VALID;
+ALTER TABLE public."WeightLog" DROP CONSTRAINT IF EXISTS "WeightLog_user_id_rollback_not_null";
+ALTER TABLE public."WeightLog" ADD CONSTRAINT "WeightLog_user_id_rollback_not_null" CHECK ("user_id" IS NOT NULL) NOT VALID;
+ALTER TABLE public."Habit" DROP CONSTRAINT IF EXISTS "Habit_user_id_rollback_not_null";
+ALTER TABLE public."Habit" ADD CONSTRAINT "Habit_user_id_rollback_not_null" CHECK ("user_id" IS NOT NULL) NOT VALID;
+ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_user_id_rollback_not_null";
+ALTER TABLE public."CheckIn" ADD CONSTRAINT "CheckIn_user_id_rollback_not_null" CHECK ("user_id" IS NOT NULL) NOT VALID;
+ALTER TABLE public."ClientWorkoutAssignment" DROP CONSTRAINT IF EXISTS "ClientWorkoutAssignment_client_id_rollback_not_null";
+ALTER TABLE public."ClientWorkoutAssignment" ADD CONSTRAINT "ClientWorkoutAssignment_client_id_rollback_not_null" CHECK ("client_id" IS NOT NULL) NOT VALID;
+COMMIT;
+
+-- ---------------------------------------------------------------------------------------------
+-- B. VALIDATE (the scans; SHARE UPDATE EXCLUSIVE, reads and writes continue)
+-- ---------------------------------------------------------------------------------------------
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+ALTER TABLE public."WorkoutSession" VALIDATE CONSTRAINT "WorkoutSession_user_id_rollback_not_null";
+ALTER TABLE public."WeightLog" VALIDATE CONSTRAINT "WeightLog_user_id_rollback_not_null";
+ALTER TABLE public."Habit" VALIDATE CONSTRAINT "Habit_user_id_rollback_not_null";
+ALTER TABLE public."CheckIn" VALIDATE CONSTRAINT "CheckIn_user_id_rollback_not_null";
+ALTER TABLE public."ClientWorkoutAssignment" VALIDATE CONSTRAINT "ClientWorkoutAssignment_client_id_rollback_not_null";
+COMMIT;
+
+-- ---------------------------------------------------------------------------------------------
+-- C. Destructive step (short ACCESS EXCLUSIVE; no scan)
+-- ---------------------------------------------------------------------------------------------
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+SET LOCAL row_security = off;
+
+-- Re-check the tables the CHECKs do not cover (the link rails and the Person / provenance links).
+DO $$
+BEGIN
   IF EXISTS (SELECT 1 FROM public."Person" WHERE "linked_user_id" IS NOT NULL)
     OR EXISTS (SELECT 1 FROM public."ImportNativeProvenance" WHERE "person_id" IS NOT NULL)
   THEN
@@ -184,26 +256,32 @@ DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_delete" ON public."Clie
 CREATE POLICY "p_clientworkoutassignmentsnapshot_delete" ON "ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
 COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_delete" ON "ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment delete: owner admin, the assigning coach, or that client''s coach/sub-coach may DELETE.';
 
--- 3. Parents: CHECKs, NOT NULL back (the guard above proved every row is user-owned), columns.
+-- 3. Parents: XOR CHECKs off, NOT NULL back (satisfied from the validated rollback CHECK of phase
+--    B, so no scan), the temporary CHECKs off, columns off.
 ALTER TABLE public."WorkoutSession" DROP CONSTRAINT IF EXISTS "WorkoutSession_owner_xor_check";
 ALTER TABLE public."WorkoutSession" ALTER COLUMN "user_id" SET NOT NULL;
+ALTER TABLE public."WorkoutSession" DROP CONSTRAINT IF EXISTS "WorkoutSession_user_id_rollback_not_null";
 ALTER TABLE public."WorkoutSession" DROP COLUMN IF EXISTS "person_id";
 
 ALTER TABLE public."WeightLog" DROP CONSTRAINT IF EXISTS "WeightLog_owner_xor_check";
 ALTER TABLE public."WeightLog" ALTER COLUMN "user_id" SET NOT NULL;
+ALTER TABLE public."WeightLog" DROP CONSTRAINT IF EXISTS "WeightLog_user_id_rollback_not_null";
 ALTER TABLE public."WeightLog" DROP COLUMN IF EXISTS "person_id";
 
 ALTER TABLE public."Habit" DROP CONSTRAINT IF EXISTS "Habit_owner_xor_check";
 ALTER TABLE public."Habit" ALTER COLUMN "user_id" SET NOT NULL;
+ALTER TABLE public."Habit" DROP CONSTRAINT IF EXISTS "Habit_user_id_rollback_not_null";
 ALTER TABLE public."Habit" DROP COLUMN IF EXISTS "person_id";
 
 ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_person_coach_check";
 ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_owner_xor_check";
 ALTER TABLE public."CheckIn" ALTER COLUMN "user_id" SET NOT NULL;
+ALTER TABLE public."CheckIn" DROP CONSTRAINT IF EXISTS "CheckIn_user_id_rollback_not_null";
 ALTER TABLE public."CheckIn" DROP COLUMN IF EXISTS "person_id";
 
 ALTER TABLE public."ClientWorkoutAssignment" DROP CONSTRAINT IF EXISTS "ClientWorkoutAssignment_owner_xor_check";
 ALTER TABLE public."ClientWorkoutAssignment" ALTER COLUMN "client_id" SET NOT NULL;
+ALTER TABLE public."ClientWorkoutAssignment" DROP CONSTRAINT IF EXISTS "ClientWorkoutAssignment_client_id_rollback_not_null";
 ALTER TABLE public."ClientWorkoutAssignment" DROP COLUMN IF EXISTS "person_id";
 
 -- 4. Person.linked_user_id / ImportNativeProvenance.person_id.

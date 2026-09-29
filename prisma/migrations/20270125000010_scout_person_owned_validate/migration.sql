@@ -1,4 +1,4 @@
--- S8-D3 step 11 of 11: validate every NOT VALID constraint from steps 1 and 10
+-- S8-D3 step 11 of 12: validate every NOT VALID constraint from steps 1 and 10
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.9 row D3-4).
 --
 -- WHAT: ALTER TABLE ... VALIDATE CONSTRAINT, one statement each, for the six CHECKs (step 1) and the

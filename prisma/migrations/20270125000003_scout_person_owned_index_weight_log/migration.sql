@@ -1,4 +1,4 @@
--- S8-D3 step 4 of 11: person-owned index, built CONCURRENTLY
+-- S8-D3 step 4 of 12: person-owned index, built CONCURRENTLY
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.1, §2.9 row D3-2).
 --
 -- WHAT: WeightLog(person_id, date): hot-path mirror of the user-owned index, leading with person_id so it

@@ -1,4 +1,4 @@
--- S8-D3 step 10 of 11: the Person tenant key and the foreign keys to Person
+-- S8-D3 step 10 of 12: the Person tenant key and the foreign keys to Person
 -- (docs/decisions/2026-09-26-s8d-person-link.md §2.2 item 3, §2.5, §2.9 row D3-3).
 --
 -- WHAT:
