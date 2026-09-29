@@ -1,6 +1,6 @@
-# FAM-0: every reachable family lands in TGP (native map + preserve destination) — r3
+# FAM-0: every reachable family lands in TGP (native map + preserve destination) — r4
 
-- **Status:** T4 design record, draft, r3 (closes R590-A, R590-B, R590-A2, R590-B2; §11). It
+- **Status:** T4 design record, draft, r4 (closes R590-A, R590-B, R590-A2, R590-B2, R590-A3, R590-B3; §11). It
   changes no code, schema or API. It binds the FAM-\* build slices in §7, each graded separately
   (T4). Not merged, not product-accepted.
 - **Date:** 2026-09-29. **Decision owner:** Bradley Gleave (repo owner).
@@ -18,7 +18,7 @@
   `families[]` rows carry **no `destination` field** (a partly-native family is expressed by
   `moved_native` + `preserved`); `NotMovedReason` is the closed seven-code enum of §6.3; the
   catch-all preserved label is `unclassified`; a counted fact → `not_moved`, an unknown → `gaps`;
-  unknown = `null`.
+  unknown = `null`. **Executive direction r4 (2026-09-29):** existing native writers keep reading the staged payload; ingest redaction = exact normalized key denylist + unmistakable value shapes only; no purge before the residual writer; media references keep the person key and are admitted under the blob lock; imported history is defined by provenance with an enforced CI check; billing is a gap until the owner decides; the projection is D-L0-6.3 by name, not restated.
 - **Open PRs this depends on:** #587 (S8-D3 person-owned schema and RLS), #588 (L2a one
   `SourceRegistryProvider`), #589 (L3 per-family evidence grammar), #577 (S8-D2 roster).
 
@@ -28,27 +28,24 @@ Owner, 2026-09-29: there are **no unsupported families**. Anything reachable on 
 into TGP, native or preserved. `complete` = every reachable client and coaching record is in TGP
 with every list proven exhausted.
 
-RESET §1 defers the completeness proof: until a separate completeness-closure record lands, no
-package type has a run-level closure, and every run settles `partial` with gap
-`completeness_not_proven` (test-only `source_signed_enumeration` excepted). **FAM-0 therefore
-defines no `complete` mechanics beyond this one rule: native and preserved records both count as
-"in TGP" once the coach can view them (§6.1).** Everything else about `complete` is an input to
-the closure record (§6.4).
+RESET §1 defers the completeness proof: until a separate completeness-closure record lands, every
+run settles `partial` with gap `completeness_not_proven` (test-only `source_signed_enumeration`
+excepted). **FAM-0 defines no `complete` mechanics beyond one rule: native and preserved records
+both count as "in TGP" once the coach can view them (§6.1).**
 
 This record decides:
 
 1. A closed, vendor-neutral **family catalogue** (§3). A record's destination is a deterministic
    function of its family, the gate state and its typed rules, never a model choice.
-2. **One canonical record and one native write path** (§4.3, §4.6): every destination consumes
-   the same sanitized record, and every native writer, existing or new, resolves a preserved row
-   for the same identity in its own transaction. Native-first and graduated writes are
-   value-identical by construction.
-3. **PRESERVE** (§4): tenant-scoped, person-linked, idempotent, credential-safe, displayed to the
-   coach, never read by AI.
-4. **Media** (§5): clean-scan gate, immutable content-addressed blobs, reference-counted erasure,
-   per-bucket copies so graduated media plays on existing screens.
-5. **Reconciliation inputs** (§6) and the codes FAM-0 maps into the L0-owned
-   `RunStatusProjectionV1`.
+2. **One native write path** (§4.6): every native writer, existing or new, resolves a preserved
+   row for the same identity in its own transaction. Existing writers (S8-C, S8-D1) keep reading
+   the staged payload exactly as today.
+3. **PRESERVE** (§4): tenant-scoped, person-linked, idempotent, credential-screened, displayed to
+   the coach, never read by AI. Staged payloads are never purged before the residual writer exists.
+4. **Media** (§5): clean-scan gate, immutable blobs, person-keyed references admitted under the
+   blob lock, tombstone-then-sweep erasure.
+5. **Reconciliation inputs** (§6) and the mapping of FAM facts into the L0-owned projection
+   (D-L0-6.3).
 6. **Slices** (§7) in landable order; erasure hooks land before any client-data or media writer.
 
 Today's facts that make this necessary:
@@ -64,10 +61,9 @@ Today's facts that make this necessary:
 - A staged token with no family ends `unresolved_family:<token>`; a family with no native
   destination ends `unresolved:no_native_destination:<family>` (S8-DOC §3.7). Neither may remain
   the terminal answer for reachable coaching data.
-- The ingest redactor (`src/scout/scout-ingest.service.ts` L82-95, L149-183) runs with no spec in
-  scope and existing native writers read the staged payload (`native-rules.ts` L435 reads
-  `program_id`; `reconciliation/facts.service.ts` L830-845 reads it too), so no value-shape rule
-  may run at ingest (§4.3).
+- The ingest redactor (`src/scout/scout-ingest.service.ts` L19-39, L149-183) is an exact
+  lower-cased key denylist; native writers and S9 facts read the staged payload
+  (`native-rules.ts` L435; `reconciliation/facts.service.ts` L830-845). FAM-0 keeps both facts.
 
 ## 2. Inventory of TGP native destinations (`prisma/schema.prisma`)
 
@@ -129,18 +125,17 @@ The catalogue extends `RECONSTRUCT_FAMILY` (`scout-reconstruct.dto.ts` L13-18) a
 source names (S8-DOC D-S8-1). Child families (`<family>.<child>`) are provenance and preserve
 namespaces only, never staged families.
 
-**Destination determinism (R590-B-B9, R590-A2-06).** A learned or authored spec (and therefore
-the model, via L0-DOC `LearnedProposalV1`) proposes **data only**: a `family` from this catalogue
-(including `unclassified`) and a field mapping with value classes (§4.3). It never proposes a
-destination or a group. The destination is decided **per record** by one pure function,
+**Destination determinism (R590-B-B9, R590-A2-06, R590-B3-B6).** A learned or authored spec (and
+therefore the model, via L0-DOC `LearnedProposalV1`) proposes **data only**: a `family` from this
+catalogue (including `unclassified`) and a field mapping. It never proposes a destination; L0
+removes `destination.kind` from `LearnedProposalV1` in its next round, and until then FAM-C1's
+validator ignores it and refuses a proposal whose `kind` disagrees with `destinationFor`. The
+destination is decided **per record** by one pure function,
 `destinationFor(family, gateState, typedResult) → 'native' | 'preserve'`: `native` iff the writer
 registry (D-FAM-3) lists a native writer for the family **and** that writer's typed interpretation
-of the canonical record is `ok`; otherwise `preserve`. A family can therefore be partly native
-and partly preserved (collision losers, foreign authors, unresolved persons); the projection
-expresses that with `moved_native` and `preserved` counts and has no family-level destination
-field (§6.3). The catalogue is the single token set: `unclassified` is the catch-all; there is no
-`PreserveGroup` and no `other`. `entity_type` in the identity key is always the family, so a
-record is keyed identically whichever destination it first landed in.
+is `ok`; otherwise `preserve`. A family can be partly native and partly preserved; the projection
+expresses that with `moved_native` and `preserved` counts (D-L0-6.3). `unclassified` is the only
+catch-all label. `entity_type` in the identity key is always the family.
 
 | Family                | Owner | Native model (when the gate is open)                                 | Gate                                          |
 | --------------------- | ----- | -------------------------------------------------------------------- | --------------------------------------------- |
@@ -166,14 +161,14 @@ record is keyed identically whichever destination it first landed in.
 | `forms`               | C     | none                                                                 | a native design                               |
 | `form_responses`      | P     | none                                                                 | a native design                               |
 | `media`               | C / P | preserved media (§5) attached to its parent                          | FAM-M1 (until then: not moved, with a reason) |
-| `billing_history`     | P     | none; **default not moved** (`not_moved: excluded_by_policy`; OQ-1)  | owner answer to OQ-1                          |
+| `billing_history`     | P     | none; not imported until the owner decides (OQ-1; placement below)   | owner answer to OQ-1                          |
 | `unclassified`        | C / P | none (a reachable coaching collection the mapping cannot name; OQ-7) | —                                             |
 
 Non-records (account settings, UI configuration, third-party service data) stay out of scope by
-the structural exclusion rule and RESET §5, never by a model choice. Placement follows RESET §6:
-an **owner-confirmed exclusion with a count** (billing under OQ-1) is `not_moved:
-excluded_by_policy`; a collection left unmapped or undetermined is a **gap** (`collection_unmapped`,
-`third_party_not_imported`; L0-DOC D-L0-6.3). Never both (R590-B2-B1).
+the structural exclusion rule and RESET §5, never by a model choice. Placement follows D-L0-6.3
+and matches L0 r5 (R590-B3-B6): **before** the owner decides, billing (and any unmapped
+collection) is gap `collection_unmapped` (uncounted); **after** the owner confirms an exclusion it
+is `not_moved: excluded_by_policy` with the device-side count of records seen. Never both.
 
 ### D-FAM-2: per-family contract
 
@@ -189,8 +184,8 @@ excluded_by_policy`; a collection left unmapped or undetermined is a **gap** (`c
   `childSourceId` (`native-contract.ts` L110-120).
 - **Spec grammar.** Per family, one minimum role set per source step: `idField` (required),
   `personSourceId` (P families), `occurredAt`/`occurredOn` with zone basis (S8-DOC §3.9), `title`,
-  and for `messages` `authorSourceId` and `authorRole`; plus the declared field list with value
-  classes (§4.3 rule 2). Native typed roles come from the native rule registry (`native-rules.ts`
+  and for `messages` `authorSourceId` and `authorRole`; plus media roles (§4.3 transform 2). No
+  declared-field or value-class list exists (R590-B3-B1). Native typed roles come from the native rule registry (`native-rules.ts`
   L794). The spec `families` object becomes a map over the catalogue (FAM-C1; L0-DOC validators
   apply unchanged).
 - **Person edge (P families).** `personSourceId` resolves only through provenance of the `clients`
@@ -241,10 +236,11 @@ excluded_by_policy`; a collection left unmapped or undetermined is a **gap** (`c
 | `workout_assignments` | S8D-DOC OQ-12                                                                                                                        | person; plan by provenance                    | `scheduled_for`                                   | until OQ-12 is answered                                                                                    |
 | `exercises`           | EX1-DOC D-EX1-2                                                                                                                      | —                                             | —                                                 | EX1 withheld (§8 C-2)                                                                                      |
 
-**Residual fields.** A native record whose canonical record carries paths the native rules do not
-consume keeps them in a `graduated` row of `ImportPreservedRecord` (§4.1) under the same identity:
-native pointer plus residual. The obligation is computed by **every** native write, native-first
-or graduated, from the same canonical record (§4.6), and verified by S9 (§6.2).
+**Residual fields.** A native record whose preserved record (§4.3) carries paths the native rules
+do not consume keeps them in a `graduated` row of `ImportPreservedRecord` (§4.1) under the same
+identity: native pointer plus residual. The obligation is computed by **every** native write from
+FAM-G1 on, native-first or graduated (§4.6), and verified by S9 for `projection_version ≥ 1`
+(§6.2). Nothing is purged before it exists.
 
 ### D-FAM-3: gates for client-owned families
 
@@ -259,41 +255,46 @@ or graduated, from the same canonical record (§4.6), and verified by S9 (§6.2)
   `Person.linked_user_id`. Client-visible **media** is not part of OQ-2 (§5.3).
 - RLS never widens: person-owned native rows and PRESERVE are service-role only.
 
-### D-FAM-4: event time, authorship and the imported-history rule (R590-A-B2, R590-B-B6, R590-B2-B5)
+### D-FAM-4: event time, authorship and the imported-history rule (R590-A-B2, R590-B-B6, R590-B2-B5, R590-B3-B4)
 
 - **Event time.** `CoachMessage.created_at := occurredAt` for imported messages only (the thread
   orders on it, index L1227). This is the sole exception to S8-DOC §3.3.
-- **Authorship.** The run carries the bearer's own source account id (the source account scope,
-  RESET §2). A coach-authored message is native only when `authorSourceId` equals it; then
-  `sender_id = bearer`. A client-authored message is native when `authorSourceId` equals the
-  thread Person's `source_person_id`; then `sender_person_id = person`. Any other author (staff,
-  sub-coach, another client) ⇒ preserved. Thread `coach_id = Person.coach_id` (the tenant head
-  coach, as `coach-effectiveness.service.ts` L466-469 already models).
-- **Imported-history rule (all consumers).** Every native table that gains any import writer
-  (FAM-N\*, S8-E1a/b/c/d, EX1) gains `imported_at DateTime?` (indexed) in its expansion migration,
-  set only inside the writer's transaction. No read state, review state or notification is
-  invented: `read_at` stays NULL unless the spec declares a read-state role; `CheckIn.reviewed_by_coach`
-  keeps its default. **Rule: every consumer of such a table excludes `imported_at IS NOT NULL`,
-  except (a) the record's own history, thread and detail screens, (b) the disclosed per-client AI
-  context (N-1), and (c) consumers the owner opts in (OQ-11; default none).** The consumer set is
-  enumerated from code, never by hand: every `prisma.<delegate>.(findMany|findFirst|count|groupBy|aggregate)`
-  call site outside `*.spec.ts`. At `d6cf9eb6`: `workoutSession` 15 files
-  (`admin/admin.service.ts`, `admin/federation/federation.service.ts`,
-  `admin/reports/transformation-scorecard.service.ts`, `ai/ai.service.ts`,
-  `ai/client-ai-context.service.ts`, `coach/coach.service.ts`, `community/community.service.ts`,
-  `insights/holistic-insights.service.ts`, `invite-codes/invite-codes.service.ts`,
-  `notifications/digest.service.ts`, `sub-coach/sub-coach-analytics.service.ts`,
-  `users/account.service.ts`, `users/users.service.ts`, `v1/v1-coach.service.ts`,
-  `workout/workout.service.ts`); `coachMessage` 17; `checkIn` 16; `loggedFoodEntry` 12;
-  `weightLog` 9; `coachingSession` 4; `mealPlan` 3; `habit` 3; `macroTarget` 2; `waterLog` 2;
-  `habitLog` 1. Each writer slice ships (i) an `rg`-based spec that fails when a call site on its
-  table is in neither its exclusion list nor the allow-list (a)-(c), and (ii) a post-link test per
-  consumer class: zero badge, queue entry, push, digest line, leaderboard/streak/community entry,
-  admin-metric delta, reminder. Thread and history screens render imported rows with no read
-  receipt.
+- **Authorship.** The run carries the bearer's own source account id (RESET §2). A coach-authored
+  message is native only when `authorSourceId` equals it; then `sender_id = bearer`. A
+  client-authored message is native when `authorSourceId` equals the thread Person's
+  `source_person_id`; then `sender_person_id = person`. Any other author ⇒ preserved. Thread
+  `coach_id = Person.coach_id` (the tenant head coach, `coach-effectiveness.service.ts` L466-469).
+- **Imported history is defined by provenance.** A native row is imported history iff an
+  `ImportNativeProvenance` row points at it. Each table that gains an import writer also gains
+  `imported_at DateTime?` (indexed), set in the writer's transaction iff the provenance row is
+  written (invariant test: `imported_at IS NOT NULL ⇔ provenance exists`); queries filter on it.
+  No read state, review state or notification is invented (`read_at` NULL unless a source
+  read-state role exists; `CheckIn.reviewed_by_coach` default).
+- **Rule.** Every consumer of such a table excludes imported history, except (a) the record's own
+  history, thread and detail screens, (b) the disclosed per-client AI context — exactly
+  `src/ai/client-ai-context.service.ts` and `src/ai/context/client-context.service.ts`
+  (`src/ai/gateway/private-context.service.ts` is **not** allow-listed) — and (c) consumers the
+  owner opts in (OQ-11, default none).
+- **Enforced CI check** (each W slice ships it for its tables; it fails on any hit outside the
+  slice's exclusion list or the allow-list). Derived from the Prisma DMMF, not a hand regex, it
+  covers, per mapped table: (1) every delegate read method (`findMany`, `findFirst`,
+  `findFirstOrThrow`, `findUnique`, `findUniqueOrThrow`, `count`, `aggregate`, `groupBy`);
+  (2) relation fields of the table on any model in `include`, `select`, `where` (`some`, `none`,
+  `every`) and `_count`; (3) `$queryRaw`, `$executeRaw` and `Prisma.sql` text containing the
+  quoted table name. Current hits at `d6cf9eb6` outside the writer modules: raw SQL
+  `coach/coach.service.ts` L515-527 (`LoggedFoodEntry` macro totals) and
+  `coach/brief/coach-brief.service.ts` L908-917 (`WeightLog` latest weight); relation filters
+  `coach-brief.service.ts` L963 (`check_ins: { none }`), `coach/cross-pillar/cross-pillar.service.ts`
+  L142 (`logged_entries: { some }` active-client count), `ai/gateway/private-context.service.ts`
+  L57 (`include: coach_messages_as_client`); `findUnique` `workout/workout.service.ts` L117, L158,
+  L167; delegate reads: `workoutSession` 15 files, `coachMessage` 17, `checkIn` 16,
+  `loggedFoodEntry` 12, `weightLog` 9, `coachingSession` 4, `mealPlan` 3, `habit` 3,
+  `macroTarget` 2, `waterLog` 2, `habitLog` 1 (category (1) only; the CI check restates the full
+  inventory per slice). Each W slice also ships a post-link test per consumer class: zero badge,
+  queue entry, push, digest line, brief line, leaderboard/streak/community entry, active-client
+  count change, admin-metric delta, reminder.
 - **Disclosure.** The import itself is AI-free (§4.7). Once a row is native and the client linked,
-  it follows live product behaviour, including the per-client AI context for that coach
-  (`client-ai-context.service.ts` L192). Stated on the coach-facing result and in §9 note N-1.
+  it follows live product behaviour, including the allow-listed AI context (N-1).
 
 ## 4. PRESERVE: the universal destination
 
@@ -313,9 +314,9 @@ model ImportPreservedRecord {
   parent_source_id   String?
   occurred_at        DateTime? @db.Timestamptz
   occurred_on        DateTime? @db.Date
-  title              String?                      // ≤ 200 chars, §4.3 text rules applied
+  title              String?                      // ≤ 200 chars
   source_archived    Boolean   @default(false)
-  fields             Json                         // the canonical record (§4.3); residual only when graduated
+  fields             Json                         // the preserved record (§4.3); residual only when graduated
   fields_sha256      String
   byte_size          Int                          // CHECK 0 < byte_size ≤ SCOUT_PRESERVE_MAX_BYTES
   dropped            Json                         // { <DropCode>: count }, codes only (§4.3)
@@ -339,29 +340,28 @@ Hand-written CHECKs (S8-B precedent, `20270122000000` L141-149): closed `family`
 
 **Two states, one shape (R590-B-C9).** `preserved` = the record's only destination. `graduated` =
 a native pointer plus residual fields; it is **not** a destination and is never counted as
-preserved. `ImportNativeProvenance` gains `residual_required Boolean` (NOT NULL, no default: every
-native write states it), `residual_id String? @unique` with FK → `ImportPreservedRecord(id)` ON
-DELETE RESTRICT, a CHECK `residual_required = (residual_id IS NOT NULL)`, and
-`imported_archived_at DateTime?`. The obligation is computed by every native write (§4.6); a
-graduated row cannot be deleted while its provenance exists; reconciliation refuses a native
-identity whose required residual is missing (§6.2) (R590-A-A2, R590-A2-02).
+preserved. `ImportNativeProvenance` gains `residual_required Boolean @default(false)`,
+`residual_id String? @unique` (FK → `ImportPreservedRecord(id)` ON DELETE RESTRICT), a CHECK
+`residual_required = (residual_id IS NOT NULL)`, `projection_version Int @default(0)` and
+`imported_archived_at DateTime?`. **Backfill and meaning** (R590-A2-02, R590-B3-B5): existing rows
+and every row written before FAM-G1 keep the defaults, `projection_version = 0` = "pre-FAM,
+residual not captured"; the three provenance write sites (`native-provenance.ts` L60, L111,
+L154) are untouched by FAM-C1 because every new column has a default. S9 claims residual
+completeness only for `projection_version ≥ 1` (§6.2). FAM-G1 backfills version-0 rows from the
+still-present staged payload (§4.3 purge ordering) before any purge runs.
 
 **Ledger.** `ScoutReconstructionLedger.target_kind` gains `preserved_record` and every new native
 kind (CHECK expand of L191; FAM-C1). A preserved top-level identity is ledger `reconstructed` with
 that kind and `target_id = ImportPreservedRecord.id`. Children and residuals are not ledger rows.
-The ledger fence trigger (`20270119000000_scout_ledger_obsolete_writer_fence` L87-92) is INSERT
-only, so the §4.6 retarget UPDATE is not fenced; FAM-G1 adds its own fence: the UPDATE runs under
-the run-row lock or, on demand, under the intent lock.
+The fence trigger (`20270119000000_scout_ledger_obsolete_writer_fence` L87-92) is INSERT only;
+the §4.6 retarget UPDATE runs under the run-row lock (or the intent lock on demand).
 
 **No third destination (R590-B-B2).** From FAM-P2 on, no run writes `ScoutReconstructedEntity`
 evidence rows (the upserting `persist` in `families.ts` L117-134 is retired for new runs);
 `client_history` and rule-less `workouts` go to PRESERVE with ledger kind `preserved_record`.
-Legacy `scout_entity` rows are converted once, idempotently per coach, by FAM-P2 **before** the
-staged purge of §4.3 activates: read `ScoutIngestEntity.payload` for the identity (the evidence
-row has no payload, schema L7112-7125), build the canonical record, insert the preserved row,
-retarget the ledger rows to `preserved_record` and delete the evidence row in one transaction (so
-`GET scout/reconstruct/entities` shows no second copy) (R590-B2-C2). An identity whose staged
-payload is already gone stays bucket f, `not_moved: destination_gate_closed`.
+Legacy `scout_entity` rows are converted once, idempotently per coach, by FAM-P2: read
+`ScoutIngestEntity.payload` (the evidence row has no payload, schema L7112-7125), build the
+preserved record, retarget the ledger rows and delete the evidence row in one transaction.
 
 ### 4.2 RLS and tenancy
 
@@ -371,160 +371,119 @@ authenticated` (`20270122000000` L167-182). No principal reads the tables direct
 route filters `coach_id = req.user.id` and re-asserts the parent's ownership (§5.3); any miss is an
 opaque 404. The FAM-P1 RLS spec is the S8D-DOC §2.2 item 4 matrix plus role × tenant negatives.
 
-### 4.3 The canonical record: one sanitized input for both destinations (R590-A-A1, R590-A2-01, R590-B-B3, R590-B2-B3)
+### 4.3 Credential screening and the preserved record (R590-A-A1, R590-A2-01, R590-B-B3, R590-B2-B3, R590-B3-B1, R590-B3-B2)
 
-**Where sanitization runs.** Two functions, one contract:
+**Ingest redaction (the only sanitizer that touches the staged payload).** `redactPayload`
+(`scout-ingest.service.ts` L149-183) keeps its shape: it recurses into nested objects and arrays
+and matches **whole keys** after normalization `norm(key)` = lower-case with `_`, `-` and
+whitespace removed. FAM-P2 replaces `REDACTED_PAYLOAD_KEYS` (L19-39) with the closed, versioned
+`CREDENTIAL_KEYS` and adds three value shapes. No word or word-pair logic exists anywhere
+(R590-B3-B2).
 
-- **Ingest** (`redactPayload`, `scout-ingest.service.ts` L149-183) stays a **key-only** redactor.
-  FAM-P2 extends `REDACTED_PAYLOAD_KEYS` with the credential words of rule 3 and nothing else: no
-  value-shape rule runs at ingest, because no spec is in scope there and existing native writers
-  read the staged payload (`native-rules.ts` L435; `facts.service.ts` L830-845). Ids are never
-  dropped at ingest.
-- **Reconstruct**: `canonicalRecord(payload, spec, family) → { fields, dropped }` is one pure,
-  versioned core function run once per staged identity, with the validated spec in scope. Its
-  output **C** is the only input to every destination: the preserve writer stores `C.fields`; every
-  native writer interprets `C.fields` (never the raw staged payload); graduation re-interprets the
-  stored `C.fields`. Native-first and graduated writes are therefore value-identical by
-  construction, and native rules see the same ids and text either way.
+- `CREDENTIAL_KEYS` (normalized): `password`, `passwd`, `pwd`, `passphrase`, `passcode`,
+  `passwordhint`, `secret`, `secretkey`, `clientsecret`, `apisecret`, `mfasecret`,
+  `twofactorsecret`, `token`, `accesstoken`, `refreshtoken`, `idtoken`, `authtoken`,
+  `bearertoken`, `sessiontoken`, `csrftoken`, `xsrftoken`, `jwt`, `bearer`, `authorization`,
+  `auth`, `authkey`, `apikey`, `accesskey`, `secretaccesskey`, `privatekey`, `signingkey`,
+  `encryptionkey`, `cookie`, `setcookie`, `otp`, `otpcode`, `totp`, `mfacode`,
+  `verificationcode`, `backupcode`, `backupcodes`, `recoverycode`, `recoverycodes`,
+  `recoveryphrase`, `seedphrase`, `mnemonic`, `securityanswer`, `pin`, `pincode`, `ssn`,
+  `socialsecuritynumber`, `taxid`, `nationalid`, `passportnumber`, `cardnumber`, `ccnumber`,
+  `creditcard`, `pan`, `cvv`, `cvv2`, `cvc`, `securitycode`, `iban`, `accountnumber`,
+  `routingnumber`. `session` is **removed** from today's list (it is coaching data). The same
+  list is applied to URL query-parameter names inside string values (the parameter is removed,
+  the URL kept).
+- Value shapes, unmistakable only: a JWT (three base64url segments, the first decoding to JSON
+  with `alg`), a `Bearer `/`Basic ` prefixed string, a PEM block. Nothing else: no entropy, Luhn,
+  length or character-class test.
+- **Must keep** (corpus): `session`, `session_id`, `sessionId`, `workout_session_id`,
+  `workoutSessionId`, `coaching_session_id`, `session_key` (not listed), `pin_order`, `pinned`, `auth_user_id`, `author_id`, `account`, `signature`,
+  `exercise_key`, `token_count`, `program_id`, every id class below, `created: "1727600000000"`,
+  a 19-digit id, an EAN-13, a 10-11 digit number, `watch?v=dQw4w9WgXcQ`, `Bench2024!`,
+  `Strength & Conditioning`, `Força`, `HIIT (30 min)`, `a1b2c`.
+- **Must drop**: every listed key (in `snake`, `camel`, `kebab` and spaced forms, e.g.
+  `{"auth key": …}`, `{"Password hint": …}`, `{"auth": …}`, `{"recoveryPhrase": …}`), a JWT, a
+  bearer string, a PEM block, `?token=…` and `?authorization=…` parameters.
 
-**Rules of `canonicalRecord`.** It is an allow-list. A value is stored only if it passes every
-rule; anything else is replaced by `{"$dropped": "<DropCode>"}` and counted in `dropped`. Codes:
-`path_undeclared`, `credential_key`, `credential_shape`, `card_number`, `contact_pii`,
-`url_unadmitted`, `class_mismatch`, `over_bound`.
+Existing native writers (S8-C, S8-D1), the S9 facts interpreter and every future W writer read
+the **staged payload as today** (R590-B3-B1). No declared-field or value-class gate exists on
+native inputs; ids are never dropped because no shape rule can match an id (id classes for the
+spec's `idField`, per L0-DOC: `int_id`, `uuid`, `short_id`; `identifier` rules accept any string
+or finite number as today, `native-rules.ts` L216-219).
 
-1. **Scope.** Only objects from collections the run classified into a catalogue family enter.
-   Settings, UI-config and third-party collections are excluded upstream (L0 exclusion rule;
-   RESET §3, §5): the collections where credentials live never reach this function.
-2. **Declared paths only (fail-closed retained-field contract).** `C.fields` keeps exactly the
-   paths the validated spec declares for the family, each with a declared **value class** from the
-   closed set `id | ref | datetime | date | number | bool | enum | text | url | media | map`.
-   Declaration is data (authored, or model-proposed in `LearnedProposalV1.mappingSpec`) and is
-   admitted by deterministic validators only: the path exists in ≥ 2 observed records of the
-   collection (or 1 when the collection has 1), ≥ 90 % of observed non-null values conform to the
-   declared class, `ref` paths resolve to another declared step's ids in ≥ 1 observed record, and
-   no declared key fails rule 3. An undeclared path is `path_undeclared` (counted). Coach-defined
-   labels (a custom question text as a key) are declared once as a `map` path (RESET §3): the
-   object is stored as `{"$map": [{"k": <label>, "v": <value>}]}`.
-3. **Credential keys (word-level, closed, versioned `CREDENTIAL_WORDS`).** Every key and every
-   `$map` label is split into words on `_`, `-`, whitespace and camelCase and lower-cased. The
-   value (any shape, any depth) is `credential_key` when any word is in `{password, passwd, pwd,
-passphrase, secret, token, bearer, authorization, auth, cookie, csrf, otp, totp, mfa, pin, cvv,
-cvc, iban, ssn, mnemonic, passport}` or any adjacent word pair is in `{(api, key), (auth, key),
-(secret, key), (private, key), (access, key), (session, id), (session, key), (recovery, phrase),
-(recovery, code), (backup, code), (seed, phrase), (security, answer), (card, number), (account,
-number), (routing, number), (tax, id), (national, id)}`. **This runs on the raw key or label
-   before any grammar or map conversion**, so `{"auth key": "…"}` and `{"Password hint": "…"}` are
-   dropped whether or not the key is grammar-clean (R590-A2-01). Not in the list, and kept:
-   `session`, `sessionDate`, `workout_session`, `signature`, `signed_at`, `account`, `key` alone
-   (`exercise_key`, `week_key`), `author*`.
-4. **Class admission per declared path.**
-   - `id` / `ref`: one of `int_id` = `^[0-9]{1,20}$`; `uuid` = 8-4-4-4-12 hex; `short_id` =
-     `^[A-Za-z0-9_-]{6,64}$` with no `.` (so nanoid, push ids, ULID, KSUID, ObjectId, Snowflake,
-     prefixed ids like `usr_2N9f…` all pass; a JWT does not). No entropy test on id paths (ids are
-     opaque by nature; the corroboration in rule 2 is the control). Ids ≤ 64 chars.
-   - `datetime` / `date` / `number` / `bool` / `enum`: grammar of the class; `enum` values are
-     ≤ 64 chars over `^[A-Za-z0-9 _./-]+$`.
-   - `text`: any string ≤ 16 KiB, except: a JWT (three base64url segments, first decoding to JSON
-     with `alg`), a `Bearer `/`Basic ` prefix or a PEM block anywhere ⇒ `credential_shape`; a
-     whitespace-delimited word of ≥ 20 chars with ≥ 3 of the classes {lower, upper, digit, symbol}
-     is replaced inline by `[hidden]` and counted once. Words < 20 chars, slugs, dates, numbers and
-     plain-alphabet words are untouched (`upper-body-strength-day`, `MyFitnessPal2024!` kept).
-   - `url`: rule 6. `media`: rule 6 media branch. `map`: labels pass rule 3; values are admitted as
-     `bool`, `number`, `date`, `datetime`, or `text` (rule 4 text), else `class_mismatch`.
-   - A value that fails its class is `class_mismatch` (never silently coerced).
-5. **Card numbers.** A 13-19 digit string passes Luhn **only** when a card-like word (`card`,
-   `creditcard`, `payment`, `bank`) is in its own key or any ancestor key; then `card_number`.
-   Epoch-ms timestamps, 18-19 digit ids and EAN-13 barcodes under other keys are kept (the r1 rule
-   dropped about 10 % of them; scratch `reviews/scratch/R590-B/luhn.py`).
-6. **URLs.** Userinfo present ⇒ `url_unadmitted`. Scheme must be `http(s)`. Query parameters are
-   kept **unless** the parameter name passes rule 3 (`token`, `sig…`, `auth`, `key`-pairs,
-   `X-Amz-Signature`-style) or the value is a ≥ 20-char opaque word (rule 4 text test); only those
-   parameters are removed (`watch?v=<11 chars>` survives; a signed-CDN query does not). Fragment
-   removed. A URL under a declared `media` path becomes `{"$media": "<ImportPreservedMedia id>"}`
-   once §5 holds the bytes, else `{"$media_pending": <ordinal>}`; the media URL string itself is
-   never stored.
-7. **Contact PII** (OQ-8 default): values under declared paths whose key words include `email`,
-   `phone`, `mobile`, `address`, `dob`, `birth`, and email-like or phone-like values anywhere, are
-   `contact_pii` until the owner answers.
-8. **Spec roles** (`idField`, `personSourceId`, parent edge, `occurredAt`, `title`) are declared
-   paths with classes `id`, `ref`, `datetime`/`date`, `text` (≤ 200) respectively; `source_id`,
-   `person_source_id`, `parent_source_id`, `title` and `family` therefore pass this function, not a
-   separate one.
-9. **Bounds.** Depth ≤ 8, ≤ 500 keys, string ≤ 16 KiB, canonical JSON ≤ `SCOUT_PRESERVE_MAX_BYTES`
-   (default 64 KiB, hard cap 256 KiB). Over-bound ⇒ the record is `not_moved: over_limit`, never
-   truncated.
-10. **Canonical form.** Sorted keys; `fields_sha256` over the canonical bytes; `projection_version`
-    stored as evidence of which rule set produced the row. A rule change applies to new runs;
-    stored rows are not re-projected (dropped material is gone) (R590-A2-C1).
+**The preserved record.** `preserveRecord(payload, spec, family) → { fields, dropped }`, pure and
+versioned, runs at reconstruct on the staged payload (already redacted) and applies exactly four
+transforms:
 
-**What "credentials never stored" means here, precisely.** Provable by rules: (i) no value is
-stored unless its path is declared and its value conforms to the declared class (rule 2, 4);
-(ii) every credential-named key or label drops its value at any depth, before any transform
-(rule 3); (iii) credential-shaped strings (JWT, Bearer/Basic, PEM, opaque ≥ 20-char words) never
-survive in text (rule 4); (iv) URL credentials never survive (rule 6); (v) credentials live in
-settings-class collections that never enter (rule 1); (vi) device-side, captured request headers
-are memory-only and never sent to TGP, and a key equal to any captured value is refused (RESET
-§3-§4). **Bounded residual, stated and owner-visible (OQ-10):** a secret that is a short
-plain-alphabet word under a declared `text` or `map` path in a coaching collection
-(`{"hint": "mydog"}`) is indistinguishable from data by any rule; the controls are (i), (v), the
-closed versioned word list and per-record `dropped` counts on the coach display.
+1. **Contact PII** (OQ-8 default): values under normalized keys `email`, `emailaddress`, `phone`,
+   `phonenumber`, `mobile`, `telephone`, `address`, `street`, `postalcode`, `zip`, `dob`,
+   `dateofbirth`, `birthdate`, and any string matching the email grammar
+   `^[^\s@]+@[^\s@]+\.[^\s@]+$`, become `{"$dropped": "contact_pii"}`. There is no phone-like value
+   test. A native rule may never consume a contact-PII key (FAM-C1 validator), so native-first
+   and graduated writes see the same consumed values.
+2. **Media.** A value under a spec-declared media role becomes `{"$media": "<ImportPreservedMedia
+id>"}` once §5 holds the bytes, else `{"$media_pending": <ordinal>}`; media-role native rules
+   resolve by the media identity key, never from a URL string, in both write paths.
+3. **Bounds.** Depth ≤ 8, ≤ 500 keys, string ≤ 16 KiB, canonical JSON ≤ `SCOUT_PRESERVE_MAX_BYTES`
+   (default 64 KiB, hard cap 256 KiB). Over-bound ⇒ `not_moved: over_limit`, never truncated.
+4. **Canonical form.** Sorted keys; `fields_sha256`; `projection_version` (evidence only; value
+   identity between paths holds per version, R590-B3-C6).
 
-**Staged payloads.** FAM-P2 clears `ScoutIngestEntity.payload` to `{}` once the intent settles,
-after the legacy conversion of §4.1 (identity columns stay for S9 counts). Consequence
-(R590-B2-C6): identities that settled `conformance_refused` or `write_failed` can only be retried
-by a new run; the projection says so through their `not_moved` count.
+**What "credentials never stored" means here, precisely (R590-A2-01).** Provable: every listed
+credential key at any depth, and every JWT/bearer/PEM value, is removed before any durable write
+(ingest negative tests over the corpus, nested and spaced forms included); credentials in URL
+query parameters named on the list are removed; captured request headers never leave the device
+(RESET §4); settings-class collections never enter (L0 exclusion rule). **Residual, stated:**
+(a) a credential stored by the source under a key name that is not on the list and is not a
+listed compound (`{"my word": "…"}`); (b) a secret whose value is an ordinary word or number
+(`{"hint": "mydog"}`, a 4-digit code under `code`). No mechanism can distinguish these from
+coaching data. Controls: collection scope, the closed versioned list (bumped on evidence), the
+bounded staging lifetime (purge, below), per-record `dropped` counts on the coach display. The
+governing invariant is therefore held for credential-class keys and shapes; the owner is asked to
+acknowledge the bounded form explicitly (OQ-12).
 
-**Test corpus** (`src/scout/preserve/__fixtures__/canonical-record-corpus.json`, synthetic values,
-codes and counts asserted, values never logged).
+**Staged purge — ordering (R590-A2-02, R590-B3-B5).** FAM-P2 purges nothing. The purge ships in
+or after FAM-G1 and clears `ScoutIngestEntity.payload` to `{}` for an intent only when all of:
+the run is terminal, the arbiter has written the settled S9 report (reconciliation's last read),
+every native identity of the intent has `projection_version ≥ 1` (residual captured or backfilled),
+and `SCOUT_STAGED_RETENTION_DAYS` (default 7) have passed. Consequence: `conformance_refused`/
+`write_failed` identities can be retried only by a new run once purged.
 
-- Must drop: JWT, `Bearer x`, `Basic x`, PEM, a 40-char `sk_`-style word inside a `text` note,
-  `{"recoveryPhrase": "alpha beta gamma"}`, `{"auth key": "opaque-secret"}` (label, pre-map),
-  `{"Password hint": "mydog"}` (label, pre-map), `{"auth": "opaque-secret"}`,
-  `{"card": {"number": "<Luhn-valid 16>"}}`, a URL with userinfo, a signed-CDN query parameter,
-  an undeclared path, a value failing its declared class, the same cases at ingest for rule 3
-  keys.
-- Must keep: `created: "1727600000000"`, a 19-digit id, an EAN-13 under `barcode`, `session`,
-  `sessionDate`, `workout_session`, `signature: "signed on device"`, `signed_at`, `exercise_key`,
-  a UUID, `upper-body-strength-day`, an ISO date, a 2 KiB note, `Monday`, `kg`,
-  `https://…/watch?v=dQw4w9WgXcQ`, `MyFitnessPal2024!`.
-- **Id false-positive corpus** (`id`/`ref` paths and `text` paths): 1 000 each of nanoid(21),
-  push-style ids (20, leading `-`), ULID(26), KSUID(27), ObjectId(24 hex), Snowflake(19),
-  UUID, `usr_`-prefixed ids: 100 % admitted on `id`/`ref` paths; on `text` paths the `[hidden]`
-  rate is reported and must be 0 for ids < 20 chars. (r2's rule rejected 98.7 % of nanoids as
-  text: scratch `reviews/scratch/R590-B2/rule4.py`.)
-- **Path equality:** for every corpus record, `nativeWrite` from C on the first run equals
-  `nativeWrite` from a stored `preserved` row's `fields` (R590-B2-B3); an S8-C plan with a nanoid
-  `program_id` keeps its program edge after FAM-P2.
+**Relation to TM-14** (`docs/decisions/2026-06-17-tm-14-no-raw-payload-storage.md`): option (C),
+a sanitized bounded projection; the source stops being the system of record when the coach leaves
+it.
 
-**Relation to TM-14** (`docs/decisions/2026-06-17-tm-14-no-raw-payload-storage.md`): TM-14
-option (C), a sanitized bounded projection; the source stops being the system of record when the
-coach leaves it.
-
-### 4.4 Retention, erasure and export (FAM-E1a lands before FAM-P2; R590-A-A4, R590-B-B7, R590-A2-04, R590-B2-B4)
+### 4.4 Retention, erasure and export (FAM-E1a lands before FAM-P2; R590-A-A4, R590-B-B7, R590-A3-01, R590-B3-B3)
 
 - **Retention:** as long as the coach account and the Person exist. A `graduated` row keeps only
   identity and residual, so no value is stored twice.
 - **Person erasure** (S8D-DOC §2.3 explicit path) selects by tenant-scoped source identity,
   including soft edges: `coach_id = P.coach_id AND (person_id = P.id OR (person_id IS NULL AND
-source_namespace = P.source_platform AND person_source_id = P.source_person_id))`. Order, so that
-  the database never points at a missing object: (1) one transaction deletes those rows, their
-  `ImportPreservedMedia` rows, and the ledger and provenance rows of those identities, and for
-  each touched blob (`SELECT … FOR UPDATE`) counts remaining `ImportPreservedMedia` references
-  across **all** Persons of the coach; a blob with zero remaining references is marked
-  `state = 'deleting'` and an `ImportErasureJob` row is written in the same transaction; (2) the
-  job deletes the blob's objects (import bucket and every `ImportMediaCopy`, `deleteObject` L116)
-  idempotently with retries and then deletes the blob row; the Person transitions to `Deleted`
-  only when its jobs are done. A blob with remaining references is untouched: another client's
-  preserved record or graduated `voice_url` keeps playing (test: erase A, B's media still plays).
+source_namespace = P.source_platform AND person_source_id = P.source_person_id))` over
+  `ImportPreservedRecord` **and** `ImportPreservedMedia` (media rows keep the person key through
+  graduation, §5.1, so graduated voice notes and photos are selected too). One transaction deletes
+  those rows, the ledger and provenance rows of those identities and P's native rows (S8D path);
+  for each touched blob, `SELECT … FOR UPDATE` the blob row, count remaining `ImportPreservedMedia`
+  references; zero ⇒ set `tombstoned_at = now()`. Nothing physical is deleted in the transaction.
+- **Sweep** (`ImportErasureJob`, retryable, idempotent), after commit and after
+  `MEDIA_TOMBSTONE_GRACE` (default 24 h): re-lock the blob, re-check zero references, delete the
+  objects (import bucket and every copy, `deleteObject` L116), then the rows. A reference added
+  meanwhile is impossible: every reference insert or re-parent takes `FOR UPDATE` on the blob row
+  and fails if `tombstoned_at IS NOT NULL` (§5.2, §5.4). The sweep also deletes media rows whose
+  native parent no longer resolves (coach deleted the imported message) and, when that leaves zero
+  references, tombstones the blob. The Person transitions to `Deleted` when its sweep is done.
   `Deleted` is a tombstone (D-FAM-2): re-import refuses.
-- **Coach account deletion** (`src/account-deletion/account-deletion.service.ts`, which has no
-  Person or import handling today) deletes preserved rows, media rows, copies and blobs by
-  `coach_id` with the same two-phase job (no reference counting needed: the tenant goes).
+- **Coach account deletion** (`src/account-deletion/account-deletion.service.ts`, no Person or
+  import handling today) tombstones every blob of the coach and deletes rows by `coach_id`; the
+  same sweep deletes the objects.
 - **Export:** coach export of preserved records per Person (JSON + signed media links) in FAM-E1a;
   the client data export (`src/data-export/data-export.service.ts`) includes preserved records only
   for OQ-2-visible families.
-- **Sequencing rule:** FAM-P2 does not write in any environment where FAM-E1a's deletion paths are
-  not present and tested; FAM-M1 does not write blobs before FAM-E1b (media erasure) is present.
+- **Sequencing rule:** FAM-P2 does not write where FAM-E1a's deletion paths are not present and
+  tested; FAM-M1 does not write blobs before FAM-E1b (media erasure) is present.
+- **Tests:** graduate A's voice note → erase A → blob and copy swept, B's shared blob survives;
+  last-reference erase racing a new attachment at the commit boundary (attachment fails on the
+  tombstone or erasure sees the reference); process loss between commit and sweep.
 
 ### 4.5 Display
 
@@ -544,46 +503,46 @@ true` is exported by the FAM-P3 route module when it registers; §6.1 reads it.
 
 Every native write — S8-D1 `clients`, S8-C `programs`/`workouts` including the EX1 withheld path,
 every W slice of §7, and on-demand graduation — goes through **one** function,
-`nativeWrite(identity, C)`, in one transaction per identity tree (parent and children, or none):
+`nativeWrite(identity, input)`, in one transaction per identity tree (parent and children, or
+none). `input` is the **staged payload** for a run (as today) or the stored `fields` of a
+`preserved` row for graduation; the two differ only by §4.3 transforms 1-2, which native rules
+never consume, so both paths yield the same native values within one `projection_version`.
 
-1. `SELECT … FOR UPDATE` the provenance key and the preserved key. Provenance present ⇒ create-only
-   replay: verify, write nothing (S8-DOC D-S8-4). Preserved row present ⇒ its stored `fields` **is**
-   `C` from here on (the record TGP holds; the fresh payload is drift evidence only, never an
-   update), and its `person_source_id`/`person_id` columns supply the person edge.
-2. Interpret `C.fields` with the family's native rules. The interpreter returns not-ok for a
-   `$dropped`, `$map` or `$media_pending` value **at a path it consumes** (R590-B2-C3); `$media` is
-   accepted only by media-role rules (§5.4). Not-ok, or gate closed ⇒ the record is (or stays)
-   preserved; if it was a soft-edge row and the person now resolves, set `person_id`, clear
-   `person_source_id`. Nothing else changes.
-3. Ok ⇒ write native rows and provenance `created` with `imported_at`, `imported_archived_at`;
-   media copies per §5.4 (copy-then-commit).
-4. **Residual** = paths of `C.fields` minus the paths the rules consumed (deterministic). Non-empty
-   ⇒ write (native-first) or convert (graduation) the `ImportPreservedRecord` row to
-   `state = 'graduated'` with the residual as `fields`, and set `residual_required = true`,
-   `residual_id`. Empty ⇒ delete any preserved row, `residual_required = false`.
+1. `SELECT … FOR UPDATE` the provenance key and the preserved key. Provenance present ⇒
+   create-only replay: verify, write nothing (S8-DOC D-S8-4). Preserved row present ⇒ its stored
+   `fields` is the input from here on (the fresh payload is drift evidence, never an update) and
+   its `person_source_id`/`person_id` columns supply the person edge.
+2. Interpret with the family's native rules exactly as today. The interpreter returns not-ok for a
+   `$dropped`, `$media_pending` value **at a path it consumes**. Not-ok, or gate closed ⇒ the
+   record is (or stays) preserved; if it was a soft-edge row and the person now resolves, set
+   `person_id`, clear `person_source_id`. Nothing else changes. There is no separate attach path.
+3. Ok ⇒ write native rows and provenance `created` with `imported_at`, `imported_archived_at`,
+   `projection_version`; media references re-parented under the blob lock (§5.4).
+4. **Residual** (FAM-G1) = paths of `preserveRecord(input)` minus the paths the rules consumed
+   (deterministic). Non-empty ⇒ write (native-first) or convert (graduation) the
+   `ImportPreservedRecord` row to `state = 'graduated'` with the residual as `fields`, and set
+   `residual_required = true`, `residual_id`. Empty ⇒ delete any preserved row. Before FAM-G1 the
+   step is skipped, `projection_version` stays 0 and nothing is purged (§4.3), so G1's backfill
+   computes the residual later from the intact staged payload.
 5. **Retarget the ledger** for every intent of this identity: `UPDATE ScoutReconstructionLedger
 SET target_kind = <native kind>, target_id = <native id> WHERE coach_id, entity_type,
-source_platform, source_id match AND target_kind = 'preserved_record'` (S9 bucket h then holds for
-   all prior intents). Native-first writes insert the ledger row as today.
+source_platform, source_id match AND target_kind = 'preserved_record'`. Native-first writes insert
+   the ledger row as today.
 
-**Triggers for graduation** are just callers of `nativeWrite`: (a) the next run of the source
-(the writer finds the preserved row in step 1); (b) on demand per coach, when the source is gone,
-iterating `preserved` rows of families whose gate is open. A rule-outcome change without a
-registry flip (an EX1 binding that now resolves, a native-rule version bump) is the same path:
-step 1 finds the preserved row, step 2 now returns ok.
+**Triggers for graduation** are callers of `nativeWrite`: (a) the next run of the source (step 1
+finds the preserved row); (b) on demand per coach when the source is gone, over `preserved` rows of
+families whose gate is open. A rule-outcome change without a registry flip (an EX1 binding that
+now resolves) is the same path.
 
 **Guard before engine.** FAM-P2 ships steps 1-2 and the "stays preserved" branch into every
-existing writer (the guard); FAM-G1 ships steps 3-5 for preserved rows (the engine). Between them,
-an existing writer that finds a preserved row for its key writes nothing native (the record is in
-TGP already), so I-1 holds from FAM-P2 on.
+existing writer (the guard); FAM-G1 ships steps 4-5 and the version-0 backfill. Between them an
+existing writer that finds a preserved row writes nothing native, so I-1 holds from FAM-P2 on.
 
-**Accounting.** One identity, one count: native once graduated, else preserved. A race with an
-import converges on the provenance unique (`families.ts` retry-once).
-
-**Tests** (FAM-P2/G1 acceptance): I-1 over S8-D1, S8-C (withheld and bound), and each W writer;
-native-first residual present and RESTRICT-protected; create → graduate → reconcile → replay;
-deletion of a residual refused; children all-or-nothing; sentinel refusal at consumed paths only;
-ledger retargeted for two intents; value equality native-first vs graduated (§4.3 corpus).
+**Tests** (FAM-P2/G1): I-1 over S8-D1, S8-C (withheld and bound) and each W writer; every existing
+fixture source yields byte-identical S8-C native rows and S9 facts before and after P2;
+native-first residual present and RESTRICT-protected after G1 backfill; create → graduate →
+reconcile → replay; residual deletion refused; children all-or-nothing; ledger retargeted for two
+intents; graduated equals native-first per version.
 
 ### 4.7 Preserved values never reach the AI or cross-coach memory
 
@@ -597,92 +556,83 @@ ledger retargeted for two intents; value equality native-first vs graduated (§4
   digest input.
 - **Logs and telemetry** carry counts and closed codes only (S9-DOC D-S9-7).
 
-## 5. Media, photos and files (FAM-M1; R590-A-B1, R590-A-B3, R590-B-B5, R590-A2-04, R590-A2-05, R590-B2-B4)
+## 5. Media, photos and files (FAM-M1; R590-A-B1, R590-A-B3, R590-B-B5, R590-A2-04, R590-A2-05, R590-A3-01, R590-B3-B3)
 
 ### 5.1 Tables
 
 - `ImportMediaBlob`: `coach_id`, `content_sha256`, `byte_size`, `content_type`, `storage_key` =
-  `imports/<coach_id>/<sha256>` (**immutable, content-addressed, never repointed**), `state ∈
-{uploading, verified, ready, rejected, deleting}`, `scan_status ∈ {pending, clean, rejected,
-error}`, `scanned_at`. Unique `(coach_id, content_sha256)`; dedup within one coach only.
+  `imports/<coach_id>/<sha256>` (immutable, never repointed), `state ∈ {uploading, verified,
+ready, rejected}`, `scan_status ∈ {pending, clean, rejected, error}`, `scanned_at`,
+  `tombstoned_at DateTime?`. Unique `(coach_id, content_sha256)`; dedup within one coach only.
 - `ImportPreservedMedia`: identity `(coach_id, source_namespace, 'media', source_id)`; `blob_id`
-  with FK `(blob_id, coach_id) → ImportMediaBlob(id, coach_id)`; parent is **either**
-  `preserved_record_id` with FK `(preserved_record_id, coach_id) → ImportPreservedRecord(id,
-coach_id)` **or** `(native_kind, native_id)` (CHECK exactly one). This row is the **reference**
-  for every use of a blob, preserved or graduated; erasure counts these rows (§4.4).
-- `ImportMediaCopy`: `blob_id` + `coach_id` (FK as above), `bucket`, `storage_key`, `state ∈
-{pending, ready, failed}`, `attempts`, unique `(blob_id, bucket)`. One copy per native bucket that
-  needs the object (§5.4).
+  with FK `(blob_id, coach_id) → ImportMediaBlob(id, coach_id)`; **`person_id`/`person_source_id`**
+  (same FK and CHECK as §4.1; copied from the parent record at creation and **kept through
+  graduation**, so erasure selects it by person, R590-B3-B3); parent is either
+  `preserved_record_id` (composite FK) or `(native_kind, native_id)` (CHECK exactly one). This row
+  is the reference for every use of a blob.
+- `ImportMediaCopy`: `blob_id` + `coach_id`, `bucket`, `storage_key`, `state ∈ {pending, ready,
+failed}`, `attempts`, unique `(blob_id, bucket)`.
+- **Reference admission (R590-A3-01):** every insert or re-parent of an `ImportPreservedMedia` row
+  takes `SELECT … FOR UPDATE` on the blob row in the same transaction and fails if
+  `tombstoned_at IS NOT NULL` or `state <> 'ready'` (`already_present` is answered under the same
+  lock). Erasure and admission therefore serialize on the blob row.
 - All tables use §4.2.
 
 ### 5.2 Path and scan gate
 
 1. The extension fetches bytes in the authorized tab, from the run's confined origin set only
-   (OQ-4), with `redirect: 'manual'`: **every** redirect hop is checked against the set; an
-   unconfined hop is `not_moved: excluded_by_policy`.
+   (OQ-4), with `redirect: 'manual'`: every redirect hop is checked; an unconfined hop is
+   `not_moved: excluded_by_policy`.
 2. It computes SHA-256 and calls the scout media route with
    `{family, source_id, parent key, sha256, byte_size, content_type}`.
-3. Server: `already_present` if the blob is `ready`; else a signed PUT (`createSignedUploadUrl`,
-   L82) for the immutable key in a **separate private bucket** (`IMPORT_MEDIA_BUCKET`; never the
-   sellable-content bucket).
-4. On confirm the server reads the object once, checks size, SHA-256 and magic bytes against
-   `content_type` (`verified`; failure `not_moved: source_refused`), then submits it to
-   `MediaScanProvider.scan(storage_key)` (a vendor-neutral provider interface, like the storage
-   provider). `ready` **only** on `clean`. `rejected` ⇒ object deleted, `not_moved:
-excluded_by_policy`. `error` or timeout (`MEDIA_SCAN_TIMEOUT_MS`) ⇒ stays `verified`, retried,
-   reported `not_moved: destination_gate_closed`. No scanner configured ⇒ nothing becomes `ready`
-   (fail closed; OQ-9).
-5. Signed download URLs are minted only for `ready` blobs. A blob counts as "in TGP" only when
+3. Server, under the blob lock: `already_present` if the blob is `ready` and not tombstoned; else
+   a signed PUT (`createSignedUploadUrl`, L82) for the immutable key in a separate private bucket
+   (`IMPORT_MEDIA_BUCKET`; never the sellable-content bucket).
+4. On confirm the server reads the object once, checks size, SHA-256 and magic bytes
+   (`verified`; failure `not_moved: write_failed`, R590-B3-C3), then `MediaScanProvider.scan`
+   (vendor-neutral provider interface). `ready` only on `clean`. `rejected` ⇒ object deleted,
+   `not_moved: excluded_by_policy`. `error`/timeout ⇒ stays `verified`, retried,
+   `not_moved: destination_gate_closed`. No scanner configured ⇒ nothing becomes `ready` (OQ-9).
+5. Signed download URLs only for `ready`, non-tombstoned blobs; a blob counts as "in TGP" only when
    `ready`.
-6. Bounds (environment-tunable down only): image ≤ 25 MB; PDF ≤ 50 MB (`PDF_MAX_BYTES`,
-   `coach-media.dto.ts` L12); audio ≤ 25 MB; video ≤ 500 MB, never transcoded; other ≤ 25 MB
-   served as `application/octet-stream`; run budget 20 GB; coach total 100 GB. Excess is
-   `not_moved: over_limit`. Storage and egress cost scales with these caps; the owner sets them
-   (OQ-3).
+6. Bounds (tunable down only): image ≤ 25 MB; PDF ≤ 50 MB (`PDF_MAX_BYTES`, `coach-media.dto.ts`
+   L12); audio ≤ 25 MB; video ≤ 500 MB, never transcoded; other ≤ 25 MB as
+   `application/octet-stream`; run 20 GB; coach 100 GB. Excess ⇒ `not_moved: over_limit` (OQ-3).
 
 ### 5.3 Ownership contract for reads
 
-Every media route (`sign`, `thumbnail`, attachment listing) is **coach-only in V1**: linked
-clients have no media read route; client-visible media is not part of OQ-2 and would be its own
-T4 slice with a person-link authorization path (R590-A2-05). The route verifies, in order:
-`blob.coach_id = req.user.id`; the `ImportPreservedMedia` row's `coach_id = req.user.id`; the
-parent belongs to the caller **and exists**: a preserved parent by the composite FK; a native
-parent by (i) an `ImportNativeProvenance` row `(coach_id = caller, native_kind, native_id)` and
-(ii) a per-kind parent resolver from the writer registry that loads the native row under the
-caller's tenant (`CoachMessage.coach_id`, `WorkoutProgram.coach_id`, `CheckIn` via its Person's
-`coach_id`, …) and confirms it is present and not deleted; the blob is `ready`. Any miss is an
-opaque 404. Tests: role × tenant negatives (anon, authenticated, linked client, other coach, own
-coach with a foreign parent id, own coach with a deleted parent, own coach with a foreign blob id,
-non-ready blob) and positives per parent kind.
+Every media route is **coach-only in V1** (client media is outside OQ-2 and would be its own T4
+slice). It verifies, in order: `blob.coach_id = req.user.id`; the media row's
+`coach_id = req.user.id`; the parent exists and belongs to the caller — a preserved parent by the
+composite FK, a native parent by an `ImportNativeProvenance` row `(coach_id = caller, native_kind,
+native_id)` **and** a per-kind resolver from the writer registry that loads the native row under
+the caller's tenant and confirms it is present; the blob is `ready` and not tombstoned. Any miss is
+an opaque 404. Tests: role × tenant negatives (anon, authenticated, linked client, other coach,
+foreign parent id, deleted parent, foreign blob id, non-ready or tombstoned blob) and positives per
+parent kind.
 
 ### 5.4 Graduated media stays playable (per-bucket copies; copy-then-commit)
 
-Native surfaces resolve media by their own columns and buckets: `CoachMessage.voice_url` must be a
-URL the live path could have produced (`messaging.service.ts` L214-249: storage host and
-`/<voice-notes bucket>/<owner>/` prefix); `CoachExercise` demo media uses the column and bucket
-EX1-C defines; check-in photos have no native column and stay preserved media attached to the
-native `CheckIn` parent. The import blob is never moved. Instead `nativeWrite` (§4.6 step 3)
-binds a **copy**:
+Native surfaces resolve media by their own columns and buckets (`CoachMessage.voice_url`,
+`messaging.service.ts` L214-249: storage host and `/<voice-notes bucket>/<owner>/` prefix;
+`CoachExercise` demo media per EX1-C; check-in photos have no native column and stay preserved
+media on the native `CheckIn` parent). The blob is never moved. FAM-M1 adds to `nativeWrite` step 3
+(the hook lives in M1, which depends on G1; R590-B3-C1):
 
-1. **Copy first, outside the SQL transaction, idempotent.** Key =
-   `<native bucket>/<tenant coach user id>/imported/<sha256>.<ext>` (owner = the tenant coach for
-   coach- and client-authored messages alike: the client has no `User` before link and the prefix
-   check applies to the send path only). If an `ImportMediaCopy(blob, bucket)` row is `ready`,
-   reuse it; else copy within the storage provider, read back, verify SHA-256, upsert the row
-   `ready`. A failure leaves `failed` + `attempts`; the native write is not-ok for that record
+1. **Copy first, outside the SQL transaction, idempotent:** key
+   `<native bucket>/<tenant coach user id>/imported/<sha256>.<ext>`; reuse a `ready`
+   `ImportMediaCopy(blob, bucket)`, else copy within the storage provider, verify SHA-256, upsert
+   `ready`. Failure ⇒ `failed` + `attempts`; the native write is not-ok for that record
    (`not_moved: write_failed`, retried next run).
-2. **Then commit** the native row with the column value derived from the copy key, plus the
-   `ImportPreservedMedia` row re-parented to `(native_kind, native_id)`.
-3. **Process loss** between 1 and 2 leaves a `ready` copy nobody references; a sweep deletes
-   copies with no `ImportPreservedMedia` reference on a blob older than `MEDIA_COPY_ORPHAN_TTL`.
-   A copy is deleted otherwise only by erasure (§4.4), when the blob's reference count is zero.
+2. **Then commit** the native row with the column derived from the copy key and the media row
+   re-parented to `(native_kind, native_id)` under the blob lock (§5.1), `person_id` kept.
+3. **Sweep:** a copy with no media row on the blob whose native parent kind uses that bucket is
+   deleted after `MEDIA_COPY_ORPHAN_TTL` (R590-A3-C1); otherwise copies go only with the blob
+   (§4.4).
 
-One immutable blob, N referencing rows, ≤ one copy per native bucket; graduation of one parent
-never changes what another parent resolves (R590-A2-04, R590-B2-B4). Tests: shared blob with two
-preserved parents, graduate one, both play; copy failure ⇒ record stays preserved; process loss
-after copy ⇒ sweep; erase one Person ⇒ other Person's copy and blob survive. FAM-N1 acceptance
-includes playback of an imported voice note in the thread screen for the coach and for a linked
-client; EX1-C likewise for a demo clip in an assigned workout.
+Tests: shared blob with two parents, graduate one, both play; copy failure ⇒ record stays
+preserved; process loss after copy ⇒ sweep; erase one Person ⇒ other Person's copy and blob
+survive; FAM-N1 playback of an imported voice note for coach and linked client; EX1-C demo clip.
 
 ## 6. Reconciliation
 
@@ -699,52 +649,50 @@ leaves closure null for every package type, so runs settle `partial` with gap
 - **Bucket j-p `preserved_present_verified`**, after j, before k: ledger `reconstructed` with
   `target_kind = preserved_record`, and the preserved row present under the same key and
   `coach_id` in state `preserved`.
-- **Bucket j residual check** (R590-A-A2, R590-A2-02): j additionally requires
-  `provenance.residual_required = false OR residual row present with matching native_kind/native_id`;
-  otherwise `unresolved:residual_missing`.
+- **Bucket j residual check** (R590-A-A2, R590-A2-02, R590-B3-B5): for
+  `provenance.projection_version ≥ 1`, j additionally requires `residual_required = false OR
+residual row present with matching native_kind/native_id`, otherwise
+  `unresolved:residual_missing`. Version-0 rows (pre-FAM-G1) are j without a residual claim.
 - **Archived amendment** (R590-B-A2, R590-A2-03, R590-B2-C4): buckets i and j, and S8 §3.4
   `already_present`, treat a native row as coach-archived iff
   `archived_at IS NOT NULL AND archived_at IS DISTINCT FROM provenance.imported_archived_at`. An
   import-time archive is verified present; a later coach archive, un-archive + re-archive
   (different timestamp) or removal is bucket i. Test: import-archived → coach change → reconcile.
+- **Coach's own removal (bucket i, decided; R590-B3-C2, was OQ-5).** A native row that was
+  verified present in an earlier settled report and is later removed or archived by the coach
+  **moved**: it is counted in `moved_native` and is **not** a `not_moved` row and not an eighth
+  reason. The S9 histogram keeps `unresolved:native_target_removed` for the history detail
+  ("removed by you") and for the deferred completeness rule (§6.4). A bucket-i row with no earlier
+  verified report (removed before any reconciliation) is `identity_conflict`.
 - **Children.** A child that is neither native nor preserved counts `unresolved_children`.
 - **Conditions.** C-FAM fires only for a staged token that resolves to no family (a spec defect).
   C-ID excludes j-p. C-REL includes unresolved person edges on preserved rows.
 - **Invariant test I-1** (§7): for every key, never both a provenance row and a preserved row in
   state `preserved`; covers S8-D1, S8-C (bound and withheld) and every W writer.
 
-### 6.3 Run-status projection: owned by L0, referenced verbatim (R590-B-A1, R590-B2-B1, R590-A2-06)
+### 6.3 Run-status projection: owned by L0 (R590-B-A1, R590-B2-B1, R590-A2-06, R590-B3-B6)
 
-FAM-0 defines no projection fields. `GET scout/import/status` returns **`RunStatusProjectionV1`**
-exactly as L0-DOC D-L0-6.3 defines it under the binding decisions: existing verdict fields;
-`families[]` = `{ family, source_count: int|null, count_basis: 'proven'|'observed'|'unknown',
-moved_native: int, preserved: int, not_moved: int|null }` — **no `destination` field**; one row
-per family seen including preserved families, labels from the D-FAM-1 catalogue (`unclassified` is
-the catch-all); `not_moved[]` = `{ family, count: int|null, reason: NotMovedReason }`; `gaps[]` =
-`{ family: string|null, code: GapCode }`. A fact with a count goes to `not_moved`; an unknown goes
-to `gaps`; never both; unknown = `null`, never 0. A partly-native family shows `moved_native > 0`
-and `preserved > 0`; no rule chooses a family-level destination. Extension and mobile render only
-this. Slice **L2d** (L0-DOC) creates the projection and the enums in `reason-codes.ts`; FAM-R1
-depends on L2d and fills `moved_native` (bucket j), `preserved` (j-p) and the `not_moved[]` rows
-below; L3b fills `source_count`/`count_basis`.
-
-`NotMovedReason` is closed: `excluded_by_policy | source_refused | unresolved_parent |
-identity_conflict | destination_gate_closed | over_limit | write_failed`. FAM-0 adds nothing to
-it; every FAM and S9 fact maps into it:
+FAM-0 defines no projection fields and restates none. `GET scout/import/status` returns
+`RunStatusProjectionV1` exactly as **L0-DOC D-L0-6.3** defines it (families rows without a
+`destination` field, closed `NotMovedReason`, `unclassified` catch-all, counted fact → `not_moved`,
+unknown → `gaps`, unknown = `null`). Slice **L2d** creates it; FAM-R1 depends on L2d and L3b and
+fills `moved_native` (bucket j, plus coach-removed rows per §6.2), `preserved` (j-p) and the
+`not_moved[]` rows from this mapping. FAM-0 adds no code and no `GapCode`:
 
 | Fact (S9 histogram key or FAM state)                                                                                                               | `NotMovedReason`          |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| billing under OQ-1; media from an unconfined origin (OQ-4); scan `rejected`; record resolving to an erased Person                                  | `excluded_by_policy`      |
-| media fetch failed on the device; media verify failed (size/sha/magic)                                                                             | `source_refused`          |
+| owner-confirmed exclusion with a device-side count (billing after OQ-1); media from an unconfined origin (OQ-4); scan `rejected`; erased Person    | `excluded_by_policy`      |
+| media fetch failed on the device (4xx/5xx)                                                                                                         | `source_refused`          |
 | media whose parent record is not in TGP; child whose parent is neither native nor preserved                                                        | `unresolved_parent`       |
-| `unresolved:identity_conflict` (h); `unresolved:native_target_removed` (i, coach removal/archive, OQ-5); `missing_source_id`                       | `identity_conflict`       |
+| `unresolved:identity_conflict` (h); `missing_source_id`; bucket i with no earlier verified report                                                  | `identity_conflict`       |
 | bucket f legacy row not yet converted; preserved before `PRESERVE_VIEWABLE`; media before FAM-M1; scan `error`/timeout; `unsupported_platform:<p>` | `destination_gate_closed` |
-| `over_limit`: preserve over bound; media over bound; media quota; `unresolved:pass_ceiling_exceeded`                                               | `over_limit`              |
-| ledger `failed`; `unresolved:residual_missing`; media copy failed                                                                                  | `write_failed`            |
+| preserve over bound; media over bound; media quota; `unresolved:pass_ceiling_exceeded`                                                             | `over_limit`              |
+| ledger `failed`; `unresolved:residual_missing`; media verify failed (size/sha/magic); media copy failed                                            | `write_failed`            |
 
-The S9 histogram keys (D-S9-7) stay on the settled report for the coach's history detail (for
-example "removed by you"); the run-status projection shows only the seven codes. No `GapCode` is
-added by FAM-0. Per-record `dropped` counts (§4.3) are shown in the coach display, not in the
+Unmapped collections (billing before OQ-1) are gap `collection_unmapped`, uncounted. The S9
+histogram keys (D-S9-7) stay on the settled report for the history detail; projection copy never
+renders `identity_conflict` as "conflict" for a coach's own action because such rows are not in
+`not_moved`. Per-record `dropped` counts (§4.3) are shown in the coach display, not in the
 projection (N-2).
 
 ### 6.4 Deferred to the completeness-closure record (RESET §1)
@@ -753,135 +701,117 @@ Required inputs, not decided here: the release gate as a `complete` condition (R
 gating), C-COV, "every media ref ready", "zero not-moved", the `excluded[]` and staged > observed
 arithmetic (R590-B-C5), and any run-level closure for preserved families.
 
-## 7. Slice plan (landable order; R590-A-C1, R590-B-B1, R590-B-B7, R590-B2-B1, R590-B2-B5)
+## 7. Slice plan (landable order; R590-A-C1, R590-B-B1, R590-B-B7, R590-B2-B1, R590-B2-B5, R590-B3-B5)
 
 Tiers follow the T0-T4 doctrine. "Pin" = ships a migration and re-pins the S11 harness (S8D-DOC
 §6). **W** = a native writer slice: it writes only through `nativeWrite` (§4.6), adds
-`imported_at` to its tables, ships the consumer spec and post-link tests of D-FAM-4, and I-1
-coverage. No W slice for a family that FAM-P2 preserves lands before FAM-G1.
+`imported_at` to its tables, ships the D-FAM-4 CI check and post-link tests, and I-1 coverage. No
+W slice for a family that FAM-P2 preserves lands before FAM-G1. **No slice purges staged payloads
+before FAM-G1.**
 
-| #   | Slice                                                                                                                                                                                                                                              | Tier  | Depends on                               | Pin |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------- | --- |
-| 0   | **FAM-0** this record                                                                                                                                                                                                                              | T4    | —                                        | no  |
-| 1   | **FAM-C1** catalogue tokens, spec grammar (role set, declared paths + classes), `destinationFor`, `preserved_record` + new native ledger kinds, `Person.source_archived_at`, provenance `residual_*`/`imported_archived_at`, contract regeneration | T4    | L2a #588, L0 r5                          | yes |
-| 2   | **FAM-P1** `ImportPreservedRecord` schema, CHECKs, RLS, composite FKs, RLS matrix spec                                                                                                                                                             | T4    | #587, FAM-C1                             | yes |
-| 3   | **FAM-E1a** erasure and export for preserved rows: Person erasure by source identity incl. soft edges, tombstone refusal, coach account deletion by `coach_id`, two-phase `ImportErasureJob`, coach export                                         | T4    | FAM-P1                                   | yes |
-| 4   | **FAM-P2** `canonicalRecord` + corpus, ingest key-list extension, staged purge, preserve writer, legacy evidence conversion, **guard retrofit into S8-D1/S8-C** (§4.6 steps 1-2), module-boundary spec, I-1                                        | T4    | FAM-P1, FAM-E1a, S8-D1                   | no  |
-| 5   | **FAM-P3** coach read route (per Person, former clients, library), `PRESERVE_VIEWABLE`, contract regeneration                                                                                                                                      | T4    | FAM-P2, S8-D2 #577                       | no  |
-| 6   | **UX-P3** mobile "From your previous platform", "Imported library", "Former clients"                                                                                                                                                               | T2    | FAM-P3                                   | —   |
-| 7   | **FAM-G1** graduation engine (§4.6 steps 3-5 for preserved rows), residual for native-first writes in S8-D1/S8-C, ledger retarget + fence, on-demand trigger, media copy hook                                                                      | T4    | FAM-P2                                   | no  |
-| 8   | **FAM-R1** reconciliation: j-p, residual check, archived predicate, `not_moved[]` mapping, `moved_native`/`preserved` fill, extension/mobile decode                                                                                                | T4    | FAM-P3, FAM-G1, **L2d** (L0), L3b #589   | no  |
-| 9   | **S8-E1a** (W) workout logs                                                                                                                                                                                                                        | T4    | #587, S8-D1, FAM-G1                      | yes |
-| 10  | **S8-E1b** (W) check-ins + body weights (collision winner; unmapped required values preserved)                                                                                                                                                     | T4    | S8-E1a                                   | yes |
-| 11  | **S8-E1c** (W) habits                                                                                                                                                                                                                              | T4    | S8-E1a                                   | yes |
-| 12  | **FAM-E1b** media erasure: reference-counted blob deletion in Person erasure and account deletion, copy deletion, orphan sweep                                                                                                                     | T4    | FAM-E1a                                  | no  |
-| 13  | **FAM-M1** media: tables, bucket, signed upload, verify, `MediaScanProvider`, quotas, ownership routes with parent resolvers, extension fetch with per-hop confinement                                                                             | T4    | FAM-P1, FAM-E1b, L3 origin set, OQ-3/4/9 | yes |
-| 14  | **FAM-N1** (W) messages: person expansion, `sender_person_id`, authorship, consumer exclusions, voice copy, §2.7 re-own amendment                                                                                                                  | T4    | #587 pattern, FAM-G1, FAM-M1, S8-D4b/D5  | yes |
-| 15  | **FAM-N2a** tenant-scoped food rows                                                                                                                                                                                                                | T4    | —                                        | yes |
-| 16  | **FAM-N2b** (W) `food_logs` + `water_logs`                                                                                                                                                                                                         | T4    | FAM-N2a, FAM-G1                          | yes |
-| 17  | **FAM-N2c** (W) `nutrition_targets` + `meal_plans`                                                                                                                                                                                                 | T4    | FAM-G1                                   | yes |
-| 18  | **FAM-N6** (W) coaching sessions                                                                                                                                                                                                                   | T4    | FAM-G1                                   | yes |
-| 19  | EX1-A/B/C, S8-E1d (W): withheld and blocked records preserved; demo media via §5.4                                                                                                                                                                 | T4    | EX1-DOC, FAM-G1, FAM-M1, OQ-12           | —   |
-| 20  | Native designs for `notes`, `goals`, `forms`, `form_responses`, `body_measurements`, `client_profile` (own T3 records)                                                                                                                             | T3→T4 | owner decisions                          | —   |
+| #   | Slice                                                                                                                                                                                                                                                                                                             | Tier  | Depends on                                       | Pin |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------ | --- |
+| 0   | **FAM-0** this record                                                                                                                                                                                                                                                                                             | T4    | —                                                | no  |
+| 1   | **FAM-C1** catalogue tokens, spec grammar (role set, media roles), `destinationFor`, proposal validator (`kind` ignored/refused), contact-PII-path validator for native rules, `preserved_record` + new native ledger kinds, `Person.source_archived_at`, provenance columns with defaults, contract regeneration | T4    | L2a #588, L0 r5                                  | yes |
+| 2   | **FAM-P1** `ImportPreservedRecord` schema, CHECKs, RLS, composite FKs, RLS matrix spec                                                                                                                                                                                                                            | T4    | #587, FAM-C1                                     | yes |
+| 3   | **FAM-E1a** erasure and export for preserved rows: Person erasure by source identity incl. soft edges, tombstone refusal, coach account deletion by `coach_id`, `ImportErasureJob`, coach export                                                                                                                  | T4    | FAM-P1                                           | yes |
+| 4   | **FAM-P2** `CREDENTIAL_KEYS` + value shapes + corpus at ingest, `preserveRecord`, preserve writer, legacy evidence conversion, **guard retrofit into S8-D1/S8-C** (§4.6 steps 1-2), before/after regression pin, module-boundary spec, I-1. **No purge.**                                                         | T4    | FAM-P1, FAM-E1a, S8-D1                           | no  |
+| 5   | **FAM-P3** coach read route (per Person, former clients, library), `PRESERVE_VIEWABLE`, contract regeneration                                                                                                                                                                                                     | T4    | FAM-P2, S8-D2 #577                               | no  |
+| 6   | **UX-P3** mobile "From your previous platform", "Imported library", "Former clients"                                                                                                                                                                                                                              | T2    | FAM-P3                                           | —   |
+| 7   | **FAM-G1** graduation engine (§4.6 steps 4-5), version-0 residual backfill, ledger retarget + fence, on-demand trigger, staged purge job (§4.3 ordering)                                                                                                                                                          | T4    | FAM-P2                                           | no  |
+| 8   | **FAM-R1** reconciliation: j-p, residual check (version ≥ 1), archived predicate, bucket-i rule, `not_moved[]` mapping, `moved_native`/`preserved` fill, extension/mobile decode                                                                                                                                  | T4    | FAM-P3, FAM-G1, **L2d** (L0), L3b #589           | no  |
+| 9   | **S8-E1a** (W) workout logs                                                                                                                                                                                                                                                                                       | T4    | #587, S8-D1, FAM-G1                              | yes |
+| 10  | **S8-E1b** (W) check-ins + body weights (collision winner; unmapped required values preserved)                                                                                                                                                                                                                    | T4    | S8-E1a                                           | yes |
+| 11  | **S8-E1c** (W) habits                                                                                                                                                                                                                                                                                             | T4    | S8-E1a                                           | yes |
+| 12  | **FAM-E1b** media erasure: person-keyed media selection, tombstone + grace sweep, copy deletion, dangling-parent cleanup                                                                                                                                                                                          | T4    | FAM-E1a                                          | no  |
+| 13  | **FAM-M1** media: tables, bucket, signed upload, verify, `MediaScanProvider`, quotas, reference admission under the blob lock, ownership routes with parent resolvers, extension fetch with per-hop confinement, **media copy hook in `nativeWrite`**                                                             | T4    | FAM-P1, FAM-E1b, FAM-G1, L3 origin set, OQ-3/4/9 | yes |
+| 14  | **FAM-N1** (W) messages: person expansion, `sender_person_id`, authorship, consumer exclusions, voice copy, §2.7 re-own amendment                                                                                                                                                                                 | T4    | #587 pattern, FAM-G1, FAM-M1, S8-D4b/D5          | yes |
+| 15  | **FAM-N2a** tenant-scoped food rows                                                                                                                                                                                                                                                                               | T4    | —                                                | yes |
+| 16  | **FAM-N2b** (W) `food_logs` + `water_logs`                                                                                                                                                                                                                                                                        | T4    | FAM-N2a, FAM-G1                                  | yes |
+| 17  | **FAM-N2c** (W) `nutrition_targets` + `meal_plans`                                                                                                                                                                                                                                                                | T4    | FAM-G1                                           | yes |
+| 18  | **FAM-N6** (W) coaching sessions                                                                                                                                                                                                                                                                                  | T4    | FAM-G1                                           | yes |
+| 19  | EX1-A/B/C, S8-E1d (W): withheld and blocked records preserved; demo media via §5.4                                                                                                                                                                                                                                | T4    | EX1-DOC, FAM-G1, FAM-M1, OQ-12                   | —   |
+| 20  | Native designs for `notes`, `goals`, `forms`, `form_responses`, `body_measurements`, `client_profile` (own T3 records)                                                                                                                                                                                            | T3→T4 | owner decisions                                  | —   |
 
 Edges: FAM-C1 needs L2a (#588) and L0 r5 vocabulary; L1 needs FAM-C1's vocabulary (RESET §7);
-FAM-R1 needs L2d (projection + enums) and L3b (`source_count`). L0-DOC should reference these
-FAM-0 slice ids in place of `PRES`/`FAM-n` (R590-B2-C7). The FAM-C1 eval-harness re-run is L1's
-CI job.
+FAM-R1 needs L2d (projection + enums) and L3b (`source_count`); FAM-M1 needs FAM-G1 (the copy
+hook extends `nativeWrite`; graph acyclic, R590-B3-C1). L0-DOC should reference these FAM-0 slice
+ids in place of `PRES`/`FAM-n` (R590-B2-C7). The FAM-C1 eval-harness re-run is L1's CI job.
 
 ## 8. Contradictions with other records (this record proposes the amendment)
 
-| #    | Record                                                                                                                                                                                               | Contradiction                                                                                        | Resolution                                                                                                                                                                                                                                                 |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C-1  | L0-DOC (`unsupported_coaching_data` as a gap; messages/photos NO for V1)                                                                                                                             | All families YES                                                                                     | RESET §6 projection; `unsupported_coaching_data` deleted in L0 r4/r5                                                                                                                                                                                       |
-| C-2  | EX1-DOC EQ-3, D-EX1-7                                                                                                                                                                                | Exercise media and withheld plans are reachable                                                      | Media via FAM-M1 (§5.4); withheld plan preserved whole with children, graduates through `nativeWrite` when CX-REF binds                                                                                                                                    |
-| C-3  | S8-DOC §3.7 `source_archived`, §4.6 (messaging absent), `scout-reconstruct.dto.ts` L9-11                                                                                                             | Archived and messaging data are reachable                                                            | D-FAM-2 archived rule + §6.2 predicate; `messages` family                                                                                                                                                                                                  |
-| C-4  | S8-DOC §3.3                                                                                                                                                                                          | `CoachMessage` orders on `created_at`                                                                | D-FAM-4 single-column exception                                                                                                                                                                                                                            |
-| C-5  | S8-DOC §3.5 `native_uniqueness`, §3.7 `no_native_destination` as final                                                                                                                               | Reachable                                                                                            | Preserved; codes kept only for history                                                                                                                                                                                                                     |
-| C-6  | S8D-DOC OQ-9                                                                                                                                                                                         | Answered by the directive                                                                            | Preserved now; native designs in slice 20                                                                                                                                                                                                                  |
-| C-7  | TM-14                                                                                                                                                                                                | PRESERVE stores record content                                                                       | §4.3 sanitized projection                                                                                                                                                                                                                                  |
-| C-8  | S9-DOC buckets i/j, S8-DOC §3.4 `already_present` ("not archived")                                                                                                                                   | Import-time archives would fail forever                                                              | §6.2 predicate on `imported_archived_at`                                                                                                                                                                                                                   |
-| C-9  | L0-DOC r5 draft: model-proposed `{kind:'preserve', group: PreserveGroup}`, `family = … ∪ preserve groups ∪ 'other'`, exclusions as gaps, r4/r5 `NotMovedReason` names, `destination` in `families[]` | One token set; destination derived per record; one enum; one placement                               | Binding decisions (header): model proposes `family` only; `unclassified`; no `destination` field; seven-code `NotMovedReason`; owner-confirmed exclusions with a count → `not_moved: excluded_by_policy`, unmapped collections → gap `collection_unmapped` |
-| C-10 | `Person` D2 comment (schema L6943-6950: "Email … deliberately NOT stored"), `families.ts` L105 ("Email/billing are never mapped or written")                                                         | Preserving `client_profile`, `forms`, `billing_history` would store contact and billing data as Json | **Reversal disclosed** (R590-B-B8): contact PII dropped by default (§4.3 rule 7), billing not moved by default; owner questions OQ-1, OQ-8. Email is still never an identity or linking key                                                                |
-| C-11 | S8-DOC D-S8-4 writers read the staged payload; S8-C `native-rules.ts` L435                                                                                                                           | One canonical input for both destinations (§4.3)                                                     | S8-D1/S8-C read `C.fields` from FAM-P2 on; ids are never dropped (§4.3 rule 4); corpus proves edge retention                                                                                                                                               |
+| #    | Record                                                                                                                                       | Contradiction                                                                                        | Resolution                                                                                                                                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C-1  | L0-DOC (`unsupported_coaching_data` as a gap; messages/photos NO for V1)                                                                     | All families YES                                                                                     | RESET §6 projection; `unsupported_coaching_data` deleted in L0 r4/r5                                                                                                                                                                             |
+| C-2  | EX1-DOC EQ-3, D-EX1-7                                                                                                                        | Exercise media and withheld plans are reachable                                                      | Media via FAM-M1 (§5.4); withheld plan preserved whole with children, graduates through `nativeWrite` when CX-REF binds                                                                                                                          |
+| C-3  | S8-DOC §3.7 `source_archived`, §4.6 (messaging absent), `scout-reconstruct.dto.ts` L9-11                                                     | Archived and messaging data are reachable                                                            | D-FAM-2 archived rule + §6.2 predicate; `messages` family                                                                                                                                                                                        |
+| C-4  | S8-DOC §3.3                                                                                                                                  | `CoachMessage` orders on `created_at`                                                                | D-FAM-4 single-column exception                                                                                                                                                                                                                  |
+| C-5  | S8-DOC §3.5 `native_uniqueness`, §3.7 `no_native_destination` as final                                                                       | Reachable                                                                                            | Preserved; codes kept only for history                                                                                                                                                                                                           |
+| C-6  | S8D-DOC OQ-9                                                                                                                                 | Answered by the directive                                                                            | Preserved now; native designs in slice 20                                                                                                                                                                                                        |
+| C-7  | TM-14                                                                                                                                        | PRESERVE stores record content                                                                       | §4.3 sanitized bounded projection                                                                                                                                                                                                                |
+| C-8  | S9-DOC buckets i/j, S8-DOC §3.4 `already_present` ("not archived")                                                                           | Import-time archives would fail forever                                                              | §6.2 predicate on `imported_archived_at`                                                                                                                                                                                                         |
+| C-9  | L0-DOC r5 (f4459fe2): `LearnedProposalV1.steps[].destination.kind` still model-proposed; `FamilyLabel` names "FAM-0 preserved-family labels" | Destination is derived per record; one catalogue                                                     | L0 removes `destination.kind` next round; FAM-C1 ignores and refuses a disagreeing `kind` until then (D-FAM-1); `FamilyLabel` = the D-FAM-1 catalogue (R590-B3-C5). Billing placement now matches L0 (gap until owner decides; then `not_moved`) |
+| C-10 | `Person` D2 comment (schema L6943-6950: "Email … deliberately NOT stored"), `families.ts` L105 ("Email/billing are never mapped or written") | Preserving `client_profile`, `forms`, `billing_history` would store contact and billing data as Json | **Reversal disclosed** (R590-B-B8): contact PII dropped by default (§4.3 transform 1), billing a gap by default; owner questions OQ-1, OQ-8. Email is still never an identity or linking key                                                     |
+| C-11 | S8-DOC D-S8-4 writers read the staged payload; S8-C `native-rules.ts` L435; S9 `facts.service.ts` L830-845                                   | r3 proposed one canonical input for both destinations                                                | **Withdrawn in r4** (executive direction): writers and S9 keep reading the staged payload; the preserved record differs only by transforms native rules never consume (§4.3, §4.6)                                                               |
+| C-12 | North Star "credentials never stored"                                                                                                        | An unlisted-key or plain-word secret inside coaching data is indistinguishable from coaching data    | Guarantee stated in bounded form (§4.3); owner acknowledgement OQ-12                                                                                                                                                                             |
 
 ## 9. Open questions for the owner (each with a safe interim default)
 
-| OQ    | Question                                                                                                                                                                                                                                                                                                                            | Interim default                                                                                                       |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| OQ-1  | Is past billing and payment history a coaching record to move? (L0 P2)                                                                                                                                                                                                                                                              | **Not moved**, `not_moved: excluded_by_policy`. If yes: preserve read-only (amounts, dates, statuses), never a charge |
-| OQ-2  | After a client joins, may they see preserved **records** about them? (Media reads stay coach-only in V1, §5.3)                                                                                                                                                                                                                      | Coach-only; coach-private families never client-visible                                                               |
-| OQ-3  | Are the media caps of §5.2 (video 500 MB, 20 GB per run, 100 GB per coach) acceptable?                                                                                                                                                                                                                                              | Caps apply                                                                                                            |
-| OQ-4  | May the extension fetch media from a separate media host proven by observation? If no, most photo-bearing runs keep media not moved                                                                                                                                                                                                 | Confined set only                                                                                                     |
-| OQ-5  | Should a coach's deletion or archive of an imported record keep it reported as not moved?                                                                                                                                                                                                                                           | Yes (`identity_conflict` in the projection; "removed by you" in the history detail)                                   |
-| OQ-6  | Should imported profile fields fill the joined client's profile on link?                                                                                                                                                                                                                                                            | No; preserved, coach-visible                                                                                          |
-| OQ-7  | May an unnameable reachable coaching collection land as `unclassified`?                                                                                                                                                                                                                                                             | Yes                                                                                                                   |
-| OQ-8  | Contact PII (email, phone, address, DOB) in `client_profile`, `forms`, `form_responses`: preserve coach-only, or never store?                                                                                                                                                                                                       | **Not stored** (`contact_pii`, counted and shown as "contact details hidden") until answered                          |
-| OQ-9  | Which malware scanner backs `MediaScanProvider`?                                                                                                                                                                                                                                                                                    | None configured ⇒ no media becomes `ready` (fail closed)                                                              |
-| OQ-10 | **Altered text.** Imported text (preserved and native) may differ from the source: credential-shaped words become `[hidden]`, signed-link query parameters are removed, undeclared fields are not kept, a short plain-word secret under a data label cannot be detected (§4.3). Acceptable, with per-record "hidden: n" disclosure? | Yes, disclosed per record; no rule is relaxed                                                                         |
-| OQ-11 | **Joined client's imported history in live surfaces.** May imported workouts/weights/check-ins enter leaderboards, community, streaks, digests, coach analytics after link?                                                                                                                                                         | **Excluded** everywhere except the record's own screens and the disclosed AI context (D-FAM-4)                        |
+| OQ    | Question                                                                                                                                                                                                                                                    | Interim default                                                                                                              |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| OQ-1  | Is past billing and payment history a coaching record to move? (L0 P2)                                                                                                                                                                                      | **Undecided ⇒ gap `collection_unmapped`**; on "no": `not_moved: excluded_by_policy` with count; on "yes": preserve read-only |
+| OQ-2  | After a client joins, may they see preserved **records** about them? (Media reads stay coach-only in V1, §5.3)                                                                                                                                              | Coach-only; coach-private families never client-visible                                                                      |
+| OQ-3  | Are the media caps of §5.2 (video 500 MB, 20 GB per run, 100 GB per coach) acceptable?                                                                                                                                                                      | Caps apply                                                                                                                   |
+| OQ-4  | May the extension fetch media from a separate media host proven by observation? If no, most photo-bearing runs keep media not moved                                                                                                                         | Confined set only                                                                                                            |
+| OQ-6  | Should imported profile fields fill the joined client's profile on link?                                                                                                                                                                                    | No; preserved, coach-visible                                                                                                 |
+| OQ-7  | May an unnameable reachable coaching collection land as `unclassified`?                                                                                                                                                                                     | Yes                                                                                                                          |
+| OQ-8  | Contact PII (email, phone, address, DOB) in `client_profile`, `forms`, `form_responses`: preserve coach-only, or never store?                                                                                                                               | **Not stored** (`contact_pii`, counted and shown as "contact details hidden") until answered                                 |
+| OQ-9  | Which malware scanner backs `MediaScanProvider`?                                                                                                                                                                                                            | None configured ⇒ no media becomes `ready` (fail closed)                                                                     |
+| OQ-10 | **Altered content.** Imported records may differ from the source only by: removed credential keys and JWT/bearer/PEM values, removed credential-named URL parameters, dropped contact PII (OQ-8), media replaced by refs. Acceptable, disclosed per record? | Yes, disclosed per record                                                                                                    |
+| OQ-11 | **Joined client's imported history in live surfaces.** May imported workouts/weights/check-ins enter leaderboards, community, streaks, digests, coach analytics after link?                                                                                 | **Excluded** everywhere except the record's own screens and the two allow-listed AI context modules (D-FAM-4)                |
+| OQ-12 | **Bounded credential guarantee.** Accept that "credentials never stored" is provable for credential-class keys and shapes only, with the residual of §4.3 stated (unlisted key names; plain-word secrets inside coaching data)?                             | The bounded guarantee stands as written; the list is versioned and grows on evidence; no relaxation                          |
 
 Notes (not questions): **N-1** graduated native rows follow live per-client AI behaviour after
 link (existing behaviour; disclosed on the result). **N-2** a per-family redaction count in
 `families[]` is proposed to L0 as an owner question; FAM-0 adds no fields. **N-3** future and
 non-terminal source sessions are preserved, so they are absent from the TGP calendar and open-slot
-computation (`scheduling-open-slots.service.ts` L90-97) would offer those times.
+computation (`scheduling-open-slots.service.ts` L90-97) would offer those times. **N-4** (was
+OQ-5) a coach's deletion of an imported record is the coach's own action: counted as moved, shown
+as "removed by you" in history (§6.2).
 
 ## 10. Invariant cross-check
 
-| Invariant                                      | How this record holds it                                                                                                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| New source → core diff = 0                     | Catalogue is TGP-side; no source names; scanner and storage are provider interfaces                                                                          |
-| AI returns data only, never decides completion | Model proposes family + declared paths/classes; `destinationFor` and validators are pure; closure is null (RESET §1)                                         |
-| Deterministic identity, writes, reconciliation | D-S8-3 key everywhere; one canonical record; one `nativeWrite`; ledger retarget; collision winner rule                                                       |
-| Credentials never stored/learned/logged/sent   | §4.3 declared-path allow-list, pre-transform key screening, shape rules, corpus; key-only ingest redaction + purge; device headers memory-only               |
-| Customer data never in cross-coach memory      | §4.7 boundary; V1 per-coach memory; dedup per coach                                                                                                          |
-| Unknown ≠ 0; no false `complete`               | L0-owned projection referenced verbatim (no `destination`, seven codes); `complete` unreachable until the closure record; residual check; archived predicate |
-| RLS never weakened                             | Service-role-only tables with REVOKE; expansions add `person_id IS NULL` guards only; §5.3 parent-existence ownership on every read                          |
-| Erasure                                        | FAM-E1a before FAM-P2, FAM-E1b before FAM-M1; soft-edge selection; tombstone; reference-counted two-phase blob deletion                                      |
-| Replay/cancel/timeout/process-loss safe        | Create-only, unique keys, one transaction per identity tree, copy-then-commit with orphan sweep, retryable erasure job                                       |
+| Invariant                                      | How this record holds it                                                                                                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New source → core diff = 0                     | Catalogue is TGP-side; no source names; scanner and storage are provider interfaces                                                                                        |
+| AI returns data only, never decides completion | Model proposes family + field mapping; `kind` ignored/refused; `destinationFor` is pure; closure is null (RESET §1)                                                        |
+| Deterministic identity, writes, reconciliation | D-S8-3 key everywhere; one `nativeWrite`; existing writers unchanged in what they read; ledger retarget; collision winner rule                                             |
+| Credentials never stored/learned/logged/sent   | Exact normalized key denylist + JWT/bearer/PEM shapes at ingest before any durable write, corpus-tested; bounded residual stated (§4.3, OQ-12); device headers memory-only |
+| Customer data never in cross-coach memory      | §4.7 boundary; V1 per-coach memory; dedup per coach                                                                                                                        |
+| Unknown ≠ 0; no false `complete`               | D-L0-6.3 projection by reference; `complete` unreachable until the closure record; residual check for version ≥ 1; archived predicate                                      |
+| RLS never weakened                             | Service-role-only tables with REVOKE; expansions add `person_id IS NULL` guards only; §5.3 parent-existence ownership on every read                                        |
+| Erasure                                        | FAM-E1a before FAM-P2, FAM-E1b before FAM-M1; person-keyed media selection; blob lock on admission; tombstone + grace sweep                                                |
+| No loss during rollout                         | No purge before FAM-G1; `residual_required` default + version-0 backfill; guard before engine                                                                              |
+| Replay/cancel/timeout/process-loss safe        | Create-only, unique keys, one transaction per identity tree, copy-then-commit with orphan sweep, retryable erasure job                                                     |
 
-## 11. Closure maps
+## 11. Closure map — r4 (R590-A3, R590-B3)
 
-### r3 (R590-A2, R590-B2)
+Earlier maps (r2: R590-A/B; r3: R590-A2/B2) are in the PR #590 body.
 
-| Finding        | Section                              | How                                                                                                                                                                                                                                                   |
-| -------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R590-A2-01     | §4.3 rules 2-4                       | Word-level credential screening on raw keys and `$map` labels before any transform; declared-path + class contract (fail closed); residual restated precisely and made an owner question (OQ-10); corpus adds the exact `$map` cases and ingest cases |
-| R590-A2-02     | §4.6, §4.1, §6.2                     | Residual computed by every `nativeWrite` (native-first included); `residual_required` NOT NULL with CHECK; deletion/replay tests for both paths                                                                                                       |
-| R590-A2-03     | D-FAM-2, §6.2                        | Provenance `imported_archived_at`; predicate `archived_at IS DISTINCT FROM imported_archived_at`; import-archived → coach change test                                                                                                                 |
-| R590-A2-04     | §5.1, §5.4, §4.4                     | Immutable content-addressed blob; per-bucket `ImportMediaCopy`; copy-then-commit; orphan sweep; reference-counted two-phase erasure; shared-blob/rollback/process-loss tests                                                                          |
-| R590-A2-05     | §5.3, D-FAM-3                        | Native parent existence + tenant via per-kind resolver; media reads coach-only in V1, client media explicitly out of OQ-2; role × tenant negatives incl. linked client and deleted parent                                                             |
-| R590-A2-06     | D-FAM-1, §6.3                        | Per-record `destinationFor`; `families[]` has no `destination` field (binding decision); mixed families expressed by counts                                                                                                                           |
-| R590-A2-C1     | §4.3 rule 10                         | Re-projection claim removed                                                                                                                                                                                                                           |
-| R590-B2-B1     | §6.3, D-FAM-1, §7, §8 C-9            | Seven-code `NotMovedReason` with full mapping; exclusions → `not_moved: excluded_by_policy`, unmapped → gap; `unclassified` only; FAM-R1 → L2d edge                                                                                                   |
-| R590-B2-B2     | §4.6, D-FAM-2, D-FAM-3               | One `nativeWrite` for every writer incl. S8-D1/S8-C withheld path; guard in FAM-P2, engine in FAM-G1; attach wording deleted (graduate first, attach only when not-ok); I-1 covers existing writers                                                   |
-| R590-B2-B3     | §4.3, §4.6, §8 C-11                  | Ingest redactor key-only (no shape rules, no id drops); one canonical record consumed by both destinations; id classes defined; id false-positive corpus; URL query rule narrowed; equality test; OQ-10                                               |
-| R590-B2-B4     | §4.4, §5.4                           | Reference count under `FOR UPDATE` across all Persons; blob and copies deleted only at zero refs; erase-A-B-plays test                                                                                                                                |
-| R590-B2-B5     | D-FAM-4, §7                          | Rule over all consumers with code-enumerated lists (15 `workoutSession` files named); allow-list (a)-(c); `rg` spec + post-link tests bound to every W slice incl. S8-E1a/b/c; OQ-11                                                                  |
-| R590-B2-C1..C7 | §6.1, §4.1, §4.6, §6.2, §9, §4.3, §7 | display-pending not in `preserved`; conversion reads staged payload and deletes evidence row; sentinel at consumed path; archived predicate; OQ-3 split, OQ-5 reworded; purge consequence stated; L0 to reference FAM-0 slice ids                     |
-
-### r2 (R590-A, R590-B)
-
-| Finding       | Section                             | How                                                                                                                                                       |
-| ------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R590-A-A1     | §4.3                                | Allow-list projection, credential keys, value classes, URL rules, metadata covered, ingest + purge, corpus, stated residual (tightened in r3)             |
-| R590-A-A2     | §4.1, §4.6, §6.2                    | One `graduated` state; `residual_id` RESTRICT FK + `residual_required`; bucket j residual check                                                           |
-| R590-A-A3     | §4.6 step 5                         | Ledger retarget for all intents inside the transaction                                                                                                    |
-| R590-A-A4     | §4.4, §7                            | Erasure by source identity incl. soft edges, tombstone, retryable job, export; FAM-E1a before P2, FAM-E1b before M1                                       |
-| R590-A-B1     | §5.2                                | Scan provider; `ready` only on `clean`; download only when `ready`; per-hop redirect confinement                                                          |
-| R590-A-B2     | D-FAM-4                             | `imported_at`; no invented read/review state; consumer exclusions; AI disclosure N-1                                                                      |
-| R590-A-B3     | §5.1, §5.3, §4.2                    | Composite FKs; native parent verified; opaque 404; REVOKE; role × tenant negatives                                                                        |
-| R590-A-C1..C3 | §7, §2, header                      | Topological order; `src/scheduling/jobs/reminder.job.ts`; anchored to L0 r5 / RESET                                                                       |
-| R590-B-A1     | §6.3                                | FAM-0 projection deleted; `RunStatusProjectionV1` verbatim                                                                                                |
-| R590-B-A2     | D-FAM-2, §6.2, §4.5                 | `clients` always native; `Person.source_archived_at`; buckets i/j and `already_present` amended; former-client display                                    |
-| R590-B-B1     | §7, D-FAM-3                         | G1 depends only on P2; every writer depends on G1; I-1                                                                                                    |
-| R590-B-B2     | §4.1                                | No evidence rows for new runs; `preserved_record` ledger kind; legacy conversion                                                                          |
-| R590-B-B3     | §4.3                                | No token matching on coaching words; Luhn only under card-like keys; negatives kept                                                                       |
-| R590-B-B4     | §4.6                                | One canonical input; sentinel refusal; atomic children                                                                                                    |
-| R590-B-B5     | §5.4                                | Native-bucket copies per column; playback acceptance                                                                                                      |
-| R590-B-B6     | D-FAM-4                             | Author = bearer's own source account or thread Person; `coach_id = Person.coach_id`                                                                       |
-| R590-B-B7     | §4.4, §7                            | E1a before P2; E1b before M1                                                                                                                              |
-| R590-B-B8     | §8 C-10, OQ-1/OQ-8                  | Reversal recorded; fail-closed defaults                                                                                                                   |
-| R590-B-B9     | D-FAM-1, §8 C-9                     | Model proposes family + mapping only; destination derived; single token set                                                                               |
-| R590-B-C1..C9 | FI-1, D-FAM-2, §9, §4.5, §4.1, §6.4 | FK shape per table; soft-edge clear; OQ-4/session notes; deterministic predicate; collision winner; metrics exclusion; states merged; arithmetic deferred |
+| Finding    | Section                  | How                                                                                                                                                                         |
+| ---------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A2-01 (r3) | §4.3, §8 C-12, OQ-12     | Nested whole-key denylist incl. spaced/compound forms (`auth key`, `Password hint`) and value shapes at ingest before any durable write; residual stated precisely          |
+| A2-02 (r3) | §4.1, §4.3, §4.6, §7     | FAM-P2 purges nothing; purge in/after G1 and after the settled report; `residual_required` default + version-0 backfill; S9 claims residual only for version ≥ 1            |
+| A3-01      | §5.1, §4.4, §5.4         | Reference insert/re-parent takes `FOR UPDATE` on the blob and fails on tombstone; erasure tombstones in-tx, deletes after commit + grace with a zero-reference re-check     |
+| A3-C1      | §5.4 step 3              | Copy sweep by bucket-using parent kind, TTL-bounded                                                                                                                         |
+| B3-B1      | §4.3, §4.6, §8 C-11      | Existing writers and S9 read the staged payload as today; no declared-field/class gate; before/after regression pin in P2                                                   |
+| B3-B2      | §4.3                     | Exact normalized key list (no words/pairs); `session` removed; `session_id` family in must-keep corpus; phone-like rule dropped; contact PII by key or email grammar only   |
+| B3-B3      | §5.1, §4.4               | `ImportPreservedMedia.person_id` kept through graduation; erasure selects media by person; dangling native parent cleanup in the sweep                                      |
+| B3-B4      | D-FAM-4                  | Imported history defined by provenance; DMMF-derived CI check over all read methods, relation filters/includes/_count, raw SQL; current hits listed; AI modules named       |
+| B3-B5      | §4.1, §4.6, §7 rows 4/7  | No purge in P2; defaults so provenance write sites are untouched; backfill semantics                                                                                        |
+| B3-B6      | D-FAM-1, §6.3, OQ-1, C-9 | Billing: gap `collection_unmapped` until decided, then `not_moved: excluded_by_policy` with count; `kind` ignored/refused until L0 removes it; D-L0-6.3 cited, not restated |
+| B3-C1      | §7 rows 7/13             | Copy hook moved to FAM-M1 (depends on G1)                                                                                                                                   |
+| B3-C2      | §6.2, §6.3, N-4          | Coach's own removal counted as moved, not `not_moved`; no eighth reason                                                                                                     |
+| B3-C3      | §5.2, §6.3               | Verify failure → `write_failed`                                                                                                                                             |
+| B3-C4      | OQ-10, OQ-12, N-4        | Split; OQ-5 → note                                                                                                                                                          |
+| B3-C5, C6  | C-9, §4.3 transform 4    | `FamilyLabel` = catalogue; identity holds per version                                                                                                                       |
