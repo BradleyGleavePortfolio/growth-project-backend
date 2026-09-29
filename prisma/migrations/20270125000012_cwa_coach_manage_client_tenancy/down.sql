@@ -1,5 +1,6 @@
--- Rollback of 20270125000012 (D8): drop the three D8 functions (app.rls_actor_id,
--- app.actor_owns_workout_plan, app.actor_coaches_client), recreate app.current_user_owns_workout_plan(text)
+-- Rollback of 20270125000012 (D8): drop the six D8 functions (app.caller_coaches_client,
+-- app.caller_owns_workout_plan, app.actor_coaches_client, app.actor_owns_workout_plan,
+-- app.rls_actor_id, app.rls_principal — dependents first), recreate app.current_user_owns_workout_plan(text)
 -- with its 20270125000011 body, comment and ACL verbatim (auth.uid()-keyed), and restore the
 -- 20270125000011 text of "assignment_coach_manage" verbatim (auth.uid()-keyed, role gate incl.
 -- sub_coach, no client-tenancy predicate). Run FIRST in the S8-D3 down chain (before 20270125000011).
@@ -10,9 +11,12 @@ SET LOCAL statement_timeout = '30s';
 
 DROP POLICY IF EXISTS "assignment_coach_manage" ON public."ClientWorkoutAssignment";
 
+DROP FUNCTION IF EXISTS app.caller_coaches_client(text);
+DROP FUNCTION IF EXISTS app.caller_owns_workout_plan(text);
 DROP FUNCTION IF EXISTS app.actor_coaches_client(text, text);
 DROP FUNCTION IF EXISTS app.actor_owns_workout_plan(text, text);
 DROP FUNCTION IF EXISTS app.rls_actor_id();
+DROP FUNCTION IF EXISTS app.rls_principal();
 
 CREATE OR REPLACE FUNCTION app.current_user_owns_workout_plan(plan_id text)
 RETURNS boolean
