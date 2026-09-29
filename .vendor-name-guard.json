@@ -229,6 +229,16 @@
       "glob": "test/utils/g2-s9c-harness.ts",
       "reason": "Importer test harness.",
       "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "docs/pilot/sql/validation/seed_synthetic.sql",
+      "reason": "S12-B4 pilot pack validation fixture: synthetic rows use a real platform-name value ('truecoach') only because the database CHECK constraint on source_platform requires a real enum value; no real coach or source data.",
+      "retire": "V1 learned-path parity"
+    },
+    {
+      "glob": "docs/pilot/sql/validation/validation_output_raw.txt",
+      "reason": "S12-B4 pilot pack validation output: recorded stdout from running the fixture above; same synthetic platform-name value, no real data.",
+      "retire": "V1 learned-path parity"
     }
   ]
 }
