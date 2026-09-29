@@ -10,6 +10,7 @@ import {
 import { ObservationService } from '../../../src/scout/induction/observation.service';
 import { ScoutLifecycleService } from '../../../src/scout/lifecycle/lifecycle.service';
 import {
+  partitionInductionRegistry,
   ReconciliationFactsService,
   type FactsDb,
 } from '../../../src/scout/reconciliation/facts.service';
@@ -34,6 +35,7 @@ import {
   composeRunArtifacts,
   defaultSourceRegistryProvider,
   loadSourceArtifacts,
+  type RegistryDb,
   type RunPackage,
   type RunPackageSource,
 } from '../../../src/scout/reconstruct/source-registry.provider';
@@ -45,7 +47,7 @@ import { rawEvidence } from '../../utils/g2-s10b-fixtures';
 /**
  * L06 (docs/decisions/2026-09-27-learn-and-remember.md D-L0-5, L2a slice): ONE
  * `SourceRegistryProvider` replaces the seven registry construction sites. Every site resolves a
- * run-pinned learned slug through `forRun(coachId, intentId)` and still resolves the repository
+ * run-pinned learned slug through `forRun(db, coachId, intentId)` and still resolves the repository
  * file specs; a slug in both a file and the run's package throws at composition (before any row
  * is read); a run with NO pin sees exactly the file registries — the identical maps the loaders
  * and builders produced before this slice.
@@ -129,15 +131,17 @@ function pinning(pkg: RunPackage = PACKAGE): RunPackageSource & { lookups: strin
   const lookups: string[] = [];
   return {
     lookups,
-    forRun: (coachId, intentId) => {
+    forRun: (_db, coachId, intentId) => {
       lookups.push(`${coachId}/${intentId}`);
       return Promise.resolve(coachId === COACH && intentId === PINNED ? pkg : null);
     },
   };
 }
 
-const provider = (source: RunPackageSource = pinning()) =>
-  new SourceRegistryProvider(undefined, source);
+/** The pin sources here ignore the handle; the provider only forwards it (R588-B-1). */
+const NO_DB = {} as RegistryDb;
+
+const provider = (source: RunPackageSource = pinning()) => new SourceRegistryProvider(source);
 
 const analytics = () =>
   Object.assign(Object.create(AnalyticsService.prototype) as AnalyticsService, {
@@ -158,13 +162,13 @@ const fileSlug = (): string => {
 describe('L06 — SourceRegistryProvider: files, pins and the double-definition error', () => {
   it('a run with no pin sees exactly the file registries (same maps as the unchanged builders)', async () => {
     const p = provider(NO_RUN_PACKAGE);
-    const run = await p.forRun(COACH, UNPINNED);
+    const run = await p.forRun(NO_DB, COACH, UNPINNED);
     expect(run.pinned).toBeNull();
     expect(run.sourceMappers).toBe(p.files.sourceMappers);
     expect(run.nativeRules).toBe(p.files.nativeRules);
     expect(run.induction).toBe(p.files.induction);
     // Every call returns the identical objects: nothing is rebuilt per run without a pin.
-    expect(await p.forRun('another-coach', UNPINNED)).toBe(run);
+    expect(await p.forRun(NO_DB, 'another-coach', UNPINNED)).toBe(run);
 
     // Byte-identical composition: the pre-L2a construction sites built exactly these.
     expect([...p.files.sourceMappers.keys()]).toEqual([...buildSourceMapperRegistry().keys()]);
@@ -193,7 +197,7 @@ describe('L06 — SourceRegistryProvider: files, pins and the double-definition 
   it('a pinned run composes the files with its package; the files themselves are untouched', async () => {
     const src = pinning();
     const p = provider(src);
-    const run = await p.forRun(COACH, PINNED);
+    const run = await p.forRun(NO_DB, COACH, PINNED);
     expect(run.pinned).toBe(PACKAGE);
     expect(run.sourceMappers.has(LEARNED)).toBe(true);
     expect(run.sourceMappers.has(fileSlug())).toBe(true);
@@ -207,14 +211,14 @@ describe('L06 — SourceRegistryProvider: files, pins and the double-definition 
     ]);
     // The file registries never learn: the pin is the run's, not the process's.
     expect(p.files.sourceMappers.has(LEARNED)).toBe(false);
-    expect((await p.forRun(COACH, UNPINNED)).sourceMappers.has(LEARNED)).toBe(false);
+    expect((await p.forRun(NO_DB, COACH, UNPINNED)).sourceMappers.has(LEARNED)).toBe(false);
     expect(src.lookups).toEqual([`${COACH}/${PINNED}`, `${COACH}/${UNPINNED}`]);
   });
 
   it('a package without rules or manifest composes too (declares nothing; never provable)', async () => {
     const run = await provider(
       pinning({ spec: LEARNED_SPEC, nativeRuleSet: null, manifest: null }),
-    ).forRun(COACH, PINNED);
+    ).forRun(NO_DB, COACH, PINNED);
     expect(run.sourceMappers.has(LEARNED)).toBe(true);
     expect(run.nativeRules.has(LEARNED)).toBe(false);
     expect(run.induction.packages.has(LEARNED)).toBe(false);
@@ -228,7 +232,7 @@ describe('L06 — SourceRegistryProvider: files, pins and the double-definition 
       nativeRuleSet: null,
       manifest: null,
     };
-    await expect(provider(pinning(doubled)).forRun(COACH, PINNED)).rejects.toThrow(
+    await expect(provider(pinning(doubled)).forRun(NO_DB, COACH, PINNED)).rejects.toThrow(
       `source platform ${slug} is defined by both a repository mapping spec and the run's learned package`,
     );
     expect(() => composeRunArtifacts(loadSourceArtifacts(), doubled)).toThrow(/defined by both/);
@@ -273,7 +277,7 @@ describe('L06 — SourceRegistryProvider: files, pins and the double-definition 
 
   it('a corrupt pin fails the run loudly instead of falling back to the files', async () => {
     const p = provider({ forRun: () => Promise.reject(new Error('pin unreadable')) });
-    await expect(p.forRun(COACH, PINNED)).rejects.toThrow('pin unreadable');
+    await expect(p.forRun(NO_DB, COACH, PINNED)).rejects.toThrow('pin unreadable');
   });
 });
 
@@ -300,7 +304,7 @@ describe('L06 — families.ts resolves through the provider', () => {
   };
 
   it('every family of a pinned run — legacy and native — maps the learned slug', async () => {
-    const families = buildRunFamilyRegistry(await provider().forRun(COACH, PINNED));
+    const families = buildRunFamilyRegistry(await provider().forRun(NO_DB, COACH, PINNED));
     expect([...families.keys()]).toEqual(['clients', 'workouts', 'client_history', 'programs']);
     expect(families.get('clients')!.map(learnedClient)).toMatchObject({ ok: true });
     expect(families.get('client_history')!.map(learnedHistory)).toMatchObject({ ok: true });
@@ -308,7 +312,7 @@ describe('L06 — families.ts resolves through the provider', () => {
   });
 
   it('the same families of a run with no pin refuse the learned slug with the exact S8-A reason', async () => {
-    const families = buildRunFamilyRegistry(await provider().forRun(COACH, UNPINNED));
+    const families = buildRunFamilyRegistry(await provider().forRun(NO_DB, COACH, UNPINNED));
     for (const [family, row] of [
       ['clients', learnedClient],
       ['client_history', learnedHistory],
@@ -339,7 +343,7 @@ describe('L06 — families.ts resolves through the provider', () => {
   });
 
   it('the options seam is unchanged: injected mappers bind the native families, legacy families keep the files', async () => {
-    const run = await provider().forRun(COACH, PINNED);
+    const run = await provider().forRun(NO_DB, COACH, PINNED);
     const injected = buildFamilyRegistry({
       sourceMappers: run.sourceMappers,
       nativeRules: run.nativeRules,
@@ -718,9 +722,10 @@ describe('L06 — ReconciliationFactsService groups through the run-pinned mappe
     expect(out.families.map((f) => [f.family, f.mapped])).toEqual([[TOKEN.client_history, false]]);
   });
 
-  it('defaultRegistry() still projects the file manifests onto an injected mapper partition', () => {
+  it('partitionInductionRegistry() still projects the file manifests onto an injected mapper partition', () => {
     const files = defaultSourceRegistryProvider().files;
-    const partition = ReconciliationFactsService.defaultRegistry(
+    const partition = partitionInductionRegistry(
+      defaultSourceRegistryProvider().artifacts,
       files.sourceMappers,
       files.nativeRules,
     );

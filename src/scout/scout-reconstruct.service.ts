@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
@@ -33,6 +27,7 @@ import { type SourceMapper } from './reconstruct/source-mapper-registry';
 import {
   defaultSourceRegistryProvider,
   SourceRegistryProvider,
+  type RunRegistries,
 } from './reconstruct/source-registry.provider';
 import {
   RECONSTRUCT_ENTITY_TYPE,
@@ -97,9 +92,11 @@ export class ScoutReconstructService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-    @Optional() registries?: SourceRegistryProvider,
+    // REQUIRED under Nest (R588-B-2): SourceRegistryModule provides it, and a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
   ) {
-    this.registries = registries ?? defaultSourceRegistryProvider();
+    this.registries = registries;
     const files = this.registries.files;
     this.families = buildRunFamilyRegistry(files);
     this.sourceMappers = files.sourceMappers;
@@ -108,10 +105,15 @@ export class ScoutReconstructService {
   /**
    * The families and mappers THIS run's rows are interpreted through (D-L0-5). No pin → the
    * file-derived (or harness-injected) instance registries, unchanged; a pin → every family
-   * bound to the run's composed registries.
+   * bound to the run's composed registries. `resolved` is the caller's once-per-settle
+   * resolution (R588-B-1); without one the pin is read here on the root client.
    */
-  private async familiesFor(coachId: string, intentId: string): Promise<RunFamilies> {
-    const run = await this.registries.forRun(coachId, intentId);
+  private async familiesFor(
+    coachId: string,
+    intentId: string,
+    resolved?: RunRegistries,
+  ): Promise<RunFamilies> {
+    const run = resolved ?? (await this.registries.forRun(this.prisma, coachId, intentId));
     if (run.pinned === null) return { families: this.families, sourceMappers: this.sourceMappers };
     return { families: buildRunFamilyRegistry(run), sourceMappers: run.sourceMappers };
   }
@@ -216,8 +218,11 @@ export class ScoutReconstructService {
     coachId: string,
     intentId: string,
     ctx: ServerRunContext,
+    resolved?: RunRegistries,
   ): Promise<RunPassResult> {
-    const registries = await this.familiesFor(coachId, intentId);
+    // R588-B-1: the settle hands the registries it resolved ONCE; the tail verifies that pin
+    // under the run-row lock and collects facts through the same object.
+    const registries = await this.familiesFor(coachId, intentId, resolved);
     const groups = await this.prisma.scoutIngestEntity.groupBy({
       by: ['source_platform', 'entity_type'],
       where: { coach_id: coachId, intent_id: intentId },

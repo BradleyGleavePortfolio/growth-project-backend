@@ -1,5 +1,7 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { InductionManifestV1 } from '../induction/contract';
+import { canonicalJson, sha256Hex } from '../induction/digest';
 import {
   buildInductionRegistry,
   loadInductionManifests,
@@ -40,6 +42,17 @@ import {
  * every run; L2b plugs in the pinned package read from PostgreSQL (`ScoutRunLearnedPackage` →
  * `ScoutLearnedPlatform`, one query, no cache). Nothing here names a source: a new site adds
  * rows, not files, and `src/**` does not change.
+ *
+ * r2 (R588-A-B1, R588-B-1, R588-B-2):
+ *  - the {@link RUN_PACKAGE_SOURCE} binding is REQUIRED and provided inside
+ *    `SourceRegistryModule` (explicitly {@link NO_RUN_PACKAGE} until L2b), so an override reaches
+ *    this provider and a missing binding fails Nest boot instead of silently reading no pin;
+ *  - `forRun` takes the database handle the caller holds (the settle transaction, a reader's
+ *    snapshot) so L2b's pin read happens on it, never on a side connection;
+ *  - every {@link RunRegistries} carries the {@link RunRegistries.pinDigest} it was built from,
+ *    and {@link SourceRegistryProvider.verifyPin} re-reads the pin on a transaction and refuses
+ *    ({@link RunRegistryPinChangedError}) when it no longer matches — the settle resolves ONCE
+ *    and verifies under the run-row lock, so one settle can never observe two pins.
  */
 
 /** The three data-only artifact kinds, as the unchanged loaders parse them. */
@@ -72,21 +85,62 @@ export interface RunPackage {
 export interface RunRegistries extends SourceRegistries {
   /** The run's pinned package, or `null`: the run sees exactly {@link SourceRegistryProvider.files}. */
   readonly pinned: RunPackage | null;
+  /**
+   * The identity of {@link pinned}: `null` for no pin, else the sha256 of the package's
+   * canonical JSON ({@link runPackageDigest}). Two resolutions interpret a run identically iff
+   * their digests are equal; {@link SourceRegistryProvider.verifyPin} compares exactly this.
+   */
+  readonly pinDigest: string | null;
 }
+
+/**
+ * The database handle a pin is read on: the caller's transaction (the settle's REPEATABLE READ
+ * tx under the run-row lock, a reader's snapshot) or the root client outside one.
+ */
+export type RegistryDb = Prisma.TransactionClient;
 
 /**
  * The typed extension point for the run's memory (D-L0-5). `null` = this run has no pin. The
  * source must never throw for "no pin"; it may throw for a corrupt pin, which fails the caller
- * loudly rather than silently falling back to the files.
+ * loudly rather than silently falling back to the files. It reads ON `db` (the caller's
+ * transaction), never on a connection of its own, and is keyed by BOTH `coachId` and `intentId`.
  */
 export interface RunPackageSource {
-  forRun(coachId: string, intentId: string): Promise<RunPackage | null>;
+  forRun(db: RegistryDb, coachId: string, intentId: string): Promise<RunPackage | null>;
 }
 
-/** DI token for the {@link RunPackageSource}; absent → {@link NO_RUN_PACKAGE}. */
+/**
+ * DI token for the {@link RunPackageSource}. REQUIRED: `SourceRegistryModule` provides it
+ * ({@link NO_RUN_PACKAGE} until L2b); tests and L2b override THIS token.
+ */
 export const RUN_PACKAGE_SOURCE = Symbol('RUN_PACKAGE_SOURCE');
-/** DI token for the file artifacts; absent → the repository files, loaded once per process. */
-export const SOURCE_ARTIFACTS = Symbol('SOURCE_ARTIFACTS');
+
+/** One settle saw two different pins (R588-B-1): the settle fails closed, nothing terminal is written. */
+export class RunRegistryPinChangedError extends Error {
+  constructor(
+    readonly coachId: string,
+    readonly intentId: string,
+    readonly expected: string | null,
+    readonly actual: string | null,
+  ) {
+    super(
+      `run ${intentId}: the pinned source package changed within one settle ` +
+        `(resolved ${expected ?? 'none'}, now ${actual ?? 'none'}); refusing to settle`,
+    );
+    this.name = 'RunRegistryPinChangedError';
+  }
+}
+
+/**
+ * The content identity of one run package: sha256 over the canonical JSON of its three parts
+ * (`null` parts included). Parsed packages are plain JSON data, so the canonical form exists;
+ * if it ever did not, the digest falls back to the (deterministic) insertion-order JSON.
+ */
+export function runPackageDigest(pkg: RunPackage | null): string | null {
+  if (pkg === null) return null;
+  const parts = { spec: pkg.spec, nativeRuleSet: pkg.nativeRuleSet, manifest: pkg.manifest };
+  return sha256Hex(canonicalJson(parts) ?? JSON.stringify(parts));
+}
 
 /** The V1 source: no run is pinned, every run sees the file registries. */
 export const NO_RUN_PACKAGE: RunPackageSource = Object.freeze({
@@ -168,7 +222,7 @@ function loadFiles(artifacts: SourceArtifacts): LoadedFiles {
   return Object.freeze({
     artifacts,
     registries,
-    unpinned: Object.freeze({ ...registries, pinned: null }),
+    unpinned: Object.freeze({ ...registries, pinned: null, pinDigest: null }),
   });
 }
 
@@ -181,27 +235,13 @@ function sharedRepositoryFiles(): LoadedFiles {
 
 @Injectable()
 export class SourceRegistryProvider {
-  private readonly runPackages: RunPackageSource;
-  private readonly explicit: SourceArtifacts | undefined;
-  private loaded: LoadedFiles | undefined;
-
-  constructor(
-    @Optional() @Inject(SOURCE_ARTIFACTS) artifacts?: SourceArtifacts,
-    @Optional() @Inject(RUN_PACKAGE_SOURCE) runPackages?: RunPackageSource,
-  ) {
-    this.explicit = artifacts;
-    this.runPackages = runPackages ?? NO_RUN_PACKAGE;
-  }
+  constructor(@Inject(RUN_PACKAGE_SOURCE) private readonly runPackages: RunPackageSource) {}
 
   private get loadedFiles(): LoadedFiles {
-    if (this.loaded === undefined) {
-      this.loaded =
-        this.explicit === undefined ? sharedRepositoryFiles() : loadFiles(this.explicit);
-    }
-    return this.loaded;
+    return sharedRepositoryFiles();
   }
 
-  /** The file artifacts this provider composes over (loaded once). */
+  /** The file artifacts this provider composes over (loaded once per process). */
   get artifacts(): SourceArtifacts {
     return this.loadedFiles.artifacts;
   }
@@ -212,22 +252,47 @@ export class SourceRegistryProvider {
   }
 
   /**
-   * The registries ONE run's rows are interpreted through. No pin → the file registries, the
-   * identical objects every time (byte-identical to the pre-L2a construction). A pin → the files
-   * composed with the pinned package, built afresh per call (PostgreSQL is the only authority,
-   * D-S11-1: no cache of a run's interpretation lives in a machine).
+   * The registries ONE run's rows are interpreted through, with the pin read on `db`. No pin →
+   * the file registries, the identical objects every time (byte-identical to the pre-L2a
+   * construction). A pin → the files composed with the pinned package, built afresh per call
+   * (PostgreSQL is the only authority, D-S11-1: no cache of a run's interpretation lives in a
+   * machine). A caller that must interpret one run in several steps (the settle) resolves ONCE
+   * and threads the result; see {@link verifyPin}.
    */
-  async forRun(coachId: string, intentId: string): Promise<RunRegistries> {
-    const pinned = await this.runPackages.forRun(coachId, intentId);
+  async forRun(db: RegistryDb, coachId: string, intentId: string): Promise<RunRegistries> {
+    const pinned = await this.runPackages.forRun(db, coachId, intentId);
     if (pinned === null) return this.loadedFiles.unpinned;
     const composed = buildSourceRegistries(composeRunArtifacts(this.artifacts, pinned));
-    return Object.freeze({ ...composed, pinned });
+    return Object.freeze({ ...composed, pinned, pinDigest: runPackageDigest(pinned) });
+  }
+
+  /**
+   * R588-B-1: re-read the run's pin on `db` (the settle transaction, under the run-row lock) and
+   * refuse unless it is the pin `resolved` was built from. A run with no pin before and after
+   * passes without composing anything.
+   */
+  async verifyPin(
+    db: RegistryDb,
+    coachId: string,
+    intentId: string,
+    resolved: RunRegistries,
+  ): Promise<void> {
+    const actual = runPackageDigest(await this.runPackages.forRun(db, coachId, intentId));
+    if (actual !== resolved.pinDigest) {
+      throw new RunRegistryPinChangedError(coachId, intentId, resolved.pinDigest, actual);
+    }
   }
 }
 
-/** The process-wide provider over the repository files; the default of every seam not injected by Nest. */
-let defaultProvider: SourceRegistryProvider | undefined;
+/**
+ * The process-wide provider over the repository files with {@link NO_RUN_PACKAGE}. It is NEVER
+ * a Nest fallback: every Nest-built consumer requires the module-provided
+ * {@link SourceRegistryProvider} (a missing binding fails boot). This factory exists only for
+ * code that constructs services by hand — unit tests and the PG proof workers — and for the
+ * option-less `buildFamilyRegistry()` over the repository files.
+ */
+let fileOnlyProvider: SourceRegistryProvider | undefined;
 export function defaultSourceRegistryProvider(): SourceRegistryProvider {
-  defaultProvider ??= new SourceRegistryProvider();
-  return defaultProvider;
+  fileOnlyProvider ??= new SourceRegistryProvider(NO_RUN_PACKAGE);
+  return fileOnlyProvider;
 }

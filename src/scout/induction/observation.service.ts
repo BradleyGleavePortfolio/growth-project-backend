@@ -13,6 +13,7 @@ import { ScoutLifecycleService, type Tx } from '../lifecycle/lifecycle.service';
 import {
   defaultSourceRegistryProvider,
   SourceRegistryProvider,
+  type RegistryDb,
 } from '../reconstruct/source-registry.provider';
 import { CHALLENGE_BYTES, type ObservationEvidenceV1 } from './contract';
 import { canonicalJson, sha256Hex } from './digest';
@@ -99,10 +100,12 @@ export class ObservationService {
     private readonly prisma: PrismaService,
     private readonly lifecycle: ScoutLifecycleService,
     @Optional() @Inject(OBSERVATION_SERVICE_OPTIONS) options?: ObservationServiceOptions,
-    @Optional() registries?: SourceRegistryProvider,
+    // REQUIRED under Nest (R588-B-2): SourceRegistryModule provides it, and a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
   ) {
     this.injectedRegistry = options?.registry;
-    this.registries = registries ?? defaultSourceRegistryProvider();
+    this.registries = registries;
     this.challenge = options?.challenge ?? (() => randomBytes(CHALLENGE_BYTES));
     this.now = options?.now ?? (() => new Date());
   }
@@ -115,9 +118,16 @@ export class ObservationService {
     return this.injectedRegistry ?? this.registries.files.induction;
   }
 
-  /** The induction registry THIS run's evidence is checked against (D-L0-5): the pin's, else {@link registry}. */
-  private async registryFor(coachId: string, intentId: string): Promise<InductionRegistry> {
-    const run = await this.registries.forRun(coachId, intentId);
+  /**
+   * The induction registry THIS run's evidence is checked against (D-L0-5): the pin's, else
+   * {@link registry}. Read on `db` — the observation's run-locked transaction (R588-B-1).
+   */
+  private async registryFor(
+    db: RegistryDb,
+    coachId: string,
+    intentId: string,
+  ): Promise<InductionRegistry> {
+    const run = await this.registries.forRun(db, coachId, intentId);
     return run.pinned === null ? this.registry : run.induction;
   }
 
@@ -227,8 +237,9 @@ export class ObservationService {
     intentId: string,
     observations: readonly ParsedEvidence[],
   ): Promise<ScoutRunObservationResult> {
-    const registry = await this.registryFor(coachId, intentId);
     return this.underRunLock(coachId, intentId, async (tx, run) => {
+      // Under the run-row lock, on the same transaction the observation is written in.
+      const registry = await this.registryFor(tx, coachId, intentId);
       const claim = await tx.scoutImportCompletion.findUnique({
         where: { coach_id_intent_id: { coach_id: coachId, intent_id: intentId } },
         select: { id: true },

@@ -21,6 +21,7 @@ import { resolveStagedFamily, type SourceMapper } from '../reconstruct/source-ma
 import {
   defaultSourceRegistryProvider,
   SourceRegistryProvider,
+  type RunRegistries,
   type SourceArtifacts,
 } from '../reconstruct/source-registry.provider';
 import {
@@ -332,6 +333,29 @@ export interface RunBinding {
   accepted_start_at: Date | null;
 }
 
+/**
+ * S10-C: the induction registry over ONE mapper partition (fail loud at construction like the
+ * mapper and native registries). Artifacts naming a platform without a mapping spec in the
+ * partition are dropped, not rejected: such a platform is unprovable in this partition
+ * (unknown), and the loud cross-check over the whole file set is the provider's (S10-B, L2a).
+ * Used when a caller injects a mapper partition (`RECONCILIATION_FACTS_OPTIONS`); `files` is the
+ * provider's artifact set (r2: the former static `defaultRegistry`, which read the process
+ * singleton, is gone).
+ */
+export function partitionInductionRegistry(
+  files: SourceArtifacts,
+  sourceMappers: ReadonlyMap<string, SourceMapper>,
+  nativeRules: NativeRuleRegistry,
+): InductionRegistry {
+  return buildInductionRegistry({
+    manifests: files.manifests.filter((m) => sourceMappers.has(m.sourcePlatform)),
+    specs: Array.from(sourceMappers.values()).map((m) => m.spec),
+    nativeRuleSets: Array.from(nativeRules.values()).filter((s) =>
+      sourceMappers.has(s.sourcePlatform),
+    ),
+  });
+}
+
 @Injectable()
 export class ReconciliationFactsService {
   /** L2a: the ONE registry provider (D-L0-5); every run's facts resolve through it. */
@@ -341,9 +365,11 @@ export class ReconciliationFactsService {
 
   constructor(
     @Optional() @Inject(RECONCILIATION_FACTS_OPTIONS) options: ReconciliationFactsOptions = {},
-    @Optional() registries?: SourceRegistryProvider,
+    // REQUIRED under Nest (R588-B-2): SourceRegistryModule provides it, and a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
   ) {
-    this.registries = registries ?? defaultSourceRegistryProvider();
+    this.registries = registries;
     const files = this.registries.files;
     const sourceMappers = options.sourceMappers ?? files.sourceMappers;
     const nativeRules: NativeRuleRegistry = options.nativeRules ?? files.nativeRules;
@@ -353,11 +379,7 @@ export class ReconciliationFactsService {
       options.registry ??
       (options.sourceMappers === undefined && options.nativeRules === undefined
         ? files.induction
-        : ReconciliationFactsService.partitionRegistry(
-            this.registries.artifacts,
-            sourceMappers,
-            nativeRules,
-          ));
+        : partitionInductionRegistry(this.registries.artifacts, sourceMappers, nativeRules));
     this.unpinned = ReconciliationFactsService.interpreters(sourceMappers, nativeRules, registry);
   }
 
@@ -376,10 +398,17 @@ export class ReconciliationFactsService {
 
   /**
    * The interpreters THIS run's rows are collected through (D-L0-5): a pinned run's composed
-   * registries, else the unpinned ones — the file registries or the injected partition.
+   * registries, else the unpinned ones — the file registries or the injected partition. The pin
+   * is `resolved` (the settle's once-per-settle resolution, R588-B-1) or read on `db` — the
+   * caller's transaction, never a side connection.
    */
-  private async registriesFor(coachId: string, intentId: string): Promise<FactsRegistries> {
-    const run = await this.registries.forRun(coachId, intentId);
+  private async registriesFor(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+    resolved: RunRegistries | undefined,
+  ): Promise<FactsRegistries> {
+    const run = resolved ?? (await this.registries.forRun(db, coachId, intentId));
     if (run.pinned === null) return this.unpinned;
     return ReconciliationFactsService.interpreters(
       run.sourceMappers,
@@ -389,48 +418,20 @@ export class ReconciliationFactsService {
   }
 
   /**
-   * S10-C: the induction registry over THIS service's mapper partition (fail loud at
-   * construction like the mapper and native registries). Artifacts naming a platform without a
-   * mapping spec here are dropped, not rejected: such a platform is unprovable in this partition
-   * (unknown), and the loud cross-check over the whole file set is the provider's (S10-B, L2a).
-   */
-  static defaultRegistry(
-    sourceMappers: ReadonlyMap<string, SourceMapper>,
-    nativeRules: NativeRuleRegistry,
-  ): InductionRegistry {
-    return ReconciliationFactsService.partitionRegistry(
-      defaultSourceRegistryProvider().artifacts,
-      sourceMappers,
-      nativeRules,
-    );
-  }
-
-  private static partitionRegistry(
-    files: SourceArtifacts,
-    sourceMappers: ReadonlyMap<string, SourceMapper>,
-    nativeRules: NativeRuleRegistry,
-  ): InductionRegistry {
-    return buildInductionRegistry({
-      manifests: files.manifests.filter((m) => sourceMappers.has(m.sourcePlatform)),
-      specs: Array.from(sourceMappers.values()).map((m) => m.spec),
-      nativeRuleSets: Array.from(nativeRules.values()).filter((s) =>
-        sourceMappers.has(s.sourcePlatform),
-      ),
-    });
-  }
-
-  /**
    * Collect the facts for one run. Reads only; safe inside the caller's transaction. `run` (S10-C)
    * is the server run row's binding; without one — or for a non-server / not-yet-accepted row —
    * `coverage` is `null` (unknown), exactly the S9 v1 facts, and no S10 table is read.
+   * `registries` (R588-B-1) is the settle's once-per-settle resolution — the SAME object the
+   * reconstruction pass interpreted the run through; without one the pin is read on `db`.
    */
   async collect(
     db: FactsDb,
     coachId: string,
     intentId: string,
     run: RunBinding | null = null,
+    registries?: RunRegistries,
   ): Promise<ReconciliationFacts> {
-    const reg = await this.registriesFor(coachId, intentId);
+    const reg = await this.registriesFor(db, coachId, intentId, registries);
     const [claim, staged, ledger] = await Promise.all([
       this.readClaim(db, coachId, intentId),
       this.readStaged(db, coachId, intentId),
