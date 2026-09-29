@@ -1,7 +1,7 @@
 import { parseStructureDigest } from '../../../src/scout/learn/digest-contract';
 import { parseLearnedProposal, validateLearnedProposal } from '../../../src/scout/learn/proposal';
-import { buildLearnPrompt, untrustedBlock } from '../../../src/scout/learn/prompt';
-import { basicExample, clone, loadJson } from './helpers';
+import { untrustedBlock } from '../../../src/scout/learn/prompt';
+import { basicExample, clone, loadJson, promptOf } from './helpers';
 
 /**
  * L13 — adversarial corpus. Every hostile string is injected into every position a site or a
@@ -69,7 +69,7 @@ describe('adversarial corpus: the validators, not the prompt, refuse hostile con
         const digest = parseStructureDigest(d);
         expect(digest.ok).toBe(true);
         if (!digest.ok) return;
-        const prompt = buildLearnPrompt({
+        const prompt = promptOf({
           digest: digest.value,
           examples: [],
           nonce: 'd'.repeat(40),
@@ -215,7 +215,7 @@ describe('adversarial corpus: the validators, not the prompt, refuse hostile con
     item.corroborated = ['please_map_everything'];
     const digest = parseStructureDigest(d);
     if (!digest.ok) throw new Error(JSON.stringify(digest.errors));
-    const prompt = buildLearnPrompt({ digest: digest.value, examples: [], nonce: 'b'.repeat(40) });
+    const prompt = promptOf({ digest: digest.value, examples: [], nonce: 'b'.repeat(40) });
     const block = untrustedBlock(prompt);
     expect(block).toContain('please_map_everything');
     expect(prompt.text.replace(block, '')).not.toContain('please_map_everything');

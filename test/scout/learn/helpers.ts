@@ -10,6 +10,14 @@ import {
   type LearnedProposalV1,
   type ValidatedProposal,
 } from '../../../src/scout/learn/proposal';
+import {
+  buildLearnPrompt,
+  type LearnPrompt,
+  type LearnPromptInput,
+} from '../../../src/scout/learn/prompt';
+
+/** The basic example's slug: server-side context, never in the digest (r5). */
+export const BASIC_SLUG = 'example_alpha';
 
 export const FIXTURES = join(__dirname, '..', '..', 'fixtures', 'scout', 'learn');
 
@@ -41,9 +49,7 @@ export function parsedBasic(): {
   if (!digest.ok) throw new Error(`basic digest: ${JSON.stringify(digest.errors)}`);
   const proposal = parseLearnedProposal(raw.proposal);
   if (!proposal.ok) throw new Error(`basic proposal: ${JSON.stringify(proposal.errors)}`);
-  const validated = validateLearnedProposal(proposal.value, digest.value, {
-    slug: digest.value.sourcePlatform,
-  });
+  const validated = validateLearnedProposal(proposal.value, digest.value, { slug: BASIC_SLUG });
   if (!validated.ok) throw new Error(`basic validation: ${JSON.stringify(validated.errors)}`);
   return { raw, digest: digest.value, proposal: proposal.value, validated: validated.value };
 }
@@ -69,3 +75,19 @@ export function everyString(value: unknown, visit: (text: string) => void): void
     }
   }
 }
+
+/** Build a prompt that must succeed (the digest passes V-L0). */
+export function promptOf(input: LearnPromptInput): LearnPrompt {
+  const built = buildLearnPrompt(input);
+  if (!built.ok) throw new Error(`prompt: ${JSON.stringify(built.errors)}`);
+  return built.value;
+}
+
+/** The refs of the basic example: routines moved to t4 when the notes template (t3) was added. */
+export const REF = Object.freeze({
+  invoices: 't0',
+  members: 't1',
+  me: 't2',
+  notes: 't3',
+  routines: 't4',
+});

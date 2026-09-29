@@ -1,20 +1,35 @@
 {
   "digest": {
-    "digestVersion": 1,
-    "sourcePlatform": "example_alpha",
+    "digestVersion": 2,
     "round": 1,
     "truncated": {
       "templates": false,
       "linkTemplates": false,
       "shapes": 0
     },
+    "origins": [
+      {
+        "ref": "o0",
+        "template": ":d",
+        "contacted": true,
+        "credentialed": true
+      },
+      {
+        "ref": "o1",
+        "template": "api.:d",
+        "contacted": true,
+        "credentialed": true
+      }
+    ],
     "templates": [
       {
         "ref": "t0",
+        "originRef": "o0",
         "method": "GET",
         "template": "/v2/billing/invoices",
         "slots": [],
         "queryKeys": [],
+        "paginationSignals": ["single_response"],
         "statuses": [200],
         "observations": 1,
         "role": "collection",
@@ -41,10 +56,12 @@
               }
             }
           }
-        }
+        },
+        "discoveredBy": "landing"
       },
       {
         "ref": "t1",
+        "originRef": "o0",
         "method": "GET",
         "template": "/v2/coaches/:s1/members",
         "slots": [
@@ -60,6 +77,7 @@
             "distinct": 1
           }
         ],
+        "paginationSignals": ["cursor_key", "next_link_key"],
         "statuses": [200],
         "observations": 3,
         "role": "collection",
@@ -110,14 +128,17 @@
               }
             }
           }
-        }
+        },
+        "discoveredBy": "landing"
       },
       {
         "ref": "t2",
+        "originRef": "o0",
         "method": "GET",
         "template": "/v2/me",
         "slots": [],
         "queryKeys": [],
+        "paginationSignals": [],
         "statuses": [200],
         "observations": 1,
         "role": "single",
@@ -136,10 +157,59 @@
               "lengthBucket": "≤32"
             }
           }
-        }
+        },
+        "discoveredBy": "landing"
       },
       {
         "ref": "t3",
+        "originRef": "o0",
+        "method": "GET",
+        "template": "/v2/notes",
+        "slots": [],
+        "queryKeys": [],
+        "paginationSignals": ["single_response", "total_count_key", "total_equals_count"],
+        "statuses": [200],
+        "observations": 1,
+        "role": "collection",
+        "collectionPaths": [["items"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "items": {
+              "kind": "array",
+              "lengthBucket": "2-9",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "body": {
+                    "kind": "string",
+                    "class": "text",
+                    "lengthBucket": "≤256"
+                  },
+                  "created_at": {
+                    "kind": "string",
+                    "class": "iso_date",
+                    "lengthBucket": "≤32"
+                  }
+                }
+              }
+            },
+            "total": {
+              "kind": "number",
+              "class": "int"
+            }
+          }
+        },
+        "discoveredBy": "landing"
+      },
+      {
+        "ref": "t4",
+        "originRef": "o1",
         "method": "GET",
         "template": "/v2/members/:p1/routines",
         "slots": [],
@@ -149,6 +219,7 @@
             "distinct": 1
           }
         ],
+        "paginationSignals": ["page_param", "total_count_key"],
         "statuses": [200],
         "observations": 4,
         "role": "collection",
@@ -207,7 +278,8 @@
               "class": "int"
             }
           }
-        }
+        },
+        "discoveredBy": "landing"
       }
     ],
     "linkTemplates": [
@@ -226,13 +298,15 @@
     "missingFamilies": []
   },
   "proposal": {
-    "proposalVersion": 1,
+    "proposalVersion": 2,
     "steps": [
       {
         "templateRef": "t1",
         "entityType": "members",
+        "family": "clients",
         "itemsPath": ["members"],
         "idField": "id",
+        "timestampField": "created_at",
         "collectAs": "member_ids",
         "pagination": {
           "style": "cursor",
@@ -241,15 +315,32 @@
         }
       },
       {
-        "templateRef": "t3",
+        "templateRef": "t4",
         "entityType": "routines",
+        "family": "workouts",
         "itemsPath": ["data"],
         "idField": "id",
+        "idScope": "global",
+        "parentEdge": {
+          "field": "member_id",
+          "toStep": "members"
+        },
         "forEach": "member_ids",
         "pagination": {
           "style": "page",
           "param": "page",
           "start": 1
+        }
+      },
+      {
+        "templateRef": "t3",
+        "entityType": "notes",
+        "family": "notes",
+        "itemsPath": ["items"],
+        "idField": "id",
+        "timestampField": "created_at",
+        "pagination": {
+          "style": "none"
         }
       }
     ],
@@ -307,6 +398,6 @@
         "reason": "out_of_scope_billing"
       }
     ],
-    "rationale": "Members list is the roster; routines per member are workouts with exercise blocks; invoices are billing."
+    "rationale": "Members list is the roster; routines per member are workouts with exercise blocks; notes are coach notes; invoices are billing."
   }
 }

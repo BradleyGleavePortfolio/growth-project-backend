@@ -1,8 +1,8 @@
 import {
   DIGEST_MAX_BYTES,
   parseStructureDigest,
-  templateKey,
-  type StructureDigestV1,
+  structureKeyOf,
+  structureKeyString,
 } from '../../../src/scout/learn/digest-contract';
 import { basicExample, clone, codesOf, loadJson } from './helpers';
 
@@ -28,19 +28,19 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
     if (!result.ok) return;
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(result.value.round).toBe(1);
-    expect(result.value.templates.map((t) => t.ref)).toEqual(['t0', 't1', 't2', 't3']);
+    expect(result.value.templates.map((t) => t.ref)).toEqual(['t0', 't1', 't2', 't3', 't4']);
+    expect(result.value.origins.map((o) => o.template)).toEqual([':d', 'api.:d']);
     expect(result.value.linkTemplates.map((l) => l.ref)).toEqual(['l0', 'l1']);
     expect(result.value.constantHeaderNames).toEqual(['accept']);
   });
 
   it('accepts every canonical shared vector digest', () => {
-    const vectors = loadJson<{ vectors: { name: string; digest: unknown }[] }>(
-      'fingerprint-vectors.json',
-    ).vectors;
-    const rawOnly = new Set(['two-collections-reordered-refs', 'depth-two-cutoff-and-bare-array']);
+    const vectors = loadJson<{
+      vectors: { name: string; digest: unknown; validDigest: boolean }[];
+    }>('fingerprint-vectors.json').vectors;
     for (const v of vectors) {
       const result = parse(v.digest);
-      if (rawOnly.has(v.name)) expect(result.ok).toBe(false);
+      if (!v.validDigest) expect(result.ok).toBe(false);
       else
         expect({ name: v.name, ok: result.ok, errors: result.ok ? [] : result.errors }).toEqual({
           name: v.name,
@@ -58,7 +58,7 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
       expectRefused({ ...d, extra: 1 }, 'extra');
       const { linkTemplates: _l, ...missing } = d;
       expectRefused(missing, 'linkTemplates');
-      expectRefused({ ...d, digestVersion: 2 }, 'digestVersion');
+      expectRefused({ ...d, digestVersion: 1 }, 'digestVersion');
     });
 
     it('refuses r2-era fields: slot hash, provenSlotHashes, header values, vocabularyVersion', () => {
@@ -76,10 +76,14 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
       expectRefused(headers2, 'constantHeaderNames');
     });
 
-    it('refuses a sourcePlatform with a digit run, and missingFamilies in round 1', () => {
+    it('r5: the slug is NOT in the digest; missingFamilies (family labels) are round 2 only', () => {
       const d = basicExample().digest as Raw;
-      expectRefused({ ...clone(d), sourcePlatform: 'site20240101' }, 'sourcePlatform');
+      expectRefused({ ...clone(d), sourcePlatform: 'example_alpha' }, 'sourcePlatform');
       expectRefused({ ...clone(d), missingFamilies: ['programs'] }, 'missingFamilies');
+      expectRefused(
+        { ...clone(d), round: 2, missingFamilies: ['not_a_family'] },
+        'missingFamilies',
+      );
       const r2 = clone(d);
       r2.round = 2;
       r2.missingFamilies = ['programs'];
@@ -327,17 +331,17 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
     });
   });
 
-  it('templateKey is (method, template, shapeSignature) and stable across ref renumbering', () => {
+  it('structure key is (origin, method, template, required keyPaths) and stable across ref renumbering', () => {
     const result = parse(basicExample().digest);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const key = templateKey(result.value.templates[1]);
-    expect(JSON.parse(key)).toEqual([
-      'GET',
-      '/v2/coaches/:s1/members',
-      expect.stringMatching(/^object\{/),
-    ]);
-    const digest: StructureDigestV1 = result.value;
-    expect(templateKey({ ...digest.templates[1], ref: 't7' })).toBe(key);
+    const key = structureKeyOf(result.value, result.value.templates[1]);
+    expect(key.origin).toBe(':d');
+    expect(key.method).toBe('GET');
+    expect(key.template).toBe('/v2/coaches/:s1/members');
+    expect(key.keyPaths).toContain('members[].display_name');
+    expect(key.keyPaths).toContain('meta.next');
+    expect(JSON.parse(structureKeyString(key))).toHaveLength(4);
+    expect(structureKeyOf(result.value, { ...result.value.templates[1], ref: 't7' })).toEqual(key);
   });
 });

@@ -8,6 +8,9 @@ import {
   PROGRAM_NATIVE_FIELDS,
   WORKOUT_NATIVE_FIELDS,
   canonicalContract,
+  ACCEPT_INTEGER_NUMBER_ID_FIELD,
+  ID_FIELD_CLASS_TEXT,
+  NONE_PROOF_TEXT,
 } from '../../../src/scout/learn/canonical-contract';
 import { STRUCTURAL_PATH_VOCABULARY } from '../../../src/scout/learn/contract-vocabulary';
 import {
@@ -24,7 +27,8 @@ import {
 } from '../../../src/scout/learn/prompt';
 import { proposalJsonSchema } from '../../../src/scout/learn/proposal';
 import { validateSchema } from '../../../src/scout/learn/schema';
-import { basicExample, parsedBasic } from './helpers';
+import { basicExample, parsedBasic, promptOf, BASIC_SLUG } from './helpers';
+import { DEVICE_OBLIGATIONS } from '../../../src/scout/learn/admission';
 
 const NONCE = 'a'.repeat(48);
 
@@ -69,7 +73,7 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
   it('part 3 is the generated schema; outputSchemaHash is stable and the schema validates the example', () => {
     expect(outputSchemaHash()).toBe(outputSchemaHash());
     expect(validateSchema(proposalJsonSchema(), basicExample().proposal)).toEqual([]);
-    const prompt = buildLearnPrompt({ digest: parsedBasic().digest, examples: [], nonce: NONCE });
+    const prompt = promptOf({ digest: parsedBasic().digest, examples: [], nonce: NONCE });
     expect(prompt.outputSchemaHash).toBe(outputSchemaHash());
     expect(prompt.parts[2]).toContain(canonicalJson(prompt.outputSchema) as string);
     expect(prompt.parts[2]).toContain('"additionalProperties":false');
@@ -78,7 +82,7 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
 
   it('builds six parts in order; the digest appears only inside the nonce-delimited block', () => {
     const { digest } = parsedBasic();
-    const prompt = buildLearnPrompt({ digest, examples: [], nonce: NONCE });
+    const prompt = promptOf({ digest, examples: [], nonce: NONCE });
     expect(prompt.promptTemplateVersion).toBe(PROMPT_TEMPLATE_VERSION);
     expect(prompt.parts).toHaveLength(6);
     expect(prompt.parts[0]).toMatch(/^Goal:/);
@@ -106,7 +110,7 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
     ) as typeof import('../../../src/scout/learn/digest-contract');
     const digest = parseStructureDigest(raw);
     if (!digest.ok) throw new Error(JSON.stringify(digest.errors));
-    const prompt = buildLearnPrompt({ digest: digest.value, examples: [], nonce: NONCE });
+    const prompt = promptOf({ digest: digest.value, examples: [], nonce: NONCE });
     const block = untrustedBlock(prompt);
     expect(block).toMatch(/^[\x20-\x7e]*$/);
     expect(block).toContain('\\u2264');
@@ -115,8 +119,8 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
 
   it('validates examples through V-L0/V-L1/V-L2… before embedding them and caps them at 3', () => {
     const { digest, raw } = parsedBasic();
-    const example = { name: 'basic', digest: raw.digest, proposal: raw.proposal };
-    const prompt = buildLearnPrompt({ digest, examples: [example], nonce: NONCE });
+    const example = { name: 'basic', digest: raw.digest, proposal: raw.proposal, slug: BASIC_SLUG };
+    const prompt = promptOf({ digest, examples: [example], nonce: NONCE });
     expect(prompt.parts[3]).toMatch(/^Examples \(structure only, validated\):/);
     const bad = { ...example, proposal: { ...(raw.proposal as object), rationale: 'https://x' } };
     expect(() => buildLearnPrompt({ digest, examples: [bad], nonce: NONCE })).toThrow(/V-L1/);
@@ -131,12 +135,37 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
     const a = randomNonce();
     expect(a).toMatch(/^[0-9a-f]{48}$/);
     expect(randomNonce()).not.toBe(a);
-    expect(buildLearnPrompt({ digest, examples: [], nonce: a }).nonce).toBe(a);
+    expect(promptOf({ digest, examples: [], nonce: a }).nonce).toBe(a);
+  });
+
+  it('A-04 (fail-first on 3a684671): the prompt parses the RAW digest itself; an unparsed leaf never reaches part 6', () => {
+    const raw = basicExample().digest as Record<string, any>;
+    raw.templates[1].shape.keys.members.items.keys.display_name.value = 'sensitive sample';
+    const built = buildLearnPrompt({ digest: raw, examples: [], nonce: NONCE });
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.errors.every((e) => e.code === 'V-L0')).toBe(true);
+    expect(JSON.stringify(built.errors)).not.toContain('sensitive sample');
+    // and a hand-built "digest" object with the slug or a hostname is refused the same way
+    const hostile = { ...basicExample().digest, sourcePlatform: 'coach.example.com' };
+    expect(buildLearnPrompt({ digest: hostile, examples: [], nonce: NONCE }).ok).toBe(false);
+  });
+
+  it('C2/B5/B4: identity, per-parent scope, none-proof and next_url confinement text are generated from the constants', () => {
+    const text = describeCanonicalContract();
+    expect(text).toContain(ID_FIELD_CLASS_TEXT);
+    expect(ID_FIELD_CLASS_TEXT.includes('number class int')).toBe(ACCEPT_INTEGER_NUMBER_ID_FIELD);
+    expect(text).toContain('idScope parent');
+    expect(text).toContain(NONE_PROOF_TEXT);
+    expect(text).toContain('authorized or contacted origin');
+    for (const obligation of DEVICE_OBLIGATIONS) expect(text).toContain(obligation);
+    expect(text).not.toContain('destination:');
+    expect(text).toContain('unclassified');
   });
 
   it('instruction parts contain no source data and no vendor or host names', () => {
     const { digest } = parsedBasic();
-    const prompt = buildLearnPrompt({ digest, examples: [], nonce: NONCE });
+    const prompt = promptOf({ digest, examples: [], nonce: NONCE });
     const instructions = prompt.parts.slice(0, 5).join('\n');
     expect(instructions).not.toMatch(/https?:\/\//);
     expect(instructions).not.toContain('example_alpha');

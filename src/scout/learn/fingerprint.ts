@@ -1,66 +1,77 @@
 import { createHash } from 'crypto';
 import {
-  templateKey,
-  templateKeyString,
-  templateShapeSignature,
+  reuseKeyString,
+  structureKeyMatches,
+  structureKeyOf,
+  structureKeyString,
+  type DigestTemplate,
   type StructureDigestV1,
+  type StructureKey,
 } from './digest-contract';
-import { shapeSignature } from './shape-signature';
 
 /**
- * L1 (D-L0-5 "Fingerprint", r3) — two sha256 fingerprints over the SLOTTED form: the sorted set
- * of `(method, slotted template, shapeSignature(itemShape, depth 2))` for templates with role
- * `collection`. The slotted template keeps vocabulary literals and `:p`/`:s` markers only, so
- * every coach on a site with the same structure hashes the same whatever their tenant words,
- * ids and header values were (L02).
+ * L1 (D-L0-3/D-L0-5 r5; R591-B-B3) — the reuse fingerprint and the structure keys.
  *
- * - `fingerprint_r1` is computed over the ROUND-1 digest: the memory lookup key at Start.
- * - `fingerprint_full` is computed over the UNION digest after explore: the drift check.
+ * - `reuseMaterial`/`reuseFingerprint`: sha256 over the sorted, distinct REUSE KEYS
+ *   `JSON.stringify([originTemplate, method, slotted template])` of the round-1 LANDING
+ *   collection templates. No key name, kind, bucket or count enters it, so a sparser account
+ *   (optional keys absent, empty collections, `null` kinds) and a fuller one fingerprint the
+ *   same; explore-only templates never participate. It is a per-coach match and drift SIGNAL
+ *   stored on a version, never compared for equality (D-L0-3) and never a lookup key — the
+ *   lookup key is `(coach_id, slug)` server-side. There is no "full" fingerprint: the r3
+ *   `fingerprint_full` drift check is deleted (R591-B-C4); drift is the per-step conformance.
+ * - `structureKeys`: the per-template structure keys (reuse key + REQUIRED key paths). A package
+ *   step covers a digest template when the reuse keys are equal and the digest's key paths are a
+ *   subset of the step's (`structureKeyMatches`).
  *
- * Both are the same function over different digests (`structureFingerprint`). Byte-compatible
- * with the extension (X2 `shared/learn/fingerprint.js`): entry = `JSON.stringify([method,
- * template, signature])`, entries de-duplicated, sorted by code unit, joined with `\n` (no
- * trailing newline) and hashed as UTF-8. Shared vectors: `fingerprint-vectors.json`.
+ * Byte-compatible with the extension mirror (X2 `shared/learn/fingerprint.js`) on the shared
+ * vectors `test/fixtures/scout/learn/fingerprint-vectors.json`: entries de-duplicated, sorted by
+ * code unit, joined with `\n` (no trailing newline) and hashed as UTF-8. The v2 vectors replace
+ * the r3 ones (grammar version 2 changed the material); X2 must re-copy them.
  */
-export { FINGERPRINT_SHAPE_DEPTH, shapeSignature } from './shape-signature';
-export { templateKey, templateKeyString, templateShapeSignature };
-
-/** Name kept for the r2 callers and the extension mirror; the same function as `shapeSignature`. */
-export const itemShapeSignature = shapeSignature;
+export { reuseKeyString, structureKeyMatches, structureKeyOf, structureKeyString };
 
 function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** The sorted, distinct material lines the fingerprint hashes (the shared vectors pin these). */
-export function fingerprintMaterial(digest: StructureDigestV1): string[] {
-  const tuples = new Set<string>();
-  for (const t of digest.templates) {
-    if (t.role !== 'collection') continue;
-    tuples.add(templateKeyString(t.method, t.template, templateShapeSignature(t)));
+function originOf(digest: StructureDigestV1, template: DigestTemplate): string {
+  return structureKeyOf(digest, template).origin;
+}
+
+/** The landing collection templates: the domain of the reuse fingerprint. */
+export function landingCollectionTemplates(digest: StructureDigestV1): readonly DigestTemplate[] {
+  return digest.templates.filter((t) => t.role === 'collection' && t.discoveredBy === 'landing');
+}
+
+/** The sorted, distinct material lines the reuse fingerprint hashes (pinned by the vectors). */
+export function reuseMaterial(digest: StructureDigestV1): string[] {
+  const lines = new Set<string>();
+  for (const t of landingCollectionTemplates(digest)) {
+    lines.add(reuseKeyString(originOf(digest, t), t.method, t.template));
   }
-  return [...tuples].sort(compareText);
+  return [...lines].sort(compareText);
 }
 
-export function structureFingerprint(digest: StructureDigestV1): string {
-  return createHash('sha256').update(fingerprintMaterial(digest).join('\n'), 'utf8').digest('hex');
+/** `fingerprint_r1`: over a round-1 digest only (round 2 is a union, never a reuse signal). */
+export function reuseFingerprint(digest: StructureDigestV1): string {
+  if (digest.round !== 1)
+    throw new Error('the reuse fingerprint is computed over a round-1 digest');
+  return createHash('sha256').update(reuseMaterial(digest).join('\n'), 'utf8').digest('hex');
 }
 
-/** `fingerprint_r1`: over the round-1 digest (memory lookup key). Refuses a round-2 digest. */
-export function fingerprintR1(digest: StructureDigestV1): string {
-  if (digest.round !== 1) throw new Error('fingerprint_r1 is computed over a round-1 digest');
-  return structureFingerprint(digest);
+/** Structure keys of the collection templates, keyed by ref: the domain of V-L10 and the package. */
+export function collectionStructureKeys(
+  digest: StructureDigestV1,
+): ReadonlyMap<string, StructureKey> {
+  return new Map(
+    digest.templates
+      .filter((t) => t.role === 'collection')
+      .map((t) => [t.ref, structureKeyOf(digest, t)]),
+  );
 }
 
-/** `fingerprint_full`: over the union digest (drift check); a round-1 digest is its own union. */
-export function fingerprintFull(digest: StructureDigestV1): string {
-  return structureFingerprint(digest);
-}
-
-/** The sorted template keys of the collection templates: the domain of V-L10 and the package. */
-export function collectionTemplateKeys(digest: StructureDigestV1): readonly string[] {
-  return digest.templates
-    .filter((t) => t.role === 'collection')
-    .map(templateKey)
-    .sort(compareText);
+/** The sorted structure-key strings of the collection templates. */
+export function collectionStructureKeyStrings(digest: StructureDigestV1): readonly string[] {
+  return [...collectionStructureKeys(digest).values()].map(structureKeyString).sort(compareText);
 }

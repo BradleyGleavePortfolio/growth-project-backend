@@ -16,6 +16,7 @@
     "signature",
     "token"
   ],
+  "prototypeKeys": ["__proto__", "constructor", "prototype"],
   "structuralKeyWords": [
     "address",
     "after",
@@ -169,8 +170,64 @@
     "webhook",
     "width"
   ],
+  "paginationParamWords": [
+    "after",
+    "before",
+    "cursor",
+    "from",
+    "limit",
+    "next",
+    "offset",
+    "page",
+    "pagesize",
+    "per",
+    "perpage",
+    "size",
+    "skip",
+    "start"
+  ],
+  "headerNameWords": [
+    "accept",
+    "api",
+    "app",
+    "application",
+    "build",
+    "cache",
+    "charset",
+    "client",
+    "content",
+    "control",
+    "device",
+    "encoding",
+    "id",
+    "if",
+    "language",
+    "locale",
+    "match",
+    "modified",
+    "none",
+    "platform",
+    "pragma",
+    "prefer",
+    "requested",
+    "since",
+    "time",
+    "timezone",
+    "type",
+    "version",
+    "with",
+    "x",
+    "zone"
+  ],
+  "originTemplatePattern": "^(?:(?::s[0-9]{1,2}|[a-z0-9-]{1,63})\\.){0,4}:d$",
+  "deviceObligations": [
+    "a key whose normalised tokens equal any captured string value in the run payloads is refused before the digest leaves the device",
+    "an object whose keys are not grammar-clean and corroborated (>= 2 siblings) collapses to a map node with keyClass unadmitted",
+    "a next_url pagination link is followed only when its origin is an authorized or contacted origin of this run (origins[].contacted), else the step stops with a named gap",
+    "every :s slot, origin slot, query value and constant header value is rebound from this run own capture; zero bindings fail closed with zero requests"
+  ],
   "deviceOnlyKeyRefusals": [
-    "key equals (case-insensitive) any captured value in the run payloads",
-    "object with non-corroborated non-vocabulary keys collapses to a map node"
+    "a key whose normalised tokens equal any captured string value in the run payloads is refused before the digest leaves the device",
+    "an object whose keys are not grammar-clean and corroborated (>= 2 siblings) collapses to a map node with keyClass unadmitted"
   ]
 }

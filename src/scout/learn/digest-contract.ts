@@ -1,26 +1,34 @@
-import { isCanonicalPlatform } from '../scout-platform';
-import { CANONICAL_FAMILIES, type CanonicalFamily } from '../reconstruct/mapping-spec';
 import {
   headerNameRefusal,
   keyAdmissionRefusal,
+  originTemplateRefusal,
   pathLiteralRefusal,
   queryKeyRefusal,
 } from './admission';
-import { shapeSignature } from './shape-signature';
+import {
+  PAGINATION_SIGNALS,
+  isFamilyLabel,
+  type FamilyLabel,
+  type PaginationSignal,
+} from './contract-vocabulary';
 
 /**
- * L1 (docs/decisions/2026-09-27-learn-and-remember.md r3, D-L0-2) — the `StructureDigestV1` the
- * extension builds on the coach's computer and the strict parser (V-L0) the learn route applies
- * before anything else. The digest carries STRUCTURE ONLY: key names, kinds, value classes,
- * counts, URL templates with ids collapsed to `:p1..` and every non-vocabulary word to a typed
- * session slot `:s1..`, query key NAMES with a distinct-value bucket, constant request header
- * NAMES. Every byte of it is hostile input (D-L0-7.2): nothing here is executed, fetched or
- * written, only matched. The admission rules for site-chosen strings live in `admission.ts` (r4
- * directives: slot-only paths, corroborated keys, no hash promotion). No source name or host
- * literal appears in this module (§3 invariant 1).
+ * L1 (docs/decisions/2026-09-27-learn-and-remember.md r4 + EXEC_RESET + r2 review round; grammar
+ * version 2) — the `StructureDigestV1` the extension builds on the coach's computer and the
+ * strict parser (V-L0) the learn route applies before anything else. The digest carries
+ * STRUCTURE ONLY: admitted key names, kinds, value classes, counts, URL templates with ids
+ * collapsed to `:p1..` and every non-vocabulary word to a typed session slot `:s1..`, origins as
+ * host TEMPLATES under the same slot rule (`:s1.:d`), query key NAMES from the closed vocabulary
+ * with a distinct-value bucket, constant request header NAMES from the closed header vocabulary,
+ * and device-computed pagination SIGNALS from a closed list. The slug is NOT in the digest (r5;
+ * R591-A-01): the memory key is server-side context and never enters the prompt. Every byte of
+ * the digest is hostile input (D-L0-7.2): nothing here is executed, fetched or written, only
+ * matched. The admission rules for site-chosen strings live in `admission.ts`. No source name or
+ * host literal appears in this module (§3 invariant 1). A version-1 digest is refused.
  */
 
-export const DIGEST_VERSION = 1 as const;
+export const DIGEST_VERSION = 2 as const;
+export const DIGEST_MAX_ORIGINS = 8;
 export const DIGEST_MAX_TEMPLATES = 64;
 export const DIGEST_MAX_LINK_TEMPLATES = 64;
 export const DIGEST_MAX_COLLECTION_PATHS = 4;
@@ -53,6 +61,7 @@ export const STRING_CLASSES = [
   'email_like',
   'phone_like',
   'url',
+  'media_url',
   'text',
 ] as const;
 export type StringClass = (typeof STRING_CLASSES)[number];
@@ -61,7 +70,17 @@ export const ID_CLASSES: readonly StringClass[] = ['int_id', 'uuid', 'short_id']
 /** The string classes the model must never be allowed to target (D-L0-7.1 part 1). */
 export const CONTACT_CLASSES: readonly StringClass[] = ['email_like', 'phone_like'];
 export const NUMBER_CLASSES = ['int', 'float'] as const;
-export const MAP_KEY_CLASSES = ['int_id', 'uuid', 'short_id', 'iso_date', 'text'] as const;
+/** `unadmitted`: the device collapsed an object whose keys failed admission (r5 rule; V-L6). */
+export const MAP_KEY_CLASSES = [
+  'int_id',
+  'uuid',
+  'short_id',
+  'iso_date',
+  'text',
+  'unadmitted',
+] as const;
+export const DISCOVERED_BY = ['landing', 'explore'] as const;
+export type DiscoveredBy = (typeof DISCOVERED_BY)[number];
 export const MAP_SIZE_BUCKETS = ['1', '2-9', '10+'] as const;
 export const STRING_LENGTH_BUCKETS = ['≤8', '≤32', '≤256', '>256'] as const;
 export const ARRAY_LENGTH_BUCKETS = ['0', '1', '2-9', '10-99', '100+'] as const;
@@ -116,14 +135,31 @@ export interface DigestQueryKey {
   readonly distinct: DistinctBucket;
 }
 
+/**
+ * One origin the page contacted, as a host TEMPLATE under the slot rule (`:s1.:d`, `api.:d`).
+ * `o0` is the authorized tab origin. `contacted` = a JSON response came from it this run;
+ * `credentialed` = the page sent it the site's own credential header. The extension confines
+ * `next_url` links to origins listed here (device obligation, admission rules).
+ */
+export interface DigestOrigin {
+  readonly ref: string;
+  readonly template: string;
+  readonly contacted: boolean;
+  readonly credentialed: boolean;
+}
+
 export interface DigestTemplate {
   /** `t0`..`t63` = position in canonical order; the model refers to templates by ref only. */
   readonly ref: string;
+  /** `o0`..`o7`: the origin this template was fetched from (r2 direction 3). */
+  readonly originRef: string;
   readonly method: DigestMethod;
   /** Root-relative; C2a ids → `:p1..`; unproven literals → `:s1..`; never a host or scheme. */
   readonly template: string;
   readonly slots: readonly DigestSlot[];
   readonly queryKeys: readonly DigestQueryKey[];
+  /** Sorted, distinct, ⊆ PAGINATION_SIGNALS: presence classes computed on the device. */
+  readonly paginationSignals: readonly PaginationSignal[];
   readonly statuses: readonly number[];
   readonly observations: number;
   readonly role: TemplateRole;
@@ -131,6 +167,8 @@ export interface DigestTemplate {
   readonly refusedKind?: RefusedKind;
   readonly collectionPaths: readonly (readonly string[])[];
   readonly shape: ShapeNode;
+  /** Round-1 landing structure vs explore-only (reuse key, D-L0-3). */
+  readonly discoveredBy: DiscoveredBy;
 }
 
 export interface DigestLinkTemplate {
@@ -149,40 +187,45 @@ export interface DigestTruncation {
 
 export interface StructureDigestV1 {
   readonly digestVersion: typeof DIGEST_VERSION;
-  readonly sourcePlatform: string;
   readonly round: 1 | 2;
   readonly truncated: DigestTruncation;
+  /** ≤ 8; `o0` first; host templates under the slot rule; distinct. */
+  readonly origins: readonly DigestOrigin[];
   readonly templates: readonly DigestTemplate[];
   readonly linkTemplates: readonly DigestLinkTemplate[];
   /** Header NAMES only (r3); values are rebound on the device. */
   readonly constantHeaderNames: readonly string[];
-  /** Round 2 only: families still unmapped. */
-  readonly missingFamilies: readonly CanonicalFamily[];
+  /** Round 2 only: FAM-0 family labels still unmapped. */
+  readonly missingFamilies: readonly FamilyLabel[];
 }
 
 const DIGEST_KEYS = [
   'digestVersion',
-  'sourcePlatform',
   'round',
   'truncated',
+  'origins',
   'templates',
   'linkTemplates',
   'constantHeaderNames',
   'missingFamilies',
 ] as const;
 const TRUNCATED_KEYS = ['templates', 'linkTemplates', 'shapes'] as const;
+const ORIGIN_KEYS = ['ref', 'template', 'contacted', 'credentialed'] as const;
 const TEMPLATE_KEYS = [
   'ref',
+  'originRef',
   'method',
   'template',
   'slots',
   'queryKeys',
+  'paginationSignals',
   'statuses',
   'observations',
   'role',
   'refusedKind',
   'collectionPaths',
   'shape',
+  'discoveredBy',
 ] as const;
 const TEMPLATE_REQUIRED_KEYS = TEMPLATE_KEYS.filter((k) => k !== 'refusedKind');
 const SLOT_KEYS = ['slot', 'class', 'distinct'] as const;
@@ -191,6 +234,7 @@ const LINK_KEYS = ['ref', 'template', 'captured'] as const;
 
 export const TEMPLATE_REF_PATTERN = /^t(0|[1-9][0-9]?)$/;
 export const LINK_REF_PATTERN = /^l(0|[1-9][0-9]?)$/;
+export const ORIGIN_REF_PATTERN = /^o[0-7]$/;
 /** Segments: unreserved literals, `:pN` row-id parameters or `:sN` session slots. */
 const TEMPLATE_PATTERN = /^(\/(?:[A-Za-z0-9._~%-]+|:p[1-9][0-9]?|:s[1-9][0-9]?))*\/?$/;
 const PARAM_PATTERN = /:p[1-9][0-9]?/g;
@@ -287,11 +331,12 @@ function checkKeyName(
   corroborated: ReadonlySet<string>,
   where: string,
   errors: Errors,
-): void {
+): boolean {
   const refusal = CREDENTIAL_KEY_PATTERN.test(key)
     ? 'credential-pattern key'
     : keyAdmissionRefusal(key, corroborated);
   if (refusal !== null) errors.add(where, refusal);
+  return refusal === null;
 }
 
 /** Parse one shape node; depth counts container nesting from 0 at the template root (≤ 4). */
@@ -419,7 +464,8 @@ function parseShape(raw: unknown, where: string, depth: number, errors: Errors):
       const attested: ReadonlySet<string> = new Set(corroborated ?? []);
       const keys: Record<string, ShapeNode> = {};
       for (const name of names) {
-        checkKeyName(name, attested, `${where}.keys.${name}`, errors);
+        // A refused name (incl. `__proto__`, R591-A-05) is never assigned into the record.
+        if (!checkKeyName(name, attested, `${where}.keys.${name}`, errors)) return null;
         const child = parseShape(rawKeys[name], `${where}.keys.${name}`, depth + 1, errors);
         if (child === null) return null;
         keys[name] = child;
@@ -611,6 +657,36 @@ function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTempl
     errors.add(`${where}.ref`, 'ref must be t0..t63');
     ok = false;
   }
+  if (typeof obj.originRef !== 'string' || !ORIGIN_REF_PATTERN.test(obj.originRef)) {
+    errors.add(`${where}.originRef`, 'originRef must be o0..o7');
+    ok = false;
+  }
+  if (!(DISCOVERED_BY as readonly unknown[]).includes(obj.discoveredBy)) {
+    errors.add(`${where}.discoveredBy`, 'discoveredBy must be landing|explore');
+    ok = false;
+  }
+  const signals = obj.paginationSignals;
+  if (
+    !isStringList(signals, PAGINATION_SIGNALS.length) ||
+    signals.some((sig) => !(PAGINATION_SIGNALS as readonly string[]).includes(sig)) ||
+    signals.some((sig, i) => i > 0 && !(signals[i - 1] < sig))
+  ) {
+    errors.add(
+      `${where}.paginationSignals`,
+      'paginationSignals must be sorted distinct names from the closed pagination-signal list',
+    );
+    ok = false;
+  } else if (signals.includes('total_equals_count') && !signals.includes('total_count_key')) {
+    errors.add(`${where}.paginationSignals`, 'total_equals_count needs total_count_key');
+    ok = false;
+  } else if (
+    signals.includes('single_response') &&
+    Array.isArray(obj.queryKeys) &&
+    obj.queryKeys.some((q) => asObject(q)?.distinct !== 1)
+  ) {
+    errors.add(`${where}.paginationSignals`, 'single_response contradicts query-key variants');
+    ok = false;
+  }
   const method = (DIGEST_METHODS as readonly unknown[]).includes(obj.method)
     ? (obj.method as DigestMethod)
     : null;
@@ -693,17 +769,70 @@ function parseTemplate(raw: unknown, index: number, errors: Errors): DigestTempl
   if (!ok || shape === null || slots === null || queryKeys === null || method === null) return null;
   return Object.freeze({
     ref: obj.ref as string,
+    originRef: obj.originRef as string,
     method,
     template: obj.template as string,
     slots: Object.freeze(slots),
     queryKeys: Object.freeze(queryKeys),
+    paginationSignals: Object.freeze([...(signals as PaginationSignal[])]),
     statuses: Object.freeze([...(obj.statuses as number[])]),
     observations: obj.observations as number,
     role: obj.role as TemplateRole,
     ...(obj.refusedKind === undefined ? {} : { refusedKind: obj.refusedKind as RefusedKind }),
     collectionPaths: Object.freeze((paths as string[][]).map((p) => Object.freeze([...p]))),
     shape,
+    discoveredBy: obj.discoveredBy as DiscoveredBy,
   });
+}
+
+function parseOrigins(raw: unknown, errors: Errors): DigestOrigin[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > DIGEST_MAX_ORIGINS) {
+    errors.add('origins', 'origins must list 1 to 8 origins (o0 = the authorized tab origin)');
+    return null;
+  }
+  const out: DigestOrigin[] = [];
+  const templates = new Set<string>();
+  let ok = true;
+  raw.forEach((o, i) => {
+    const where = `origins[${i}]`;
+    const obj = asObject(o);
+    if (obj === null || !checkKeys(obj, ORIGIN_KEYS, ORIGIN_KEYS, where, errors)) {
+      ok = false;
+      return;
+    }
+    if (obj.ref !== `o${i}`) {
+      errors.add(`${where}.ref`, `ref must be o${i} (position)`);
+      ok = false;
+    }
+    if (typeof obj.template !== 'string' || !isBoundedText(obj.template, 128)) {
+      errors.add(`${where}.template`, 'origin template must be bounded text');
+      ok = false;
+    } else {
+      const refusal = originTemplateRefusal(obj.template);
+      if (refusal !== null) {
+        errors.add(`${where}.template`, refusal);
+        ok = false;
+      } else if (templates.has(obj.template)) {
+        errors.add(`${where}.template`, 'duplicate origin template');
+        ok = false;
+      }
+      templates.add(obj.template);
+    }
+    if (typeof obj.contacted !== 'boolean' || typeof obj.credentialed !== 'boolean') {
+      errors.add(where, 'contacted and credentialed must be booleans');
+      ok = false;
+    }
+    if (ok)
+      out.push(
+        Object.freeze({
+          ref: obj.ref as string,
+          template: obj.template as string,
+          contacted: obj.contacted as boolean,
+          credentialed: obj.credentialed as boolean,
+        }),
+      );
+  });
+  return ok ? out : null;
 }
 
 function parseTruncated(raw: unknown, errors: Errors): DigestTruncation | null {
@@ -808,33 +937,84 @@ function compareText(a: string, b: string): number {
 }
 
 /**
- * The template key of D-L0-3/D-L0-5 in its canonical string form:
- * `JSON.stringify([method, slotted template, shapeSignature])`, byte-equal to one fingerprint
- * material line. `shapeSignature` is supplied by `fingerprint.ts` (one function over ShapeNode).
+ * The admitted KEY PATHS of a shape (r5 D-L0-3): names only, no kinds or buckets; REQUIRED keys
+ * only (a key listed in `optional` is a sparsity artefact, not structure; R591-B-B3); an array
+ * step is `[]`; a `map` node is never entered (its keys are data). Sorted by code unit.
  */
-export function templateKeyString(method: string, template: string, signature: string): string {
-  return JSON.stringify([method, template, signature]);
+export function shapeKeyPaths(root: ShapeNode): readonly string[] {
+  const out: string[] = [];
+  const walk = (node: ShapeNode, prefix: string): void => {
+    if (node.kind === 'array') {
+      walk(node.items, `${prefix}[]`);
+      return;
+    }
+    if (node.kind !== 'object') return;
+    const optional = new Set(node.optional ?? []);
+    for (const key of Object.keys(node.keys).sort(compareText)) {
+      if (optional.has(key)) continue;
+      const path = prefix === '' ? key : `${prefix}.${key}`;
+      out.push(path);
+      walk(node.keys[key], path);
+    }
+  };
+  walk(root, '');
+  return out.sort(compareText);
 }
 
 /**
- * The shape signature that enters a template's key: the item shape at `collectionPaths[0]`
- * (depth 2), or `unsupported` when no collection path reaches an array (single/refused).
+ * The reuse key of one template (D-L0-3, R591-B-B3): `JSON.stringify([originTemplate, method,
+ * template])`. It contains no key, kind or bucket, so a sparser account (optional keys absent,
+ * empty collections, `null` kinds) has the same reuse key. Shape is conformance, not identity.
  */
-export function templateShapeSignature(template: {
-  readonly collectionPaths: readonly (readonly string[])[];
-  readonly shape: ShapeNode;
-}): string {
-  const first = template.collectionPaths[0];
-  const item = first === undefined ? null : itemShapeAt(template.shape, first);
-  return item === null ? 'unsupported' : shapeSignature(item);
-}
-
-export function templateKey(template: DigestTemplate): string {
-  return templateKeyString(template.method, template.template, templateShapeSignature(template));
+export function reuseKeyString(originTemplate: string, method: string, template: string): string {
+  return JSON.stringify([originTemplate, method, template]);
 }
 
 /**
- * V-L0: strict keys at every level, bounds, canonical slug, root-relative `:p`/`:s` templates
+ * The structure key (r5 D-L0-3): the reuse key plus the sorted REQUIRED key paths. A digest
+ * template MATCHES a package step when the reuse keys are equal and the digest's key paths are a
+ * subset of the step's (`structureKeyMatches`): a sparser account observes fewer keys, never more
+ * structure.
+ */
+export interface StructureKey {
+  readonly origin: string;
+  readonly method: DigestMethod;
+  readonly template: string;
+  readonly keyPaths: readonly string[];
+}
+
+export function structureKeyString(key: StructureKey): string {
+  return JSON.stringify([key.origin, key.method, key.template, key.keyPaths]);
+}
+
+export function originTemplateOf(digest: StructureDigestV1, template: DigestTemplate): string {
+  const origin = digest.origins.find((o) => o.ref === template.originRef);
+  if (origin === undefined) throw new Error(`unknown originRef ${template.originRef}`);
+  return origin.template;
+}
+
+export function structureKeyOf(digest: StructureDigestV1, template: DigestTemplate): StructureKey {
+  return Object.freeze({
+    origin: originTemplateOf(digest, template),
+    method: template.method,
+    template: template.template,
+    keyPaths: shapeKeyPaths(template.shape),
+  });
+}
+
+export function structureKeyMatches(step: StructureKey, digestKey: StructureKey): boolean {
+  if (
+    step.origin !== digestKey.origin ||
+    step.method !== digestKey.method ||
+    step.template !== digestKey.template
+  )
+    return false;
+  const stepPaths = new Set(step.keyPaths);
+  return digestKey.keyPaths.every((p) => stepPaths.has(p));
+}
+
+/**
+ * V-L0: strict keys at every level, bounds, version 2, origins under the host slot rule, root-relative `:p`/`:s` templates
  * whose literals are closed-vocabulary words only, typed slots matching the template, query key NAMES with
  * distinct buckets, header NAMES only, refs in canonical order, collection paths that reach
  * arrays, `refusedKind` for refused templates only, `missingFamilies` in round 2 only, and the
@@ -850,13 +1030,12 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
   if (!checkKeys(obj, DIGEST_KEYS, DIGEST_KEYS, 'digest', errors)) {
     return { ok: false, errors: errors.list };
   }
-  if (obj.digestVersion !== DIGEST_VERSION) errors.add('digestVersion', 'digestVersion must be 1');
-  const slug = isCanonicalPlatform(obj.sourcePlatform) ? obj.sourcePlatform : null;
-  if (slug === null || DIGIT_RUN_PATTERN.test(slug)) {
-    errors.add('sourcePlatform', 'sourcePlatform must be a canonical platform token');
-  }
+  if (obj.digestVersion !== DIGEST_VERSION)
+    errors.add('digestVersion', `digestVersion must be ${DIGEST_VERSION}`);
   if (obj.round !== 1 && obj.round !== 2) errors.add('round', 'round must be 1 or 2');
   const truncated = parseTruncated(obj.truncated, errors);
+  const origins = parseOrigins(obj.origins, errors);
+  const originByRef = new Map((origins ?? []).map((o) => [o.ref, o.template]));
 
   const templates: DigestTemplate[] = [];
   if (!Array.isArray(obj.templates) || obj.templates.length > DIGEST_MAX_TEMPLATES) {
@@ -870,19 +1049,28 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
         errors.add(`templates[${i}].ref`, `ref must be t${i} (position in canonical order)`);
       if (refs.has(parsed.ref)) errors.add(`templates[${i}].ref`, 'duplicate ref');
       refs.add(parsed.ref);
+      if (origins !== null && !originByRef.has(parsed.originRef))
+        errors.add(`templates[${i}].originRef`, 'originRef names no origin');
+      if (obj.round === 1 && parsed.discoveredBy === 'explore')
+        errors.add(`templates[${i}].discoveredBy`, 'explore-discovered templates are round 2 only');
       templates.push(parsed);
     });
-    // Canonical order (D-L0-3): sorted by the template key; one template per key.
+    // Canonical order (D-L0-3): sorted by the structure key; one template per key.
     const keys = templates.map((t) =>
-      templateKeyString(t.method, t.template, templateShapeSignature(t)),
+      structureKeyString({
+        origin: originByRef.get(t.originRef) ?? '',
+        method: t.method,
+        template: t.template,
+        keyPaths: shapeKeyPaths(t.shape),
+      }),
     );
     keys.forEach((key, i) => {
       if (i > 0 && !(keys[i - 1] < key))
         errors.add(
           `templates[${i}]`,
           keys[i - 1] === key
-            ? 'duplicate template key'
-            : 'templates must be in canonical order (method, template, shapeSignature)',
+            ? 'duplicate structure key'
+            : 'templates must be in canonical order (origin, method, template, keyPaths)',
         );
     });
   }
@@ -890,11 +1078,11 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
   const linkTemplates = parseLinkTemplates(obj.linkTemplates, errors);
   const headerNames = parseHeaderNames(obj.constantHeaderNames, errors);
   if (
-    !isStringList(obj.missingFamilies, CANONICAL_FAMILIES.length) ||
-    obj.missingFamilies.some((f) => !(CANONICAL_FAMILIES as readonly string[]).includes(f)) ||
+    !isStringList(obj.missingFamilies, 32) ||
+    obj.missingFamilies.some((f) => !isFamilyLabel(f)) ||
     new Set(obj.missingFamilies).size !== obj.missingFamilies.length
   ) {
-    errors.add('missingFamilies', 'missingFamilies must be distinct canonical families');
+    errors.add('missingFamilies', 'missingFamilies must be distinct family labels');
   } else if (obj.round === 1 && obj.missingFamilies.length > 0) {
     errors.add('missingFamilies', 'missingFamilies is round 2 only');
   }
@@ -904,18 +1092,18 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
     truncated === null ||
     linkTemplates === null ||
     headerNames === null ||
-    slug === null
+    origins === null
   )
     return { ok: false, errors: errors.list };
   const digest: StructureDigestV1 = Object.freeze({
     digestVersion: DIGEST_VERSION,
-    sourcePlatform: slug,
     round: obj.round as 1 | 2,
     truncated,
+    origins: Object.freeze(origins),
     templates: Object.freeze(templates),
     linkTemplates: Object.freeze(linkTemplates),
     constantHeaderNames: Object.freeze(headerNames),
-    missingFamilies: Object.freeze([...(obj.missingFamilies as CanonicalFamily[])]),
+    missingFamilies: Object.freeze([...(obj.missingFamilies as FamilyLabel[])]),
   });
   const bytes = utf8Bytes(JSON.stringify(digest));
   if (bytes > DIGEST_MAX_BYTES) {

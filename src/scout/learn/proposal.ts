@@ -13,7 +13,6 @@ import {
   type NativeRuleSet,
   type RuleKind,
 } from '../reconstruct/native/native-rules';
-import { WORKOUT_PLAN_TYPES } from '../reconstruct/native/native-contract';
 import type { InductionManifestV1, ProvingBasisKind } from '../induction/contract';
 import { parseInductionManifest } from '../induction/parse';
 import { buildInductionRegistry } from '../induction/manifest-registry';
@@ -25,40 +24,63 @@ import {
   asObject,
   itemShapeAt,
   shapeAtPath,
+  structureKeyOf,
+  structureKeyString,
   templateParamCount,
   type DigestTemplate,
   type LearnParseResult,
   type ShapeNode,
   type StructureDigestV1,
+  type StructureKey,
 } from './digest-contract';
-import { KEY_IDENTIFIER_PATTERN, KEY_MAX_BYTES } from './admission';
 import {
+  KEY_IDENTIFIER_PATTERN,
+  KEY_MAX_BYTES,
+  ORIGIN_TEMPLATE_PATTERN,
+  PAGINATION_PARAM_WORDS,
+  QUERY_KEY_PATTERN,
+} from './admission';
+import {
+  ACCEPT_INTEGER_NUMBER_ID_FIELD,
   ENTITY_FIELD_DESCRIPTIONS,
   EXERCISE_NATIVE_FIELDS,
-  NEXT_LINK_KEYS,
-  PAGINATION_QUERY_KEYS,
+  NATIVE_RULE_KINDS,
   PAGINATION_STYLES,
   type PaginationStyle,
   PERSON_FIELD_DESCRIPTIONS,
   PROGRAM_NATIVE_FIELDS,
   WORKOUT_NATIVE_FIELDS,
+  isMappedFamily,
   type NativeFieldDescription,
 } from './canonical-contract';
-import { templateKey } from './fingerprint';
+import {
+  FAMILY_LABELS,
+  MORE_PAGES_SIGNALS,
+  tokenize,
+  type FamilyLabel,
+} from './contract-vocabulary';
 import { validateSchema, type JsonSchema } from './schema';
 
 /**
- * L1 (D-L0-4) — the `LearnedProposalV1` grammar (data only), its strict parser V-L1 and the
- * validators V-L2…V-L8 and V-L10 that must accept before any source request. The grammar is
- * written ONCE as a JSON Schema (`proposalJsonSchema()`), generated from the same canonical
- * tables the validators iterate; V-L1 interprets that schema, the prompt prints it, the provider
- * enforces it. `mappingSpec` and `nativeRules` are re-parsed by the landed interpreters
- * (`parseSourceMappingSpec`, `parseNativeRuleSet`) — never reimplemented — and the derived
- * `InductionManifestV1` must pass S10 V1-V6 in `buildInductionRegistry`.
+ * L1 (D-L0-4, grammar version 2; r2 review round) — the `LearnedProposalV1` grammar (data only),
+ * its strict parser V-L1 and the validators V-L2…V-L8 and V-L10 that must accept before any
+ * source request. The grammar is written ONCE as a JSON Schema (`proposalJsonSchema()`),
+ * generated from the same canonical tables the validators iterate; V-L1 interprets that schema,
+ * the prompt prints it, the provider enforces it. `mappingSpec` and `nativeRules` are re-parsed
+ * by the landed interpreters (`parseSourceMappingSpec`, `parseNativeRuleSet`) — never
+ * reimplemented — and the derived `InductionManifestV1` must pass S10 V1-V6 in
+ * `buildInductionRegistry` (V-L7 is the ONLY check of "rule families ⊆ spec families": the
+ * landed registry does it, so a test with a stray rule family fails at V-L7 alone).
+ *
+ * The model proposes a FAMILY LABEL (closed FAM-0 catalogue, `unclassified` catch-all) and a
+ * field mapping; it never proposes a destination (r2 direction 2). Steps carry `idScope`,
+ * `parentEdge` and `timestampField` (direction 3). Pagination is judged against the template's
+ * device-computed `paginationSignals` (direction 4). Enum rules and string flag markers are not
+ * proposable: the digest carries no values, so such literals would be model-invented (A-02).
  */
 
-export const PROPOSAL_VERSION = 1 as const;
-export const PROPOSAL_MAX_STEPS = 8;
+export const PROPOSAL_VERSION = 2 as const;
+export const PROPOSAL_MAX_STEPS = 16;
 export const PROPOSAL_MAX_EXPLORE = 8;
 export const PROPOSAL_MAX_RATIONALE_CHARS = 512;
 export const PROPOSAL_MAX_PATHS_PER_RULE = 4;
@@ -68,36 +90,41 @@ export const UNMAPPED_REASONS = [
   'out_of_scope_billing',
   'out_of_scope_account_settings',
   'out_of_scope_ui_config',
-  'unsupported_coaching_data',
   'unknown',
 ] as const;
 export type UnmappedReason = (typeof UNMAPPED_REASONS)[number];
-export { NEXT_LINK_KEYS, PAGINATION_QUERY_KEYS, PAGINATION_STYLES, type PaginationStyle };
-
-/**
- * Divergence from r3 D-L0-4 (flagged, not silent): r3 names the id classes `int_id|uuid|short_id`
- * (string classes only). The legacy oracle and the shared X2 vectors carry `{kind:'number',
- * class:'int'}` ids, so a literal reading makes V1-P item 6 (oracle parity) unreachable. An
- * integer NUMBER node is therefore accepted as an id field as well; flip this to `false` if r4
- * keeps the literal rule.
- */
-export const ACCEPT_INTEGER_NUMBER_ID_FIELD = true;
+export const ID_SCOPES = ['global', 'parent'] as const;
+export type IdScope = (typeof ID_SCOPES)[number];
+export { ACCEPT_INTEGER_NUMBER_ID_FIELD, PAGINATION_STYLES, type PaginationStyle };
 
 export interface ProposalPagination {
   readonly style: PaginationStyle;
-  /** Query key carrying the page/offset/cursor (styles page, offset, cursor). */
+  /** Query key carrying the page number / cursor (styles page, cursor). */
   readonly param?: string;
-  /** First page value (style page: 0|1; style offset: 0). */
+  /** First page value (style page: 0|1). */
   readonly start?: number;
   /** Path to the next cursor (style cursor) or the next link (style next_url). */
   readonly nextPath?: readonly string[];
 }
 
+export interface ParentEdge {
+  /** The item key holding the parent's source id. */
+  readonly field: string;
+  /** The `entityType` of an EARLIER step the parent lives in. */
+  readonly toStep: string;
+}
+
 export interface ProposalStep {
   readonly templateRef: string;
   readonly entityType: string;
+  /** Classification only; the destination is derived later (r2 direction 2). */
+  readonly family: FamilyLabel;
   readonly itemsPath: readonly string[];
   readonly idField: string;
+  /** Required when `forEach` is set: `parent` ⇒ identity is `${parentId}:${id}`. */
+  readonly idScope?: IdScope;
+  readonly parentEdge?: ParentEdge;
+  readonly timestampField?: string;
   readonly collectAs?: string;
   readonly forEach?: string;
   readonly pagination: ProposalPagination;
@@ -127,8 +154,6 @@ const LINK_REF = '^l(0|[1-9][0-9]?)$';
 const SLUG_PATTERN = '^[a-z0-9][a-z0-9._:-]{0,255}$';
 /** Printable text: no control or format characters, no `@`, no scheme separator, no digit run. */
 const RATIONALE_PATTERN = '^(?!.*(://|@|[0-9]{4}))[^\\p{Cc}\\p{Cf}]*$';
-/** A model-invented source enum value or flag marker: short ASCII, never a digit run. */
-const SOURCE_VALUE_PATTERN = '^(?![0-9]{4})(?!.*[0-9]{4})[A-Za-z0-9 _-]{1,32}$';
 
 const keyString: JsonSchema = { type: 'string', pattern: KEY_PATTERN, maxLength: KEY_MAX_BYTES };
 const keyPath: JsonSchema = {
@@ -216,24 +241,9 @@ function nativeRuleSchema(kinds: readonly RuleKind[]): JsonSchema {
             default: { type: 'integer', minimum: -999, maximum: 999 },
           },
         };
-      case 'enum':
-        return {
-          ...base,
-          required: ['kind', 'paths', 'map'],
-          properties: {
-            kind: kindProp,
-            paths,
-            map: {
-              type: 'object',
-              propertyNames: { pattern: SOURCE_VALUE_PATTERN, maxLength: 32 },
-              additionalProperties: { type: 'string', enum: WORKOUT_PLAN_TYPES },
-              minProperties: 1,
-              maxProperties: 16,
-            },
-            default: { type: 'string', enum: WORKOUT_PLAN_TYPES },
-          },
-        };
       case 'flag':
+        // R591-A-02: truthy markers are booleans or small integers only; a string marker would
+        // be a source VALUE the digest never showed the model.
         return {
           ...base,
           required: ['kind', 'paths', 'truthy'],
@@ -244,12 +254,9 @@ function nativeRuleSchema(kinds: readonly RuleKind[]): JsonSchema {
               type: 'array',
               minItems: 1,
               maxItems: 8,
+              uniqueItems: true,
               items: {
-                anyOf: [
-                  { type: 'string', pattern: SOURCE_VALUE_PATTERN, maxLength: 32 },
-                  { type: 'integer', minimum: -999, maximum: 999 },
-                  { type: 'boolean' },
-                ],
+                anyOf: [{ type: 'integer', minimum: -999, maximum: 999 }, { type: 'boolean' }],
               },
             },
           },
@@ -282,8 +289,11 @@ function nativeFieldsSchema(
   extra: Record<string, JsonSchema> = {},
 ): JsonSchema {
   const properties: Record<string, JsonSchema> = { ...extra };
-  for (const [field, meta] of Object.entries(fields))
-    properties[field] = nativeRuleSchema(meta.kinds);
+  for (const [field, meta] of Object.entries(fields)) {
+    // Only the proposable kinds (no `enum`); a field with none left is not proposable at all.
+    const kinds = meta.kinds.filter((k) => NATIVE_RULE_KINDS.includes(k));
+    if (kinds.length > 0) properties[field] = nativeRuleSchema(kinds);
+  }
   return { type: 'object', additionalProperties: false, properties };
 }
 
@@ -340,13 +350,22 @@ export function proposalJsonSchema(): JsonSchema {
         maxItems: PROPOSAL_MAX_STEPS,
         items: {
           type: 'object',
-          required: ['templateRef', 'entityType', 'itemsPath', 'idField', 'pagination'],
+          required: ['templateRef', 'entityType', 'family', 'itemsPath', 'idField', 'pagination'],
           additionalProperties: false,
           properties: {
             templateRef: { type: 'string', pattern: TEMPLATE_REF },
             entityType: token,
+            family: { type: 'string', enum: FAMILY_LABELS },
             itemsPath: { type: 'array', items: keyString, maxItems: PROPOSAL_MAX_PATH_DEPTH },
             idField: keyString,
+            idScope: { type: 'string', enum: ID_SCOPES },
+            parentEdge: {
+              type: 'object',
+              required: ['field', 'toStep'],
+              additionalProperties: false,
+              properties: { field: keyString, toStep: token },
+            },
+            timestampField: keyString,
             collectAs: token,
             forEach: token,
             pagination: {
@@ -355,7 +374,7 @@ export function proposalJsonSchema(): JsonSchema {
               additionalProperties: false,
               properties: {
                 style: { type: 'string', enum: PAGINATION_STYLES },
-                param: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_.[\\]-]{0,63}$' },
+                param: { type: 'string', pattern: QUERY_KEY_PATTERN.source },
                 start: { type: 'integer', minimum: 0, maximum: 1 },
                 nextPath: keyPath,
               },
@@ -393,6 +412,36 @@ export function proposalJsonSchema(): JsonSchema {
   };
 }
 
+/** Copy one schema-validated step into a frozen `ProposalStep` (shared with the package reader). */
+export function copyStep(s: Record<string, unknown>): ProposalStep {
+  const edge = s.parentEdge as ParentEdge | undefined;
+  return Object.freeze({
+    templateRef: s.templateRef as string,
+    entityType: s.entityType as string,
+    family: s.family as FamilyLabel,
+    itemsPath: Object.freeze([...(s.itemsPath as string[])]),
+    idField: s.idField as string,
+    ...(s.idScope === undefined ? {} : { idScope: s.idScope as IdScope }),
+    ...(edge === undefined
+      ? {}
+      : { parentEdge: Object.freeze({ field: edge.field, toStep: edge.toStep }) }),
+    ...(s.timestampField === undefined ? {} : { timestampField: s.timestampField as string }),
+    ...(s.collectAs === undefined ? {} : { collectAs: s.collectAs as string }),
+    ...(s.forEach === undefined ? {} : { forEach: s.forEach as string }),
+    pagination: copyPagination(s.pagination as ProposalPagination),
+  });
+}
+
+/** The step fragment of the grammar, for readers that re-validate stored steps (package.ts). */
+export function stepJsonSchema(): JsonSchema {
+  const schema = proposalJsonSchema();
+  if (!('type' in schema) || schema.type !== 'object' || schema.properties === undefined)
+    throw new Error('grammar');
+  const steps = schema.properties.steps;
+  if (!('type' in steps) || steps.type !== 'array') throw new Error('grammar');
+  return steps.items;
+}
+
 function copyPagination(p: ProposalPagination): ProposalPagination {
   return Object.freeze({
     style: p.style,
@@ -405,9 +454,12 @@ function copyPagination(p: ProposalPagination): ProposalPagination {
 // ── V-L1 ──────────────────────────────────────────────────────────────────────────────────
 
 /** Every string anywhere in the reply: no scheme, no `@`, no digit run, no control/format char. */
-function scanStrings(value: unknown, path: string, errors: Errors): void {
+export function scanStrings(value: unknown, path: string, errors: Errors): void {
   if (typeof value === 'string') {
-    if (/:\/\//.test(value) || /^[a-z][a-z0-9+.-]*:/i.test(value))
+    if (
+      /:\/\//.test(value) ||
+      (/^[a-z][a-z0-9+.-]*:/i.test(value) && !ORIGIN_TEMPLATE_PATTERN.test(value))
+    )
       errors.add(path, 'string parses as a URL or scheme');
     if (value.includes('@')) errors.add(path, 'value-like character in string');
     if (DIGIT_RUN_PATTERN.test(value)) errors.add(path, 'digit run of 4 or more in string');
@@ -439,17 +491,7 @@ export function parseLearnedProposal(raw: unknown): LearnParseResult<LearnedProp
   scanStrings(raw, '$', errors);
   if (errors.any) return { ok: false, errors: errors.list };
   const obj = raw as Record<string, unknown>;
-  const steps = (obj.steps as Record<string, unknown>[]).map((s) =>
-    Object.freeze({
-      templateRef: s.templateRef as string,
-      entityType: s.entityType as string,
-      itemsPath: Object.freeze([...(s.itemsPath as string[])]),
-      idField: s.idField as string,
-      ...(s.collectAs === undefined ? {} : { collectAs: s.collectAs as string }),
-      ...(s.forEach === undefined ? {} : { forEach: s.forEach as string }),
-      pagination: copyPagination(s.pagination as ProposalPagination),
-    }),
-  );
+  const steps = (obj.steps as Record<string, unknown>[]).map((s) => copyStep(s));
   return {
     ok: true,
     value: Object.freeze({
@@ -472,17 +514,30 @@ export function parseLearnedProposal(raw: unknown): LearnParseResult<LearnedProp
 // ── V-L2 … V-L8, V-L10 ────────────────────────────────────────────────────────────────────
 
 export interface ProposalValidationContext {
-  /** The run's slug (D-L0-5); the digest, the spec and the rules must all carry it. */
+  /** The run's slug (D-L0-5), server-side context: the spec and the rules must carry it. */
   readonly slug: string;
-  /** Round 2 (D-L0-3): template keys of the round-1 package's steps, each must still be a step. */
+  /**
+   * Round 2 (D-L0-3): structure-key strings of the round-1 package's steps; each must still be
+   * a step. MANDATORY for a round-2 digest — a round-2 validation without it is refused
+   * (R591-B-B2: no fail-open).
+   */
   readonly round1StepKeys?: readonly string[];
+  /**
+   * `strict` (default, a live proposal): every mapping path resolves. `match` (a stored package
+   * re-applied to a new digest, D-L0-3 step 3): a mapping path whose FIRST key this digest never
+   * observed in the item shape is compatible and binds nothing; a path that resolves to the wrong
+   * class is still refused.
+   */
+  readonly mode?: 'strict' | 'match';
 }
 
 export interface ValidatedStep {
   readonly step: ProposalStep;
   readonly template: DigestTemplate;
-  readonly templateKey: string;
-  readonly family: CanonicalFamily;
+  readonly structureKey: StructureKey;
+  readonly family: FamilyLabel;
+  /** The canonical mapping family when `family` is mapped, else `null` (classification only). */
+  readonly mappedFamily: CanonicalFamily | null;
   readonly itemShape: ShapeNode & { readonly kind: 'object' };
 }
 
@@ -493,7 +548,10 @@ export interface ValidatedProposal {
   readonly nativeRules: NativeRuleSet | null;
   readonly manifest: InductionManifestV1;
   readonly steps: readonly ValidatedStep[];
-  readonly unmapped: readonly { readonly templateKey: string; readonly reason: UnmappedReason }[];
+  readonly unmapped: readonly {
+    readonly structureKey: StructureKey;
+    readonly reason: UnmappedReason;
+  }[];
 }
 
 function isIdShape(node: ShapeNode): boolean {
@@ -534,30 +592,26 @@ export function deriveInductionManifest(
   });
 }
 
-function shapeHasKey(node: ShapeNode, names: ReadonlySet<string>, depth = 0): boolean {
-  if (depth > 4) return false;
-  if (node.kind === 'object') {
-    for (const [key, child] of Object.entries(node.keys)) {
-      if (names.has(key.toLowerCase())) return true;
-      if (shapeHasKey(child, names, depth + 1)) return true;
-    }
-    return false;
-  }
-  if (node.kind === 'array') return shapeHasKey(node.items, names, depth + 1);
-  if (node.kind === 'map') return shapeHasKey(node.values, names, depth + 1);
-  return false;
+const PARAM_WORD_SET: ReadonlySet<string> = new Set(PAGINATION_PARAM_WORDS);
+
+function isPaginationWord(param: string): boolean {
+  const tokens = tokenize(param);
+  return tokens.length > 0 && tokens.every((t) => PARAM_WORD_SET.has(t));
 }
 
-const PAGINATION_QUERY_KEY_SET: ReadonlySet<string> = new Set(PAGINATION_QUERY_KEYS);
-const NEXT_LINK_KEY_SET: ReadonlySet<string> = new Set(NEXT_LINK_KEYS);
-
-/** Reset directive 4: `none` requires positive proof from the digest (no pagination signal). */
+/**
+ * Reset directive 4 + r2 direction 4: `none` is a claim that needs POSITIVE proof from the
+ * device-computed signals — `single_response` present, no more-pages signal, and a total count
+ * either absent or proven equal to the row count. Never exhaustion: L3 proves that at replay.
+ */
 export function paginationNoneRefusal(template: DigestTemplate): string | null {
-  const signal = template.queryKeys.find((q) => PAGINATION_QUERY_KEY_SET.has(q.key.toLowerCase()));
-  if (signal !== undefined)
-    return `pagination none needs positive proof: template has query key "${signal.key}"`;
-  if (shapeHasKey(template.shape, NEXT_LINK_KEY_SET))
-    return 'pagination none needs positive proof: response shape carries a next-link key';
+  const signals = new Set<string>(template.paginationSignals);
+  if (!signals.has('single_response'))
+    return 'pagination none needs positive proof: template lacks the single_response signal';
+  const more = MORE_PAGES_SIGNALS.find((sig) => signals.has(sig));
+  if (more !== undefined) return `pagination none needs positive proof: template signals ${more}`;
+  if (signals.has('total_count_key') && !signals.has('total_equals_count'))
+    return 'pagination none needs positive proof: a total count key without total_equals_count';
   return null;
 }
 
@@ -569,12 +623,20 @@ function checkPagination(
 ): void {
   const p = step.pagination;
   const at = `${where}.pagination`;
-  const needsParam = p.style === 'page' || p.style === 'offset' || p.style === 'cursor';
+  const signals = new Set<string>(template.paginationSignals);
+  const needsParam = p.style === 'page' || p.style === 'cursor';
   const needsNext = p.style === 'cursor' || p.style === 'next_url';
   if (needsParam) {
     if (p.param === undefined) errors.add(`${at}.param`, `${p.style} needs param`, 'V-L5');
-    else if (!template.queryKeys.some((q) => q.key === p.param))
-      errors.add(`${at}.param`, 'pagination param is not a query key of the template', 'V-L5');
+    else if (!template.queryKeys.some((q) => q.key === p.param)) {
+      const signal = p.style === 'page' ? 'page_param' : 'cursor_key';
+      if (!(isPaginationWord(p.param) && signals.has(signal)))
+        errors.add(
+          `${at}.param`,
+          `pagination param must be a query key of the template, or a pagination word when the template signals ${signal}`,
+          'V-L5',
+        );
+    }
   } else if (p.param !== undefined) {
     errors.add(`${at}.param`, `${p.style} takes no param`, 'V-L5');
   }
@@ -596,12 +658,8 @@ function checkPagination(
   } else if (p.nextPath !== undefined) {
     errors.add(`${at}.nextPath`, `${p.style} takes no nextPath`, 'V-L5');
   }
-  if (p.start !== undefined) {
-    if (p.style === 'offset' && p.start !== 0)
-      errors.add(`${at}.start`, 'offset starts at 0', 'V-L5');
-    else if (p.style !== 'page' && p.style !== 'offset')
-      errors.add(`${at}.start`, `${p.style} takes no start`, 'V-L5');
-  }
+  if (p.start !== undefined && p.style !== 'page')
+    errors.add(`${at}.start`, `${p.style} takes no start`, 'V-L5');
   if (p.style === 'none') {
     const refusal = paginationNoneRefusal(template);
     if (refusal !== null) errors.add(`${at}.style`, refusal, 'V-L5');
@@ -615,9 +673,15 @@ function checkPathTarget(
   acceptsClasses: readonly string[] | null,
   errors: Errors,
   code: string,
+  mode: 'strict' | 'match' = 'strict',
 ): void {
   const targets = shapes.map((s) => shapeAtPath(s, path)).filter((n): n is ShapeNode => n !== null);
   if (targets.length === 0) {
+    // Match mode: a key this digest never observed is a sparser account, not a contradiction.
+    const unobserved = shapes.every(
+      (s) => s.kind === 'object' && !Object.prototype.hasOwnProperty.call(s.keys, path[0]),
+    );
+    if (mode === 'match' && unobserved) return;
     errors.add(where, 'path does not resolve to a key in the item shape of a feeding step', code);
     return;
   }
@@ -644,8 +708,11 @@ export function validateLearnedProposal(
   context: ProposalValidationContext,
 ): LearnParseResult<ValidatedProposal> {
   const errors = new Errors('V-L2');
-  if (digest.sourcePlatform !== context.slug)
-    errors.add('digest.sourcePlatform', 'digest slug differs from the run slug', 'V-L0');
+  const mode = context.mode ?? 'strict';
+  if (digest.round === 2 && context.round1StepKeys === undefined) {
+    errors.add('context.round1StepKeys', 'round-2 validation needs the round-1 step keys', 'V-L10');
+    return { ok: false, errors: errors.list };
+  }
 
   // V-L2
   let spec: SourceMappingSpec | null = null;
@@ -667,30 +734,40 @@ export function validateLearnedProposal(
           'nativeRules slug differs from the run slug',
           'V-L3',
         );
-      if (spec !== null)
-        for (const family of Object.keys(rules.families))
-          if (!(family in spec.families))
-            errors.add(
-              `nativeRules.families.${family}`,
-              'rule family is not a spec family',
-              'V-L3',
-            );
+      // "rule families ⊆ spec families" is V-L7's (the landed registry's) check, not repeated here.
     } catch (err) {
       errors.add('nativeRules', message(err), 'V-L3');
     }
   }
   if (spec === null || errors.any) return { ok: false, errors: errors.list };
 
-  // V-L4
+  // V-L4: steps with a MAPPED family ⇔ mappingSpec.steps keys, same family; a step whose family
+  // is classification-only (no mapping family) must not appear in the spec.
   const entityTypes = proposal.steps.map((s) => s.entityType);
   if (new Set(entityTypes).size !== entityTypes.length)
     errors.add('steps', 'duplicate entityType across steps', 'V-L4');
-  for (const [i, s] of proposal.steps.entries())
-    if (!Object.prototype.hasOwnProperty.call(spec.steps, s.entityType))
-      errors.add(`steps[${i}].entityType`, 'entityType is not a mappingSpec.steps key', 'V-L4');
-  for (const key of Object.keys(spec.steps))
-    if (!entityTypes.includes(key))
-      errors.add(`mappingSpec.steps.${key}`, 'spec step has no proposal step', 'V-L4');
+  const mappedTypes: string[] = [];
+  for (const [i, s] of proposal.steps.entries()) {
+    const inSpec = Object.prototype.hasOwnProperty.call(spec.steps, s.entityType);
+    if (isMappedFamily(s.family)) {
+      mappedTypes.push(s.entityType);
+      if (!inSpec)
+        errors.add(`steps[${i}].entityType`, 'entityType is not a mappingSpec.steps key', 'V-L4');
+      else if (spec.steps[s.entityType] !== s.family)
+        errors.add(`steps[${i}].family`, 'family differs from mappingSpec.steps family', 'V-L4');
+    } else if (inSpec) {
+      errors.add(
+        `steps[${i}].family`,
+        'a classification-only family label has no mappingSpec.steps entry',
+        'V-L4',
+      );
+    }
+  }
+  // Match mode: a spec step absent from this digest is an explore target, not a refusal.
+  if (mode === 'strict')
+    for (const key of Object.keys(spec.steps))
+      if (!mappedTypes.includes(key))
+        errors.add(`mappingSpec.steps.${key}`, 'spec step has no proposal step', 'V-L4');
 
   // V-L5
   const byRef = new Map(digest.templates.map((t) => [t.ref, t]));
@@ -721,9 +798,9 @@ export function validateLearnedProposal(
       errors.add(`${where}.itemsPath`, 'items are not objects', 'V-L5');
       return;
     }
-    const idNode = Object.prototype.hasOwnProperty.call(item.keys, step.idField)
-      ? item.keys[step.idField]
-      : null;
+    const keyOf = (name: string): ShapeNode | null =>
+      Object.prototype.hasOwnProperty.call(item.keys, name) ? item.keys[name] : null;
+    const idNode = keyOf(step.idField);
     if (idNode === null || !isIdShape(idNode))
       errors.add(`${where}.idField`, 'idField is not an id-class key of the item shape', 'V-L5');
     checkPagination(step, template, where, errors);
@@ -734,6 +811,8 @@ export function validateLearnedProposal(
         errors.add(`${where}.forEach`, 'forEach must name an earlier step collectAs', 'V-L5');
       if (params !== 1)
         errors.add(`${where}.forEach`, 'a forEach template needs exactly one :p parameter', 'V-L5');
+      if (step.idScope === undefined)
+        errors.add(`${where}.idScope`, 'a forEach step must state idScope', 'V-L5');
     } else if (params !== 0) {
       errors.add(`${where}.templateRef`, 'a template with :p parameters needs forEach', 'V-L5');
     }
@@ -742,15 +821,39 @@ export function validateLearnedProposal(
         errors.add(`${where}.collectAs`, 'duplicate collectAs', 'V-L5');
       else collectAs.set(step.collectAs, i);
     }
-    const family = spec.steps[step.entityType];
-    if (family !== undefined)
-      validated.push({
-        step,
-        template,
-        templateKey: templateKey(template),
-        family,
-        itemShape: item,
-      });
+    if (step.parentEdge !== undefined) {
+      const fieldNode = keyOf(step.parentEdge.field);
+      if (fieldNode === null || !isIdShape(fieldNode) || step.parentEdge.field === step.idField)
+        errors.add(
+          `${where}.parentEdge.field`,
+          'parentEdge.field must be an id-class key of the item shape other than idField',
+          'V-L5',
+        );
+      const target = proposal.steps.findIndex((o) => o.entityType === step.parentEdge?.toStep);
+      if (target < 0 || target >= i)
+        errors.add(
+          `${where}.parentEdge.toStep`,
+          'parentEdge.toStep must be an earlier step',
+          'V-L5',
+        );
+    }
+    if (step.timestampField !== undefined) {
+      const tsNode = keyOf(step.timestampField);
+      if (tsNode === null || tsNode.kind !== 'string' || tsNode.class !== 'iso_date')
+        errors.add(
+          `${where}.timestampField`,
+          'timestampField must be an iso_date key of the item shape',
+          'V-L5',
+        );
+    }
+    validated.push({
+      step,
+      template,
+      structureKey: structureKeyOf(digest, template),
+      family: step.family,
+      mappedFamily: isMappedFamily(step.family) ? step.family : null,
+      itemShape: item,
+    });
   });
   if (errors.any) return { ok: false, errors: errors.list };
 
@@ -759,9 +862,10 @@ export function validateLearnedProposal(
     const familyRules = spec.families[family];
     if (familyRules === undefined) continue;
     const fieldRules: Record<string, FieldRule> = { ...familyRules };
-    const feeding = validated.filter((v) => v.family === family).map((v) => v.itemShape);
+    const feeding = validated.filter((v) => v.mappedFamily === family).map((v) => v.itemShape);
     if (feeding.length === 0) {
-      errors.add(`mappingSpec.families.${family}`, 'family has no feeding step', 'V-L6');
+      if (mode === 'strict')
+        errors.add(`mappingSpec.families.${family}`, 'family has no feeding step', 'V-L6');
       continue;
     }
     const descriptions =
@@ -778,6 +882,7 @@ export function validateLearnedProposal(
           meta?.acceptsClasses ?? null,
           errors,
           'V-L6',
+          mode,
         ),
       );
     }
@@ -787,9 +892,12 @@ export function validateLearnedProposal(
       string,
       Record<string, unknown>,
     ][]) {
-      const feeding = validated.filter((v) => v.family === family).map((v) => v.itemShape);
+      // A rule family outside the spec is V-L7's refusal (registry), not a V-L6 path error.
+      if (!Object.prototype.hasOwnProperty.call(spec.families, family)) continue;
+      const feeding = validated.filter((v) => v.mappedFamily === family).map((v) => v.itemShape);
       if (feeding.length === 0) {
-        errors.add(`nativeRules.families.${family}`, 'family has no feeding step', 'V-L6');
+        if (mode === 'strict')
+          errors.add(`nativeRules.families.${family}`, 'family has no feeding step', 'V-L6');
         continue;
       }
       for (const [field, rule] of Object.entries(familyRules)) {
@@ -824,11 +932,12 @@ export function validateLearnedProposal(
                 null,
                 errors,
                 'V-L6',
+                mode,
               ),
             );
         } else {
           rulePaths(rule as NativeRule).forEach((path, j) =>
-            checkPathTarget(path, feeding, `${where}.paths[${j}]`, null, errors, 'V-L6'),
+            checkPathTarget(path, feeding, `${where}.paths[${j}]`, null, errors, 'V-L6', mode),
           );
         }
       }
@@ -884,15 +993,18 @@ export function validateLearnedProposal(
         'V-L10',
       );
   if (digest.round === 2 && context.round1StepKeys !== undefined) {
-    const keys = new Set(validated.map((v) => v.templateKey));
+    const keys = new Set(validated.map((v) => structureKeyString(v.structureKey)));
     for (const key of context.round1StepKeys)
       if (!keys.has(key))
-        errors.add('steps', 'round-2 proposal drops a round-1 step (template key)', 'V-L10');
+        errors.add('steps', 'round-2 proposal drops a round-1 step (structure key)', 'V-L10');
   }
   if (errors.any) return { ok: false, errors: errors.list };
 
   const unmapped = proposal.unmapped.map((u) =>
-    Object.freeze({ templateKey: templateKey(byRef.get(u.templateRef)!), reason: u.reason }),
+    Object.freeze({
+      structureKey: structureKeyOf(digest, byRef.get(u.templateRef)!),
+      reason: u.reason,
+    }),
   );
   return {
     ok: true,

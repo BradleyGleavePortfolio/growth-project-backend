@@ -1,7 +1,10 @@
 import {
   CREDENTIAL_SUBSTRINGS,
+  DEVICE_OBLIGATIONS,
   DEVICE_ONLY_KEY_REFUSALS,
+  HEADER_NAME_WORDS,
   KEY_MAX_BYTES,
+  PROTOTYPE_KEYS,
   STRUCTURAL_KEY_VOCABULARY,
   admissionRules,
   credentialNameRefusal,
@@ -9,6 +12,7 @@ import {
   isVocabularyKey,
   keyAdmissionRefusal,
   keyGrammarRefusal,
+  originTemplateRefusal,
   pathLiteralRefusal,
   queryKeyRefusal,
 } from '../../../src/scout/learn/admission';
@@ -142,10 +146,49 @@ describe('learn admission (r4 directives: keys, path literals, query keys, heade
     });
   });
 
+  describe('r2: A-01 identifier leakage paths and A-05 prototype names (fail-first on 3a684671)', () => {
+    it('refuses semantic identifiers as query keys and header names; admits vocabulary forms', () => {
+      expect(queryKeyRefusal('AliceSmith')).not.toBeNull();
+      expect(queryKeyRefusal('coach_alice')).not.toBeNull();
+      expect(queryKeyRefusal('campaign')).not.toBeNull();
+      for (const ok of ['page', 'per_page', 'after', 'cursor', 'status', 'filter[status]'])
+        expect({ key: ok, refusal: queryKeyRefusal(ok) }).toEqual({ key: ok, refusal: null });
+      expect(headerNameRefusal('X-Tenant-AliceSmith')).not.toBeNull();
+      expect(headerNameRefusal('x-coach')).not.toBeNull();
+      expect(headerNameRefusal('x-api-version')).toBeNull();
+      expect(headerNameRefusal('x-client-platform')).toBeNull();
+    });
+    it('origins are host templates under the slot rule: a hostname or tenant label never parses', () => {
+      for (const ok of [':d', 'api.:d', ':s1.:d', 'api.:s1.:d'])
+        expect({ t: ok, r: originTemplateRefusal(ok) }).toEqual({ t: ok, r: null });
+      for (const bad of [
+        'alice.example.com',
+        'alicesmith.:d',
+        'example.com',
+        'https://api.:d',
+        ':d/',
+        'api.:d.',
+        'acme-fitness.:d',
+      ])
+        expect(originTemplateRefusal(bad)).not.toBeNull();
+    });
+    it('refuses __proto__, constructor and prototype as keys', () => {
+      for (const k of PROTOTYPE_KEYS) {
+        expect(keyGrammarRefusal(k)).toMatch(/prototype/);
+        expect(keyAdmissionRefusal(k, new Set([k]))).not.toBeNull();
+      }
+    });
+  });
+
   it('exposes the rules as data with the grammar, the credential list and the device-only refusals; the fixture mirror matches', () => {
     const rules = admissionRules();
     expect(rules.deviceOnlyKeyRefusals).toEqual(DEVICE_ONLY_KEY_REFUSALS);
-    expect(rules.deviceOnlyKeyRefusals.some((r) => r.includes('captured value'))).toBe(true);
+    expect(rules.deviceOnlyKeyRefusals.some((r) => r.includes('captured string value'))).toBe(true);
+    // B4: next_url confinement and slot rebinding are contract data in the fixture mirror.
+    expect(rules.deviceObligations).toEqual(DEVICE_OBLIGATIONS);
+    expect(rules.deviceObligations.some((r) => r.includes('next_url'))).toBe(true);
+    expect(rules.headerNameWords).toEqual(HEADER_NAME_WORDS);
+    expect(rules.prototypeKeys).toEqual(PROTOTYPE_KEYS);
     expect(loadJson('admission-rules.json')).toEqual(JSON.parse(JSON.stringify(rules)));
     expect(rules.keyMaxBytes).toBe(KEY_MAX_BYTES);
     expect(rules.credentialSubstrings).toEqual(CREDENTIAL_SUBSTRINGS);

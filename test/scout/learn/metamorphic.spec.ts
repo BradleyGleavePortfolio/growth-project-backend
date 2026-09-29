@@ -1,9 +1,9 @@
 import { parseStructureDigest } from '../../../src/scout/learn/digest-contract';
-import { structureFingerprint } from '../../../src/scout/learn/fingerprint';
+import { reuseFingerprint } from '../../../src/scout/learn/fingerprint';
 import { buildLearnedPackage, packageDigest } from '../../../src/scout/learn/package';
-import { buildLearnPrompt } from '../../../src/scout/learn/prompt';
+
 import { parseLearnedProposal, validateLearnedProposal } from '../../../src/scout/learn/proposal';
-import { basicExample, parsedBasic } from './helpers';
+import { basicExample, parsedBasic, promptOf } from './helpers';
 
 /**
  * L14 (metamorphic, D-L0-8 "no vendor names"): a vendor/tenant word placed anywhere a site or a
@@ -47,7 +47,7 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
     renamedItem.corroborated = ['flag'];
     const renamedDigest = parseStructureDigest(renamed);
     if (!renamedDigest.ok) throw new Error(JSON.stringify(renamedDigest.errors));
-    expect(structureFingerprint(digest.value)).toBe(structureFingerprint(renamedDigest.value));
+    expect(reuseFingerprint(digest.value)).toBe(reuseFingerprint(renamedDigest.value));
     // the same proposal validates identically against both
     const proposal = parseLearnedProposal(basicExample().proposal);
     if (!proposal.ok) throw new Error('fixture');
@@ -57,16 +57,18 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
     });
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
-    expect(packageDigest(buildLearnedPackage(a.value))).toEqual(
-      packageDigest(buildLearnedPackage(b.value)),
-    );
+    // v2: an admitted key NAME is structure (it enters the step's keyPaths), so the two packages
+    // differ only there; everything else — steps, spec, rules, manifest — is identical.
+    const strip = (pkg: object) =>
+      JSON.parse(JSON.stringify(pkg), (k, v) => (k === 'keyPaths' ? undefined : v));
+    expect(strip(buildLearnedPackage(a.value))).toEqual(strip(buildLearnedPackage(b.value)));
     expect(packageDigest(buildLearnedPackage(a.value))).not.toEqual(
       packageDigest(buildLearnedPackage(base.validated)),
     );
     // the prompt differs only inside the untrusted block
     const nonce = 'c'.repeat(40);
-    const pa = buildLearnPrompt({ digest: digest.value, examples: [], nonce });
-    const pb = buildLearnPrompt({ digest: renamedDigest.value, examples: [], nonce });
+    const pa = promptOf({ digest: digest.value, examples: [], nonce });
+    const pb = promptOf({ digest: renamedDigest.value, examples: [], nonce });
     expect(pa.parts.slice(0, 5)).toEqual(pb.parts.slice(0, 5));
     expect(pa.contractHash).toBe(pb.contractHash);
     expect(pa.outputSchemaHash).toBe(pb.outputSchemaHash);
@@ -75,7 +77,6 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
   it('as the slug it is data: the fingerprint, contract hash and schema hash do not move; only slug-bearing fields do', () => {
     const base = parsedBasic();
     const d = basicExample().digest as Raw;
-    d.sourcePlatform = VENDOR;
     const p = basicExample().proposal as Raw;
     p.mappingSpec.sourcePlatform = VENDOR;
     p.nativeRules.sourcePlatform = VENDOR;
@@ -85,7 +86,7 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
     const validated = validateLearnedProposal(proposal.value, digest.value, { slug: VENDOR });
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
-    expect(structureFingerprint(digest.value)).toBe(structureFingerprint(base.digest));
+    expect(reuseFingerprint(digest.value)).toBe(reuseFingerprint(base.digest));
     const pkg = buildLearnedPackage(validated.value);
     const basePkg = buildLearnedPackage(base.validated);
     expect({ ...pkg, sourcePlatform: 0, mappingSpec: 0, nativeRules: 0, manifest: 0 }).toEqual({
@@ -96,6 +97,8 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
       manifest: 0,
     });
     expect(JSON.stringify(pkg).split(VENDOR).length - 1).toBe(4);
+    // and the slug never enters the prompt (r5: not a digest field)
+    expect(promptOf({ digest: d, examples: [], nonce: 'd'.repeat(40) }).text).not.toContain(VENDOR);
     // and the slug is refused wherever it is not the run's slug
     expect(
       validateLearnedProposal(proposal.value, digest.value, { slug: 'example_alpha' }).ok,
@@ -105,6 +108,7 @@ describe('metamorphic: a vendor word cannot change core behaviour except via dat
   it('as an entityType, collectAs or rationale word it is plain data', () => {
     const p = basicExample().proposal as Raw;
     p.steps[0].entityType = VENDOR;
+    p.steps[1].parentEdge.toStep = VENDOR;
     p.mappingSpec.steps = { [VENDOR]: 'clients', routines: 'workouts' };
     p.rationale = `${VENDOR} roster and routines`;
     const digest = parseStructureDigest(basicExample().digest);
