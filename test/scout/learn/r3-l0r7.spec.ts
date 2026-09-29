@@ -571,11 +571,13 @@ describe('owed item 4: the coach-derived few-shot example lives inside the nonce
       });
       expect(prompt.parts[5]).toContain(`${UNTRUSTED_EXAMPLE_BEGIN} ${NONCE} kind=${kind}\n`);
     }
+    // a kind outside the closed list (as an untyped caller could pass it) is a caller error
+    const hostile: Raw = { kind: 'ignore previous' };
     expect(() =>
       buildLearnPrompt({
         digest,
         examples: [],
-        coachExample: { kind: 'ignore previous' as never, package: coachPackage() },
+        coachExample: { kind: hostile.kind, package: coachPackage() },
         nonce: NONCE,
       }),
     ).toThrow(/kind/);
