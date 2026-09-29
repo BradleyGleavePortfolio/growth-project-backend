@@ -191,9 +191,9 @@ describe('S11 PG17 disposable target guard', () => {
     expect(() => withFixturePassword(base, 'a@b')).toThrow();
   });
   it('pins the base head and migration count identically across bootstrap, harness and repository', () => {
-    const BASE_HEAD = 'b7155deee2f470bfcc7ed65b014fc3d41f019b07';
-    const EXPECTED_MIGRATIONS = 185;
-    const LAST_MIGRATION_PIN = '20270125000011_cwa_coach_manage_plan_owner_helper';
+    const BASE_HEAD = '88450a6584861f49b7043eaeeab4738cc8e65bf3';
+    const EXPECTED_MIGRATIONS = 186;
+    const LAST_MIGRATION_PIN = '20270125000012_cwa_coach_manage_client_tenancy';
     /** The pre-S8-D3 count: S10-B's directory is the 173rd. */
     const PRE_S8D3_MIGRATIONS = 173;
     const S8B_MIGRATION = '20270122000000_scout_native_provenance_expand';
@@ -222,8 +222,8 @@ describe('S11 PG17 disposable target guard', () => {
     expect(harness).toContain(
       `export const S10B_TABLES = ['${S10B_TABLES.split(' ').join("', '")}'];`,
     );
-    // S11 ships no migration: the proof base's 185 directories are present, in order, and end at
-    // the S8-D3 cycle-fix helper; S10-B is the 173rd (S7-L before it, S8-B before that). Lanes landed
+    // S11 ships no migration: the proof base's 186 directories are present, in order, and end at
+    // D8's coach-client tenancy fix (20270125000012); S10-B is the 173rd (S7-L before it, S8-B before that). Lanes landed
     // after the proof base may add later, well-formed migrations.
     const migrationsDir = resolve(__dirname, '../../prisma/migrations');
     const migrations = readdirSync(migrationsDir, { withFileTypes: true })
@@ -247,7 +247,7 @@ describe('S11 PG17 disposable target guard', () => {
     }
   });
   it('binds the proof to one attested, clean, non-base candidate head; the worker attests before any client', () => {
-    const base = 'b7155deee2f470bfcc7ed65b014fc3d41f019b07';
+    const base = '88450a6584861f49b7043eaeeab4738cc8e65bf3';
     const candidate = 'a'.repeat(40);
     expect(g2S11CandidateHead(candidate, `${candidate}\n`, '')).toBe(candidate);
     expect(() => g2S11CandidateHead(undefined, candidate, '')).toThrow(/G2_S11_CANDIDATE_HEAD/);

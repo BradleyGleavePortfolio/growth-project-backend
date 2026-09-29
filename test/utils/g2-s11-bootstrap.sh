@@ -3,8 +3,8 @@
 # derived by literal substitution from the landed S9-C bootstrap test/utils/g2-s9c-bootstrap.sh
 # (as landed at 92b96715, unchanged) for the S11-only disposable cluster/database; only the lane
 # descriptor and base pin differ. S11-A1 ships NO migration: the candidate's prisma tree must be
-# byte-identical to the base (re-pinned with PR #587 to its S8-D3 schema commit; previously 711c1f8f,
-# the landed S10-B prisma tree), so there is no OLD side here. The full accepted history (185
+# byte-identical to the base (re-pinned with PR #593 to its D8 tenancy commit; previously b7155dee (#587) and 711c1f8f,
+# the landed S10-B prisma tree), so there is no OLD side here. The full accepted history (186
 # migrations, S8-B, S7-L, S10-B and the twelve S8-D3 directories included) is installed from the
 # CANDIDATE root through the real release mechanism (`prisma migrate deploy`), and the S11 specs then
 # drive the candidate journey (real pairing, lifecycle, ingest, progress, settle and read services,
@@ -27,15 +27,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Base pin (kept identical in test/utils/g2-s11-pg-harness.ts and test/utils/g2-s11-db-guard.spec.ts).
-BASE_HEAD=b7155deee2f470bfcc7ed65b014fc3d41f019b07
+BASE_HEAD=88450a6584861f49b7043eaeeab4738cc8e65bf3
 S8B_MIGRATION=20270122000000_scout_native_provenance_expand
 S7L_MIGRATION=20270123000000_scout_run_lifecycle_expand
 S10B_MIGRATION=20270124000000_scout_run_observation_expand
 # 172 accepted migrations through S8-B and S7-L plus S10-B = 173, plus the twelve S8-D3 directories
-# (20270125000000..11, PR #587) = 185 tracked by the base (the last directory is S8-D3's cycle-fix
-# helper); S11-A1 adds none. Re-pinned with #587 (docs/decisions/2026-09-26-s8d-person-link.md §6).
-EXPECTED_MIGRATIONS=185
-LAST_MIGRATION_PIN=20270125000011_cwa_coach_manage_plan_owner_helper
+# (20270125000000..12, PRs #587 + #593) = 186 tracked by the base (the last directory is D8's
+# coach-client tenancy fix); S11-A1 adds none. Re-pinned with #593 (decision record §6).
+EXPECTED_MIGRATIONS=186
+LAST_MIGRATION_PIN=20270125000012_cwa_coach_manage_client_tenancy
 S10B_TABLES="ScoutRunDeclaration ScoutRunObservation ScoutRunSettledBasis"
 EXPECTED_VERSION="${G2_S11_SERVER_VERSION:-170006}"
 # Distinctive S11 fixture markers: pinned literals, never read from the environment (see
@@ -150,7 +150,7 @@ psql_db -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXI
 fi # MODE=bootstrap steps 1-3
 
 # 4. Candidate source: S11-A1 ships no migration. The prisma tree (schema + migrations) must be
-#    byte-identical to the base and track exactly the accepted 185 directories, S8-B, S7-L, S10-B and
+#    byte-identical to the base and track exactly the accepted 186 directories, S8-B, S7-L, S10-B and
 #    the twelve S8-D3 directories included, with S8-D3's last as the last (sorted) directory.
 git -C "$ROOT" cat-file -e "$BASE_HEAD^{commit}" || { echo "base $BASE_HEAD unknown in $ROOT" >&2; exit 4; }
 [[ -z "$(git -C "$ROOT" diff --name-only "$BASE_HEAD" HEAD -- prisma)" ]] \
