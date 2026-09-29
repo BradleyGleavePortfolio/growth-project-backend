@@ -29,6 +29,19 @@
  *   F. The five new tables: RLS enabled + forced, service_role permissive + RESTRICTIVE deny-all
  *      policies present, API-role privileges revoked, and a direct authenticated read is refused.
  *
+ * Harness notes (orchestrator decision 2026-09-29, fix round 1 of PR #587 — correctness fixes, not
+ * weakening; every other assertion is unchanged):
+ *   - Parent DELETE cells on WorkoutSession / Habit: the fixtures carry a child row (ExerciseSet /
+ *     HabitLog) and both child FKs are ON DELETE RESTRICT (baseline migration), so an ADMITTED parent
+ *     delete ends in 23503 instead of a row count and the cell cannot tell "policy admitted the row"
+ *     from a refusal. Those cells first remove the child rows as the BYPASSRLS connection owner inside
+ *     the same rolled-back transaction (before SET LOCAL ROLE), then run the DELETE as the principal:
+ *     the cell measures the parent's DELETE policy alone. The child tables' own policies are measured
+ *     in their own rows of the matrix.
+ *   - 23505 assertions: Prisma surfaces PostgreSQL's DETAIL line for unique violations (the violated
+ *     key columns and values), never the index name. The constraint is identified by its key columns
+ *     AND by its definition read from pg_indexes, which is at least as strict as a name match.
+ *
  * Principals are Postgres roles + the GUCs the helpers read (app.current_user_id /
  * app.current_user_role) and, for the auth.uid()-keyed assignment policies, request.jwt.claim.sub
  * (Supabase's classic auth.uid() reads that claim; the CI bootstrap stub returns NULL, so this spec
@@ -82,11 +95,14 @@ async function attempt(
   p: Principal,
   stmt: string,
   mode: 'count' | 'exec' = 'exec',
+  /** Run BEFORE `SET LOCAL ROLE`, as the BYPASSRLS connection owner, in the same rolled-back transaction. */
+  bypassSetup: string[] = [],
 ): Promise<Outcome> {
   let out: Outcome = { ok: false, sqlstate: 'NORUN', message: 'did not run' };
   try {
     await prisma.$transaction(
       async (tx) => {
+        for (const s of bypassSetup) await tx.$executeRawUnsafe(s);
         await tx.$executeRawUnsafe(`SET LOCAL ROLE ${p.role}`);
         await tx.$executeRawUnsafe(
           `SELECT set_config('app.current_user_id', ${lit(p.userId ?? '')}, true)`,
@@ -178,6 +194,8 @@ const users = {
 };
 const PERSON = id('person');
 const PLAN = id('plan');
+/** A plan owned by coach B: proves coach A cannot assign a plan that is not theirs. */
+const PLAN_B = id('plan-b');
 const ROWS = {
   ws: { user: id('ws-user'), person: id('ws-person') },
   es: { user: id('es-user'), person: id('es-person') },
@@ -249,6 +267,11 @@ type TableCase = {
   insertPersonOwned: string;
   /** Principals expected to be allowed that insert (owner exception only). */
   insertPersonAllow: string[];
+  /**
+   * Parents with ON DELETE RESTRICT children: removes the fixture child rows of `rowId`; run as the
+   * BYPASSRLS owner before the principal's DELETE (see header) so the cell measures the parent policy.
+   */
+  childDelete?: (rowId: string) => string;
 };
 
 const NONE: string[] = [];
@@ -263,6 +286,7 @@ const TABLES: TableCase[] = [
     personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."WorkoutSession" ("id","person_id","date","workout_name","workout_type") VALUES (${lit(id('ws-new'))}, ${lit(PERSON)}, DATE '2024-01-03', 'w', 't')`,
     insertPersonAllow: NONE,
+    childDelete: (rowId) => `DELETE FROM public."ExerciseSet" WHERE "workout_id" = ${lit(rowId)}`,
   },
   {
     table: 'ExerciseSet',
@@ -291,6 +315,7 @@ const TABLES: TableCase[] = [
     personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."Habit" ("id","person_id","name") VALUES (${lit(id('habit-new'))}, ${lit(PERSON)}, 'h')`,
     insertPersonAllow: NONE,
+    childDelete: (rowId) => `DELETE FROM public."HabitLog" WHERE "habit_id" = ${lit(rowId)}`,
   },
   {
     table: 'HabitLog',
@@ -414,7 +439,9 @@ async function insertFixtures(): Promise<void> {
     `INSERT INTO public."Person" ("id","coach_id","source_platform","source_person_id","display_name") VALUES (${lit(PERSON)}, ${lit(users.coachA.id)}, 'fixture', ${lit(id('src'))}, 'Imported Fixture')`,
   );
   await prisma.$executeRawUnsafe(
-    `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES (${lit(PLAN)}, ${lit(users.coachA.id)}, 'plan', 'strength', now())`,
+    `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES
+      (${lit(PLAN)}, ${lit(users.coachA.id)}, 'plan', 'strength', now()),
+      (${lit(PLAN_B)}, ${lit(users.coachB.id)}, 'plan-b', 'strength', now())`,
   );
   // Five parents: one user-owned (S1) and one person-owned (P) row each; CheckIn rows name coach A.
   await prisma.$executeRawUnsafe(
@@ -475,7 +502,7 @@ async function removeFixtures(): Promise<void> {
   await del('WeightLog', 'id', [ROWS.wl.user, ROWS.wl.person]);
   await del('ExerciseSet', 'id', [ROWS.es.user, ROWS.es.person]);
   await del('WorkoutSession', 'id', [ROWS.ws.user, ROWS.ws.person]);
-  await del('WorkoutPlan', 'id', [PLAN]);
+  await del('WorkoutPlan', 'id', [PLAN, PLAN_B]);
   await del('Person', 'id', [PERSON]);
   await del(
     'User',
@@ -520,7 +547,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
 
   // ── Schema facts ──────────────────────────────────────────────────────────────────────────
   describe('schema (all eleven S8-D3 directories applied; constraints validated; policies guarded)', () => {
-    it('records the eleven S8-D3 migrations as applied', async () => {
+    it('records the eleven S8-D3 migrations and the CWA policy-cycle fix as applied', async () => {
       const rows = await q<{ migration_name: string }>(
         `SELECT migration_name FROM "_prisma_migrations" WHERE migration_name LIKE '20270125%' AND finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY 1`,
       );
@@ -536,6 +563,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         '20270125000008_scout_person_owned_index_provenance',
         '20270125000009_scout_person_owned_keys',
         '20270125000010_scout_person_owned_validate',
+        '20270125000011_cwa_coach_manage_plan_owner_helper',
       ]);
     });
 
@@ -640,9 +668,11 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
                 ? `UPDATE public."${c.table}" ${c.set} WHERE "id" = ${lit(rowId)}`
                 : `DELETE FROM public."${c.table}" WHERE "id" = ${lit(rowId)}`;
           const mode = verb === 'select' ? 'count' : 'exec';
+          const setup = (rowId: string) =>
+            verb === 'delete' && c.childDelete ? [c.childDelete(rowId)] : [];
 
           it(`${c.table} / ${p.label} / ${verb} / USER-owned row → ${c.userAllow[verb].includes(key) ? 'allow' : 'deny'}`, async () => {
-            const out = await attempt(p, stmt(c.rows.user), mode);
+            const out = await attempt(p, stmt(c.rows.user), mode, setup(c.rows.user));
             const expected = c.userAllow[verb].includes(key) ? 1 : 0;
             expect({ table: c.table, principal: p.label, verb, out }).toEqual({
               table: c.table,
@@ -653,7 +683,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
           });
 
           it(`${c.table} / ${p.label} / ${verb} / PERSON-owned row → ${c.personAllow[verb].includes(key) ? 'allow (stated owner exception)' : 'deny'}`, async () => {
-            const out = await attempt(p, stmt(c.rows.person), mode);
+            const out = await attempt(p, stmt(c.rows.person), mode, setup(c.rows.person));
             const expected = c.personAllow[verb].includes(key) ? 1 : 0;
             expect({ table: c.table, principal: p.label, verb, out }).toEqual({
               table: c.table,
@@ -714,6 +744,141 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         });
       }
     }
+  });
+
+  // ── 20270125000011: the WorkoutPlan <-> ClientWorkoutAssignment policy cycle is broken ───────
+  describe('ClientWorkoutAssignment coach-manage write path (20270125000011 breaks the base policy cycle)', () => {
+    const CWA = 'ClientWorkoutAssignment';
+    const insertCwa = (planId: string, clientId: string, assignedBy: string) =>
+      `INSERT INTO public."${CWA}" ("id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-x'))}, ${lit(planId)}, ${lit(clientId)}, ${lit(assignedBy)}, TIMESTAMP '2024-01-05 00:00:00')`;
+    const DENY = { ok: false, sqlstate: '42501', message: expect.any(String) };
+
+    it('the helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and the WITH CHECK uses it instead of an inline WorkoutPlan read', async () => {
+      const fn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
+        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_owns_workout_plan(text)')`,
+      );
+      expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
+      const pub = await q<{ ok: boolean }>(
+        `SELECT has_function_privilege('public', 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
+      );
+      expect(pub).toEqual([{ ok: false }]);
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        const r = await q<{ ok: boolean }>(
+          `SELECT has_function_privilege(${lit(role)}, 'app.current_user_owns_workout_plan(text)', 'EXECUTE') AS ok`,
+        );
+        expect({ role, ...r[0] }).toEqual({ role, ok: true });
+      }
+      const pol = await q<{ qual: string; with_check: string }>(
+        `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
+      );
+      expect(pol).toHaveLength(1);
+      expect(pol[0].with_check).toMatch(/app\.current_user_owns_workout_plan\(workout_plan_id\)/);
+      expect(pol[0].with_check).not.toMatch(/"WorkoutPlan"/);
+      expect(pol[0].qual).not.toMatch(/"WorkoutPlan"/);
+      // The other direction of the former cycle is untouched: WorkoutPlan's client read still
+      // consults ClientWorkoutAssignment (its intent), and WorkoutPlan reads do not recurse.
+      const wp = await q<{ qual: string }>(
+        `SELECT qual FROM pg_policies WHERE schemaname = 'public' AND tablename = 'WorkoutPlan' AND policyname = 'client_read_assigned_plans'`,
+      );
+      expect(wp[0].qual).toMatch(/"ClientWorkoutAssignment"/);
+      const planRead = await attempt(
+        P.s1,
+        `SELECT count(*)::bigint AS n FROM public."WorkoutPlan" WHERE "id" = ${lit(PLAN)}`,
+        'count',
+      );
+      expect(planRead).toEqual({ ok: true, count: 1 });
+    });
+
+    it('no principal sees 42P17 on a ClientWorkoutAssignment write any more (the base defect)', async () => {
+      for (const p of Object.values(P)) {
+        const upd = await attempt(
+          p,
+          `UPDATE public."${CWA}" SET "post_notes" = 'x' WHERE "id" = 'no-such-row'`,
+        );
+        expect({ principal: p.label, upd }).toEqual({
+          principal: p.label,
+          upd: { ok: true, count: 0 },
+        });
+        const ins = await attempt(p, insertCwa(PLAN, users.s1.id, users.coachA.id));
+        expect({ principal: p.label, sqlstate: ins.ok ? 'ok' : ins.sqlstate }).not.toEqual({
+          principal: p.label,
+          sqlstate: '42P17',
+        });
+      }
+    });
+
+    it('coach A can assign their OWN plan to their client (the designed coach-manage branch now works)', async () => {
+      const ins = await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachA.id));
+      expect(ins).toEqual({ ok: true, count: 1 });
+      const upd = await attempt(
+        P.coachA,
+        `UPDATE public."${CWA}" SET "post_notes" = 'x' WHERE "id" = ${lit(ROWS.cwa.user)}`,
+      );
+      expect(upd).toEqual({ ok: true, count: 1 });
+    });
+
+    it("coach A cannot assign coach B's plan (plan ownership, WITH CHECK 42501)", async () => {
+      expect(await attempt(P.coachA, insertCwa(PLAN_B, users.s1.id, users.coachA.id))).toEqual(
+        DENY,
+      );
+      // ... nor re-point an existing own assignment at coach B's plan.
+      expect(
+        await attempt(
+          P.coachA,
+          `UPDATE public."${CWA}" SET "workout_plan_id" = ${lit(PLAN_B)} WHERE "id" = ${lit(ROWS.cwa.user)}`,
+        ),
+      ).toEqual(DENY);
+    });
+
+    it("coach A cannot forge assigned_by as coach B, and coach B cannot write on coach A's plan", async () => {
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(P.coachB, insertCwa(PLAN, users.s3.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual({
+        ok: true,
+        count: 1,
+      });
+    });
+
+    it('clients, same-coach students, unrelated students and anon cannot write ClientWorkoutAssignment at all', async () => {
+      for (const key of ['s1', 's2', 's3', 'anon'] as const) {
+        const p = P[key];
+        // Even naming themselves as the assigner on their own coach's plan (the IDOR 20260702 closed).
+        const ins = await attempt(p, insertCwa(PLAN, users.s1.id, p.userId ?? users.s1.id));
+        expect({ principal: p.label, ins }).toEqual({ principal: p.label, ins: DENY });
+        const upd = await attempt(
+          p,
+          `UPDATE public."${CWA}" SET "post_notes" = 'x' WHERE "id" = ${lit(ROWS.cwa.user)}`,
+        );
+        expect({ principal: p.label, upd }).toEqual({
+          principal: p.label,
+          upd: { ok: true, count: 0 },
+        });
+      }
+    });
+
+    it('person-owned (unlinked Person) assignments stay service-role only: no principal can insert, update or flip one', async () => {
+      for (const p of Object.values(P)) {
+        const ins = await attempt(
+          p,
+          `INSERT INTO public."${CWA}" ("id","workout_plan_id","person_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-x'))}, ${lit(PLAN)}, ${lit(PERSON)}, ${lit(users.coachA.id)}, TIMESTAMP '2024-01-05 00:00:00')`,
+        );
+        expect({ principal: p.label, ins }).toEqual({ principal: p.label, ins: DENY });
+        const upd = await attempt(
+          p,
+          `UPDATE public."${CWA}" SET "post_notes" = 'x' WHERE "id" = ${lit(ROWS.cwa.person)}`,
+        );
+        expect({ principal: p.label, upd }).toEqual({
+          principal: p.label,
+          upd: { ok: true, count: 0 },
+        });
+        const flip = await attempt(
+          p,
+          `UPDATE public."${CWA}" SET "client_id" = NULL, "person_id" = ${lit(PERSON)} WHERE "id" = ${lit(ROWS.cwa.user)}`,
+        );
+        const denied = (flip.ok && flip.count === 0) || (!flip.ok && flip.sqlstate === '42501');
+        expect({ principal: p.label, flip, denied }).toMatchObject({ denied: true });
+      }
+    });
   });
 
   // ── Constraints, proved as a BYPASSRLS principal (the policy is not what refuses) ─────────
@@ -785,13 +950,37 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     });
 
     it('CheckIn: one person-owned check-in per Person per day (partial unique, 23505)', async () => {
+      // The partial unique index is the only unique index over (person_id, date) (header, harness notes).
+      const idx = await q<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'CheckIn' AND indexname = 'CheckIn_person_id_date_key'`,
+      );
+      expect(idx).toEqual([
+        {
+          indexdef: `CREATE UNIQUE INDEX "CheckIn_person_id_date_key" ON public."CheckIn" USING btree (person_id, date) WHERE (person_id IS NOT NULL)`,
+        },
+      ]);
       const out = await asAdmin(
         `INSERT INTO public."CheckIn" ("id","user_id","person_id","coach_id","date","soreness") VALUES (${lit(id('x'))}, NULL, ${lit(PERSON)}, ${lit(users.coachA.id)}, DATE '2024-01-02', 1)`,
       );
+      // Prisma surfaces the DETAIL line (violated key columns + values); the (user_id, date) key would
+      // report `Key (user_id, date)`.
       expect(out).toEqual({
         ok: false,
         sqlstate: '23505',
-        message: expect.stringContaining('CheckIn_person_id_date_key'),
+        message: expect.stringContaining(
+          `Key (person_id, date)=(${PERSON}, 2024-01-02) already exists`,
+        ),
+      });
+      // The pre-existing (user_id, date) key still governs user-owned rows, unchanged.
+      const userDup = await asAdmin(
+        `INSERT INTO public."CheckIn" ("id","user_id","person_id","coach_id","date","soreness") VALUES (${lit(id('x'))}, ${lit(users.s1.id)}, NULL, ${lit(users.coachA.id)}, DATE '2024-01-01', 1)`,
+      );
+      expect(userDup).toEqual({
+        ok: false,
+        sqlstate: '23505',
+        message: expect.stringContaining(
+          `Key (user_id, date)=(${users.s1.id}, 2024-01-01) already exists`,
+        ),
       });
     });
 
@@ -815,7 +1004,10 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       ) =>
         `INSERT INTO public."PersonLink" ("id","coach_id","person_id","user_id","path","invite_id","challenge_id","verified_channel","verified_contact_digest","client_confirmed_at","coach_confirmed_at","coach_confirmed_by_user_id","linked_at","undo_deadline_at","records_moved") VALUES (${lit(linkId)}, ${lit(coach)}, ${lit(person)}, ${lit(user)}, 'invite', ${lit(inviteId)}, ${lit(challengeId)}, 'email', 'd', now(), now(), ${lit(coach)}, TIMESTAMP '2024-03-01 00:00:00', ${deadline}, '{}'::jsonb)`;
 
-      const run = async (tail: string): Promise<Outcome> => {
+      /** Leading statements are fixture setup (must succeed); the LAST argument is the probed statement. */
+      const run = async (...stmts: string[]): Promise<Outcome> => {
+        const tail = stmts[stmts.length - 1];
+        const pre = stmts.slice(0, -1);
         let out: Outcome = { ok: false, sqlstate: 'NORUN', message: '' };
         try {
           await prisma.$transaction(
@@ -834,6 +1026,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
                   `TIMESTAMP '2024-03-31 00:00:00'`,
                 ),
               );
+              for (const s of pre) await tx.$executeRawUnsafe(s);
               try {
                 out = { ok: true, count: await tx.$executeRawUnsafe(tail) };
               } catch (e) {
@@ -877,17 +1070,55 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
           `TIMESTAMP '2024-03-31 00:00:00'`,
         ),
       );
+      // 23505 carries the DETAIL line (violated key), not the index name: `(person_id)` alone is the
+      // active-per-Person partial unique; the (coach_id, user_id) key names both columns.
       expect(secondActiveForPerson).toEqual({
         ok: false,
         sqlstate: '23505',
-        message: expect.stringContaining('PersonLink_active_person_key'),
+        message: expect.stringContaining(`Key (person_id)=(${PERSON}) already exists`),
+      });
+      const activeIdx = await q<{ indexname: string; indexdef: string }>(
+        `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'PersonLink' AND indexname IN ('PersonLink_active_person_key', 'PersonLink_active_coach_user_key') ORDER BY indexname`,
+      );
+      expect(activeIdx).toEqual([
+        {
+          indexname: 'PersonLink_active_coach_user_key',
+          indexdef: `CREATE UNIQUE INDEX "PersonLink_active_coach_user_key" ON public."PersonLink" USING btree (coach_id, user_id) WHERE ((linked_at IS NOT NULL) AND (unlinked_at IS NULL))`,
+        },
+        {
+          indexname: 'PersonLink_active_person_key',
+          indexdef: `CREATE UNIQUE INDEX "PersonLink_active_person_key" ON public."PersonLink" USING btree (person_id) WHERE ((linked_at IS NOT NULL) AND (unlinked_at IS NULL))`,
+        },
+      ]);
+
+      // Same account, a second Person of the same coach → the (coach_id, user_id) active key (L6).
+      const secondActiveForUser = await run(
+        `INSERT INTO public."Person" ("id","coach_id","source_platform","source_person_id","display_name") VALUES (${lit(id('person-2'))}, ${lit(users.coachA.id)}, 'fixture', ${lit(id('src-2'))}, 'Second Fixture')`,
+        linkSql(
+          id('link-2'),
+          users.coachA.id,
+          id('person-2'),
+          users.s1.id,
+          `TIMESTAMP '2024-03-31 00:00:00'`,
+        ),
+      );
+      expect(secondActiveForUser).toEqual({
+        ok: false,
+        sqlstate: '23505',
+        message: expect.stringContaining(
+          `Key (coach_id, user_id)=(${users.coachA.id}, ${users.s1.id}) already exists`,
+        ),
       });
 
+      // Composite tenant FK: a link naming coach B for a Person that belongs to coach A. Probed on a
+      // Person with NO active link (PERSON already holds link1, whose active-person key would fire
+      // first, 23505), so the FK is the only constraint that can refuse.
       const wrongTenant = await run(
+        `INSERT INTO public."Person" ("id","coach_id","source_platform","source_person_id","display_name") VALUES (${lit(id('person-2'))}, ${lit(users.coachA.id)}, 'fixture', ${lit(id('src-2'))}, 'Second Fixture')`,
         linkSql(
           id('link-2'),
           users.coachB.id,
-          PERSON,
+          id('person-2'),
           users.s3.id,
           `TIMESTAMP '2024-03-31 00:00:00'`,
         ),
