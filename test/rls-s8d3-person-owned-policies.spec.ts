@@ -931,7 +931,15 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       );
       expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
       // ACL as the MIGRATION left it (captured before the harness's blanket grant; R593-c7B-05).
+      // D8 round 3 (R593-c7A2-02): the two-id worker is service_role-only; the API roles reach it
+      // through the caller-bound app.caller_owns_workout_plan(text), which carries their grant.
       expect(migrationAcl['app.actor_owns_workout_plan(text, text)']).toEqual({
+        public: false,
+        anon: false,
+        authenticated: false,
+        service_role: true,
+      });
+      expect(migrationAcl['app.caller_owns_workout_plan(text)']).toEqual({
         public: false,
         anon: true,
         authenticated: true,
@@ -941,9 +949,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
       );
       expect(pol).toHaveLength(1);
-      expect(pol[0].with_check).toMatch(
-        /app\.actor_owns_workout_plan\(app\.rls_actor_id\(\), workout_plan_id\)/,
-      );
+      expect(pol[0].with_check).toMatch(/app\.caller_owns_workout_plan\(workout_plan_id\)/);
       expect(pol[0].with_check).not.toMatch(/"WorkoutPlan"/);
       expect(pol[0].qual).not.toMatch(/"WorkoutPlan"/);
       // The other direction of the former cycle is untouched: WorkoutPlan's client read still
