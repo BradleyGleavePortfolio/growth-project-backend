@@ -47,10 +47,22 @@
  * (Supabase's classic auth.uid() reads that claim; the CI bootstrap stub returns NULL, so this spec
  * installs the claim-reading form on the disposable database — test environment only).
  *
+ * D8 (owner decision 2026-09-29; migration 20270125000012, stacked on #587): `assignment_coach_manage`
+ * now applies the application's coach-client tenancy rule (WorkoutBuilderService.assertCanAccessClient:
+ * client.coach_id = caller, OR caller is a sub-coach with an OPEN SubCoachAssignment to that live
+ * student) in BOTH USING and WITH CHECK. The block "D8 — coach-client tenancy" below proves the
+ * positive paths (head coach, owner-as-coach, sub-coach with open delegation), the negative paths
+ * (cross-tenant INSERT, UPDATE re-pointing client_id, SELECT, DELETE; closed delegation; non-student
+ * target) and that the composed policy still never recurses (42P17). One pre-D8 assertion in the
+ * 20270125000011 block flipped from allow to deny: coach B assigning their own plan to coach A's
+ * client — that was the gap D8 closes.
+ *
  * Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL. Skipped when neither is set (the
  * default jest lane never selects this file); HARD-FAILS when set but unreachable.
  */
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
 
 const TEST_DB_URL = process.env.S8D3_RLS_TEST_DATABASE_URL || process.env.TEST_DATABASE_URL || '';
@@ -191,11 +203,25 @@ const users = {
   s1: { id: id('student-1'), supabase: randomUUID(), role: 'student', coach_id: id('coach-a') },
   s2: { id: id('student-2'), supabase: randomUUID(), role: 'student', coach_id: id('coach-a') },
   s3: { id: id('student-3'), supabase: randomUUID(), role: 'student', coach_id: id('coach-b') },
+  // D8 fixtures. Sub-coach SC is on coach A's team (role coach, coach_id = A) exactly as
+  // SubCoachScopeService defines a sub-coach; S4 is the owner user's own client (owner-as-coach).
+  subCoach: {
+    id: id('sub-coach'),
+    supabase: randomUUID(),
+    role: 'coach',
+    coach_id: id('coach-a') as string | null,
+  },
+  s4: { id: id('student-4'), supabase: randomUUID(), role: 'student', coach_id: id('owner') },
 };
 const PERSON = id('person');
 const PLAN = id('plan');
 /** A plan owned by coach B: proves coach A cannot assign a plan that is not theirs. */
 const PLAN_B = id('plan-b');
+/** D8: a plan owned by the sub-coach, and one owned by the owner user. */
+const PLAN_SC = id('plan-sc');
+const PLAN_O = id('plan-o');
+/** D8: SubCoachAssignment rows — SC -> S1 OPEN; SC -> S2 CLOSED (unassigned_at set). */
+const SCA = { open: id('sca-open'), closed: id('sca-closed') };
 const ROWS = {
   ws: { user: id('ws-user'), person: id('ws-person') },
   es: { user: id('es-user'), person: id('es-person') },
@@ -203,7 +229,15 @@ const ROWS = {
   habit: { user: id('habit-user'), person: id('habit-person') },
   hl: { user: id('hl-user'), person: id('hl-person') },
   ci: { user: id('ci-user'), person: id('ci-person') },
-  cwa: { user: id('cwa-user'), person: id('cwa-person'), personBare: id('cwa-person-bare') },
+  cwa: {
+    user: id('cwa-user'),
+    person: id('cwa-person'),
+    personBare: id('cwa-person-bare'),
+    /** D8: assigned by the sub-coach (own plan) to S1, whom SC holds an open delegation for. */
+    subOwn: id('cwa-sub-own'),
+    /** D8: a pre-D8 cross-tenant row — assigned by coach B (own plan) to coach A's client S1. */
+    crossTenant: id('cwa-cross-tenant'),
+  },
   snap: { user: id('snap-user'), person: id('snap-person') },
 };
 
@@ -441,7 +475,15 @@ async function insertFixtures(): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES
       (${lit(PLAN)}, ${lit(users.coachA.id)}, 'plan', 'strength', now()),
-      (${lit(PLAN_B)}, ${lit(users.coachB.id)}, 'plan-b', 'strength', now())`,
+      (${lit(PLAN_B)}, ${lit(users.coachB.id)}, 'plan-b', 'strength', now()),
+      (${lit(PLAN_SC)}, ${lit(users.subCoach.id)}, 'plan-sc', 'strength', now()),
+      (${lit(PLAN_O)}, ${lit(users.owner.id)}, 'plan-o', 'strength', now())`,
+  );
+  // D8: sub-coach delegations — one open (S1), one closed (S2).
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO public."SubCoachAssignment" ("id","head_coach_id","sub_coach_id","client_id","assigned_at","unassigned_at") VALUES
+      (${lit(SCA.open)}, ${lit(users.coachA.id)}, ${lit(users.subCoach.id)}, ${lit(users.s1.id)}, now(), NULL),
+      (${lit(SCA.closed)}, ${lit(users.coachA.id)}, ${lit(users.subCoach.id)}, ${lit(users.s2.id)}, now() - interval '2 days', now() - interval '1 day')`,
   );
   // Five parents: one user-owned (S1) and one person-owned (P) row each; CheckIn rows name coach A.
   await prisma.$executeRawUnsafe(
@@ -478,7 +520,9 @@ async function insertFixtures(): Promise<void> {
     `INSERT INTO public."ClientWorkoutAssignment" ("id","workout_plan_id","client_id","person_id","assigned_by_coach_id","scheduled_for") VALUES
       (${lit(ROWS.cwa.user)}, ${lit(PLAN)}, ${lit(users.s1.id)}, NULL, ${lit(users.coachA.id)}, TIMESTAMP '2024-01-01 00:00:00'),
       (${lit(ROWS.cwa.person)}, ${lit(PLAN)}, NULL, ${lit(PERSON)}, ${lit(users.coachA.id)}, TIMESTAMP '2024-01-02 00:00:00'),
-      (${lit(ROWS.cwa.personBare)}, ${lit(PLAN)}, NULL, ${lit(PERSON)}, ${lit(users.coachA.id)}, TIMESTAMP '2024-01-04 00:00:00')`,
+      (${lit(ROWS.cwa.personBare)}, ${lit(PLAN)}, NULL, ${lit(PERSON)}, ${lit(users.coachA.id)}, TIMESTAMP '2024-01-04 00:00:00'),
+      (${lit(ROWS.cwa.subOwn)}, ${lit(PLAN_SC)}, ${lit(users.s1.id)}, NULL, ${lit(users.subCoach.id)}, TIMESTAMP '2024-01-06 00:00:00'),
+      (${lit(ROWS.cwa.crossTenant)}, ${lit(PLAN_B)}, ${lit(users.s1.id)}, NULL, ${lit(users.coachB.id)}, TIMESTAMP '2024-01-07 00:00:00')`,
   );
   await prisma.$executeRawUnsafe(
     `INSERT INTO public."ClientWorkoutAssignmentSnapshot" ("id","assignment_id","plan_name","plan_type","exercises_json","source_plan_id","source_version") VALUES
@@ -495,14 +539,21 @@ async function removeFixtures(): Promise<void> {
     );
   };
   await del('ClientWorkoutAssignmentSnapshot', 'id', [ROWS.snap.user, ROWS.snap.person]);
-  await del('ClientWorkoutAssignment', 'id', [ROWS.cwa.user, ROWS.cwa.person, ROWS.cwa.personBare]);
+  await del('ClientWorkoutAssignment', 'id', [
+    ROWS.cwa.user,
+    ROWS.cwa.person,
+    ROWS.cwa.personBare,
+    ROWS.cwa.subOwn,
+    ROWS.cwa.crossTenant,
+  ]);
   await del('HabitLog', 'id', [ROWS.hl.user, ROWS.hl.person]);
   await del('Habit', 'id', [ROWS.habit.user, ROWS.habit.person]);
   await del('CheckIn', 'id', [ROWS.ci.user, ROWS.ci.person]);
   await del('WeightLog', 'id', [ROWS.wl.user, ROWS.wl.person]);
   await del('ExerciseSet', 'id', [ROWS.es.user, ROWS.es.person]);
   await del('WorkoutSession', 'id', [ROWS.ws.user, ROWS.ws.person]);
-  await del('WorkoutPlan', 'id', [PLAN, PLAN_B]);
+  await del('WorkoutPlan', 'id', [PLAN, PLAN_B, PLAN_SC, PLAN_O]);
+  await del('SubCoachAssignment', 'id', [SCA.open, SCA.closed]);
   await del('Person', 'id', [PERSON]);
   await del(
     'User',
@@ -564,6 +615,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         '20270125000009_scout_person_owned_keys',
         '20270125000010_scout_person_owned_validate',
         '20270125000011_cwa_coach_manage_plan_owner_helper',
+        '20270125000012_cwa_coach_manage_client_tenancy',
       ]);
     });
 
@@ -833,7 +885,10 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     it("coach A cannot forge assigned_by as coach B, and coach B cannot write on coach A's plan", async () => {
       expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachB.id))).toEqual(DENY);
       expect(await attempt(P.coachB, insertCwa(PLAN, users.s3.id, users.coachB.id))).toEqual(DENY);
-      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual({
+      // Pre-D8 this cell was ALLOWED (coach B's own plan, but coach A's client) — the tenancy gap
+      // D8 closes. Coach B on their own plan for their OWN client is the allowed shape.
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s3.id, users.coachB.id))).toEqual({
         ok: true,
         count: 1,
       });
@@ -878,6 +933,221 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         const denied = (flip.ok && flip.count === 0) || (!flip.ok && flip.sqlstate === '42501');
         expect({ principal: p.label, flip, denied }).toMatchObject({ denied: true });
       }
+    });
+  });
+
+  // ── D8 (20270125000012): assignment_coach_manage applies the app's coach-client tenancy rule ──
+  describe('D8 — coach-client tenancy on assignment_coach_manage (20270125000012)', () => {
+    const CWA = 'ClientWorkoutAssignment';
+    const DENY = { ok: false, sqlstate: '42501', message: expect.any(String) };
+    const insertCwa = (planId: string, clientId: string, assignedBy: string) =>
+      `INSERT INTO public."${CWA}" ("id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-d8'))}, ${lit(planId)}, ${lit(clientId)}, ${lit(assignedBy)}, TIMESTAMP '2024-01-08 00:00:00')`;
+    const count = (rowId: string) =>
+      `SELECT count(*)::bigint AS n FROM public."${CWA}" WHERE "id" = ${lit(rowId)}`;
+    const touch = (rowId: string) =>
+      `UPDATE public."${CWA}" SET "post_notes" = 'd8' WHERE "id" = ${lit(rowId)}`;
+    const repoint = (rowId: string, clientId: string) =>
+      `UPDATE public."${CWA}" SET "client_id" = ${lit(clientId)} WHERE "id" = ${lit(rowId)}`;
+    const remove = (rowId: string) => `DELETE FROM public."${CWA}" WHERE "id" = ${lit(rowId)}`;
+    /** Sub-coach on coach A's team (role coach, coach_id = A); open delegation to S1, closed to S2. */
+    const SC: Principal = {
+      label: 'sub-coach SC (team A; open delegation to S1)',
+      role: 'authenticated',
+      userId: users.subCoach.id,
+      userRole: 'coach',
+      supabaseId: users.subCoach.supabase,
+    };
+    const ALLOW_1 = { ok: true, count: 1 };
+    const NONE_0 = { ok: true, count: 0 };
+
+    it('the tenancy helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and BOTH USING and WITH CHECK call it (no inline User/SubCoachAssignment read; plan helper kept)', async () => {
+      const fn = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
+        `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.current_user_coaches_client(text)')`,
+      );
+      expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
+      const pub = await q<{ ok: boolean }>(
+        `SELECT has_function_privilege('public', 'app.current_user_coaches_client(text)', 'EXECUTE') AS ok`,
+      );
+      expect(pub).toEqual([{ ok: false }]);
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        const r = await q<{ ok: boolean }>(
+          `SELECT has_function_privilege(${lit(role)}, 'app.current_user_coaches_client(text)', 'EXECUTE') AS ok`,
+        );
+        expect({ role, ...r[0] }).toEqual({ role, ok: true });
+      }
+      const pol = await q<{ qual: string; with_check: string; cmd: string; permissive: string }>(
+        `SELECT qual, with_check, cmd, permissive FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} AND policyname = 'assignment_coach_manage'`,
+      );
+      expect(pol).toHaveLength(1);
+      expect(pol[0].cmd).toBe('ALL');
+      expect(pol[0].permissive).toBe('PERMISSIVE');
+      for (const clause of [pol[0].qual, pol[0].with_check]) {
+        expect(clause).toMatch(/app\.current_user_coaches_client\(client_id\)/);
+        expect(clause).toMatch(/person_id IS NULL/);
+        expect(clause).toMatch(/assigned_by_coach_id = /);
+        expect(clause).toMatch(/sub_coach/);
+        expect(clause).not.toMatch(/"SubCoachAssignment"/);
+      }
+      // #587's plan-ownership condition is preserved in WITH CHECK (and only there, as before).
+      expect(pol[0].with_check).toMatch(/app\.current_user_owns_workout_plan\(workout_plan_id\)/);
+      expect(pol[0].qual).not.toMatch(/current_user_owns_workout_plan/);
+      // No other policy on the table changed: the client read branch is still present.
+      const names = await q<{ policyname: string }>(
+        `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(CWA)} ORDER BY 1`,
+      );
+      expect(names.map((r) => r.policyname)).toEqual(
+        expect.arrayContaining(['assignment_client_read', 'assignment_coach_manage']),
+      );
+    });
+
+    it('no principal (including the sub-coach) sees 42P17 on any ClientWorkoutAssignment statement with the composed policy', async () => {
+      for (const p of [...Object.values(P), SC]) {
+        const outs = [
+          await attempt(p, count(ROWS.cwa.user), 'count'),
+          await attempt(p, touch(ROWS.cwa.user)),
+          await attempt(p, remove(ROWS.cwa.subOwn)),
+          await attempt(p, insertCwa(PLAN, users.s1.id, users.coachA.id)),
+        ];
+        for (const out of outs) {
+          expect({ principal: p.label, sqlstate: out.ok ? 'ok' : out.sqlstate }).not.toEqual({
+            principal: p.label,
+            sqlstate: '42P17',
+          });
+        }
+      }
+    });
+
+    // (1) positive: a head coach on their OWN roster.
+    it('head coach A: INSERT / SELECT / UPDATE / DELETE for their own clients (S1, S2) are allowed', async () => {
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(ALLOW_1);
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.s2.id, users.coachA.id))).toEqual(ALLOW_1);
+      expect(await attempt(P.coachA, count(ROWS.cwa.user), 'count')).toEqual(ALLOW_1);
+      expect(await attempt(P.coachA, touch(ROWS.cwa.user))).toEqual(ALLOW_1);
+      // Re-pointing between two of A's own clients passes WITH CHECK.
+      expect(await attempt(P.coachA, repoint(ROWS.cwa.user, users.s2.id))).toEqual(ALLOW_1);
+      expect(await attempt(P.coachA, remove(ROWS.cwa.user))).toEqual(ALLOW_1);
+    });
+
+    // (2) negative: another coach's client, or an unrelated user, as the assignee.
+    it("cross-tenant INSERT: coach A cannot assign their own plan to coach B's client (S3), to the owner's client (S4), or to a non-client user (coach B, SC)", async () => {
+      for (const target of [users.s3.id, users.s4.id, users.coachB.id, users.subCoach.id]) {
+        expect({ target, out: await attempt(P.coachA, insertCwa(PLAN, target, users.coachA.id)) }).toEqual({
+          target,
+          out: DENY,
+        });
+      }
+      // Coach B, symmetric.
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s1.id, users.coachB.id))).toEqual(DENY);
+      expect(await attempt(P.coachB, insertCwa(PLAN_B, users.s3.id, users.coachB.id))).toEqual(ALLOW_1);
+    });
+
+    it("cross-tenant UPDATE: coach A cannot re-point their own assignment at coach B's client (S3) or at a non-student user (WITH CHECK 42501)", async () => {
+      expect(await attempt(P.coachA, repoint(ROWS.cwa.user, users.s3.id))).toEqual(DENY);
+      expect(await attempt(P.coachA, repoint(ROWS.cwa.user, users.s4.id))).toEqual(DENY);
+      expect(await attempt(P.coachA, repoint(ROWS.cwa.user, users.coachB.id))).toEqual(DENY);
+    });
+
+    it('cross-tenant SELECT / UPDATE / DELETE: a pre-D8 row coach B created for coach A\'s client is invisible and immutable to coach B (USING), while coach A still cannot touch it either (assigned_by is B)', async () => {
+      // Coach B assigned it, on their own plan, but S1 is coach A's client: 0 rows, never 42501.
+      expect(await attempt(P.coachB, count(ROWS.cwa.crossTenant), 'count')).toEqual(NONE_0);
+      expect(await attempt(P.coachB, touch(ROWS.cwa.crossTenant))).toEqual(NONE_0);
+      expect(await attempt(P.coachB, repoint(ROWS.cwa.crossTenant, users.s3.id))).toEqual(NONE_0);
+      expect(await attempt(P.coachB, remove(ROWS.cwa.crossTenant))).toEqual(NONE_0);
+      // Coach A owns the client but did not assign it: assigned_by_coach_id = caller still governs.
+      expect(await attempt(P.coachA, count(ROWS.cwa.crossTenant), 'count')).toEqual(NONE_0);
+      expect(await attempt(P.coachA, touch(ROWS.cwa.crossTenant))).toEqual(NONE_0);
+      expect(await attempt(P.coachA, remove(ROWS.cwa.crossTenant))).toEqual(NONE_0);
+      // The client keeps reading it through assignment_client_read (unchanged).
+      expect(await attempt(P.s1, count(ROWS.cwa.crossTenant), 'count')).toEqual(ALLOW_1);
+      // The row still exists (nothing above was admitted; every cell rolled back anyway).
+      const still = await q<{ n: bigint | number }>(count(ROWS.cwa.crossTenant));
+      expect(Number(still[0].n)).toBe(1);
+    });
+
+    // (3) legitimate paths: owner-as-coach, sub-coach with an open delegation, person-owned unchanged.
+    it('owner user acting as a coach: allowed for their own client (S4) on their own plan; denied for coach A\'s client', async () => {
+      expect(await attempt(P.owner, insertCwa(PLAN_O, users.s4.id, users.owner.id))).toEqual(ALLOW_1);
+      expect(await attempt(P.owner, insertCwa(PLAN_O, users.s1.id, users.owner.id))).toEqual(DENY);
+      // The owner role has no admin bypass on this table: coach A's row stays 0 for the owner.
+      expect(await attempt(P.owner, count(ROWS.cwa.user), 'count')).toEqual(NONE_0);
+      expect(await attempt(P.owner, touch(ROWS.cwa.user))).toEqual(NONE_0);
+    });
+
+    it('sub-coach SC with an OPEN delegation to S1: INSERT (own plan) / SELECT / UPDATE / DELETE of their own assignment for S1 are allowed', async () => {
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s1.id, users.subCoach.id))).toEqual(ALLOW_1);
+      expect(await attempt(SC, count(ROWS.cwa.subOwn), 'count')).toEqual(ALLOW_1);
+      expect(await attempt(SC, touch(ROWS.cwa.subOwn))).toEqual(ALLOW_1);
+      expect(await attempt(SC, remove(ROWS.cwa.subOwn))).toEqual(ALLOW_1);
+      // Head coach A does not see SC's row (assigned_by is SC) — unchanged assigned_by rule.
+      expect(await attempt(P.coachA, count(ROWS.cwa.subOwn), 'count')).toEqual(NONE_0);
+    });
+
+    it("sub-coach SC: CLOSED delegation (S2), no delegation (S3), a non-student (coach A) and the head coach's plan are all denied", async () => {
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s2.id, users.subCoach.id))).toEqual(DENY);
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s3.id, users.subCoach.id))).toEqual(DENY);
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.coachA.id, users.subCoach.id))).toEqual(DENY);
+      // Re-pointing SC's own S1 assignment at S2 (closed delegation) fails WITH CHECK.
+      expect(await attempt(SC, repoint(ROWS.cwa.subOwn, users.s2.id))).toEqual(DENY);
+      // Plan ownership (#587) still composes: SC cannot assign head coach A's plan even to S1.
+      expect(await attempt(SC, insertCwa(PLAN, users.s1.id, users.subCoach.id))).toEqual(DENY);
+      // And SC cannot forge assigned_by as A.
+      expect(await attempt(SC, insertCwa(PLAN, users.s1.id, users.coachA.id))).toEqual(DENY);
+    });
+
+    it('closing the delegation (unassigned_at set) revokes the sub-coach through direct access; re-opening restores it — evaluated live, not cached', async () => {
+      const close = `UPDATE public."SubCoachAssignment" SET "unassigned_at" = now() WHERE "id" = ${lit(SCA.open)}`;
+      expect(await attempt(SC, count(ROWS.cwa.subOwn), 'count', [close])).toEqual(NONE_0);
+      expect(await attempt(SC, touch(ROWS.cwa.subOwn), 'exec', [close])).toEqual(NONE_0);
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s1.id, users.subCoach.id), 'exec', [close])).toEqual(DENY);
+      const reopen = `UPDATE public."SubCoachAssignment" SET "unassigned_at" = NULL WHERE "id" = ${lit(SCA.closed)}`;
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s2.id, users.subCoach.id), 'exec', [reopen])).toEqual(ALLOW_1);
+    });
+
+    it('a soft-deleted student is out of the sub-coach scope (deleted_at IS NULL), but stays on the head coach\'s roster branch — as the application evaluates it', async () => {
+      const softDelete = `UPDATE public."User" SET "deleted_at" = now() WHERE "id" = ${lit(users.s1.id)}`;
+      expect(await attempt(SC, insertCwa(PLAN_SC, users.s1.id, users.subCoach.id), 'exec', [softDelete])).toEqual(DENY);
+      expect(await attempt(P.coachA, insertCwa(PLAN, users.s1.id, users.coachA.id), 'exec', [softDelete])).toEqual(ALLOW_1);
+    });
+
+    it('students and anon still cannot write, and person-owned rows remain service-role only under the composed policy', async () => {
+      for (const key of ['s1', 's2', 's3', 'anon'] as const) {
+        const p = P[key];
+        expect({ principal: p.label, out: await attempt(p, insertCwa(PLAN, users.s1.id, p.userId ?? users.s1.id)) }).toEqual({
+          principal: p.label,
+          out: DENY,
+        });
+        expect({ principal: p.label, out: await attempt(p, remove(ROWS.cwa.user)) }).toEqual({
+          principal: p.label,
+          out: NONE_0,
+        });
+      }
+      for (const p of [...Object.values(P), SC]) {
+        expect({ principal: p.label, out: await attempt(p, touch(ROWS.cwa.person)) }).toEqual({
+          principal: p.label,
+          out: NONE_0,
+        });
+      }
+    });
+
+    it('down.sql text restores the 20270125000011 policy and drops only the D8 helper (reversibility contract, static)', async () => {
+      // The live forward → down → forward parity proof runs in the Migration Dry-Run workflow; here we
+      // pin the contract so a future edit to either file cannot silently diverge.
+      const migrations = path.join(__dirname, '..', 'prisma', 'migrations');
+      const down = fs.readFileSync(
+        path.join(migrations, '20270125000012_cwa_coach_manage_client_tenancy', 'down.sql'),
+        'utf8',
+      );
+      const prev = fs.readFileSync(
+        path.join(migrations, '20270125000011_cwa_coach_manage_plan_owner_helper', 'migration.sql'),
+        'utf8',
+      );
+      const policyOf = (sql: string) => {
+        const m = /CREATE POLICY "assignment_coach_manage"[\s\S]*?\);/.exec(sql);
+        return m ? m[0].replace(/\s+/g, ' ') : null;
+      };
+      expect(policyOf(down)).toBe(policyOf(prev));
+      expect(down).toMatch(/DROP FUNCTION IF EXISTS app\.current_user_coaches_client\(text\);/);
+      expect(down).not.toMatch(/current_user_owns_workout_plan\(text\)\s*;/);
     });
   });
 
