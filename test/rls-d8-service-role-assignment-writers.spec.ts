@@ -62,7 +62,8 @@ const U = {
   teamCoach: randomUUID(), // role coach on A's team (a non-student) with an open delegation from the sub-coach
   ownerU: randomUUID(), // role owner acting as a coach
   s6: randomUUID(), // the owner's own student
-  weird: randomUUID(), // role student with coach_id set and an open "delegation" row to S1
+  weird: randomUUID(), // role student with coach_id set and an open "delegation" row to S7
+  s7: randomUUID(), // coach A's student; target of the `weird` row (one OPEN delegation per client is UNIQUE)
 };
 const PLAN_A = randomUUID();
 const PLAN_SC = randomUUID();
@@ -107,6 +108,7 @@ async function insertFixtures(): Promise<void> {
   await user(U.ownerU, 'owner', null);
   await user(U.s6, 'student', U.ownerU);
   await user(U.weird, 'student', U.coachA);
+  await user(U.s7, 'student', U.coachA);
   await prisma.$executeRawUnsafe(
     `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES
       (${lit(PLAN_A)}, ${lit(U.coachA)}, ${lit(`${RUN}-plan-a`)}, 'strength', now()),
@@ -120,7 +122,7 @@ async function insertFixtures(): Promise<void> {
       (${lit(SCA_OPEN)}, ${lit(U.coachA)}, ${lit(U.subCoach)}, ${lit(U.s1)}, now(), NULL),
       (${lit(SCA_C06.deleted)}, ${lit(U.coachA)}, ${lit(U.subCoach)}, ${lit(U.s5)}, now(), NULL),
       (${lit(SCA_C06.nonStudent)}, ${lit(U.coachA)}, ${lit(U.subCoach)}, ${lit(U.teamCoach)}, now(), NULL),
-      (${lit(SCA_C06.weird)}, ${lit(U.coachA)}, ${lit(U.weird)}, ${lit(U.s1)}, now(), NULL)`,
+      (${lit(SCA_C06.weird)}, ${lit(U.coachA)}, ${lit(U.weird)}, ${lit(U.s7)}, now(), NULL)`,
   );
 }
 
@@ -335,6 +337,7 @@ describeLive(
         s5: U.s5,
         teamCoach: U.teamCoach,
         s6: U.s6,
+        s7: U.s7,
       };
       const cells: Array<{ actor: string; client: string; app: boolean; sql: boolean }> = [];
       for (const [an, actor] of Object.entries(actors)) {
@@ -367,7 +370,10 @@ describeLive(
         'coachA->teamCoach': true, // roster branch: the team coach's User.coach_id is A
         'ownerU->s6': true, // owner-role actor on their own roster
         'ownerU->s1': false,
-        'weird->s1': false, // coach_id set but role ≠ coach: the delegated branch requires role coach
+        'weird->s7': false, // coach_id set + open delegation, but role ≠ coach: the delegated branch requires role coach
+        'weird->s1': false,
+        'coachA->s7': true,
+        'subCoach->s7': false, // no delegation to S7
       } as Record<string, boolean>);
     });
     // ─── Round 3 (R593-c7A2-01): authorization atomic with the write ─────────────────────────────
