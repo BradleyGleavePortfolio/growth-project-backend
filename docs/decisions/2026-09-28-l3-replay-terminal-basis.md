@@ -4,18 +4,23 @@ Status: implemented on `cand/x43/l3-basis` (draft PR #589 to `integration/import
 the T4 reviews R589-A / R589-B (r2) and R589-c7A / R589-c7B (r3), under the **executive reset
 of 2026-09-29** (`reviews/EXEC_RESET_2026-09-29.md` §1, §6, §8 — binding). Extends
 `docs/decisions/2026-09-26-s10-induction.md` (D-S10-1, D-S10-8) and the L0 record
-`docs/decisions/2026-09-27-learn-and-remember.md` **r6** (`origin/cand/x43/learn-doc-r2` at
-`d5bfea98`; the D-L0-6 text this slice implements is byte-identical in r5 and r6): D-L0-6
-"Per-family counting evidence is kept" (`StepEvidenceV1`, `StopReason`, positive exhaustion per
-step, fan-out, family count basis, evidence cardinality), D-L0-6.3 `FamilyRowV1.count_basis`
-and `GapCode`, D-L0-9 slices L3a/L3b, acceptance L14/L15. D-L0-6.1's closure machinery is deleted
+`docs/decisions/2026-09-27-learn-and-remember.md` **r7** (`origin/cand/x43/learn-doc-r2` at
+`e79e6578`; the D-L0-6 text and L15 this slice implements are byte-identical in r5, r6 and r7):
+D-L0-6 "Per-family counting evidence is kept" (`StepEvidenceV1`, `StopReason`, positive
+exhaustion per step, fan-out, family count basis, evidence cardinality), D-L0-6.3
+`FamilyRowV1.count_basis` and `GapCode`, D-L0-9 slices L3a/L3b, acceptance L14/L15. The r7
+D-L0-9 L3a row lists what #589 owed before it is r7-conformant — drop `short_page` from the
+terminal stops (a short page is observed, never proof), rename `none_proven` →
+`first_page_only`, add `'observed'` to `FAMILY_COUNT_BASES` computed per D-L0-6, the L15
+early-short-page negative — all four are done in r3 (§2, §3; `replay-basis-r3.spec.ts`); the
+L3b remainder that needs the L2b pin is §6. D-L0-6.1's closure machinery is deleted
 by the reset and is **not** implemented here. Nothing here names a source platform; every rule
 below is data over structure.
 
 ## Owner decision and what this slice may claim
 
 D1 (2026-09-28, verbatim): _"lets do complete to mean 'All past client and coaching records in
-this site are now in TGP'"_. D1 is unchanged — and, per the reset §1 and L0 r6 D-L0-6
+this site are now in TGP'"_. D1 is unchanged — and, per the reset §1 and L0 r7 D-L0-6
 "`complete` is unreachable until CL", **cannot be claimed yet**: no package type (learned,
 file/reviewed, legacy) has a run-level closure. Consequently:
 
@@ -58,20 +63,20 @@ Strict keys: `evidence_version: 1`, `source_platform`, `account_scope_id_digest`
 declaration's 32-byte challenge), `steps[]` (1..64, D-L0-6 "Evidence cardinality"),
 `observed_unique`, `id_set_digest` (D-S10-2 digest rule over the union of the steps' id sets).
 The family's single observation row aggregates one `ReplayStepEvidenceV1` per step, `:s`/`:q`
-variant or probe feeding the family (no unique-key change). Each step is L0 r5/r6
+variant or probe feeding the family (no unique-key change). Each step is L0 r5–r7
 `StepEvidenceV1` on the wire in snake_case: `step_key`, `pages_fetched`, `raw_items`,
 `distinct_raw_ids`, `duplicate_ids`, `synthetic_ids`, `missing_id_items`, `stop`,
 `advertised_next: boolean`, `refused_pages`, `fan_out`, `id_set_digest` (this step's own
 D-S10-2 digest).
 
 `stop ∈ StopReason = { absent_next, empty_page, short_page, first_page_only, budget, cycle,
-error, advertised_next }` (`REPLAY_STEP_STOPS`, verbatim r5/r6; the r2 `none_proven` is gone),
+error, advertised_next }` (`REPLAY_STEP_STOPS`, verbatim r5–r7; the r2 `none_proven` is gone),
 partitioned for the evaluator into `REPLAY_EXHAUSTED_STOPS = {absent_next, empty_page}`,
 `REPLAY_OBSERVED_STOPS = {short_page, first_page_only}`, `REPLAY_ABORTED_STOPS = {budget, cycle,
 error}` plus `advertised_next` (observed).
 
 `fan_out: null | { parent_step, parent_ids_digest, contexts_expected, contexts_fetched,
-contexts_exhausted }` — the r5/r6 fields plus `parent_step` (additive): the step whose id set
+contexts_exhausted }` — the r5–r7 fields plus `parent_step` (additive): the step whose id set
 the fan-out iterated. The pinned package (L2b) carries no `forEach`/parent edge yet, so the
 evaluator cannot infer the parent; when the pin lands, the evaluator must check `parent_step`
 against it and the field may become derivable. `parent_step === step_key` is refused by the
@@ -142,10 +147,10 @@ unexhausted, or an `observed` parent — with reasons `list_not_exhausted` (the 
 one family fail closed (`basis_kind_conflict`).
 
 The rule is style-agnostic: the package carries no pagination style, so the evaluator applies the
-r5/r6 rule per stop value — `page` ends `empty_page`, `cursor`/`next_url` end `absent_next`,
+r5–r7 rule per stop value — `page` ends `empty_page`, `cursor`/`next_url` end `absent_next`,
 `none` is `first_page_only` (observed, never certified); the origin confinement of `next_url` is a
 device-side replay rule (X2b), not something the evidence can prove. The r2 request that X2b
-report `short_page`/`empty_page` for `style: 'none'` is **withdrawn** — r5/r6 provide
+report `short_page`/`empty_page` for `style: 'none'` is **withdrawn** — r5–r7 provide
 `first_page_only`.
 
 Closed reason codes (`COVERAGE_REASON_CODES`, append-only, counts only): the r2 set plus
@@ -158,7 +163,7 @@ template logic; the `reviewed_package` variant (R581-A2-04); the loader-set `ori
 `CoverageEvaluationInput.closure` input; `src/scout/induction/closure.ts`. No closure record,
 type or input remains in `src/scout/induction`; a `closure` key smuggled into the evaluator input
 is ignored (tested). The findings of R589-A/B on closure are inputs to the future
-completeness-closure record (L0 r6 §9), not to this slice.
+completeness-closure record (L0 r7 §9), not to this slice.
 
 ## 5. What reaches the coach (reset §6; D-L0-6.3; R589-A-5, R589-B-B2, R589-c7B-04)
 
@@ -168,9 +173,11 @@ unchanged `evaluateCoverage()`: `families[family] = {source_count: int | null, c
 structure `RunStatusProjectionV1.families[].source_count/count_basis` and `gaps[]` (slice L2d)
 consume. `observed` here is the **evaluator's** basis (a verified but unexhausted list), never a
 run basis; L2d may still derive an `observed` row from staged rows when no evidence exists.
-`template_absent` and `residual_unknown` (r6 `GapCode`s) are not L3 evidence: `template_absent`
-is L2d's mapping of a pin-recorded absent template (this evaluator only ever sees the pin's step
-set and fails closed `step_set_mismatch` when a step is missing); `residual_unknown` is FAM-0's.
+`template_absent` and `residual_unknown` (r6/r7 `GapCode`s, D-L0-6.3) are not L3 evidence:
+`template_absent` is L2d's mapping of a pin-recorded absent template (r7 D-L0-3; this evaluator
+only ever sees the pin's step set and fails closed `step_set_mismatch` when a step is missing);
+`residual_unknown` is FAM-0's content statement (r7 D-L0-6.3 "Legacy records have one
+placement"), derived from the S9 report, never from replay evidence.
 Nothing here is persisted or shown yet; the settle path (`facts.service.ts`) still stores only the
 S9 facts.
 
