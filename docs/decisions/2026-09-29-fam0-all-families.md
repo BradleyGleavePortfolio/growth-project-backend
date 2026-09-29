@@ -1,6 +1,6 @@
-# FAM-0: every reachable family lands in TGP (native map + preserve destination) — r5
+# FAM-0: every reachable family lands in TGP (native map + preserve destination) — r6
 
-- **Status:** T4 design record, draft, r5 (closes R590-A, R590-B, R590-A2, R590-B2, R590-A3, R590-B3; applies owner decisions of 2026-09-29 09:52 PDT on OQ-1/P2, P4, P6; §11). It
+- **Status:** T4 design record, draft, r6 (closes R590-A, R590-B, R590-A2, R590-B2, R590-A3, R590-B3, R590-A4, R590-B4; applies owner decisions of 2026-09-29 09:52 PDT on OQ-1/P2, P4, P6; §11). It
   changes no code, schema or API. It binds the FAM-\* build slices in §7, each graded separately
   (T4). Not merged, not product-accepted.
 - **Date:** 2026-09-29. **Decision owner:** Bradley Gleave (repo owner).
@@ -170,10 +170,19 @@ rule, never by a model choice. **Third-party and partner-service data reachable 
 coach's own session moves and is used** like any other reachable record of its family (owner
 decision P6, 2026-09-29); the former exclude-and-disclose default is deleted. Bounds unchanged: no
 credential is stored (§4.3), the extension never logs into a partner service (RESET §2, §4), and
-only what the coach's session can reach is read. Placement follows D-L0-6.3 and matches L0 r5:
-an unmapped reachable collection is gap `collection_unmapped` (uncounted); an owner-confirmed
-exclusion is `not_moved: excluded_by_policy` with the device-side count. Never both. No family in
-the catalogue is currently excluded by policy.
+only what the coach's session can reach is read. **Partner-origin rule (FAM-0 owns it):** a
+foreign origin is in scope iff the coach's own source page issued the request during the run with
+the coach's session, and the response is coaching data about the coach's clients or business;
+never a payment-card entry endpoint or an identity-provider token endpoint (those hops are
+`not_moved: excluded_by_policy`). Placement follows D-L0-6.3: an unmapped reachable collection is
+gap `collection_unmapped` (uncounted); an owner-confirmed exclusion is
+`not_moved: excluded_by_policy` with the device-side count. Never both. No family in the
+catalogue is currently excluded by policy.
+
+**Required L0 r6 amendments** (R590-A4-B2, R590-B4-B5; FAM-0 no longer claims to match L0 r5):
+drop `LearnedProposalV1.steps[].destination.kind`; delete the `third_party_not_imported` and
+`out_of_scope_billing` codes; admit partner-service origins by the rule above; `FamilyLabel` = the
+D-FAM-1 catalogue; reference FAM-0 slice ids.
 
 ### D-FAM-2: per-family contract
 
@@ -253,24 +262,33 @@ FAM-G1 on, native-first or graduated (§4.6), and verified by S9 for `projection
   preserved per client (P family, `personSourceId` required), coach-visible, read-only. No native
   model; §4.3 applies unchanged (card data is credential-class: `cardnumber`, `pan`, `cvv`,
   `iban`, `accountnumber` are on `CREDENTIAL_KEYS`; last-4 and brand under other keys are data).
-- **`billing_schedule`.** When the source exposes a recurring subscription for a client, the spec
-  declares the roles `amount`, `currency`, `interval` (`week|month|year` + count), `sourceStatus`
-  (`active|paused|cancelled|past_due|trialing|unknown`, mapped from the source string, the raw
-  string kept), `startedAt`, `nextDueAt` (observed) and optionally `pausedAt`/`cancelledAt`. The
-  preserved `fields` carry the raw values plus a structured block
-  `{ next_due_at, amount, currency, interval, source_status, derivation }` where `derivation` is
-  `observed` when `nextDueAt` was read, otherwise `derived:start+interval` (the first period end
-  after "now" from `startedAt` and `interval`, computed at reconstruct in the run's zone basis,
-  S8-DOC §3.9, with the inputs recorded), or `none` when `sourceStatus` is `cancelled` or the
-  inputs are missing. One row per (client, source subscription id); coach display shows the
-  schedule beside the client so no payment is missed.
+- **`billing_schedule`** (roles and derivation owned by slice **FAM-B1**, §7). When the source
+  exposes a recurring subscription for a client, the spec declares the roles `amountMinor`
+  (integer minor units) and `currency` (ISO 4217), `interval` (`week|month|year`) and
+  `intervalCount`, `sourceStatus` (`active|paused|cancelled|past_due|trialing|unknown`, mapped
+  from the source string, the raw string kept), `anchorAt` (start or last-billed anchor),
+  `nextDueAt` (only when the source shows it) and optionally `pausedAt`/`cancelledAt`. The
+  preserved `fields` store the raw values plus the **derivation inputs only**:
+  `{ amount_minor, currency, interval, interval_count, source_status, anchor_at, next_due_at_observed?, observed_at }`.
+  **No computed date is stored** (R590-A4-B1, R590-B4-B4). `next_due_at` is computed at read time
+  by the typed read port: `observed` when the source showed it (label "from source, seen
+  <observed_at>"), else the first period end after the reading time from `anchor_at` +
+  `interval × interval_count` in the run's zone basis (S8-DOC §3.9), **always labelled
+  `estimated`**; `none` when `source_status` is `cancelled` or inputs are missing. One row per
+  (client, source subscription id); the coach display shows the schedule beside the client.
+- **Typed read port.** `BillingScheduleReadPort.listForCoach(coachId) → BillingScheduleView[]`
+  (`{ person_id, amount_minor, currency, interval, interval_count, source_status, next_due:
+{ at, basis: 'observed' | 'estimated' | 'none', observed_at } }`) lives inside
+  `src/scout/preserve/**` and is the only cross-module surface for billing data (§4.7 boundary
+  gains one named consumer: `src/billing/**` may import this port and nothing else from preserve).
 - **What does not move.** Moving the schedule moves **no live charge**: the source keeps charging
   through the coach's connected payment account until the coach cancels there; TGP never stores
   or copies card or bank data and never creates a charge from imported data. The coach display
   says so on every schedule row.
 - **Consumer, not designed here.** A future slice **BILL-1** (reminders + TGP checkout whose first
-  charge lands on the carried `next_due_at`, after which the coach cancels at the source) is the
-  only consumer of `billing_schedule`. Pointer only: BILL-1 maps a schedule to the existing
+  charge lands on the carried due date, after which the coach cancels at the source) is the only
+  consumer of the read port. **An `estimated` date never triggers a charge, reminder escalation or
+  dunning**: BILL-1 must obtain coach or client confirmation of the date first. Pointer only: BILL-1 maps a schedule to the existing
   `CoachPackage` (schema L3239) and `ClientPurchase` (L3529) concepts; FAM-0 writes neither.
 
 ### D-FAM-3: gates for client-owned families
@@ -311,7 +329,8 @@ FAM-G1 on, native-first or graduated (§4.6), and verified by S9 for `projection
   covers, per mapped table: (1) every delegate read method (`findMany`, `findFirst`,
   `findFirstOrThrow`, `findUnique`, `findUniqueOrThrow`, `count`, `aggregate`, `groupBy`);
   (2) relation fields of the table on any model in `include`, `select`, `where` (`some`, `none`,
-  `every`) and `_count`; (3) `$queryRaw`, `$executeRaw` and `Prisma.sql` text containing the
+  `every`) and `_count`; (3) `$queryRaw`, `$executeRaw`, `$queryRawUnsafe`, `$executeRawUnsafe`
+  and `Prisma.sql` text containing the
   quoted table name. Current hits at `d6cf9eb6` outside the writer modules: raw SQL
   `coach/coach.service.ts` L515-527 (`LoggedFoodEntry` macro totals) and
   `coach/brief/coach-brief.service.ts` L908-917 (`WeightLog` latest weight); relation filters
@@ -421,20 +440,26 @@ whitespace removed. FAM-P2 replaces `REDACTED_PAYLOAD_KEYS` (L19-39) with the cl
   `recoveryphrase`, `seedphrase`, `mnemonic`, `securityanswer`, `pin`, `pincode`, `ssn`,
   `socialsecuritynumber`, `taxid`, `nationalid`, `passportnumber`, `cardnumber`, `ccnumber`,
   `creditcard`, `pan`, `cvv`, `cvv2`, `cvc`, `securitycode`, `iban`, `accountnumber`,
-  `routingnumber`. `session` is **removed** from today's list (it is coaching data). The same
+  `routingnumber`, `newpassword`, `currentpassword`, `oldpassword`, `passwordconfirmation`,
+  `apitoken`, `xapikey`, `xauthtoken`, `otpsecret`, `totpsecret` (R590-B4-B3). `session` is **removed** from today's list (it is coaching data). The same
   list is applied to URL query-parameter names inside string values (the parameter is removed,
   the URL kept).
 - Value shapes, unmistakable only: a JWT (three base64url segments, the first decoding to JSON
-  with `alg`), a `Bearer `/`Basic ` prefixed string, a PEM block. Nothing else: no entropy, Luhn,
-  length or character-class test.
+  with `alg`), a `Bearer `/`Basic ` prefix **followed by a token-shaped value** (≥ 20 chars of
+  base64/base64url/hex, no spaces, to end of string; R590-B4-B1), a PEM block. Nothing else at
+  ingest: no entropy, Luhn, length or character-class test.
 - **Must keep** (corpus): `session`, `session_id`, `sessionId`, `workout_session_id`,
   `workoutSessionId`, `coaching_session_id`, `session_key` (not listed), `pin_order`, `pinned`, `auth_user_id`, `author_id`, `account`, `signature`,
   `exercise_key`, `token_count`, `program_id`, every id class below, `created: "1727600000000"`,
   a 19-digit id, an EAN-13, a 10-11 digit number, `watch?v=dQw4w9WgXcQ`, `Bench2024!`,
-  `Strength & Conditioning`, `Força`, `HIIT (30 min)`, `a1b2c`.
+  `Strength & Conditioning`, `Força`, `HIIT (30 min)`, `a1b2c`, `Basic Strength Program`,
+  `Basic Full Body A`, `Bearer Crawl Complex`, `Basic `. The corpus is re-run with
+  `reviews/scratch/R590-B4/rule_r5.py`-style whole-key modelling on every list change.
 - **Must drop**: every listed key (in `snake`, `camel`, `kebab` and spaced forms, e.g.
   `{"auth key": …}`, `{"Password hint": …}`, `{"auth": …}`, `{"recoveryPhrase": …}`), a JWT, a
-  bearer string, a PEM block, `?token=…` and `?authorization=…` parameters.
+  `Bearer eyJhbGciOi…` string, `Basic dGVzdDp0ZXN0ZXN0ZXN0ZXN0` (≥ 20 chars), a PEM block,
+  `?token=…` and `?authorization=…` parameters, `new_password`, `X-Auth-Token`, `api_token`,
+  `otp_secret`.
 
 Existing native writers (S8-C, S8-D1), the S9 facts interpreter and every future W writer read
 the **staged payload as today** (R590-B3-B1). No declared-field or value-class gate exists on
@@ -443,8 +468,12 @@ spec's `idField`, per L0-DOC: `int_id`, `uuid`, `short_id`; `identifier` rules a
 or finite number as today, `native-rules.ts` L216-219).
 
 **The preserved record.** `preserveRecord(payload, spec, family) → { fields, dropped }`, pure and
-versioned, runs at reconstruct on the staged payload (already redacted) and applies exactly four
-transforms:
+versioned, runs at reconstruct on the staged payload and applies exactly five transforms.
+**Transform 0 (R590-A4-01, R590-B4-B2):** it first re-applies the **current** `CREDENTIAL_KEYS`
+and value-shape rules of ingest (the staged row may predate a list change), so every preserve
+write, the FAM-P2 legacy conversion and the FAM-G1 residual backfill screen with the list in force
+at write time; a later list growth re-screens on the next write or backfill (`projection_version`
+bumps). Then:
 
 1. **Contact PII** (OQ-8 default): values under normalized keys `email`, `emailaddress`, `phone`,
    `phonenumber`, `mobile`, `telephone`, `address`, `street`, `postalcode`, `zip`, `dob`,
@@ -455,14 +484,21 @@ transforms:
 2. **Media.** A value under a spec-declared media role becomes `{"$media": "<ImportPreservedMedia
 id>"}` once §5 holds the bytes, else `{"$media_pending": <ordinal>}`; media-role native rules
    resolve by the media identity key, never from a URL string, in both write paths.
-3. **Bounds.** Depth ≤ 8, ≤ 500 keys, string ≤ 16 KiB, canonical JSON ≤ `SCOUT_PRESERVE_MAX_BYTES`
+3. **Billing shapes** (families `billing_history`, `billing_schedule` only; R590-A4-02): at any
+   depth, a string or number of 13-19 digits (separators ` `/`-` allowed) passing Luhn, an IBAN
+   (`^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$` with mod-97 check), and an account/routing pair (a 9-digit
+   ABA passing its checksum adjacent to a 4-17 digit value in the same object) become
+   `{"$dropped": "payment_instrument"}`, counted. Last-4 and brand under other keys are data.
+4. **Bounds.** Depth ≤ 8, ≤ 500 keys, string ≤ 16 KiB, canonical JSON ≤ `SCOUT_PRESERVE_MAX_BYTES`
    (default 64 KiB, hard cap 256 KiB). Over-bound ⇒ `not_moved: over_limit`, never truncated.
-4. **Canonical form.** Sorted keys; `fields_sha256`; `projection_version` (evidence only; value
+5. **Canonical form.** Sorted keys; `fields_sha256`; `projection_version` (evidence only; value
    identity between paths holds per version, R590-B3-C6).
 
 **What "credentials never stored" means here, precisely (R590-A2-01).** Provable: every listed
 credential key at any depth, and every JWT/bearer/PEM value, is removed before any durable write
-(ingest negative tests over the corpus, nested and spaced forms included); credentials in URL
+and again with the current list before every preserve write, conversion or backfill (ingest and
+preserve negative tests over the corpus, nested and spaced forms included); payment instruments
+in billing families are removed by shape; credentials in URL
 query parameters named on the list are removed; captured request headers never leave the device
 (RESET §4); settings-class collections never enter (structural exclusion rule). **Residual, stated:**
 (a) a credential stored by the source under a key name that is not on the list and is not a
@@ -580,7 +616,8 @@ intents; graduated equals native-first per version.
 - **Module boundary spec** (FAM-P2 acceptance): outside `src/scout/preserve/**`,
   `src/scout/reconciliation/**`, `src/account-deletion/**`, `src/data-export/**`, no file references
   the Prisma delegates `importPreservedRecord`, `importPreservedMedia`, `importMediaBlob`,
-  `importMediaCopy`, `importErasureJob`. `src/ai/**`, `src/roman/**`, `src/insights/**`,
+  `importMediaCopy`, `importErasureJob` (sole exception: `src/billing/**` imports the
+  `BillingScheduleReadPort` of D-FAM-5, never a delegate). `src/ai/**`, `src/roman/**`, `src/insights/**`,
   `src/coach/brief/**`, `src/coach/command-center/**`, `src/notifications/**`, `src/community/**`,
   `src/scout/learn/**` never import the preserve module. `rg`-based, fails on a new reference.
 - **Learn memory** is structure-only and, in V1, per coach (RESET §2). Preserved values are never
@@ -750,6 +787,7 @@ before FAM-G1.**
 | 2   | **FAM-P1** `ImportPreservedRecord` schema, CHECKs, RLS, composite FKs, RLS matrix spec                                                                                                                                                                                                                            | T4    | #587, FAM-C1                                     | yes |
 | 3   | **FAM-E1a** erasure and export for preserved rows: Person erasure by source identity incl. soft edges, tombstone refusal, coach account deletion by `coach_id`, `ImportErasureJob`, coach export                                                                                                                  | T4    | FAM-P1                                           | yes |
 | 4   | **FAM-P2** `CREDENTIAL_KEYS` + value shapes + corpus at ingest, `preserveRecord`, preserve writer, legacy evidence conversion, **guard retrofit into S8-D1/S8-C** (§4.6 steps 1-2), before/after regression pin, module-boundary spec, I-1. **No purge.**                                                         | T4    | FAM-P1, FAM-E1a, S8-D1                           | no  |
+| 4b  | **FAM-B1** billing roles (`amountMinor`, `currency`, `interval`, `intervalCount`, `sourceStatus`, `anchorAt`, `nextDueAt`), billing value shapes (§4.3 transform 3), derivation-input storage, `BillingScheduleReadPort` with read-time `estimated`/`observed` labelling, coach display of D-FAM-5                | T4    | FAM-P2                                           | no  |
 | 5   | **FAM-P3** coach read route (per Person, former clients, library), `PRESERVE_VIEWABLE`, contract regeneration                                                                                                                                                                                                     | T4    | FAM-P2, S8-D2 #577                               | no  |
 | 6   | **UX-P3** mobile "From your previous platform", "Imported library", "Former clients"                                                                                                                                                                                                                              | T2    | FAM-P3                                           | —   |
 | 7   | **FAM-G1** graduation engine (§4.6 steps 4-5), version-0 residual backfill, ledger retarget + fence, on-demand trigger, staged purge job (§4.3 ordering)                                                                                                                                                          | T4    | FAM-P2                                           | no  |
@@ -829,7 +867,9 @@ as "removed by you" in history (§6.2).
 | No loss during rollout                         | No purge before FAM-G1; `residual_required` default + version-0 backfill; guard before engine                                                                              |
 | Replay/cancel/timeout/process-loss safe        | Create-only, unique keys, one transaction per identity tree, copy-then-commit with orphan sweep, retryable erasure job                                                     |
 
-## 11. Closure map — r5 owner decisions and r4 (R590-A3, R590-B3)
+## 11. Closure map — r6 (R590-A4, R590-B4), r5 owner decisions, r4 (R590-A3, R590-B3)
+
+r6: A4-01/B4-B2 → §4.3 transform 0 (current list re-applied on every preserve write, conversion, backfill); A4-02 → §4.3 transform 3 (billing shapes: Luhn card, IBAN, ABA+account); A4-B1/B4-B4 → D-FAM-5 (derivation inputs stored, `next_due_at` computed at read, `estimated` label, minor units + ISO 4217, FAM-B1 owns, typed read port, BILL-1 confirmation rule), §4.7, §7 row 4b; B4-B1 → §4.3 Bearer/Basic token-shape rule + corpus titles; B4-B3 → `CREDENTIAL_KEYS` additions; A4-B2/B4-B5 → D-FAM-1 partner-origin rule + "Required L0 r6 amendments" (match-L0-r5 claim deleted); B4-C1 → D-FAM-4 CI check covers `$queryRawUnsafe`/`$executeRawUnsafe`.
 
 r5 (owner decisions 2026-09-29 09:52 PDT): OQ-1/P2 → D-FAM-1 rows, D-FAM-5, §6.3, C-10, OQ-1; P6 → D-FAM-1 placement paragraph, OQ table; P4 → §5.2 step 3, OQ-3. OQ-11 unchanged (with the owner).
 
