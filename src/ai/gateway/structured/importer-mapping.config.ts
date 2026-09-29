@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AiGatewayConfig, AiProviderName } from '../ai-gateway.config';
+import { isProdLike } from '../../../common/env-validation';
 import { MICROS_PER_USD, parseUsdToMicros } from './money';
 
 // L1-gw — configuration for the `importer.mapping` capability.
@@ -26,6 +27,16 @@ import { MICROS_PER_USD, parseUsdToMicros } from './money';
 // boot (`assertBootPosture`) so an operator cannot enable the capability on
 // defaults by accident; with the switch OFF it is logged and every call is
 // refused at call time.
+//
+// r4 (R592-c7B2-02): prices are PER MODEL. `AI_PRICE_*` price the primary;
+// `AI_MODEL_PRICES_USD_PER_MTOK` (`model=in/out,model=in/out`) prices any
+// model explicitly and is REQUIRED for every fallback. A configured model
+// (primary or fallback) without its own price is refused in production
+// (`price-unset:AI_MODEL_PRICES_USD_PER_MTOK:<model>`, boot-fatal with the
+// switch on) — a pricier fallback can never be counted at the primary's
+// tariff. r4 (R592-c7B2-C05): `staging` is prod-like here, as it is for
+// `src/common/env-validation.ts`; r4 (R592-c7A2-02): the money/model checks
+// run BEFORE the provider-key check so a missing key cannot mask them at boot.
 
 export const IMPORTER_MAPPING_CAPABILITY = 'importer.mapping';
 
@@ -40,6 +51,7 @@ const ENV_MAX_OUTPUT_TOKENS = 'SCOUT_LEARN_MAX_OUTPUT_TOKENS';
 const ENV_DAILY_SPEND = 'SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD';
 const ENV_PRICE_IN = 'AI_PRICE_INPUT_USD_PER_MTOK';
 const ENV_PRICE_OUT = 'AI_PRICE_OUTPUT_USD_PER_MTOK';
+const ENV_MODEL_PRICES = 'AI_MODEL_PRICES_USD_PER_MTOK';
 const ENV_DEV_OFFLINE = 'AI_GATEWAY_DEV_ALLOW_OFFLINE_PROVIDER';
 const ENV_LEGACY_PROVIDER = 'AI_GATEWAY_PROVIDER';
 
@@ -54,6 +66,7 @@ export const IMPORTER_MAPPING_ENV_KEYS = Object.freeze([
   ENV_DAILY_SPEND,
   ENV_PRICE_IN,
   ENV_PRICE_OUT,
+  ENV_MODEL_PRICES,
   ENV_DEV_OFFLINE,
 ]);
 
@@ -67,9 +80,9 @@ export const IMPORTER_MAPPING_DEFAULTS = Object.freeze({
   // production only; production refuses when the cap is unset.
   dailySpendMicrosPlaceholder: 20 * MICROS_PER_USD,
   // Conservative list prices (micro-USD per million tokens = $10 / $50 per
-  // MTok) used OUTSIDE production when AI_PRICE_* are unset. Production
-  // refuses when either price is unset (R592-c7B-03). Prices are config,
-  // never per-model code.
+  // MTok) used OUTSIDE production for any model without an explicit price.
+  // Production refuses when any configured model is unpriced (R592-c7B-03,
+  // R592-c7B2-02). Prices are config, never per-model code.
   inputPriceMicrosPerMTok: 10 * MICROS_PER_USD,
   outputPriceMicrosPerMTok: 50 * MICROS_PER_USD,
   temperature: 0,
@@ -80,6 +93,15 @@ export const IMPORTER_MAPPING_DEFAULTS = Object.freeze({
 // production.
 export const BOOT_FATAL_REASON_RE =
   /^(model-unset|spend-cap-unset|price-unset:.*|config-invalid:.*)$/;
+
+// Price of ONE model, integer micro-USD per million tokens (money.ts).
+export interface ModelPrice {
+  inputMicrosPerMTok: number;
+  outputMicrosPerMTok: number;
+  // Where the price came from: the per-model map, the primary `AI_PRICE_*`
+  // pair, or the non-production list-price default.
+  source: 'model-map' | 'primary-price' | 'default';
+}
 
 export interface ImporterMappingResolvedConfig {
   // True only when every gate is open and a real provider will be called.
@@ -97,9 +119,11 @@ export interface ImporterMappingResolvedConfig {
   // Integer micro-USD (money.ts). Null only when the cap could not be
   // resolved (then `ok` is false).
   dailySpendCapMicros: number | null;
-  // Integer micro-USD per million tokens. 0 only when `ok` is false.
-  inputPriceMicrosPerMTok: number;
-  outputPriceMicrosPerMTok: number;
+  // Per-model prices (r4, R592-c7B2-02): exactly one entry per model in
+  // `models`, keyed by model id. Empty when `ok` is false because a price
+  // could not be resolved. Reservation uses the price of the model about to
+  // be called; settlement the price of the model actually called.
+  modelPrices: ReadonlyMap<string, ModelPrice>;
   temperature: number;
   isProduction: boolean;
 }
@@ -144,8 +168,11 @@ export class ImporterMappingConfig implements OnModuleInit {
     else this.logger.warn(line);
   }
 
+  // Prod-like = `production` or `staging` (same predicate as the repo's env
+  // validation, R592-c7B2-C05): staging gets no silent money/model defaults
+  // and no stub either.
   isProduction(): boolean {
-    return (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+    return isProdLike((process.env.NODE_ENV ?? '').trim());
   }
 
   isTest(): boolean {
@@ -206,6 +233,20 @@ export class ImporterMappingConfig implements OnModuleInit {
       IMPORTER_MAPPING_DEFAULTS.outputPriceMicrosPerMTok,
       isProduction,
     );
+    const priceMap = parseModelPriceMap(process.env[ENV_MODEL_PRICES]);
+    const prices =
+      models.ok && priceIn.ok && priceOut.ok && priceMap.ok
+        ? resolveModelPrices(
+            models.value,
+            {
+              inputMicrosPerMTok: priceIn.value,
+              outputMicrosPerMTok: priceOut.value,
+              source: priceIn.defaulted || priceOut.defaulted ? 'default' : 'primary-price',
+            },
+            priceMap.value,
+            isProduction,
+          )
+        : null;
     const cap = parseCapMicros(process.env[ENV_DAILY_SPEND], isProduction);
 
     const base = {
@@ -216,8 +257,7 @@ export class ImporterMappingConfig implements OnModuleInit {
       maxInputTokens: maxIn.ok ? maxIn.value : IMPORTER_MAPPING_DEFAULTS.maxInputTokens,
       maxOutputTokens: maxOut.ok ? maxOut.value : IMPORTER_MAPPING_DEFAULTS.maxOutputTokens,
       dailySpendCapMicros: cap.ok ? cap.value : null,
-      inputPriceMicrosPerMTok: priceIn.ok ? priceIn.value : 0,
-      outputPriceMicrosPerMTok: priceOut.ok ? priceOut.value : 0,
+      modelPrices: prices?.ok ? prices.value : new Map<string, ModelPrice>(),
       temperature: IMPORTER_MAPPING_DEFAULTS.temperature,
       isProduction,
     };
@@ -238,10 +278,11 @@ export class ImporterMappingConfig implements OnModuleInit {
         return { ...base, ok: true, refusalReason: null, stubPermitted: true };
       return refuse('stub-provider-not-permitted');
     }
-    if (!this.gateway.providerKeyPresent(provider))
-      return refuse(`provider-key-missing:${provider}`);
     // r3 (R592-c7A-05): the PRIMARY must be set and valid regardless of any
     // fallback; a malformed fallback entry refuses rather than being dropped.
+    // r4 (R592-c7A2-02): model / limit / price / cap validity is decided
+    // BEFORE the provider key so `assertBootPosture` sees a defaults gap even
+    // when the key is also missing.
     if (!models.ok) return refuse(models.reason);
     // Strict config: any unparseable or non-positive limit/price refuses.
     if (!callTimeout.ok) return refuse(callTimeout.reason);
@@ -249,7 +290,12 @@ export class ImporterMappingConfig implements OnModuleInit {
     if (!maxOut.ok) return refuse(maxOut.reason);
     if (!priceIn.ok) return refuse(priceIn.reason);
     if (!priceOut.ok) return refuse(priceOut.reason);
+    if (!priceMap.ok) return refuse(priceMap.reason);
+    // r4 (R592-c7B2-02): every configured model must have its own price.
+    if (!prices || !prices.ok) return refuse(prices?.reason ?? 'price-unset:unresolved');
     if (!cap.ok) return refuse(cap.reason);
+    if (!this.gateway.providerKeyPresent(provider))
+      return refuse(`provider-key-missing:${provider}`);
     return { ...base, ok: true, refusalReason: null };
   }
 
@@ -319,16 +365,79 @@ function parsePriceMicros(
   raw: string | undefined,
   fallbackMicros: number,
   isProduction: boolean,
-): Parsed<number> {
+): Parsed<number> & { defaulted?: boolean } {
   const s = (raw ?? '').trim();
   if (s === '') {
     return isProduction
       ? { ok: false, reason: `price-unset:${name}` }
-      : { ok: true, value: fallbackMicros };
+      : { ok: true, value: fallbackMicros, defaulted: true };
   }
   const micros = parseUsdToMicros(s);
   if (micros === null || micros <= 0) return { ok: false, reason: `config-invalid:${name}` };
-  return { ok: true, value: micros };
+  return { ok: true, value: micros, defaulted: false };
+}
+
+// Per-model price map: `model=input/output[,model=input/output...]`, decimal
+// USD per million tokens on each side (same parser and bounds as
+// `AI_PRICE_*`). Strict: a malformed entry, an empty entry, a non-positive
+// price or a repeated model id refuses (`config-invalid:<NAME>`) instead of
+// being dropped. Unset ⇒ empty map (then every fallback is unpriced).
+const PRICE_ENTRY_RE = /^([A-Za-z0-9._:-]{1,128})=([^/=,]+)\/([^/=,]+)$/;
+
+export function parseModelPriceMap(
+  raw: string | undefined,
+): Parsed<ReadonlyMap<string, { inputMicrosPerMTok: number; outputMicrosPerMTok: number }>> {
+  const s = (raw ?? '').trim();
+  const out = new Map<string, { inputMicrosPerMTok: number; outputMicrosPerMTok: number }>();
+  if (s === '') return { ok: true, value: out };
+  const bad = { ok: false as const, reason: `config-invalid:${ENV_MODEL_PRICES}` };
+  for (const entry of s.split(',')) {
+    const m = PRICE_ENTRY_RE.exec(entry.trim());
+    if (!m) return bad;
+    const [, model, rawIn, rawOut] = m;
+    if (out.has(model)) return bad;
+    const inputMicrosPerMTok = parseUsdToMicros(rawIn);
+    const outputMicrosPerMTok = parseUsdToMicros(rawOut);
+    if (
+      inputMicrosPerMTok === null ||
+      outputMicrosPerMTok === null ||
+      inputMicrosPerMTok <= 0 ||
+      outputMicrosPerMTok <= 0
+    )
+      return bad;
+    out.set(model, { inputMicrosPerMTok, outputMicrosPerMTok });
+  }
+  return { ok: true, value: out };
+}
+
+// One price per configured model (R592-c7B2-02). Precedence per model: its
+// `AI_MODEL_PRICES_USD_PER_MTOK` entry; else, for the PRIMARY only, the
+// `AI_PRICE_*` pair; else, outside production, the list-price default. In
+// production a fallback without a map entry is refused
+// (`price-unset:AI_MODEL_PRICES_USD_PER_MTOK:<model>`) — the primary's
+// price is never applied to another model.
+export function resolveModelPrices(
+  models: readonly string[],
+  primary: ModelPrice,
+  map: ReadonlyMap<string, { inputMicrosPerMTok: number; outputMicrosPerMTok: number }>,
+  isProduction: boolean,
+): Parsed<ReadonlyMap<string, ModelPrice>> {
+  const out = new Map<string, ModelPrice>();
+  models.forEach((model, i) => {
+    const mapped = map.get(model);
+    if (mapped) out.set(model, { ...mapped, source: 'model-map' });
+    else if (i === 0) out.set(model, { ...primary });
+    else if (!isProduction)
+      out.set(model, {
+        inputMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.inputPriceMicrosPerMTok,
+        outputMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.outputPriceMicrosPerMTok,
+        source: 'default',
+      });
+  });
+  for (const model of models) {
+    if (!out.has(model)) return { ok: false, reason: `price-unset:${ENV_MODEL_PRICES}:${model}` };
+  }
+  return { ok: true, value: out };
 }
 
 // Daily cap in decimal USD → integer micro-USD. Production REFUSES when unset

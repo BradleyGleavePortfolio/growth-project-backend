@@ -7,6 +7,7 @@ import {
   IMPORTER_MAPPING_CAPABILITY,
   ImporterMappingConfig,
   ImporterMappingResolvedConfig,
+  ModelPrice,
 } from './importer-mapping.config';
 import { AiStructuredProviderRegistry } from './structured-provider.registry';
 import {
@@ -20,6 +21,7 @@ import {
   AiGatewayError,
   AiGatewayErrorCode,
   AiProviderUsage,
+  isProviderUsage,
   toAiGatewayError,
 } from './structured-ai.errors';
 import {
@@ -67,8 +69,15 @@ import { addMicros, microsToCentsCeil, microsToUsd, tokenCostMicros } from './mo
 //      usage is charged; a provider HTTP 4xx (request rejected before any
 //      generation, proven unbilled) settles to 0; every other failure after
 //      the request was sent (timeout, abort, transport error, 5xx) keeps the
-//      full reservation because usage is unknown. A settlement above the
-//      reservation is re-checked under the day lock and recorded.
+//      full reservation because usage is unknown. r4 (R592-c7A2-01,
+//      R592-c7B2-01): a RETURNED response whose usage block is missing,
+//      partial or malformed is ALSO unknown usage — the adapter carries
+//      `usage: null`, the reservation is kept in full and the row is never
+//      labelled provider-reported; nothing is ever coerced to 0. r4
+//      (R592-c7B2-02): prices are per model — the reservation is priced at
+//      the model about to be called and the settlement at the model actually
+//      called. A settlement above the reservation is re-checked under the
+//      day lock and recorded.
 //      Reservation failure ⇒ no call. Hashes only, never prompt or response
 //      content; caller metadata is allow-listed and nested so it can never
 //      overwrite a charge field.
@@ -149,11 +158,18 @@ export interface ImporterMappingResult<T> {
   // (authoritative) and its USD rendering (display).
   chargeMicros: number;
   usdEstimate: number;
+  // How the charge was determined: `provider` (validated usage the provider
+  // reported), or `unknown-kept-reservation` (the provider returned no
+  // usable usage; the conservative reservation stands). The stub path
+  // reports `none` (nothing reserved, nothing charged).
+  usageBasis: UsageBasis | 'none';
   // 1-based number of provider attempts made (1 = primary succeeded).
   attempts: number;
   fallbackUsed: boolean;
   redactionsApplied: RedactionSummary;
 }
+
+export type UsageBasis = 'provider' | 'provider-rejected-4xx' | 'unknown-kept-reservation';
 
 type AttemptOutcome = 'ok' | 'stub' | AiGatewayErrorCode;
 
@@ -294,8 +310,8 @@ export class ImporterMappingGatewayService {
         provider: resp.provider,
         model: resp.model,
         outcome: 'stub',
-        promptTokens: resp.promptTokens,
-        responseTokens: resp.responseTokens,
+        promptTokens: null,
+        responseTokens: null,
         latencyMs: resp.latencyMs,
         promptHash,
         redactions: redacted.summary,
@@ -308,11 +324,12 @@ export class ImporterMappingGatewayService {
         model: resp.model,
         enabled: false,
         output: null,
-        promptTokens: resp.promptTokens,
-        responseTokens: resp.responseTokens,
+        promptTokens: 0,
+        responseTokens: 0,
         latencyMs: resp.latencyMs,
         chargeMicros: 0,
         usdEstimate: 0,
+        usageBasis: 'none',
         attempts: 0,
         fallbackUsed: false,
         redactionsApplied: redacted.summary,
@@ -406,10 +423,22 @@ export class ImporterMappingGatewayService {
         throw err;
       }
 
-      // 5b. Reserve the conservative maximum in the ledger BEFORE the call.
-      //     The ledger derives the accounting day from the database clock
-      //     inside its transaction (R592-c7A-04).
-      const reserveMicros = this.estimateMicros(cfg, inputTokenEstimate, maxOutputTokens);
+      // 5b. Reserve the conservative maximum in the ledger BEFORE the call,
+      //     priced at THIS model's tariff (R592-c7B2-02). The ledger derives
+      //     the accounting day from the database clock inside its
+      //     transaction (R592-c7A-04).
+      const reservePrice = this.priceFor(cfg, model);
+      if (!reservePrice) {
+        // Cannot happen when cfg.ok (one price per configured model); a
+        // foreign model id is a programming error and must not be paid for.
+        throw new AiGatewayError('ai_unavailable', {
+          provider: adapter.name,
+          model,
+          attempt,
+          reason: 'price-unset:model-not-priced',
+        });
+      }
+      const reserveMicros = this.estimateMicros(reservePrice, inputTokenEstimate, maxOutputTokens);
       let reservation: SpendReservation;
       try {
         reservation = await this.ledger.reserve({
@@ -432,6 +461,7 @@ export class ImporterMappingGatewayService {
               model_requested: model,
               fallback_from: fallbackFrom,
               models_configured: cfg.models.length,
+              ...priceFields(model, reservePrice),
             },
           },
         });
@@ -592,32 +622,56 @@ export class ImporterMappingGatewayService {
         }
       }
 
-      // 5f. Settle the reservation (r3, R592-c7A-02/03, R592-c7B-01).
-      //     Provider returned (resp, or usage carried on the adapter's
-      //     rejection) ⇒ ACTUAL usage. Provider HTTP 4xx ⇒ the request was
-      //     rejected before generation (proven unbilled) ⇒ 0. Anything else
-      //     after the request was sent (timeout, kill-switch abort, transport
-      //     error, 5xx, unknown) ⇒ usage unknown ⇒ the reservation stands.
-      const usage: AiProviderUsage | null = resp
-        ? {
-            promptTokens: resp.promptTokens,
-            responseTokens: resp.responseTokens,
-            model: resp.model,
-            stopReason: resp.stopReason ?? null,
-          }
-        : (failure?.usage ?? null);
+      // 5f. Settle the reservation (r3, R592-c7A-02/03, R592-c7B-01; r4,
+      //     R592-c7A2-01 / R592-c7B2-01 / R592-c7B2-02).
+      //     Provider returned WITH a validated usage block (on `resp`, or
+      //     carried on the adapter's rejection) ⇒ ACTUAL usage at the price of
+      //     the model actually called. Provider HTTP 4xx ⇒ the request was
+      //     rejected before generation (proven unbilled) ⇒ 0. Anything else —
+      //     timeout, kill-switch abort, transport error, 5xx, AND a returned
+      //     response whose usage is missing / partial / malformed — ⇒ usage
+      //     unknown ⇒ the reservation stands. Nothing is ever coerced to 0.
+      const rawUsage: unknown = resp ? resp.usage : (failure?.usage ?? null);
+      const usage: AiProviderUsage | null = isProviderUsage(rawUsage) ? rawUsage : null;
+      const providerReturned = !!resp || failure?.detail.providerReturned === true;
       const status = failure?.detail.httpStatus ?? null;
       const providerRejected =
-        !usage && !timedOut && !killed && status != null && status >= 400 && status < 500;
-      let usageBasis: 'provider' | 'provider-rejected-4xx' | 'unknown-kept-reservation';
+        !usage &&
+        !providerReturned &&
+        !timedOut &&
+        !killed &&
+        status != null &&
+        status >= 400 &&
+        status < 500;
+      // Price of the model actually called: the provider-reported id when
+      // it is a configured model (an alias may resolve to a dated id — then
+      // the requested model's price applies), never another model's price.
+      const settlePriceModel = usage && cfg.modelPrices.has(usage.model) ? usage.model : model;
+      const settlePrice = this.priceFor(cfg, settlePriceModel);
+      // A usage whose cost cannot be represented in the ledger's bounds is
+      // treated as unknown too (never as 0, never by clamping).
+      let providerCharge: number | null = null;
+      if (usage && settlePrice) {
+        try {
+          providerCharge = this.estimateMicros(
+            settlePrice,
+            usage.promptTokens,
+            usage.responseTokens,
+          );
+        } catch {
+          providerCharge = null;
+        }
+      }
+      let usageBasis: UsageBasis;
+      let usageUnknownReason: 'provider-returned-no-usable-usage' | 'no-response' | null = null;
       let promptTokens: number;
       let responseTokens: number;
       let chargedMicros: number;
-      if (usage) {
+      if (usage && providerCharge !== null) {
         usageBasis = 'provider';
         promptTokens = usage.promptTokens;
         responseTokens = usage.responseTokens;
-        chargedMicros = this.estimateMicros(cfg, promptTokens, responseTokens);
+        chargedMicros = providerCharge;
       } else if (providerRejected) {
         usageBasis = 'provider-rejected-4xx';
         promptTokens = 0;
@@ -625,9 +679,15 @@ export class ImporterMappingGatewayService {
         chargedMicros = 0;
       } else {
         usageBasis = 'unknown-kept-reservation';
+        usageUnknownReason = providerReturned ? 'provider-returned-no-usable-usage' : 'no-response';
         promptTokens = inputTokenEstimate;
         responseTokens = maxOutputTokens;
         chargedMicros = reservation.reservedMicros;
+        if (providerReturned) {
+          this.logger.warn(
+            `[importer.mapping] provider returned without usable usage (model=${model}); reservation kept in full (reserve_micros=${reservation.reservedMicros})`,
+          );
+        }
       }
       const modelUsed = usage?.model || model;
       const stopReason = usage?.stopReason ?? null;
@@ -652,7 +712,15 @@ export class ImporterMappingGatewayService {
           http_status: status,
           error_reason: failure?.detail.reason ?? null,
           stop_reason: stopReason,
+          provider_returned: providerReturned,
           usage_basis: usageBasis,
+          usage_unknown_reason: usageUnknownReason,
+          cache_creation_tokens: usage?.cacheCreationTokens ?? null,
+          cache_read_tokens: usage?.cacheReadTokens ?? null,
+          ...priceFields(
+            usageBasis === 'provider' ? settlePriceModel : model,
+            usageBasis === 'provider' ? settlePrice : reservePrice,
+          ),
           validation_error_count: failure?.validation?.errors.length ?? null,
         },
       });
@@ -681,6 +749,7 @@ export class ImporterMappingGatewayService {
           latencyMs,
           usdEstimate: microsToUsd(recordedMicros),
           chargeMicros: recordedMicros,
+          usageBasis,
           attempts: attempt + 1,
           fallbackUsed: attempt > 0,
           redactionsApplied: redacted.summary,
@@ -702,17 +771,21 @@ export class ImporterMappingGatewayService {
     throw lastError ?? new AiGatewayError('ai_unavailable', { reason: 'no-model-attempted' });
   }
 
-  // Integer µUSD, each side rounded UP (money.ts): never 0 for a positive
-  // token count at a positive price.
-  estimateMicros(
-    cfg: ImporterMappingResolvedConfig,
-    inputTokens: number,
-    outputTokens: number,
-  ): number {
+  // Integer µUSD at ONE model's price, each side rounded UP (money.ts): never
+  // 0 for a positive token count at a positive price. Token counts must be
+  // non-negative safe integers (validated upstream); anything else throws
+  // rather than being coerced (r4 — no `?? 0` / NaN→0 path anywhere).
+  estimateMicros(price: ModelPrice, inputTokens: number, outputTokens: number): number {
     return addMicros(
-      tokenCostMicros(nonNegInt(inputTokens), cfg.inputPriceMicrosPerMTok),
-      tokenCostMicros(nonNegInt(outputTokens), cfg.outputPriceMicrosPerMTok),
+      tokenCostMicros(inputTokens, price.inputMicrosPerMTok),
+      tokenCostMicros(outputTokens, price.outputMicrosPerMTok),
     );
+  }
+
+  // The configured price of `model`, or null when the model is not in the
+  // resolved list (R592-c7B2-02: never another model's price).
+  priceFor(cfg: ImporterMappingResolvedConfig, model: string): ModelPrice | null {
+    return cfg.modelPrices.get(model) ?? null;
   }
 
   // Zero-charge audit row for refusals and the stub path (NOT a reservation;
@@ -805,8 +878,14 @@ export function estimateInputTokens(...parts: string[]): number {
   return Math.ceil((chars / CHARS_PER_TOKEN) * INPUT_SAFETY_FACTOR) + INPUT_OVERHEAD_TOKENS;
 }
 
-function nonNegInt(n: number): number {
-  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : 0;
+// Content-free price provenance for the audit row (R592-c7B2-02).
+function priceFields(model: string, price: ModelPrice | null): Record<string, unknown> {
+  return {
+    price_model: model,
+    price_source: price?.source ?? null,
+    price_input_micros_per_mtok: price?.inputMicrosPerMTok ?? null,
+    price_output_micros_per_mtok: price?.outputMicrosPerMTok ?? null,
+  };
 }
 
 // A request may only LOWER the configured cap. A supplied value that is not

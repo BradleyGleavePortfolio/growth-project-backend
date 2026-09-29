@@ -26,6 +26,7 @@ import { StubProviderAdapter } from '../../src/ai/gateway/providers/stub-provide
 import {
   AI_GATEWAY_ERROR_CODES,
   AiGatewayError,
+  AiProviderUsage,
   AnthropicStructuredProviderAdapter,
   AiStructuredProviderAdapter,
   AiStructuredProviderRequest,
@@ -40,6 +41,9 @@ import {
   IMPORTER_MAPPING_ENV_KEYS,
   INPUT_OVERHEAD_TOKENS,
   JsonSchemaObject,
+  isProviderUsage,
+  parseModelPriceMap,
+  parseProviderUsage,
   RESERVE_TX_OPTIONS,
   addMicros,
   advisoryLockKey,
@@ -122,6 +126,19 @@ type Plan =
   | { kind: 'hang' }
   | { kind: 'throw'; err: unknown };
 
+// Validated usage as a real adapter would report it (r4: the response carries
+// `usage: AiProviderUsage | null`, never bare token numbers).
+function usageOf(model: string, promptTokens: number, responseTokens: number): AiProviderUsage {
+  return {
+    promptTokens,
+    responseTokens,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    model,
+    stopReason: 'tool_use',
+  };
+}
+
 class FakeStructuredProvider implements AiStructuredProviderAdapter {
   readonly name = 'anthropic';
   readonly calls: AiStructuredProviderRequest[] = [];
@@ -149,8 +166,7 @@ class FakeStructuredProvider implements AiStructuredProviderAdapter {
       model: plan.model ?? req.model,
       output: plan.output,
       enabled: true,
-      promptTokens: plan.tokensIn ?? 1000,
-      responseTokens: plan.tokensOut ?? 100,
+      usage: usageOf(plan.model ?? req.model, plan.tokensIn ?? 1000, plan.tokensOut ?? 100),
       latencyMs: 5,
       stopReason: plan.stopReason ?? 'tool_use',
     };
@@ -536,8 +552,7 @@ describe('G2 — provider errors surface as typed closed codes', () => {
         model: req.model,
         output: { families: [], confidence: 1 },
         enabled: false,
-        promptTokens: 1,
-        responseTokens: 1,
+        usage: usageOf(req.model, 1, 1),
         latencyMs: 1,
       }),
     };
@@ -754,8 +769,7 @@ describe('G4 — hard timeout, max output tokens, daily spend cap, audit', () =>
           model: req.model,
           output: { families: [], confidence: 1 },
           enabled: true,
-          promptTokens: 0,
-          responseTokens: 10,
+          usage: usageOf(req.model, 0, 10),
           latencyMs: 1,
         };
       },
@@ -987,8 +1001,7 @@ describe('G5 — structured output against a supplied JSON schema is mandatory',
     });
     expect(res.output).toEqual({ families: ['x'], confidence: 1 });
     expect(res.model).toBe('model-primary-2026');
-    expect(res.promptTokens).toBe(12);
-    expect(res.responseTokens).toBe(34);
+    expect(res.usage).toMatchObject({ promptTokens: 12, responseTokens: 34 });
     expect(create).toHaveBeenCalledTimes(1);
     const [params, options] = create.mock.calls[0];
     expect(params.model).toBe('model-primary');
@@ -1208,8 +1221,7 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
           model: req.model,
           output: { families: [], confidence: 1 },
           enabled: true,
-          promptTokens: 0,
-          responseTokens: 1000,
+          usage: usageOf(req.model, 0, 1000),
           latencyMs: 1,
         };
       },
@@ -1256,8 +1268,7 @@ describe('r2 — spend: reserve-before-call in the ledger (R592-A-A1/A2, R592-B-
           model: req.model,
           output: { families: [], confidence: 1 },
           enabled: true,
-          promptTokens: 0,
-          responseTokens: 1000,
+          usage: usageOf(req.model, 0, 1000),
           latencyMs: 1,
         };
       },
@@ -1422,8 +1433,7 @@ describe('r2 — kill switch re-checked before every attempt and while in flight
           model: req.model,
           output: { families: [], confidence: 1 },
           enabled: true,
-          promptTokens: 0,
-          responseTokens: 10,
+          usage: usageOf(req.model, 0, 10),
           latencyMs: 1,
         };
       },
@@ -2025,9 +2035,12 @@ describe('r3 — every billed response settles its ACTUAL usage; unknown usage k
     expect(err.usage).toEqual({
       promptTokens: 7,
       responseTokens: 9,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
       model: 'm-used',
       stopReason: 'max_tokens',
     });
+    expect(err.detail.providerReturned).toBe(true);
   });
 
   it.each([
@@ -2257,11 +2270,14 @@ describe('r3 — production has no silent defaults for model or prices; boot fai
     err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
     expect(err.detail.reason).toBe('price-unset:AI_PRICE_OUTPUT_USD_PER_MTOK');
     expect(fake.calls).toHaveLength(0);
-    // Non-production keeps the conservative list-price default.
+    // Non-production keeps the conservative list-price default (for the primary).
     process.env.NODE_ENV = 'test';
-    expect(config.resolve()).toMatchObject({
-      ok: true,
-      outputPriceMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.outputPriceMicrosPerMTok,
+    const resolved = config.resolve();
+    expect(resolved.ok).toBe(true);
+    expect(resolved.modelPrices.get('model-primary')).toEqual({
+      inputMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.inputPriceMicrosPerMTok,
+      outputMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.outputPriceMicrosPerMTok,
+      source: 'default',
     });
   });
 
@@ -2430,6 +2446,8 @@ describe('r3 — class C closures (R592-c7B-C05, R592-c7B-C06, R592-c7A-07)', ()
         new AiGatewayError('ai_timeout', {}, undefined, undefined, {
           promptTokens: 1,
           responseTokens: 2,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
           model: 'm',
           stopReason: null,
         }),
@@ -2450,5 +2468,505 @@ describe('r3 — class C closures (R592-c7B-C05, R592-c7B-C06, R592-c7A-07)', ()
     expect(fake.calls).toHaveLength(0);
     await svc.invokeStructured(baseRequest({ maxOutputTokens: 100 }));
     expect(fake.calls[0].maxOutputTokens).toBe(100);
+  });
+});
+
+// ── r4: closures for the c7 re-audits (R592-c7A2-01, R592-c7A2-02, R592-c7B2-01, R592-c7B2-02, C04/C05) ──
+//
+// Every behavioural test here drives the REAL AnthropicStructuredProviderAdapter
+// (mock SDK client) through the real gateway and the real AuditSpendLedger,
+// and fails on 367d3e85 (where the adapter defaulted missing counts to 0 and a
+// single price pair applied to every model).
+
+// A valid tool call and a truncated response, so each malformed usage shape
+// is probed on BOTH a success and a rejected (billed) response.
+const OK_CONTENT = [
+  { type: 'tool_use', name: 'mapping_proposal', input: { families: [], confidence: 1 } },
+];
+const MALFORMED_USAGE_SHAPES: Array<[string, Record<string, unknown>]> = [
+  ['no usage block at all', {}],
+  ['usage: null', { usage: null }],
+  ['usage: {} (empty)', { usage: {} }],
+  ['usage: [] (array)', { usage: [] }],
+  ['usage: "20000/4096" (string)', { usage: '20000/4096' }],
+  ['partial: input_tokens only', { usage: { input_tokens: 20_000 } }],
+  ['partial: output_tokens only', { usage: { output_tokens: 4_096 } }],
+  ['non-numeric strings', { usage: { input_tokens: '20000', output_tokens: '4096' } }],
+  ['numeric string on one side', { usage: { input_tokens: 20_000, output_tokens: '4096' } }],
+  ['negative output', { usage: { input_tokens: 20_000, output_tokens: -1 } }],
+  ['negative input', { usage: { input_tokens: -20_000, output_tokens: 4_096 } }],
+  ['non-integer (float) counts', { usage: { input_tokens: 20_000.5, output_tokens: 4_096 } }],
+  ['NaN', { usage: { input_tokens: Number.NaN, output_tokens: 4_096 } }],
+  ['Infinity', { usage: { input_tokens: 20_000, output_tokens: Number.POSITIVE_INFINITY } }],
+  ['booleans', { usage: { input_tokens: true, output_tokens: true } }],
+  ['null counts', { usage: { input_tokens: null, output_tokens: null } }],
+  [
+    'zero usage (0 / 0) — not credible for a returned response',
+    { usage: { input_tokens: 0, output_tokens: 0 } },
+  ],
+  ['zero input with output', { usage: { input_tokens: 0, output_tokens: 4_096 } }],
+  [
+    'valid counts but a malformed cache field',
+    { usage: { input_tokens: 20_000, output_tokens: 4_096, cache_read_input_tokens: 'lots' } },
+  ],
+  [
+    'valid counts but a negative cache field',
+    { usage: { input_tokens: 20_000, output_tokens: 4_096, cache_creation_input_tokens: -5 } },
+  ],
+  [
+    'valid counts but a fractional cache field',
+    { usage: { input_tokens: 20_000, output_tokens: 4_096, cache_creation_input_tokens: 1.5 } },
+  ],
+];
+
+describe('r4 — a RETURNED response with missing / partial / malformed usage is UNKNOWN usage: the full reservation is kept, never $0, never labelled provider (R592-c7A2-01, R592-c7B2-01)', () => {
+  const expectKeptReservation = (prisma: PrismaDouble) => {
+    const row = prisma.audits[0];
+    const m = row.metadata;
+    expect(m.reserved_micros).toBeGreaterThan(200_000);
+    expect(m.charge_micros).toBe(m.reserved_micros);
+    expect(m.usage_basis).toBe('unknown-kept-reservation');
+    expect(m.usage_unknown_reason).toBe('provider-returned-no-usable-usage');
+    expect(m.provider_returned).toBe(true);
+    expect(m.usd_estimate).toBe(m.usd_reserved);
+    // The row reports the conservative estimate, not a fabricated 0/0.
+    expect(row.prompt_token_estimate).toBeGreaterThan(0);
+    expect(row.response_token_estimate).toBe(IMPORTER_MAPPING_DEFAULTS.maxOutputTokens);
+    expect(prisma.callLogs[0].costCents).toBe(Math.ceil(m.charge_micros / 10_000));
+    return m;
+  };
+
+  it.each(MALFORMED_USAGE_SHAPES)(
+    'success response with %s → result charged at the reservation, basis unknown-kept-reservation',
+    async (_label, shape) => {
+      const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+        model: 'model-primary',
+        stop_reason: 'tool_use',
+        content: OK_CONTENT,
+        ...shape,
+      }));
+      const { svc, prisma } = realAdapterSvc(create);
+      const res = await svc.invokeStructured(baseRequest());
+      expect(res.output).toEqual({ families: [], confidence: 1 });
+      const m = expectKeptReservation(prisma);
+      expect(res.chargeMicros).toBe(m.reserved_micros);
+      expect(res.chargeMicros).toBeGreaterThan(0);
+      expect(res.usageBasis).toBe('unknown-kept-reservation');
+      expect(m.outcome).toBe('ok');
+    },
+  );
+
+  it.each(MALFORMED_USAGE_SHAPES)(
+    'truncated (billed, rejected) response with %s → reservation kept, error carries no usage',
+    async (_label, shape) => {
+      const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+        model: 'model-primary',
+        stop_reason: 'max_tokens',
+        content: OK_CONTENT,
+        ...shape,
+      }));
+      const { svc, prisma } = realAdapterSvc(create);
+      const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_malformed_output');
+      expect(err.detail.reason).toBe('truncated-at-max-tokens');
+      expect(err.detail.providerReturned).toBe(true);
+      expect(err.usage).toBeUndefined();
+      const m = expectKeptReservation(prisma);
+      expect(m.outcome).toBe('ai_malformed_output');
+    },
+  );
+
+  it('the kept reservation counts against later admission: a no-usage success at a cap sized for one reservation refuses the next call', async () => {
+    // Default prices: reservation ≈ input estimate (~1.1k tokens × $10/MTok)
+    // + 4096 × $50/MTok ≈ $0.216. A cap of $0.40 admits exactly one.
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.40';
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary',
+      stop_reason: 'tool_use',
+      content: OK_CONTENT,
+      // no usage → had this settled to $0 (old head) the second call would be admitted
+    }));
+    const { svc, prisma } = realAdapterSvc(create);
+    const first = await svc.invokeStructured(baseRequest());
+    expect(first.chargeMicros).toBeGreaterThan(200_000);
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(err.detail.reason).toBe('daily-spend-cap');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(prisma.audits).toHaveLength(1);
+  });
+
+  it('valid usage is still settled as provider usage; prompt-cache tokens are billed input (R592-c7B2-C04); absent cache fields are not a defect', async () => {
+    const create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary',
+      stop_reason: 'tool_use',
+      content: OK_CONTENT,
+      usage: {
+        input_tokens: 1_000,
+        output_tokens: 100,
+        cache_creation_input_tokens: 300,
+        cache_read_input_tokens: 200,
+      },
+    }));
+    const { svc, prisma } = realAdapterSvc(create);
+    const res = await svc.invokeStructured(baseRequest());
+    // 1 500 billed input tokens × $10/MTok + 100 × $50/MTok = 15 000 + 5 000 µUSD.
+    expect(res.chargeMicros).toBe(20_000);
+    expect(res.usageBasis).toBe('provider');
+    expect(res.promptTokens).toBe(1_500);
+    expect(prisma.audits[0].metadata).toMatchObject({
+      usage_basis: 'provider',
+      usage_unknown_reason: null,
+      provider_returned: true,
+      cache_creation_tokens: 300,
+      cache_read_tokens: 200,
+      charge_micros: 20_000,
+    });
+    // Absent / null cache fields (the API omits them without caching) → 0, not unknown.
+    for (const usage of [
+      { input_tokens: 1_000, output_tokens: 100 },
+      { input_tokens: 1_000, output_tokens: 100, cache_creation_input_tokens: null },
+      { input_tokens: 1_000, output_tokens: 0 },
+    ]) {
+      const c = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+        model: 'model-primary',
+        stop_reason: 'tool_use',
+        content: OK_CONTENT,
+        usage,
+      }));
+      const r = await realAdapterSvc(c).svc.invokeStructured(baseRequest());
+      expect(r.usageBasis).toBe('provider');
+      expect(r.chargeMicros).toBe(usage.output_tokens === 0 ? 10_000 : 15_000);
+    }
+  });
+
+  it('parseProviderUsage / isProviderUsage never coerce (unit): every malformed shape is null, valid shapes are exact', () => {
+    const ctx = { model: 'm', stopReason: null };
+    for (const [, shape] of MALFORMED_USAGE_SHAPES) {
+      expect(parseProviderUsage((shape as { usage?: unknown }).usage, ctx)).toBeNull();
+    }
+    expect(parseProviderUsage({ input_tokens: 1, output_tokens: 0 }, ctx)).toEqual({
+      promptTokens: 1,
+      responseTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      model: 'm',
+      stopReason: null,
+    });
+    expect(
+      parseProviderUsage(
+        { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 1, cache_read_input_tokens: 1 },
+        ctx,
+      ),
+    ).toBeNull();
+    // The error constructor drops (never normalises) a malformed usage object.
+    const bad = { promptTokens: Number.NaN, responseTokens: '9', model: 'm', stopReason: null };
+    // @ts-expect-error deliberately malformed usage handed to the constructor
+    const err = new AiGatewayError('ai_malformed_output', {}, undefined, undefined, bad);
+    expect(err.usage).toBeUndefined();
+    expect(isProviderUsage(bad)).toBe(false);
+    expect(
+      isProviderUsage({
+        promptTokens: 1,
+        responseTokens: 2,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        model: 'm',
+        stopReason: 'x',
+      }),
+    ).toBe(true);
+    // A foreign adapter that hands the gateway usage with cache tokens exceeding the total is malformed.
+    expect(
+      isProviderUsage({
+        promptTokens: 1,
+        responseTokens: 2,
+        cacheCreationTokens: 5,
+        cacheReadTokens: 0,
+        model: 'm',
+        stopReason: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('no `?? 0` / coerce-to-zero path remains in the structured gateway sources (guard)', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const dir = path.resolve(__dirname, '../../src/ai/gateway/structured');
+    for (const f of fs.readdirSync(dir)) {
+      const src = fs.readFileSync(path.join(dir, f), 'utf8').split('\n');
+      src.forEach((line, i) => {
+        // Money/token coercions are forbidden; a `?? 0` is allowed only on a
+        // non-money display count (models_configured) and in comments.
+        if (/\?\?\s*0\b/.test(line) && !line.trim().startsWith('//')) {
+          expect(`${f}:${i + 1}: ${line.trim()}`).toContain('models_configured');
+        }
+        expect(line).not.toMatch(/tokens\s*\?\?\s*0|_tokens\s*\?\?\s*0|nonNegInt/);
+      });
+    }
+  });
+});
+
+describe('r4 — prices are per model: a fallback is reserved and settled at ITS price; an unpriced configured model is refused (R592-c7B2-02)', () => {
+  // Fallback priced at 3× the primary ($30 / $150 per MTok).
+  const FALLBACK_PRICES = 'model-fallback=30/150';
+  const FALLBACK_BILLED_MICROS = 20_000 * 30 + 4_096 * 150; // 1 214 400 µUSD
+
+  // First call: primary 529 (retryable, usage unknown); second: fallback succeeds.
+  function primary529ThenFallbackOk() {
+    return jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async (params) => {
+      if (params.model === 'model-primary')
+        throw Object.assign(new Error('overloaded'), { status: 529 });
+      return {
+        model: params.model,
+        stop_reason: 'tool_use',
+        usage: BILLED_USAGE,
+        content: OK_CONTENT,
+      };
+    });
+  }
+
+  it('B2-02 probe, inverted: a fallback that costs 3× is reserved and charged at 3× (its own price), the primary attempt at the primary price', async () => {
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK = FALLBACK_PRICES;
+    const { svc, prisma } = realAdapterSvc(primary529ThenFallbackOk());
+    const res = await svc.invokeStructured(baseRequest());
+    expect(res.model).toBe('model-fallback');
+    expect(res.fallbackUsed).toBe(true);
+    expect(res.chargeMicros).toBe(FALLBACK_BILLED_MICROS);
+    expect(res.usageBasis).toBe('provider');
+    expect(prisma.audits).toHaveLength(2);
+    const [primaryRow, fallbackRow] = prisma.audits;
+    // Primary attempt: reserved at the primary price, kept (529 ⇒ unknown usage).
+    expect(primaryRow.metadata).toMatchObject({
+      model_requested: 'model-primary',
+      price_model: 'model-primary',
+      price_source: 'default',
+      price_input_micros_per_mtok: 10_000_000,
+      price_output_micros_per_mtok: 50_000_000,
+      usage_basis: 'unknown-kept-reservation',
+      usage_unknown_reason: 'no-response',
+      provider_returned: false,
+    });
+    // Fallback attempt: reserved at 3× the primary reservation, settled at its own price.
+    expect(fallbackRow.metadata).toMatchObject({
+      model_requested: 'model-fallback',
+      fallback_from: 'model-primary',
+      price_model: 'model-fallback',
+      price_source: 'model-map',
+      price_input_micros_per_mtok: 30_000_000,
+      price_output_micros_per_mtok: 150_000_000,
+      usage_basis: 'provider',
+      charge_micros: FALLBACK_BILLED_MICROS,
+    });
+    expect(fallbackRow.metadata.reserved_micros).toBe(3 * primaryRow.metadata.reserved_micros);
+    expect(prisma.callLogs[1].costCents).toBe(Math.ceil(FALLBACK_BILLED_MICROS / 10_000));
+  });
+
+  it('the cap is enforced at the fallback price: a cap with room for the primary reservation but not the fallback refuses the fallback (never admitted at the primary tariff)', async () => {
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK = FALLBACK_PRICES;
+    // Primary reservation ≈ $0.216 (kept on 529); fallback reservation ≈ $0.648.
+    // A $0.70 cap fits the primary, and would fit a second call priced at the
+    // PRIMARY tariff (0.216 + 0.216 < 0.70) — but not at the fallback's.
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '0.70';
+    const create = primary529ThenFallbackOk();
+    const { svc, prisma } = realAdapterSvc(create);
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_budget_exhausted');
+    expect(err.detail.reason).toBe('daily-spend-cap');
+    expect(err.detail.model).toBe('model-fallback');
+    expect(create).toHaveBeenCalledTimes(1); // the fallback was never called
+    expect(prisma.audits).toHaveLength(1);
+    expect(prisma.audits[0].metadata.usage_basis).toBe('unknown-kept-reservation');
+  });
+
+  it("settlement prices the model the provider reports when it is a configured model; an unconfigured alias id settles at the requested model's price and is recorded", async () => {
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK = FALLBACK_PRICES;
+    // (a) provider reports the (configured) fallback id although the primary was requested.
+    let create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-fallback',
+      stop_reason: 'tool_use',
+      usage: BILLED_USAGE,
+      content: OK_CONTENT,
+    }));
+    let { svc, prisma } = realAdapterSvc(create);
+    let res = await svc.invokeStructured(baseRequest());
+    expect(res.model).toBe('model-fallback');
+    expect(res.chargeMicros).toBe(FALLBACK_BILLED_MICROS);
+    expect(prisma.audits[0].metadata).toMatchObject({
+      model_requested: 'model-primary',
+      price_model: 'model-fallback',
+      price_source: 'model-map',
+      usage_basis: 'provider',
+    });
+    // (b) provider reports a dated id not in the config: the requested model's price applies.
+    create = jest.fn<ReturnType<CreateFn>, Parameters<CreateFn>>(async () => ({
+      model: 'model-primary-20260929',
+      stop_reason: 'tool_use',
+      usage: BILLED_USAGE,
+      content: OK_CONTENT,
+    }));
+    ({ svc, prisma } = realAdapterSvc(create));
+    res = await svc.invokeStructured(baseRequest());
+    expect(res.model).toBe('model-primary-20260929');
+    expect(res.chargeMicros).toBe(BILLED_MICROS);
+    expect(prisma.audits[0].metadata).toMatchObject({
+      price_model: 'model-primary',
+      price_source: 'default',
+    });
+  });
+
+  it('production: a configured fallback without its own price is refused before any call (price-unset:AI_MODEL_PRICES_USD_PER_MTOK:<model>) and fails the boot with the switch on', async () => {
+    productionEnv();
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback,model-third';
+    delete process.env.AI_MODEL_PRICES_USD_PER_MTOK;
+    const create = primary529ThenFallbackOk();
+    const { svc, prisma, config } = realAdapterSvc(create);
+    const err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('price-unset:AI_MODEL_PRICES_USD_PER_MTOK:model-fallback');
+    expect(create).not.toHaveBeenCalled();
+    expect(prisma.audits[0].metadata.charge_micros).toBe(0);
+    expect(() => config.assertBootPosture()).toThrow(
+      /price-unset:AI_MODEL_PRICES_USD_PER_MTOK:model-fallback/,
+    );
+    // Pricing the first fallback only moves the refusal to the next unpriced model.
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK = FALLBACK_PRICES;
+    expect(config.resolve()).toMatchObject({
+      ok: false,
+      refusalReason: 'price-unset:AI_MODEL_PRICES_USD_PER_MTOK:model-third',
+    });
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK = `${FALLBACK_PRICES},model-third=1/2`;
+    expect(config.resolve().ok).toBe(true);
+    expect(() => config.assertBootPosture()).not.toThrow();
+    // Switch off: dark feature, logged, refused per call — not fatal.
+    delete process.env.AI_MODEL_PRICES_USD_PER_MTOK;
+    process.env.SCOUT_LEARN_AI_ENABLED = 'false';
+    expect(() => config.assertBootPosture()).not.toThrow();
+  });
+
+  it('AI_MODEL_PRICES_USD_PER_MTOK is parsed strictly: malformed, empty, repeated or non-positive entries refuse (config-invalid), never dropped; the map overrides AI_PRICE_* for the primary', () => {
+    const { config } = buildSvc(new FakeStructuredProvider([]));
+    process.env.SCOUT_LEARN_MODEL_FALLBACKS = 'model-fallback';
+    for (const bad of [
+      'model-fallback=30',
+      'model-fallback=30/',
+      'model-fallback=/150',
+      'model-fallback:30/150',
+      'model-fallback=30/150,',
+      ',model-fallback=30/150',
+      'model-fallback=0/150',
+      'model-fallback=30/-1',
+      'model-fallback=abc/150',
+      'model-fallback=30/150,model-fallback=31/151',
+      'bad model=30/150',
+      'model-fallback=30/150/2',
+      'model-fallback=1e3/150',
+    ]) {
+      process.env.AI_MODEL_PRICES_USD_PER_MTOK = bad;
+      expect(config.resolve()).toMatchObject({
+        ok: false,
+        refusalReason: 'config-invalid:AI_MODEL_PRICES_USD_PER_MTOK',
+      });
+    }
+    expect(parseModelPriceMap('')).toEqual({ ok: true, value: new Map() });
+    // Valid: spaces tolerated around entries; extra (unconfigured) models allowed.
+    process.env.AI_MODEL_PRICES_USD_PER_MTOK =
+      ' model-fallback=30/150 , model-primary=3/15 , other=1/1 ';
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '10';
+    process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '50';
+    const r = config.resolve();
+    expect(r.ok).toBe(true);
+    expect([...r.modelPrices.keys()]).toEqual(['model-primary', 'model-fallback']);
+    expect(r.modelPrices.get('model-primary')).toEqual({
+      inputMicrosPerMTok: 3_000_000,
+      outputMicrosPerMTok: 15_000_000,
+      source: 'model-map',
+    });
+    expect(r.modelPrices.get('model-fallback')).toEqual({
+      inputMicrosPerMTok: 30_000_000,
+      outputMicrosPerMTok: 150_000_000,
+      source: 'model-map',
+    });
+    // Without a map entry the primary uses AI_PRICE_*; outside production an
+    // unpriced fallback uses the list-price default (source recorded).
+    delete process.env.AI_MODEL_PRICES_USD_PER_MTOK;
+    const r2 = config.resolve();
+    expect(r2.ok).toBe(true);
+    expect(r2.modelPrices.get('model-primary')).toMatchObject({
+      inputMicrosPerMTok: 10_000_000,
+      source: 'primary-price',
+    });
+    expect(r2.modelPrices.get('model-fallback')).toMatchObject({
+      inputMicrosPerMTok: IMPORTER_MAPPING_DEFAULTS.inputPriceMicrosPerMTok,
+      source: 'default',
+    });
+  });
+
+  it('the new key is registered (prod-switches.yml, .env.example, docs) and read through an in-file const', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    expect(IMPORTER_MAPPING_ENV_KEYS).toContain('AI_MODEL_PRICES_USD_PER_MTOK');
+    const yaml = fs.readFileSync(path.resolve(__dirname, '../../prod-switches.yml'), 'utf8');
+    const row = yaml
+      .slice(yaml.indexOf('- name: AI_MODEL_PRICES_USD_PER_MTOK\n'))
+      .split('\n')
+      .slice(0, 6)
+      .join('\n');
+    expect(row).toContain('owner: importer');
+    expect(row).toContain(
+      'REQUIRED in production for EVERY model listed in SCOUT_LEARN_MODEL_FALLBACKS',
+    );
+    expect(fs.readFileSync(path.resolve(__dirname, '../../.env.example'), 'utf8')).toContain(
+      'AI_MODEL_PRICES_USD_PER_MTOK=',
+    );
+    expect(fs.readFileSync(path.resolve(__dirname, '../../docs/ai-gateway.md'), 'utf8')).toContain(
+      '`AI_MODEL_PRICES_USD_PER_MTOK`',
+    );
+  });
+});
+
+describe('r4 — class C closures (R592-c7A2-02 boot precedence, R592-c7B2-C05 staging is prod-like)', () => {
+  it('A2-02: with the switch ON in production, a missing provider key no longer masks a missing price / model / cap — the boot still fails', () => {
+    productionEnv();
+    delete process.env.ANTHROPIC_API_KEY;
+    const { config } = buildSvc(new FakeStructuredProvider([]));
+    // Key missing, everything else set: operations gap, logged, not fatal (unchanged).
+    expect(config.resolve().refusalReason).toBe('provider-key-missing:anthropic');
+    expect(() => config.assertBootPosture()).not.toThrow();
+    for (const unset of [
+      'AI_PRICE_INPUT_USD_PER_MTOK',
+      'SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD',
+      'AI_MODEL_IMPORTER_MAPPING',
+    ]) {
+      const saved = process.env[unset];
+      delete process.env[unset];
+      // On 367d3e85 this resolved to provider-key-missing and only logged.
+      expect(config.resolve().refusalReason).not.toBe('provider-key-missing:anthropic');
+      expect(() => config.assertBootPosture()).toThrow(/SCOUT_LEARN_AI_ENABLED is on/);
+      process.env[unset] = saved;
+    }
+  });
+
+  it('C05: NODE_ENV=staging is prod-like — no silent money/model defaults, no stub', async () => {
+    process.env.NODE_ENV = 'staging';
+    const fake = new FakeStructuredProvider([
+      { kind: 'ok', output: { families: [], confidence: 1 } },
+    ]);
+    const { svc, config } = buildSvc(fake);
+    expect(config.isProduction()).toBe(true);
+    expect(config.stubAllowed()).toBe(false);
+    // openEnv() leaves the prices unset and the cap at 20: in test that is the
+    // list-price default; in staging it is a refusal.
+    let err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('price-unset:AI_PRICE_INPUT_USD_PER_MTOK');
+    process.env.AI_PRICE_INPUT_USD_PER_MTOK = '10';
+    process.env.AI_PRICE_OUTPUT_USD_PER_MTOK = '50';
+    delete process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD;
+    err = await expectCode(svc.invokeStructured(baseRequest()), 'ai_unavailable');
+    expect(err.detail.reason).toBe('spend-cap-unset');
+    expect(fake.calls).toHaveLength(0);
+    // Fully configured staging calls the real adapter like production would.
+    process.env.SCOUT_LEARN_GLOBAL_DAILY_SPEND_USD = '20';
+    const res = await svc.invokeStructured(baseRequest());
+    expect(res.enabled).toBe(true);
+    expect(fake.calls).toHaveLength(1);
   });
 });

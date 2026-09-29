@@ -60,6 +60,11 @@ export interface AiGatewayErrorDetail {
   provider?: string | null;
   // 0-based attempt index across the ordered model list.
   attempt?: number;
+  // True when the provider RETURNED a response (billed) that the adapter
+  // then rejected — even if it reported no usable usage. The gateway uses
+  // it to keep the reservation instead of treating the rejection as an
+  // unbilled 4xx (r4, R592-c7A2-01 / R592-c7B2-01).
+  providerReturned?: boolean;
 }
 
 // Validator output for `ai_malformed_output`. `errors` are JSON-pointer paths
@@ -83,13 +88,94 @@ export const MAX_VALIDATION_FIELD_CHARS = 200;
 // response the adapter then REJECTED (truncation, refusal, wrong tool-call
 // count, foreign block, ...). Carried on the error so the gateway settles the
 // ACTUAL charge instead of refunding a paid call to zero.
+//
+// r4 (R592-c7A2-01, R592-c7B2-01): a value of this type is PROOF of usable
+// usage. Both token counts are non-negative safe integers validated by
+// `parseProviderUsage`; nothing here is ever defaulted to 0. When the
+// provider's usage block is missing, partial or malformed the adapter
+// carries `null` (usage UNKNOWN) and the gateway keeps the full reservation.
 export interface AiProviderUsage {
+  // Billed input tokens: `input_tokens` plus any prompt-cache tokens the
+  // provider reports (R592-c7B2-C04) — all validated integers.
   promptTokens: number;
   responseTokens: number;
+  // Cache components folded into `promptTokens` (0 when the provider did not
+  // report them; recorded so an operator can see caching was billed).
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   // Model the provider reports it actually used.
   model: string;
   // Provider-side stop reason, when known.
   stopReason: string | null;
+}
+
+// Raw usage fields as the Anthropic Messages API reports them. Any other
+// provider slot maps its own field names onto this shape before calling
+// `parseProviderUsage`.
+export interface RawProviderUsage {
+  input_tokens?: unknown;
+  output_tokens?: unknown;
+  cache_creation_input_tokens?: unknown;
+  cache_read_input_tokens?: unknown;
+}
+
+// Validate a provider usage block. Returns null — usage UNKNOWN — unless
+// `input_tokens` and `output_tokens` are BOTH present non-negative safe
+// integers, and every cache field that is present (not null/undefined) is
+// one too. Never coerces: a missing, partial, string, float, NaN, negative
+// or boolean count is unknown, not 0 (R592-c7A2-01, R592-c7B2-01). A
+// RETURNED response necessarily consumed input tokens, so a report of
+// `input_tokens: 0` is not credible and is unknown as well (a "zero usage"
+// report can never release a reservation).
+export function parseProviderUsage(
+  raw: unknown,
+  ctx: { model: string; stopReason: string | null },
+): AiProviderUsage | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const u = raw as RawProviderUsage;
+  if (!isCount(u.input_tokens) || u.input_tokens < 1 || !isCount(u.output_tokens)) return null;
+  const cacheCreation = optionalCount(u.cache_creation_input_tokens);
+  const cacheRead = optionalCount(u.cache_read_input_tokens);
+  if (cacheCreation === null || cacheRead === null) return null;
+  const promptTokens = u.input_tokens + cacheCreation + cacheRead;
+  if (!Number.isSafeInteger(promptTokens)) return null;
+  return {
+    promptTokens,
+    responseTokens: u.output_tokens,
+    cacheCreationTokens: cacheCreation,
+    cacheReadTokens: cacheRead,
+    model: ctx.model,
+    stopReason: ctx.stopReason,
+  };
+}
+
+// True only for an already-validated usage object (defence in depth at the
+// gateway: a foreign adapter that hands over a malformed object is treated
+// as unknown usage, never as a charge).
+export function isProviderUsage(v: unknown): v is AiProviderUsage {
+  if (!v || typeof v !== 'object') return false;
+  const u = v as Partial<AiProviderUsage>;
+  return (
+    isCount(u.promptTokens) &&
+    isCount(u.responseTokens) &&
+    isCount(u.cacheCreationTokens) &&
+    isCount(u.cacheReadTokens) &&
+    u.cacheCreationTokens + u.cacheReadTokens <= u.promptTokens &&
+    typeof u.model === 'string' &&
+    u.model.length > 0 &&
+    (u.stopReason === null || typeof u.stopReason === 'string')
+  );
+}
+
+function isCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+}
+
+// Absent / null optional field → 0 (the API omits it when no caching
+// happened); present but not a count → null (malformed ⇒ unknown).
+function optionalCount(v: unknown): number | null {
+  if (v === undefined || v === null) return 0;
+  return isCount(v) ? v : null;
 }
 
 export class AiGatewayError extends Error {
@@ -102,7 +188,9 @@ export class AiGatewayError extends Error {
   // `declare` so no class-field initializer can re-create it as enumerable.
   declare readonly validation?: AiValidationFailure;
   // Present when the provider returned (and billed) a response that was then
-  // rejected. Absent ⇒ usage unknown (the ledger keeps the reservation).
+  // rejected AND reported usable usage. Absent ⇒ usage unknown (the ledger
+  // keeps the reservation). Never synthesized: a malformed value passed to
+  // the constructor is dropped, not normalised to zeros (r4).
   readonly usage?: AiProviderUsage;
 
   constructor(
@@ -131,13 +219,8 @@ export class AiGatewayError extends Error {
         configurable: false,
       });
     }
-    if (usage) {
-      this.usage = {
-        promptTokens: nonNegInt(usage.promptTokens),
-        responseTokens: nonNegInt(usage.responseTokens),
-        model: String(usage.model ?? ''),
-        stopReason: usage.stopReason == null ? null : String(usage.stopReason),
-      };
+    if (usage != null && isProviderUsage(usage)) {
+      this.usage = { ...usage };
     }
   }
 
@@ -188,10 +271,6 @@ export function toAiGatewayError(
   // Transport-level failure (DNS, socket reset, connection refused) — the
   // provider may be fine on the next model/region, so treat as retryable.
   return new AiGatewayError('ai_provider_error', { ...base, reason: 'transport-error' });
-}
-
-function nonNegInt(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.ceil(v) : 0;
 }
 
 function pickHttpStatus(err: unknown): number | null {

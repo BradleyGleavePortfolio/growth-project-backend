@@ -8,6 +8,8 @@
 // and never swallow errors: they either return a response or throw an
 // `AiGatewayError`.
 
+import type { AiProviderUsage } from './structured-ai.errors';
+
 // A caller-owned JSON schema. Accepted READONLY and structurally loose so a
 // consumer's own closed schema type (e.g. a readonly discriminated union with
 // `readonly required?: readonly string[]`) is assignable without a cast; the
@@ -57,8 +59,13 @@ export interface AiStructuredProviderResponse {
   output: unknown;
   // False only for the stub adapter (test / explicit dev flag).
   enabled: boolean;
-  promptTokens: number;
-  responseTokens: number;
+  // Billed usage the provider reported, validated by `parseProviderUsage`
+  // (non-negative safe integers), or `null` when the provider returned no
+  // usable usage block (missing, partial, non-numeric, negative, fractional).
+  // `null` means UNKNOWN: the gateway then keeps the full reservation and
+  // never records a provider-reported charge (r4, R592-c7A2-01 /
+  // R592-c7B2-01). Adapters must never default a count to 0.
+  usage: AiProviderUsage | null;
   latencyMs: number;
   // Provider-side stop reason, when known ("end_turn", "tool_use",
   // "max_tokens", ...). "max_tokens" is treated as malformed output.

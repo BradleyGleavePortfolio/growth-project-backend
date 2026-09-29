@@ -1457,13 +1457,19 @@ switches:
     prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Input price (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for importer.mapping spend reservations. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $10 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
+    description: "Input price of the PRIMARY importer.mapping model (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for spend reservations and settlement; fallback models are priced ONLY by AI_MODEL_PRICES_USD_PER_MTOK. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $10 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
   - name: AI_PRICE_OUTPUT_USD_PER_MTOK
     tier: prod
     prod_default: MUST_SET
     auto_flip_on_in_prod: false
     owner: importer
-    description: "Output price (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for importer.mapping spend reservations. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $50 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
+    description: "Output price of the PRIMARY importer.mapping model (decimal USD per million tokens, up to 6 decimals; stored as integer micro-USD) used for spend reservations and settlement; fallback models are priced ONLY by AI_MODEL_PRICES_USD_PER_MTOK. Production REFUSES every call while unset (price-unset) and fails the boot when SCOUT_LEARN_AI_ENABLED is on; outside production the $50 list-price default applies. Must be > 0 — zero/negative/garbage = refused."
+  - name: AI_MODEL_PRICES_USD_PER_MTOK
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: importer
+    description: "Per-model prices for importer.mapping: `model=input/output[,model=input/output]`, decimal USD per million tokens (up to 6 decimals; stored as integer micro-USD; each > 0). REQUIRED in production for EVERY model listed in SCOUT_LEARN_MODEL_FALLBACKS (a fallback is never charged at the primary's AI_PRICE_* tariff): a fallback without an entry refuses every call (price-unset:AI_MODEL_PRICES_USD_PER_MTOK:<model>) and fails the boot when SCOUT_LEARN_AI_ENABLED is on. An entry for the primary overrides AI_PRICE_*. Malformed / repeated entries = refused (config-invalid). Unset with no fallbacks = fine."
   - name: AI_GATEWAY_DEV_ALLOW_OFFLINE_PROVIDER
     tier: feature
     prod_default: OFF

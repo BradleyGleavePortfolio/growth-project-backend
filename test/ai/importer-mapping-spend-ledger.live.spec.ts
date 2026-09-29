@@ -10,7 +10,10 @@
  * PrismaClient instances (one per simulated application instance) and proves:
  *
  *   1. `pg_advisory_xact_lock(bigint)` with the JS BigInt key binds as int8 and
- *      BLOCKS a second connection until the holder commits;
+ *      BLOCKS a second connection until the holder commits — witnessed
+ *      directly in `pg_locks` / `pg_stat_activity` (r4, R592-c7B2-C01: a
+ *      not-granted advisory lock on the key whose backend waits on 'Lock'),
+ *      not only by elapsed time;
  *   2. under N concurrent reservations from N connections with a cap sized for
  *      k < N, exactly k are admitted and the sum of reservations is ≤ cap
  *      (READ COMMITTED visibility of the previous holder's committed row after
@@ -53,6 +56,52 @@ if (!TEST_DB_URL) {
   console.warn(
     '[l1gw-spend-ledger] L1GW_SPEND_LEDGER_DATABASE_URL not set — real-PostgreSQL spend-ledger suite skipped.',
   );
+}
+
+// pg_locks rows for a bigint advisory key (see test 1).
+interface AdvisoryLockRow {
+  pid: number;
+  granted: boolean;
+  waitEventType: string | null;
+}
+
+async function advisoryLockRows(admin: PrismaClient, key: bigint): Promise<AdvisoryLockRow[]> {
+  // classid/objid are oid (unsigned 32-bit) columns; split the signed int8 key.
+  // The two halves are computed integers (never user input), inlined as
+  // literals so the int8→oid cast is unambiguous for values above 2^31.
+  const unsigned = BigInt.asUintN(64, key);
+  const classid = Number(unsigned >> 32n);
+  const objid = Number(unsigned & 0xffffffffn);
+  const rows = await admin.$queryRaw<
+    Array<{ pid: number; granted: boolean; wait_event_type: string | null }>
+  >`
+    SELECT l.pid, l.granted, a.wait_event_type
+      FROM pg_locks l
+      LEFT JOIN pg_stat_activity a ON a.pid = l.pid
+     WHERE l.locktype = 'advisory'
+       AND l.objsubid = 1
+       AND l.classid = ${Prisma.raw(String(classid))}::oid
+       AND l.objid = ${Prisma.raw(String(objid))}::oid
+     ORDER BY l.granted DESC`;
+  return rows.map((r) => ({
+    pid: Number(r.pid),
+    granted: r.granted,
+    waitEventType: r.wait_event_type,
+  }));
+}
+
+async function waitForAdvisoryWaiter(
+  admin: PrismaClient,
+  key: bigint,
+  timeoutMs: number,
+): Promise<AdvisoryLockRow | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const waiter = (await advisoryLockRows(admin, key)).find((r) => !r.granted);
+    if (waiter && waiter.waitEventType === 'Lock') return waiter;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
 }
 
 function asPrismaService(client: PrismaClient): PrismaService {
@@ -187,8 +236,21 @@ liveDescribe(
         settled = true;
         return r;
       });
+      // r4 (R592-c7B2-C01): prove the wait DIRECTLY from the server's lock
+      // table rather than by elapsed time. `pg_advisory_xact_lock(bigint)`
+      // shows up in pg_locks as locktype='advisory', classid = high 32 bits,
+      // objid = low 32 bits, objsubid = 1; the waiter's row is NOT granted and
+      // its backend reports wait_event_type='Lock'. Poll (bounded) until the
+      // waiter is visible, then assert.
+      const waiter = await waitForAdvisoryWaiter(admin, key, 10_000);
+      expect(waiter).toMatchObject({ granted: false, waitEventType: 'Lock' });
+      // The holder's row for the same key is granted on a different backend.
+      const holderRows = await advisoryLockRows(admin, key);
+      expect(holderRows.filter((r) => r.granted)).toHaveLength(1);
+      expect(holderRows.filter((r) => !r.granted)).toHaveLength(1);
+      expect(holderRows[0].pid).not.toBe(holderRows[1].pid);
+      // And it still has not written anything (timing check kept as a second witness).
       await new Promise((r) => setTimeout(r, 750));
-      // Still blocked on the lock held by the other connection.
       expect(settled).toBe(false);
       expect(await admin.aiRequestAudit.count()).toBe(0);
       releaseHolder();

@@ -15,23 +15,18 @@ export class StubStructuredProviderAdapter implements AiStructuredProviderAdapte
   readonly name = 'stub';
 
   async completeStructured(
-    req: AiStructuredProviderRequest,
+    _req: AiStructuredProviderRequest,
   ): Promise<AiStructuredProviderResponse> {
     return {
       provider: 'stub',
       model: 'disabled',
       output: null,
       enabled: false,
-      promptTokens: estimateTokens(req.systemPrompt) + estimateTokens(req.userContent),
-      responseTokens: 0,
+      // The stub spends nothing and reports no usage (unknown by construction;
+      // the stub path never reserves, so nothing is charged either way).
+      usage: null,
       latencyMs: 0,
       stopReason: 'stub',
     };
   }
-}
-
-export function estimateTokens(s: string): number {
-  if (!s) return 0;
-  // ~4 chars/token — the same rough estimate the legacy stub uses.
-  return Math.max(1, Math.round(s.length / 4));
 }

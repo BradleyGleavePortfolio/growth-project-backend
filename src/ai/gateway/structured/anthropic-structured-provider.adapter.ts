@@ -11,6 +11,7 @@ import {
   AiGatewayError,
   AiGatewayErrorCode,
   AiProviderUsage,
+  parseProviderUsage,
   toAiGatewayError,
 } from './structured-ai.errors';
 import { isObjectSchema } from './structured-provider.types';
@@ -107,21 +108,32 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
       throw mapped;
     }
     const latencyMs = Date.now() - startedAt;
-    const promptTokens = resp.usage?.input_tokens ?? 0;
-    const responseTokens = resp.usage?.output_tokens ?? 0;
-    const modelUsed = resp.model ?? req.model;
-    const stopReason = resp.stop_reason ?? null;
+    const modelUsed =
+      typeof resp.model === 'string' && resp.model.trim() !== '' ? resp.model : req.model;
+    const stopReason = typeof resp.stop_reason === 'string' ? resp.stop_reason : null;
     // r3 (R592-c7A-02, R592-c7B-01): the provider RETURNED — whatever we
     // decide about the content, the call was billed. Every rejection below
     // carries this usage so the gateway settles the actual charge.
-    const usage: AiProviderUsage = { promptTokens, responseTokens, model: modelUsed, stopReason };
+    // r4 (R592-c7A2-01, R592-c7B2-01): the usage block is VALIDATED, never
+    // defaulted. Missing / partial / non-integer counts ⇒ `null` ⇒ the
+    // gateway keeps the full reservation (usage unknown), and the rejection
+    // below carries no usage rather than a fabricated zero.
+    const usage: AiProviderUsage | null = parseProviderUsage(resp.usage, {
+      model: modelUsed,
+      stopReason,
+    });
+    if (!usage) {
+      this.logger.warn(
+        `[importer.mapping] provider response carried no usable usage block (model=${modelUsed}); usage recorded as unknown`,
+      );
+    }
     const reject = (code: AiGatewayErrorCode, reason: string): AiGatewayError =>
       new AiGatewayError(
         code,
-        { provider: this.name, model: modelUsed, reason },
+        { provider: this.name, model: modelUsed, reason, providerReturned: true },
         undefined,
         undefined,
-        usage,
+        usage ?? undefined,
       );
 
     // r2 (R592-A-B3): the answer must be EXACTLY one tool-use block naming
@@ -170,8 +182,7 @@ export class AnthropicStructuredProviderAdapter implements AiStructuredProviderA
       model: modelUsed,
       output: toolUse.input,
       enabled: true,
-      promptTokens,
-      responseTokens,
+      usage,
       latencyMs,
       stopReason,
     };
