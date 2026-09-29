@@ -162,6 +162,28 @@ exactly what these policies exist to defend.
      person-owned row through direct access; the flip is service-role only.
    - `ClientWorkoutAssignment`: `assignment_coach_manage` (USING and WITH CHECK) and
      `assignment_client_read` gain `AND "person_id" IS NULL`.
+     **Implementation addendum (2026-09-29, PR #587 fix round 1, orchestrator decision):** the
+     D3 live matrix surfaced a **latent base defect** in `assignment_coach_manage` as shipped in
+     `20260702000000` — its WITH CHECK reads `WorkoutPlan`, whose `client_read_assigned_plans`
+     (`20260620000000`) reads `ClientWorkoutAssignment`, so PostgreSQL refused **every** direct
+     INSERT/UPDATE on `ClientWorkoutAssignment` by a non-BYPASSRLS role with 42P17 ("infinite
+     recursion detected in policy") before evaluating any predicate; the designed coach-manage
+     write branch was unusable through direct access (the app writes as service_role, so it
+     never observed it). Reproduced on `integration/importer` without S8-D3. Fixed inside the D3
+     slice as a twelfth directory `20270125000011_cwa_coach_manage_plan_owner_helper`: the
+     plan-ownership test moves, predicate unchanged, into a `SECURITY DEFINER` `STABLE` helper
+     `app.current_user_owns_workout_plan(plan_id text)` (`SET search_path = ''`,
+     schema-qualified, EXECUTE revoked from PUBLIC and granted to `service_role`, `authenticated`,
+     `anon`, precedent `20261212000000`). SECURITY DEFINER SQL functions are never inlined, so
+     the rewriter no longer sees the cycle. Nobody gains read or write access: the helper returns
+     only whether the **caller** owns **one** plan id, and the rest of the policy is byte-identical
+     to D3-1. Reversible (`down.sql` restores the D3-1 text verbatim). Live-tested in
+     `test/rls-s8d3-person-owned-policies.spec.ts` (the 23 formerly-42P17 matrix cells pass as
+     written; coach A on coach B's plan → 42501; clients/students/anon cannot write; unlinked
+     Person rows service-role only). **Pre-existing gap left as-is, for the owner:** the policy has
+     never checked the _client's_ tenancy — a coach can assign their own plan to another coach's
+     student through direct access (the application layer guards this today). Tightening that is
+     a semantic change to a base policy (sub-coach semantics), not part of the cycle fix.
    - `WorkoutSession`, `WeightLog`, `Habit`: D3 **recreates** the three out-of-band policies inside
      the migration directory (`ENABLE`/`FORCE` + idempotent `DROP POLICY IF EXISTS` + `CREATE POLICY`)
      with `"user_id" = cur AND "person_id" IS NULL`. This also closes the harness gap and
@@ -506,6 +528,11 @@ unique constraint, `DROP INDEX CONCURRENTLY` each D3-2 index, drop columns, drop
 each with the same timeouts (precedent `20270118000000_…/down.sql` L5-6). The type ripple (§2.1)
 ships in the same slice because the generated client changes at D3-1. **All four directories count
 against the S11 pin (§6): 173 → 177 at D3, 178 after S8-E1a, 179 after S8-D6.**
+
+_Implementation note (2026-09-29):_ the landed tree is twelve directories (`20270125000000` …
+`20270125000011`): the four planned steps split so that each `CONCURRENTLY` index is its own
+non-transactional directory, plus `20270125000011_cwa_coach_manage_plan_owner_helper` for the
+base policy-cycle fix recorded in §2.2 item 4. The pin arithmetic in §6 counts the landed number.
 
 ## 3. Link flow against the existing machinery
 
