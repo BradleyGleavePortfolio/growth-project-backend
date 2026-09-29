@@ -33,6 +33,7 @@ import { isCanonicalPlatform } from '../../src/scout/scout-platform';
 
 import { ScoutIngestController } from '../../src/scout/scout-ingest.controller';
 import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
+import { ScoutLifecycleService } from '../../src/scout/lifecycle/lifecycle.service';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwksVerifierService } from '../../src/auth/jwks.service';
@@ -72,6 +73,15 @@ const analyticsStub = { capture: jest.fn() };
     { provide: AnalyticsService, useValue: analyticsStub },
     { provide: JwksVerifierService, useValue: jwksStub },
     { provide: PtmService, useValue: ptmStub },
+    // L2a r2 (R588-B-2): the lifecycle is a REQUIRED dependency under Nest (no silent
+    // self-construction). This validation-only module hand-builds it over the stubs, exactly the
+    // instance the removed @Optional fallback used to build.
+    {
+      provide: ScoutLifecycleService,
+      useFactory: (prisma: PrismaService, analytics: AnalyticsService) =>
+        new ScoutLifecycleService(prisma, analytics),
+      inject: [PrismaService, AnalyticsService],
+    },
     // Route uses @UseGuards(JwtAuthGuard, RolesGuard) — provide the REAL guards
     // so Nest resolves them from DI against the stubbed I/O above.
     JwtAuthGuard,
