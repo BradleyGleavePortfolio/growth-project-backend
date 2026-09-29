@@ -191,8 +191,11 @@ describe('S11 PG17 disposable target guard', () => {
     expect(() => withFixturePassword(base, 'a@b')).toThrow();
   });
   it('pins the base head and migration count identically across bootstrap, harness and repository', () => {
-    const BASE_HEAD = '711c1f8f8b42157bca97f2a721557be7ef006667';
-    const EXPECTED_MIGRATIONS = 173;
+    const BASE_HEAD = 'b7155deee2f470bfcc7ed65b014fc3d41f019b07';
+    const EXPECTED_MIGRATIONS = 185;
+    const LAST_MIGRATION_PIN = '20270125000011_cwa_coach_manage_plan_owner_helper';
+    /** The pre-S8-D3 count: S10-B's directory is the 173rd. */
+    const PRE_S8D3_MIGRATIONS = 173;
     const S8B_MIGRATION = '20270122000000_scout_native_provenance_expand';
     const S7L_MIGRATION = '20270123000000_scout_run_lifecycle_expand';
     const S10B_MIGRATION = '20270124000000_scout_run_observation_expand';
@@ -205,7 +208,8 @@ describe('S11 PG17 disposable target guard', () => {
     expect(bootstrap).toContain(`S7L_MIGRATION=${S7L_MIGRATION}\n`);
     expect(bootstrap).toContain(`S10B_MIGRATION=${S10B_MIGRATION}\n`);
     expect(bootstrap).toContain(`S10B_TABLES="${S10B_TABLES}"\n`);
-    expect(bootstrap).toContain('[[ "$LAST_MIGRATION" == "$S10B_MIGRATION" ]]');
+    expect(bootstrap).toContain(`LAST_MIGRATION_PIN=${LAST_MIGRATION_PIN}\n`);
+    expect(bootstrap).toContain('[[ "$LAST_MIGRATION" == "$LAST_MIGRATION_PIN" ]]');
     expect(G2_S11_BASE_HEAD).toBe(BASE_HEAD);
     expect(harness).toContain(`export const BASE_HEAD: string = G2_S11_BASE_HEAD;`);
     expect(bootstrap).toContain(`G2_S11_CANDIDATE_HEAD`);
@@ -214,12 +218,13 @@ describe('S11 PG17 disposable target guard', () => {
     expect(harness).toContain(`export const S8B_MIGRATION = '${S8B_MIGRATION}';`);
     expect(harness).toContain(`export const S7L_MIGRATION = '${S7L_MIGRATION}';`);
     expect(harness).toContain(`export const S10B_MIGRATION = '${S10B_MIGRATION}';`);
+    expect(harness).toContain(`export const LAST_MIGRATION_PIN = '${LAST_MIGRATION_PIN}';`);
     expect(harness).toContain(
       `export const S10B_TABLES = ['${S10B_TABLES.split(' ').join("', '")}'];`,
     );
-    // S11 ships no migration: the proof base's 173 directories are present, in order, and end at
-    // the S10-B migration (S7-L before it, S8-B before that). Lanes landed after the proof base may
-    // add later, well-formed migrations.
+    // S11 ships no migration: the proof base's 185 directories are present, in order, and end at
+    // the S8-D3 cycle-fix helper; S10-B is the 173rd (S7-L before it, S8-B before that). Lanes landed
+    // after the proof base may add later, well-formed migrations.
     const migrationsDir = resolve(__dirname, '../../prisma/migrations');
     const migrations = readdirSync(migrationsDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -227,18 +232,22 @@ describe('S11 PG17 disposable target guard', () => {
       .sort();
     const baseMigrations = migrations.slice(0, EXPECTED_MIGRATIONS);
     expect(baseMigrations).toHaveLength(EXPECTED_MIGRATIONS);
-    expect(baseMigrations[EXPECTED_MIGRATIONS - 1]).toBe(S10B_MIGRATION);
-    expect(baseMigrations[EXPECTED_MIGRATIONS - 2]).toBe(S7L_MIGRATION);
-    expect(baseMigrations[EXPECTED_MIGRATIONS - 3]).toBe(S8B_MIGRATION);
-    expect(baseMigrations.filter((name) => name > S10B_MIGRATION)).toEqual([]);
+    expect(baseMigrations[EXPECTED_MIGRATIONS - 1]).toBe(LAST_MIGRATION_PIN);
+    expect(baseMigrations[PRE_S8D3_MIGRATIONS - 1]).toBe(S10B_MIGRATION);
+    expect(baseMigrations[PRE_S8D3_MIGRATIONS - 2]).toBe(S7L_MIGRATION);
+    expect(baseMigrations[PRE_S8D3_MIGRATIONS - 3]).toBe(S8B_MIGRATION);
+    expect(
+      baseMigrations.slice(PRE_S8D3_MIGRATIONS).every((name) => name.startsWith('20270125')),
+    ).toBe(true);
+    expect(baseMigrations.filter((name) => name > LAST_MIGRATION_PIN)).toEqual([]);
     for (const later of migrations.slice(EXPECTED_MIGRATIONS)) {
-      expect(later > S10B_MIGRATION).toBe(true);
+      expect(later > LAST_MIGRATION_PIN).toBe(true);
       expect(later).toMatch(/^\d{14}_[a-z0-9_]+$/);
       expect(readdirSync(resolve(migrationsDir, later))).toContain('migration.sql');
     }
   });
   it('binds the proof to one attested, clean, non-base candidate head; the worker attests before any client', () => {
-    const base = '711c1f8f8b42157bca97f2a721557be7ef006667';
+    const base = 'b7155deee2f470bfcc7ed65b014fc3d41f019b07';
     const candidate = 'a'.repeat(40);
     expect(g2S11CandidateHead(candidate, `${candidate}\n`, '')).toBe(candidate);
     expect(() => g2S11CandidateHead(undefined, candidate, '')).toThrow(/G2_S11_CANDIDATE_HEAD/);
