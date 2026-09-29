@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -15,6 +15,7 @@ import {
   parseObservationEnvelope,
   ScoutRunDeclarationDto,
   ScoutRunDeclarationResult,
+  SCOUT_RUN_EVIDENCE_SCHEMAS,
   ScoutRunObservationDto,
   ScoutRunObservationResult,
 } from './observation.dto';
@@ -36,6 +37,9 @@ export type ObservationRequest = AuthedRequest & { rawBody?: Buffer };
  */
 @ApiTags('scout')
 @ApiBearerAuth('bearer')
+// L3 r4 (R589-c7A2-02): the two evidence kinds are reached only through the `oneOf` on
+// `ScoutRunObservationDto.observations`, so they must be registered as extra models.
+@ApiExtraModels(...SCOUT_RUN_EVIDENCE_SCHEMAS)
 @ApiResponse({
   status: 400,
   description:

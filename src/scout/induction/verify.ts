@@ -10,6 +10,7 @@ import {
   type FamilyCountBasis,
   type ProvingBasisKind,
   type ReplayFanOutV1,
+  type ReplayStepEvidenceV1,
 } from './contract';
 import { EMPTY_IDENTITY_SET_DIGEST, type IdentitySetDigest } from './digest';
 import type { InductionPackage, InductionRegistry } from './manifest-registry';
@@ -48,8 +49,11 @@ import {
 // `CoverageEvaluation.families` (for the one run-status projection, slice L2d) but NEVER a
 // `CoverageFact` with `known: true`: the reconciler cannot see the replay kind at all, and the run
 // settles `partial/coverage_basis_unknown` through the existing reason channel. `complete` stays
-// reachable only through `source_signed_enumeration`, whose manifests the loader refuses outside
-// an explicit development/test runtime (`parseInductionManifestForRuntime`, S12-B2 + L3 r3).
+// reachable only through `source_signed_enumeration`, whose manifests are refused outside an
+// explicit development/test runtime at the one registry boundary every package passes
+// (`buildInductionRegistry`, L3 r4 `R589-c7B2-01`: file, pinned/learned and partition packages
+// alike; the loader's `parseInductionManifestForRuntime` is the earlier redundant gate, S12-B2 +
+// L3 r3).
 // `evaluateCoverage` (the S9 facts) is otherwise unchanged; `evaluateCoverageDetailed` adds the
 // typed per-family structure (closed reason codes in `COVERAGE_REASON_CODES`).
 
@@ -410,10 +414,13 @@ function proveSourceSignedEnumeration(
  * the run's declaration challenge and report EXACTLY the step set the pinned package maps to the
  * family (the family token alone when the spec maps no step to it); a missing, extra or
  * duplicate step key is unknown. Per step, in this order: a synthetic or missing id is
- * `identity_unproven`; contradictory counters are `evidence_inconsistent`; a `budget`/`cycle`/
- * `error` stop is `crawl_truncated`; a step that fetched no page (a root step, or a fan-out with
- * contexts to visit) is `zero_pages_fetched`; fan-out counters that contradict each other or the
- * pages are `fan_out_short`. The family totals must be consistent with the steps (a single step
+ * `identity_unproven`; `raw_items` not exactly the sum of the four identity counters (r4) is
+ * `evidence_inconsistent`; a `budget`/`cycle`/`error` stop is `crawl_truncated`; a step that
+ * fetched no page (a root step, or a fan-out with contexts to visit) is `zero_pages_fetched`;
+ * fan-out counters that contradict each other or the pages are `fan_out_short`; an `empty_page`
+ * stop whose page counts cannot hold the fetched empty terminal page (r4: root `pages_fetched <
+ * 2`, fan-out `pages_fetched <= contexts_fetched`, with items) is `evidence_inconsistent`. The
+ * family totals must be consistent with the steps (a single step
  * IS the family). Then every step's `id_set_digest` and `distinct_raw_ids` must equal the staged
  * rows of that step (`staged_digest_missing` / `step_staged_mismatch`) — that is what makes a
  * multi-step union and a fan-out's parent id set verifiable. The unit is `exhausted` iff every step
@@ -451,10 +458,11 @@ function proveReplayTerminalEnumeration(
     if (step.synthetic_ids !== 0 || step.missing_id_items !== 0) {
       return unproven('identity_unproven');
     }
-    if (step.distinct_raw_ids > step.raw_items) return unproven('evidence_inconsistent');
-    if (step.distinct_raw_ids + step.duplicate_ids > step.raw_items) {
-      return unproven('evidence_inconsistent');
-    }
+    // L3 r4 (`R589-c7A2-01`; L0 r7 D-L0-4 C0 `raw_items == distinct_raw_ids + duplicate_ids`):
+    // EXACT accounting. Every reported item is exactly one of a first-seen staged identity, a
+    // repeat of one, a synthetic id or an item without an id; an item outside that partition has
+    // no accounted identity, so the count it would support is unknown, never `proven`.
+    if (!exactlyAccounted(step)) return unproven('evidence_inconsistent');
     if (REPLAY_ABORTED_STOPS.includes(step.stop)) return unproven('crawl_truncated');
     const fan = step.fan_out;
     if (fan === null) {
@@ -466,6 +474,12 @@ function proveReplayTerminalEnumeration(
       // A fan-out with contexts to visit that fetched no page observed nothing (unknown, never 0).
       if (fan.contexts_expected > 0 && step.pages_fetched < 1) return unproven('zero_pages_fetched');
     }
+    // L3 r4 (`R589-c7B2-02`): `empty_page` is proof only when the evidence can contain a FETCHED
+    // empty terminal page. `pages_fetched` counts that page, so a step that held items needs a
+    // page beyond the ones that held them: root `pages_fetched >= 2`; fan-out `pages_fetched >
+    // contexts_fetched` (every context that held items ended on its own empty page). A single
+    // 17-item page labelled `empty_page` is the L15 first page under another name: inconsistent.
+    if (!emptyPageConsistent(step)) return unproven('evidence_inconsistent');
     distinctSum += step.distinct_raw_ids;
   }
   // The family totals are the union of the steps' id sets: never more than their sum, and for
@@ -515,6 +529,24 @@ function proveReplayTerminalEnumeration(
       steps,
     },
   };
+}
+
+/** L3 r4: `raw_items` is exactly partitioned by the four identity counters (D-L0-4 C0). */
+function exactlyAccounted(step: ReplayStepEvidenceV1): boolean {
+  const accounted =
+    step.distinct_raw_ids + step.duplicate_ids + step.synthetic_ids + step.missing_id_items;
+  return Number.isSafeInteger(accounted) && accounted === step.raw_items;
+}
+
+/**
+ * L3 r4: a step stopped at `empty_page` reports page counts that can hold the fetched empty
+ * terminal page (`pages_fetched` includes it; `contract.ts` `ReplayStepEvidenceV1.pages_fetched`).
+ * A step that held no item may have fetched only the empty page itself.
+ */
+function emptyPageConsistent(step: ReplayStepEvidenceV1): boolean {
+  if (step.stop !== 'empty_page' || step.raw_items === 0) return true;
+  const fan = step.fan_out;
+  return fan === null ? step.pages_fetched >= 2 : step.pages_fetched > fan.contexts_fetched;
 }
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {

@@ -193,8 +193,9 @@ export const EVIDENCE_KEYS = [
  * How one replay step stopped, as the engine reports it (L0 r5 D-L0-6 `StopReason`, verbatim).
  * Three classes, decided by `verify.ts`:
  * - `REPLAY_EXHAUSTED_STOPS` — positive exhaustion after ≥ 1 page: `empty_page` (page style: the
- *   page after the last one came back empty) and `absent_next` (cursor / `next_url` style: the
- *   next path resolved to null/absent). Only these can make a count `proven`.
+ *   page after the last one came back empty and IS counted in `pages_fetched`, so a step that
+ *   held items has ≥ 2 pages; r4) and `absent_next` (cursor / `next_url` style: the next path
+ *   resolved to null/absent). Only these can make a count `proven`.
  * - `REPLAY_OBSERVED_STOPS` — the list ended without positive proof: `short_page` (a page shorter
  *   than the page size; r5: "a short page is NOT proof") and `first_page_only` (a `style: 'none'`
  *   step, whose single page is never certified). The count is at most `observed`.
@@ -266,17 +267,28 @@ export interface ReplayStepEvidenceV1 {
   /** The mapping spec's step key (or the family token when the spec maps no step to the family). */
   readonly step_key: string;
   /**
-   * Pages fetched by this step. A root step (`fan_out: null`) must have fetched ≥ 1 page (the
-   * parser refuses 0): a crawl that fetched nothing observed no terminal, so an empty collection
-   * is proven only by a positive GET (unknown is never 0). For a fan-out step, the total across
-   * its contexts (≥ `contexts_fetched`).
+   * EVERY page this step fetched, the terminal page INCLUDED (L3 r4, `R589-c7B2-02`, normative):
+   * a page-style list of two data pages whose page 3 came back empty reports `pages_fetched: 3`;
+   * a cursor-style list whose last data page carried no next cursor reports its data pages. A root
+   * step (`fan_out: null`) must have fetched ≥ 1 page (the parser refuses 0): a crawl that fetched
+   * nothing observed no terminal, so an empty collection is proven only by a positive GET (unknown
+   * is never 0). For a fan-out step, the total across its contexts (≥ `contexts_fetched`).
+   * Consequently `stop: 'empty_page'` with `raw_items > 0` requires `pages_fetched ≥ 2` on a root
+   * step and `pages_fetched > contexts_fetched` on a fan-out (each context that held items ended
+   * on its own fetched empty page); the evaluator answers `evidence_inconsistent` (unknown)
+   * otherwise — a single non-empty page is never an empty terminal page.
    */
   readonly pages_fetched: number;
-  /** Items the pages held, before identity. */
+  /**
+   * Items the pages held, before identity. EXACTLY partitioned by the four counters below (L3 r4,
+   * `R589-c7A2-01`; L0 r7 D-L0-4 C0): `raw_items === distinct_raw_ids + duplicate_ids +
+   * synthetic_ids + missing_id_items`. An item outside the partition has no accounted identity,
+   * so the evaluator answers `evidence_inconsistent` (unknown), never a `proven` count.
+   */
   readonly raw_items: number;
-  /** Distinct staged identities among them (never a synthetic id). */
+  /** Items that were the first occurrence of a real staged identity (never a synthetic id). */
   readonly distinct_raw_ids: number;
-  /** Items whose identity repeated an earlier one. */
+  /** Items whose real identity repeated an earlier one. */
   readonly duplicate_ids: number;
   /** Items given a synthetic positional id; must be 0 (a fabricated identity never counts). */
   readonly synthetic_ids: number;
@@ -402,7 +414,11 @@ export const COVERAGE_REASON_CODES = [
   'zero_pages_fetched',
   /** A replay step counted a synthetic or missing id: a fabricated identity never proves. */
   'identity_unproven',
-  /** A replay row's step counters or digests contradict its family totals. */
+  /**
+   * A replay row contradicts itself: a step's `raw_items` is not exactly the sum of its four
+   * identity counters (r4), an `empty_page` stop with items on too few pages to hold the fetched
+   * empty terminal page (r4), or step counters/digests that contradict the family totals.
+   */
   'evidence_inconsistent',
   /**
    * A fan-out step's context counters contradict each other or its pages (`contexts_fetched` >

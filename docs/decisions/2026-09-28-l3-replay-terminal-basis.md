@@ -1,7 +1,8 @@
 # L3 — `replay_terminal_enumeration` evidence: a per-family SOURCE COUNT with a stated basis (no closure yet)
 
-Status: implemented on `cand/x43/l3-basis` (draft PR #589 to `integration/importer`), r3 after
-the T4 reviews R589-A / R589-B (r2) and R589-c7A / R589-c7B (r3), under the **executive reset
+Status: implemented on `cand/x43/l3-basis` (draft PR #589 to `integration/importer`), r4 after
+the T4 reviews R589-A / R589-B (r2), R589-c7A / R589-c7B (r3) and R589-c7A2 / R589-c7B2 (r4; §7),
+under the **executive reset
 of 2026-09-29** (`reviews/EXEC_RESET_2026-09-29.md` §1, §6, §8 — binding). Extends
 `docs/decisions/2026-09-26-s10-induction.md` (D-S10-1, D-S10-8) and the L0 record
 `docs/decisions/2026-09-27-learn-and-remember.md` **r7** (`origin/cand/x43/learn-doc-r2` at
@@ -37,7 +38,19 @@ file/reviewed, legacy) has a run-level closure. Consequently:
   development/test runtime**. r3 closes `R589-c7A-01`: the runtime loader
   (`parseInductionManifestForRuntime(raw, origin, refuseTestOnly = true)`) refuses **every**
   manifest that lists a verifier-bound kind for any family, marked or not
-  (`listsVerifierBoundKind`), in addition to the S12-B2 marker rules. Reproduced by auditor A and
+  (`listsVerifierBoundKind`), in addition to the S12-B2 marker rules. **r4 (`R589-c7B2-01`) moves
+  the rule to the one boundary every package passes:** `buildInductionRegistry` (the S10-C
+  cross-check every registry is built through — the file loader's manifests, a run's pinned or
+  learned package via `composeRunArtifacts` → `buildSourceRegistries`, a mapper partition via
+  `partitionInductionRegistry`, the proof workers) drops any manifest listing a verifier-bound
+  kind unless `NODE_ENV` is explicitly development/test (`InductionRegistryInput.refuseVerifierBoundKinds`,
+  default `!testOnlyArtifactsAllowed(NODE_ENV)`), after validating it. On `e5b990b6` the same
+  unmarked signed manifest, supplied as `RunPackage.manifest` and composed under
+  `NODE_ENV=production`, settled `complete` (auditor B's repro); it now yields `package_missing`
+  for every family and `partial/coverage_basis_unknown`, through `composeRunArtifacts`, through
+  `SourceRegistryProvider.forRun` with an overriding `RUN_PACKAGE_SOURCE` and through a partition
+  (`test-only-exclusion.spec.ts` "R589-c7B2-01", failing on `e5b990b6`). The loader's own refusal
+  stays as the earlier, redundant gate. Reproduced by auditor A and
   settled against auditor B's statement: on `61b0d251` an unmarked, otherwise valid signed
   manifest with valid signed evidence loaded under refusal and reached `complete`
   (`test-only-exclusion.spec.ts` "R589-c7A-01", fails on the old head). The r2 "positive control"
@@ -87,14 +100,34 @@ step count and digest is over the **staged identity**: under `idScope: 'parent'`
 `parent:id`, otherwise the raw id. Two parents sharing a child raw id are two identities; a raw
 (collapsed) digest never verifies against the staged rows (`step_staged_mismatch`, tested).
 
-Uploaded through the existing `runs/observation` route; `ScoutRunObservationEvidenceSchema`
-carries the kind-specific optional fields and `ScoutRunReplayStepEvidenceSchema` /
-`ScoutRunReplayFanOutSchema` describe the step (contract regenerated).
+Uploaded through the existing `runs/observation` route. **Published schema (r4, `R589-c7A2-02`):**
+`ScoutRunObservationDto.observations[]` is a discriminated `oneOf` (`discriminator: basis_kind`)
+over two closed component schemas, `ScoutRunSourceSignedEvidenceSchema` and
+`ScoutRunReplayTerminalEvidenceSchema`; each requires **every** wire key of its kind, pins
+`basis_kind` to a one-value enum and sets `additionalProperties: false`;
+`ScoutRunReplayStepEvidenceSchema` (all 12 keys required, counters `integer ≥ 0`) and
+`ScoutRunReplayFanOutSchema` (all 5 keys required) are closed the same way; `fan_out` is
+`oneOf: [FanOut, {type: null}]`; decoded byte lengths (32-byte challenge, 64-byte signature,
+≤ 1024-byte statement) are padded-base64 patterns. The r3 loose union
+(`ScoutRunObservationEvidenceSchema`, common keys required and both tails optional) is gone.
+`test/contracts/importer-contract.spec.ts` pins the structure and runs an independent JSON
+Schema validator (`ajv`) against `parseEvidence` over a corpus that drops, adds, retypes and
+ranges every key of both kinds, the step and the fan-out: they agree on every syntactic case,
+and the handful of rules no schema can state (root `pages_fetched: 0`, self-parent, duplicate
+`step_key`, canonical base64 padding bits, canonical-JSON statement) are schema-valid and
+parser-rejected, never the reverse. The contract artifact is regenerated.
 
 Body bound (D-L0-6): the route checks the received bytes against 64 KiB first, parses the
 envelope, then re-checks against 32 KiB unless **every** entry is the replay kind. A mixed or
 signed-only body between 32 and 64 KiB is therefore refused as `too_large` after parsing rather
 than before (the same 400, one parse later); nothing is stored either way.
+
+**`pages_fetched` is normative (r4, `R589-c7B2-02`):** it counts **every** page the step fetched,
+the terminal page **included** — a page-style list of two data pages whose page 3 came back
+empty is `pages_fetched: 3`; a cursor-style list reports its data pages. X2b builds against this.
+**`raw_items` is exactly partitioned (r4, `R589-c7A2-01`; D-L0-4 C0):** `raw_items ===
+distinct_raw_ids + duplicate_ids + synthetic_ids + missing_id_items` — every reported item is a
+first-seen real identity, a repeat of one, a synthetic id or an item without an id.
 
 Parser refusals (`parseEvidence`, never throws): any unknown/missing key, a non-integer or
 negative counter, a `stop` outside the closed set, a non-boolean `advertised_next`, a non-hex64
@@ -109,13 +142,20 @@ Binding first: the row binds to this run (coach, intent, epoch, challenge, scope
 the reported step set is **exactly** the spec's steps for the family — the family token alone
 when the spec maps no step to it (`R589-B-C7`); a missing, extra or duplicate step is
 `step_set_mismatch`. Per step: `synthetic_ids`/`missing_id_items ≠ 0` ⇒ `identity_unproven`;
-contradictory counters (`distinct_raw_ids + duplicate_ids ≤ raw_items`) ⇒
-`evidence_inconsistent`; an aborted stop (`budget`/`cycle`/`error`) ⇒ `crawl_truncated`; a root
-step with no page, or a fan-out with contexts to visit and no page ⇒ `zero_pages_fetched`;
-fan-out counters contradicting each other or the page total (`fetched > expected`, `exhausted >
-fetched`, `pages_fetched < fetched`) ⇒ `fan_out_short`. The family totals must be consistent with
-the steps (`observed_unique ≤ Σ distinct_raw_ids`; a single-step family's count and digest ARE
-the family's).
+**inexact accounting** (r4: `raw_items ≠ distinct_raw_ids + duplicate_ids + synthetic_ids +
+missing_id_items`; r3 checked only `>`, so `raw_items: 2, distinct_raw_ids: 1` with nothing else
+accounted certified `proven 1` — auditor A2's counterexample) ⇒ `evidence_inconsistent`; an
+aborted stop (`budget`/`cycle`/`error`) ⇒ `crawl_truncated`; a root step with no page, or a
+fan-out with contexts to visit and no page ⇒ `zero_pages_fetched`; fan-out counters contradicting
+each other or the page total (`fetched > expected`, `exhausted > fetched`, `pages_fetched <
+fetched`) ⇒ `fan_out_short`; **an `empty_page` stop with no room for the fetched empty terminal
+page** (r4: `raw_items > 0` with root `pages_fetched < 2`, or fan-out `pages_fetched ≤
+contexts_fetched` — auditor B2's T19 "17 items on one page labelled `empty_page`" and T20) ⇒
+`evidence_inconsistent`, i.e. unknown, not even `observed` (the row is self-contradictory; an
+honest first page is `first_page_only`/`short_page` and is `observed`). `raw_items: 0` with
+`pages_fetched: 1` and `empty_page` stays the positive proof of an empty collection. The family
+totals must be consistent with the steps (`observed_unique ≤ Σ distinct_raw_ids`; a single-step
+family's count and digest ARE the family's).
 
 **Per-step staged verification (`R589-c7A-04`, `R589-c7B-C4/S4`).** `StagedPlatformFacts.steps`
 (new, required: `entity_type → IdentitySetDigest | null`, emitted by `stagedPlatformFacts` for
@@ -172,7 +212,10 @@ unchanged `evaluateCoverage()`: `families[family] = {source_count: int | null, c
 'proven' | 'observed' | 'unknown', basis_kind, reasons: {code, platform | null}[]}` — the typed
 structure `RunStatusProjectionV1.families[].source_count/count_basis` and `gaps[]` (slice L2d)
 consume. `observed` here is the **evaluator's** basis (a verified but unexhausted list), never a
-run basis; L2d may still derive an `observed` row from staged rows when no evidence exists.
+run basis. L0 r7 defines `observed` **only** from step evidence (D-L0-6 "Family count basis";
+§3.4 "`source_count` is null without an `observed`/`proven` basis"): L2d shows a count only with
+an evaluator basis and **never derives one from staged rows** — the r3 sentence licensing that is
+withdrawn (`R589-c7B2-C02`; the D5 "unknown shown as unknown, never 0" rule).
 `template_absent` and `residual_unknown` (r6/r7 `GapCode`s, D-L0-6.3) are not L3 evidence:
 `template_absent` is L2d's mapping of a pin-recorded absent template (r7 D-L0-3; this evaluator
 only ever sees the pin's step set and fails closed `step_set_mismatch` when a step is missing);
@@ -186,4 +229,24 @@ S9 facts.
 Step **variants** (`:s`/`:q`; `R589-c7A-05`, `R589-c7B-C3`) are not representable until the pin
 carries the compiled package: today's spec has step tokens only, so a variant key is an extra step
 and fails closed (`step_set_mismatch`). When the pin lands, L3b must accept exactly the pin's
-step-and-variant set and check `fan_out.parent_step` against the pin's `forEach`.
+step-and-variant set and check `fan_out.parent_step` against the pin's `forEach`. Explicitly
+(`R589-c7B2-C01`): once the pin carries `forEach`, a pinned fan-out step that reports `fan_out:
+null` — or a pinned root step that reports a parent — is refused (`step_set_mismatch` or a new
+closed code), so a fan-out cannot escape parent binding by calling itself a root; today the pin
+has no edge and such a row verifies only against its own staged rows (auditor B2's T16).
+
+## 7. r4 (R589-c7A2 / R589-c7B2) — what changed and what did not
+
+- `R589-c7B2-01` (B): kind refusal at `buildInductionRegistry` for every package path (above).
+- `R589-c7B2-02` (B): `pages_fetched` normative; `empty_page` consistency rule (§2, §3).
+- `R589-c7A2-01` (B): exact `raw_items` accounting per step (§2, §3).
+- `R589-c7A2-02` (B): closed, discriminated OpenAPI union; validator-vs-parser agreement test (§2).
+- `R589-c7B2-C02` (C): the evidence-free `observed` sentence withdrawn (§5). `R589-c7B2-C01` (C):
+  recorded in §6. `R589-c7B2-C05` (C): `indexSteps`' ambiguity branch (a step key verified in two
+  families is dropped, so no fan-out binds to it) is defensive — `spec.steps` maps a step key to
+  one family, so the case is reachable only through a spec that names a family token as another
+  family's step; not exercised by a test in r4, recorded. `R589-c7B2-C03`/`C04` and
+  `R589-c7A2` C notes are the L0 owner's (fan-out shortfall wording, `stepKey` casing) or X2b's
+  (`next_url` confinement); not changed here.
+- Unchanged: `reconcile.ts`, `coverage.ts`, `arbiter.ts`, `RUN_REASON_CODES`, the Prisma schema,
+  the parser's grammar (the r4 rules are evaluator-level, so a stored T19/T20 row answers unknown).

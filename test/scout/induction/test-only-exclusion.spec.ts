@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import type { InductionManifestV1 } from '../../../src/scout/induction/contract';
-import { stagedFamilyDigests } from '../../../src/scout/induction/digest';
+import { mappingSpecDigest, stagedFamilyDigests } from '../../../src/scout/induction/digest';
 import {
   buildInductionRegistry,
   INDUCTION_MANIFESTS_DIR,
@@ -23,8 +23,23 @@ import {
   type StoredObservation,
 } from '../../../src/scout/induction/verify';
 import { parseSourceMappingSpec } from '../../../src/scout/reconstruct/mapping-spec';
-import { loadNativeRuleSets } from '../../../src/scout/reconstruct/native/native-rule-registry';
-import { loadSourceMappingSpecs } from '../../../src/scout/reconstruct/source-mapper-registry';
+import {
+  buildNativeRuleRegistry,
+  loadNativeRuleSets,
+} from '../../../src/scout/reconstruct/native/native-rule-registry';
+import {
+  buildSourceMapperRegistry,
+  loadSourceMappingSpecs,
+} from '../../../src/scout/reconstruct/source-mapper-registry';
+import {
+  buildSourceRegistries,
+  composeRunArtifacts,
+  SourceRegistryProvider,
+  type RegistryDb,
+  type RunPackage,
+  type SourceArtifacts,
+} from '../../../src/scout/reconstruct/source-registry.provider';
+import { partitionInductionRegistry } from '../../../src/scout/reconciliation/facts.service';
 import {
   evidenceFor,
   referenceIdDigest,
@@ -109,11 +124,10 @@ function registry(manifests: readonly InductionManifestV1[]): InductionRegistry 
   return buildInductionRegistry({ manifests, specs: [SPEC], nativeRuleSets: [] });
 }
 
-function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
-  // The spec digest does not depend on the manifest, so the evidence is identical in every mode.
-  const specDigest = registry([parseInductionManifest(FIXTURE_RAW, 'digest')]).packages.get(
-    SLUG,
-  )!.specDigest;
+function evaluate(reg: InductionRegistry, slug = SLUG): ReturnType<typeof evaluateCoverage> {
+  // The spec digest does not depend on the manifest, so the evidence is identical in every mode
+  // (when the package was refused, the digest of the fixture spec keeps the evidence well-formed).
+  const specDigest = reg.packages.get(slug)?.specDigest ?? mappingSpecDigest(SPEC)!;
   const observations: StoredObservation[] = FAMILIES.map((family) => ({
     coach_id: RUN.coach_id,
     intent_id: RUN.intent_id,
@@ -122,7 +136,7 @@ function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
     evidence: evidenceFor(
       {
         statement_version: 1,
-        source_platform: SLUG,
+        source_platform: slug,
         account_scope_id_digest: SCOPE,
         family,
         challenge_b64: CHALLENGE.toString('base64'),
@@ -140,13 +154,13 @@ function evaluate(reg: InductionRegistry): ReturnType<typeof evaluateCoverage> {
     run: RUN,
     declaration: {
       challenge: CHALLENGE,
-      platforms: [{ source_platform: SLUG, account_scope_id_digests: [SCOPE] }],
+      platforms: [{ source_platform: slug, account_scope_id_digests: [SCOPE] }],
     },
     registry: reg,
     observations,
     staged: [
       {
-        source_platform: SLUG,
+        source_platform: slug,
         grouped_families: FAMILIES,
         families: stagedFamilyDigests(Object.entries(IDS)),
         steps: new Map(),
@@ -216,6 +230,18 @@ function withNodeEnv<T>(value: string | undefined, run: () => T): T {
   }
 }
 
+async function withNodeEnvAsync<T>(value: string | undefined, run: () => Promise<T>): Promise<T> {
+  const saved = process.env.NODE_ENV;
+  if (value === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = value;
+  try {
+    return await run();
+  } finally {
+    if (saved === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = saved;
+  }
+}
+
 const REFUSING_ENVS: readonly (string | undefined)[] = [
   undefined,
   '',
@@ -274,6 +300,117 @@ describe('positive control — the unmarked signed package proves in the allowin
     expect(kept?.basisKinds.clients).toEqual([REPLAY]);
     expect(listsVerifierBoundKind(parseInductionManifest(replayOnly, 'r'))).toBe(false);
     expect(listsVerifierBoundKind(parseInductionManifest(oneSigned, 'o'))).toBe(true);
+  });
+});
+
+describe('R589-c7B2-01 — the kind refusal holds at the registry boundary every package passes (L3 r4)', () => {
+  /** The auditor's pinned-package case: the UNMARKED signed fixture manifest as a run's `RunPackage`. */
+  const PINNED: RunPackage = {
+    spec: SPEC,
+    nativeRuleSet: null,
+    manifest: parseInductionManifest(FIXTURE_RAW, 'pin'),
+  };
+  /** File artifacts that do not define the slug (the pin is the only definition of it). */
+  const NO_FILES: SourceArtifacts = { specs: [], nativeRuleSets: [], manifests: [] };
+  const NO_DB = {} as RegistryDb;
+
+  it('buildInductionRegistry drops a manifest listing source_signed_enumeration in a refusing runtime, whichever path supplied it; a replay-only manifest stays', () => {
+    const signed = parseInductionManifest(FIXTURE_RAW, 'signed');
+    const replayOnly = parseInductionManifest(
+      { ...FIXTURE_RAW, basisKinds: { clients: [REPLAY], programs: [REPLAY], workouts: [REPLAY] }, verifiers: [] },
+      'replay',
+    );
+    for (const value of REFUSING_ENVS) {
+      withNodeEnv(value, () => {
+        expect(registry([signed]).packages.has(SLUG)).toBe(false);
+        expect(registry([replayOnly]).packages.has(SLUG)).toBe(true);
+      });
+    }
+    for (const value of ALLOWING_ENVS) {
+      withNodeEnv(value, () => {
+        expect(registry([signed]).packages.get(SLUG)?.manifest).toEqual(signed);
+      });
+    }
+    // The explicit switch overrides the runtime default both ways.
+    expect(
+      buildInductionRegistry({ manifests: [signed], specs: [SPEC], nativeRuleSets: [], refuseVerifierBoundKinds: true }).packages.has(SLUG),
+    ).toBe(false);
+    expect(
+      buildInductionRegistry({ manifests: [signed], specs: [SPEC], nativeRuleSets: [], refuseVerifierBoundKinds: false }).packages.has(SLUG),
+    ).toBe(true);
+  });
+
+  it('a defective signed manifest still fails loudly before it is dropped (validated, then refused)', () => {
+    const mismatched = parseInductionManifest(
+      { ...FIXTURE_RAW, expectedFamilies: ['clients', 'workouts'], basisKinds: { clients: [SIGNED], workouts: [SIGNED] } },
+      'defective',
+    );
+    withNodeEnv('production', () => {
+      expect(() => registry([mismatched])).toThrow(/expectedFamilies must equal the mapping spec families/);
+    });
+  });
+
+  it.each(REFUSING_ENVS.map((v) => [label(v), v]))(
+    'NODE_ENV %s: the auditor\'s pinned package (composeRunArtifacts → buildSourceRegistries) with valid signed evidence yields every family unknown and the run settles partial, never complete',
+    (_name, value) => {
+      withNodeEnv(value, () => {
+        const composed = buildSourceRegistries(composeRunArtifacts(NO_FILES, PINNED));
+        expect(composed.induction.packages.has(SLUG)).toBe(false);
+        expect(composed.sourceMappers.has(SLUG)).toBe(true); // the spec still maps rows; only the closure is gone
+        const facts = evaluate(composed.induction);
+        expect(facts).toEqual(UNPROVEN);
+        expect(verdictOf(facts)).toEqual({ outcome: 'partial', reason_code: 'coverage_basis_unknown' });
+      });
+    },
+  );
+
+  it.each(ALLOWING_ENVS.map((v) => [label(v), v]))(
+    'NODE_ENV %s: the same pinned package proves and reaches complete (discriminating control: the runtime, not the evidence, closes the path)',
+    (_name, value) => {
+      withNodeEnv(value, () => {
+        const composed = buildSourceRegistries(composeRunArtifacts(NO_FILES, PINNED));
+        expect(composed.induction.packages.get(SLUG)?.manifest).toEqual(PINNED.manifest);
+        const facts = evaluate(composed.induction);
+        expect(facts).toEqual(PROVEN);
+        expect(verdictOf(facts)).toEqual({ outcome: 'complete', reason_code: null });
+      });
+    },
+  );
+
+  it('through SourceRegistryProvider.forRun with an overriding RUN_PACKAGE_SOURCE (the L2b seam): refusing → partial; allowing → complete', async () => {
+    // The provider composes over the REPOSITORY files, which already define the fixture slug, so
+    // the pin carries the same package under a slug the files do not define.
+    const learned = `${SLUG}_learned`;
+    const learnedPin: RunPackage = {
+      spec: parseSourceMappingSpec(
+        { ...JSON.parse(readFileSync(S10_PURE_SPEC_PATH, 'utf8')), sourcePlatform: learned },
+        `${learned}.json`,
+      ),
+      nativeRuleSet: null,
+      manifest: parseInductionManifest({ ...FIXTURE_RAW, sourcePlatform: learned }, 'learned-pin'),
+    };
+    const provider = new SourceRegistryProvider({ forRun: () => Promise.resolve(learnedPin) });
+    // The registry is composed AFTER the pin read resolves, so the runtime is held across the await.
+    const refused = await withNodeEnvAsync('production', () => provider.forRun(NO_DB, RUN.coach_id, RUN.intent_id));
+    expect(refused.pinned).toBe(learnedPin);
+    expect(refused.sourceMappers.has(learned)).toBe(true);
+    expect(refused.induction.packages.has(learned)).toBe(false);
+    expect(verdictOf(evaluate(refused.induction, learned))).toEqual({ outcome: 'partial', reason_code: 'coverage_basis_unknown' });
+    const allowed = await withNodeEnvAsync('test', () => provider.forRun(NO_DB, RUN.coach_id, RUN.intent_id));
+    expect(allowed.induction.packages.has(learned)).toBe(true);
+    expect(verdictOf(evaluate(allowed.induction, learned))).toEqual({ outcome: 'complete', reason_code: null });
+  });
+
+  it('through a mapper partition (partitionInductionRegistry): the signed manifest is dropped in a refusing runtime', () => {
+    const files: SourceArtifacts = { specs: [SPEC], nativeRuleSets: [], manifests: [PINNED.manifest!] };
+    const mappers = buildSourceMapperRegistry([SPEC]);
+    const rules = buildNativeRuleRegistry([]);
+    withNodeEnv('production', () => {
+      expect(partitionInductionRegistry(files, mappers, rules).packages.has(SLUG)).toBe(false);
+    });
+    withNodeEnv('test', () => {
+      expect(partitionInductionRegistry(files, mappers, rules).packages.has(SLUG)).toBe(true);
+    });
   });
 });
 

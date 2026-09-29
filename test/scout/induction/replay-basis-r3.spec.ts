@@ -442,7 +442,8 @@ describe('L3 r3 — fan-out (L0 r5/r6 D-L0-6): parent_ids_digest = the parent st
     expect(d.families.programs).toEqual(UNCOUNTED('fan_out_parent_unproven'));
     // The honest binding to routines' two verified ids proves.
     const honest = replayEvidence('programs', {
-      steps: [step('plans', { pages_fetched: 2, fan_out: fanOver('routines', STEP_IDS.routines) })],
+      // r4: `empty_page` counts the fetched empty terminal page — 2 contexts, 1 item, 3 pages.
+      steps: [step('plans', { pages_fetched: 3, fan_out: fanOver('routines', STEP_IDS.routines) })],
     });
     expect(detailed({ observations: rows({ programs: [stored(honest)] }) }).families).toEqual(BASELINE);
   });
@@ -513,7 +514,7 @@ describe('L3 r3 — fan-out (L0 r5/r6 D-L0-6): parent_ids_digest = the parent st
     const wrongParentDigest = replayEvidence('workouts', {
       steps: [
         step('routines'),
-        step('sessions', { pages_fetched: 2, fan_out: { ...fanOver('members', ['p1']), contexts_expected: 2, contexts_fetched: 2, contexts_exhausted: 2 } }),
+        step('sessions', { pages_fetched: 3, fan_out: { ...fanOver('members', ['p1']), contexts_expected: 2, contexts_fetched: 2, contexts_exhausted: 2 } }),
       ],
     });
     expect(detailed({ observations: rows({ workouts: [stored(wrongParentDigest)] }) }).families.workouts).toEqual(
@@ -551,7 +552,7 @@ describe('L3 r3 — fan-out (L0 r5/r6 D-L0-6): parent_ids_digest = the parent st
       steps: [step('routines'), step('sessions', { pages_fetched: 2, stop: 'absent_next', fan_out: fanOver('members', STEP_IDS.members) })],
     });
     const plansOverSessions = replayEvidence('programs', {
-      steps: [step('plans', { pages_fetched: 1, fan_out: fanOver('sessions', STEP_IDS.sessions) })],
+      steps: [step('plans', { pages_fetched: 2, fan_out: fanOver('sessions', STEP_IDS.sessions) })],
     });
     expect(
       detailed({ observations: rows({ workouts: [stored(sessionsOverMembers)], programs: [stored(plansOverSessions)] }) })

@@ -6,6 +6,7 @@ import type { InductionManifestV1 } from './contract';
 import { mappingSpecDigest } from './digest';
 import {
   isCanonicalFamily,
+  listsVerifierBoundKind,
   parseInductionManifest,
   parseInductionManifestForRuntime,
 } from './parse';
@@ -102,6 +103,17 @@ export interface InductionRegistryInput {
   readonly manifests: readonly InductionManifestV1[];
   readonly specs: readonly SourceMappingSpec[];
   readonly nativeRuleSets: readonly NativeRuleSet[];
+  /**
+   * L3 r4 (`R589-c7B2-01`): refuse every manifest that lists a verifier-bound kind
+   * (`source_signed_enumeration`) at THIS boundary, which every package passes — the file loader's
+   * manifests, a run's pinned/learned package (`composeRunArtifacts` → `buildSourceRegistries`),
+   * a partition (`partitionInductionRegistry`) and the proof workers alike. Default: the runtime
+   * is not explicitly development/test (`testOnlyArtifactsAllowed`), read at build time. A
+   * refused manifest is dropped, exactly as the loader drops it: its platform has no induction
+   * package, every family is unknown (`package_missing`) and the run settles `partial`. Tests and
+   * the S10/S11 harnesses pass `false` only through an allowing `NODE_ENV`.
+   */
+  readonly refuseVerifierBoundKinds?: boolean;
 }
 
 function familyKeys(families: object): CanonicalFamily[] {
@@ -132,8 +144,19 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
  * spec, rule set or manifest; a manifest or rule set without exactly one spec; `expectedFamilies`
  * ≠ the spec's `families` keys; `nativeRules: 'declared'` without a loaded rule set (or `absent`
  * with one); rule-set families outside `expectedFamilies`.
+ *
+ * L3 r4 (`R589-c7B2-01`; executive reset 2026-09-29 §1, L0 r7 D-L0-6 "no package type — learned,
+ * file/reviewed or legacy — has a run-level closure"): this is the ONE choke point every induction
+ * package passes before the evaluator can see it, so the kind-level refusal of
+ * `source_signed_enumeration` (the only kind that yields `known: true`, from which S9 settles
+ * `complete`) is enforced HERE, not only in the file loader. In a refusing runtime a manifest
+ * listing that kind for any family is validated (the cross-checks above still run on it) and then
+ * dropped, marker or no marker, whichever path supplied it. `parseInductionManifestForRuntime`
+ * in the loader stays as the earlier, redundant gate.
  */
 export function buildInductionRegistry(input: InductionRegistryInput): InductionRegistry {
+  const refuseVerifierBoundKinds =
+    input.refuseVerifierBoundKinds ?? !testOnlyArtifactsAllowed(process.env.NODE_ENV);
   const specs = new Map<string, SourceMappingSpec>();
   for (const spec of input.specs) {
     if (specs.has(spec.sourcePlatform)) {
@@ -188,6 +211,9 @@ export function buildInductionRegistry(input: InductionRegistryInput): Induction
     }
     const specDigest = mappingSpecDigest(spec);
     if (specDigest === null) throw new Error(`mapping spec for ${platform} is not canonical JSON`);
+    // L3 r4: after the cross-checks (a defective manifest still fails loudly), before the package
+    // exists. Dropped, never composed: the platform is unprovable in this runtime.
+    if (refuseVerifierBoundKinds && listsVerifierBoundKind(manifest)) continue;
     packages.set(
       platform,
       Object.freeze({ manifest, specDigest, stepsByFamily: stepsByFamily(spec) }),
