@@ -264,10 +264,10 @@ describe('S8-F stage 4: roster stays the Person bridge on a real ledger (F10)', 
     ledger({ source: 'c2', family: 'clients', targetId: 'person-1', kind: 'workout_plan' });
   });
 
-  it('F10: the response is qualified and only the NULL/person-kind row is served', async () => {
+  it('F10: the response is qualified (fixed false since S8-D2) and only the NULL/person-kind row is served', async () => {
     const r = await roster();
     expect(r.failure).toBeUndefined();
-    expect(r.result.roster_bridge_pending).toBe(true);
+    expect(r.result.roster_bridge_pending).toBe(false);
     expect(r.result.persons.map((p: any) => p.source_person_id)).toEqual(['tc_1']);
     expect(r.result.accounting.reconstructed).toBe(2);
   });

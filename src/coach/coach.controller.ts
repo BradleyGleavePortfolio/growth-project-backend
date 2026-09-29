@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  NotFoundException,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
@@ -9,6 +21,8 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AdminPtmService } from '../admin/ptm/admin-ptm.service';
 import { RiskBoardQueryDto } from '../admin/ptm/admin-ptm.dto';
+import { ImportedPeopleService } from './imported-people.service';
+import { ImportedPeopleQueryDto, ImportedPeopleResult } from './imported-people.dto';
 
 @ApiTags('coach')
 @Controller('coach')
@@ -18,6 +32,7 @@ export class CoachController {
     private coachService: CoachService,
     private analytics: AnalyticsService,
     private adminPtm: AdminPtmService,
+    private importedPeople: ImportedPeopleService,
   ) {}
 
   @Get('dashboard')
@@ -74,6 +89,55 @@ export class CoachController {
   }
 
   // ------------------------------------------------------------------ //
+  // S8-D2 — "imported, not yet joined" (owner D-S8-2 (a);                //
+  // docs/decisions/2026-09-26-s8d-person-link.md §5.2).                  //
+  //                                                                      //
+  // The coach roster shows the coach's imported `Person` rows as a       //
+  // SIBLING collection of GET /coach/clients, never interleaved into     //
+  // that `User` array (no existing consumer sees a non-User row; the     //
+  // array response of /coach/clients is unchanged in shape).            //
+  //                                                                      //
+  // Privacy doctrine (as the risk board above):                          //
+  //   * req.user.id is the ONLY tenant key — an owner or sub-coach sees  //
+  //     Persons of their OWN coach id, never another coach's import.     //
+  //   * A Person carries no email/phone/contact column; the row emits   //
+  //     person_id, display_name, state, source_platform and markers.    //
+  //   * invite / proposal markers are null until their tables exist     //
+  //     (S8-D3+); suggestions are same-coach name matches, read-time     //
+  //     only, never persisted or applied.                               //
+  //   * Declared before the `clients/:id/*` routes so the static segment //
+  //     wins; OWNER listed explicitly per the C1 pattern.               //
+  // ------------------------------------------------------------------ //
+  @Roles('coach', 'owner')
+  @Get('clients/imported')
+  @ApiOperation({
+    summary: "Imported, not yet joined: the coach's imported Persons without an account",
+    description:
+      "Lists the calling coach's imported Person rows whose state is not Claimed and not " +
+      'Deleted (Suspended is shown with its state), newest first, with bounded cursor ' +
+      'pagination. A sibling of GET /coach/clients: never interleaved into the User array. ' +
+      'Each row carries `joined: false`, the fixed label "imported, not yet joined", and the ' +
+      'link-flow markers `invite` and `proposal`, which are null until the PersonInvite ' +
+      '(S8-D4a) and PersonLinkProposal (S8-D6) tables exist — never fabricated. ' +
+      '`suggestions` lists same-coach students whose account name equals the display name ' +
+      '(normalised), computed at read time, never persisted or applied. No email, phone or ' +
+      'contact field is emitted; coach_id is taken from the bearer token only.',
+  })
+  @ApiResponse({ status: 200, description: 'Imported-people page.', type: ImportedPeopleResult })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid query (oversized cursor or out-of-range take).',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
+  @ApiResponse({ status: 403, description: 'Caller does not hold the coach or owner role.' })
+  async getImportedPeople(
+    @Request() req: AuthedRequest,
+    @Query() query: ImportedPeopleQueryDto,
+  ): Promise<ImportedPeopleResult> {
+    return this.importedPeople.list(req.user.id, query.cursor, query.take);
+  }
+
+  // ------------------------------------------------------------------ //
   // Phase 1E — Coach-scoped PTM risk board.                              //
   //                                                                      //
   // Privacy doctrine:                                                    //
@@ -91,22 +155,18 @@ export class CoachController {
   @Get('clients/risk-board')
   @ApiOperation({
     summary:
-      'Coach-scoped PTM risk board. Returns this coach\'s own clients sorted by churn-risk bucket. ' +
+      "Coach-scoped PTM risk board. Returns this coach's own clients sorted by churn-risk bucket. " +
       'risk_score and success_score are always null — use the bucket field to drive UI colour.',
   })
   @ApiResponse({
     status: 200,
-    description:
-      'Cursor-paginated list of risk-board rows scoped to the calling coach\'s roster.',
+    description: "Cursor-paginated list of risk-board rows scoped to the calling coach's roster.",
   })
   @ApiResponse({
     status: 403,
     description: 'Caller does not hold the coach or owner role.',
   })
-  async getCoachRiskBoard(
-    @Request() req: AuthedRequest,
-    @Query() query: RiskBoardQueryDto,
-  ) {
+  async getCoachRiskBoard(@Request() req: AuthedRequest, @Query() query: RiskBoardQueryDto) {
     return this.adminPtm.getRiskBoardForCoach(req.user.id, {
       bucket: query.bucket,
       cursor: query.cursor,
@@ -179,8 +239,18 @@ export class CoachController {
   }
 
   @Get('clients/:id/summary')
-  async getClientSummary(@Request() req: AuthedRequest, @Param('id') clientId: string, @Query('date') date?: string) {
-    return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role, auditContext(req));
+  async getClientSummary(
+    @Request() req: AuthedRequest,
+    @Param('id') clientId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.coachService.getClientSummary(
+      req.user.id,
+      clientId,
+      date,
+      req.user.role,
+      auditContext(req),
+    );
   }
 
   @Get('my-guidelines')
@@ -194,7 +264,11 @@ export class CoachController {
   }
 
   @Post('guidelines/:client_id')
-  async postGuidelines(@Request() req: AuthedRequest, @Param('client_id') clientId: string, @Body() body: { guidelines: string }) {
+  async postGuidelines(
+    @Request() req: AuthedRequest,
+    @Param('client_id') clientId: string,
+    @Body() body: { guidelines: string },
+  ) {
     const result = await this.coachService.postGuidelines(req.user.id, clientId, body.guidelines);
     this.analytics.capture(req.user.id, Events.COACH_ACTION, { action_type: 'post_guidelines' });
     return result;
@@ -214,6 +288,6 @@ function auditContext(req: AuditableRequest): { ip: string | null; userAgent: st
   const fwdIp = xff.split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
   const uaRaw = req?.headers?.['user-agent'];
-  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : uaRaw ?? null;
+  const userAgent = Array.isArray(uaRaw) ? (uaRaw[0] ?? null) : (uaRaw ?? null);
   return { ip: ip || null, userAgent: userAgent || null };
 }

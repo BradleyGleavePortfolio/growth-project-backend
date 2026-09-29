@@ -492,14 +492,15 @@ describe('R10(C) / R15 — recompute-on-read: the status carries the report addi
       });
     }
     // Truthful counts: the rejected clients are rejected, the client-owned evidence row is
-    // unresolved, and `clients` carries the interim qualifier (S8-DOC L372-374).
+    // unresolved, and `clients` carries no qualifier since S8-D2 retired the interim
+    // `roster_bridge_pending` emission (S8-DOC L372-374 superseded by the S8-D record §1.2).
     expect(byToken.get(TOKEN.clients)).toMatchObject({
       staged_unique: 2,
       native_present_verified: 0,
       rejected: 2,
       unresolved: 0,
       reasons: [{ code: `unsupported_platform:${PLATFORM}`, count: 2 }],
-      qualifiers: ['roster_bridge_pending'],
+      qualifiers: [],
     });
     expect(byToken.get(TOKEN.workouts)).toMatchObject({
       staged_unique: 2,

@@ -38,9 +38,10 @@ export class ScoutRosterController {
       'bounded cursor pagination. Excludes deleted and cross-tenant rows; never ' +
       'returns email or billing fields. Returns 404 when the intent is unknown ' +
       'for the caller or when the scout flags are off. The response carries ' +
-      'roster_bridge_pending: true (also on empty pages): these are interim Person ' +
-      'bridge rows, not native roster clients or principals, until the S8-D bridge ' +
-      'is accepted. Only person-kind ledger rows are materialized here.',
+      'roster_bridge_pending: false (also on empty pages) since S8-D2: imported Persons ' +
+      'are visible in the coach roster (GET /api/coach/clients/imported) as "imported, not ' +
+      'yet joined"; no principal is minted here. Only person-kind ledger rows are ' +
+      'materialized here.',
   })
   @ApiResponse({ status: 200, description: 'Reconstructed roster page.', type: ScoutRosterResult })
   @ApiResponse({

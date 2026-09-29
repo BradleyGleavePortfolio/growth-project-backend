@@ -38,6 +38,11 @@ export const IMPORTER_BARE_PATHS = [
   // (R-DARK-1) 404 from the /api/scout prefix gate before any guard runs.
   '/scout/runs/declaration',
   '/scout/runs/observation',
+  // S8-D2 (docs/decisions/2026-09-26-s8d-person-link.md §5.2): the coach roster's
+  // "imported, not yet joined" sibling collection mobile UX-D2 renders. Bearer,
+  // coach/owner; NOT under the /api/scout flag gate (it renders server state only:
+  // no imported Person exists unless the importer ran for that coach).
+  '/coach/clients/imported',
 ] as const;
 
 // Applied to every selected path so the artifact presents the real,

@@ -1235,6 +1235,147 @@ describe('importer contract (R80 freeze)', () => {
     });
   });
 
+  // S8-D2 (docs/decisions/2026-09-26-s8d-person-link.md §5.2): the coach roster's
+  // "imported, not yet joined" sibling collection. Pinned so a regeneration that
+  // widens the row (a contact field, the source record id, a User email) or
+  // turns a truthful-null marker into a required object is caught in review.
+  describe('S8-D2 coach roster: GET /api/coach/clients/imported', () => {
+    const path = '/api/coach/clients/imported';
+    const props = (name: string): string[] =>
+      Object.keys(rec(dig(contract, 'components', 'schemas', name, 'properties'))).sort();
+
+    it('is a bearer GET with an optional bounded cursor and take (1..50, default 20)', () => {
+      const op = rec(dig(contract, 'paths', path, 'get'));
+      expect(Object.keys(rec(dig(contract, 'paths', path)))).toEqual(['get']);
+      const params = (op.parameters as unknown[]).map(rec);
+      const cursor = rec(params.find((p) => p.name === 'cursor'));
+      expect(cursor).toMatchObject({ in: 'query', required: false });
+      expect(rec(cursor.schema)).toMatchObject({ type: 'string', maxLength: 64 });
+      const take = rec(params.find((p) => p.name === 'take'));
+      expect(take).toMatchObject({ in: 'query', required: false });
+      expect(rec(take.schema)).toMatchObject({
+        type: 'number',
+        minimum: 1,
+        maximum: 50,
+        default: 20,
+      });
+      // No coach id, intent id or any other selector: the tenant is the bearer.
+      expect(params.map((p) => p.name).sort()).toEqual(['cursor', 'take']);
+      for (const status of ['200', '400', '401', '403']) {
+        expect(dig(op, 'responses', status)).toBeDefined();
+      }
+    });
+
+    it('returns the ImportedPeopleResult envelope: imported_people[], fixed label, page', () => {
+      expect(
+        dig(
+          contract,
+          'paths',
+          path,
+          'get',
+          'responses',
+          '200',
+          'content',
+          'application/json',
+          'schema',
+          '$ref',
+        ),
+      ).toBe('#/components/schemas/ImportedPeopleResult');
+      expect(props('ImportedPeopleResult')).toEqual(['imported_people', 'label', 'page']);
+      expect(dig(contract, 'components', 'schemas', 'ImportedPeopleResult', 'required')).toEqual(
+        expect.arrayContaining(['imported_people', 'label', 'page']),
+      );
+      expect(
+        dig(
+          contract,
+          'components',
+          'schemas',
+          'ImportedPeopleResult',
+          'properties',
+          'label',
+          'example',
+        ),
+      ).toBe('imported, not yet joined');
+      expect(
+        dig(
+          contract,
+          'components',
+          'schemas',
+          'ImportedPeopleResult',
+          'properties',
+          'imported_people',
+          'items',
+          '$ref',
+        ),
+      ).toBe('#/components/schemas/ImportedPersonDto');
+      expect(props('ImportedPeoplePageDto')).toEqual(['has_more', 'limit', 'next_cursor']);
+    });
+
+    it('the row is exactly the §5.2 shape — no contact field, no source record id, no email', () => {
+      expect(props('ImportedPersonDto')).toEqual([
+        'display_name',
+        'invite',
+        'joined',
+        'person_id',
+        'proposal',
+        'source_platform',
+        'state',
+        'suggestions',
+      ]);
+      const row = rec(dig(contract, 'components', 'schemas', 'ImportedPersonDto', 'properties'));
+      expect(dig(row, 'joined', 'example')).toBe(false);
+      expect(dig(row, 'display_name', 'nullable')).toBe(true);
+      expect(dig(row, 'invite', 'nullable')).toBe(true);
+      expect(dig(row, 'proposal', 'nullable')).toBe(true);
+      // Claimed/Deleted are never listed, but the enum is the Prisma PersonState set.
+      expect(dig(row, 'state', 'enum')).toEqual([
+        'InvitePending',
+        'Invited',
+        'Claimed',
+        'Suspended',
+        'Deleted',
+      ]);
+      expect(props('ImportedPersonSuggestionDto')).toEqual(['display_name', 'user_id']);
+      expect(props('ImportedPersonInviteMarkerDto')).toEqual(['expires_at', 'sent_via', 'status']);
+      expect(props('ImportedPersonProposalMarkerDto')).toEqual(['expires_at', 'status']);
+      for (const name of [
+        'ImportedPersonDto',
+        'ImportedPersonSuggestionDto',
+        'ImportedPersonInviteMarkerDto',
+        'ImportedPersonProposalMarkerDto',
+        'ImportedPeopleResult',
+      ]) {
+        // Property NAMES only: `sent_via`'s example is the channel word "email", which is
+        // not a contact field. No property may be a contact or the source record id, and
+        // no example may carry an address.
+        for (const key of props(name)) {
+          expect(key).not.toMatch(/email|phone|contact|source_person_id/);
+        }
+        expect(JSON.stringify(dig(contract, 'components', 'schemas', name))).not.toContain('@');
+      }
+    });
+
+    it('importer-G roster keeps its shape and now says roster_bridge_pending: false', () => {
+      expect(props('ScoutRosterResult')).toEqual([
+        'accounting',
+        'intent_id',
+        'page',
+        'persons',
+        'roster_bridge_pending',
+      ]);
+      expect(
+        dig(
+          contract,
+          'components',
+          'schemas',
+          'ScoutRosterResult',
+          'properties',
+          'roster_bridge_pending',
+        ),
+      ).toMatchObject({ type: 'boolean', example: false });
+    });
+  });
+
   // The in-process determinism checks (stableSort idempotence, repeated
   // serializeContract) live in importer-contract-extraction.spec.ts. This one is
   // stronger: it regenerates the artifact from a COLD, SEPARATE Node process (a

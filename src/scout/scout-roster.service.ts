@@ -228,9 +228,10 @@ export class ScoutRosterService {
       },
       persons,
       page: { limit, next_cursor: nextCursor, has_more: hasMore },
-      // S8-F: the roster is still the interim Person bridge (native contract
-      // §4.1). Always true — including on an empty page — until the accepted
-      // S8-D principal bridge replaces it. Not a per-row flag, not a count.
+      // S8-F qualifier, fixed `false` since S8-D2 (the coach roster now lists
+      // imported Persons — see scout-roster.dto.ts). Present on every page,
+      // empty pages included, until mobile stops reading it. Not a per-row
+      // flag, not a count.
       roster_bridge_pending: ROSTER_BRIDGE_PENDING,
     };
   }

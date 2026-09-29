@@ -365,7 +365,9 @@ describe('S9-B ReconciliationFactsService', () => {
         ['routines', null, false],
         ['workouts', null, false],
       ]);
-      expect(family(facts, 'clients').qualifiers).toEqual(['roster_bridge_pending']);
+      // S8-D2 retired the `roster_bridge_pending` emission (imported Persons are visible in
+      // the coach roster); no family emits a qualifier now.
+      expect(family(facts, 'clients').qualifiers).toEqual([]);
       expect(family(facts, 'clients').client_owned).toBe(false);
       expect(family(facts, 'client_history').client_owned).toBe(true);
       expect(family(facts, 'client_history').qualifiers).toEqual([]);
@@ -696,14 +698,14 @@ describe('S9-B ReconciliationFactsService', () => {
       expect(identity(clients, 'P2').ledger).toMatchObject({
         provenance: { outcome: 'already_present', native: 'present_owned' },
       });
-      expect(clients.qualifiers).toEqual(['roster_bridge_pending']);
+      expect(clients.qualifiers).toEqual([]);
       const result = reconcile(facts);
       expect(result.report.families.find((f) => f.family === 'clients')).toMatchObject({
         staged_unique: 2,
         native_present_verified: 2,
         unresolved: 0,
         reasons: [],
-        qualifiers: ['roster_bridge_pending'],
+        qualifiers: [],
       });
       // Only clients staged here ⇒ the run's sole condition is the v1 coverage basis.
       expect(result.report.conditions).toEqual(['coverage_basis_unknown']);
