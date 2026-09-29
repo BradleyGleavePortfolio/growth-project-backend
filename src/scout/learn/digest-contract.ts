@@ -5,12 +5,8 @@ import {
   pathLiteralRefusal,
   queryKeyRefusal,
 } from './admission';
-import {
-  PAGINATION_SIGNALS,
-  isFamilyLabel,
-  type FamilyLabel,
-  type PaginationSignal,
-} from './contract-vocabulary';
+import { PAGINATION_SIGNALS, type PaginationSignal } from './contract-vocabulary';
+import { isFamilyLabel, type FamilyLabel } from './family-catalogue';
 
 /**
  * L1 (docs/decisions/2026-09-27-learn-and-remember.md r4 + EXEC_RESET + r2 review round; grammar
@@ -40,6 +36,8 @@ export const DIGEST_MAX_STATUSES = 8;
 export const DIGEST_MAX_HEADER_NAMES = 16;
 export const DIGEST_MAX_TEMPLATE_BYTES = 512;
 export const DIGEST_MAX_SLOTS = 16;
+/** Bound on the non-GET JSON response count (a disclosure count, never a value). */
+export const DIGEST_MAX_NON_GET_DATA_ORIGINS = 65535;
 /** Upper bound of the canonical JSON of one digest (D-L0-2 "Bounds": 32 KiB). */
 export const DIGEST_MAX_BYTES = 32 * 1024;
 
@@ -195,6 +193,12 @@ export interface StructureDigestV1 {
   readonly linkTemplates: readonly DigestLinkTemplate[];
   /** Header NAMES only (r3); values are rebound on the device. */
   readonly constantHeaderNames: readonly string[];
+  /**
+   * r7 (D-L0-2; D-L0-9 L1 owed item 2): count of same-page JSON responses to non-GET requests.
+   * Non-GET traffic is never captured, templated or replayed (D14 bound); the count is disclosed
+   * as gap `non_get_data_unobserved` by the projection (L2d). A count, never an origin or value.
+   */
+  readonly nonGetDataOrigins: number;
   /** Round 2 only: FAM-0 family labels still unmapped. */
   readonly missingFamilies: readonly FamilyLabel[];
 }
@@ -207,6 +211,7 @@ const DIGEST_KEYS = [
   'templates',
   'linkTemplates',
   'constantHeaderNames',
+  'nonGetDataOrigins',
   'missingFamilies',
 ] as const;
 const TRUNCATED_KEYS = ['templates', 'linkTemplates', 'shapes'] as const;
@@ -1002,15 +1007,85 @@ export function structureKeyOf(digest: StructureDigestV1, template: DigestTempla
   });
 }
 
+/**
+ * Key-path INCLUSION (D-L0-3 round-2 monotone rule (ii), and the sparse-account direction of a
+ * match): same identity and `digestKey.keyPaths` ⊆ `step.keyPaths`.
+ */
 export function structureKeyMatches(step: StructureKey, digestKey: StructureKey): boolean {
-  if (
-    step.origin !== digestKey.origin ||
-    step.method !== digestKey.method ||
-    step.template !== digestKey.template
-  )
-    return false;
+  if (!identityMatches(step, digestKey)) return false;
   const stepPaths = new Set(step.keyPaths);
   return digestKey.keyPaths.every((p) => stepPaths.has(p));
+}
+
+/**
+ * Template IDENTITY (r7 D-L0-3): `(originTemplate, method, slotted template)` — the structure key
+ * without its key paths. Every match in this slice is BY IDENTITY: a sparser account (fewer keys)
+ * and key-path growth (extra admitted keys) are both compatible; extra digest keys bind nothing
+ * (the mapping never names them) and are counted as `keypath_growth`, an audit drift signal,
+ * never a trigger.
+ */
+export function identityString(key: StructureKey): string {
+  return reuseKeyString(key.origin, key.method, key.template);
+}
+
+export function identityMatches(a: StructureKey, b: StructureKey): boolean {
+  return a.origin === b.origin && a.method === b.method && a.template === b.template;
+}
+
+/** Admitted key paths of `digestKey` the package `step` never recorded (D-L0-3 `keypath_growth`). */
+export function keyPathGrowth(step: StructureKey, digestKey: StructureKey): number {
+  const stepPaths = new Set(step.keyPaths);
+  return digestKey.keyPaths.filter((p) => !stepPaths.has(p)).length;
+}
+
+/**
+ * The identities this digest OBSERVED, with their key paths (names only; no kinds, buckets or
+ * values): what the round-1 pin stores as `observed_identities` (D-L0-5) and what the round-2
+ * monotone rule reads (D-L0-3 (ii)). Every template participates, whatever its role.
+ */
+export function observedIdentities(digest: StructureDigestV1): readonly StructureKey[] {
+  return Object.freeze(digest.templates.map((t) => structureKeyOf(digest, t)));
+}
+
+export interface UnionCheck {
+  /** Round-1 identities the union re-observed with a strict superset of key paths. */
+  readonly keyPathGrowth: number;
+}
+
+/**
+ * D-L0-3 round-2 **monotone observation rule (ii)** (r7 `R581-c7A-01`, `R581-c7B-02`): for every
+ * identity of the ROUND-1 DIGEST the union must contain the same identity with `keyPaths` ⊇ the
+ * round-1 key paths; otherwise the digest is not a union of this run's observations and is
+ * refused `digest_not_union`. Package steps are NEVER part of this test — a package step the run
+ * did not observe is `template_absent` (`applyLearnedPackage().absentSteps`), never a refusal, so
+ * a sparse account, an unvisited link or an unused feature can never fail round 2.
+ */
+export function checkUnionDigest(
+  round1Observed: readonly StructureKey[],
+  union: StructureDigestV1,
+): LearnParseResult<UnionCheck> {
+  const errors = new Errors('digest_not_union');
+  if (union.round !== 2) {
+    errors.add('round', 'the union digest must be round 2');
+    return { ok: false, errors: errors.list };
+  }
+  const unionKeys = observedIdentities(union);
+  let growth = 0;
+  round1Observed.forEach((r1, i) => {
+    const hits = unionKeys.filter((u) => identityMatches(u, r1));
+    if (hits.length === 0) {
+      errors.add(`round1[${i}]`, 'a round-1 identity is missing from the union digest');
+      return;
+    }
+    const superset = hits.find((u) => structureKeyMatches(u, r1));
+    if (superset === undefined) {
+      errors.add(`round1[${i}]`, 'the union re-observes a round-1 identity with fewer key paths');
+      return;
+    }
+    growth += keyPathGrowth(r1, superset);
+  });
+  if (errors.any) return { ok: false, errors: errors.list };
+  return { ok: true, value: Object.freeze({ keyPathGrowth: growth }) };
 }
 
 /**
@@ -1077,6 +1152,17 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
 
   const linkTemplates = parseLinkTemplates(obj.linkTemplates, errors);
   const headerNames = parseHeaderNames(obj.constantHeaderNames, errors);
+  const nonGet = obj.nonGetDataOrigins;
+  if (
+    typeof nonGet !== 'number' ||
+    !Number.isInteger(nonGet) ||
+    nonGet < 0 ||
+    nonGet > DIGEST_MAX_NON_GET_DATA_ORIGINS
+  )
+    errors.add(
+      'nonGetDataOrigins',
+      `nonGetDataOrigins must be an integer count 0..${DIGEST_MAX_NON_GET_DATA_ORIGINS}`,
+    );
   if (
     !isStringList(obj.missingFamilies, 32) ||
     obj.missingFamilies.some((f) => !isFamilyLabel(f)) ||
@@ -1103,6 +1189,7 @@ export function parseStructureDigest(raw: unknown): LearnParseResult<StructureDi
     templates: Object.freeze(templates),
     linkTemplates: Object.freeze(linkTemplates),
     constantHeaderNames: Object.freeze(headerNames),
+    nonGetDataOrigins: nonGet as number,
     missingFamilies: Object.freeze([...(obj.missingFamilies as FamilyLabel[])]),
   });
   const bytes = utf8Bytes(JSON.stringify(digest));

@@ -28,7 +28,8 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
     if (!result.ok) return;
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(result.value.round).toBe(1);
-    expect(result.value.templates.map((t) => t.ref)).toEqual(['t0', 't1', 't2', 't3', 't4']);
+    expect(result.value.templates.map((t) => t.ref)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5']);
+    expect(result.value.nonGetDataOrigins).toBe(0);
     expect(result.value.origins.map((o) => o.template)).toEqual([':d', 'api.:d']);
     expect(result.value.linkTemplates.map((l) => l.ref)).toEqual(['l0', 'l1']);
     expect(result.value.constantHeaderNames).toEqual(['accept']);
@@ -206,6 +207,8 @@ describe('StructureDigestV1 r3 parser (V-L0)', () => {
       t.ref = 't3';
       d.templates.splice(3, 0, t);
       d.templates[4].ref = 't4';
+      d.templates[5].ref = 't5';
+      d.templates[6].ref = 't6';
       expectRefused(d);
     });
   });

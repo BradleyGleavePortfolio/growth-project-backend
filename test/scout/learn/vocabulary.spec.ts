@@ -17,8 +17,8 @@ function isSortedUnique(list: readonly string[]): boolean {
 }
 
 describe('contract vocabulary (closed, versioned, vendor-neutral)', () => {
-  it('is version 2, sorted, unique, lower-case ASCII words', () => {
-    expect(VOCABULARY_VERSION).toBe(2);
+  it('is version 3 (r7: mutating verbs, catalogue-bound family labels), sorted, unique, lower-case ASCII words', () => {
+    expect(VOCABULARY_VERSION).toBe(3);
     for (const list of [
       STRUCTURAL_PATH_VOCABULARY,
       STATUS_VARIANT_VOCABULARY,

@@ -97,7 +97,10 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
     const before = prompt.text.slice(0, prompt.text.indexOf(UNTRUSTED_BEGIN));
     expect(before).not.toContain('/v2/coaches/:s1/members');
     expect(before).not.toContain(NONCE);
-    expect(prompt.text.indexOf(UNTRUSTED_BEGIN)).toBe(prompt.text.lastIndexOf(UNTRUSTED_BEGIN));
+    // exactly one site-structure block; no example block without a coach example
+    expect(prompt.text.split(`${UNTRUSTED_BEGIN} `)).toHaveLength(2);
+    expect(prompt.hasCoachExample).toBe(false);
+    expect(prompt.text).not.toContain('UNTRUSTED_EXAMPLE_PACKAGE_BEGIN ');
   });
 
   it('escapes every non-ASCII and control character in the untrusted block', () => {
@@ -117,7 +120,7 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
     expect(asciiJson('"a\u200bb\n"')).toBe('"a\\u200bb\\u000a"');
   });
 
-  it('validates examples through V-L0/V-L1/V-L2… before embedding them and caps them at 3', () => {
+  it('validates examples through V-L0/V-L1/V-L2… before embedding them and caps them at 2 (r7: repository fixtures only)', () => {
     const { digest, raw } = parsedBasic();
     const example = { name: 'basic', digest: raw.digest, proposal: raw.proposal, slug: BASIC_SLUG };
     const prompt = promptOf({ digest, examples: [example], nonce: NONCE });
@@ -125,8 +128,11 @@ describe('learn prompt (D-L0-7.1 / 7.2, L11)', () => {
     const bad = { ...example, proposal: { ...(raw.proposal as object), rationale: 'https://x' } };
     expect(() => buildLearnPrompt({ digest, examples: [bad], nonce: NONCE })).toThrow(/V-L1/);
     expect(() =>
-      buildLearnPrompt({ digest, examples: [example, example, example, example], nonce: NONCE }),
-    ).toThrow(/at most 3/);
+      buildLearnPrompt({ digest, examples: [example, example, example], nonce: NONCE }),
+    ).toThrow(/at most 2/);
+    expect(promptOf({ digest, examples: [example, example], nonce: NONCE }).parts[3]).toContain(
+      'Example proposal',
+    );
   });
 
   it('requires a hex nonce; randomNonce satisfies it and differs per call', () => {

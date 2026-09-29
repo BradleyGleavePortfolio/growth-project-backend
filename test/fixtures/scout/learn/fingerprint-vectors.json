@@ -223,6 +223,7 @@
           }
         ],
         "constantHeaderNames": ["accept", "x-requested-with"],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -358,6 +359,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -493,6 +495,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": false,
@@ -720,6 +723,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -858,6 +862,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -993,6 +998,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1186,6 +1192,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": false,
@@ -1306,6 +1313,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1333,6 +1341,7 @@
         "templates": [],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1466,6 +1475,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1601,6 +1611,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1736,6 +1747,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,
@@ -1868,6 +1880,7 @@
         ],
         "linkTemplates": [],
         "constantHeaderNames": [],
+        "nonGetDataOrigins": 0,
         "missingFamilies": []
       },
       "validDigest": true,

@@ -83,11 +83,15 @@ export function promptOf(input: LearnPromptInput): LearnPrompt {
   return built.value;
 }
 
-/** The refs of the basic example: routines moved to t4 when the notes template (t3) was added. */
+/**
+ * The refs of the basic example in canonical order (r7: `saved_filters` (t4, the unmapped UI-config
+ * collection) was added and routines moved to t5; invoices (t0) is a `billing_history` step).
+ */
 export const REF = Object.freeze({
   invoices: 't0',
   members: 't1',
   me: 't2',
   notes: 't3',
-  routines: 't4',
+  filters: 't4',
+  routines: 't5',
 });

@@ -14,7 +14,9 @@ import {
   Errors,
   asObject,
   checkKeys,
+  identityMatches,
   isWellFormedTemplate,
+  keyPathGrowth,
   structureKeyMatches,
   structureKeyOf,
   structureKeyString,
@@ -32,7 +34,7 @@ import {
   originTemplateRefusal,
   pathLiteralRefusal,
 } from './admission';
-import { VOCABULARY_VERSION } from './contract-vocabulary';
+import { VOCABULARY_VERSION, mutatingTokenRefusal } from './contract-vocabulary';
 import { CANONICAL_CONTRACT_VERSION, contractHash, isMappedFamily } from './canonical-contract';
 import {
   PROPOSAL_MAX_STEPS,
@@ -224,9 +226,9 @@ export function packageDigest(pkg: LearnedPackageV1): LearnParseResult<string> {
   return { ok: true, value: createHash('sha256').update(text.value, 'utf8').digest('hex') };
 }
 
-/** The sorted structure-key strings of the package's steps (the round-2 union rule input). */
-export function packageStepKeys(pkg: LearnedPackageV1): readonly string[] {
-  return pkg.steps.map((s) => structureKeyString(s.key)).sort();
+/** The structure keys of the package's steps (the round-2 union rule input, V-L10). */
+export function packageStepKeys(pkg: LearnedPackageV1): readonly StructureKey[] {
+  return Object.freeze(pkg.steps.map((s) => s.key));
 }
 
 function message(err: unknown): string {
@@ -334,6 +336,9 @@ export function parseLearnedPackage(raw: unknown): LearnParseResult<LearnedPacka
         keyStrings.add(text);
         if (!originSet.has(key.origin))
           errors.add(`${where}.key.origin`, 'step origin is not a package origin');
+        // A stored step on a mutating template never drives a request (D-L0-6.2, V-L5).
+        const mutating = mutatingTokenRefusal(templateSegments(key.template), []);
+        if (mutating !== null) errors.add(`${where}.key.template`, mutating, 'V-L5');
       }
       if (!(DISCOVERED_BY as readonly unknown[]).includes(entry.discoveredBy))
         errors.add(`${where}.discoveredBy`, 'discoveredBy must be landing|explore');
@@ -442,23 +447,35 @@ export function parseLearnedPackage(raw: unknown): LearnParseResult<LearnedPacka
 export interface PackageApplication {
   /** V-L2…V-L10 over the reconstructed proposal and THIS digest (match mode). */
   readonly validated: ValidatedProposal;
-  /** Package steps whose structure key no template of this digest matches: explore targets. */
+  /**
+   * Package steps whose IDENTITY no collection template of this digest shows: `template_absent`
+   * (D-L0-3) — round 1: explore targets; round 2: zero requests, gap `template_absent`, never a
+   * refusal.
+   */
   readonly absentSteps: readonly PackageStep[];
+  /**
+   * Admitted key paths this digest shows beyond the matched package entries (D-L0-3 key-path
+   * growth): recorded on the pin as `keypath_growth`, an audit drift signal, never a trigger.
+   */
+  readonly keypathGrowth: number;
 }
 
 export interface PackageApplicationContext {
   readonly slug: string;
-  /** Round 2 only (mandatory then): the round-1 pin's step keys. */
-  readonly round1StepKeys?: readonly string[];
+  /** Round 2 only (mandatory then): the round-1 pin's step keys (`packageStepKeys`). */
+  readonly round1StepKeys?: readonly StructureKey[];
 }
 
 /**
- * D-L0-3 step 3 (memory match) — apply a parsed package to the CURRENT digest: every collection
- * template of the digest must be covered by exactly one package step or unmapped entry by
- * structure-key match (digest key paths ⊆ package key paths), and the reconstructed proposal must
- * pass V-L2…V-L10 in match mode. A digest template no entry covers is a miss (`package_uncovered`);
- * a package step absent from the digest is not a miss — it is returned as an explore target.
- * Nothing stored is trusted past this point: the digest, not the row, decides.
+ * D-L0-3 step 3 (memory match) and round-2 step (iii) — apply a parsed package to the CURRENT
+ * digest: every collection template of the digest must be covered by exactly one package step or
+ * unmapped entry BY IDENTITY (`(origin, method, template)`; r7). A sparser digest (fewer key
+ * paths) and key-path growth (more) both match: growth binds nothing and is counted. When several
+ * entries share an identity the one whose key paths include the digest's is taken. The
+ * reconstructed proposal must pass V-L2…V-L10 in match mode. A digest template no entry covers is
+ * a miss (`package_uncovered`); a package step absent from the digest is not a miss — it is
+ * returned as `absentSteps` (`template_absent`). Nothing stored is trusted past this point: the
+ * digest, not the row, decides.
  */
 export function applyLearnedPackage(
   pkg: LearnedPackageV1,
@@ -473,28 +490,43 @@ export function applyLearnedPackage(
   const steps: ProposalStep[] = [];
   const unmapped: { templateRef: string; reason: UnmappedReason }[] = [];
   const used = new Set<number>();
+  let growth = 0;
+  type Hit = {
+    readonly key: StructureKey;
+    readonly index: number;
+    readonly kind: 'step' | 'unmapped';
+  };
   for (const template of digest.templates) {
     if (template.role !== 'collection') continue;
     const key = structureKeyOf(digest, template);
-    const stepHits = pkg.steps
-      .map((s, i) => [s, i] as const)
-      .filter(([s]) => structureKeyMatches(s.key, key));
-    const unmappedHits = pkg.unmapped.filter((u) => structureKeyMatches(u.key, key));
-    if (stepHits.length + unmappedHits.length !== 1) {
+    let hits: Hit[] = [
+      ...pkg.steps.map((s, i): Hit => ({ key: s.key, index: i, kind: 'step' })),
+      ...pkg.unmapped.map((u, i): Hit => ({ key: u.key, index: i, kind: 'unmapped' })),
+    ].filter((h) => identityMatches(h.key, key));
+    if (hits.length > 1) {
+      // several entries share the identity (a `:q` variant recorded later, a re-learn): the one
+      // whose recorded key paths include this digest's and are closest to it wins; a tie refuses
+      const including = hits.filter((h) => structureKeyMatches(h.key, key));
+      const distance = (h: Hit): number => h.key.keyPaths.length - key.keyPaths.length;
+      const best = Math.min(...including.map(distance));
+      hits = including.filter((h) => distance(h) === best);
+    }
+    if (hits.length !== 1) {
       errors.add(
         `digest.templates.${template.ref}`,
-        stepHits.length + unmappedHits.length === 0
+        hits.length === 0
           ? 'no package step or unmapped entry covers this collection template'
           : 'more than one package entry covers this collection template',
       );
       continue;
     }
-    if (stepHits.length === 1) {
-      const [hit, index] = stepHits[0];
-      used.add(index);
-      steps.push(Object.freeze({ templateRef: template.ref, ...hit.step }));
+    const [hit] = hits;
+    growth += keyPathGrowth(hit.key, key);
+    if (hit.kind === 'step') {
+      used.add(hit.index);
+      steps.push(Object.freeze({ templateRef: template.ref, ...pkg.steps[hit.index].step }));
     } else {
-      unmapped.push({ templateRef: template.ref, reason: unmappedHits[0].reason });
+      unmapped.push({ templateRef: template.ref, reason: pkg.unmapped[hit.index].reason });
     }
   }
   if (errors.any) return { ok: false, errors: errors.list };
@@ -502,9 +534,9 @@ export function applyLearnedPackage(
   const order = new Map(pkg.steps.map((s, i) => [s.step.entityType, i]));
   steps.sort((a, b) => (order.get(a.entityType) ?? 0) - (order.get(b.entityType) ?? 0));
   const absentSteps = pkg.steps.filter((_, i) => !used.has(i));
-  // A dropped step may leave a spec step without a proposal step; that is a V-L4 refusal by
-  // design (the package as a whole does not apply to this digest) unless round 1 explore can
-  // still reach it — the caller decides with `absentSteps`.
+  // An absent step may leave a spec step without a proposal step; match mode accepts that (the
+  // step is an explore target in round 1 and `template_absent` in round 2 — the caller decides
+  // with `absentSteps`).
   const proposal: LearnedProposalV1 = Object.freeze({
     proposalVersion: PROPOSAL_VERSION,
     steps: Object.freeze(steps),
@@ -522,6 +554,10 @@ export function applyLearnedPackage(
   if (!validated.ok) return validated;
   return {
     ok: true,
-    value: Object.freeze({ validated: validated.value, absentSteps: Object.freeze(absentSteps) }),
+    value: Object.freeze({
+      validated: validated.value,
+      absentSteps: Object.freeze(absentSteps),
+      keypathGrowth: growth,
+    }),
   };
 }

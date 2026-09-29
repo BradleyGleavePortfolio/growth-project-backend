@@ -20,13 +20,17 @@ import { COMPLETENESS_BASIS_KINDS, NATIVE_RULES_DECLARATIONS } from '../inductio
 import { ID_CLASSES, STRING_CLASSES } from './digest-contract';
 import { PAGINATION_PARAM_WORDS, admissionRules, type AdmissionRulesV1 } from './admission';
 import {
-  FAMILY_LABELS,
   MORE_PAGES_SIGNALS,
   PAGINATION_SIGNAL_DESCRIPTIONS,
   contractVocabulary,
   type ContractVocabularyV1,
-  type FamilyLabel,
 } from './contract-vocabulary';
+import {
+  FAMILY_LABELS,
+  familyCatalogue,
+  type FamilyCatalogueV1,
+  type FamilyLabel,
+} from './family-catalogue';
 
 /**
  * L1 (D-L0-7.1 part 2) — the canonical TGP target structure as ONE runtime object: families,
@@ -84,9 +88,10 @@ export const ENTITY_FIELD_DESCRIPTIONS = {
 } as const satisfies Record<keyof EntityFieldRules, FieldDescription>;
 
 /**
- * One FAM-0 family label (D-FAM-1; r2 direction 2). The model CLASSIFIES a collection into a
- * label; it never proposes a destination — native | preserve is derived later from the native
- * writer registry. `mapped` = a `mappingSpec.steps` entry (canonical mapping family) is required
+ * One FAM-0 family label (D-FAM-1; r2 direction 2; r7: labels come from the catalogue binding
+ * `family-catalogue.ts`, FAM-C1 the one owner). The model CLASSIFIES a collection into a label;
+ * it never proposes a destination — native | preserve is derived per record by FAM-C1's
+ * `destinationFor`. A label without a description here is a compile error. `mapped` = a `mappingSpec.steps` entry (canonical mapping family) is required
  * for steps of this label; the other labels are classification only in this slice.
  */
 export interface FamilyDescription {
@@ -98,7 +103,10 @@ export interface FamilyDescription {
 }
 
 const FAMILY_TEXT: Readonly<Record<FamilyLabel, string>> = {
-  billing_history: 'invoices, payments and subscriptions of the coaching business',
+  billing_history:
+    'past invoices, payments and charges of the coaching business (moves; preserved, coach-visible)',
+  billing_schedule:
+    'the recurring billing arrangement per client: plan, interval, amount, next payment date (moves; preserved)',
   body_measurements: 'client body measurements other than weight (girths, skinfolds, body fat)',
   body_weights: 'client body weight entries over time',
   checkins: 'periodic client check-in submissions (questions, answers, photos, ratings)',
@@ -235,7 +243,8 @@ export const RELATIONSHIP_RULES: readonly string[] = Object.freeze([
   'workouts.clientSourceId and client_history.clientSourceId link a record to a clients source id.',
   'workouts.programSourceId (native) links a workout to a programs source id.',
   'forEach fans a step out over an earlier step collectAs ids through the template :p1 parameter.',
-  'family is a classification from the closed label list; the destination (native or preserve) is derived by the server, never proposed.',
+  'family is a classification from the closed label list; the destination (native or preserve) is derived by the server per record, never proposed.',
+  'Billing collections are families: billing_history (past invoices, payments) and billing_schedule (the recurring arrangement); they are never unmapped as out of scope.',
 ]);
 
 /**
@@ -289,6 +298,8 @@ export interface CanonicalContractV1 {
     readonly noneProof: string;
   };
   readonly acceptIntegerNumberIdField: boolean;
+  /** The bound family catalogue (FAM-C1 surface; interim table until it lands). */
+  readonly familyCatalogue: FamilyCatalogueV1;
   readonly vocabulary: ContractVocabularyV1;
   readonly admission: AdmissionRulesV1;
 }
@@ -319,6 +330,7 @@ export function canonicalContract(): CanonicalContractV1 {
       noneProof: NONE_PROOF_TEXT,
     },
     acceptIntegerNumberIdField: ACCEPT_INTEGER_NUMBER_ID_FIELD,
+    familyCatalogue: familyCatalogue(),
     vocabulary: contractVocabulary(),
     admission: admissionRules(),
   });

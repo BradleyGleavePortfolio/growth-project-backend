@@ -1,5 +1,7 @@
 import { createHash } from 'crypto';
 import {
+  identityMatches,
+  keyPathGrowth,
   parseStructureDigest,
   structureKeyMatches,
   structureKeyOf,
@@ -76,8 +78,12 @@ describe('reuse fingerprint and structure keys (D-L0-3 r5; R591-B-B3)', () => {
       parsedSparse.value.templates.find((t) => t.ref === REF.members)!,
     );
     expect(structureKeyMatches(fullKey, sparseKey)).toBe(true);
-    // The other direction is not a match: a digest with MORE structure than the package step.
+    // Key-path inclusion is directional; identity matching (r7 D-L0-3) is not: a digest with
+    // MORE structure than the package step is the same identity with growth 1.
     expect(structureKeyMatches(sparseKey, fullKey)).toBe(false);
+    expect(identityMatches(sparseKey, fullKey)).toBe(true);
+    expect(keyPathGrowth(sparseKey, fullKey)).toBe(1);
+    expect(keyPathGrowth(fullKey, sparseKey)).toBe(0);
   });
 
   it('the reuse fingerprint refuses a round-2 digest (a union is never a reuse signal)', () => {
@@ -112,7 +118,7 @@ describe('reuse fingerprint and structure keys (D-L0-3 r5; R591-B-B3)', () => {
     const parsed = parseStructureDigest(basicExample().digest);
     if (!parsed.ok) throw new Error('fixture');
     const keys = collectionStructureKeyStrings(parsed.value);
-    expect(keys).toHaveLength(4);
+    expect(keys).toHaveLength(5);
     expect([...keys].sort()).toEqual(keys);
     for (const key of keys) expect(JSON.parse(key)).toHaveLength(4);
   });

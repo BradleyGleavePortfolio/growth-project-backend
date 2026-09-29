@@ -209,6 +209,53 @@
       },
       {
         "ref": "t4",
+        "originRef": "o0",
+        "method": "GET",
+        "template": "/v2/saved_filters",
+        "slots": [],
+        "queryKeys": [],
+        "paginationSignals": ["single_response"],
+        "statuses": [200],
+        "observations": 1,
+        "role": "collection",
+        "collectionPaths": [["filters"]],
+        "shape": {
+          "kind": "object",
+          "keys": {
+            "filters": {
+              "kind": "array",
+              "lengthBucket": "2-9",
+              "items": {
+                "kind": "object",
+                "keys": {
+                  "id": {
+                    "kind": "string",
+                    "class": "int_id",
+                    "lengthBucket": "≤8"
+                  },
+                  "name": {
+                    "kind": "string",
+                    "class": "text",
+                    "lengthBucket": "≤32"
+                  },
+                  "columns": {
+                    "kind": "array",
+                    "lengthBucket": "2-9",
+                    "items": {
+                      "kind": "string",
+                      "class": "text",
+                      "lengthBucket": "≤32"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "discoveredBy": "landing"
+      },
+      {
+        "ref": "t5",
         "originRef": "o1",
         "method": "GET",
         "template": "/v2/members/:p1/routines",
@@ -295,6 +342,7 @@
       }
     ],
     "constantHeaderNames": ["accept"],
+    "nonGetDataOrigins": 0,
     "missingFamilies": []
   },
   "proposal": {
@@ -315,7 +363,7 @@
         }
       },
       {
-        "templateRef": "t4",
+        "templateRef": "t5",
         "entityType": "routines",
         "family": "workouts",
         "itemsPath": ["data"],
@@ -339,6 +387,16 @@
         "itemsPath": ["items"],
         "idField": "id",
         "timestampField": "created_at",
+        "pagination": {
+          "style": "none"
+        }
+      },
+      {
+        "templateRef": "t0",
+        "entityType": "invoices",
+        "family": "billing_history",
+        "itemsPath": ["invoices"],
+        "idField": "id",
         "pagination": {
           "style": "none"
         }
@@ -394,10 +452,10 @@
     "explore": ["l0"],
     "unmapped": [
       {
-        "templateRef": "t0",
-        "reason": "out_of_scope_billing"
+        "templateRef": "t4",
+        "reason": "out_of_scope_ui_config"
       }
     ],
-    "rationale": "Members list is the roster; routines per member are workouts with exercise blocks; notes are coach notes; invoices are billing."
+    "rationale": "Members list is the roster; routines per member are workouts with exercise blocks; notes are coach notes; invoices are billing history; saved filters are UI configuration."
   }
 }

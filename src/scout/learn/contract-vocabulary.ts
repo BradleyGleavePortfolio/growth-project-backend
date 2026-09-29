@@ -16,9 +16,9 @@
  * test must still pass. No given name, host, vendor or product name may ever enter this list.
  */
 
-import { CANONICAL_FAMILIES } from '../reconstruct/mapping-spec';
+import { FAMILY_LABELS } from './family-catalogue';
 
-export const VOCABULARY_VERSION = 2 as const;
+export const VOCABULARY_VERSION = 3 as const;
 
 /** `v1`, `v2`, … `v999`: an API version marker is structural without being listed. */
 export const VERSION_TOKEN_PATTERN = /^v[0-9]{1,3}$/;
@@ -254,7 +254,7 @@ const PATH_WORDS: readonly string[] = [
   'diets',
   'supplement',
   'supplements',
-  // commerce (D-L0-6.1 P tokens for out_of_scope_billing)
+  // commerce (billing_history / billing_schedule families, D10; FAM-0 D-FAM-5)
   'billing',
   'invoice',
   'invoices',
@@ -403,45 +403,99 @@ export const MORE_PAGES_SIGNALS: readonly PaginationSignal[] = Object.freeze([
 ]);
 
 /**
- * FAMILY LABELS (FAM-0 r2 D-FAM-1; r2 direction 2): the closed catalogue the model classifies a
- * collection into. `unclassified` is the catch-all for a reachable coaching collection the model
- * cannot name. The destination (native | preserve) is NEVER proposed: it is derived later from the
- * native writer registry. Every canonical mapping family is a label.
+ * FAMILY LABELS: re-exported from the catalogue BINDING (`family-catalogue.ts`; FAM-C1 is the one
+ * owner, D-L0-4 V-L4). This module defines no family list (L0 r7 D-L0-9 L1 owed item 3).
  */
-export const FAMILY_LABELS = [
-  'billing_history',
-  'body_measurements',
-  'body_weights',
-  'checkins',
-  'client_history',
-  'client_profile',
-  'clients',
-  'coaching_sessions',
-  'exercises',
-  'food_logs',
-  'form_responses',
-  'forms',
-  'goals',
-  'habits',
-  'meal_plans',
-  'media',
-  'messages',
-  'notes',
-  'nutrition_targets',
-  'programs',
-  'unclassified',
-  'water_logs',
-  'workout_assignments',
-  'workout_logs',
-  'workouts',
-] as const;
-export type FamilyLabel = (typeof FAMILY_LABELS)[number];
-const FAMILY_LABEL_SET: ReadonlySet<string> = new Set(FAMILY_LABELS);
-if (!CANONICAL_FAMILIES.every((f) => FAMILY_LABEL_SET.has(f))) {
-  throw new Error('FAMILY_LABELS must contain every canonical mapping family');
+export { FAMILY_LABELS, isFamilyLabel, type FamilyLabel } from './family-catalogue';
+
+/**
+ * MUTATING VERB VOCABULARY (L0 r7 D-L0-6.2 no-mutation bound; D-L0-9 L1 owed item 5): closed,
+ * versioned, vendor-neutral. A learned template or `:q` variant whose path segments, query keys
+ * or (device only) rebound query values contain ANY of these tokens (split on `-`, `_`, `.`,
+ * camel-case) is refused: on the device (`mutating_template_refused`, zero requests) and at V-L5
+ * on the server, where such a collection may only be `unmapped`. Mirrored by fixture in the
+ * extension (`contract-vocabulary.json`). Words that are also structural path words (`archive`,
+ * `event`, `set`, `view`) are admitted by V-L0 as literals and then refused as step templates
+ * by V-L5 — a template naming them can be described, never replayed. Most other verbs never
+ * reach the server at all: the slot rule collapses them to `:sN`, so the device-side check over
+ * the real words is the primary gate and this list is the shared contract both sides run.
+ */
+const MUTATING_VERBS: readonly string[] = [
+  'accept',
+  'ack',
+  'acknowledge',
+  'action',
+  'approve',
+  'archive',
+  'assign',
+  'cancel',
+  'cmd',
+  'command',
+  'complete',
+  'confirm',
+  'create',
+  'decline',
+  'delete',
+  'destroy',
+  'dismiss',
+  'event',
+  'logout',
+  'mark',
+  'notify',
+  'op',
+  'open',
+  'opened',
+  'operation',
+  'read',
+  'reject',
+  'remove',
+  'reset',
+  'revoke',
+  'seen',
+  'send',
+  'set',
+  'signout',
+  'submit',
+  'subscribe',
+  'toggle',
+  'track',
+  'unarchive',
+  'unread',
+  'unsubscribe',
+  'update',
+  'view',
+  'viewed',
+  'visit',
+];
+export const MUTATING_VERB_VOCABULARY: readonly string[] = Object.freeze(
+  [...new Set(MUTATING_VERBS.map((w) => w.toLowerCase()))].sort(compareText),
+);
+const MUTATING_SET: ReadonlySet<string> = new Set(MUTATING_VERB_VOCABULARY);
+
+export function isMutatingToken(token: string): boolean {
+  return MUTATING_SET.has(token.toLowerCase());
 }
-export function isFamilyLabel(value: unknown): value is FamilyLabel {
-  return typeof value === 'string' && FAMILY_LABEL_SET.has(value);
+
+/**
+ * The first mutating token among the given path segments (`:p`/`:s` markers skipped) and query
+ * key names, or `null`. Shared by V-L5 and the package reader; the device runs the same test over
+ * the real words and the rebound query values it alone holds.
+ */
+export function mutatingTokenRefusal(
+  segments: readonly string[],
+  queryKeys: readonly string[],
+): string | null {
+  for (const segment of segments) {
+    if (/^:[ps][1-9][0-9]?$/.test(segment)) continue;
+    const hit = tokenize(segment).find(isMutatingToken);
+    if (hit !== undefined) return `path segment names the mutating verb ${hit}`;
+  }
+  for (const key of queryKeys) {
+    const parts = key.split(/[[\]]+/).filter((part) => part.length > 0);
+    const hit = parts.flatMap(tokenize).find(isMutatingToken);
+    if (hit !== undefined) return `query key names the mutating verb ${hit}`;
+  }
+  return null;
 }
 
 const VOCABULARY_SET: ReadonlySet<string> = new Set(STRUCTURAL_PATH_VOCABULARY);
@@ -478,6 +532,7 @@ export interface ContractVocabularyV1 {
   readonly statusVariantKeys: readonly string[];
   readonly statusProbeValues: readonly string[];
   readonly paginationSignals: readonly string[];
+  readonly mutatingVerbs: readonly string[];
   readonly familyLabels: readonly string[];
 }
 
@@ -489,6 +544,7 @@ export function contractVocabulary(): ContractVocabularyV1 {
     statusVariantKeys: STATUS_VARIANT_VOCABULARY,
     statusProbeValues: STATUS_VALUE_VOCABULARY,
     paginationSignals: PAGINATION_SIGNALS,
+    mutatingVerbs: MUTATING_VERB_VOCABULARY,
     familyLabels: FAMILY_LABELS,
   });
 }

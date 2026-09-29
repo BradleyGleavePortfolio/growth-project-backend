@@ -1,6 +1,6 @@
 import { NATIVE_RULE_FIELDS } from '../../../src/scout/reconstruct/native/native-rules';
 import type { SourceMappingSpec } from '../../../src/scout/reconstruct/mapping-spec';
-import { parseStructureDigest, structureKeyString } from '../../../src/scout/learn/digest-contract';
+import { parseStructureDigest } from '../../../src/scout/learn/digest-contract';
 import {
   ACCEPT_INTEGER_NUMBER_ID_FIELD,
   PROPOSAL_MAX_RATIONALE_CHARS,
@@ -15,7 +15,7 @@ import {
   nativeFieldTablesMatchInterpreter,
 } from '../../../src/scout/learn/canonical-contract';
 import { validateSchema } from '../../../src/scout/learn/schema';
-import { basicExample, clone, codesOf, parsedBasic } from './helpers';
+import { REF, basicExample, clone, codesOf, parsedBasic } from './helpers';
 
 type Raw = Record<string, any>;
 
@@ -46,7 +46,7 @@ describe('LearnedProposalV1 (D-L0-4): V-L1 parser', () => {
   it('accepts the basic example', () => {
     const { proposal } = parsedBasic();
     expect(Object.isFrozen(proposal)).toBe(true);
-    expect(proposal.steps).toHaveLength(3);
+    expect(proposal.steps).toHaveLength(4);
   });
 
   it('refuses non-JSON, non-objects, unknown keys at every level and missing keys', () => {
@@ -160,9 +160,14 @@ describe('LearnedProposalV1: validators V-L2 … V-L8, V-L10 over the digest', (
       verifiers: [],
       nativeRules: 'declared',
     });
-    expect(validated.steps.map((s) => s.family)).toEqual(['clients', 'workouts', 'notes']);
-    expect(validated.steps.map((s) => s.mappedFamily)).toEqual(['clients', 'workouts', null]);
-    expect(validated.unmapped[0].reason).toBe('out_of_scope_billing');
+    expect(validated.steps.map((s) => s.family)).toEqual([
+      'clients',
+      'workouts',
+      'notes',
+      'billing_history',
+    ]);
+    expect(validated.steps.map((s) => s.mappedFamily)).toEqual(['clients', 'workouts', null, null]);
+    expect(validated.unmapped[0].reason).toBe('out_of_scope_ui_config');
   });
 
   it('V-L2: the landed mapping-spec parser is the authority; slug must match', () => {
@@ -289,8 +294,8 @@ describe('LearnedProposalV1: validators V-L2 … V-L8, V-L10 over the digest', (
     expectCode(validateRaw(n), 'V-L5', 'style'); // routines signal page_param + total_count_key
     const withSignals = (signals: string[]) => {
       const dd = basicExample().digest as Raw;
-      dd.templates[4].queryKeys = [];
-      dd.templates[4].paginationSignals = signals;
+      dd.templates[5].queryKeys = []; // routines (REF.routines)
+      dd.templates[5].paginationSignals = signals;
       return dd;
     };
     expect(validateRaw(n, withSignals(['single_response'])).ok).toBe(true);
@@ -420,9 +425,9 @@ describe('LearnedProposalV1: validators V-L2 … V-L8, V-L10 over the digest', (
     expectCode(validateRaw(single), 'V-L10');
   });
 
-  it('V-L10 round 2: every round-1 step (by template key) must still be a step', () => {
+  it('V-L10 round 2: every round-1 step whose identity is in the union must still be a step', () => {
     const { validated, raw } = parsedBasic();
-    const round1Keys = validated.steps.map((s) => structureKeyString(s.structureKey));
+    const round1Keys = validated.steps.map((s) => s.structureKey);
     const d = clone(raw.digest) as Raw;
     d.round = 2;
     const p = clone(raw.proposal) as Raw;
@@ -447,7 +452,7 @@ describe('LearnedProposalV1: validators V-L2 … V-L8, V-L10 over the digest', (
     delete dropped.mappingSpec.steps.routines;
     delete dropped.mappingSpec.families.workouts;
     dropped.nativeRules = null;
-    dropped.unmapped.push({ templateRef: 't4', reason: 'unknown' });
+    dropped.unmapped.push({ templateRef: REF.routines, reason: 'unknown' });
     const parsedDropped = parseLearnedProposal(dropped);
     if (!parsedDropped.ok) throw new Error(JSON.stringify(parsedDropped.errors));
     expectCode(

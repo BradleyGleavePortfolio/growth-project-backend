@@ -224,7 +224,8 @@
     "a key whose normalised tokens equal any captured string value in the run payloads is refused before the digest leaves the device",
     "an object whose keys are not grammar-clean and corroborated (>= 2 siblings) collapses to a map node with keyClass unadmitted",
     "a next_url pagination link is followed only when its origin is an authorized or contacted origin of this run (origins[].contacted), else the step stops with a named gap",
-    "every :s slot, origin slot, query value and constant header value is rebound from this run own capture; zero bindings fail closed with zero requests"
+    "every :s slot, origin slot, query value and constant header value is rebound from this run own capture; zero bindings fail closed with zero requests",
+    "a template or :q variant whose path segments, query keys or rebound query values contain a token of the mutating verb vocabulary (contract-vocabulary mutatingVerbs) is refused with zero requests (mutating_template_refused); only GET or HEAD requests the page itself issued this run, with the same query-key set, are ever replayed"
   ],
   "deviceOnlyKeyRefusals": [
     "a key whose normalised tokens equal any captured string value in the run payloads is refused before the digest leaves the device",

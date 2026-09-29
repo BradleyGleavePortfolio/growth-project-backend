@@ -157,10 +157,12 @@ describe('r2 closure: every test here fails on 3a684671', () => {
       expect(applied.ok).toBe(true);
       if (!applied.ok) return;
       expect(applied.value.absentSteps).toEqual([]);
+      expect(applied.value.keypathGrowth).toBe(0);
       expect(applied.value.validated.steps.map((s) => s.step.templateRef)).toEqual([
         REF.members,
         REF.routines,
         REF.notes,
+        REF.invoices,
       ]);
       // B3: a sparser account (optional key absent) still applies
       const sparse = basicExample().digest as Raw;
@@ -174,7 +176,8 @@ describe('r2 closure: every test here fails on 3a684671', () => {
       const noNameDigest = parseStructureDigest(noName);
       if (!noNameDigest.ok) throw new Error('fixture');
       expect(applyLearnedPackage(pkg, noNameDigest.value, { slug: BASIC_SLUG }).ok).toBe(true);
-      // a digest with MORE structure than the step does not match: uncovered template
+      // r7 D-L0-3 (supersedes the r2 assertion here): a digest with MORE structure than the
+      // step still matches BY IDENTITY; the extra key binds nothing and is counted as growth
       const richer = basicExample().digest as Raw;
       richer.templates[1].shape.keys.members.items.keys.tags = {
         kind: 'array',
@@ -184,9 +187,9 @@ describe('r2 closure: every test here fails on 3a684671', () => {
       richer.templates[1].shape.keys.members.items.corroborated = ['tags'];
       const richerDigest = parseStructureDigest(richer);
       if (!richerDigest.ok) throw new Error(JSON.stringify(richerDigest.errors));
-      const miss = applyLearnedPackage(pkg, richerDigest.value, { slug: BASIC_SLUG });
-      expect(miss.ok).toBe(false);
-      if (!miss.ok) expect(miss.errors[0].detail).toMatch(/no package step/);
+      const grown = applyLearnedPackage(pkg, richerDigest.value, { slug: BASIC_SLUG });
+      expect(grown.ok).toBe(true);
+      if (grown.ok) expect(grown.value.keypathGrowth).toBe(1);
       // the wrong-class case is still refused in match mode
       const wrongClass = basicExample().digest as Raw;
       wrongClass.templates[1].shape.keys.members.items.keys.display_name.class = 'email_like';
@@ -197,6 +200,7 @@ describe('r2 closure: every test here fails on 3a684671', () => {
       const fewer = basicExample().digest as Raw;
       fewer.templates.splice(3, 1);
       fewer.templates[3].ref = 't3';
+      fewer.templates[4].ref = 't4';
       const fewerDigest = parseStructureDigest(fewer);
       if (!fewerDigest.ok) throw new Error(JSON.stringify(fewerDigest.errors));
       const partial = applyLearnedPackage(pkg, fewerDigest.value, { slug: BASIC_SLUG });

@@ -55,8 +55,9 @@ describe('LearnedPackageV1 (D-L0-4/5, V-L9)', () => {
       '/v2/coaches/:s1/members',
       '/v2/members/:p1/routines',
       '/v2/notes',
+      '/v2/billing/invoices',
     ]);
-    expect(pkg.steps.map((s) => s.key.origin)).toEqual([':d', 'api.:d', ':d']);
+    expect(pkg.steps.map((s) => s.key.origin)).toEqual([':d', 'api.:d', ':d', ':d']);
     expect(pkg.origins).toEqual([':d', 'api.:d']);
     expect(pkg.contractHash).toMatch(/^[0-9a-f]{64}$/);
     expect(pkg.steps[1].step.parentEdge).toEqual({ field: 'member_id', toStep: 'members' });
@@ -65,15 +66,17 @@ describe('LearnedPackageV1 (D-L0-4/5, V-L9)', () => {
     expect(JSON.stringify(pkg)).not.toMatch(/"templateRef"|"t[0-9]"/);
     expect(pkg.constantHeaderNames).toEqual(['accept']);
     expect(pkg.manifest.verifiers).toEqual([]);
+    // r7: billing is a family (classification only), never an unmapped reason
+    expect(pkg.steps[3].step.family).toBe('billing_history');
     expect(pkg.unmapped).toEqual([
       {
         key: {
           origin: ':d',
           method: 'GET',
-          template: '/v2/billing/invoices',
-          keyPaths: ['invoices', 'invoices[].amount', 'invoices[].id'],
+          template: '/v2/saved_filters',
+          keyPaths: ['filters', 'filters[].columns', 'filters[].id', 'filters[].name'],
         },
-        reason: 'out_of_scope_billing',
+        reason: 'out_of_scope_ui_config',
       },
     ]);
     assertPackageInvariants(pkg);
@@ -96,8 +99,8 @@ describe('LearnedPackageV1 (D-L0-4/5, V-L9)', () => {
     const pkg = buildLearnedPackage(validated);
     const back = unwrap(parseLearnedPackage(JSON.parse(unwrap(canonicalPackageJson(pkg)))));
     expect(back).toEqual(JSON.parse(JSON.stringify(pkg)));
-    expect(packageStepKeys(back)).toEqual(
-      validated.steps.map((s) => structureKeyString(s.structureKey)).sort(),
+    expect(packageStepKeys(back).map(structureKeyString)).toEqual(
+      validated.steps.map((s) => structureKeyString(s.structureKey)),
     );
   });
 

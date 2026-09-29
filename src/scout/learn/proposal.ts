@@ -22,11 +22,12 @@ import {
   Errors,
   ID_CLASSES,
   asObject,
+  identityMatches,
   itemShapeAt,
   shapeAtPath,
   structureKeyOf,
-  structureKeyString,
   templateParamCount,
+  templateSegments,
   type DigestTemplate,
   type LearnParseResult,
   type ShapeNode,
@@ -53,12 +54,8 @@ import {
   isMappedFamily,
   type NativeFieldDescription,
 } from './canonical-contract';
-import {
-  FAMILY_LABELS,
-  MORE_PAGES_SIGNALS,
-  tokenize,
-  type FamilyLabel,
-} from './contract-vocabulary';
+import { MORE_PAGES_SIGNALS, mutatingTokenRefusal, tokenize } from './contract-vocabulary';
+import { FAMILY_LABELS, type FamilyLabel } from './family-catalogue';
 import { validateSchema, type JsonSchema } from './schema';
 
 /**
@@ -86,8 +83,12 @@ export const PROPOSAL_MAX_RATIONALE_CHARS = 512;
 export const PROPOSAL_MAX_PATHS_PER_RULE = 4;
 export const PROPOSAL_MAX_PATH_DEPTH = 4;
 
+/**
+ * r7 (D-L0-4; D-L0-9 L1 owed item 1): `out_of_scope_billing` is DELETED — billing is a family
+ * (`billing_history` / `billing_schedule`, D10; FAM-0 D-FAM-5), never an unmapped reason. A
+ * reason is a claim, never an exclusion: every unmapped collection is gap `collection_unmapped`.
+ */
 export const UNMAPPED_REASONS = [
-  'out_of_scope_billing',
   'out_of_scope_account_settings',
   'out_of_scope_ui_config',
   'unknown',
@@ -517,11 +518,14 @@ export interface ProposalValidationContext {
   /** The run's slug (D-L0-5), server-side context: the spec and the rules must carry it. */
   readonly slug: string;
   /**
-   * Round 2 (D-L0-3): structure-key strings of the round-1 package's steps; each must still be
-   * a step. MANDATORY for a round-2 digest — a round-2 validation without it is refused
-   * (R591-B-B2: no fail-open).
+   * Round 2 (D-L0-3, V-L10 union rule; r7): the structure keys of the round-1 package's steps.
+   * Every round-1 step WHOSE IDENTITY IS IN THE UNION (a collection template of this digest with
+   * the same `(origin, method, template)`, whatever its key paths) must still be a step; a
+   * round-1 step whose identity the union never shows is `template_absent` — never a refusal.
+   * MANDATORY for a round-2 digest — a round-2 validation without it is refused (R591-B-B2: no
+   * fail-open).
    */
-  readonly round1StepKeys?: readonly string[];
+  readonly round1StepKeys?: readonly StructureKey[];
   /**
    * `strict` (default, a live proposal): every mapping path resolves. `match` (a stored package
    * re-applied to a new digest, D-L0-3 step 3): a mapping path whose FIRST key this digest never
@@ -784,6 +788,20 @@ export function validateLearnedProposal(
       );
       return;
     }
+    // r7 D-L0-6.2 no-mutation bound, server half: a template naming a mutating verb in a path
+    // literal or query key may only be `unmapped` (the device refuses it with zero requests).
+    const mutating = mutatingTokenRefusal(
+      templateSegments(template.template),
+      template.queryKeys.map((q) => q.key),
+    );
+    if (mutating !== null) {
+      errors.add(
+        `${where}.templateRef`,
+        `${mutating}: a mutating template may only be unmapped (D-L0-6.2)`,
+        'V-L5',
+      );
+      return;
+    }
     const pathText = JSON.stringify(step.itemsPath);
     if (!template.collectionPaths.some((p) => JSON.stringify(p) === pathText)) {
       errors.add(
@@ -993,10 +1011,20 @@ export function validateLearnedProposal(
         'V-L10',
       );
   if (digest.round === 2 && context.round1StepKeys !== undefined) {
-    const keys = new Set(validated.map((v) => structureKeyString(v.structureKey)));
-    for (const key of context.round1StepKeys)
-      if (!keys.has(key))
-        errors.add('steps', 'round-2 proposal drops a round-1 step (structure key)', 'V-L10');
+    // Union rule (r7): a round-1 step is owed only when the union shows its identity; a step the
+    // run never observed is `template_absent`, never a refusal (sparse account, unvisited link).
+    const unionIdentities = digest.templates
+      .filter((t) => t.role === 'collection')
+      .map((t) => structureKeyOf(digest, t));
+    context.round1StepKeys.forEach((key, i) => {
+      if (!unionIdentities.some((u) => identityMatches(u, key))) return;
+      if (!validated.some((v) => identityMatches(v.structureKey, key)))
+        errors.add(
+          'steps',
+          `round-2 proposal drops round-1 step ${i} whose identity is in the union`,
+          'V-L10',
+        );
+    });
   }
   if (errors.any) return { ok: false, errors: errors.list };
 
