@@ -52,8 +52,9 @@
  *     (SubCoachScopeService: User.role = coach with coach_id = the head coach; delegation = an OPEN
  *     SubCoachAssignment row): SC on coach A's team WITH an open delegation to S1 (and a closed one
  *     to S2), and SCX on coach B's team WITHOUT any delegation. Every matrix row and the CWA write
- *     block run for both. The only branch that admits a sub-coach today is the snapshot's
- *     app.is_subcoach_of(cwa.client_id), and only for a user-owned assignment.
+ *     block run for both. No S8-D3 policy branch admits a sub-coach on these fixtures: the
+ *     snapshot's app.is_subcoach_of(cwa.client_id) is unreachable for a head-coach-assigned row
+ *     (its parent EXISTS is RLS-filtered), and the CWA write branch admits SC only on SC's own plan.
  *   - The helper's EXECUTE ACL is captured BEFORE the harness's blanket
  *     `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app`, so the ACL assertion proves the MIGRATION's
  *     REVOKE/GRANT, not the harness's.
@@ -408,10 +409,10 @@ const TABLES: TableCase[] = [
     set: `SET "plan_name" = 'x'`,
     // owner; the assigned client (select); the assigning coach / current coach. The policy also names
     // the client's sub-coach (app.is_subcoach_of), but its EXISTS subquery on ClientWorkoutAssignment
-    // is itself RLS-filtered for the invoking role, and pre-D8 `assignment_coach_manage` does not
-    // admit SC (assigned_by = A) — so SC sees NO parent row and the branch is unreachable here.
-    // #593 (D8, migration 000012) admits SC on the parent and flips these three cells to allow
-    // (proved live there). SCX (no delegation) stays denied in both.
+    // is itself RLS-filtered for the invoking role, and `assignment_coach_manage` requires
+    // assigned_by_coach_id = the actor (pre-D8 via auth.uid(); D8 via app.rls_actor_id() too) — so
+    // for a row assigned by coach A, SC sees NO parent row and the branch is unreachable. SC reaches
+    // a snapshot only under an assignment SC itself wrote. Both sub-coaches: denied.
     userAllow: {
       select: ['s1', 'coachA', 'owner'],
       update: ['coachA', 'owner'],
