@@ -141,7 +141,7 @@ export function withFixturePassword(
  * the callers supply `git rev-parse HEAD` and `git status --porcelain` output.
  */
 export const G2_S11_CANDIDATE_HEAD_ENV = 'G2_S11_CANDIDATE_HEAD';
-export const G2_S11_BASE_HEAD = '88450a6584861f49b7043eaeeab4738cc8e65bf3';
+export const G2_S11_BASE_HEAD = '6d55e9e47569bdff13aa417e2cb39245737c212c';
 export function g2S11CandidateHead(
   declared: string | undefined,
   checkedOut: string,

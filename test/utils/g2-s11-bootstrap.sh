@@ -27,7 +27,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Base pin (kept identical in test/utils/g2-s11-pg-harness.ts and test/utils/g2-s11-db-guard.spec.ts).
-BASE_HEAD=88450a6584861f49b7043eaeeab4738cc8e65bf3
+BASE_HEAD=6d55e9e47569bdff13aa417e2cb39245737c212c
 S8B_MIGRATION=20270122000000_scout_native_provenance_expand
 S7L_MIGRATION=20270123000000_scout_run_lifecycle_expand
 S10B_MIGRATION=20270124000000_scout_run_observation_expand

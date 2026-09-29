@@ -191,7 +191,7 @@ describe('S11 PG17 disposable target guard', () => {
     expect(() => withFixturePassword(base, 'a@b')).toThrow();
   });
   it('pins the base head and migration count identically across bootstrap, harness and repository', () => {
-    const BASE_HEAD = '88450a6584861f49b7043eaeeab4738cc8e65bf3';
+    const BASE_HEAD = '6d55e9e47569bdff13aa417e2cb39245737c212c';
     const EXPECTED_MIGRATIONS = 186;
     const LAST_MIGRATION_PIN = '20270125000012_cwa_coach_manage_client_tenancy';
     /** The pre-S8-D3 count: S10-B's directory is the 173rd. */
@@ -247,7 +247,7 @@ describe('S11 PG17 disposable target guard', () => {
     }
   });
   it('binds the proof to one attested, clean, non-base candidate head; the worker attests before any client', () => {
-    const base = '88450a6584861f49b7043eaeeab4738cc8e65bf3';
+    const base = '6d55e9e47569bdff13aa417e2cb39245737c212c';
     const candidate = 'a'.repeat(40);
     expect(g2S11CandidateHead(candidate, `${candidate}\n`, '')).toBe(candidate);
     expect(() => g2S11CandidateHead(undefined, candidate, '')).toThrow(/G2_S11_CANDIDATE_HEAD/);
