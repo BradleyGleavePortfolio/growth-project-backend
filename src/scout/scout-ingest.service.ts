@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { PrismaService } from '../prisma.service';
@@ -45,9 +45,11 @@ export class ScoutIngestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
-    @Optional() lifecycle?: ScoutLifecycleService,
+    // REQUIRED under Nest (R588-B-2): ScoutModule provides the lifecycle, so a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    lifecycle: ScoutLifecycleService = new ScoutLifecycleService(prisma, analytics),
   ) {
-    this.lifecycle = lifecycle ?? new ScoutLifecycleService(prisma, analytics);
+    this.lifecycle = lifecycle;
   }
 
   /**

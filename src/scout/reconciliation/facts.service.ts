@@ -1,11 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { PersonState, type Prisma } from '@prisma/client';
 import { stagedFamilyDigests } from '../induction/digest';
-import {
-  buildInductionRegistry,
-  loadInductionManifests,
-  type InductionRegistry,
-} from '../induction/manifest-registry';
+import { buildInductionRegistry, type InductionRegistry } from '../induction/manifest-registry';
 import {
   evaluateCoverage,
   type RunDeclaration,
@@ -19,16 +15,15 @@ import {
   PROVENANCE_OUTCOME,
 } from '../reconstruct/native/native-contract';
 import { buildNativeFamilies } from '../reconstruct/native/native-families';
-import {
-  buildNativeRuleRegistry,
-  type NativeRuleRegistry,
-} from '../reconstruct/native/native-rule-registry';
+import { type NativeRuleRegistry } from '../reconstruct/native/native-rule-registry';
 import { LEDGER_TARGET_KIND } from '../reconstruct/native/persist-outcome';
+import { resolveStagedFamily, type SourceMapper } from '../reconstruct/source-mapper-registry';
 import {
-  buildSourceMapperRegistry,
-  resolveStagedFamily,
-  type SourceMapper,
-} from '../reconstruct/source-mapper-registry';
+  defaultSourceRegistryProvider,
+  SourceRegistryProvider,
+  type RunRegistries,
+  type SourceArtifacts,
+} from '../reconstruct/source-registry.provider';
 import {
   RECONSTRUCT_FAMILY,
   RECONSTRUCT_MAX_ROWS,
@@ -124,12 +119,22 @@ import {
 /** The transaction (or client) the caller already holds; S9 runs inside S8-G's settle tx (D-S9-1). */
 export type FactsDb = Prisma.TransactionClient;
 
-/** Facts-service options, injectable for tests: registries default to the repository-resident ones. */
+/**
+ * Facts-service options, injectable for tests: the registries of a run with NO pin default to
+ * the ONE provider's file registries (L2a, D-L0-5); a pinned run resolves its own.
+ */
 export interface ReconciliationFactsOptions {
   readonly sourceMappers?: ReadonlyMap<string, SourceMapper>;
   readonly nativeRules?: NativeRuleRegistry;
-  /** S10-C: the induction registry; default: on-disk manifests over this service's mappers. */
+  /** S10-C: the induction registry; default: the file manifests over this service's mappers. */
   readonly registry?: InductionRegistry;
+}
+
+/** The three interpreters one `collect` resolves a run's rows through. */
+interface FactsRegistries {
+  readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
+  readonly workoutInterpreter: WorkoutInterpreter;
+  readonly registry: InductionRegistry;
 }
 
 /** DI token for {@link ReconciliationFactsOptions}; absent → repository-resident registries. */
@@ -340,57 +345,105 @@ export interface RunBinding {
   accepted_start_at: Date | null;
 }
 
+/**
+ * S10-C: the induction registry over ONE mapper partition (fail loud at construction like the
+ * mapper and native registries). Artifacts naming a platform without a mapping spec in the
+ * partition are dropped, not rejected: such a platform is unprovable in this partition
+ * (unknown), and the loud cross-check over the whole file set is the provider's (S10-B, L2a).
+ * Used when a caller injects a mapper partition (`RECONCILIATION_FACTS_OPTIONS`); `files` is the
+ * provider's artifact set (r2: the former static `defaultRegistry`, which read the process
+ * singleton, is gone).
+ */
+export function partitionInductionRegistry(
+  files: SourceArtifacts,
+  sourceMappers: ReadonlyMap<string, SourceMapper>,
+  nativeRules: NativeRuleRegistry,
+): InductionRegistry {
+  return buildInductionRegistry({
+    manifests: files.manifests.filter((m) => sourceMappers.has(m.sourcePlatform)),
+    specs: Array.from(sourceMappers.values()).map((m) => m.spec),
+    nativeRuleSets: Array.from(nativeRules.values()).filter((s) =>
+      sourceMappers.has(s.sourcePlatform),
+    ),
+  });
+}
+
 @Injectable()
 export class ReconciliationFactsService {
-  private readonly sourceMappers: ReadonlyMap<string, SourceMapper>;
-  private readonly workoutInterpreter: WorkoutInterpreter;
-  private readonly registry: InductionRegistry;
+  /** L2a: the ONE registry provider (D-L0-5); every run's facts resolve through it. */
+  private readonly registries: SourceRegistryProvider;
+  /** The interpreters of a run with NO pin: the options seam over the provider's file registries. */
+  private readonly unpinned: FactsRegistries;
 
   constructor(
     @Optional() @Inject(RECONCILIATION_FACTS_OPTIONS) options: ReconciliationFactsOptions = {},
+    // REQUIRED under Nest (R588-B-2): SourceRegistryModule provides it, and a missing binding
+    // fails boot. The default applies only to hand-constructed instances (tests, proof workers).
+    registries: SourceRegistryProvider = defaultSourceRegistryProvider(),
   ) {
-    this.sourceMappers = options.sourceMappers ?? buildSourceMapperRegistry();
-    const nativeRules: NativeRuleRegistry = options.nativeRules ?? buildNativeRuleRegistry();
-    // The accepted S8-C dispatch + S8-A/S8-C interpreters; only `map` is ever called (read-only).
-    this.workoutInterpreter = buildNativeFamilies({
-      sourceMappers: this.sourceMappers,
-      nativeRules,
-    }).workouts;
-    this.registry =
+    this.registries = registries;
+    const files = this.registries.files;
+    const sourceMappers = options.sourceMappers ?? files.sourceMappers;
+    const nativeRules: NativeRuleRegistry = options.nativeRules ?? files.nativeRules;
+    // With no injected partition the registry IS the provider's cross-checked induction
+    // registry; an injected partition keeps S10-C's lenient projection of the file manifests.
+    const registry =
       options.registry ??
-      ReconciliationFactsService.defaultRegistry(this.sourceMappers, nativeRules);
+      (options.sourceMappers === undefined && options.nativeRules === undefined
+        ? files.induction
+        : partitionInductionRegistry(this.registries.artifacts, sourceMappers, nativeRules));
+    this.unpinned = ReconciliationFactsService.interpreters(sourceMappers, nativeRules, registry);
+  }
+
+  /** The accepted S8-C dispatch + S8-A/S8-C interpreters; only `map` is ever called (read-only). */
+  private static interpreters(
+    sourceMappers: ReadonlyMap<string, SourceMapper>,
+    nativeRules: NativeRuleRegistry,
+    registry: InductionRegistry,
+  ): FactsRegistries {
+    return {
+      sourceMappers,
+      workoutInterpreter: buildNativeFamilies({ sourceMappers, nativeRules }).workouts,
+      registry,
+    };
   }
 
   /**
-   * S10-C: the induction registry over THIS service's mapper partition (fail loud at
-   * construction like the mapper and native registries). Artifacts naming a platform without a
-   * mapping spec here are dropped, not rejected: such a platform is unprovable in this partition
-   * (unknown), and the loud on-disk cross-check is `ObservationService`'s (S10-B).
+   * The interpreters THIS run's rows are collected through (D-L0-5): a pinned run's composed
+   * registries, else the unpinned ones — the file registries or the injected partition. The pin
+   * is `resolved` (the settle's once-per-settle resolution, R588-B-1) or read on `db` — the
+   * caller's transaction, never a side connection.
    */
-  static defaultRegistry(
-    sourceMappers: ReadonlyMap<string, SourceMapper>,
-    nativeRules: NativeRuleRegistry,
-  ): InductionRegistry {
-    return buildInductionRegistry({
-      manifests: loadInductionManifests().filter((m) => sourceMappers.has(m.sourcePlatform)),
-      specs: Array.from(sourceMappers.values()).map((m) => m.spec),
-      nativeRuleSets: Array.from(nativeRules.values()).filter((s) =>
-        sourceMappers.has(s.sourcePlatform),
-      ),
-    });
+  private async registriesFor(
+    db: FactsDb,
+    coachId: string,
+    intentId: string,
+    resolved: RunRegistries | undefined,
+  ): Promise<FactsRegistries> {
+    const run = resolved ?? (await this.registries.forRun(db, coachId, intentId));
+    if (run.pinned === null) return this.unpinned;
+    return ReconciliationFactsService.interpreters(
+      run.sourceMappers,
+      run.nativeRules,
+      run.induction,
+    );
   }
 
   /**
    * Collect the facts for one run. Reads only; safe inside the caller's transaction. `run` (S10-C)
    * is the server run row's binding; without one — or for a non-server / not-yet-accepted row —
    * `coverage` is `null` (unknown), exactly the S9 v1 facts, and no S10 table is read.
+   * `registries` (R588-B-1) is the settle's once-per-settle resolution — the SAME object the
+   * reconstruction pass interpreted the run through; without one the pin is read on `db`.
    */
   async collect(
     db: FactsDb,
     coachId: string,
     intentId: string,
     run: RunBinding | null = null,
+    registries?: RunRegistries,
   ): Promise<ReconciliationFacts> {
+    const reg = await this.registriesFor(db, coachId, intentId, registries);
     const [claim, staged, ledger] = await Promise.all([
       this.readClaim(db, coachId, intentId),
       this.readStaged(db, coachId, intentId),
@@ -414,7 +467,7 @@ export class ReconciliationFactsService {
     for (const row of staged) {
       platforms.add(row.source_platform);
       tokenCounts.set(row.entity_type, (tokenCounts.get(row.entity_type) ?? 0) + 1);
-      const grouped = this.group(row);
+      const grouped = this.group(reg, row);
       const acc = entryFor(grouped.mapped, grouped.family);
       if (grouped.resolutionReason !== null) acc.resolutionReasons.add(grouped.resolutionReason);
       acc.members.push(grouped);
@@ -432,7 +485,7 @@ export class ReconciliationFactsService {
       if (stagedKeys.has(ledgerKey(row.entity_type, row.source_platform, row.source_id))) continue;
       ledgerWithoutStaged += 1;
       // Attributed to a family entry where the ledger row's own (platform, token) resolves.
-      const resolved = resolveFamily(this.sourceMappers, row.source_platform, row.entity_type);
+      const resolved = resolveFamily(reg.sourceMappers, row.source_platform, row.entity_type);
       if (resolved !== null) entryFor(true, resolved).ledgerWithoutStaged += 1;
     }
 
@@ -571,6 +624,7 @@ export class ReconciliationFactsService {
         }
         if (acc.family === RECONSTRUCT_FAMILY.workouts) {
           this.workoutEdges(
+            reg,
             coachId,
             member,
             led,
@@ -607,7 +661,7 @@ export class ReconciliationFactsService {
       const union = new Set<string>();
       let known = true;
       for (const platform of platforms) {
-        const mapper = this.sourceMappers.get(platform);
+        const mapper = reg.sourceMappers.get(platform);
         if (mapper === undefined) {
           known = false;
           break;
@@ -618,7 +672,7 @@ export class ReconciliationFactsService {
     }
 
     // ── 7. Coverage (S10-C, D-S10-3): the evaluator over the settle epoch's stored evidence ──
-    const coverage = await this.evaluateRunCoverage(db, coachId, intentId, run, staged);
+    const coverage = await this.evaluateRunCoverage(reg, db, coachId, intentId, run, staged);
 
     return {
       claim,
@@ -638,6 +692,7 @@ export class ReconciliationFactsService {
    * staged row: `observed_unique` comes only from verified evidence.
    */
   private async evaluateRunCoverage(
+    reg: FactsRegistries,
     db: FactsDb,
     coachId: string,
     intentId: string,
@@ -659,22 +714,22 @@ export class ReconciliationFactsService {
         accepted_start_at: run.accepted_start_at,
       },
       declaration,
-      registry: this.registry,
+      registry: reg.registry,
       observations,
-      staged: stagedPlatformFacts(this.sourceMappers, staged),
+      staged: stagedPlatformFacts(reg.sourceMappers, staged),
     });
   }
 
   // ── Grouping / interpretation ──────────────────────────────────────────────────────────────
 
-  private group(row: StagedRow): Grouped {
+  private group(reg: FactsRegistries, row: StagedRow): Grouped {
     const identity = identityKey(row.source_platform, row.source_id);
-    const mapper = this.sourceMappers.get(row.source_platform) ?? null;
-    const family = resolveFamily(this.sourceMappers, row.source_platform, row.entity_type);
+    const mapper = reg.sourceMappers.get(row.source_platform) ?? null;
+    const family = resolveFamily(reg.sourceMappers, row.source_platform, row.entity_type);
     if (family !== null) {
       return { row, identity, mapped: true, family, resolutionReason: null, mapper };
     }
-    const step = resolveStagedFamily(this.sourceMappers, row.source_platform, row.entity_type);
+    const step = resolveStagedFamily(reg.sourceMappers, row.source_platform, row.entity_type);
     return {
       row,
       identity,
@@ -769,6 +824,7 @@ export class ReconciliationFactsService {
   // ── Relationship edges for a `workouts` identity (E-R1, E-R2) ─────────────────────────────
 
   private workoutEdges(
+    reg: FactsRegistries,
     coachId: string,
     member: Grouped,
     led: LedgerRow | null,
@@ -795,7 +851,7 @@ export class ReconciliationFactsService {
       plan !== undefined && plan.coach_id === coachId && plan.archived_at === null ? plan : null;
 
     // E-R1: declared iff the accepted interpreter derives a parent program for this row.
-    const derived = this.deriveTemplate(member);
+    const derived = this.deriveTemplate(reg, member);
     if (derived !== null && derived.programSourceId !== null) {
       const parentIdentity = identityKey(member.row.source_platform, derived.programSourceId);
       const parentNative = programNativeId.get(parentIdentity) ?? null;
@@ -841,11 +897,12 @@ export class ReconciliationFactsService {
 
   /** Accepted S8-C interpretation of a staged workouts row; null unless it is a native template. */
   private deriveTemplate(
+    reg: FactsRegistries,
     member: Grouped,
   ): { programSourceId: string | null; weekIndex: number | null; dayIndex: number | null } | null {
     let mapped: ReturnType<WorkoutInterpreter['map']>;
     try {
-      mapped = this.workoutInterpreter.map({
+      mapped = reg.workoutInterpreter.map({
         source_id: member.row.source_id,
         source_platform: member.row.source_platform,
         payload: member.row.payload,
