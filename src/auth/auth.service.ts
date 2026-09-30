@@ -406,6 +406,16 @@ export class AuthService {
       invite_code_required: gateEnabled,
       coach_code_required: gateEnabled,
       providers,
+      // Clinic launch C02 — legacy field names the shipped mobile build reads
+      // (CreateAccountScreen / RoleSelectionScreen): `require_invite_code`
+      // mirrors invite_code_required; `google_signin_enabled` mirrors
+      // providers.includes('google'). `apple_signin_enabled` is additive for
+      // symmetry. Mobile falls back to require_invite_code=true and
+      // google_signin_enabled=true when a field is missing, which is why the
+      // omission was a live bug (codeless signup blocked; dead Google button).
+      require_invite_code: gateEnabled,
+      google_signin_enabled: googleEnabled,
+      apple_signin_enabled: appleEnabled,
       invite_code_field: 'invite_code',
       invite_code: {
         min_length: INVITE_CODE_MIN_LENGTH,
