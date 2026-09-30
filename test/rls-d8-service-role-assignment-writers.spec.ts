@@ -26,6 +26,15 @@
  *      INSERT), and once it lands the next write of the same shape is refused. On the pre-round-3 head
  *      (plain findUnique/findMany, no lock) the concurrent UPDATE completes inside the pause and the
  *      "blocked" assertion fails — that is the behavioural discriminator.
+ *   8. (S4B-01) the drip-path MealPlanAssetResolver, entered WITHOUT a caller transaction (the PR-10
+ *      cron entry point, which since round 3 opens its own `$transaction`), survives losing the
+ *      drip_drop_id race: two resolvers on two connections materialise the SAME drop; the winner's
+ *      INSERT commits, the loser's `INSERT ... ON CONFLICT ("drip_drop_id") DO NOTHING` WAITS for that
+ *      commit (asserted: it has not settled while the winner's transaction is held open), returns no
+ *      row WITHOUT aborting the loser's transaction, and the loser re-reads the winner in the same
+ *      transaction. Both calls return the same id and exactly one row exists. On 798208b7 (plain
+ *      `create` + catch P2002 + re-read) the loser's transaction is aborted by the unique violation and
+ *      the re-read fails with 25P02 — that call throws, which is the behavioural discriminator.
  *
  * Fixtures are synthetic, run-prefixed UUIDs and are removed in afterAll. Notifications are a stub
  * (no push is sent). Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL; skipped when neither
@@ -39,6 +48,8 @@ import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { lockTenancyFacts, type LockedTenancyFacts } from '../src/sub-coach/tenancy-lock';
 import { AssignWorkoutMaterializer } from '../src/ai/gateway/materialisers/assign-workout.materialiser';
 import { AssignMealPlanMaterializer } from '../src/ai/gateway/materialisers/assign-meal-plan.materialiser';
+import { MealPlanAssetResolver } from '../src/packages/asset-resolvers/meal-plan.resolver';
+import { ResolverSubCoachScope } from '../src/packages/asset-resolvers/sub-coach-scope.helper';
 
 const TEST_DB_URL = process.env.S8D3_RLS_TEST_DATABASE_URL || process.env.TEST_DATABASE_URL || '';
 const describeLive = TEST_DB_URL ? describe : describe.skip;
@@ -610,6 +621,119 @@ describeLive(
           await prisma.$executeRawUnsafe(
             `UPDATE public."User" SET "coach_id" = ${lit(U.coachA)} WHERE "id" = ${lit(U.s1)}`,
           );
+        }
+      }, 30_000);
+
+      it('S4B-01 — drip path, no caller tx, two connections, SAME drop: the loser\'s ON CONFLICT INSERT waits for the winner\'s commit, returns no row WITHOUT aborting its transaction, and both materialise() calls return the winner\'s id with exactly ONE DailyMealPlanAssignment row', async () => {
+        const dropId = `${RUN}-drop-${randomUUID().slice(0, 8)}`;
+        const input = {
+          clientId: U.s1,
+          coachId: U.coachA,
+          assetId: MEAL_A,
+          scheduledDropId: dropId,
+        };
+        const isDripInsert = (arg: unknown) =>
+          typeof (arg as { sql?: unknown })?.sql === 'string' &&
+          /INSERT INTO "DailyMealPlanAssignment"/.test((arg as { sql: string }).sql);
+        /**
+         * Wrap a real client so the resolver's OWN transaction pauses at the drip INSERT (after the
+         * prior-fire probe saw no row and the plan check passed) until `gate.open()`, and — for the
+         * winner — pauses AGAIN after the INSERT returned, holding the transaction (and the new,
+         * uncommitted unique index entry) open until `hold.open()`. Everything else, the FOR SHARE
+         * tenancy reads included, goes straight to the real transaction client.
+         */
+        function gatedResolverPrisma(
+          client: PrismaClient,
+          gate: ReturnType<typeof makeGate>,
+          hold?: ReturnType<typeof makeGate>,
+        ) {
+          const gateTx = (tx: any) =>
+            new Proxy(tx, {
+              get(t, p) {
+                if (p !== '$queryRaw') return t[p];
+                return async (...args: unknown[]) => {
+                  if (!isDripInsert(args[0])) return t.$queryRaw(...args);
+                  gate.markReached();
+                  await gate.opened;
+                  const out = await t.$queryRaw(...args);
+                  if (hold) {
+                    hold.markReached();
+                    await hold.opened;
+                  }
+                  return out;
+                };
+              },
+            });
+          return new Proxy(client as any, {
+            get(target, prop) {
+              if (prop !== '$transaction') return target[prop];
+              return (cb: (tx: any) => Promise<unknown>, opts?: unknown) =>
+                target.$transaction((tx: any) => cb(gateTx(tx)), opts);
+            },
+          });
+        }
+        const resolverOn = (client: any) =>
+          new MealPlanAssetResolver(client, new ResolverSubCoachScope(new SubCoachScopeService(client)));
+
+        const gateW = makeGate();
+        const holdW = makeGate();
+        const gateL = makeGate();
+        // Two independent pools — one per concurrent cron worker. Each resolver's OWN transaction
+        // takes one connection; ResolverSubCoachScope.getHeadCoachIdForSubCoach reads through the
+        // service's client OUTSIDE that transaction, so a single-connection pool (the CI-pinned
+        // `prisma`) would wait on itself until the 5 s interactive timeout — hence 3 per pool here.
+        const withLimit = (n: number) =>
+          /connection_limit=\d+/.test(TEST_DB_URL)
+            ? TEST_DB_URL.replace(/connection_limit=\d+/, `connection_limit=${n}`)
+            : `${TEST_DB_URL}${TEST_DB_URL.includes('?') ? '&' : '?'}connection_limit=${n}`;
+        const poolW = new PrismaClient({ datasources: { db: { url: withLimit(3) } } });
+        const poolL = new PrismaClient({ datasources: { db: { url: withLimit(3) } } });
+        const winner = resolverOn(gatedResolverPrisma(poolW, gateW, holdW));
+        const loser = resolverOn(gatedResolverPrisma(poolL, gateL));
+
+        let loserSettled = false;
+        try {
+          await Promise.all([poolW.$connect(), poolL.$connect()]);
+          const wp = winner.materialise(input);
+          const lp = loser.materialise(input).finally(() => {
+            loserSettled = true;
+          });
+          // Both are past the idempotency short-circuit (no prior row) and the plan check.
+          await Promise.all([gateW.reached, gateL.reached]);
+          // Winner INSERTs and holds its transaction open: the row and its unique index entry are uncommitted.
+          gateW.open();
+          await holdW.reached;
+          // Loser INSERTs: ON CONFLICT must WAIT for the winner's transaction to decide the conflict.
+          gateL.open();
+          await sleep(750);
+          expect(loserSettled).toBe(false);
+          // Nothing visible yet from a third vantage point (the winner has not committed).
+          const during = (await prisma2.$queryRawUnsafe(
+            `SELECT count(*)::int AS n FROM public."DailyMealPlanAssignment" WHERE "drip_drop_id" = ${lit(dropId)}`,
+          )) as Array<{ n: number }>;
+          expect(during[0].n).toBe(0);
+          // Release the winner: it commits; the loser's INSERT returns no row and it re-reads the winner.
+          holdW.open();
+          const [w, l] = await Promise.all([wp, lp]);
+          expect(w.materialisedRef).toEqual(expect.any(String));
+          expect(l.materialisedRef).toBe(w.materialisedRef);
+          const rows = (await prisma2.$queryRawUnsafe(
+            `SELECT "id", "client_id", "assigned_by_coach_id", "daily_meal_plan_id" FROM public."DailyMealPlanAssignment" WHERE "drip_drop_id" = ${lit(dropId)}`,
+          )) as Array<{ id: string; client_id: string; assigned_by_coach_id: string; daily_meal_plan_id: string }>;
+          expect(rows).toEqual([
+            { id: w.materialisedRef, client_id: U.s1, assigned_by_coach_id: U.coachA, daily_meal_plan_id: MEAL_A },
+          ]);
+          // A later fire of the same drop (no gates) converges on the same id without inserting.
+          const again = await resolverOn(poolW).materialise(input);
+          expect(again.materialisedRef).toBe(w.materialisedRef);
+        } finally {
+          gateW.open();
+          holdW.open();
+          gateL.open();
+          await prisma2.$executeRawUnsafe(
+            `DELETE FROM public."DailyMealPlanAssignment" WHERE "drip_drop_id" = ${lit(dropId)}`,
+          );
+          await Promise.all([poolW.$disconnect(), poolL.$disconnect()]);
         }
       }, 30_000);
 

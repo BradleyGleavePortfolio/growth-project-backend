@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -33,10 +34,18 @@ import type {
 // Idempotency mechanics:
 //   - When invoked from a ScheduledDrop (PR-10), `scheduledDropId` is set.
 //     We pass it as `drip_drop_id` on INSERT. The new UNIQUE on that column
-//     means two concurrent retries race on the index: the winner commits,
-//     the loser gets Prisma error P2002 and falls through to a re-read of
-//     the winner's row, returning the same `materialised_ref`. Exactly one
-//     assignment exists in either ordering.
+//     means two concurrent retries race on the index: the INSERT is
+//     `ON CONFLICT ("drip_drop_id") DO NOTHING RETURNING "id"`, so the winner
+//     gets its id back and the loser gets NO row — PostgreSQL makes the loser
+//     wait for the winner's transaction to commit before deciding the
+//     conflict — and then re-reads the winner's row in the SAME transaction,
+//     returning the same `materialised_ref`. Exactly one assignment exists in
+//     either ordering. (S4B-01, PR #593 fix round: the previous shape caught
+//     Prisma P2002 from a plain `create` and re-read afterwards; once the cron
+//     path ran inside `$transaction` that unique violation ABORTED the
+//     transaction, so the re-read failed with 25P02 and the loser threw
+//     instead of converging. ON CONFLICT never raises, so the transaction —
+//     and the FOR SHARE tenancy locks it holds — stays live.)
 //   - When invoked without a scheduledDropId (back-compat / manual call),
 //     we fall back to the prior "find latest existing assignment for
 //     (client, plan)" probe and return its id if any. This is the same
@@ -48,6 +57,18 @@ import type {
 // transaction is opened — the immediate-at-checkout fan-out passes `tx`);
 // the PR-10 cron path passes none and the resolver opens its own transaction
 // so the scope check and the INSERT are atomic (D8 round 3, R593-c7A2-01).
+
+/**
+ * S4B-01: the drip INSERT hit the drip_drop_id UNIQUE (ON CONFLICT DO NOTHING returned no row) but
+ * no row with that drop id is visible afterwards — only a DELETE racing the INSERT can produce it.
+ * Surfaced (not retried) so the dispatcher's failure path records it.
+ */
+export class DripAssignmentConflictWithoutWinnerError extends Error {
+  constructor(readonly dropId: string) {
+    super(`MealPlanAssetResolver: drip_drop_id=${dropId} conflicted on INSERT but no winner row found`);
+    this.name = 'DripAssignmentConflictWithoutWinnerError';
+  }
+}
 
 @Injectable()
 export class MealPlanAssetResolver implements AssignableAssetResolver {
@@ -128,7 +149,7 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
   }
 
   private async insertDripAssignment(args: {
-    db: Pick<PrismaService, 'dailyMealPlan' | 'dailyMealPlanAssignment'>;
+    db: Pick<PrismaService, 'dailyMealPlan' | 'dailyMealPlanAssignment' | '$queryRaw'>;
     clientId: string;
     planId: string;
     tenantCoachId: string;
@@ -148,35 +169,36 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
 
     await this.assertPlanOwnedByTenant({ db, planId, tenantCoachId });
 
-    try {
-      const created = await db.dailyMealPlanAssignment.create({
-        data: {
-          daily_meal_plan_id: planId,
-          client_id: clientId,
-          assigned_by_coach_id: tenantCoachId,
-          starts_on: this.todayUtcDate(),
-          drip_drop_id: dropId,
-        },
-        select: { id: true },
-      });
-      return created.id;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Loser of the race. Re-read by drop id to return the winner's
-        // assignment so ScheduledDrop.materialised_ref converges.
-        const winner = await db.dailyMealPlanAssignment.findUnique({
-          where: { drip_drop_id: dropId },
-          select: { id: true },
-        });
-        if (winner) return winner.id;
-        // Vanishingly unlikely: P2002 with no row visible afterwards (DELETE
-        // raced an INSERT). Surface loudly rather than silently retry.
-        this.logger.error(
-          `MealPlanAssetResolver: P2002 on drip_drop_id=${dropId} but no winner row found`,
-        );
-      }
-      throw err;
-    }
+    // Conflict-safe INSERT (S4B-01): a unique violation would abort the
+    // enclosing transaction (25P02 on every later statement), so the race is
+    // decided by ON CONFLICT DO NOTHING instead of by catching P2002. Column
+    // list mirrors `dailyMealPlanAssignment.create` above: `id` is a Prisma-level
+    // @default(uuid()) so it is supplied here; `created_at` is a DB default.
+    const startsOn = this.todayUtcDate();
+    const inserted = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      INSERT INTO "DailyMealPlanAssignment"
+        ("id", "daily_meal_plan_id", "client_id", "assigned_by_coach_id", "starts_on", "drip_drop_id")
+      VALUES
+        (${randomUUID()}, ${planId}, ${clientId}, ${tenantCoachId}, ${startsOn}::date, ${dropId})
+      ON CONFLICT ("drip_drop_id") DO NOTHING
+      RETURNING "id"
+    `);
+    if (inserted.length === 1) return inserted[0].id;
+
+    // Loser of the race: the conflicting row is committed (ON CONFLICT waited
+    // for the winner's transaction). Re-read by drop id — still inside our
+    // live transaction — so ScheduledDrop.materialised_ref converges.
+    const winner = await db.dailyMealPlanAssignment.findUnique({
+      where: { drip_drop_id: dropId },
+      select: { id: true },
+    });
+    if (winner) return winner.id;
+    // Vanishingly unlikely: conflict with no row visible afterwards (DELETE
+    // raced an INSERT). Surface loudly rather than silently retry.
+    this.logger.error(
+      `MealPlanAssetResolver: drip_drop_id=${dropId} conflicted on INSERT but no winner row found`,
+    );
+    throw new DripAssignmentConflictWithoutWinnerError(dropId);
   }
 
   private async assertPlanOwnedByTenant(args: {
