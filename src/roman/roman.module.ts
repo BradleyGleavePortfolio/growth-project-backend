@@ -18,10 +18,23 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
+import { RomanConsentController } from './consent/roman-consent.controller';
+import { RomanConsentService } from './consent/roman-consent.service';
+import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
 
 @Module({
-  controllers: [RomanController],
-  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
-  exports: [RomanService],
+  // RomanConsentController serves /me/ai-consent (R2). RomanConsentService and
+  // AiProcessingConsentGuard are exported so /ai/chat can enforce the same
+  // consent while AI Guide lives (plan §6.2). AuditService comes from the
+  // @Global AuditModule.
+  controllers: [RomanController, RomanConsentController],
+  providers: [
+    RomanService,
+    RomanFeatureGuard,
+    romanAnthropicClientProvider,
+    RomanConsentService,
+    AiProcessingConsentGuard,
+  ],
+  exports: [RomanService, RomanConsentService, AiProcessingConsentGuard],
 })
 export class RomanModule {}

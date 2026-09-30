@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AiProcessingConsentGuard } from '../roman/consent/ai-processing-consent.guard';
 
 @ApiTags('ai')
 @Controller('ai')
@@ -17,7 +18,11 @@ export class AiController {
   constructor(private aiService: AiService) {}
 
   // Rate limited: 20 requests per hour per user (anti-abuse)
+  // R2: AI Guide sends client data to a third-party model, so it needs the
+  // same AI processing consent as Roman until R7 retires it. Returns 403
+  // ROMAN_CONSENT_REQUIRED without a live grant of the current version.
   @Post('chat')
+  @UseGuards(AiProcessingConsentGuard)
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
   async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
     const result = await this.aiService.chat(
