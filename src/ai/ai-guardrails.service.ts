@@ -58,7 +58,7 @@ export class AIGuardrailsService {
           applied.push('calorie-floor');
           out =
             out +
-            `\n\nNote: any number under ${floor} kcal in this reply is below the safety floor for adult men. Stick with ${ctx.prescribed.calories ?? 'your prescribed target'} kcal.`;
+            `\n\nNote: any number under ${floor} kcal in this reply is below your safety floor. Stick with ${ctx.prescribed.calories ?? 'your prescribed target'} kcal.`;
           break;
         }
       }

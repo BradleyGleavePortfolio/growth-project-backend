@@ -16,6 +16,7 @@
 //   cap        the global daily USD cap serves the resting reply with no call
 //   ledger     one AICallLog row per upstream call, capability roman_chat
 
+import type { RomanConsentService } from '../../src/roman/consent/roman-consent.service';
 import 'reflect-metadata';
 import { RomanService } from '../../src/roman/roman.service';
 import { RomanController } from '../../src/roman/roman.controller';
@@ -46,6 +47,13 @@ import {
   asPrismaDouble,
   asResponseDouble,
 } from './roman-test-doubles';
+
+/** R2 (integration): consent double that ALLOWS every turn; consent is covered in roman-consent.spec.ts. */
+function makeConsentAllow(): RomanConsentService {
+  const double = { assertAiConsent: jest.fn(async () => undefined) };
+  // @ts-expect-error partial structural mock of RomanConsentService — only assertAiConsent is read by the controller.
+  return double;
+}
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 const ENV_KEYS = [
@@ -439,6 +447,7 @@ describe('R1 honest failure — never a blank reply', () => {
     const ctrl = new RomanController(
       service,
       asPrismaDouble({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+      makeConsentAllow(),
     );
     const writes: string[] = [];
     const res = {
