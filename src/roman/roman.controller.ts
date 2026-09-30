@@ -38,15 +38,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
-import {
-  RomanCaller,
-  RomanService,
-} from './roman.service';
-import {
-  ListMessagesQueryDto,
-  OpenSessionDto,
-  SendMessageDto,
-} from './roman.dto';
+import { RomanCaller, RomanService } from './roman.service';
+import { ListMessagesQueryDto, OpenSessionDto, SendMessageDto } from './roman.dto';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -103,9 +96,8 @@ export class RomanController {
     try {
       await this.roman.assertWithinRateLimit(caller);
     } catch (err) {
-      const payload = (
-        err as { getResponse?: () => unknown }
-      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
+      const payload = (err as { getResponse?: () => unknown }).getResponse?.() as
+        { retryAfterSeconds?: number } | undefined;
       if (typeof payload?.retryAfterSeconds === 'number') {
         res.setHeader('Retry-After', String(payload.retryAfterSeconds));
       }
@@ -139,6 +131,19 @@ export class RomanController {
       for await (const chunk of this.roman.streamAssistantTurn(caller, session, {
         signal: abort.signal,
       })) {
+        if (chunk.type === 'error') {
+          // Honest failure (plan §2.7): a structured `event: error` frame the
+          // mobile can render — never a blank `done`.
+          res.write(
+            `event: error\ndata: ${JSON.stringify({
+              type: 'error',
+              code: chunk.code ?? 'ROMAN_UNAVAILABLE',
+              message: chunk.message ?? 'Roman is not available right now.',
+              messageId: chunk.messageId ?? null,
+            })}\n\n`,
+          );
+          break;
+        }
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         if (chunk.type === 'done') break;
       }
