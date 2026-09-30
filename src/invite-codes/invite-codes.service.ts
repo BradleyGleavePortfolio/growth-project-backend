@@ -8,7 +8,7 @@ import {
   // Phase 1C imports retained when previewCode/attachUserToCoachByCode are
   // exercised below.
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -49,12 +49,13 @@ export const INVITE_CODE_PATTERN = /^[A-Za-z0-9-]+$/;
 // signup-time coach provisioning mints the CoachProfile.invite_code inside
 // the signup transaction, where the retry-on-P2002 loop below cannot run).
 // Same alphabet/length as the private `generateCode` so codes are
-// indistinguishable from lazily-created ones.
+// indistinguishable from lazily-created ones. `crypto.randomInt` is uniform
+// over the alphabet (the previous `byte % 31` was slightly biased —
+// CodeQL js/biased-cryptographic-random).
 export function generateInviteCodeCandidate(): string {
-  const bytes = randomBytes(CODE_LENGTH);
   let out = CODE_PREFIX;
   for (let i = 0; i < CODE_LENGTH; i++) {
-    out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return out;
 }
