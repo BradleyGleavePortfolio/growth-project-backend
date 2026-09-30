@@ -45,6 +45,20 @@ export const INVITE_CODE_MAX_LENGTH = 32;
 // dashes only. Mobile mirrors this to gate input before POST.
 export const INVITE_CODE_PATTERN = /^[A-Za-z0-9-]+$/;
 
+// Stateless `GP-XXXXXX` candidate generator shared with AuthService (C13
+// signup-time coach provisioning mints the CoachProfile.invite_code inside
+// the signup transaction, where the retry-on-P2002 loop below cannot run).
+// Same alphabet/length as the private `generateCode` so codes are
+// indistinguishable from lazily-created ones.
+export function generateInviteCodeCandidate(): string {
+  const bytes = randomBytes(CODE_LENGTH);
+  let out = CODE_PREFIX;
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  }
+  return out;
+}
+
 @Injectable()
 export class InviteCodesService {
   private readonly logger = new Logger(InviteCodesService.name);
@@ -79,12 +93,7 @@ export class InviteCodesService {
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
   private generateCode(): string {
-    const bytes = randomBytes(CODE_LENGTH);
-    let out = CODE_PREFIX;
-    for (let i = 0; i < CODE_LENGTH; i++) {
-      out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
-    }
-    return out;
+    return generateInviteCodeCandidate();
   }
 
   async createForCoach(

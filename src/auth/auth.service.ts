@@ -12,13 +12,16 @@ import {
 import { createClient } from '@supabase/supabase-js';
 // Named import (not `import ws from 'ws'`) — see supabase.service.ts for why.
 import { WebSocket as WS } from 'ws';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   InviteCodesService,
   INVITE_CODE_MAX_LENGTH,
   INVITE_CODE_MIN_LENGTH,
   INVITE_CODE_PREFIX,
+  generateInviteCodeCandidate,
 } from '../invite-codes/invite-codes.service';
+import type { IntendedRole } from './auth.dto';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
@@ -42,6 +45,21 @@ import type { AppRole } from '../common/decorators/roles.decorator';
 function selfServiceBecomeCoachEnabled(): boolean {
   return (process.env.ALLOW_SELF_SERVICE_BECOME_COACH ?? '').toLowerCase() === 'true';
 }
+
+// Clinic launch C13 (owner direction 2026-09-30, supersedes the "no
+// self-promotion" clause of R-ONBOARDING-ROLE-GATE-1 for SIGNUP TIME ONLY):
+// a brand-new account may be created directly as a coach. This is not a
+// runtime escalation — there is no existing account, no roster, no data —
+// and it goes through exactly one code path (`createSignupUser`) that every
+// signup provider shares. The gate above is untouched: an EXISTING account
+// can still only become a coach via OWNER promote (or the legacy env-gated
+// become-coach).
+//
+// Attempts to find an unused CoachProfile.invite_code before the signup tx.
+const SIGNUP_COACH_CODE_ATTEMPTS = 8;
+
+type SignupProvider = 'email' | 'google' | 'apple';
+type AuditCtx = { ip?: string | null; userAgent?: string | null };
 
 @Injectable()
 export class AuthService {
@@ -85,13 +103,121 @@ export class AuthService {
     });
   }
 
-  async register(data: {
-    email: string;
-    password: string;
-    name: string;
-    phone?: string;
-    ref?: string;
-  }) {
+  // ---- C13: signup-time role choice --------------------------------------
+  //
+  // The ONLY place a client-supplied role reaches the User table. Called by
+  // register / googleAuth / appleAuth strictly on the "no local row exists"
+  // branch; existing rows never pass through here.
+  //
+  //   intended_role absent | 'client'  -> `role: 'student'` via the exact same
+  //                                        prisma.user.create as before.
+  //   intended_role 'coach'            -> ONE transaction: User(role coach) +
+  //                                        CoachSubscription upsert
+  //                                        {tier free, status active, update {}}
+  //                                        (identical to becomeCoach; never
+  //                                        overwrites a row) + CoachProfile with
+  //                                        a fresh GP- invite code (what
+  //                                        /coaches/me/invite-link would
+  //                                        otherwise lazily mint). Then a
+  //                                        USER_ROLE_CHANGED audit row with
+  //                                        actor = the new user.
+  //
+  // A new coach is created with coach_id = null and no invite code is ever
+  // redeemed on this path, so the "student with a coach_id becomes a coach"
+  // combination cannot arise.
+  private async createSignupUser(
+    data: Prisma.UserUncheckedCreateInput,
+    intendedRole: IntendedRole | undefined,
+    provider: SignupProvider,
+    ctx: AuditCtx = {},
+  ) {
+    if (intendedRole !== 'coach') {
+      return this.prisma.user.create({ data: { ...data, role: 'student' } });
+    }
+
+    const inviteCode = await this.pickUnusedCoachInviteCode();
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({ data: { ...data, role: 'coach' } });
+      // Same shape as becomeCoach: `update: {}` never touches an existing row.
+      await tx.coachSubscription.upsert({
+        where: { coach_id: created.id },
+        create: { coach_id: created.id, tier: 'free', status: 'active' },
+        update: {},
+      });
+      await tx.coachProfile.create({
+        data: { user_id: created.id, invite_code: inviteCode },
+      });
+      return created;
+    });
+
+    // Reviewable like every other elevation: actor = target so operators
+    // scanning user.role_changed see signup-time coaches next to promote /
+    // become-coach rows. Awaited (AuditService swallows its own failures).
+    await this.audit.write({
+      action: AuditAction.USER_ROLE_CHANGED,
+      actorId: user.id,
+      actorRole: 'coach',
+      actorEmail: user.email,
+      targetUserId: user.id,
+      targetType: 'user',
+      targetId: user.id,
+      tenantCoachId: user.id,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      metadata: { from: null, to: 'coach', via: 'signup_role_choice', provider },
+    });
+    this.analytics.capture(user.id, Events.COACH_PROMOTED, {
+      via: 'signup_role_choice',
+      provider,
+      tier: 'free',
+    });
+    return user;
+  }
+
+  // CoachProfile.invite_code is @unique. A unique violation inside an
+  // interactive transaction aborts it, so we pick a free candidate up front
+  // (2^30 space; a collision after this check is astronomically unlikely and
+  // would surface as a 500 that the client can simply retry).
+  private async pickUnusedCoachInviteCode(): Promise<string> {
+    for (let attempt = 0; attempt < SIGNUP_COACH_CODE_ATTEMPTS; attempt++) {
+      const candidate = generateInviteCodeCandidate();
+      const taken = await this.prisma.coachProfile.findUnique({
+        where: { invite_code: candidate },
+        select: { id: true },
+      });
+      if (!taken) return candidate;
+    }
+    throw new InternalServerErrorException('Could not allocate a coach invite code');
+  }
+
+  // `invite_code` + `intended_role: 'coach'` is contradictory (a code attaches
+  // the user to a coach AS A CLIENT). Refuse before any provider round-trip so
+  // neither a Supabase user nor a local row is created for an ambiguous body.
+  private assertRoleChoiceCompatibleWithInviteCode(
+    intendedRole: IntendedRole | undefined,
+    inviteCode: string | undefined,
+  ) {
+    if (intendedRole === 'coach' && inviteCode) {
+      throw new BadRequestException({
+        error: 'intended_role_not_allowed_with_invite_code',
+        message:
+          'An invite code enrols you as a client of that coach. Remove the invite code to create a coach account, or sign up as a client.',
+      });
+    }
+  }
+
+  async register(
+    data: {
+      email: string;
+      password: string;
+      name: string;
+      phone?: string;
+      ref?: string;
+      intended_role?: IntendedRole;
+    },
+    ctx: AuditCtx = {},
+  ) {
     // Validate password strength before sending to Supabase
     const { password } = data;
     if (
@@ -129,17 +255,20 @@ export class AuthService {
     if (error) throw new BadRequestException(error.message);
     if (!signupData.user) throw new BadRequestException('Signup failed');
 
-    // Create user record in our DB immediately (role selection happens after verify)
-    const user = await this.prisma.user.create({
-      data: {
+    // Create user record in our DB immediately. C13: role is fixed here from
+    // `intended_role` (default client/student); it is never re-selectable later.
+    const user = await this.createSignupUser(
+      {
         supabase_id: signupData.user.id,
         email: data.email,
         name: data.name,
         phone: data.phone || null,
-        role: 'student',
         signup_ref: data.ref ?? null,
       },
-    });
+      data.intended_role,
+      'email',
+      ctx,
+    );
 
     // Psych Report #4: Analytics — user_registered server-side event
     this.analytics.capture(user.id, Events.USER_REGISTERED, {
@@ -153,6 +282,7 @@ export class AuthService {
       requires_verification: true,
       user_id: user.id,
       email: data.email,
+      role: user.role,
     };
   }
 
@@ -412,10 +542,16 @@ export class AuthService {
         max_length: INVITE_CODE_MAX_LENGTH,
         prefix: INVITE_CODE_PREFIX,
       },
+      // C13: mobile shows the client/coach picker on account creation and
+      // sends `intended_role` on /auth/register, /auth/google, /auth/apple.
+      role_choice: true,
+      role_choice_field: 'intended_role',
+      role_choice_values: ['client', 'coach'],
     };
   }
 
-  async googleAuth(token: string, inviteCode?: string) {
+  async googleAuth(token: string, inviteCode?: string, intendedRole?: IntendedRole) {
+    this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
     // The mobile app uses Supabase OAuth flow (expo-auth-session).
     // The token here is a Supabase access_token from the OAuth redirect.
     // We use the admin SDK to look up the user by their access token.
@@ -483,14 +619,16 @@ export class AuthService {
           data: { supabase_id: supaUser.id },
         });
       } else {
-        user = await this.prisma.user.create({
-          data: {
+        // C13: brand-new row — the only branch where intended_role applies.
+        user = await this.createSignupUser(
+          {
             supabase_id: supaUser.id,
             email: supaEmail,
             name: supaUser.user_metadata?.full_name || supaEmail,
-            role: 'student',
           },
-        });
+          intendedRole,
+          'google',
+        );
         isNewUser = true;
         this.analytics.capture(user.id, Events.USER_REGISTERED_GOOGLE, {
           role: user.role,
@@ -542,7 +680,9 @@ export class AuthService {
     inviteCode?: string,
     ctx: { ip?: string | null; userAgent?: string | null } = {},
     raw_nonce?: string,
+    intendedRole?: IntendedRole,
   ) {
+    this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
     if (!this.appleVerifier.isConfigured()) {
       // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
       // 503 (rather than a 401) so mobile can distinguish "not configured
@@ -667,14 +807,17 @@ export class AuthService {
           (typeof supaUser.user_metadata?.full_name === 'string' &&
             supaUser.user_metadata.full_name) ||
           supaEmail;
-        user = await this.prisma.user.create({
-          data: {
+        // C13: brand-new row — the only branch where intended_role applies.
+        user = await this.createSignupUser(
+          {
             supabase_id: supaUser.id,
             email: supaEmail,
             name: resolvedName,
-            role: 'student',
           },
-        });
+          intendedRole,
+          'apple',
+          ctx,
+        );
         isNewUser = true;
         this.analytics.capture(user.id, Events.USER_REGISTERED_APPLE, {
           role: user.role,
@@ -904,8 +1047,20 @@ export class AuthService {
     phone?: string;
     invite_code?: string;
     ref?: string;
+    intended_role?: IntendedRole;
   }) {
     const gateEnabled = (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+
+    // C13: a code-based signup ALWAYS creates a client. Refuse 'coach'
+    // up front (before Supabase signUp) with a stable error code so mobile
+    // can route the user to the plain /auth/register coach path instead.
+    if (data.intended_role === 'coach') {
+      throw new BadRequestException({
+        error: 'intended_role_not_allowed_with_invite_code',
+        message:
+          'Signing up with an invite code always creates a client account. Use the standard signup without a code to create a coach account.',
+      });
+    }
 
     if (gateEnabled && !data.invite_code) {
       throw new BadRequestException('Coach invite code is required');
@@ -923,6 +1078,7 @@ export class AuthService {
       name: data.name,
       phone: data.phone,
       ref: data.ref,
+      // intended_role deliberately NOT forwarded: always a client here.
     });
 
     if (data.invite_code) {

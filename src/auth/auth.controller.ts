@@ -58,6 +58,8 @@ export class AuthController {
     summary: 'Register a new user with email + password',
     description:
       'Creates a Supabase user and the corresponding application User row. ' +
+      'Optional intended_role (client | coach, default client) fixes the role at creation; ' +
+      'coach provisions a free/active CoachSubscription. ' +
       'Rate-limited to 5/hour/IP to blunt enumeration and spam signup loops.',
   })
   @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
@@ -66,8 +68,8 @@ export class AuthController {
   @Public()
   @Post('register')
   @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
-  async register(@Body() body: RegisterDto) {
-    return this.authService.register(body);
+  async register(@Body() body: RegisterDto, @Request() req: AuditableRequest) {
+    return this.authService.register(body, auditContext(req));
   }
 
   @ApiOperation({
@@ -171,7 +173,11 @@ export class AuthController {
   })
   @HttpCode(HttpStatus.OK)
   async googleAuth(@Body() body: GoogleAuthDto, @Request() req: Record<string, any>) {
-    const result = await this.authService.googleAuth(body.token, body.invite_code);
+    const result = await this.authService.googleAuth(
+      body.token,
+      body.invite_code,
+      body.intended_role,
+    );
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
     return result;
   }
@@ -203,6 +209,7 @@ export class AuthController {
       body.invite_code,
       auditContext(req),
       body.raw_nonce,
+      body.intended_role,
     );
     await this.loginThrottleReset.resetLoginCounters(extractIp(req));
     return result;

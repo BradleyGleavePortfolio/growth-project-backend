@@ -142,6 +142,30 @@ out-of-spec input with a polished structured 400 carrying
 `code: 'invite_code_invalid_format'` — no input echo, no DB lookup, the
 same shape regardless of which constraint failed.
 
+### Signup-time role choice (C13, owner direction 2026-09-30)
+
+`/auth/signup-policy` advertises `role_choice: true`,
+`role_choice_field: 'intended_role'` and `role_choice_values: ['client','coach']`.
+The optional body field `intended_role` (`client` default | `coach`) is
+accepted by `/auth/register`, `/auth/google` and `/auth/apple`, and is
+honoured **only** on the branch that inserts a brand-new `User` row
+(`AuthService.createSignupUser`). Rules that keep the escalation hole closed:
+
+- Existing accounts are never changed by `intended_role` (google/apple
+  sign-ins for a known `supabase_id` or a linked email ignore it).
+- `coach` runs one transaction: `User.role='coach'`, `CoachSubscription`
+  upsert `{tier:'free', status:'active', update:{}}` (same as `becomeCoach`;
+  never overwrites a row) and a `CoachProfile` with a fresh `GP-` invite code.
+  Then a `user.role_changed` audit row with actor = the new user and
+  `metadata.via='signup_role_choice'`.
+- `/auth/signup-with-code` always creates a client; `intended_role: 'coach'`
+  is refused with `400 { error: 'intended_role_not_allowed_with_invite_code' }`.
+  The same code is returned when google/apple receive both `invite_code`
+  and `intended_role: 'coach'` (checked before any provider round-trip).
+- `/auth/become-coach` and `/auth/select-role` are unchanged and still refuse.
+- Email verification is unchanged (`register` still returns
+  `requires_verification: true`; the response additionally carries `role`).
+
 `JWT_SECRET` is reserved and currently unused — verification is JWKS-based.
 
 ## Failure modes
