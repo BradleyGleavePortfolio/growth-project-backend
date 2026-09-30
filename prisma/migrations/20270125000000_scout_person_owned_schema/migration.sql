@@ -16,15 +16,30 @@
 --     client_id, the exactly-one-owner CHECK ((user_id IS NULL) <> (person_id IS NULL)) and, on
 --     CheckIn, CHECK (person_id IS NULL OR coach_id IS NOT NULL) — all NOT VALID (validated in step 11,
 --     20270125000010, without a write lock).
---   * RLS rewrite for eight tables (§2.2): every NON-owner policy branch gains "person_id IS NULL"
---     (USING and WITH CHECK), so a person-owned row is reachable only through the service-role code
---     path that asserts person.coach_id = caller; no permissive policy is added for person_id.
---     WorkoutSession, WeightLog and Habit had NO in-tree policy (the out-of-band
---     prisma/migrations/rls_fitness_backend.sql owned them): this file recreates those three
---     policies in-tree, guarded, and closes the migrations-only harness gap (CheckIn's ENABLE,
---     also out-of-band until now, is stated in-tree for the same reason). The app.is_owner()
---     branches on ExerciseSet, HabitLog, CheckIn and ClientWorkoutAssignmentSnapshot are kept
---     unchanged (stated owner exception, §2.2 item 2).
+--   * RLS rewrite for eight tables (§2.2): EVERY policy branch — owner branches included — gains
+--     "person_id IS NULL" (USING and WITH CHECK), so a person-owned row is reachable only through
+--     the service-role code path that asserts person.coach_id = caller; no permissive policy is
+--     added for person_id. WorkoutSession, WeightLog and Habit had NO in-tree policy (the
+--     out-of-band prisma/migrations/rls_fitness_backend.sql owned them): this file recreates those
+--     three policies in-tree, guarded, and closes the migrations-only harness gap (CheckIn's
+--     ENABLE, also out-of-band until now, is stated in-tree for the same reason).
+--   * NO owner exception for person-owned rows (S4-A-587-593-01, fix round 3 of PR #587/#593).
+--     The inherited app.is_owner() branches on CheckIn (check_in_owner_all), ExerciseSet, HabitLog
+--     and ClientWorkoutAssignmentSnapshot read two session GUCs (app.current_user_id /
+--     app.current_user_role, 20261212000000 L59-86) that a SQL session running as `anon` or
+--     `authenticated` can set_config() itself — the same GUC 20270125000012 (D8) treats as
+--     untrusted for the JWT principal class. Left as they were, a student JWT plus a forged owner
+--     GUC reached every coach's imported person-owned history. Those branches now carry the guard
+--     too: on CheckIn directly ("person_id" IS NULL); on the three children through NEW
+--     SECURITY DEFINER helpers app.workout_session_is_user_owned(text) /
+--     app.habit_is_user_owned(text) / app.assignment_is_user_owned(text) (true only when the
+--     parent row EXISTS and its person_id IS NULL; fail-closed on a missing parent), because the
+--     parents' own policies would otherwise hide the parent row from the owner branch's check
+--     (WorkoutSession / Habit have no owner branch) and a caller-RLS check could not be fail-closed.
+--     The owner branch itself is otherwise UNCHANGED for user-owned rows (the GUC-trust question for
+--     user-owned rows is platform-wide, outside this slice, and recorded in the PR). Owner/admin
+--     work on imported history uses the service-role (BYPASSRLS) application path, which is the
+--     only path the application actually takes (Prisma connects as the database owner).
 --
 -- WHAT NOT: no composite FK to Person here (B7 ordering: unique key first, steps 2-9 / step 10); no
 -- CONCURRENTLY index here (steps 2-9); no VALIDATE here (step 11); no writer, no route, no flag, no
@@ -436,11 +451,19 @@ CREATE POLICY "habit_owner_access" ON public."Habit"
   WITH CHECK ("user_id" = app.current_user_id() AND "person_id" IS NULL);
 COMMENT ON POLICY "habit_owner_access" ON public."Habit" IS 'S8-D3: the owning user only, and never a person-owned row (person_id IS NULL). Person-owned history is service_role-only. Supersedes the out-of-band rls_fitness_backend.sql policy of the same name.';
 
--- 5b. CheckIn (20260607000000 L354-391): client, coach-select, coach-insert, coach-update gain the
---     guard in USING and WITH CHECK; check_in_owner_all is kept unchanged (owner exception).
+-- 5b. CheckIn (20260607000000 L354-391): owner_all, client, coach-select, coach-insert,
+--     coach-update ALL gain the guard in USING and WITH CHECK. check_in_owner_all is guarded too
+--     (S4-A-587-593-01, see header): app.is_owner() is a GUC predicate a JWT session can forge, so
+--     it must not reach a person-owned row; for user-owned rows the branch is unchanged.
 --     ENABLE is stated in-tree (20260607000000 only re-FORCEs; the out-of-band file enabled it).
 ALTER TABLE public."CheckIn" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."CheckIn" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "check_in_owner_all" ON public."CheckIn";
+CREATE POLICY "check_in_owner_all" ON public."CheckIn"
+  FOR ALL TO public
+  USING (app.is_owner() AND "person_id" IS NULL)
+  WITH CHECK (app.is_owner() AND "person_id" IS NULL);
+COMMENT ON POLICY "check_in_owner_all" ON public."CheckIn" IS 'Owner (app.is_owner()) may read/write user-owned check-ins only; never a person-owned row (S8-D3, S4-A-587-593-01: the owner GUC is forgeable by API-role sessions, so person-owned history is service_role-only).';
 DROP POLICY IF EXISTS "check_in_client_all" ON public."CheckIn";
 CREATE POLICY "check_in_client_all" ON public."CheckIn"
   FOR ALL TO public
@@ -528,45 +551,117 @@ CREATE POLICY "assignment_client_read"
         )
     );
 
--- 5d. Children: the non-owner EXISTS(parent) branch gains parent.person_id IS NULL; the
---     app.is_owner() branch is unchanged.
+-- 5d. Children: the non-owner EXISTS(parent) branch gains parent.person_id IS NULL, and the
+--     app.is_owner() branch is ANDed with a parent-ownership helper (S4-A-587-593-01) so a forged
+--     owner GUC cannot reach a child of a person-owned parent. The check cannot be an inline
+--     EXISTS: it would run under the caller's RLS on the parent, and WorkoutSession / Habit admit
+--     no owner, so a genuine owner would see NO parent (breaking the user-owned owner branch) while a
+--     NOT-EXISTS form would be fail-OPEN on the invisible person-owned parent. Hence three
+--     SECURITY DEFINER helpers (precedent app.is_subcoach_of 20261215000000; hardening
+--     20261212000000 / 20270125000012: STABLE, search_path = '', schema-qualified, PUBLIC revoked,
+--     EXECUTE to the roles under which the policies are evaluated). Each answers ONE question about
+--     ONE id — "does a user-owned parent with this id exist" — never a relationship between two ids
+--     (the oracle shape R593-c7A2-02 withholds from the API roles); a missing parent is false, so the
+--     owner branch is fail-closed and the plain FK error still surfaces for a genuine owner.
+CREATE SCHEMA IF NOT EXISTS app;
+
+CREATE OR REPLACE FUNCTION app.workout_session_is_user_owned(session_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT session_id IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM public."WorkoutSession" ws
+       WHERE ws."id" = session_id
+         AND ws."person_id" IS NULL
+     )
+$$;
+COMMENT ON FUNCTION app.workout_session_is_user_owned(text) IS
+  'Security-definer RLS helper (S8-D3, S4-A-587-593-01): true when a WorkoutSession with this id exists and is user-owned (person_id IS NULL). Guards the app.is_owner() branch of the ExerciseSet policies so the forgeable owner GUC never reaches a child of a person-owned session. Fail-closed on a missing parent.';
+REVOKE ALL ON FUNCTION app.workout_session_is_user_owned(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.workout_session_is_user_owned(text) TO service_role, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION app.habit_is_user_owned(habit_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT habit_id IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM public."Habit" h
+       WHERE h."id" = habit_id
+         AND h."person_id" IS NULL
+     )
+$$;
+COMMENT ON FUNCTION app.habit_is_user_owned(text) IS
+  'Security-definer RLS helper (S8-D3, S4-A-587-593-01): true when a Habit with this id exists and is user-owned (person_id IS NULL). Guards the app.is_owner() branch of the HabitLog policies so the forgeable owner GUC never reaches a log under a person-owned habit. Fail-closed on a missing parent.';
+REVOKE ALL ON FUNCTION app.habit_is_user_owned(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.habit_is_user_owned(text) TO service_role, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION app.assignment_is_user_owned(assignment_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT assignment_id IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM public."ClientWorkoutAssignment" cwa
+       WHERE cwa."id" = assignment_id
+         AND cwa."person_id" IS NULL
+     )
+$$;
+COMMENT ON FUNCTION app.assignment_is_user_owned(text) IS
+  'Security-definer RLS helper (S8-D3, S4-A-587-593-01): true when a ClientWorkoutAssignment with this id exists and is user-owned (person_id IS NULL). Guards the app.is_owner() branch of the ClientWorkoutAssignmentSnapshot policies so the forgeable owner GUC never reaches a snapshot of a person-owned assignment. Fail-closed on a missing parent.';
+REVOKE ALL ON FUNCTION app.assignment_is_user_owned(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.assignment_is_user_owned(text) TO service_role, anon, authenticated;
+
 DROP POLICY IF EXISTS "p_exerciseset_select" ON public."ExerciseSet";
-CREATE POLICY "p_exerciseset_select" ON public."ExerciseSet" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
-COMMENT ON POLICY "p_exerciseset_select" ON public."ExerciseSet" IS 'Child-via-session read: owner, the session owner (user_id), or that user''s current coach may SELECT; never through a person-owned session (S8-D3).';
+CREATE POLICY "p_exerciseset_select" ON public."ExerciseSet" AS PERMISSIVE FOR SELECT TO public USING (((app.is_owner() AND app.workout_session_is_user_owned("workout_id")) OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
+COMMENT ON POLICY "p_exerciseset_select" ON public."ExerciseSet" IS 'Child-via-session read: owner (user-owned sessions only), the session owner (user_id), or that user''s current coach may SELECT; never through a person-owned session (S8-D3; owner branch guarded by app.workout_session_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_exerciseset_insert" ON public."ExerciseSet";
-CREATE POLICY "p_exerciseset_insert" ON public."ExerciseSet" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
-COMMENT ON POLICY "p_exerciseset_insert" ON public."ExerciseSet" IS 'Child-via-session write: owner, the session owner, or that user''s current coach may INSERT; never under a person-owned session (S8-D3).';
+CREATE POLICY "p_exerciseset_insert" ON public."ExerciseSet" AS PERMISSIVE FOR INSERT TO public WITH CHECK (((app.is_owner() AND app.workout_session_is_user_owned("workout_id")) OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
+COMMENT ON POLICY "p_exerciseset_insert" ON public."ExerciseSet" IS 'Child-via-session write: owner (user-owned sessions only), the session owner, or that user''s current coach may INSERT; never under a person-owned session (S8-D3; owner branch guarded by app.workout_session_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_exerciseset_update" ON public."ExerciseSet";
-CREATE POLICY "p_exerciseset_update" ON public."ExerciseSet" AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id")))))) WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
-COMMENT ON POLICY "p_exerciseset_update" ON public."ExerciseSet" IS 'Child-via-session update: owner, session owner, or current coach may UPDATE; CHECK reverifies the parent session; never a person-owned session (S8-D3).';
+CREATE POLICY "p_exerciseset_update" ON public."ExerciseSet" AS PERMISSIVE FOR UPDATE TO public USING (((app.is_owner() AND app.workout_session_is_user_owned("workout_id")) OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id")))))) WITH CHECK (((app.is_owner() AND app.workout_session_is_user_owned("workout_id")) OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
+COMMENT ON POLICY "p_exerciseset_update" ON public."ExerciseSet" IS 'Child-via-session update: owner (user-owned sessions only), session owner, or current coach may UPDATE; CHECK reverifies the parent session; never a person-owned session (S8-D3; owner branch guarded by app.workout_session_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_exerciseset_delete" ON public."ExerciseSet";
-CREATE POLICY "p_exerciseset_delete" ON public."ExerciseSet" AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
-COMMENT ON POLICY "p_exerciseset_delete" ON public."ExerciseSet" IS 'Child-via-session delete: owner, session owner, or current coach may DELETE; never under a person-owned session (S8-D3).';
+CREATE POLICY "p_exerciseset_delete" ON public."ExerciseSet" AS PERMISSIVE FOR DELETE TO public USING (((app.is_owner() AND app.workout_session_is_user_owned("workout_id")) OR (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."person_id" IS NULL AND (ws."user_id" = app.current_user_id() OR app.is_current_coach_of(ws."user_id"))))));
+COMMENT ON POLICY "p_exerciseset_delete" ON public."ExerciseSet" IS 'Child-via-session delete: owner (user-owned sessions only), session owner, or current coach may DELETE; never under a person-owned session (S8-D3; owner branch guarded by app.workout_session_is_user_owned, S4-A-587-593-01).';
 
 DROP POLICY IF EXISTS "p_habitlog_select" ON public."HabitLog";
-CREATE POLICY "p_habitlog_select" ON public."HabitLog" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
-COMMENT ON POLICY "p_habitlog_select" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner) may read a habit log; never through a person-owned habit (S8-D3).';
+CREATE POLICY "p_habitlog_select" ON public."HabitLog" AS PERMISSIVE FOR SELECT TO public USING (((app.is_owner() AND app.habit_is_user_owned("habit_id")) OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
+COMMENT ON POLICY "p_habitlog_select" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner, user-owned habits only) may read a habit log; never through a person-owned habit (S8-D3; owner branch guarded by app.habit_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_habitlog_insert" ON public."HabitLog";
-CREATE POLICY "p_habitlog_insert" ON public."HabitLog" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
-COMMENT ON POLICY "p_habitlog_insert" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner) may write a habit log; never under a person-owned habit (S8-D3).';
+CREATE POLICY "p_habitlog_insert" ON public."HabitLog" AS PERMISSIVE FOR INSERT TO public WITH CHECK (((app.is_owner() AND app.habit_is_user_owned("habit_id")) OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
+COMMENT ON POLICY "p_habitlog_insert" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner, user-owned habits only) may write a habit log; never under a person-owned habit (S8-D3; owner branch guarded by app.habit_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_habitlog_update" ON public."HabitLog";
-CREATE POLICY "p_habitlog_update" ON public."HabitLog" AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id")))))) WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
-COMMENT ON POLICY "p_habitlog_update" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner) may update a habit log; never under a person-owned habit (S8-D3).';
+CREATE POLICY "p_habitlog_update" ON public."HabitLog" AS PERMISSIVE FOR UPDATE TO public USING (((app.is_owner() AND app.habit_is_user_owned("habit_id")) OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id")))))) WITH CHECK (((app.is_owner() AND app.habit_is_user_owned("habit_id")) OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
+COMMENT ON POLICY "p_habitlog_update" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner, user-owned habits only) may update a habit log; never under a person-owned habit (S8-D3; owner branch guarded by app.habit_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_habitlog_delete" ON public."HabitLog";
-CREATE POLICY "p_habitlog_delete" ON public."HabitLog" AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
-COMMENT ON POLICY "p_habitlog_delete" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner) may delete a habit log; never under a person-owned habit (S8-D3).';
+CREATE POLICY "p_habitlog_delete" ON public."HabitLog" AS PERMISSIVE FOR DELETE TO public USING (((app.is_owner() AND app.habit_is_user_owned("habit_id")) OR (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."person_id" IS NULL AND (h."user_id" = app.current_user_id() OR app.is_current_coach_of(h."user_id"))))));
+COMMENT ON POLICY "p_habitlog_delete" ON public."HabitLog" IS 'PR-RLS-07: habit owner or that owner''s current coach (or backend owner, user-owned habits only) may delete a habit log; never under a person-owned habit (S8-D3; owner branch guarded by app.habit_is_user_owned, S4-A-587-593-01).';
 
 DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_select" ON public."ClientWorkoutAssignmentSnapshot";
-CREATE POLICY "p_clientworkoutassignmentsnapshot_select" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."client_id" = app.current_user_id() OR cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
-COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_select" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment read: owner admin, the assigned client, the assigning coach, or that client''s current coach/sub-coach may SELECT the snapshot; never through a person-owned assignment (S8-D3).';
+CREATE POLICY "p_clientworkoutassignmentsnapshot_select" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR SELECT TO public USING (((app.is_owner() AND app.assignment_is_user_owned("assignment_id")) OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."client_id" = app.current_user_id() OR cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
+COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_select" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment read: owner admin (user-owned assignments only), the assigned client, the assigning coach, or that client''s current coach/sub-coach may SELECT the snapshot; never through a person-owned assignment (S8-D3; owner branch guarded by app.assignment_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_insert" ON public."ClientWorkoutAssignmentSnapshot";
-CREATE POLICY "p_clientworkoutassignmentsnapshot_insert" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
-COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_insert" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment write: owner admin, the assigning coach, or that client''s current coach/sub-coach may INSERT the snapshot (taken inside the assign tx); never under a person-owned assignment (S8-D3).';
+CREATE POLICY "p_clientworkoutassignmentsnapshot_insert" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR INSERT TO public WITH CHECK (((app.is_owner() AND app.assignment_is_user_owned("assignment_id")) OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
+COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_insert" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment write: owner admin (user-owned assignments only), the assigning coach, or that client''s current coach/sub-coach may INSERT the snapshot (taken inside the assign tx); never under a person-owned assignment (S8-D3; owner branch guarded by app.assignment_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_update" ON public."ClientWorkoutAssignmentSnapshot";
-CREATE POLICY "p_clientworkoutassignmentsnapshot_update" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id")))))) WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
-COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_update" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment update: owner admin, the assigning coach, or that client''s coach/sub-coach may UPDATE; snapshots are immutable in practice but the policy keeps the parent check symmetric; never a person-owned assignment (S8-D3).';
+CREATE POLICY "p_clientworkoutassignmentsnapshot_update" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR UPDATE TO public USING (((app.is_owner() AND app.assignment_is_user_owned("assignment_id")) OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id")))))) WITH CHECK (((app.is_owner() AND app.assignment_is_user_owned("assignment_id")) OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
+COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_update" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment update: owner admin (user-owned assignments only), the assigning coach, or that client''s coach/sub-coach may UPDATE; snapshots are immutable in practice but the policy keeps the parent check symmetric; never a person-owned assignment (S8-D3; owner branch guarded by app.assignment_is_user_owned, S4-A-587-593-01).';
 DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot";
-CREATE POLICY "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
-COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment delete: owner admin, the assigning coach, or that client''s coach/sub-coach may DELETE; never under a person-owned assignment (S8-D3).';
+CREATE POLICY "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR DELETE TO public USING (((app.is_owner() AND app.assignment_is_user_owned("assignment_id")) OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND cwa."person_id" IS NULL AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
+COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment delete: owner admin (user-owned assignments only), the assigning coach, or that client''s coach/sub-coach may DELETE; never under a person-owned assignment (S8-D3; owner branch guarded by app.assignment_is_user_owned, S4-A-587-593-01).';
 
 COMMIT;
