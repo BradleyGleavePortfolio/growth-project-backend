@@ -42,6 +42,8 @@ import {
   ROMAN_UNAVAILABLE_MESSAGE,
   ROMAN_UPSTREAM_TIMEOUT_MS,
 } from './roman.constants';
+import { RomanClientContextService } from './context/roman-client-context.service';
+import type { RomanClientContextBundle } from './context/roman-client-context.types';
 import {
   ROMAN_AI_CAPABILITY,
   RomanModelConfig,
@@ -113,6 +115,20 @@ export class RomanService {
   private readonly modelConfig: RomanModelConfig;
   /** UTC day-key of the last daily-cap alert, so the operator page fires once per day. */
   private lastCapAlertDay: string | null = null;
+
+  /**
+   * R3 — per-turn client grounding. Property-injected and optional so the
+   * coach surface, unit tests and any wiring without RomanClientContextService
+   * simply run ungrounded. Set via `setClientContext` in tests.
+   */
+  @Optional()
+  @Inject(RomanClientContextService)
+  private clientContext: RomanClientContextService | null = null;
+
+  /** Test seam / explicit wiring for the R3 context builder. */
+  setClientContext(ctx: RomanClientContextService | null): void {
+    this.clientContext = ctx;
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -248,6 +264,9 @@ export class RomanService {
       modelId?: string | null;
       interrupted?: boolean;
       parentMessageId?: string | null;
+      /** R3 provenance: sha256 of the <client_data> block this turn saw. */
+      contextHash?: string | null;
+      contextGeneratedAt?: Date | null;
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
@@ -262,6 +281,8 @@ export class RomanService {
           model_id: data.modelId ?? null,
           interrupted: data.interrupted ?? false,
           parent_message_id: data.parentMessageId ?? null,
+          context_hash: data.contextHash ?? null,
+          context_generated_at: data.contextGeneratedAt ?? null,
         },
       });
       await tx.romanSession.update({
@@ -428,12 +449,24 @@ export class RomanService {
       return;
     }
 
-    const system = buildRomanSystemPrompt({
+    const staticSystem = buildRomanSystemPrompt({
       surface: session.surface,
       voice: this.voiceStateOf(session),
       subjectContext:
         typeof session.subject_context_json === 'string' ? session.subject_context_json : null,
     });
+    // R3 — ground the CLIENT surface in the caller's own data. Rebuilt from
+    // the DB every turn (15 s memo), injected as a second system block and
+    // never written into RomanMessage.content. The coach surface, and any
+    // non-student caller, gets no client data (plan §2.3: coach-side Roman
+    // is phase 2 / R14 and needs its own IDOR + consent checks).
+    const contextBundle = await this.loadClientContext(caller, session);
+    const system: string | Array<{ type: 'text'; text: string }> = contextBundle
+      ? [
+          { type: 'text', text: staticSystem },
+          { type: 'text', text: contextBundle.rendered },
+        ]
+      : staticSystem;
     const messages = await this.buildContextTurns(session.id);
 
     let acc = '';
@@ -566,6 +599,8 @@ export class RomanService {
       completionTokens,
       modelId: answeringModel,
       interrupted,
+      contextHash: contextBundle?.hash ?? null,
+      contextGeneratedAt: contextBundle?.generated_at ?? null,
     });
 
     yield {
@@ -667,6 +702,30 @@ export class RomanService {
   }
 
   // ─── helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * R3 — client grounding is built only for a `student` caller on the
+   * `client` surface. A builder failure degrades to an ungrounded turn (and
+   * a warning) rather than a blank reply; tenancy is enforced inside the
+   * builder by the caller id, which comes from the JWT.
+   */
+  private async loadClientContext(
+    caller: RomanCaller,
+    session: RomanSession,
+  ): Promise<RomanClientContextBundle | null> {
+    if (!this.clientContext) return null;
+    if (session.surface !== 'client' || caller.role !== 'student') return null;
+    try {
+      return await this.clientContext.getBundle({ id: caller.id, role: caller.role });
+    } catch (err) {
+      this.logger.warn(
+        `RomanClientContext build failed for session ${session.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+  }
 
   private isUniqueViolation(err: unknown): boolean {
     return (

@@ -23,6 +23,8 @@ import { RomanHealthController } from './model/roman-health.controller';
 import { RomanConsentController } from './consent/roman-consent.controller';
 import { RomanConsentService } from './consent/roman-consent.service';
 import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
+import { RomanClientContextService } from './context/roman-client-context.service';
+import { RomanContextController } from './context/roman-context.controller';
 
 @Module({
   // RomanHealthController serves GET /health/roman (@Public, no feature gate)
@@ -32,7 +34,9 @@ import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard'
   // AiProcessingConsentGuard are exported so /ai/chat can enforce the same
   // consent while AI Guide lives (plan §6.2). AuditService comes from the
   // @Global AuditModule.
-  controllers: [RomanController, RomanHealthController, RomanConsentController],
+  // R3: RomanClientContextService grounds every client-surface turn and
+  // serves GET /roman/context/me (RomanContextController).
+  controllers: [RomanController, RomanHealthController, RomanConsentController, RomanContextController],
   providers: [
     RomanService,
     RomanFeatureGuard,
@@ -40,7 +44,14 @@ import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard'
     RomanModelHealthService,
     RomanConsentService,
     AiProcessingConsentGuard,
+    RomanClientContextService,
   ],
-  exports: [RomanService, RomanModelHealthService, RomanConsentService, AiProcessingConsentGuard],
+  exports: [
+    RomanService,
+    RomanModelHealthService,
+    RomanConsentService,
+    AiProcessingConsentGuard,
+    RomanClientContextService,
+  ],
 })
 export class RomanModule {}

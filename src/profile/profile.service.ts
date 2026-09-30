@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { romanContextInvalidate } from '../roman/context/roman-context-invalidation';
 import { UpdateProfileDto } from './profile.dto';
 
 @Injectable()
@@ -60,6 +61,8 @@ export class ProfileService {
 
     const existing = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
 
+    // R3 — profile facts feed Roman's grounding; drop the memo on any write.
+    romanContextInvalidate(userId);
     if (existing) {
       return this.prisma.userProfile.update({
         where: { user_id: userId },
@@ -117,6 +120,7 @@ export class ProfileService {
     // Carbs: remaining calories
     const carbsG = (targetCalories - proteinG * 4 - fatG * 9) / 4;
 
+    romanContextInvalidate(userId);
     return this.prisma.userProfile.update({
       where: { user_id: userId },
       data: {
