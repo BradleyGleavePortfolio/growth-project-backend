@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { lockTenancyFacts } from '../sub-coach/tenancy-lock';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
@@ -74,11 +75,7 @@ export class RealMealPlansService {
     return this.prisma.mealTemplate.findUnique({ where: { id: templateId } });
   }
 
-  async updateTemplate(
-    coachId: string,
-    templateId: string,
-    dto: UpdateMealTemplateDto,
-  ) {
+  async updateTemplate(coachId: string, templateId: string, dto: UpdateMealTemplateDto) {
     await this.assertTemplateOwnedBy(coachId, templateId);
     return this.prisma.mealTemplate.update({
       where: { id: templateId },
@@ -110,10 +107,7 @@ export class RealMealPlansService {
 
   // Validate that every meal_template_id referenced by `slots` belongs
   // to this coach. Done in one round-trip to keep big plans cheap.
-  private async validateSlotTemplates(
-    coachId: string,
-    slots: DailyPlanSlotInputDto[],
-  ) {
+  private async validateSlotTemplates(coachId: string, slots: DailyPlanSlotInputDto[]) {
     if (slots.length === 0) return;
     const ids = Array.from(new Set(slots.map((s) => s.meal_template_id)));
     const found = await this.prisma.mealTemplate.findMany({
@@ -123,9 +117,7 @@ export class RealMealPlansService {
     const foundSet = new Set(found.map((f) => f.id));
     const missing = ids.filter((id) => !foundSet.has(id));
     if (missing.length > 0) {
-      throw new BadRequestException(
-        `Meal template(s) not owned by coach: ${missing.join(', ')}`,
-      );
+      throw new BadRequestException(`Meal template(s) not owned by coach: ${missing.join(', ')}`);
     }
   }
 
@@ -190,11 +182,7 @@ export class RealMealPlansService {
     });
   }
 
-  async updatePlan(
-    coachId: string,
-    planId: string,
-    dto: UpdateDailyMealPlanDto,
-  ) {
+  async updatePlan(coachId: string, planId: string, dto: UpdateDailyMealPlanDto) {
     await this.assertPlanOwnedBy(coachId, planId);
     if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots);
 
@@ -244,11 +232,7 @@ export class RealMealPlansService {
 
   // ─── Assignments ─────────────────────────────────────────────────────
 
-  async assignPlan(
-    coachId: string,
-    planId: string,
-    dto: AssignDailyPlanDto,
-  ) {
+  async assignPlan(coachId: string, planId: string, dto: AssignDailyPlanDto) {
     await this.assertPlanOwnedBy(coachId, planId);
     await this.assertClientOfCoach(coachId, dto.client_id);
 
@@ -258,14 +242,25 @@ export class RealMealPlansService {
       throw new BadRequestException('ends_on must not precede starts_on');
     }
 
-    return this.prisma.dailyMealPlanAssignment.create({
-      data: {
-        daily_meal_plan_id: planId,
-        client_id: dto.client_id,
-        assigned_by_coach_id: coachId,
-        starts_on: startsOn,
-        ends_on: endsOn,
-      },
+    // D8 round 3 (R593-c7A2-01): the pre-check above is a fast 404; the
+    // authoritative check re-reads the client's roster facts FOR SHARE inside
+    // the transaction that writes the row, so a roster reassignment cannot
+    // commit between the check and this INSERT. Same predicate as
+    // assertClientOfCoach (head-coach roster, live student).
+    return this.prisma.$transaction(async (tx) => {
+      const facts = await lockTenancyFacts(tx, coachId, dto.client_id);
+      if (!facts.client || facts.client.coach_id !== coachId || facts.client.role !== 'student') {
+        throw new NotFoundException('Client not found');
+      }
+      return tx.dailyMealPlanAssignment.create({
+        data: {
+          daily_meal_plan_id: planId,
+          client_id: dto.client_id,
+          assigned_by_coach_id: coachId,
+          starts_on: startsOn,
+          ends_on: endsOn,
+        },
+      });
     });
   }
 

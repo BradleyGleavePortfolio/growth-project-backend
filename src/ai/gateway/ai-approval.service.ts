@@ -45,7 +45,12 @@ export class AiApprovalService {
     private materialisers: CapabilityMaterializerRegistry | null = null,
   ) {}
 
-  async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string }) {
+  async listPending(scope: {
+    tenantCoachId?: string;
+    subjectUserId?: string;
+    limit?: number;
+    status?: string;
+  }) {
     const limit = Math.min(Math.max(scope.limit ?? 50, 1), 200);
     // Allow filtering by explicit status; fall back to 'pending' when omitted so
     // existing callers that don't pass a status keep their current behaviour.
@@ -148,6 +153,40 @@ export class AiApprovalService {
             // Don't audit-log the race state as a materialisation failure
             // — it's a benign concurrency outcome and the winner will
             // record the success. Re-throw so the caller sees a 409.
+            throw err;
+          }
+          if (err instanceof ForbiddenException) {
+            // D8 round 3 (R593-c7B2-C07): a tenancy / ownership refusal by
+            // the materialiser (e.g. AI_DRAFT_CLIENT_SCOPE_FORBIDDEN,
+            // AI_DRAFT_CLIENT_SUBJECT_MISMATCH, plan tenant mismatch) is an
+            // authorization outcome, not an infrastructure failure. Surface
+            // it as the 403 it is — not a 500 with a "retry" CTA — and audit
+            // it as a refusal. The draft stays 'pending' (nothing was written);
+            // re-approval is only meaningful if the tenancy facts change.
+            const refusal =
+              typeof err.getResponse() === 'object'
+                ? (err.getResponse() as Record<string, unknown>)
+                : { message: err.getResponse() };
+            this.logger.warn(
+              `Materialisation refused for draft ${draft.id} (capability=${draft.capability}): ${JSON.stringify(refusal)}`,
+            );
+            await this.audit
+              .write({
+                action: 'ai.draft_materialise_refused',
+                actorId: input.decider.id,
+                actorRole: input.decider.role,
+                targetType: 'ai_action_draft',
+                targetId: draft.id,
+                targetUserId: draft.subject_user_id ?? null,
+                tenantCoachId: draft.tenant_coach_id ?? null,
+                ip: input.ip ?? null,
+                userAgent: input.userAgent ?? null,
+                metadata: {
+                  capability: draft.capability,
+                  refusal,
+                },
+              })
+              .catch(() => undefined);
             throw err;
           }
           // Surface as a 500 with the underlying message so the coach UI
@@ -295,8 +334,7 @@ export class AiApprovalService {
       throw new ConflictException({
         error: 'AI_DRAFT_ALREADY_DECIDED',
         capability: draft.capability,
-        reason:
-          'Draft was decided by another approver before this request landed.',
+        reason: 'Draft was decided by another approver before this request landed.',
       });
     }
     const updated = await this.prisma.aiActionDraft.findUnique({

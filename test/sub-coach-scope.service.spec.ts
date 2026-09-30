@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { PrismaService } from '../src/prisma.service';
+import { tenancyQueryRawMock } from './utils/tenancy-lock-mock';
 
 const HEAD_COACH = 'head-1';
 const SUB_COACH = 'sub-1';
@@ -56,9 +57,23 @@ function buildPrismaMock(opts: {
     },
   );
 
+  // D8 round 3: canAccessClient reads the tenancy facts FOR SHARE ($queryRaw).
+  const users = [
+    { id: SUB_COACH, role: opts.callerRole, coach_id: opts.callerCoachId },
+    { id: HEAD_COACH, role: 'coach', coach_id: null },
+    { id: CLIENT_A, role: 'student', coach_id: HEAD_COACH },
+    { id: CLIENT_B, role: 'student', coach_id: HEAD_COACH },
+  ];
+  const subCoachAssignments = opts.assignedToSub.map((cid) => ({
+    sub_coach_id: SUB_COACH,
+    client_id: cid,
+    unassigned_at: null,
+  }));
+
   return {
     user: { findUnique: userFindUnique, findMany: userFindMany },
     subCoachAssignment: { findMany: subCoachAssignmentFindMany },
+    $queryRaw: jest.fn(tenancyQueryRawMock({ users, subCoachAssignments })),
   } as unknown as PrismaService;
 }
 

@@ -28,6 +28,7 @@
 import 'reflect-metadata';
 import { MealPlansService } from '../src/meal-plans/meal-plans.service';
 import { RealMealPlansService } from '../src/real-meal-plans/real-meal-plans.service';
+import { tenancyQueryRawMock } from './utils/tenancy-lock-mock';
 import {
   ClientMealPlanAliasController,
   ClientMealPlansController,
@@ -126,6 +127,9 @@ function makePrisma() {
     _mealPlans: mealPlans,
     _assignments: assignments,
     $transaction: async (fn: any) => fn(prisma),
+    // D8 round 3: RealMealPlansService.assignPlan re-reads the client's roster
+    // facts FOR SHARE inside its write transaction ($queryRaw).
+    $queryRaw: (q: any) => tenancyQueryRawMock({ users: prisma._users, subCoachAssignments: [] })(q),
     user: {
       findFirst: jest.fn(async ({ where, select }: any) => {
         const row = users.find((u) => matches(u, where));

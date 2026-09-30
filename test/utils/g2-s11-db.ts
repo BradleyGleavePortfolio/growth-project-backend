@@ -3,7 +3,7 @@
  * D-S11-6): derived by literal substitution from the landed S9-C guard test/utils/g2-s9c-db.ts
  * (unchanged; the donor as landed at 92b96715), which stays byte-identical and keeps governing the
  * S9-C proof. The S11 base pin was 711c1f8f (S10-A → S10-B → S10-D D1 → S11-0 record) and is re-pinned
- * with PR #587 to its S8-D3 schema commit (decision record §6, migration sequencing). Only the lane
+ * with PR #593 to its D8 tenancy commit (previously #587's S8-D3 schema commit) (decision record §6, migration sequencing). Only the lane
  * descriptor differs: one dedicated disposable database on an S11-only disposable PostgreSQL 17
  * cluster, a further identity separate from every earlier lane (E, T/Q0, S5, B, R, N/Q1, C, S7-L,
  * S8-B, S8-C, S8-F, S8-G, S9-B, S9-C, S10-B), so no earlier proof state is reused and no earlier
@@ -141,7 +141,7 @@ export function withFixturePassword(
  * the callers supply `git rev-parse HEAD` and `git status --porcelain` output.
  */
 export const G2_S11_CANDIDATE_HEAD_ENV = 'G2_S11_CANDIDATE_HEAD';
-export const G2_S11_BASE_HEAD = 'b7155deee2f470bfcc7ed65b014fc3d41f019b07';
+export const G2_S11_BASE_HEAD = '6d55e9e47569bdff13aa417e2cb39245737c212c';
 export function g2S11CandidateHead(
   declared: string | undefined,
   checkedOut: string,

@@ -9,8 +9,8 @@
  * server hosts (D-S11-6). Imported only by test/rls-g2-s11.spec.ts and the S11 real-PG specs under
  * test/scout/s11/ (via test/utils/g2-s11-harness.ts).
  *
- * There is no OLD side: S11-A1 ships no migration, so the base prisma tree (re-pinned with PR #587
- * to its S8-D3 schema commit; the landed S10-B tree plus the twelve S8-D3 directories) is the only schema; the accepted
+ * There is no OLD side: S11-A1 ships no migration, so the base prisma tree (re-pinned with PR #593
+ * to its D8 tenancy commit; the landed S10-B tree plus the thirteen 20270125 directories) is the only schema; the accepted
  * S7-L run objects, the S8-B native provenance objects and the S10-B declaration/observation/
  * settled-basis tables are the proof target. No up/down file helpers are carried.
  */
@@ -36,11 +36,11 @@ export const S10B_MIGRATION = '20270124000000_scout_run_observation_expand';
 /** The S10-B run declaration / observation / settled-basis tables (present, RLS on, runtime-revoked). */
 export const S10B_TABLES = ['ScoutRunDeclaration', 'ScoutRunObservation', 'ScoutRunSettledBasis'];
 /**
- * 172 accepted migrations through S8-B and S7-L plus S10-B = 173, plus the twelve S8-D3 directories
- * (PR #587) = 185; the last is S8-D3's cycle-fix helper. S11-A1 adds none.
+ * 172 accepted migrations through S8-B and S7-L plus S10-B = 173, plus the thirteen 20270125 directories
+ * (PRs #587 + #593) = 186; the last is D8's coach-client tenancy fix. S11-A1 adds none.
  */
-export const EXPECTED_MIGRATIONS = 185;
-export const LAST_MIGRATION_PIN = '20270125000011_cwa_coach_manage_plan_owner_helper';
+export const EXPECTED_MIGRATIONS = 186;
+export const LAST_MIGRATION_PIN = '20270125000012_cwa_coach_manage_client_tenancy';
 
 const raw = process.env.G2_S11_DATABASE_URL;
 const password = process.env.G2_S11_PASSWORD;

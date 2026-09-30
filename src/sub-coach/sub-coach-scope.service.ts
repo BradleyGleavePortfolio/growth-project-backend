@@ -1,5 +1,22 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  evaluateCanAccessClient,
+  evaluateCanActOnClient,
+  lockTenancyFacts,
+  type LockedTenancyFacts,
+  type TenancyLockDb,
+} from './tenancy-lock';
+
+/**
+ * The subset of the Prisma client the scope predicates read. Accepting it as a
+ * parameter lets a caller evaluate the predicate INSIDE its own interactive
+ * transaction (`tx`). Note that READ COMMITTED does NOT give two statements one
+ * snapshot; the write-gate `canActOnClient` therefore takes row locks (see
+ * `tenancy-lock.ts`, D8 fix round 3, R593-c7A2-01).
+ */
+type ScopeDb = Pick<Prisma.TransactionClient, 'user' | 'subCoachAssignment'>;
 
 /**
  * SubCoachScopeService
@@ -47,8 +64,8 @@ export class SubCoachScopeService {
    *
    * Returns [] if the user has no clients (or isn't a coach at all).
    */
-  async getAuthorizedClientIds(userId: string): Promise<string[]> {
-    const u = await this.prisma.user.findUnique({
+  async getAuthorizedClientIds(userId: string, db: ScopeDb = this.prisma): Promise<string[]> {
+    const u = await db.user.findUnique({
       where: { id: userId },
       select: { role: true, coach_id: true },
     });
@@ -56,14 +73,14 @@ export class SubCoachScopeService {
 
     if (u.coach_id) {
       // Sub-coach: scope through SubCoachAssignment overlay.
-      const open = await this.prisma.subCoachAssignment.findMany({
+      const open = await db.subCoachAssignment.findMany({
         where: { sub_coach_id: userId, unassigned_at: null },
         select: { client_id: true },
       });
       if (open.length === 0) return [];
       const ids = open.map((r) => r.client_id);
       // Filter out soft-deleted clients / non-students at the DB level.
-      const live = await this.prisma.user.findMany({
+      const live = await db.user.findMany({
         where: { id: { in: ids }, role: 'student', deleted_at: null },
         select: { id: true },
       });
@@ -71,7 +88,7 @@ export class SubCoachScopeService {
     }
 
     // Head coach: own roster.
-    const clients = await this.prisma.user.findMany({
+    const clients = await db.user.findMany({
       where: { coach_id: userId, role: 'student', deleted_at: null },
       select: { id: true },
     });
@@ -102,8 +119,79 @@ export class SubCoachScopeService {
    * caller is a head coach who owns the client, OR a sub-coach with an
    * open assignment to that client.
    */
-  async canAccessClient(userId: string, clientId: string): Promise<boolean> {
-    const ids = await this.getAuthorizedClientIds(userId);
+  async canAccessClient(
+    userId: string,
+    clientId: string,
+    db: ScopeDb = this.prisma,
+  ): Promise<boolean> {
+    const ids = await this.getAuthorizedClientIds(userId, db);
     return ids.includes(clientId);
+  }
+
+  /**
+   * `canAccessClient` for WRITERS: the same predicate, evaluated over the
+   * tenancy facts read `FOR SHARE` through `db` (D8 round 3, R593-c7A2-01).
+   * Call it with the write transaction's client so a roster reassignment or
+   * delegation revocation cannot commit between this decision and the write.
+   */
+  async canAccessClientLocked(
+    userId: string,
+    clientId: string,
+    db: TenancyLockDb = this.prisma,
+  ): Promise<boolean> {
+    return evaluateCanAccessClient(await lockTenancyFacts(db, userId, clientId));
+  }
+
+  /**
+   * THE coach-client tenancy rule for assignment writes (owner decision D8,
+   * 2026-09-29): the acting user may write an assignment naming `clientId`
+   * when EITHER
+   *   (a) the client's `User.coach_id` is the acting user (head coach / owner
+   *       direct roster — no test of the target's role or deletion state, exactly
+   *       as `WorkoutBuilderService.assertCanAccessClient` evaluates it), OR
+   *   (b) `canAccessClient` admits them (a sub-coach with an OPEN
+   *       SubCoachAssignment to that live student).
+   *
+   * This is the predicate `WorkoutBuilderService.assertCanAccessClient` applies on
+   * every human assignment write, expressed as a boolean so the AI approval
+   * materialisers (which write as the service role, where RLS does not run) can
+   * apply the SAME rule at approval time. The RLS helper
+   * `app.actor_coaches_client(actor, client)` (migration 20270125000012) encodes
+   * the same predicate for the direct-access path; the two must not diverge.
+   *
+   * ATOMICITY (R593-c7A2-01): the facts are read with `SELECT ... FOR SHARE`
+   * through `db`. Called with the caller's interactive-transaction client this
+   * makes the authorization atomic with the write: a concurrent roster
+   * reassignment (`UPDATE "User" SET coach_id`) or delegation revocation
+   * (`UPDATE "SubCoachAssignment" SET unassigned_at`) either blocks until the
+   * write transaction ends or, if it committed first, is what the locked read
+   * observes. Every assignment writer MUST call this inside its write
+   * transaction; with the default (non-transactional) client it is only a
+   * pre-check. Unknown client → false.
+   */
+  async canActOnClient(
+    actingUserId: string,
+    clientId: string,
+    db: TenancyLockDb = this.prisma,
+  ): Promise<boolean> {
+    return evaluateCanActOnClient(await lockTenancyFacts(db, actingUserId, clientId), actingUserId);
+  }
+
+  /**
+   * `canActOnClient` with the reason, for callers that map "unknown client" to
+   * 404 and "not yours" to 403 (WorkoutBuilderService.assertCanAccessClient).
+   * Same locking read, same predicate.
+   */
+  async explainActOnClient(
+    actingUserId: string,
+    clientId: string,
+    db: TenancyLockDb = this.prisma,
+  ): Promise<{ verdict: 'allowed' | 'client_not_found' | 'forbidden'; facts: LockedTenancyFacts }> {
+    const facts = await lockTenancyFacts(db, actingUserId, clientId);
+    if (!facts.client) return { verdict: 'client_not_found', facts };
+    return {
+      verdict: evaluateCanActOnClient(facts, actingUserId) ? 'allowed' : 'forbidden',
+      facts,
+    };
   }
 }

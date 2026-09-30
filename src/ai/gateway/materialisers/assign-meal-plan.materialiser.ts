@@ -8,6 +8,7 @@ import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { NotificationKind } from '../../../notifications/notification-kind';
+import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import {
   CapabilityMaterializer,
   MaterializeResult,
@@ -30,7 +31,10 @@ export const ASSIGN_MEAL_PLAN_CAPABILITY = 'draft.assign_meal_plan';
  * Payload shape:
  *   - `dailyMealPlanId` (UUID): the existing plan to assign. Must belong
  *     to `draft.tenant_coach_id` (re-checked here).
- *   - `clientId` (UUID): subject. Must be a client of the tenant coach.
+ *   - `clientId` (UUID): subject. Must be a client of the tenant coach —
+ *     enforced at approval time by `SubCoachScopeService.canActOnClient`
+ *     inside the write transaction (D8; PR #593 R593-c7A-01 / R593-c7B-01),
+ *     and bound to `draft.subject_user_id` when the draft carries one.
  *   - `startsOn` (ISO date, `YYYY-MM-DD`): first day of the plan window.
  *   - `endsOn` (ISO date, `YYYY-MM-DD`, optional): inclusive last day.
  *     When unset the plan runs open-ended until manually unassigned.
@@ -75,6 +79,8 @@ export class AssignMealPlanMaterializer implements CapabilityMaterializer {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // D8 — same tenancy rule as AssignWorkoutMaterializer; required.
+    private readonly subCoachScope: SubCoachScopeService,
   ) {}
 
   canHandle(capability: string): boolean {
@@ -129,9 +135,57 @@ export class AssignMealPlanMaterializer implements CapabilityMaterializer {
       throw err;
     }
 
+    // D8 (R593-c7A-01): bind the payload client to the authorised subject.
+    if (draft.subject_user_id && draft.subject_user_id !== payload.clientId) {
+      this.logger.warn(
+        {
+          event: 'AI_MATERIALISER_SUBJECT_MISMATCH',
+          capability: this.capability,
+          draftId: draft.id,
+          subjectUserId: draft.subject_user_id,
+          payloadClientId: payload.clientId,
+        },
+        'assign_meal_plan refused: payload.clientId differs from draft.subject_user_id',
+      );
+      throw new ForbiddenException({
+        error: 'AI_DRAFT_CLIENT_SUBJECT_MISMATCH',
+        capability: this.capability,
+        message:
+          'The proposed clientId is not the subject this draft was authorised for.',
+      });
+    }
+
     let assignmentId: string;
+    const tenantCoachId = draft.tenant_coach_id;
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        // D8 coach-client tenancy at approval time, inside the write
+        // transaction, before any row is written, with the tenancy facts locked
+        // FOR SHARE through `tx` (R593-c7A2-01; see AssignWorkoutMaterializer).
+        const canAct = await this.subCoachScope.canActOnClient(
+          tenantCoachId,
+          payload.clientId,
+          tx,
+        );
+        if (!canAct) {
+          this.logger.warn(
+            {
+              event: 'AI_MATERIALISER_CLIENT_SCOPE_REJECTED',
+              capability: this.capability,
+              draftId: draft.id,
+              tenantCoachId,
+              requesterId: draft.requester_id,
+              clientId: payload.clientId,
+            },
+            'assign_meal_plan refused: tenant coach may not act on this client at approval time',
+          );
+          throw new ForbiddenException({
+            error: 'AI_DRAFT_CLIENT_SCOPE_FORBIDDEN',
+            capability: this.capability,
+            message:
+              'Client does not belong to this coach (or the delegation is no longer open).',
+          });
+        }
         const plan = await tx.dailyMealPlan.findUnique({
           where: { id: payload.dailyMealPlanId },
           select: { id: true, coach_id: true },
@@ -143,19 +197,19 @@ export class AssignMealPlanMaterializer implements CapabilityMaterializer {
             dailyMealPlanId: payload.dailyMealPlanId,
           });
         }
-        if (plan.coach_id !== draft.tenant_coach_id) {
+        if (plan.coach_id !== tenantCoachId) {
           throw new ForbiddenException({
             error: 'AI_DRAFT_MEAL_PLAN_TENANT_MISMATCH',
             capability: this.capability,
             planCoachId: plan.coach_id,
-            tenantCoachId: draft.tenant_coach_id,
+            tenantCoachId,
           });
         }
         return tx.dailyMealPlanAssignment.create({
           data: {
             daily_meal_plan_id: payload.dailyMealPlanId,
             client_id: payload.clientId,
-            assigned_by_coach_id: draft.tenant_coach_id ?? requester.id,
+            assigned_by_coach_id: tenantCoachId,
             starts_on: new Date(payload.startsOn),
             ends_on: payload.endsOn ? new Date(payload.endsOn) : null,
             ai_draft_id: draft.id,

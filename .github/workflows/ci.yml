@@ -373,6 +373,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run the D8 service-role assignment-writer tenancy proof (PR #593)
+        # D8: the REAL AssignWorkoutMaterializer / AssignMealPlanMaterializer + SubCoachScopeService
+        # against this BYPASSRLS connection on the same deployed chain — proves the application gate
+        # on the path where RLS never runs, that it agrees with app.actor_coaches_client, and (round 3,
+        # R593-c7A2-01) that the check is atomic with the write: a second connection's reassignment /
+        # revocation blocks on the writer's row locks until it commits.
+        run: npx jest --config jest.rls.config.js test/rls-d8-service-role-assignment-writers.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   person-owned-migration-rehearsal:
     # S8-D3 populated-data rollout / rollback rehearsal (PR #587 fix round 2, R587-c7B-04; G13).
     # scripts/ci/s8d3-populated-rehearsal.sh: pre-S8-D3 chain via `prisma migrate deploy`, ~1.0M

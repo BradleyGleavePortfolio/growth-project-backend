@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { SubCoachOutOfScopeError } from './assignable-asset-resolver.errors';
+import type { TenancyLockDb } from '../../sub-coach/tenancy-lock';
 
 // PR-7 — shared sub-coach scope check used by every AssignableAssetResolver.
 //
@@ -38,16 +39,18 @@ export class ResolverSubCoachScope {
   async resolve(
     coachId: string,
     clientId: string,
+    db?: TenancyLockDb,
   ): Promise<ResolvedActingCoach> {
-    const allowed = await this.subCoachScope.canAccessClient(
-      coachId,
-      clientId,
-    );
+    // D8 round 3 (R593-c7A2-01): resolvers that write assignment rows pass
+    // their write transaction so the scope facts are locked FOR SHARE and the
+    // decision is atomic with the INSERT.
+    const allowed = db
+      ? await this.subCoachScope.canAccessClientLocked(coachId, clientId, db)
+      : await this.subCoachScope.canAccessClient(coachId, clientId);
     if (!allowed) {
       throw new SubCoachOutOfScopeError(coachId, clientId);
     }
-    const headCoachId =
-      await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
+    const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
     return {
       tenantCoachId: headCoachId ?? coachId,
       actingCoachId: coachId,
