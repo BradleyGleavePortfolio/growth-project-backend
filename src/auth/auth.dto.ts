@@ -6,7 +6,10 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { BadRequestException } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
@@ -108,26 +111,98 @@ export class GoogleAuthDto {
   invite_code?: string;
 }
 
+// Clinic launch C02 — the mobile Sign in with Apple body (growth-project-mobile
+// src/utils/appleAuth.ts + src/services/api.ts appleAuth) is:
+//   { identity_token, authorization_code?, email?, full_name?: {given_name, family_name}, invite_code? }
+// while older clients send { token, full_name?: string, invite_code?, raw_nonce? }.
+// The global ValidationPipe runs with forbidNonWhitelisted, so every field the
+// app sends MUST be declared here or the whole request is a 400. Both shapes
+// are accepted; `resolveAppleIdentityToken()` picks the JWT the verifier uses.
+// Token verification itself (AppleVerifierService + Supabase signInWithIdToken)
+// is unchanged — this is a body-contract fix only.
+
+/** Mobile sends full_name as an object on first authorization; normalise to a string. */
+export function normalizeAppleFullName(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const v = value as { given_name?: unknown; family_name?: unknown };
+    const parts = [v.given_name, v.family_name]
+      .filter((p): p is string => typeof p === 'string')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    return parts.length > 0 ? parts.join(' ') : undefined;
+  }
+  return undefined;
+}
+
+/** Empty strings from the SDK (`email: ''`) are treated as absent. */
+function emptyToUndefined(value: unknown): unknown {
+  return typeof value === 'string' && value.trim().length === 0 ? undefined : value;
+}
+
 export class AppleAuthDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Apple identity token (JWT) issued by Sign in with Apple on the mobile or web SDK.',
+      'Apple identity token (JWT) issued by Sign in with Apple. Legacy field name; equivalent to `identity_token`. At least one of the two is required.',
     minLength: 10,
   })
+  @ValidateIf((o: AppleAuthDto) => o.identity_token === undefined || o.token !== undefined)
   @IsString()
   @MinLength(10)
-  token!: string;
+  token?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Apple identity token (JWT) as sent by the current mobile build. Alias of `token`; at least one of the two is required.',
+    minLength: 10,
+  })
+  @ValidateIf((o: AppleAuthDto) => o.token === undefined || o.identity_token !== undefined)
+  @IsString()
+  @MinLength(10)
+  identity_token?: string;
+
+  // Accepted so the mobile body validates. The server does not exchange it —
+  // session minting uses the identity token via Supabase, which is the
+  // existing, audited verification path.
+  @ApiPropertyOptional({
+    description:
+      'Apple authorization code from the SDK. Accepted for contract compatibility; not used server-side.',
+    maxLength: 2048,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  authorization_code?: string;
+
+  // Accepted so the mobile body validates. NEVER trusted: the account email
+  // comes from the verified identity token / Supabase user, not the body.
+  @ApiPropertyOptional({
+    description:
+      'Email reported by the Apple SDK. Accepted for contract compatibility; the server uses the email inside the verified identity token instead.',
+    format: 'email',
+    maxLength: 320,
+  })
+  @Transform(({ value }) => emptyToUndefined(value))
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  email?: string;
 
   // Apple only returns the user's full_name on the FIRST authorization, in the
   // SDK response — never inside the identity token. The mobile app must pass
   // it through on that first call so the server can persist it; subsequent
-  // logins omit the field.
+  // logins omit the field. Accepts a plain string OR the SDK object
+  // { given_name, family_name }; the object is normalised to "Given Family".
   @ApiPropertyOptional({
     description:
-      "User's full name from the Apple SDK's first-authorization response. Apple does not include this in the identity token, so mobile must forward it explicitly on first contact.",
+      "User's full name from the Apple SDK's first-authorization response, either as a string or as { given_name, family_name } (normalised to a string). Apple does not include this in the identity token, so mobile must forward it explicitly on first contact.",
     example: 'Jane Doe',
     maxLength: 200,
   })
+  @Transform(({ value }) => normalizeAppleFullName(value))
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -169,6 +244,24 @@ export class AppleAuthDto {
   @MinLength(16)
   @MaxLength(128)
   raw_nonce?: string;
+}
+
+/**
+ * Pick the identity token from either field name. Throws 400 when neither is
+ * present (defence in depth behind the ValidateIf pair) or when both are
+ * present and disagree (an ambiguous body is never silently resolved).
+ */
+export function resolveAppleIdentityToken(dto: Pick<AppleAuthDto, 'token' | 'identity_token'>): string {
+  const a = dto.identity_token;
+  const b = dto.token;
+  if (a && b && a !== b) {
+    throw new BadRequestException('identity_token and token must match when both are provided');
+  }
+  const resolved = a ?? b;
+  if (!resolved) {
+    throw new BadRequestException('identity_token is required');
+  }
+  return resolved;
 }
 
 // Mobile (#56) calls /auth/attach-invite-code; backend exposes the same

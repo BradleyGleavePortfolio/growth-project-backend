@@ -30,6 +30,7 @@ import {
   IssueRecentAuthTokenDto,
   ExtensionRefreshDto,
   ExtensionRefreshResult,
+  resolveAppleIdentityToken,
 } from './auth.dto';
 import {
   envelopeWithCode,
@@ -212,7 +213,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async appleAuth(@Body() body: AppleAuthDto, @Request() req: AuditableRequest) {
     const result = await this.authService.appleAuth(
-      body.token,
+      resolveAppleIdentityToken(body),
       body.full_name,
       body.invite_code,
       auditContext(req),

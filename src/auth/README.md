@@ -104,6 +104,15 @@ gates pass. Deleted accounts never produce a signal.
   `/auth/google`. The handler inspects `app_metadata.provider`,
   `app_metadata.providers`, and `identities[].provider` and rejects any
   token that does not assert Google as the issuer.
+- `/auth/apple` accepts both body shapes: the current mobile build's
+  `{ identity_token, authorization_code?, email?, full_name?: {given_name, family_name}, invite_code? }`
+  and the legacy `{ token, full_name?: string, invite_code?, raw_nonce? }`.
+  `identity_token` is an alias of `token` (`resolveAppleIdentityToken`
+  rejects a body where both are present and differ); `full_name` objects
+  are normalised to `"Given Family"`; `authorization_code` and body `email`
+  are accepted for contract compatibility but never trusted — the account
+  email comes from the verified identity token. Verification itself is
+  unchanged (AppleVerifierService + Supabase `signInWithIdToken`).
 - `selectRole` refuses any client request to elevate a user to `coach`
   or `owner`. Coach provisioning happens through the admin module or a
   bootstrap script.
@@ -133,7 +142,7 @@ gates pass. Deleted accounts never produce a signal.
 | `SUPABASE_ANON_KEY` | yes | Anon key — used for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Admin SDK key — used by the Google handler to call `auth.getUser(token)` and resolve the Supabase user. |
 | `SUPABASE_REDIRECT_URL` | yes | Email-confirm deep link target (e.g. `tgp://verified`). |
-| `COACH_CODE_GATE_ENABLED` | optional | When `true`, `/auth/signup-with-code` requires a coach invite code. `/auth/signup-policy` reflects this via `invite_code_required` (canonical) and `coach_code_required` (deprecated alias) so mobile can hide/show the field. |
+| `COACH_CODE_GATE_ENABLED` | optional | When `true`, `/auth/signup-with-code` requires a coach invite code. `/auth/signup-policy` reflects this via `invite_code_required` (canonical), `coach_code_required` (deprecated alias) and `require_invite_code` (legacy name the shipped mobile build reads) so mobile can hide/show the field. The policy also carries `google_signin_enabled` / `apple_signin_enabled` booleans mirroring `providers`. |
 
 `/auth/signup-policy` also exposes the invite-code format spec
 (`invite_code.min_length`, `max_length`, `prefix`) so the mobile client
