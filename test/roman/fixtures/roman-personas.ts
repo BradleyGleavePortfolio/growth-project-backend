@@ -770,7 +770,19 @@ export function makePersonaDb(): PersonaDb {
         return [...raw.romanMessages].reverse();
       }),
       count: jest.fn(async () => 0),
-      findFirst: jest.fn(async () => null),
+      // R4 reads the latest user turn; R8 seeds turns through create().
+      findFirst: jest.fn(async (args: { where?: Where } = {}) => {
+        calls.push('romanMessage.findFirst');
+        const rows = raw.romanMessages.filter((r) => matches(r, args.where));
+        return rows.length ? rows[rows.length - 1] : null;
+      }),
+      // R4 post-check rewrites the persisted turn to what the client saw.
+      update: jest.fn(async ({ where, data }: { where: { id: string }; data: Row }) => {
+        calls.push('romanMessage.update');
+        const row = raw.romanMessages.find((r) => r.id === where.id);
+        if (row) Object.assign(row, data);
+        return row ?? null;
+      }),
     },
     romanSession: { update: jest.fn(async () => ({})), findFirst: jest.fn(async () => null) },
     coachSubscription: { findUnique: jest.fn(async () => null) },

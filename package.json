@@ -17,6 +17,7 @@
     "readiness:keys:check": "ts-node scripts/gen-operator-keys.ts --check",
     "secrets:print": "ts-node scripts/print-required-secrets.ts",
     "secrets:print:fly": "FORMAT=fly ts-node scripts/print-required-secrets.ts",
+    "eval:roman:live": "ts-node --transpile-only scripts/eval-roman-live.ts",
     "secrets:missing": "FORMAT=missing ts-node scripts/print-required-secrets.ts",
     "smoke": "ts-node scripts/smoke.ts",
     "smoke:staging": "SMOKE_BASE_URL=${SMOKE_BASE_URL:-https://api-staging.thegrowthproject.app} ts-node scripts/smoke.ts",

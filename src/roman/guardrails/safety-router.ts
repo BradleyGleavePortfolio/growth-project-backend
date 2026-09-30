@@ -56,6 +56,8 @@ const EATING_DISORDER: RegExp[] = [
   /\b(punish|make up for) (myself|it) (with|by) (exercise|cardio|working out)\b/i,
   /\b(only|just) (eat|have|do) (\d{2,3}) ?(kcal|calories|cal)\b/i,
   /\b(\d{2,3}) ?(kcal|calories|cal) (a|per) day\b/i,
+  // Sub-floor intake requests below 1,200 kcal ("drop to 1,000 calories").
+  /\b(drop|cut|go|get) (down )?to (\d{3}|1,?[01]\d{2}) ?(kcal|calories|cal)\b/i,
   /\bskip (all|every) meals?\b/i,
   /\b(fast|fasting) for (\d+|two|three|four|five|several|a few) days\b/i,
 ];
