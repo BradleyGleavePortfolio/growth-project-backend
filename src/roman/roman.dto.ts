@@ -29,9 +29,9 @@ export class OpenSessionDto {
 export class SendMessageDto {
   @IsString()
   @MinLength(1)
-  // Hard cap on a single user turn. Generous for chat; prevents abuse / giant
-  // payloads. Older turns are tail-sliced server-side (brief §3).
-  @MaxLength(8000)
+  // Hard cap on a single user turn (plan §2.4: 2,000 chars, down from 8,000).
+  // Prevents abuse / giant payloads. Older turns are tail-sliced server-side.
+  @MaxLength(2000)
   content!: string;
 }
 

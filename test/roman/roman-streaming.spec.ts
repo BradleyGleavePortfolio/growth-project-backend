@@ -213,10 +213,13 @@ describe('Roman SSE streaming — happy path', () => {
       frames.push(chunk);
     }
 
+    // R4 (plan §2.7): the server buffers the model stream, post-checks it and
+    // emits ONE delta carrying the full text. The raw per-token stream is
+    // still available through `streamModelTurn`.
     const deltas = (frames as Array<{ type: string; text?: string }>).filter(
       (f) => f.type === 'delta',
     );
-    expect(deltas.map((d) => d.text)).toEqual(['Push ', 'harder', '.']);
+    expect(deltas.map((d) => d.text)).toEqual(['Push harder.']);
 
     const done = (frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>).find(
       (f) => f.type === 'done',
@@ -254,7 +257,7 @@ describe('Roman SSE streaming — happy path', () => {
     const deltaTexts = frames
       .filter((f) => f.event === 'message' && f.data?.type === 'delta')
       .map((f) => f.data.text);
-    expect(deltaTexts).toEqual(['Let', "'s go"]);
+    expect(deltaTexts).toEqual(["Let's go"]); // R4: buffered, one delta
     const done = frames.find((f) => f.data?.type === 'done');
     expect(done?.data.interrupted).toBe(false);
     expect(isEnded()).toBe(true);

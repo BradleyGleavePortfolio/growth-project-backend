@@ -41,6 +41,7 @@ export const CONTEXT_LIMITS = {
 // from suggesting anything below this, on top of the post-response check
 // in GuardrailService.
 const CALORIE_FLOOR_FALLBACK = 1500;
+const CALORIE_FLOOR_FEMALE = 1200;
 
 // Cache TTL: short enough that "I just logged a meal, ask the AI" is fresh,
 // long enough to absorb chat-burst usage (rapid follow-up questions reuse
@@ -329,7 +330,11 @@ export class ClientAIContextService {
         opted_in: requesterProfile?.show_on_leaderboard ?? false,
         rank: null, // rank is expensive to compute on every chat; AI uses opted_in signal only
       },
-      guardrails: this.buildGuardrails(prescribed, !!user.coach_id),
+      guardrails: this.buildGuardrails(
+        prescribed,
+        !!user.coach_id,
+        (profile?.sex as 'male' | 'female' | 'prefer_not_to_say') ?? 'prefer_not_to_say',
+      ),
       generated_at: new Date().toISOString(),
     };
     return ctx;
@@ -640,11 +645,16 @@ export class ClientAIContextService {
     };
   }
 
-  private buildGuardrails(prescribed: AppPrescribedTargets, hasCoach: boolean): AIGuardrails {
-    const floor =
-      prescribed.calories != null
-        ? Math.min(CALORIE_FLOOR_FALLBACK, Math.round(prescribed.calories * 0.8))
-        : CALORIE_FLOOR_FALLBACK;
+  private buildGuardrails(
+    prescribed: AppPrescribedTargets,
+    hasCoach: boolean,
+    sex: 'male' | 'female' | 'prefer_not_to_say' = 'prefer_not_to_say',
+  ): AIGuardrails {
+    // R4 (plan §4.4 / decision D4): the floor is sex-aware and never scaled
+    // down by the prescribed target. 1,200 kcal for women; 1,500 kcal for men
+    // and when sex is not given. The old `min(1500, 0.8 × target)` let a
+    // 1,450 kcal target produce a 1,160 kcal "floor".
+    const floor = sex === 'female' ? CALORIE_FLOOR_FEMALE : CALORIE_FLOOR_FALLBACK;
     return {
       forbid_calorie_recommendations_below: floor,
       forbid_contradicting_macros: prescribed.calories != null || prescribed.protein_g != null,
