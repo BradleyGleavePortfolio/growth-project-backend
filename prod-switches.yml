@@ -578,6 +578,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: roman
     description: "Global daily Roman spend cap in USD (default 25) computed from AICallLog capability=roman_chat; 0 disables."
+  - name: ROMAN_CONSENT_CURRENT_VERSION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: roman
+    description: "Consent copy version Roman requires (default roman-ai-v1). Set to roman-ai-v1 at launch; bump only with a copy change (forces re-consent)."
   - name: FEATURE_WEARABLES_INGEST_POST
     tier: optional
     prod_default: STUB_ALLOWED

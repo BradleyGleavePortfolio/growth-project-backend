@@ -38,8 +38,16 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
-import { RomanCaller, RomanService } from './roman.service';
-import { ListMessagesQueryDto, OpenSessionDto, SendMessageDto } from './roman.dto';
+import { RomanConsentService } from './consent/roman-consent.service';
+import {
+  RomanCaller,
+  RomanService,
+} from './roman.service';
+import {
+  ListMessagesQueryDto,
+  OpenSessionDto,
+  SendMessageDto,
+} from './roman.dto';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -47,6 +55,7 @@ export class RomanController {
   constructor(
     private readonly roman: RomanService,
     private readonly prisma: PrismaService,
+    private readonly consent: RomanConsentService,
   ) {}
 
   // ─── POST /roman/sessions — open or resume ─────────────────────────────────
@@ -103,6 +112,13 @@ export class RomanController {
       }
       throw err;
     }
+
+    // AI processing consent (R2, plan §6.2): enforced on EVERY turn, before
+    // the user turn is persisted, before any context is built and before any
+    // model call. Throws a structured 403 ROMAN_CONSENT_REQUIRED that the
+    // mobile uses to show the consent sheet. Nothing reaches Anthropic
+    // without a live grant of the current consent version.
+    await this.consent.assertAiConsent(caller.id);
 
     const session = await this.roman.getOwnedSession(caller, id);
     await this.roman.appendMessage(caller, session.id, {

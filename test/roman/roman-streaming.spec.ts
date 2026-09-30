@@ -22,6 +22,7 @@
 import 'reflect-metadata';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanService } from '../../src/roman/roman.service';
+import type { RomanConsentService } from '../../src/roman/consent/roman-consent.service';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
@@ -197,6 +198,13 @@ function parseFrames(writes: string[]) {
 
 const FREE = { id: 'user-A', role: 'student', tier: 'free' as const };
 
+/** R2: consent double that ALLOWS every turn (the 403 path is covered in roman-consent.spec.ts). */
+function consentAllow(): RomanConsentService {
+  const double = { assertAiConsent: jest.fn(async () => undefined) };
+  // @ts-expect-error partial structural mock of RomanConsentService — only assertAiConsent is read by the controller.
+  return double;
+}
+
 describe('Roman SSE streaming — happy path', () => {
   it('translates Anthropic deltas into SSE frames and persists the full turn', async () => {
     const { prisma, messages } = makePrisma();
@@ -238,6 +246,7 @@ describe('Roman SSE streaming — happy path', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const req = makeReq();
     const { res, writes, isEnded } = makeRes();
@@ -279,6 +288,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res, writes, isEnded } = makeRes();
 
@@ -316,6 +326,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res } = makeRes();
 
@@ -363,6 +374,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res } = makeRes();
 

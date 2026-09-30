@@ -20,18 +20,27 @@ import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanModelHealthService } from './model/roman-model-health.service';
 import { RomanHealthController } from './model/roman-health.controller';
+import { RomanConsentController } from './consent/roman-consent.controller';
+import { RomanConsentService } from './consent/roman-consent.service';
+import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
 
 @Module({
   // RomanHealthController serves GET /health/roman (@Public, no feature gate)
   // so the operator and the deploy smoke can see model health while the chat
   // surface itself stays dark behind RomanFeatureGuard.
-  controllers: [RomanController, RomanHealthController],
+  // RomanConsentController serves /me/ai-consent (R2). RomanConsentService and
+  // AiProcessingConsentGuard are exported so /ai/chat can enforce the same
+  // consent while AI Guide lives (plan §6.2). AuditService comes from the
+  // @Global AuditModule.
+  controllers: [RomanController, RomanHealthController, RomanConsentController],
   providers: [
     RomanService,
     RomanFeatureGuard,
     romanAnthropicClientProvider,
     RomanModelHealthService,
+    RomanConsentService,
+    AiProcessingConsentGuard,
   ],
-  exports: [RomanService, RomanModelHealthService],
+  exports: [RomanService, RomanModelHealthService, RomanConsentService, AiProcessingConsentGuard],
 })
 export class RomanModule {}
