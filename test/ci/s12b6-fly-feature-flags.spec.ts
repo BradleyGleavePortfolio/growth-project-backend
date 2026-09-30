@@ -1,11 +1,17 @@
 // S12-B6 / S9 review closure (S12B6-SOL-B1, S12B6-SOL-B2, S9A584-B1, S9A584-B2,
-// S9B-584-A1, S9B-584-B1..B3): workflow tests for
+// S9B-584-A1, S9B-584-B1..B3, S9A2-584-B1, S9-B2 C1): workflow tests for
 // .github/workflows/fly-feature-flags-set.yml.
 //
 // What this file proves, and how:
-//  - Structural invariants of the YAML (dispatch-only, inputs, no allowlist
-//    input, allowlist only from the GitHub secret, shell: bash, permissions,
-//    production environment, no inline `${{ inputs.* }}` in run: blocks).
+//  - Structural invariants of the YAML (dispatch-only; EVERY input is a closed
+//    `type: choice` with a fixed option list and a default drawn from it — no
+//    free-text input exists (S9A2-584-B1); no allowlist input; allowlist only
+//    from the GitHub secret; shell: bash; permissions; production environment;
+//    no inline `${{ inputs.* }}` in run: blocks; the deadline options and the
+//    validators' closed sets are one and the same list).
+//  - `clear` unsets FEATURE_SCOUT_PILOT_COACH_IDS via `flyctl secrets unset`
+//    (S9-B2 C1) before the single `secrets set`, and verification requires an
+//    unset name to be ABSENT and a set name to be present.
 //  - EVERY shell step of the job is extracted from the parsed YAML and
 //    executed under `bash --noprofile --norc -eo pipefail <file>` — the exact
 //    invocation the Actions runner uses for `shell: bash` (S9B-584-B3) — with
@@ -26,9 +32,11 @@
 //
 // What this file does NOT prove: anything about the rendered public Actions
 // log (GitHub prints non-secret `env:` values there — the reason the
-// allowlist is a secret, not an input), the production environment approval
-// gate, real Fly API behaviour (including whether an empty value is accepted
-// for `clear`), or real flyctl output. Those need a real, owner-approved
+// allowlist is a secret, not an input, and the reason every input is a closed
+// choice), GitHub's server-side rejection of a dispatch value outside a
+// choice's option list (HTTP 422 — the in-job validators re-check the closed
+// sets regardless), the production environment approval gate, real Fly API
+// behaviour, or real flyctl output. Those need a real, owner-approved
 // dispatch and are out of scope for a test file. Never dispatch the real
 // workflow against production as a test.
 
@@ -74,8 +82,8 @@ type Doc = {
 const STEP = {
   target: 'Validate Fly app target',
   confirm: 'Confirm operator intent',
-  flags: 'Validate flag values (empty = leave unchanged, S12B6-SOL-B1)',
-  deadline: 'Validate scout run deadline (empty = leave unchanged)',
+  flags: 'Validate flag values (unchanged = leave alone, S12B6-SOL-B1)',
+  deadline: 'Validate scout run deadline (unchanged = leave alone)',
   allowlist: 'Validate pilot coach allowlist (from secret; never an input)',
   token: 'Check Fly token configuration',
   push: 'Push feature flags to Fly (only inputs explicitly set this dispatch)',
@@ -83,6 +91,11 @@ const STEP = {
 } as const;
 
 const APP = 'backend-spring-lake-3890';
+const FLAG_INPUTS = ['feature_scout_ingest', 'feature_extension_pairing', 'feature_scout_reconstruct'] as const;
+// The closed deadline choices (ms). Must stay identical to the YAML options,
+// the deadline validator's case list and the push step's case list — asserted
+// structurally below.
+const DEADLINE_CHOICES = ['300000', '900000', '1800000', '3600000'];
 // Synthetic, syntactically valid UUIDs. Never real coach ids.
 const U1 = '11111111-1111-1111-1111-111111111111';
 const U2 = '22222222-2222-2222-2222-222222222222';
@@ -112,6 +125,8 @@ type FlyStub = {
   listExit?: number;
   /** Exit code for `flyctl secrets set`. Default 0. */
   setExit?: number;
+  /** Exit code for `flyctl secrets unset`. Default 0. */
+  unsetExit?: number;
 };
 
 type RunResult = {
@@ -157,6 +172,10 @@ function runStep(step: Step, env: Record<string, string>, fly: FlyStub = {}): Ru
       '  echo "stub: Machine 000000000000 [app] update succeeded"',
       '  exit "${STUB_SET_EXIT}"',
       'fi',
+      'if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "unset" ]; then',
+      '  echo "stub: Machine 000000000000 [app] update succeeded"',
+      '  exit "${STUB_UNSET_EXIT}"',
+      'fi',
       'echo "stub: unexpected flyctl subcommand" >&2',
       'exit 99',
       '',
@@ -173,6 +192,7 @@ function runStep(step: Step, env: Record<string, string>, fly: FlyStub = {}): Ru
       STUB_LIST_BODY: listBody,
       STUB_LIST_EXIT: String(fly.listExit ?? 0),
       STUB_SET_EXIT: String(fly.setExit ?? 0),
+      STUB_UNSET_EXIT: String(fly.unsetExit ?? 0),
       ...env,
     },
   });
@@ -198,16 +218,18 @@ function expectNoValueLeak(out: string, extra: string[] = []) {
   }
 }
 
+// Every input at its default: nothing selected for change.
 const PUSH_ENV_EMPTY = {
   APP,
   FLY_API_TOKEN: 'stub-token',
-  SCOUT: '',
-  RECONSTRUCT: '',
-  PAIRING: '',
-  DEADLINE: '',
+  SCOUT: 'unchanged',
+  RECONSTRUCT: 'unchanged',
+  PAIRING: 'unchanged',
+  DEADLINE: 'unchanged',
   ALLOWLIST_MODE: 'unchanged',
   COACH_IDS: '',
 };
+const UNSET_ARGV = ['secrets', 'unset', '-a', APP, 'FEATURE_SCOUT_PILOT_COACH_IDS'];
 
 // A `flyctl secrets list --json` body in the shape flyctl renders
 // (internal/command/secrets/list.go: SecretWithStatus{name,digest,status}).
@@ -230,13 +252,62 @@ describe('fly-feature-flags-set.yml — structural invariants (S12-B6 / S9B-584-
     expect(on).not.toMatch(/schedule/);
   });
 
-  it('S12B6-SOL-B1: every flag and the deadline input default to empty (no default-on mutation)', () => {
+  it('S9A2-584-B1: EVERY workflow_dispatch input is a closed type: choice — string options only, default drawn from them; no free-text input exists', () => {
     const inputs = loadDoc().on?.workflow_dispatch?.inputs ?? {};
-    for (const name of ['feature_scout_ingest', 'feature_extension_pairing', 'feature_scout_reconstruct', 'scout_run_deadline_ms']) {
-      expect(inputs[name]).toBeDefined();
-      expect(inputs[name].default).toBe('');
+    expect(Object.keys(inputs).sort()).toEqual(
+      ['app', 'confirm', 'feature_extension_pairing', 'feature_scout_ingest', 'feature_scout_reconstruct', 'pilot_allowlist', 'scout_run_deadline_ms'].sort(),
+    );
+    for (const [name, spec] of Object.entries(inputs)) {
+      expect([name, spec.type]).toEqual([name, 'choice']);
+      expect(Array.isArray(spec.options)).toBe(true);
+      const options = spec.options as unknown[];
+      expect(options.length).toBeGreaterThanOrEqual(1);
+      // Options like true/false/300000 must be quoted in the YAML so they stay
+      // strings (an unquoted `true` would parse as a YAML boolean).
+      for (const o of options) expect(typeof o).toBe('string');
+      expect(new Set(options).size).toBe(options.length);
+      expect(typeof spec.default).toBe('string');
+      expect(options).toContain(spec.default);
+    }
+  });
+
+  it('S12B6-SOL-B1: every flag and the deadline input is [unchanged, ...] defaulting to unchanged (no default-on mutation)', () => {
+    const inputs = loadDoc().on?.workflow_dispatch?.inputs ?? {};
+    for (const name of FLAG_INPUTS) {
+      expect(inputs[name].options).toEqual(['unchanged', 'true', 'false']);
+      expect(inputs[name].default).toBe('unchanged');
       expect(inputs[name].required).toBe(false);
     }
+    expect(inputs['scout_run_deadline_ms'].options).toEqual(['unchanged', ...DEADLINE_CHOICES]);
+    expect(inputs['scout_run_deadline_ms'].default).toBe('unchanged');
+    expect(inputs['scout_run_deadline_ms'].required).toBe(false);
+  });
+
+  it('S9A2-584-B1: app is a one-option choice; confirm is [no, SET] defaulting to the non-confirming no', () => {
+    const inputs = loadDoc().on?.workflow_dispatch?.inputs ?? {};
+    expect(inputs['app'].options).toEqual([APP]);
+    expect(inputs['app'].default).toBe(APP);
+    expect(inputs['app'].required).toBe(true);
+    expect(inputs['confirm'].options).toEqual(['no', 'SET']);
+    expect(inputs['confirm'].default).toBe('no');
+    expect(inputs['confirm'].required).toBe(true);
+  });
+
+  it('the deadline choice list, the deadline validator and the push step agree on exactly the same closed set, all within the app grammar', () => {
+    const inputs = loadDoc().on?.workflow_dispatch?.inputs ?? {};
+    const yamlChoices = (inputs['scout_run_deadline_ms'].options as string[]).filter((o) => o !== 'unchanged');
+    expect(yamlChoices).toEqual(DEADLINE_CHOICES);
+    // Literal bash `case` alternative list `300000|900000|1800000|3600000` (pipes escaped for the regex).
+    const caseList = DEADLINE_CHOICES.join('\\|');
+    // The validator: a `case` with exactly this alternative list.
+    expect(findStep(STEP.deadline).run).toMatch(new RegExp(`^\\s*${caseList}\\) ;;$`, 'm'));
+    // The push step re-checks the same list before building the argument.
+    expect(findStep(STEP.push).run).toMatch(new RegExp(`^\\s*${caseList}\\)$`, 'm'));
+    for (const c of DEADLINE_CHOICES) {
+      expect(new RegExp(APP_DEADLINE_RE_SRC).test(c)).toBe(true);
+      expect(appReadDeadlineMs(c)).toBe(Number(c));
+    }
+    expect(DEADLINE_CHOICES).toContain(String(APP_DEADLINE_DEFAULT));
   });
 
   it('S9B-584-A1: the allowlist VALUE is not a workflow input; pilot_allowlist is a closed choice defaulting to unchanged', () => {
@@ -289,8 +360,9 @@ describe('fly-feature-flags-set.yml — structural invariants (S12-B6 / S9B-584-
     for (const st of loadJob().steps ?? []) if (st.run) expect(st.run).not.toMatch(inline);
   });
 
-  it('never runs a destructive or deploying flyctl command; only secrets set/list', () => {
+  it('never runs a destructive or deploying flyctl command; only secrets set/list, plus one literal unset of FEATURE_SCOUT_PILOT_COACH_IDS (S9-B2 C1)', () => {
     const mutate = /flyctl\s+(machines?\s+(start|stop|restart|destroy|kill|update)|deploy|scale)\b/;
+    const unsetLines: string[] = [];
     for (const st of loadJob().steps ?? []) {
       if (!st.run) continue;
       expect(st.run).not.toMatch(mutate);
@@ -300,9 +372,13 @@ describe('fly-feature-flags-set.yml — structural invariants (S12-B6 / S9B-584-
         .join('\n');
       for (const m of code.matchAll(/flyctl\s+(\S+)\s+(\S+)/g)) {
         expect(m[1]).toBe('secrets');
-        expect(['set', 'list']).toContain(m[2]);
+        expect(['set', 'list', 'unset']).toContain(m[2]);
       }
+      for (const line of code.split('\n')) if (/flyctl\s+secrets\s+unset/.test(line)) unsetLines.push(line.trim());
     }
+    // Exactly one unset, in the push step, with a fixed literal name (never a variable).
+    expect(unsetLines).toEqual(['flyctl secrets unset -a "${APP}" FEATURE_SCOUT_PILOT_COACH_IDS']);
+    expect(findStep(STEP.push).run).toContain(unsetLines[0]);
   });
 
   it('all eight shell steps exist in the expected order, with the app-target guard before any credentialed step', () => {
@@ -341,7 +417,7 @@ describe('"Confirm operator intent" step (executed)', () => {
     expect(r.out).toMatch(/Operator confirmed/);
   });
 
-  it.each(['', 'set', 'SET ', ' SET', 'yes', 'true', SECRETISH])('rejects %j with exit 1 and does not echo it', (confirm) => {
+  it.each(['no', '', 'set', 'SET ', ' SET', 'yes', 'true', SECRETISH])('rejects %j (incl. the default `no`) with exit 1 and does not echo it', (confirm) => {
     const r = runStep(findStep(STEP.confirm), { CONFIRM: confirm });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/::error::confirm input must be the literal string 'SET'/);
@@ -374,24 +450,24 @@ describe('"Check Fly token configuration" step (executed)', () => {
 describe('"Validate flag values" step (executed, S12B6-SOL-B1 / B2)', () => {
   const step = () => findStep(STEP.flags);
 
-  it('accepts all three flags empty (nothing specified) with exit 0', () => {
-    const r = runStep(step(), { SCOUT: '', RECONSTRUCT: '', PAIRING: '' });
+  it('accepts all three flags at unchanged (nothing selected) with exit 0', () => {
+    const r = runStep(step(), { SCOUT: 'unchanged', RECONSTRUCT: 'unchanged', PAIRING: 'unchanged' });
     expect(r.code).toBe(0);
-    expect(r.out.match(/not specified, leaving current Fly value unchanged/g)).toHaveLength(3);
+    expect(r.out.match(/unchanged, leaving current Fly value untouched/g)).toHaveLength(3);
   });
 
-  it('accepts a mix of empty and valid true/false with exit 0', () => {
-    const r = runStep(step(), { SCOUT: 'true', RECONSTRUCT: '', PAIRING: 'false' });
+  it('accepts a mix of unchanged and valid true/false with exit 0', () => {
+    const r = runStep(step(), { SCOUT: 'true', RECONSTRUCT: 'unchanged', PAIRING: 'false' });
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/feature_scout_ingest: valid boolean/);
-    expect(r.out).toMatch(/feature_scout_reconstruct: not specified/);
+    expect(r.out).toMatch(/feature_scout_reconstruct: unchanged/);
     expect(r.out).toMatch(/feature_extension_pairing: valid boolean/);
   });
 
-  it('rejects a non-boolean, non-empty value with exit 1 and does not echo the value itself', () => {
-    const r = runStep(step(), { SCOUT: SECRETISH, RECONSTRUCT: '', PAIRING: '' });
+  it('rejects a value outside the closed set with exit 1 and does not echo the value itself', () => {
+    const r = runStep(step(), { SCOUT: SECRETISH, RECONSTRUCT: 'unchanged', PAIRING: 'unchanged' });
     expect(r.code).toBe(1);
-    expect(r.out).toMatch(/::error::feature_scout_ingest must be exactly 'true', 'false', or empty/);
+    expect(r.out).toMatch(/::error::feature_scout_ingest must be exactly 'true', 'false', or 'unchanged'/);
     expectNoValueLeak(r.out);
   });
 
@@ -403,10 +479,13 @@ describe('"Validate flag values" step (executed, S12B6-SOL-B1 / B2)', () => {
     expect(r.out).not.toMatch(/::error::feature_scout_reconstruct/);
   });
 
-  it.each(['TRUE', 'False', '1', '0', ' true', 'true ', 'true\n', 'on'])('rejects %j as not exactly the literal booleans', (bad) => {
-    const r = runStep(step(), { SCOUT: bad, RECONSTRUCT: '', PAIRING: '' });
-    expect(r.code).toBe(1);
-  });
+  it.each(['', 'TRUE', 'False', '1', '0', ' true', 'true ', 'true\n', 'on', 'Unchanged', 'unchanged '])(
+    'rejects %j as not exactly one of the choice options (empty included: the choice type never yields it)',
+    (bad) => {
+      const r = runStep(step(), { SCOUT: bad, RECONSTRUCT: 'unchanged', PAIRING: 'unchanged' });
+      expect(r.code).toBe(1);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -414,20 +493,29 @@ describe('"Validate flag values" step (executed, S12B6-SOL-B1 / B2)', () => {
 describe('"Validate scout run deadline" step (executed) — differential against the app\'s readDeadlineMs grammar', () => {
   const step = () => findStep(STEP.deadline);
 
-  it('empty means unchanged (exit 0)', () => {
-    const r = runStep(step(), { DEADLINE: '' });
+  it('unchanged means unchanged (exit 0, no value)', () => {
+    const r = runStep(step(), { DEADLINE: 'unchanged' });
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/scout_run_deadline_ms: not specified, leaving current Fly value unchanged/);
+    expect(r.out).toMatch(/scout_run_deadline_ms: unchanged, leaving current Fly value untouched/);
   });
 
-  // Accepted by the app: /^[1-9][0-9]{0,9}$/ (positive integer, no leading
-  // zeros, at most 10 digits). Anything else silently falls back to the
-  // 300000 ms default — the workflow must refuse those instead of "setting"
-  // a value the app ignores.
-  const CASES: Array<[string, boolean]> = [
+  it.each(DEADLINE_CHOICES)('accepts the choice option %j, which the app honours exactly', (value) => {
+    const r = runStep(step(), { DEADLINE: value });
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(new RegExp(`scout_run_deadline_ms: valid choice \\(${value} ms\\), will be set`));
+    expect(appReadDeadlineMs(value)).toBe(Number(value));
+  });
+
+  // [value, appHonours]. The app honours /^[1-9][0-9]{0,9}$/ (positive
+  // integer, no leading zeros, at most 10 digits) and silently falls back to
+  // the 300000 ms default for anything else. None of these is a choice
+  // option, so the workflow rejects ALL of them — those the app would honour
+  // are the deliberate stricter-in-the-harmless-direction cases (the closed
+  // dropdown is the point, S9A2-584-B1); the rest the app would ignore anyway.
+  const REJECTED: Array<[string, boolean]> = [
     ['1', true],
     ['60000', true],
-    ['300000', true],
+    ['240000', true],
     ['9999999999', true],
     ['10000000000', false],
     ['0', false],
@@ -436,37 +524,55 @@ describe('"Validate scout run deadline" step (executed) — differential against
     ['1.5', false],
     ['1e3', false],
     ['abc', false],
-    [' 1', false],
-    ['1 ', false],
-    ['1\n', false],
+    ['', false],
+    [' 300000', false],
+    ['300000 ', false],
+    ['300000\n', false],
     ['300000ms', false],
-    ['+1', false],
+    ['+300000', false],
     ['１', false],
+    ['Unchanged', false],
     [SECRETISH, false],
   ];
 
-  it.each(CASES)('%j → workflow accepts=%s, and acceptance ⇔ the app honours the value', (value, accepted) => {
+  it.each(REJECTED)('rejects the non-option %j (app would honour it: %s) without echoing it', (value, appHonours) => {
+    expect(DEADLINE_CHOICES).not.toContain(value);
+    // The app's oracle is its regex: a match is honoured verbatim, anything
+    // else falls back to the default. (Number(' 300000') happens to equal the
+    // default, so equality with Number(value) is NOT a usable oracle.)
+    expect(new RegExp(APP_DEADLINE_RE_SRC).test(value)).toBe(appHonours);
+    if (appHonours) expect(appReadDeadlineMs(value)).toBe(Number(value));
+    else expect(appReadDeadlineMs(value)).toBe(APP_DEADLINE_DEFAULT);
     const r = runStep(step(), { DEADLINE: value });
-    // The app either honours the value (returns exactly Number(value)) or
-    // silently falls back to SCOUT_RUN_DEADLINE_MS_DEFAULT.
-    const appHonours = appReadDeadlineMs(value) === Number(value);
-    expect(appHonours).toBe(accepted);
-    if (accepted) {
-      expect(r.code).toBe(0);
-      expect(r.out).toMatch(/scout_run_deadline_ms: valid positive integer/);
-    } else {
-      expect(r.code).toBe(1);
-      expect(r.out).toMatch(/::error::scout_run_deadline_ms must be a positive integer/);
-      expectNoValueLeak(r.out, value.length >= 4 ? [value] : []);
+    expect(r.code).toBe(1);
+    const optionsText = `${DEADLINE_CHOICES.join(', ')}, or 'unchanged'`;
+    expect(r.out).toContain(`::error::scout_run_deadline_ms must be one of ${optionsText}`);
+    expect(r.out).not.toMatch(/will be set/);
+    // The error names the options, so the non-leak assertion can only cover
+    // values that are not a substring of that fixed option text (e.g. 60000
+    // is inside 3600000).
+    const trimmed = value.trim();
+    expectNoValueLeak(r.out, trimmed.length >= 4 && !optionsText.includes(trimmed) ? [trimmed] : []);
+  });
+
+  it('invariant: workflow accepts ⇒ app honours, over every value exercised here', () => {
+    for (const value of [...DEADLINE_CHOICES, ...REJECTED.map(([v]) => v)]) {
+      const r = runStep(step(), { DEADLINE: value });
+      if (r.code === 0) {
+        expect(new RegExp(APP_DEADLINE_RE_SRC).test(value)).toBe(true);
+        expect(appReadDeadlineMs(value)).toBe(Number(value));
+      }
     }
   });
 
-  it('the workflow regex is textually the one the app uses in readDeadlineMs, and the default is 300000', () => {
+  it('the workflow still re-checks the app grammar textually as in readDeadlineMs (defence in depth), and the default is 300000', () => {
     expect(APP_DEADLINE_RE_SRC).toBe('^[1-9][0-9]{0,9}$');
     expect(LIFECYCLE_SRC).toMatch(/export const SCOUT_RUN_DEADLINE_MS_DEFAULT = 300_000;/);
     expect(step().run).toMatch(/=~ \^\[1-9\]\[0-9\]\{0,9\}\$/);
     // Bash ERE and JS RegExp agree on this grammar for every case above.
-    for (const [value] of CASES) expect(new RegExp(APP_DEADLINE_RE_SRC).test(value)).toBe(/^[1-9][0-9]{0,9}$/.test(value));
+    for (const value of [...DEADLINE_CHOICES, ...REJECTED.map(([v]) => v)]) {
+      expect(new RegExp(APP_DEADLINE_RE_SRC).test(value)).toBe(/^[1-9][0-9]{0,9}$/.test(value));
+    }
   });
 });
 
@@ -482,10 +588,10 @@ describe('"Validate pilot coach allowlist" step (executed) — modes', () => {
     expectNoValueLeak(r.out);
   });
 
-  it('clear: exit 0 and described as going dark', () => {
+  it('clear: exit 0 and described as an UNSET that goes dark', () => {
     const r = runStep(step(), { ALLOWLIST_MODE: 'clear', COACH_IDS: '' });
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/will set FEATURE_SCOUT_PILOT_COACH_IDS to empty \(pilot surface goes dark/);
+    expect(r.out).toMatch(/will UNSET FEATURE_SCOUT_PILOT_COACH_IDS on Fly \(pilot surface goes dark/);
   });
 
   it('push-from-secret with the secret empty: exit 1 naming the secret and the gh command', () => {
@@ -633,19 +739,64 @@ describe('"Push feature flags to Fly" step (executed with flyctl stubbed, S12B6-
     expect(r.out).toMatch(/Pushing 1 name\(s\): FEATURE_SCOUT_RECONSTRUCT/);
   });
 
-  it('pushes only the deadline when only it is set', () => {
-    const r = runStep(step(), { ...PUSH_ENV_EMPTY, DEADLINE: '120000' });
+  it.each(DEADLINE_CHOICES)('pushes only the deadline (%s) when only it is set', (value) => {
+    const r = runStep(step(), { ...PUSH_ENV_EMPTY, DEADLINE: value });
     expect(r.code).toBe(0);
-    expect(r.flyctlCalls).toEqual([['secrets', 'set', '-a', APP, 'SCOUT_RUN_DEADLINE_MS=120000']]);
+    expect(r.flyctlCalls).toEqual([['secrets', 'set', '-a', APP, `SCOUT_RUN_DEADLINE_MS=${value}`]]);
     expect(r.githubEnv).toEqual(['PUSHED_NAMES=SCOUT_RUN_DEADLINE_MS']);
   });
 
-  it('clear maps to an empty FEATURE_SCOUT_PILOT_COACH_IDS value and touches nothing else', () => {
+  it('S9-B2 C1: clear maps to ONE `flyctl secrets unset` of the literal name, no `secrets set`, records UNSET_NAMES only', () => {
     const r = runStep(step(), { ...PUSH_ENV_EMPTY, ALLOWLIST_MODE: 'clear', COACH_IDS: U1 });
     expect(r.code).toBe(0);
-    expect(r.flyctlCalls).toEqual([['secrets', 'set', '-a', APP, 'FEATURE_SCOUT_PILOT_COACH_IDS=']]);
-    expect(r.githubEnv).toEqual(['PUSHED_NAMES=FEATURE_SCOUT_PILOT_COACH_IDS']);
+    expect(r.flyctlCalls).toEqual([UNSET_ARGV]);
+    expect(r.githubEnv).toEqual(['UNSET_NAMES=FEATURE_SCOUT_PILOT_COACH_IDS']);
+    expect(r.out).toMatch(/Unsetting 1 name\(s\): FEATURE_SCOUT_PILOT_COACH_IDS/);
+    expect(r.out).not.toMatch(/Pushing/);
     expectNoValueLeak(r.out);
+  });
+
+  it('clear + a flag: unset FIRST, then one secrets set without the allowlist name; both env lines recorded in that order', () => {
+    const r = runStep(step(), { ...PUSH_ENV_EMPTY, SCOUT: 'true', DEADLINE: '900000', ALLOWLIST_MODE: 'clear' });
+    expect(r.code).toBe(0);
+    expect(r.flyctlCalls).toEqual([UNSET_ARGV, ['secrets', 'set', '-a', APP, 'FEATURE_SCOUT_INGEST=true', 'SCOUT_RUN_DEADLINE_MS=900000']]);
+    expect(r.githubEnv).toEqual(['UNSET_NAMES=FEATURE_SCOUT_PILOT_COACH_IDS', 'PUSHED_NAMES=FEATURE_SCOUT_INGEST SCOUT_RUN_DEADLINE_MS']);
+    for (const argv of r.flyctlCalls) if (argv[1] === 'set') expect(argv.join(' ')).not.toMatch(/FEATURE_SCOUT_PILOT_COACH_IDS/);
+  });
+
+  it('a failing unset stops the step (bash -e) before any secrets set and records nothing', () => {
+    const r = runStep(step(), { ...PUSH_ENV_EMPTY, SCOUT: 'true', ALLOWLIST_MODE: 'clear' }, { unsetExit: 5 });
+    expect(r.code).toBe(5);
+    expect(r.flyctlCalls).toEqual([UNSET_ARGV]);
+    expect(r.githubEnv).toEqual([]);
+  });
+
+  it('a failing set after a successful unset leaves UNSET_NAMES recorded and PUSHED_NAMES absent (red, truthful)', () => {
+    const r = runStep(step(), { ...PUSH_ENV_EMPTY, SCOUT: 'true', ALLOWLIST_MODE: 'clear' }, { setExit: 7 });
+    expect(r.code).toBe(7);
+    expect(r.flyctlCalls).toHaveLength(2);
+    expect(r.githubEnv).toEqual(['UNSET_NAMES=FEATURE_SCOUT_PILOT_COACH_IDS']);
+  });
+
+  it('the push step never emits `FEATURE_SCOUT_PILOT_COACH_IDS=` (empty value) for clear', () => {
+    expect(step().run).not.toMatch(/FEATURE_SCOUT_PILOT_COACH_IDS="\)/);
+    expect(step().run).not.toMatch(/FEATURE_SCOUT_PILOT_COACH_IDS=\$\{COACH_IDS:-\}/);
+  });
+
+  const OUTSIDE_SETS: Array<[string, Record<string, string>]> = [
+    ['flag empty string', { SCOUT: '' }],
+    ['flag outside the set', { PAIRING: 'yes' }],
+    ['flag case variant', { RECONSTRUCT: 'True' }],
+    ['deadline empty string', { DEADLINE: '' }],
+    ['deadline in app grammar but not a choice option', { DEADLINE: '60000' }],
+    ['deadline padded option', { DEADLINE: '300000 ' }],
+  ];
+  it.each(OUTSIDE_SETS)('S9A2-584-B1 defence in depth: push re-checks the closed sets — %s → exit 1, no flyctl call, nothing recorded', (_label, override) => {
+    const r = runStep(step(), { ...PUSH_ENV_EMPTY, SCOUT: 'true', ...override });
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/::error::.*Nothing was pushed/);
+    expect(r.flyctlCalls).toEqual([]);
+    expect(r.githubEnv).toEqual([]);
   });
 
   it('unchanged omits the allowlist name even when the secret is configured', () => {
@@ -718,13 +869,26 @@ describe('"Push feature flags to Fly" step (executed with flyctl stubbed, S12B6-
     expect(r.flyctlCalls).toHaveLength(1);
     expect(r.githubEnv).toEqual([]);
   });
+
+  it('never calls secrets unset unless pilot_allowlist=clear', () => {
+    for (const mode of ['unchanged', 'push-from-secret']) {
+      const r = runStep(step(), { ...PUSH_ENV_EMPTY, SCOUT: 'true', ALLOWLIST_MODE: mode, COACH_IDS: U1 });
+      expect(r.code).toBe(0);
+      expect(r.flyctlCalls.filter((c) => c[1] === 'unset')).toEqual([]);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
 
 describe('"Verify pushed names are present on Fly" step (executed with flyctl stubbed, S9B-584-B1)', () => {
   const step = () => findStep(STEP.verify);
-  const env = (pushed: string) => ({ APP, FLY_API_TOKEN: 'stub-token', PUSHED_NAMES: pushed });
+  const env = (pushed: string, unset?: string) => ({
+    APP,
+    FLY_API_TOKEN: 'stub-token',
+    PUSHED_NAMES: pushed,
+    ...(unset === undefined ? {} : { UNSET_NAMES: unset }),
+  });
   const OTHER_ROWS = [
     { name: 'DATABASE_URL', status: 'Deployed' },
     { name: 'JWT_SECRET', status: 'Deployed' },
@@ -804,28 +968,105 @@ describe('"Verify pushed names are present on Fly" step (executed with flyctl st
     expect(r.out).not.toMatch(/present on Fly/);
   });
 
-  it('refuses to verify when PUSHED_NAMES is empty or absent', () => {
-    for (const e of [env(''), { APP, FLY_API_TOKEN: 'stub-token' }]) {
+  it('refuses to verify when PUSHED_NAMES and UNSET_NAMES are both empty or absent', () => {
+    for (const e of [env(''), env('', ''), { APP, FLY_API_TOKEN: 'stub-token' }]) {
       const r = runStep(step(), e, { listJson: listJson(OTHER_ROWS) });
       expect(r.code).toBe(1);
-      expect(r.out).toMatch(/::error::PUSHED_NAMES is empty/);
+      expect(r.out).toMatch(/::error::PUSHED_NAMES and UNSET_NAMES are both empty/);
       expect(r.flyctlCalls).toEqual([]);
     }
+  });
+
+  describe('unset names (S9-B2 C1): an unset name must be ABSENT', () => {
+    it('passes when the unset name is absent from the listing, with PUSHED_NAMES absent entirely (clear-only dispatch)', () => {
+      const r = runStep(step(), { APP, FLY_API_TOKEN: 'stub-token', UNSET_NAMES: 'FEATURE_SCOUT_PILOT_COACH_IDS' }, { listJson: listJson(OTHER_ROWS) });
+      expect(r.code).toBe(0);
+      expect(r.flyctlCalls).toEqual([['secrets', 'list', '-a', APP, '--json']]);
+      expect(r.out).toMatch(/^FEATURE_SCOUT_PILOT_COACH_IDS: absent on Fly \(unset confirmed\)$/m);
+      expect(r.out).toMatch(/Every name unset this run \(FEATURE_SCOUT_PILOT_COACH_IDS\) is absent from Fly/);
+      expect(r.out).not.toMatch(/present on Fly/);
+      expect(r.out).not.toMatch(/Every name pushed/);
+      expect(r.out).not.toMatch(/::warning::/);
+      for (const o of OTHER_ROWS) expect(r.out).not.toContain(o.name);
+    });
+
+    it('fails (exit 1) when the unset name is STILL PRESENT — never a false "cleared"', () => {
+      const r = runStep(step(), env('', 'FEATURE_SCOUT_PILOT_COACH_IDS'), {
+        listJson: listJson([...OTHER_ROWS, { name: 'FEATURE_SCOUT_PILOT_COACH_IDS', status: 'Deployed' }]),
+      });
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/^FEATURE_SCOUT_PILOT_COACH_IDS: STILL PRESENT on Fly after unset$/m);
+      expect(r.out).toMatch(/::error::Names unset this run are still present on Fly: FEATURE_SCOUT_PILOT_COACH_IDS$/m);
+      expect(r.out).not.toMatch(/absent from Fly/);
+      expect(r.out).not.toMatch(/d1g3st/);
+    });
+
+    it('still-present is judged by exact name, not prefix/substring', () => {
+      const r = runStep(step(), env('', 'FEATURE_SCOUT_PILOT_COACH_IDS'), {
+        listJson: listJson([{ name: 'FEATURE_SCOUT_PILOT_COACH_IDS_OLD', status: 'Deployed' }, { name: 'XFEATURE_SCOUT_PILOT_COACH_IDS', status: 'Deployed' }]),
+      });
+      expect(r.code).toBe(0);
+      expect(r.out).toMatch(/absent on Fly \(unset confirmed\)/);
+    });
+
+    it('mixed dispatch: set names present AND unset name absent → pass; both summary lines printed, only touched names named', () => {
+      const r = runStep(step(), env('FEATURE_SCOUT_INGEST SCOUT_RUN_DEADLINE_MS', 'FEATURE_SCOUT_PILOT_COACH_IDS'), {
+        listJson: listJson([...OTHER_ROWS, { name: 'FEATURE_SCOUT_INGEST', status: 'Deployed' }, { name: 'SCOUT_RUN_DEADLINE_MS', status: 'Deployed' }]),
+      });
+      expect(r.code).toBe(0);
+      expect(r.out).toMatch(/^FEATURE_SCOUT_INGEST: present on Fly \(status: Deployed\)$/m);
+      expect(r.out).toMatch(/^SCOUT_RUN_DEADLINE_MS: present on Fly \(status: Deployed\)$/m);
+      expect(r.out).toMatch(/^FEATURE_SCOUT_PILOT_COACH_IDS: absent on Fly \(unset confirmed\)$/m);
+      expect(r.out).toMatch(/Every name pushed this run \(FEATURE_SCOUT_INGEST SCOUT_RUN_DEADLINE_MS\) is present on Fly/);
+      expect(r.out).toMatch(/Every name unset this run \(FEATURE_SCOUT_PILOT_COACH_IDS\) is absent from Fly/);
+      for (const o of OTHER_ROWS) expect(r.out).not.toContain(o.name);
+    });
+
+    it('mixed dispatch: a missing set name AND a still-present unset name both fail, both reported', () => {
+      const r = runStep(step(), env('FEATURE_SCOUT_INGEST', 'FEATURE_SCOUT_PILOT_COACH_IDS'), {
+        listJson: listJson([...OTHER_ROWS, { name: 'FEATURE_SCOUT_PILOT_COACH_IDS', status: 'Deployed' }]),
+      });
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/FEATURE_SCOUT_INGEST: MISSING on Fly/);
+      expect(r.out).toMatch(/FEATURE_SCOUT_PILOT_COACH_IDS: STILL PRESENT on Fly after unset/);
+      expect(r.out).toMatch(/::error::Names pushed this run did not appear on Fly after set: FEATURE_SCOUT_INGEST/);
+    });
+
+    it('a non-array body is rejected loudly for unset verification too, never a false "absent"', () => {
+      const r = runStep(step(), env('', 'FEATURE_SCOUT_PILOT_COACH_IDS'), { listJson: 'not json' });
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/::error::flyctl secrets list --json did not return a JSON array/);
+      expect(r.out).not.toMatch(/absent/);
+    });
   });
 });
 
 // ---------------------------------------------------------------------------
 
 describe('end-to-end step sequence with flyctl stubbed (every run: block, runner shell semantics)', () => {
-  function runSequence(inputs: { app?: string; confirm?: string; scout?: string; reconstruct?: string; pairing?: string; deadline?: string; allowlist?: string }, secret: string) {
+  const FULL_LISTING = [
+    { name: 'FEATURE_SCOUT_INGEST', status: 'Deployed' },
+    { name: 'FEATURE_SCOUT_RECONSTRUCT', status: 'Deployed' },
+    { name: 'FEATURE_EXTENSION_PAIRING', status: 'Deployed' },
+    { name: 'SCOUT_RUN_DEADLINE_MS', status: 'Deployed' },
+    { name: 'FEATURE_SCOUT_PILOT_COACH_IDS', status: 'Deployed' },
+  ];
+
+  // Inputs default to each choice's YAML default (confirm is forced to SET
+  // unless a test overrides it, so the sequence gets past the confirm step).
+  function runSequence(
+    inputs: { app?: string; confirm?: string; scout?: string; reconstruct?: string; pairing?: string; deadline?: string; allowlist?: string },
+    secret: string,
+    listing: Array<{ name: string; status?: string }> = FULL_LISTING,
+  ) {
     const steps = loadJob().steps!.filter((s) => s.run);
     const inputEnv = {
       APP: inputs.app ?? APP,
       CONFIRM: inputs.confirm ?? 'SET',
-      SCOUT: inputs.scout ?? '',
-      RECONSTRUCT: inputs.reconstruct ?? '',
-      PAIRING: inputs.pairing ?? '',
-      DEADLINE: inputs.deadline ?? '',
+      SCOUT: inputs.scout ?? 'unchanged',
+      RECONSTRUCT: inputs.reconstruct ?? 'unchanged',
+      PAIRING: inputs.pairing ?? 'unchanged',
+      DEADLINE: inputs.deadline ?? 'unchanged',
       ALLOWLIST_MODE: inputs.allowlist ?? 'unchanged',
       COACH_IDS: secret,
       FLY_API_TOKEN: 'stub-token',
@@ -836,15 +1077,7 @@ describe('end-to-end step sequence with flyctl stubbed (every run: block, runner
       // Only the env: keys the step declares are visible to it (plus GITHUB_ENV carry-over), as on the runner.
       const visible: Record<string, string> = {};
       for (const k of Object.keys(st.env ?? {})) visible[k] = (inputEnv as Record<string, string>)[k] ?? '';
-      const r = runStep(st, { ...carried, ...visible }, {
-        listJson: listJson([
-          { name: 'FEATURE_SCOUT_INGEST', status: 'Deployed' },
-          { name: 'FEATURE_SCOUT_RECONSTRUCT', status: 'Deployed' },
-          { name: 'FEATURE_EXTENSION_PAIRING', status: 'Deployed' },
-          { name: 'SCOUT_RUN_DEADLINE_MS', status: 'Deployed' },
-          { name: 'FEATURE_SCOUT_PILOT_COACH_IDS', status: 'Deployed' },
-        ]),
-      });
+      const r = runStep(st, { ...carried, ...visible }, { listJson: listJson(listing) });
       results.push({ name: st.name ?? '?', r });
       for (const line of r.githubEnv) {
         const i = line.indexOf('=');
@@ -855,13 +1088,42 @@ describe('end-to-end step sequence with flyctl stubbed (every run: block, runner
     return results;
   }
 
-  it('happy path: allowlist from secret + deadline → every step exits 0, exactly one secrets set with both names, values never printed', () => {
-    const res = runSequence({ allowlist: 'push-from-secret', deadline: '240000' }, `${U1},${U2}`);
+  it('happy path: allowlist from secret + deadline → every step exits 0, exactly one secrets set with both names, no unset, values never printed', () => {
+    const res = runSequence({ allowlist: 'push-from-secret', deadline: '900000' }, `${U1},${U2}`);
     expect(res.map((x) => x.name)).toEqual(Object.values(STEP));
     for (const x of res) expect(x.r.code).toBe(0);
-    const sets = res.flatMap((x) => x.r.flyctlCalls).filter((c) => c[1] === 'set');
-    expect(sets).toEqual([['secrets', 'set', '-a', APP, 'SCOUT_RUN_DEADLINE_MS=240000', `FEATURE_SCOUT_PILOT_COACH_IDS=${U1},${U2}`]]);
+    const mutations = res.flatMap((x) => x.r.flyctlCalls).filter((c) => c[1] !== 'list');
+    expect(mutations).toEqual([['secrets', 'set', '-a', APP, 'SCOUT_RUN_DEADLINE_MS=900000', `FEATURE_SCOUT_PILOT_COACH_IDS=${U1},${U2}`]]);
     expectNoValueLeak(res.map((x) => x.r.out).join('\n'));
+  });
+
+  it('the default dispatch (every choice at its default, confirm=no) stops at the confirm step: nothing validated, nothing called', () => {
+    const res = runSequence({ confirm: 'no' }, U1);
+    expect(res.map((x) => x.name)).toEqual([STEP.target, STEP.confirm]);
+    expect(res[1].r.code).toBe(1);
+    expect(res.flatMap((x) => x.r.flyctlCalls)).toEqual([]);
+  });
+
+  it('clear + a flag (S9-B2 C1): unset runs before set; verify passes only because the unset name is ABSENT from the listing', () => {
+    const listingWithoutAllowlist = FULL_LISTING.filter((r) => r.name !== 'FEATURE_SCOUT_PILOT_COACH_IDS');
+    const res = runSequence({ allowlist: 'clear', scout: 'false' }, U1, listingWithoutAllowlist);
+    expect(res.map((x) => x.name)).toEqual(Object.values(STEP));
+    for (const x of res) expect(x.r.code).toBe(0);
+    const mutations = res.flatMap((x) => x.r.flyctlCalls).filter((c) => c[1] !== 'list');
+    expect(mutations).toEqual([UNSET_ARGV, ['secrets', 'set', '-a', APP, 'FEATURE_SCOUT_INGEST=false']]);
+    const verify = res[res.length - 1].r.out;
+    expect(verify).toMatch(/FEATURE_SCOUT_PILOT_COACH_IDS: absent on Fly \(unset confirmed\)/);
+    expect(verify).toMatch(/FEATURE_SCOUT_INGEST: present on Fly/);
+    expectNoValueLeak(res.map((x) => x.r.out).join('\n'));
+  });
+
+  it('clear where Fly still lists the name afterwards: every step up to verify passes, verify fails — never a false "cleared"', () => {
+    const res = runSequence({ allowlist: 'clear' }, U1, FULL_LISTING);
+    expect(res.map((x) => x.name)).toEqual(Object.values(STEP));
+    expect(res[res.length - 1].r.code).toBe(1);
+    expect(res[res.length - 1].r.out).toMatch(/::error::Names unset this run are still present on Fly: FEATURE_SCOUT_PILOT_COACH_IDS/);
+    const mutations = res.flatMap((x) => x.r.flyctlCalls).filter((c) => c[1] !== 'list');
+    expect(mutations).toEqual([UNSET_ARGV]);
   });
 
   it('a value the app parser would reject stops at the allowlist validator; flyctl is never invoked', () => {
@@ -884,9 +1146,23 @@ describe('end-to-end step sequence with flyctl stubbed (every run: block, runner
     expect(res.flatMap((x) => x.r.flyctlCalls)).toEqual([]);
   });
 
-  it('a deadline the app would ignore stops at the deadline validator', () => {
-    const res = runSequence({ deadline: '0' }, '');
+  it.each(['0', '60000', ''])('a deadline outside the closed choices (%j) stops at the deadline validator, even one the app would honour', (deadline) => {
+    const res = runSequence({ deadline }, '');
     expect(res[res.length - 1].name).toBe(STEP.deadline);
+    expect(res[res.length - 1].r.code).toBe(1);
+    expect(res.flatMap((x) => x.r.flyctlCalls)).toEqual([]);
+  });
+
+  const OUTSIDE_CHOICES: Array<[string, Parameters<typeof runSequence>[0], string]> = [
+    ['flag', { scout: 'yes' }, STEP.flags],
+    ['flag (empty)', { pairing: '' }, STEP.flags],
+    ['app', { app: '' }, STEP.target],
+    ['confirm (empty)', { confirm: '' }, STEP.confirm],
+  ];
+  it.each(OUTSIDE_CHOICES)('a %s value outside its closed choices stops at its validator with no flyctl call', (_label, inputs, stopAt) => {
+    const res = runSequence(inputs, '');
+    expect(res[res.length - 1].name).toBe(stopAt);
+    expect(res[res.length - 1].r.code).toBe(1);
     expect(res.flatMap((x) => x.r.flyctlCalls)).toEqual([]);
   });
 
