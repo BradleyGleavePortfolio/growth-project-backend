@@ -27,8 +27,8 @@ type ValidationFailure = { valid: false; reason: string };
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 // Unambiguous alphabet — no 0/O, 1/I/L — so codes read unambiguously over the
-// phone or in handwriting. 32 chars × 6 = 2^30 combinations, plenty for the
-// foreseeable code volume.
+// phone or in handwriting. 31 chars × 6 positions = 31^6 ≈ 8.9×10^8
+// combinations, plenty for the foreseeable code volume.
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
 const CODE_PREFIX = 'GP-';
@@ -58,6 +58,28 @@ export function generateInviteCodeCandidate(): string {
     out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return out;
+}
+
+// Clinic C13 fix round — shared with AuthService.selectRole and the C03 attach
+// error table (#599 folds this into INVITE_ATTACH_ERROR on rebase; keep the
+// string identical in both PRs). Returned as `{ code, message }` (ErrorEnvelope
+// shape) so mobile can branch without parsing prose.
+export const INVITE_ATTACH_COACH_CANNOT_REDEEM = 'coach_cannot_redeem' as const;
+
+/** Roles that own a tenant (or a seat in one) and must never be re-parented
+ *  or demoted by a client invite code / storefront purchase. */
+export const COACH_LIKE_ROLES: ReadonlySet<string> = new Set(['coach', 'sub_coach', 'owner']);
+
+export function isCoachLikeRole(role: string | null | undefined): boolean {
+  return !!role && COACH_LIKE_ROLES.has(role);
+}
+
+export function coachCannotRedeemBody(): { code: typeof INVITE_ATTACH_COACH_CANNOT_REDEEM; message: string } {
+  return {
+    code: INVITE_ATTACH_COACH_CANNOT_REDEEM,
+    message:
+      'Coach accounts cannot redeem a client invite code. Your role was fixed when the account was created; ask the platform owner if it needs to change.',
+  };
 }
 
 @Injectable()
@@ -545,6 +567,14 @@ export class InviteCodesService {
   // initial OAuth roundtrip) and then enters the coach's invite code
   // from the post-OAuth screen. Atomic + idempotent — also used by the
   // `signup-with-code` flow once the user record exists.
+  //
+  // Clinic C13 fix round (audits: Opus B1 / Grok A2): a coach-like account
+  // (coach, sub_coach, owner) is REFUSED with a structured code instead of
+  // being silently rewritten to `role:'student'`. Redeeming a code used to
+  // demote a head coach, orphan their roster (User.coach_id of every client
+  // still pointed at them) and leave their CoachSubscription + invite code
+  // live. The role is fixed at account creation (R-ROLE-CHOICE-1); a change
+  // is an OWNER action, never a side effect of typing a code.
   async attachUserToCoachByCode(userId: string, code: string) {
     // Resolve to a coach_id, regardless of whether the code is a
     // CoachProfile default code or a legacy InviteCode row.
@@ -575,6 +605,12 @@ export class InviteCodesService {
     if (!me) throw new NotFoundException('User not found');
     if (me.role === 'owner') {
       throw new ForbiddenException('Owners cannot redeem a coach invite');
+    }
+    if (isCoachLikeRole(me.role)) {
+      this.logger.warn(
+        `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (coach_cannot_redeem)`,
+      );
+      throw new ForbiddenException(coachCannotRedeemBody());
     }
 
     // Atomic linkage + (if applicable) used_count bump.

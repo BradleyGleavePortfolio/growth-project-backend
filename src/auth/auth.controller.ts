@@ -172,13 +172,21 @@ export class AuthController {
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
-  async googleAuth(@Body() body: GoogleAuthDto, @Request() req: Record<string, any>) {
+  async googleAuth(@Body() body: GoogleAuthDto, @Request() req: AuditableRequest) {
     const result = await this.authService.googleAuth(
       body.token,
       body.invite_code,
       body.intended_role,
+      // Fix round (Opus C5 / Grok B1): the signup-time role audit row needs
+      // the request IP / user-agent on the Google path too.
+      auditContext(req),
     );
-    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    // Grok B5: only a RETURNING user's success clears the login windows. A
+    // brand-new account is not a retried login, and resetting on it made
+    // account minting unbounded per IP.
+    if (!result.is_new_user) {
+      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    }
     return result;
   }
 
@@ -211,7 +219,9 @@ export class AuthController {
       body.raw_nonce,
       body.intended_role,
     );
-    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    if (!result.is_new_user) {
+      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    }
     return result;
   }
 

@@ -586,6 +586,21 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000].',
   },
   {
+    name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
+    tier: 'optional',
+    reason: 'Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500].',
+  },
+  {
+    name: 'SIGNUP_ROLE_CHOICE_ENABLED',
+    tier: 'optional',
+    reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
+  },
+  {
+    name: 'FREE_COACH_AI_MONTHLY_CAP_USD',
+    tier: 'optional',
+    reason: "Clinic C13 — monthly ACTUAL AI spend ceiling (USD) for coaches on CoachSubscription.tier='free' (self-serve signups). Default 5. Can only lower the envelope relative to COACH_AI_MAX_ACTUAL_CENTS, never raise it; pro/enterprise and legacy coaches without a subscription row keep the global ceiling.",
+  },
+  {
     name: 'AUTH_PWD_RESET_PER_HOUR',
     tier: 'optional',
     reason: 'Phase 10 — per-IP password-reset email requests per hour (POST /auth/forgot-password). Defaults to 3; clamped to [1, 1000].',

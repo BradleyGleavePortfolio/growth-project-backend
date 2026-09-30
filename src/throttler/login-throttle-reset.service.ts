@@ -1,7 +1,23 @@
 import { Injectable, Optional, Logger } from '@nestjs/common';
-import { InjectThrottlerStorage } from '@nestjs/throttler';
+import { InjectThrottlerStorage, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import { THROTTLER_NAMES } from './throttler.config';
+
+// Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
+// minted through /auth/google and /auth/apple. Those routes carry login
+// throttles that a successful exchange used to reset, so coach minting was
+// unbounded per IP. Default matches /auth/register's AUTH_SIGNUP (5/hour).
+// Clamped to [1, 500]. Client creates are NOT counted here on purpose: clinic
+// QR intake (C03) signs many clients up behind one NAT.
+export const AUTH_OAUTH_COACH_SIGNUP_PER_HOUR_DEFAULT = 5;
+export function resolveOAuthCoachSignupPerHour(): number {
+  const raw = process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR;
+  if (!raw) return AUTH_OAUTH_COACH_SIGNUP_PER_HOUR_DEFAULT;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return AUTH_OAUTH_COACH_SIGNUP_PER_HOUR_DEFAULT;
+  return Math.min(n, 500);
+}
+const OAUTH_COACH_SIGNUP_TTL_MS = 3_600_000;
 
 /**
  * LoginThrottleResetService — clears the per-IP auth-login rate-limit
@@ -37,6 +53,42 @@ export class LoginThrottleResetService {
     @InjectThrottlerStorage()
     private readonly storage: ThrottlerStorage | undefined,
   ) {}
+
+  /**
+   * Consume one per-IP slot for an OAuth-minted coach account. Throws the
+   * throttler's own 429 when the hourly ceiling is exceeded. Never reset by
+   * a successful login (unlike the login windows above). No storage (unit
+   * tests / throttling disabled) means no limit, same as the guard itself.
+   */
+  async consumeOAuthCoachSignupSlot(ip: string | null | undefined): Promise<void> {
+    if (!this.storage || !ip) return;
+    const limit = resolveOAuthCoachSignupPerHour();
+    let totalHits = 0;
+    try {
+      const rec = await this.storage.increment(
+        `oauth-coach-signup:ip:${ip}`,
+        OAUTH_COACH_SIGNUP_TTL_MS,
+        limit,
+        0,
+        THROTTLER_NAMES.AUTH_SIGNUP,
+      );
+      totalHits = rec.totalHits;
+    } catch (err) {
+      // Storage outage: fail open (the login throttles still apply) but say so.
+      this.logger.warn(
+        `Could not count oauth coach signup for ip:${ip}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+    if (totalHits > limit) {
+      this.logger.warn(
+        `oauth coach signup ceiling hit for ip:${ip} (${totalHits}/${limit} per hour)`,
+      );
+      throw new ThrottlerException();
+    }
+  }
 
   /**
    * Reset both auth-login windows for the given IP address.

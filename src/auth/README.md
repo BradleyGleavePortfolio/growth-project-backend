@@ -144,27 +144,85 @@ same shape regardless of which constraint failed.
 
 ### Signup-time role choice (C13, owner direction 2026-09-30)
 
-`/auth/signup-policy` advertises `role_choice: true`,
+`/auth/signup-policy` advertises `role_choice: <bool>`,
 `role_choice_field: 'intended_role'` and `role_choice_values: ['client','coach']`.
 The optional body field `intended_role` (`client` default | `coach`) is
 accepted by `/auth/register`, `/auth/google` and `/auth/apple`, and is
 honoured **only** on the branch that inserts a brand-new `User` row
-(`AuthService.createSignupUser`). Rules that keep the escalation hole closed:
+(`AuthService.createSignupUser`). Rules that keep the escalation hole closed
+(tightened in the PR #597 fix round after two independent audits):
 
-- Existing accounts are never changed by `intended_role` (google/apple
-  sign-ins for a known `supabase_id` or a linked email ignore it).
-- `coach` runs one transaction: `User.role='coach'`, `CoachSubscription`
-  upsert `{tier:'free', status:'active', update:{}}` (same as `becomeCoach`;
-  never overwrites a row) and a `CoachProfile` with a fresh `GP-` invite code.
-  Then a `user.role_changed` audit row with actor = the new user and
-  `metadata.via='signup_role_choice'`.
+- **Kill switch** `SIGNUP_ROLE_CHOICE_ENABLED` (default `true`). Any of
+  `false|0|off` makes `intended_role: 'coach'` a plain client signup on
+  every endpoint and flips `signup-policy.role_choice` to `false`; the
+  contradiction check below is also disabled (nothing to contradict).
+- Existing accounts are never changed by `intended_role`: google/apple
+  sign-ins for a known `supabase_id` or a linked email ignore it. Emails
+  are canonicalised (`normalizeEmail`: NFKC + trim + lowercase) and the
+  duplicate / link lookup is **case-insensitive**, so `Jane@Example.com`
+  and `jane@example.com` are the same account. The stored and returned
+  `email` is the canonical form.
+- **The first OAuth call fixes the role permanently.** A Google/Apple first
+  contact with `intended_role: 'coach'` creates a coach; without it, a
+  client. There is no self-service path between the two afterwards
+  (`/auth/become-coach` is hard-gated, `/auth/select-role` refuses
+  coaches); the only recovery is an OWNER `promote`/demote in the admin
+  surface. Mobile must therefore ask the question **before** the OAuth
+  round-trip.
+- `coach` runs one transaction: `User.role='coach', coach_id=null`
+  (forced), `CoachSubscription` upsert `{tier:'free', status:'active',
+  update:{}}` (same as `becomeCoach`; never overwrites a row), a
+  `CoachProfile` with a fresh `GP-` invite code, **and** the
+  `user.role_changed` audit row (`AuditService.writeTx`, actor = target,
+  `actor_role = null`, `metadata.via='signup_role_choice'`, request IP /
+  user-agent on every provider). The audit write is not best-effort here:
+  if it fails the whole signup fails and rolls back. Only an
+  `invite_code` P2002 (a race on the pre-checked code) is retried, with a
+  fresh code, up to 3 attempts; any other error propagates.
+- `/auth/register` picks the invite code **before** Supabase `signUp`,
+  treats Supabase's obfuscated "already exists" reply (`identities: []`)
+  as `409 Email already registered`, and if the local transaction fails
+  after `signUp` succeeded it deletes the orphaned Supabase auth user via
+  the admin API (logged by Supabase id only — never email/password) and
+  rethrows the original error, so a retry is clean.
+- Google **create or link** requires a verified email
+  (`email_confirmed_at` or the Google identity's `email_verified`); an
+  unverified first contact is `401`. Returning users matched by
+  `supabase_id` are unaffected. Apple identity tokens are verified locally
+  (`AppleTokenVerifierService`) and Apple only issues verified addresses.
+- Each OAuth-minted **coach** consumes a per-IP slot
+  (`AUTH_OAUTH_COACH_SIGNUP_PER_HOUR`, default 5/h, key
+  `oauth-coach-signup:ip:<ip>`, 429 on overflow); client intake through QR
+  codes is not counted. A successful OAuth call that **created** an
+  account no longer resets the login-throttle counters — only a
+  returning user's success does.
+- A coach can never be demoted or re-parented by a client invite code.
+  `InviteCodesService.attachUserToCoachByCode` refuses `coach`,
+  `sub_coach` (and, as before, `owner`) with
+  `403 { code: 'coach_cannot_redeem' }` (exported as
+  `INVITE_ATTACH_COACH_CANNOT_REDEEM`); `/auth/select-role` returns the
+  same body for coach-like callers; google/apple skip the attach for
+  coach-like users and return `invite_attached: false`. C03 (#599) is
+  expected to fold this code into its `INVITE_ATTACH_ERROR` map — the
+  guard itself lives here.
 - `/auth/signup-with-code` always creates a client; `intended_role: 'coach'`
-  is refused with `400 { error: 'intended_role_not_allowed_with_invite_code' }`.
-  The same code is returned when google/apple receive both `invite_code`
+  is refused with `400 { error: 'intended_role_not_allowed_with_invite_code' }`
+  when a code is present and `400 { error:
+  'coach_signup_requires_register_endpoint' }` when it is not. The first
+  code is also returned when google/apple receive both `invite_code`
   and `intended_role: 'coach'` (checked before any provider round-trip).
-- `/auth/become-coach` and `/auth/select-role` are unchanged and still refuse.
+- `/auth/become-coach` and `/auth/select-role` are unchanged for students.
 - Email verification is unchanged (`register` still returns
-  `requires_verification: true`; the response additionally carries `role`).
+  `requires_verification: true`; the response additionally carries
+  `role`). A coach therefore exists before the email is verified. There is
+  currently **no** verified-email check in front of coach-only money /
+  payout actions (Stripe Connect onboarding, storefront publishing) — that
+  is a documented follow-up, not part of this change.
+- Free-tier coaches (any account whose `CoachSubscription.tier` is `free`)
+  get `FREE_COACH_AI_MONTHLY_CAP_USD` (default **$5**) of actual AI spend
+  per month instead of the global `COACH_AI_MAX_ACTUAL_CENTS` ($40); the
+  setting is clamped to the global cap and can only reduce spend. See
+  `src/ai-credits/`.
 
 `JWT_SECRET` is reserved and currently unused — verification is JWKS-based.
 
