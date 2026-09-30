@@ -17,11 +17,22 @@
  *      are owner-only, so the coach never sees the parent row. That is the pre-existing production
  *      posture (the parents' RLS came from the out-of-band file); S8-D3 states it in-tree and this
  *      matrix asserts it rather than the policy text's intent.)
- *   C. The owner role's stated exception: it reaches person-owned rows on ExerciseSet, HabitLog,
- *      CheckIn and the snapshot (existing FOR ALL owner branch, unchanged) and NOT on
- *      WorkoutSession, WeightLog, Habit (no owner branch exists).
+ *   C. NO owner exception for person-owned rows (fix round 3, S4-A-587-593-01): the owner branch
+ *      (app.is_owner(), a predicate over two session GUCs that an `anon` / `authenticated` SQL
+ *      session can set_config() itself) no longer reaches a person-owned row on CheckIn, ExerciseSet,
+ *      HabitLog or the snapshot — `check_in_owner_all` carries "person_id" IS NULL and the three
+ *      child owner branches are ANDed with the SECURITY DEFINER parent-ownership helpers
+ *      app.workout_session_is_user_owned / app.habit_is_user_owned / app.assignment_is_user_owned.
+ *      Person-owned rows are service_role-only on all eight tables for every RLS-bound principal.
+ *      The owner branch is unchanged for USER-owned rows (asserted: the owner cells of B still pass,
+ *      and a backend-class owner reads user-owned rows on the four tables). Before this round the
+ *      owner-positive cells asserted the exception; they now assert the denial. The block
+ *      "S4-A-587-593-01" below is the live negative matrix: student JWT + forged owner GUC, another
+ *      coach + forged owner GUC, anon + forged owner GUC, the genuine JWT owner, and a backend-class
+ *      owner, for SELECT / INSERT / UPDATE / DELETE on each affected table. Every one of those
+ *      person-owned cells was ADMITTED at 3e243750 / 798208b7 (the forged owner saw and could write the rows).
  *   D. No non-bypass principal can flip a row to person-owned or insert a person-owned row
- *      (WITH CHECK), except the owner on CheckIn through its unchanged owner branch (stated).
+ *      (WITH CHECK) — the owner included.
  *   E. As service_role-equivalent (BYPASSRLS): the XOR CHECKs, the CheckIn coach CHECK, the
  *      composite tenant FK (a person-owned check-in naming another coach fails the FK, not a
  *      policy), the person-owned one-per-day partial unique, the PersonLink active uniques and the
@@ -73,9 +84,9 @@
  *     block run for both. On the stacked (D8) head the sub-coach cells assert the D8 rule: SC with
  *     an OPEN delegation writes its own plan for S1; SC on the CLOSED delegation (S2) and SCX
  *     (no delegation) are DENIED — the two cells #587 recorded as the pre-D8 gap.
- *   - The helper's EXECUTE ACL is captured BEFORE the harness's blanket
- *     `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app`, so the ACL assertion proves the MIGRATION's
- *     REVOKE/GRANT, not the harness's.
+ *   - The helper's EXECUTE ACL is captured BEFORE any harness grant, so the ACL assertion proves the
+ *     MIGRATION's REVOKE/GRANT, not the harness's. (Fix round 3, S4B-C03: the harness no longer
+ *     blanket-grants the API roles at all — see CHAIN_ACL_EXPECTED / ANON_HARNESS_SUPPLEMENT.)
  *
  * Connection: S8D3_RLS_TEST_DATABASE_URL > TEST_DATABASE_URL. Skipped when neither is set (the
  * default jest lane never selects this file); HARD-FAILS when set but unreachable.
@@ -110,6 +121,37 @@ type Principal = {
 };
 
 type Outcome = { ok: true; count: number } | { ok: false; sqlstate: string; message: string };
+
+/**
+ * S4B-C02: SQLSTATE 42501 is `insufficient_privilege` — PostgreSQL raises it for a POLICY refusal
+ * ("new row violates row-level security policy for table ..."), for a missing TABLE privilege
+ * ("permission denied for table ...") and for a missing FUNCTION privilege ("permission denied for
+ * function ..."). A cell that means "the policy refused" must match the policy text, or a
+ * harness/ACL accident (a helper the role cannot execute) would pass as a tenancy denial. The three
+ * matchers below are used everywhere a refusal is asserted; no cell accepts a bare 42501.
+ */
+const POLICY_DENY = {
+  ok: false,
+  sqlstate: '42501',
+  message: expect.stringMatching(/row-level security policy/),
+};
+const TABLE_PRIVILEGE_DENY = {
+  ok: false,
+  sqlstate: '42501',
+  message: expect.stringMatching(/permission denied for table/),
+};
+const FUNCTION_PRIVILEGE_DENY = {
+  ok: false,
+  sqlstate: '42501',
+  message: expect.stringMatching(/permission denied for function/),
+};
+/** "Denied" for an UPDATE: the row is invisible under USING (0 rows) or the new row fails WITH CHECK (policy 42501). */
+function isPolicyDenied(out: Outcome): boolean {
+  return (
+    (out.ok && out.count === 0) ||
+    (!out.ok && out.sqlstate === '42501' && /row-level security policy/.test(out.message))
+  );
+}
 
 function sqlstate(e: unknown): string {
   const err = e as { meta?: { code?: string }; message?: string; code?: string };
@@ -215,10 +257,39 @@ const id = (s: string) => `${RUN}-${s}`;
 const BACKEND_ROLE = `${RUN.replace(/-/g, '_')}_backend`;
 /**
  * D8 (R593-c7B-05): EXECUTE privileges on the D8 functions exactly as the MIGRATION left them, read
- * BEFORE the harness's blanket `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app` below. The ACL assertions
+ * BEFORE any harness grant (see the beforeAll; S4B-C03). The ACL assertions
  * in the D8 block read this, so they prove the migration's GRANT/REVOKE, not the harness's.
  */
 const migrationAcl: Record<string, Record<string, boolean>> = {};
+/**
+ * S4B-C03: the `app` functions the policies on the eight tables (and the D8 policy) CALL for the
+ * API roles, with the EXECUTE ACL the chain must leave for `anon` / `authenticated`. Captured into
+ * migrationAcl BEFORE any harness grant and asserted in the "chain ACL" cell below, so a future
+ * migration that revokes one of them is caught here instead of being papered over by a harness grant.
+ *   - app.current_user_id(): anon needs EXECUTE even though app.rls_actor_id() never TAKES the GUC
+ *     branch for anon — PostgreSQL checks EXECUTE on every function named in an expression at
+ *     expression init (ExecInitFunc), un-taken CASE branches included. 20260704000000 (RLS-01) L69
+ *     revoked it from anon; 20261212000000 L463 re-granted it. Without that re-grant EVERY policy
+ *     that names app.rls_actor_id() (ClientWorkoutAssignment) would fail for anon with a FUNCTION
+ *     42501, not a policy decision.
+ *   - app.is_owner(), app.current_user_role(), app.is_current_coach_of(text): RLS-01 deliberately
+ *     REVOKED these from anon (unauthenticated sessions have no legitimate reason to evaluate the
+ *     backend GUCs). On the chain as deployed, an anon session touching a table whose policies name
+ *     them therefore fails CLOSED with a function-privilege 42501 before any row is tested. The
+ *     harness grants exactly these three to anon (see beforeAll) so the anon matrix cells prove that
+ *     the POLICY denies anon as well (defence in depth); the assertion below records that the chain
+ *     itself still withholds them, so the supplement stays visible and a future grant is noticed.
+ */
+const CHAIN_ACL_EXPECTED: Record<string, { anon: boolean; authenticated: boolean }> = {
+  'auth.uid()': { anon: true, authenticated: true },
+  'app.current_user_id()': { anon: true, authenticated: true },
+  'app.is_owner()': { anon: false, authenticated: true },
+  'app.current_user_role()': { anon: false, authenticated: true },
+  'app.is_current_coach_of(text)': { anon: false, authenticated: true },
+  'app.is_subcoach_of(text)': { anon: true, authenticated: true },
+};
+/** The RLS-01 revocations the harness supplements for anon (and ONLY these; see CHAIN_ACL_EXPECTED). */
+const ANON_HARNESS_SUPPLEMENT = ['app.is_owner()', 'app.current_user_role()', 'app.is_current_coach_of(text)'];
 const D8_FUNCTIONS = [
   'app.rls_principal()',
   'app.rls_actor_id()',
@@ -300,6 +371,16 @@ const ROWS = {
   },
   snap: { user: id('snap-user'), person: id('snap-person') },
 };
+/**
+ * S4-A-587-593-01 (fix round 3): the three SECURITY DEFINER parent-ownership helpers 20270125000000
+ * adds so the child owner branches can be fail-closed on a person-owned parent. One id in, one fact out
+ * ("does a USER-owned parent with this id exist"); EXECUTE for the roles the policies run under.
+ */
+const S4_HELPERS: Array<[fn: string, table: string, rows: { user: string; person: string }]> = [
+  ['app.workout_session_is_user_owned(text)', 'WorkoutSession', ROWS.ws],
+  ['app.habit_is_user_owned(text)', 'Habit', ROWS.habit],
+  ['app.assignment_is_user_owned(text)', 'ClientWorkoutAssignment', ROWS.cwa],
+];
 
 const P: Record<string, Principal> = {
   anon: { label: 'anon (no principal)', role: 'anon' },
@@ -383,7 +464,6 @@ type TableCase = {
 };
 
 const NONE: string[] = [];
-const OWNER = ['owner'];
 
 const TABLES: TableCase[] = [
   {
@@ -400,11 +480,12 @@ const TABLES: TableCase[] = [
     table: 'ExerciseSet',
     rows: ROWS.es,
     set: `SET "notes" = 'x'`,
-    // coach branch shadowed by WorkoutSession's owner-only policy (see header, B).
+    // coach branch shadowed by WorkoutSession's owner-only policy (see header, B). Owner branch:
+    // user-owned sessions only (app.workout_session_is_user_owned; S4-A-587-593-01).
     userAllow: { select: ['s1', 'owner'], update: ['s1', 'owner'], delete: ['s1', 'owner'] },
-    personAllow: { select: OWNER, update: OWNER, delete: OWNER },
+    personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."ExerciseSet" ("id","workout_id","exercise_name","muscle_group","sets_completed","reps_per_set","weight_per_set") VALUES (${lit(id('es-new'))}, ${lit(ROWS.ws.person)}, 'e', 'chest', 1, ARRAY[1], ARRAY[1.0::double precision])`,
-    insertPersonAllow: OWNER,
+    insertPersonAllow: NONE,
   },
   {
     table: 'WeightLog',
@@ -429,25 +510,27 @@ const TABLES: TableCase[] = [
     table: 'HabitLog',
     rows: ROWS.hl,
     set: `SET "value" = 2`,
-    // coach branch shadowed by Habit's owner-only policy (see header, B).
+    // coach branch shadowed by Habit's owner-only policy (see header, B). Owner branch: user-owned
+    // habits only (app.habit_is_user_owned; S4-A-587-593-01).
     userAllow: { select: ['s1', 'owner'], update: ['s1', 'owner'], delete: ['s1', 'owner'] },
-    personAllow: { select: OWNER, update: OWNER, delete: OWNER },
+    personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."HabitLog" ("id","habit_id","date") VALUES (${lit(id('hl-new'))}, ${lit(ROWS.habit.person)}, DATE '2024-01-03')`,
-    insertPersonAllow: OWNER,
+    insertPersonAllow: NONE,
   },
   {
     table: 'CheckIn',
     rows: ROWS.ci,
     set: `SET "notes" = 'x'`,
-    // owner_all; client_all; coach_select (coach_id = A); coach_update (coach_id = A AND current coach of S1).
+    // owner_all (user-owned rows only, S4-A-587-593-01); client_all; coach_select (coach_id = A);
+    // coach_update (coach_id = A AND current coach of S1).
     userAllow: {
       select: ['s1', 'coachA', 'owner'],
       update: ['s1', 'coachA', 'owner'],
       delete: ['s1', 'owner'],
     },
-    personAllow: { select: OWNER, update: OWNER, delete: OWNER },
+    personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."CheckIn" ("id","person_id","coach_id","date","soreness") VALUES (${lit(id('ci-new'))}, ${lit(PERSON)}, ${lit(users.coachA.id)}, DATE '2024-01-03', 1)`,
-    insertPersonAllow: OWNER,
+    insertPersonAllow: NONE,
   },
   {
     table: 'ClientWorkoutAssignment',
@@ -468,15 +551,16 @@ const TABLES: TableCase[] = [
     // is itself RLS-filtered for the invoking role, and `assignment_coach_manage` (pre-D8 and D8
     // alike) requires assigned_by_coach_id = the actor — so for a row assigned by coach A, SC sees NO
     // parent row and the branch is unreachable. SC reaches a snapshot only under an assignment SC
-    // itself wrote. Both sub-coaches: denied here.
+    // itself wrote. Both sub-coaches: denied here. Owner branch: user-owned assignments only
+    // (app.assignment_is_user_owned; S4-A-587-593-01).
     userAllow: {
       select: ['s1', 'coachA', 'owner'],
       update: ['coachA', 'owner'],
       delete: ['coachA', 'owner'],
     },
-    personAllow: { select: OWNER, update: OWNER, delete: OWNER },
+    personAllow: { select: NONE, update: NONE, delete: NONE },
     insertPersonOwned: `INSERT INTO public."ClientWorkoutAssignmentSnapshot" ("id","assignment_id","plan_name","plan_type","exercises_json","source_plan_id","source_version") VALUES (${lit(id('snap-new'))}, ${lit(ROWS.cwa.personBare)}, 'p', 'strength', '[]'::jsonb, ${lit(PLAN)}, 1)`,
-    insertPersonAllow: OWNER,
+    insertPersonAllow: NONE,
   },
 ];
 
@@ -505,6 +589,7 @@ const REWRITTEN_POLICIES: Array<[string, string]> = [
   ['WorkoutSession', 'workout_session_owner_access'],
   ['WeightLog', 'weight_log_owner_access'],
   ['Habit', 'habit_owner_access'],
+  ['CheckIn', 'check_in_owner_all'],
   ['CheckIn', 'check_in_client_all'],
   ['CheckIn', 'check_in_coach_select'],
   ['CheckIn', 'check_in_current_coach_insert'],
@@ -652,8 +737,19 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       `CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$`,
     );
     // D8 (R593-c7B-05): record the D8 functions' ACL as the migration left it, BEFORE any harness grant.
-    for (const fn of D8_FUNCTIONS) {
+    // Same for the S4-A-587-593-01 parent-ownership helpers.
+    // A function the chain under test does not define is recorded as absent (empty ACL), so a chain
+    // missing a helper fails in the cell that asserts it, not here.
+    for (const fn of [
+      ...D8_FUNCTIONS,
+      ...S4_HELPERS.map(([fn]) => fn),
+      ...Object.keys(CHAIN_ACL_EXPECTED),
+    ]) {
       migrationAcl[fn] = {};
+      const present = await q<{ ok: boolean }>(
+        `SELECT to_regprocedure(${lit(fn)}) IS NOT NULL AS ok`,
+      );
+      if (!present[0]?.ok) continue;
       for (const grantee of ['public', 'anon', 'authenticated', 'service_role']) {
         const r = await q<{ ok: boolean }>(
           `SELECT has_function_privilege(${lit(grantee)}, ${lit(fn)}, 'EXECUTE') AS ok`,
@@ -670,21 +766,22 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     await prisma.$executeRawUnsafe(
       `GRANT USAGE ON SCHEMA public, app, auth TO anon, authenticated, "${BACKEND_ROLE}"`,
     );
-    await prisma.$executeRawUnsafe(
-      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO anon, authenticated, "${BACKEND_ROLE}"`,
-    );
-    // R593-c7A2-02: put the two D8 WORKERS back to the migration's ACL (service_role only). The blanket
-    // grant above exists for the older `app` helpers; it must not hand the API roles the relationship
-    // oracle the migration withholds, or the oracle tests below would not observe the migration.
-    for (const fn of D8_WORKERS) {
-      await prisma.$executeRawUnsafe(
-        `REVOKE EXECUTE ON FUNCTION ${fn} FROM anon, authenticated, "${BACKEND_ROLE}"`,
-      );
+    // S4B-C03: NO blanket `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app` to the API roles. `anon` and
+    // `authenticated` run the policies with the EXECUTE ACL the CHAIN left them (asserted in the
+    // "chain ACL" cell), plus exactly the three RLS-01 anon revocations listed in
+    // ANON_HARNESS_SUPPLEMENT — see CHAIN_ACL_EXPECTED for why. The harness-only backend-class role
+    // (unknown to the chain) is granted every `app` helper except the two D8 WORKERS, which stay
+    // service_role-only for it too (R593-c7A2-02: the oracle tests below must observe the migration).
+    for (const fn of ANON_HARNESS_SUPPLEMENT) {
+      await prisma.$executeRawUnsafe(`GRANT EXECUTE ON FUNCTION ${fn} TO anon`);
     }
     await prisma.$executeRawUnsafe(
-      `GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, "${BACKEND_ROLE}"`,
+      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO "${BACKEND_ROLE}"`,
     );
-    await prisma.$executeRawUnsafe(`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`);
+    for (const fn of D8_WORKERS) {
+      await prisma.$executeRawUnsafe(`REVOKE EXECUTE ON FUNCTION ${fn} FROM "${BACKEND_ROLE}"`);
+    }
+    await prisma.$executeRawUnsafe(`GRANT EXECUTE ON FUNCTION auth.uid() TO "${BACKEND_ROLE}"`);
     for (const t of [
       ...TABLES.map((c) => c.table),
       'User',
@@ -702,6 +799,11 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
   afterAll(async () => {
     try {
       await removeFixtures();
+      // S4B-C03: leave the chain's ACL as we found it (a rerun on the same database must still see
+      // the migrations' ACL in the "chain ACL" cell, not this harness's supplement).
+      for (const fn of ANON_HARNESS_SUPPLEMENT) {
+        await prisma.$executeRawUnsafe(`REVOKE EXECUTE ON FUNCTION ${fn} FROM anon`);
+      }
       await prisma.$executeRawUnsafe(`DROP OWNED BY "${BACKEND_ROLE}"`);
       await prisma.$executeRawUnsafe(`DROP ROLE IF EXISTS "${BACKEND_ROLE}"`);
     } finally {
@@ -762,7 +864,20 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
       }
     });
 
-    it('the 21 rewritten policies exist and every non-owner branch carries person_id IS NULL', async () => {
+    it('chain ACL (S4B-C03): the API roles hold EXECUTE on the helpers the policies name exactly as the migrations left it — anon and authenticated on app.current_user_id() and auth.uid(); the RLS-01 anon revocations still in force (the harness supplements only those three, and only for anon)', async () => {
+      const seen: Record<string, { anon: boolean; authenticated: boolean }> = {};
+      for (const fn of Object.keys(CHAIN_ACL_EXPECTED)) {
+        seen[fn] = {
+          anon: migrationAcl[fn]?.anon ?? false,
+          authenticated: migrationAcl[fn]?.authenticated ?? false,
+        };
+      }
+      expect(seen).toEqual(CHAIN_ACL_EXPECTED);
+      const withheld = Object.keys(CHAIN_ACL_EXPECTED).filter((fn) => !CHAIN_ACL_EXPECTED[fn].anon);
+      expect(withheld.sort()).toEqual([...ANON_HARNESS_SUPPLEMENT].sort());
+    });
+
+    it('the 22 rewritten policies exist and every branch — check_in_owner_all included — carries person_id IS NULL', async () => {
       for (const [table, name] of REWRITTEN_POLICIES) {
         const rows = await q<{ qual: string | null; with_check: string | null; cmd: string }>(
           `SELECT qual, with_check, cmd FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(table)} AND policyname = ${lit(name)}`,
@@ -815,7 +930,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         );
         expect({ t, read }).toEqual({
           t,
-          read: { ok: false, sqlstate: '42501', message: expect.any(String) },
+          read: TABLE_PRIVILEGE_DENY,
         });
       }
     });
@@ -878,7 +993,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
             expect({ table: c.table, principal: p.label, out }).toEqual({
               table: c.table,
               principal: p.label,
-              out: { ok: false, sqlstate: '42501', message: expect.any(String) },
+              out: POLICY_DENY,
             });
           }
         });
@@ -904,11 +1019,253 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
             `UPDATE public."${t}" SET "${OWNER_COL[t]}" = NULL, "person_id" = ${lit(PERSON)} WHERE "id" = ${lit(rowId)}`,
           );
           // Either the row is invisible to this principal (0 rows) or the new row fails WITH CHECK.
-          const denied = (out.ok && out.count === 0) || (!out.ok && out.sqlstate === '42501');
+          const denied = isPolicyDenied(out);
           expect({ t, principal: p.label, out, denied }).toMatchObject({ denied: true });
         });
       }
     }
+  });
+
+  // ── S4-A-587-593-01: the owner GUC is not a key to person-owned rows ─────────────────────────
+  describe('S4-A-587-593-01 — forged owner GUC (student / other coach / anon JWT class) and every other RLS-bound owner are denied person-owned rows; the owner branch survives for user-owned rows', () => {
+    const DENY = POLICY_DENY;
+    const NONE_0 = { ok: true, count: 0 };
+    const ALLOW_1 = { ok: true, count: 1 };
+    /** The four tables whose inherited app.is_owner() branch 3e243750 / 798208b7 left unguarded. */
+    const AFFECTED = TABLES.filter((c) =>
+      ['CheckIn', 'ExerciseSet', 'HabitLog', 'ClientWorkoutAssignmentSnapshot'].includes(c.table),
+    );
+    /**
+     * Forged principals: the SQL role is `authenticated` (or `anon`), the JWT subject is whoever the
+     * caller really is, and the two backend GUCs are set to what app.is_owner() wants to see. This is
+     * exactly what any PostgREST/SQL session running as an API role can do with set_config().
+     */
+    const FORGED: Principal[] = [
+      {
+        ...P.s3,
+        label: "student S3 (coach B's client, JWT) + forged GUCs: owner's User.id / role owner",
+        userId: users.owner.id,
+        userRole: 'owner',
+      },
+      {
+        ...P.s3,
+        label: 'student S3 (JWT) + forged GUCs: own User.id / role owner',
+        userRole: 'owner',
+      },
+      {
+        ...P.coachB,
+        label: "coach B (JWT; not the Person's coach) + forged GUC role owner",
+        userRole: 'owner',
+      },
+      {
+        ...P.anon,
+        label: "anon (no JWT) + forged GUCs: owner's User.id / role owner",
+        userId: users.owner.id,
+        userRole: 'owner',
+      },
+    ];
+    /** Genuine owners of each principal class: the JWT owner (P.owner) and a backend-class owner (trusted GUC). */
+    const backendOwner: Principal = {
+      label: 'backend-class role as the owner (GUC identity, no JWT)',
+      role: BACKEND_ROLE,
+      userId: users.owner.id,
+      userRole: 'owner',
+    };
+    const OWNERS: Principal[] = [P.owner, backendOwner];
+
+    it('catalog: the three parent-ownership helpers are SECURITY DEFINER, STABLE, search_path-pinned; the MIGRATION revoked PUBLIC and granted anon / authenticated / service_role; check_in_owner_all is guarded in USING and WITH CHECK; every child owner branch is `app.is_owner() AND app.<parent>_is_user_owned(...)` and no bare `app.is_owner() OR` remains', async () => {
+      for (const [fn] of S4_HELPERS) {
+        const shape = await q<{ prosecdef: boolean; provolatile: string; proconfig: string[] | null }>(
+          `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure(${lit(fn)})`,
+        );
+        expect({ fn, shape }).toEqual({
+          fn,
+          shape: [{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }],
+        });
+        expect({ fn, acl: migrationAcl[fn] }).toEqual({
+          fn,
+          acl: { public: false, anon: true, authenticated: true, service_role: true },
+        });
+      }
+      const ownerAll = await q<{ qual: string; with_check: string }>(
+        `SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = 'CheckIn' AND policyname = 'check_in_owner_all'`,
+      );
+      expect(ownerAll).toHaveLength(1);
+      expect(ownerAll[0].qual).toMatch(/app\.is_owner\(\) AND \(person_id IS NULL\)/);
+      expect(ownerAll[0].with_check).toMatch(/app\.is_owner\(\) AND \(person_id IS NULL\)/);
+      const guard: Record<string, RegExp> = {
+        ExerciseSet: /app\.is_owner\(\) AND app\.workout_session_is_user_owned\(workout_id\)/,
+        HabitLog: /app\.is_owner\(\) AND app\.habit_is_user_owned\(habit_id\)/,
+        ClientWorkoutAssignmentSnapshot:
+          /app\.is_owner\(\) AND app\.assignment_is_user_owned\(assignment_id\)/,
+      };
+      for (const table of Object.keys(guard)) {
+        const pols = await q<{ policyname: string; qual: string | null; with_check: string | null }>(
+          `SELECT policyname, qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ${lit(table)} AND policyname LIKE 'p\\_%' AND policyname NOT LIKE '%service_role%' ORDER BY policyname`,
+        );
+        expect({ table, n: pols.length }).toEqual({ table, n: 4 });
+        for (const pol of pols) {
+          for (const expr of [pol.qual, pol.with_check]) {
+            if (expr === null) continue;
+            expect({ table, policy: pol.policyname, expr }).toMatchObject({
+              expr: expect.stringMatching(guard[table]),
+            });
+            expect({ table, policy: pol.policyname, bareOwnerOr: /app\.is_owner\(\) OR/.test(expr) }).toEqual({
+              table,
+              policy: pol.policyname,
+              bareOwnerOr: false,
+            });
+          }
+        }
+      }
+    });
+
+    it('helpers answer only "does a USER-owned parent with this id exist": true for the user-owned fixture parent, false for the person-owned one, false for a missing id, false for NULL — for authenticated, anon and the backend-class role alike', async () => {
+      for (const [fn, , rows] of S4_HELPERS) {
+        const name = fn.replace(/\(text\)$/, '');
+        for (const p of [P.s3, P.anon, backendOwner]) {
+          const probe = async (arg: string) =>
+            attempt(p, `SELECT (${name}(${arg}))::int AS n`, 'count');
+          expect({ fn, principal: p.label, user: await probe(lit(rows.user)) }).toEqual({
+            fn,
+            principal: p.label,
+            user: ALLOW_1,
+          });
+          expect({ fn, principal: p.label, person: await probe(lit(rows.person)) }).toEqual({
+            fn,
+            principal: p.label,
+            person: NONE_0,
+          });
+          expect({ fn, principal: p.label, missing: await probe(lit(id('no-such-row'))) }).toEqual({
+            fn,
+            principal: p.label,
+            missing: NONE_0,
+          });
+          expect({ fn, principal: p.label, nul: await probe('NULL::text') }).toEqual({
+            fn,
+            principal: p.label,
+            nul: NONE_0,
+          });
+        }
+      }
+    });
+
+    for (const c of AFFECTED) {
+      for (const p of [...FORGED, ...OWNERS]) {
+        it(`${c.table} / ${p.label} / SELECT, UPDATE, DELETE of the PERSON-owned row → 0 rows (ADMITTED at 798208b7)`, async () => {
+          const sel = await attempt(
+            p,
+            `SELECT count(*)::bigint AS n FROM public."${c.table}" WHERE "id" = ${lit(c.rows.person)}`,
+            'count',
+          );
+          const upd = await attempt(
+            p,
+            `UPDATE public."${c.table}" ${c.set} WHERE "id" = ${lit(c.rows.person)}`,
+          );
+          const del = await attempt(
+            p,
+            `DELETE FROM public."${c.table}" WHERE "id" = ${lit(c.rows.person)}`,
+          );
+          expect({ table: c.table, principal: p.label, sel, upd, del }).toEqual({
+            table: c.table,
+            principal: p.label,
+            sel: NONE_0,
+            upd: NONE_0,
+            del: NONE_0,
+          });
+        });
+
+        it(`${c.table} / ${p.label} / INSERT ${c.table === 'CheckIn' ? 'a person-owned row' : 'a child under the person-owned parent'} → 42501 (ADMITTED at 798208b7)`, async () => {
+          const out = await attempt(p, c.insertPersonOwned);
+          expect({ table: c.table, principal: p.label, out }).toEqual({
+            table: c.table,
+            principal: p.label,
+            out: DENY,
+          });
+        });
+      }
+    }
+
+    it("CheckIn / every forged or genuine RLS-bound owner / UPDATE flipping the user-owned row to person-owned (WITH CHECK) → denied (ADMITTED at 798208b7 for a forged owner GUC)", async () => {
+      for (const p of [...FORGED, ...OWNERS]) {
+        const flip = await attempt(
+          p,
+          `UPDATE public."CheckIn" SET "user_id" = NULL, "person_id" = ${lit(PERSON)} WHERE "id" = ${lit(ROWS.ci.user)}`,
+        );
+        // Either the row is invisible to this principal (0 rows) or the new row fails WITH CHECK.
+        const denied = isPolicyDenied(flip);
+        expect({ principal: p.label, flip, denied }).toMatchObject({ denied: true });
+      }
+    });
+
+    it('children / every forged or genuine RLS-bound owner / UPDATE re-pointing the user-owned child at the person-owned parent (WITH CHECK) → denied (ADMITTED at 798208b7 for a forged owner GUC)', async () => {
+      const repoint: Array<[table: string, fk: string, child: string, personParent: string]> = [
+        ['ExerciseSet', 'workout_id', ROWS.es.user, ROWS.ws.person],
+        ['HabitLog', 'habit_id', ROWS.hl.user, ROWS.habit.person],
+        ['ClientWorkoutAssignmentSnapshot', 'assignment_id', ROWS.snap.user, ROWS.cwa.personBare],
+      ];
+      for (const [table, fk, child, parent] of repoint) {
+        for (const p of [...FORGED, ...OWNERS]) {
+          const out = await attempt(
+            p,
+            `UPDATE public."${table}" SET "${fk}" = ${lit(parent)} WHERE "id" = ${lit(child)}`,
+          );
+          const denied = isPolicyDenied(out);
+          expect({ table, principal: p.label, out, denied }).toMatchObject({ denied: true });
+        }
+      }
+    });
+
+    it('the owner branch is intact for USER-owned rows: a backend-class owner (trusted GUC class) reads the user-owned CheckIn, ExerciseSet, HabitLog and snapshot rows, and the JWT owner keeps the matrix cells above', async () => {
+      // Proves the person-owned denials above are the GUARD, not a missing owner branch.
+      for (const c of AFFECTED) {
+        const sel = await attempt(
+          backendOwner,
+          `SELECT count(*)::bigint AS n FROM public."${c.table}" WHERE "id" = ${lit(c.rows.user)}`,
+          'count',
+        );
+        expect({ table: c.table, sel }).toEqual({ table: c.table, sel: ALLOW_1 });
+      }
+    });
+
+    it('the four tables WITHOUT an owner branch (WorkoutSession, WeightLog, Habit, ClientWorkoutAssignment) deny the same forged owners on the person-owned row and refuse a person-owned INSERT (unchanged; completes the matrix)', async () => {
+      for (const c of TABLES.filter((t) => !AFFECTED.includes(t))) {
+        for (const p of [...FORGED, ...OWNERS]) {
+          const sel = await attempt(
+            p,
+            `SELECT count(*)::bigint AS n FROM public."${c.table}" WHERE "id" = ${lit(c.rows.person)}`,
+            'count',
+          );
+          const ins = await attempt(p, c.insertPersonOwned);
+          expect({ table: c.table, principal: p.label, sel, ins }).toEqual({
+            table: c.table,
+            principal: p.label,
+            sel: NONE_0,
+            ins: DENY,
+          });
+        }
+      }
+    });
+
+    it('20270125000000/down.sql restores check_in_owner_all with its 20260607000000 text and drops the three helpers only AFTER the child policies that name them are restored (reversibility contract, static)', async () => {
+      const down = fs.readFileSync(
+        path.join(__dirname, '..', 'prisma', 'migrations', '20270125000000_scout_person_owned_schema', 'down.sql'),
+        'utf8',
+      );
+      expect(down).toMatch(
+        /CREATE POLICY "check_in_owner_all" ON "CheckIn"\s+FOR ALL TO public\s+USING \(app\.is_owner\(\)\)\s+WITH CHECK \(app\.is_owner\(\)\);/,
+      );
+      const drops = S4_HELPERS.map(([fn]) => down.indexOf(`DROP FUNCTION IF EXISTS ${fn};`));
+      expect(drops.every((i) => i > 0)).toBe(true);
+      const lastRestoredChild = down.lastIndexOf('CREATE POLICY "p_clientworkoutassignmentsnapshot_delete"');
+      const columnDrop = down.indexOf('DROP COLUMN IF EXISTS "person_id"');
+      expect(lastRestoredChild).toBeGreaterThan(0);
+      expect(Math.min(...drops)).toBeGreaterThan(lastRestoredChild);
+      expect(Math.max(...drops)).toBeLessThan(columnDrop);
+      // The restored (pre-D3) child policies name no helper.
+      const restored = down.slice(down.indexOf('DROP POLICY IF EXISTS "p_exerciseset_select"'), Math.min(...drops));
+      expect(restored).not.toMatch(/_is_user_owned\(/);
+    });
   });
 
   // ── 20270125000011: the WorkoutPlan <-> ClientWorkoutAssignment policy cycle is broken ───────
@@ -916,7 +1273,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
     const CWA = 'ClientWorkoutAssignment';
     const insertCwa = (planId: string, clientId: string, assignedBy: string) =>
       `INSERT INTO public."${CWA}" ("id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-x'))}, ${lit(planId)}, ${lit(clientId)}, ${lit(assignedBy)}, TIMESTAMP '2024-01-05 00:00:00')`;
-    const DENY = { ok: false, sqlstate: '42501', message: expect.any(String) };
+    const DENY = POLICY_DENY;
 
     it('the plan-ownership helper is SECURITY DEFINER, STABLE, search_path-pinned, PUBLIC-revoked, and the WITH CHECK uses it instead of an inline WorkoutPlan read (D8 renamed it app.actor_owns_workout_plan(actor, plan))', async () => {
       // 20270125000012 (D8) replaced app.current_user_owns_workout_plan(text) with the actor-keyed
@@ -930,7 +1287,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
         `SELECT prosecdef, provolatile, proconfig FROM pg_proc WHERE oid = to_regprocedure('app.actor_owns_workout_plan(text, text)')`,
       );
       expect(fn).toEqual([{ prosecdef: true, provolatile: 's', proconfig: ['search_path=""'] }]);
-      // ACL as the MIGRATION left it (captured before the harness's blanket grant; R593-c7B-05).
+      // ACL as the MIGRATION left it (captured before any harness grant; R593-c7B-05).
       // D8 round 3 (R593-c7A2-02): the two-id worker is service_role-only; the API roles reach it
       // through the caller-bound app.caller_owns_workout_plan(text), which carries their grant.
       expect(migrationAcl['app.actor_owns_workout_plan(text, text)']).toEqual({
@@ -1099,7 +1456,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
           p,
           `UPDATE public."${CWA}" SET "client_id" = NULL, "person_id" = ${lit(PERSON)} WHERE "id" = ${lit(ROWS.cwa.user)}`,
         );
-        const denied = (flip.ok && flip.count === 0) || (!flip.ok && flip.sqlstate === '42501');
+        const denied = isPolicyDenied(flip);
         expect({ principal: p.label, flip, denied }).toMatchObject({ denied: true });
       }
     });
@@ -1108,7 +1465,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
   // ── D8 (20270125000012): assignment_coach_manage applies the app's coach-client tenancy rule ──
   describe('D8 — coach-client tenancy on assignment_coach_manage (20270125000012)', () => {
     const CWA = 'ClientWorkoutAssignment';
-    const DENY = { ok: false, sqlstate: '42501', message: expect.any(String) };
+    const DENY = POLICY_DENY;
     const insertCwa = (planId: string, clientId: string, assignedBy: string) =>
       `INSERT INTO public."${CWA}" ("id","workout_plan_id","client_id","assigned_by_coach_id","scheduled_for") VALUES (${lit(id('cwa-d8'))}, ${lit(planId)}, ${lit(clientId)}, ${lit(assignedBy)}, TIMESTAMP '2024-01-08 00:00:00')`;
     const count = (rowId: string) =>
@@ -1483,7 +1840,7 @@ describeLive('S8-D3 person-owned schema — RLS role × owner-state matrix (live
           expect({ who: principal.label, stmt, out }).toEqual({
             who: principal.label,
             stmt,
-            out: expect.objectContaining({ ok: false, sqlstate: '42501' }),
+            out: FUNCTION_PRIVILEGE_DENY,
           });
         }
       }

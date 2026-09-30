@@ -1,7 +1,8 @@
--- S8-D3 step 1 of 12 rollback: reverse 20270125000000_scout_person_owned_schema exactly.
--- Run ONLY after the down files of 20270125000011, 20270125000010, 20270125000009 and
--- 20270125000001..08 (newest first); this file drops no key that a later directory created and
--- refuses to destroy data.
+-- S8-D3 step 1 of 12 rollback (13 directories once D8's 20270125000012 is stacked on top): reverse
+-- 20270125000000_scout_person_owned_schema exactly.
+-- Run ONLY after the down files of 20270125000012 (D8; its down.sql says "run FIRST"),
+-- 20270125000011, 20270125000010, 20270125000009 and 20270125000001..08 (newest first); this file
+-- drops no key that a later directory created and refuses to destroy data.
 --
 -- FAIL-CLOSED: refuses (atomically, nothing dropped) while ANY person-owned row exists on the five
 -- parents, ANY Person is linked, ANY provenance row names a Person, or ANY link-rail row exists.
@@ -25,9 +26,14 @@
 -- re-checks, ADD CONSTRAINT is guarded by DROP IF EXISTS). If any phase times out (lock_timeout 5s
 -- / statement_timeout 30s) it fails atomically; re-run the file — every phase is idempotent.
 --
--- POLICY RESTORE: the rewritten policies on CheckIn, ClientWorkoutAssignment, ExerciseSet,
--- HabitLog and ClientWorkoutAssignmentSnapshot are recreated with their pre-D3 text verbatim
--- (20260607000000, 20260702000000, 20260621000000, 20261213000000 x2, 20261215000000).
+-- POLICY RESTORE: the rewritten policies on CheckIn (check_in_owner_all included),
+-- ClientWorkoutAssignment, ExerciseSet, HabitLog and ClientWorkoutAssignmentSnapshot are recreated
+-- with their pre-D3 text verbatim (20260607000000, 20260702000000, 20260621000000,
+-- 20261213000000 x2, 20261215000000). The three S4-A-587-593-01 parent-ownership helpers
+-- (app.workout_session_is_user_owned / app.habit_is_user_owned / app.assignment_is_user_owned) are
+-- dropped AFTER the child policies that reference them are restored (a policy depends on the
+-- functions it names, so the reverse order would fail) and BEFORE the person_id columns their bodies
+-- read are dropped.
 -- WorkoutSession, WeightLog and Habit had no in-tree policy before D3: their guarded policies are
 -- dropped here. RLS stays ENABLED and FORCED on all four out-of-band tables (WorkoutSession,
 -- WeightLog, Habit, CheckIn) — FAIL CLOSED: this rollback never widens direct database access.
@@ -134,6 +140,11 @@ DROP POLICY IF EXISTS "workout_session_owner_access" ON public."WorkoutSession";
 DROP POLICY IF EXISTS "weight_log_owner_access" ON public."WeightLog";
 DROP POLICY IF EXISTS "habit_owner_access" ON public."Habit";
 
+DROP POLICY IF EXISTS "check_in_owner_all" ON public."CheckIn";
+CREATE POLICY "check_in_owner_all" ON "CheckIn"
+  FOR ALL TO public
+  USING (app.is_owner())
+  WITH CHECK (app.is_owner());
 DROP POLICY IF EXISTS "check_in_client_all" ON public."CheckIn";
 CREATE POLICY "check_in_client_all" ON "CheckIn"
   FOR ALL TO public
@@ -255,6 +266,11 @@ COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_update" ON "ClientWorkoutAs
 DROP POLICY IF EXISTS "p_clientworkoutassignmentsnapshot_delete" ON public."ClientWorkoutAssignmentSnapshot";
 CREATE POLICY "p_clientworkoutassignmentsnapshot_delete" ON "ClientWorkoutAssignmentSnapshot" AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cwa."assigned_by_coach_id" = app.current_user_id() OR app.is_current_coach_of(cwa."client_id") OR app.is_subcoach_of(cwa."client_id"))))));
 COMMENT ON POLICY "p_clientworkoutassignmentsnapshot_delete" ON "ClientWorkoutAssignmentSnapshot" IS 'Child-via-assignment delete: owner admin, the assigning coach, or that client''s coach/sub-coach may DELETE.';
+
+-- 2b. The S4-A-587-593-01 parent-ownership helpers: no restored policy names them any more.
+DROP FUNCTION IF EXISTS app.workout_session_is_user_owned(text);
+DROP FUNCTION IF EXISTS app.habit_is_user_owned(text);
+DROP FUNCTION IF EXISTS app.assignment_is_user_owned(text);
 
 -- 3. Parents: XOR CHECKs off, NOT NULL back (satisfied from the validated rollback CHECK of phase
 --    B, so no scan), the temporary CHECKs off, columns off.

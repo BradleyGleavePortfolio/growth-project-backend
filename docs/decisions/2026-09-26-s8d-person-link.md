@@ -209,13 +209,36 @@ exactly what these policies exist to defend.
      (L226-249) and the out-of-band file is marked superseded for these three tables.
    - Children: the non-owner `EXISTS(…)` branch of `p_exerciseset_*`, `p_habitlog_*` and
      `p_clientworkoutassignmentsnapshot_*` gains `AND <parent>."person_id" IS NULL`.
-2. **Owner exception, stated truthfully.** The `app.is_owner()` branches on `ExerciseSet`,
-   `HabitLog`, `CheckIn` and the snapshot are **kept unchanged**: the backend `owner` role can
-   read person-owned rows directly, as it can read every other row on those tables today. D3
-   does not add an owner branch to `WorkoutSession`/`WeightLog`/`Habit` (none exists). If the
-   owner wants the operator role excluded from imported history, that is a one-line change per
-   policy and a product decision — recorded as a note, not an OQ, because the default is the
-   existing behaviour.
+2. **No owner exception for person-owned rows** (superseded 2026-09-29, PR #587/#593 fix round 3,
+   independent review finding S4-A-587-593-01, class A). The first D3 text kept the inherited
+   `app.is_owner()` branches on `ExerciseSet`, `HabitLog`, `CheckIn` (`check_in_owner_all`) and the
+   snapshot unchanged as a "stated owner exception". That predicate reads two session GUCs
+   (`app.current_user_id`, `app.current_user_role`; `20261212000000` L59-86) that any SQL session
+   running as `anon` or `authenticated` can `set_config()` itself — the same GUC D8
+   (`20270125000012`) already treats as untrusted for the JWT principal class — so a student JWT
+   plus a forged owner GUC reached every coach's imported person-owned history. Checked before
+   choosing the closure: the application reaches these tables only through Prisma as the database
+   owner (BYPASSRLS; `RlsContextInterceptor` sets the GUCs on that connection, where RLS never runs)
+   and the mobile app uses supabase-js for auth and realtime broadcast only (no direct table reads),
+   so **no real owner read of these tables goes through RLS**. Closure (in `20270125000000`, edited
+   in place, not deployed anywhere): person-owned rows are `service_role`-only on all eight tables for
+   every RLS-bound principal. `check_in_owner_all` gains `AND "person_id" IS NULL` (USING and WITH
+   CHECK); the three child owner branches become `app.is_owner() AND app.<parent>_is_user_owned(fk)`
+   with three new `SECURITY DEFINER` `STABLE` `search_path = ''` helpers
+   (`app.workout_session_is_user_owned(text)`, `app.habit_is_user_owned(text)`,
+   `app.assignment_is_user_owned(text)`; EXECUTE revoked from PUBLIC, granted to `service_role`,
+   `anon`, `authenticated`) that answer one fact about one id — "does a user-owned parent with this id
+   exist" — and are false for a missing parent (fail-closed). A definer helper is needed because the
+   parents' own policies (`WorkoutSession`/`Habit` admit no owner) would hide the parent from an
+   inline check, and a `NOT EXISTS` form would be fail-open on the invisible person-owned parent.
+   The owner branch is **unchanged for user-owned rows**; whether the GUC-keyed identity should be
+   trusted at all for the API roles on user-owned rows is a platform-wide question outside this
+   slice (recorded in the PR). `down.sql` restores `check_in_owner_all` verbatim and drops the three
+   helpers after the child policies that name them are restored. The §2.2 item 4 matrix row for
+   `owner` and the live spec's owner-positive cells flipped from allow to deny; the spec's
+   "S4-A-587-593-01" block is the negative matrix (forged owner GUC under student / other coach /
+   anon JWT class, the genuine JWT owner, a backend-class owner; SELECT / INSERT / UPDATE / DELETE on
+   each affected table), every cell of which was admitted at 798208b7.
 3. **Cross-tenant `coach_id` protection on `CheckIn`.** `CheckIn.coach_id` is nullable and
    independent of `user_id` (`schema.prisma` L1102-1107). For person-owned rows D3 enforces it in
    the database: `CHECK ("person_id" IS NULL OR "coach_id" IS NOT NULL)` plus a composite
@@ -240,7 +263,7 @@ exactly what these policies exist to defend.
    | a different coach                                        | deny                                                                              | deny                                                                                                                       |
    | the client, before link / after unlink                   | allow own rows                                                                    | deny (not theirs)                                                                                                          |
    | the linked client, after link (row now `user_id = cur`)  | allow                                                                             | n/a — the row is user-owned once linked                                                                                    |
-   | `owner` role                                             | as today                                                                          | allow on `ExerciseSet`, `HabitLog`, `CheckIn`, snapshot (stated exception); deny on `WorkoutSession`, `WeightLog`, `Habit` |
+   | `owner` role (genuine, any RLS-bound class) or a forged owner GUC | as today (owner branch unchanged for user-owned rows)                     | **deny all verbs on all eight tables** (fix round 3, S4-A-587-593-01; formerly allowed on `ExerciseSet`, `HabitLog`, `CheckIn`, snapshot) |
    | any non-bypass principal, INSERT/UPDATE with `person_id` | —                                                                                 | WITH CHECK deny (flip and person-owned writes are service-role only)                                                       |
 
    Plus: `CheckIn` insert with `person_id` set and `coach_id` ≠ `person.coach_id` fails the

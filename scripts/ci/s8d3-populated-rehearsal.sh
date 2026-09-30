@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # S8-D3 populated-data rollout / rollback rehearsal (PR #587 fix round 2, R587-c7B-04; G13).
 #
-# Proves, on a real PostgreSQL with POPULATED tables, that the twelve S8-D3 directories
-# (20270125000000 .. 20270125000011) apply forward through the real release mechanism
+# Proves, on a real PostgreSQL with POPULATED tables, that every S8-D3 directory (20270125*: the
+# twelve D3 directories 20270125000000 .. 20270125000011 plus D8's 20270125000012 when it is stacked
+# on top — the glob below decides, at least 12) applies forward through the real release mechanism
 # (`prisma migrate deploy`), that the full down chain (newest first) reverses them WITHOUT touching a
 # row, and that the forward chain applies again — with row counts and per-table checksums identical
 # at every stage, every S8-D3 constraint VALIDATED and every CONCURRENTLY index VALID at the end.
-# Every phase is timed and the row counts are printed, so the log is the evidence record.
+# Every phase is timed and the row counts are printed, so the log is the evidence record. TIMING lines
+# are written on fd 3 (a dup of the script's stdout taken before any redirect), so a `>/dev/null` on a
+# timed psql/prisma command silences that command's output WITHOUT swallowing its timing
+# (S4B-C01: at 798208b7 only two of the sixteen-plus timings reached the CI log).
 #
 # Also proves the step-1 down's FAIL-CLOSED guard on populated data: with ONE person-owned row
 # present the down refuses (fixed text) and drops nothing; after the row is moved it succeeds.
 #
 # Inputs: DATABASE_URL / DIRECT_URL (the disposable CI database; the Supabase-equivalent bootstrap
 # already applied), REHEARSAL_SCALE (row multiplier, default 1 = about 1.0M rows across the twelve
-# tables below; the scans this rehearses are linear in it).
+# populated tables below; the scans this rehearses are linear in it).
 #
 # Not proof of: production row counts or production lock contention under live traffic. It is the
 # populated rehearsal G13 asks for, on synthetic data of stated size.
@@ -29,12 +33,13 @@ mapfile -t S8D3_DIRS < <(find prisma/migrations -mindepth 1 -maxdepth 1 -type d 
 [[ ${#S8D3_DIRS[@]} -ge 12 ]] || { echo "expected at least 12 S8-D3 directories, found ${#S8D3_DIRS[@]}" >&2; exit 2; }
 
 now_ms() { date +%s%3N; }
-timed() { # timed <label> <cmd...>
+exec 3>&1 # evidence channel for TIMING lines: survives a per-command `>/dev/null` (S4B-C01)
+timed() { # timed <label> <cmd...>   (the command's own stdout may be redirected by the caller)
   local label="$1"; shift
   local t0; t0=$(now_ms)
   "$@"
   local t1; t1=$(now_ms)
-  echo "TIMING ${label}: $((t1 - t0)) ms"
+  echo "TIMING ${label}: $((t1 - t0)) ms" >&3
 }
 sql() { $PSQL -At -c "$1"; }
 
@@ -138,7 +143,8 @@ echo "== row counts / checksums BEFORE S8-D3"
 FP0="$(fingerprint)"; printf '%s\n' "$FP0"
 
 # ---------------------------------------------------------------------------------------------
-# 3. Forward: the twelve S8-D3 directories through `prisma migrate deploy` (timed as a whole).
+# 3. Forward: the S8-D3 directories (12 D3 + D8's 000012 when stacked) through `prisma migrate deploy`
+#    (timed as a whole).
 # ---------------------------------------------------------------------------------------------
 echo "== 3. forward: S8-D3 chain (prisma migrate deploy on the populated database)"
 timed "s8d3-forward-deploy" npx prisma migrate deploy
