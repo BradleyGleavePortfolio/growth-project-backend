@@ -37,6 +37,7 @@ import {
   EXPECTED_MIGRATIONS,
   expectedVersion,
   jsonAdmin,
+  LAST_MIGRATION_PIN,
   root,
   run,
   S10B_MIGRATION,
@@ -80,7 +81,10 @@ describe('lane identity (bootstrap state, never repaired here)', () => {
       sql(
         `SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC, migration_name DESC LIMIT 1`,
       ),
-    ).toBe(S10B_MIGRATION);
+    ).toBe(LAST_MIGRATION_PIN);
+    expect(
+      sql(`SELECT count(*) FROM _prisma_migrations WHERE migration_name = '${S10B_MIGRATION}'`),
+    ).toBe('1');
     expect(sql(`SELECT to_regclass('public."ImportNativeProvenance"') IS NOT NULL`)).toBe('t');
     for (const table of JOURNEY_TABLES)
       expect(sql(`SELECT to_regclass('public."${table}"') IS NOT NULL`)).toBe('t');

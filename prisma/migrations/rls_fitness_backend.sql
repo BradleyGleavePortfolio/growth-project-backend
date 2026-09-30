@@ -11,6 +11,16 @@
 --   ConnectCustomer / ClientPurchase / CoachPackage (20260601+)
 -- HabitLog is excluded from direct policy — it has no user_id column; its
 -- data is only accessible through the owning Habit row (which IS protected).
+--
+-- SUPERSEDED for WorkoutSession, WeightLog and Habit (S8-D3, migration
+-- 20270125000000_scout_person_owned_schema, docs/decisions/2026-09-26-s8d-person-link.md
+-- §2.2 item 1): that migration recreates "workout_session_owner_access",
+-- "weight_log_owner_access" and "habit_owner_access" IN-TREE with the added
+-- guard `AND "person_id" IS NULL`, so imported (person-owned) history is
+-- never reachable through a user policy. Re-running THIS file after that
+-- migration re-widens those three policies to their unguarded form. Do not
+-- re-run the WeightLog / WorkoutSession / Habit sections below on a database
+-- that carries 20270125000000; apply that directory (or its down.sql) instead.
 
 BEGIN;
 
@@ -218,6 +228,11 @@ COMMIT;
 -- =============================================================================
 -- ROLLBACK (run manually if needed):
 -- =============================================================================
+-- S8-D3 note: on a database that carries 20270125000000_scout_person_owned_schema,
+-- "weight_log_owner_access", "workout_session_owner_access" and "habit_owner_access"
+-- are owned by that migration (guarded form). Dropping them here, or disabling RLS on
+-- "WeightLog" / "WorkoutSession" / "Habit" / "CheckIn", reverts an in-tree migration
+-- out of band; use that directory's down.sql chain instead.
 -- BEGIN;
 -- DROP POLICY IF EXISTS "user_self_access"                    ON "User";
 -- DROP POLICY IF EXISTS "user_profile_owner_access"           ON "UserProfile";

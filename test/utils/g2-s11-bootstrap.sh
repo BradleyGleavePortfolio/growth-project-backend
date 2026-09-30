@@ -3,9 +3,9 @@
 # derived by literal substitution from the landed S9-C bootstrap test/utils/g2-s9c-bootstrap.sh
 # (as landed at 92b96715, unchanged) for the S11-only disposable cluster/database; only the lane
 # descriptor and base pin differ. S11-A1 ships NO migration: the candidate's prisma tree must be
-# byte-identical to the base 711c1f8f (S10-A → S10-B → S10-D D1 → S11-0 record; the landed S10-B
-# prisma tree), so there is no OLD side here. The full accepted history (173 migrations, S8-B, S7-L
-# and S10-B included; the last is S10-B) is installed from the
+# byte-identical to the base (re-pinned with PR #587 to its S8-D3 schema commit; previously 711c1f8f,
+# the landed S10-B prisma tree), so there is no OLD side here. The full accepted history (185
+# migrations, S8-B, S7-L, S10-B and the twelve S8-D3 directories included) is installed from the
 # CANDIDATE root through the real release mechanism (`prisma migrate deploy`), and the S11 specs then
 # drive the candidate journey (real pairing, lifecycle, ingest, progress, settle and read services,
 # two worker processes = two server hosts) against it.
@@ -27,13 +27,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Base pin (kept identical in test/utils/g2-s11-pg-harness.ts and test/utils/g2-s11-db-guard.spec.ts).
-BASE_HEAD=711c1f8f8b42157bca97f2a721557be7ef006667
+BASE_HEAD=b7155deee2f470bfcc7ed65b014fc3d41f019b07
 S8B_MIGRATION=20270122000000_scout_native_provenance_expand
 S7L_MIGRATION=20270123000000_scout_run_lifecycle_expand
 S10B_MIGRATION=20270124000000_scout_run_observation_expand
-# 172 accepted migrations through S8-B and S7-L plus S10-B = 173 tracked by the base (the last
-# directory is S10-B's); S11-A1 adds none.
-EXPECTED_MIGRATIONS=173
+# 172 accepted migrations through S8-B and S7-L plus S10-B = 173, plus the twelve S8-D3 directories
+# (20270125000000..11, PR #587) = 185 tracked by the base (the last directory is S8-D3's cycle-fix
+# helper); S11-A1 adds none. Re-pinned with #587 (docs/decisions/2026-09-26-s8d-person-link.md §6).
+EXPECTED_MIGRATIONS=185
+LAST_MIGRATION_PIN=20270125000011_cwa_coach_manage_plan_owner_helper
 S10B_TABLES="ScoutRunDeclaration ScoutRunObservation ScoutRunSettledBasis"
 EXPECTED_VERSION="${G2_S11_SERVER_VERSION:-170006}"
 # Distinctive S11 fixture markers: pinned literals, never read from the environment (see
@@ -148,8 +150,8 @@ psql_db -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXI
 fi # MODE=bootstrap steps 1-3
 
 # 4. Candidate source: S11-A1 ships no migration. The prisma tree (schema + migrations) must be
-#    byte-identical to the base and track exactly the accepted 173 directories, S8-B, S7-L and S10-B
-#    included, with S10-B's as the last (sorted) directory.
+#    byte-identical to the base and track exactly the accepted 185 directories, S8-B, S7-L, S10-B and
+#    the twelve S8-D3 directories included, with S8-D3's last as the last (sorted) directory.
 git -C "$ROOT" cat-file -e "$BASE_HEAD^{commit}" || { echo "base $BASE_HEAD unknown in $ROOT" >&2; exit 4; }
 [[ -z "$(git -C "$ROOT" diff --name-only "$BASE_HEAD" HEAD -- prisma)" ]] \
   || { echo "candidate prisma tree differs from base $BASE_HEAD; S11-A1 must ship no schema/migration change" >&2; exit 4; }
@@ -162,7 +164,7 @@ COUNT="$(find "$ROOT/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [[ -f "$ROOT/prisma/migrations/$S7L_MIGRATION/migration.sql" ]] || { echo "candidate lacks the accepted S7-L migration" >&2; exit 4; }
 [[ -f "$ROOT/prisma/migrations/$S10B_MIGRATION/migration.sql" ]] || { echo "candidate lacks the accepted S10-B migration" >&2; exit 4; }
 LAST_MIGRATION="$(find "$ROOT/prisma/migrations" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort | tail -n 1)"
-[[ "$LAST_MIGRATION" == "$S10B_MIGRATION" ]] || { echo "last migration is $LAST_MIGRATION, expected S10-B's $S10B_MIGRATION" >&2; exit 4; }
+[[ "$LAST_MIGRATION" == "$LAST_MIGRATION_PIN" ]] || { echo "last migration is $LAST_MIGRATION, expected the pinned $LAST_MIGRATION_PIN" >&2; exit 4; }
 
 if [[ "$MODE" == bootstrap ]]; then
 # 5. Full accepted history (S8-B and S7-L included) through the real release mechanism from the candidate root.

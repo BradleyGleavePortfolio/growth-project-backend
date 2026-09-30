@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { SubCoachSummaryView } from './sub-coaches.types';
 
@@ -94,9 +90,7 @@ export class SubCoachAnalyticsService {
   // Engagement score (v1): four boolean / averaged signals over the last
   // seven days, each weighted equally. Anything we can't compute on a
   // dry database returns 0 rather than fake data.
-  private async computeEngagement(
-    subCoachId: string,
-  ): Promise<SubCoachSummaryView['engagement']> {
+  private async computeEngagement(subCoachId: string): Promise<SubCoachSummaryView['engagement']> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
     const fortyEightHours = 48 * 3_600_000;
 
@@ -132,12 +126,18 @@ export class SubCoachAnalyticsService {
       // For each client, find the most recent CheckIn timestamp, then
       // check whether the sub-coach sent a CoachMessage within 48h of
       // it. We use logged_at (CheckIn) and created_at (CoachMessage).
-      const latestCheckIns = await this.prisma.checkIn.findMany({
-        where: { user_id: { in: clientIds } },
-        orderBy: { logged_at: 'desc' },
-        distinct: ['user_id'],
-        select: { user_id: true, logged_at: true },
-      });
+      // Scoped to user_id IN clientIds (user-owned rows); the flatMap only
+      // narrows the S8-D3 nullable owner column.
+      const latestCheckIns = (
+        await this.prisma.checkIn.findMany({
+          where: { user_id: { in: clientIds } },
+          orderBy: { logged_at: 'desc' },
+          distinct: ['user_id'],
+          select: { user_id: true, logged_at: true },
+        })
+      ).flatMap((c) =>
+        c.user_id === null ? [] : [{ user_id: c.user_id, logged_at: c.logged_at }],
+      );
       if (latestCheckIns.length > 0) {
         const messages = await this.prisma.coachMessage.findMany({
           where: {
@@ -170,35 +170,31 @@ export class SubCoachAnalyticsService {
       // Workout plan touched this week by the sub-coach. A new or
       // freshly-completed assignment is the closest proxy for
       // "updated workout plan" on the current schema.
-      const recentAssignments =
-        await this.prisma.clientWorkoutAssignment.findMany({
-          where: {
-            assigned_by_coach_id: subCoachId,
-            client_id: { in: clientIds },
-            OR: [
-              { scheduled_for: { gte: sevenDaysAgo } },
-              { completed_at: { gte: sevenDaysAgo } },
-            ],
-          },
-          select: { client_id: true },
-          distinct: ['client_id'],
-        });
+      const recentAssignments = await this.prisma.clientWorkoutAssignment.findMany({
+        where: {
+          assigned_by_coach_id: subCoachId,
+          client_id: { in: clientIds },
+          OR: [{ scheduled_for: { gte: sevenDaysAgo } }, { completed_at: { gte: sevenDaysAgo } }],
+        },
+        select: { client_id: true },
+        distinct: ['client_id'],
+      });
       updatedWorkoutPlanThisWeek = recentAssignments.length;
 
       // Avg workout completion ≥ 70%: in the absence of a per-session
       // completion-percent column, we approximate via assignment
       // completion ratio over the last 7d. A client whose 7-day
       // assignments are at least 70% completed counts.
-      const recent7dAssignments =
-        await this.prisma.clientWorkoutAssignment.findMany({
-          where: {
-            client_id: { in: clientIds },
-            scheduled_for: { gte: sevenDaysAgo },
-          },
-          select: { client_id: true, completed_at: true },
-        });
+      const recent7dAssignments = await this.prisma.clientWorkoutAssignment.findMany({
+        where: {
+          client_id: { in: clientIds },
+          scheduled_for: { gte: sevenDaysAgo },
+        },
+        select: { client_id: true, completed_at: true },
+      });
       const byClient = new Map<string, { total: number; done: number }>();
       for (const a of recent7dAssignments) {
+        if (a.client_id === null) continue; // client-scoped query; S8-D3 type narrowing only
         const cur = byClient.get(a.client_id) ?? { total: 0, done: 0 };
         cur.total += 1;
         if (a.completed_at) cur.done += 1;
@@ -210,8 +206,7 @@ export class SubCoachAnalyticsService {
     }
 
     // Score = mean of four normalized signals (0..1) * 100.
-    const norm = (n: number) =>
-      totalClients === 0 ? 0 : Math.min(1, n / totalClients);
+    const norm = (n: number) => (totalClients === 0 ? 0 : Math.min(1, n / totalClients));
     const score = Math.round(
       ((norm(loggedIn7d) +
         norm(messagedWithin48hOfCheckin) +

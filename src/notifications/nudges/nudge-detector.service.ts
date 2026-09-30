@@ -141,22 +141,21 @@ export class NudgeDetectorService {
    * Owns the 2–6 day window so it does not stomp the 7-day inactivity detector.
    */
   async detectMissedCheckin(now: Date): Promise<NudgeCandidate[]> {
-    const minThreshold = new Date(
-      now.getTime() - DETECTOR_WINDOWS.missedCheckinMaxDays * DAY_MS,
-    );
-    const maxThreshold = new Date(
-      now.getTime() - DETECTOR_WINDOWS.missedCheckinMinDays * DAY_MS,
-    );
+    const minThreshold = new Date(now.getTime() - DETECTOR_WINDOWS.missedCheckinMaxDays * DAY_MS);
+    const maxThreshold = new Date(now.getTime() - DETECTOR_WINDOWS.missedCheckinMinDays * DAY_MS);
 
     // Users whose most-recent check-in date sits within (minThreshold, maxThreshold].
     // We pull each user's most recent check-in, then filter.
     const rows = await this.prisma.checkIn.groupBy({
       by: ['user_id'],
+      // S8-D3: person-owned (imported) check-ins have no user to nudge.
+      where: { person_id: null },
       _max: { date: true },
     });
 
     const candidates: NudgeCandidate[] = [];
     for (const row of rows) {
+      if (row.user_id === null) continue;
       const lastDate = row._max.date;
       if (!lastDate) continue;
       if (lastDate < minThreshold) continue; // covered by inactivity
@@ -197,13 +196,15 @@ export class NudgeDetectorService {
     // Pull users whose most recent check-in is 1 or 2 days stale —
     // narrow enough to keep the lookback affordable.
     const recent = await this.prisma.checkIn.findMany({
-      where: { date: { gte: lookbackStart } },
+      // S8-D3: person-owned (imported) check-ins have no user to nudge.
+      where: { date: { gte: lookbackStart }, person_id: null },
       orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
       select: { user_id: true, date: true },
     });
 
     const byUser = new Map<string, Date[]>();
     for (const r of recent) {
+      if (r.user_id === null) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
       byUser.get(r.user_id)!.push(r.date);
     }
@@ -301,12 +302,8 @@ export class NudgeDetectorService {
    * notification groupBy. Merge happens in memory.
    */
   async detectInactive(now: Date): Promise<NudgeCandidate[]> {
-    const oldest = new Date(
-      now.getTime() - DETECTOR_WINDOWS.inactiveMaxDays * DAY_MS,
-    );
-    const newest = new Date(
-      now.getTime() - DETECTOR_WINDOWS.inactiveMinDays * DAY_MS,
-    );
+    const oldest = new Date(now.getTime() - DETECTOR_WINDOWS.inactiveMaxDays * DAY_MS);
+    const newest = new Date(now.getTime() - DETECTOR_WINDOWS.inactiveMinDays * DAY_MS);
 
     // Users with no activity newer than `newest`. We scope to users who
     // have any history at all (created_at older than the inactive window)
@@ -343,6 +340,7 @@ export class NudgeDetectorService {
 
     const lastCheckinByUser = new Map<string, Date | null>();
     for (const row of checkinAgg) {
+      if (row.user_id === null) continue; // user-scoped query; S8-D3 type narrowing only
       lastCheckinByUser.set(row.user_id, row._max.logged_at ?? null);
     }
     const lastNotifByUser = new Map<string, Date | null>();
@@ -381,27 +379,18 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function floorDays(later: Date, earlier: Date): number {
-  const ms = later.getTime() - earlier.getTime();
-  return Math.floor(ms / DAY_MS);
-}
-
 /**
  * Calendar-day difference in a given IANA timezone.
  *
  * Returns the integer number of local-calendar days between `earlier`
- * and `later` (later - earlier). Unlike `floorDays`, this is immune to
+ * and `later` (later - earlier). Unlike a raw millisecond floor, this is immune to
  * DST transitions because we project both timestamps onto their local
  * YYYY-MM-DD label and difference the labels as UTC midnights — DST
  * doesn't move calendar days, only the clock.
  *
  * Used by detectStreakBroken (audit P2-2). Exported for testing.
  */
-export function calendarDayDiff(
-  later: Date,
-  earlier: Date,
-  timezone: string,
-): number {
+export function calendarDayDiff(later: Date, earlier: Date, timezone: string): number {
   const laterKey = localDateKey(later, timezone);
   const earlierKey = localDateKey(earlier, timezone);
   // Reinterpret the two YYYY-MM-DD strings as UTC midnights so we can

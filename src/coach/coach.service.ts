@@ -86,7 +86,12 @@ export class CoachService {
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_WORKOUTS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_FOOD_MACROS, callerRole),
       this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole),
-      this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, callerRole),
+      this.consent.coachCanAccess(
+        coachId,
+        clientId,
+        ConsentScope.FITNESS_HABITS_PROGRESS,
+        callerRole,
+      ),
     ]);
     return { workouts, food, bodyMetrics, habitsProgress };
   }
@@ -458,7 +463,10 @@ export class CoachService {
         : Promise.resolve([]),
     ]);
 
-    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    let total_calories = 0,
+      total_protein_g = 0,
+      total_carbs_g = 0,
+      total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;
       const fi = entry.food_item;
@@ -569,18 +577,25 @@ export class CoachService {
       }),
     ]);
 
+    // Queries above are scoped to user_id IN clientIds (user-owned rows); the
+    // null guards only narrow the S8-D3 nullable owner column.
     const workedOutRecently = new Set(
-      workoutGroups.filter((g) => g._count._all > 0).map((g) => g.user_id),
+      workoutGroups
+        .filter((g) => g._count._all > 0)
+        .map((g) => g.user_id)
+        .filter((id): id is string => id !== null),
     );
 
     const weightLogsByUser = new Map<string, { date: Date; weight_lbs: number }[]>();
     for (const wl of allRecentWeightLogs) {
+      if (wl.user_id === null) continue;
       const arr = weightLogsByUser.get(wl.user_id) ?? [];
       if (arr.length < 4) arr.push({ date: wl.date, weight_lbs: wl.weight_lbs });
       weightLogsByUser.set(wl.user_id, arr);
     }
 
-    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> = [];
+    const alerts: Array<{ type: string; client_id: string; client_name: string; message: string }> =
+      [];
 
     for (const client of clients) {
       const weightLogs = weightLogsByUser.get(client.id) ?? [];
@@ -674,11 +689,11 @@ export class CoachService {
 
     // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
     const [
-      foodLogGroups,      // clients who logged food today
-      workoutGroups,      // clients who worked out in the last 5 days
-      pendingCheckIns,    // check-ins submitted but not reviewed
-      unreadMsgCount,     // messages not yet read by the coach
-      recentWeightLogs,   // weight logs for trend detection (last 30 days)
+      foodLogGroups, // clients who logged food today
+      workoutGroups, // clients who worked out in the last 5 days
+      pendingCheckIns, // check-ins submitted but not reviewed
+      unreadMsgCount, // messages not yet read by the coach
+      recentWeightLogs, // weight logs for trend detection (last 30 days)
       unreviewedCheckins, // per-client unreviewed check-in groupBy (for no_checkin flag)
     ] = await Promise.all([
       // Active today: clients with at least one food log entry today.
@@ -731,17 +746,22 @@ export class CoachService {
     ]);
 
     // ── Step 3: Derive attention_needed list from aggregated data ───────────
-    const workedOutRecently = new Set(workoutGroups.map((g: { user_id: string }) => g.user_id));
+    // All three groupBys are scoped to user_id IN clientIds (user-owned rows);
+    // the null filters only narrow the S8-D3 nullable owner column.
+    const workedOutRecently = new Set(
+      workoutGroups.map((g) => g.user_id).filter((id): id is string => id !== null),
+    );
     const loggedToday = new Set(foodLogGroups.map((g: { user_id: string }) => g.user_id));
     // Clients with at least one unreviewed check-in submitted (no_checkin flag).
     // (Finding 6 — MEDIUM, audit 2026-05-19)
     const hasUnreviewedCheckin = new Set(
-      unreviewedCheckins.map((r: { user_id: string }) => r.user_id),
+      unreviewedCheckins.map((r) => r.user_id).filter((id): id is string => id !== null),
     );
 
     // Group weight logs by client (already sorted desc by date per client).
     const weightLogsByUser = new Map<string, number[]>();
     for (const wl of recentWeightLogs) {
+      if (wl.user_id === null) continue;
       const arr = weightLogsByUser.get(wl.user_id) ?? [];
       if (arr.length < 4) arr.push(wl.weight_lbs);
       weightLogsByUser.set(wl.user_id, arr);

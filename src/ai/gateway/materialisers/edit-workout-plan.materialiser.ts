@@ -1,23 +1,12 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { AnalyticsService } from '../../../analytics/analytics.service';
 import { Events } from '../../../analytics/events';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
-import {
-  CapabilityMaterializer,
-  MaterializeResult,
-} from './capability-materialiser.interface';
-import {
-  applyWorkoutDiff,
-  WorkoutDiffApplyError,
-} from './__shared/workout-diff.applier';
+import { CapabilityMaterializer, MaterializeResult } from './capability-materialiser.interface';
+import { applyWorkoutDiff, WorkoutDiffApplyError } from './__shared/workout-diff.applier';
 import {
   PlanSnapshot,
   serialiseSnapshotExercises,
@@ -57,14 +46,10 @@ export const EditWorkoutPlanPayloadSchema = z
   })
   .strict();
 
-export type EditWorkoutPlanPayload = z.infer<
-  typeof EditWorkoutPlanPayloadSchema
->;
+export type EditWorkoutPlanPayload = z.infer<typeof EditWorkoutPlanPayloadSchema>;
 
 /** Used by `AiGatewayService.invoke` to validate at draft creation. */
-export function assertEditWorkoutPlanPayload(
-  raw: unknown,
-): EditWorkoutPlanPayload {
+export function assertEditWorkoutPlanPayload(raw: unknown): EditWorkoutPlanPayload {
   const parsed = EditWorkoutPlanPayloadSchema.parse(raw);
   assertDiffSerializedSizeWithinLimit(parsed.diff);
   return parsed;
@@ -116,8 +101,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
       throw new ForbiddenException({
         error: 'AI_DRAFT_NO_REQUESTER',
         capability: this.capability,
-        message:
-          'Draft has no requester_id; cannot verify scope at materialisation time.',
+        message: 'Draft has no requester_id; cannot verify scope at materialisation time.',
       });
     }
 
@@ -222,8 +206,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
             throw new ConflictException({
               error: 'gateway_concurrent_edit_retry',
               capability: this.capability,
-              reason:
-                'The plan was edited since this draft was created. Refresh and retry.',
+              reason: 'The plan was edited since this draft was created. Refresh and retry.',
               expected_revision_index: head.revision_index,
               provided_base_revision_index: payload.base_revision_index,
             });
@@ -231,10 +214,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
 
           // Apply the diff against the current head snapshot via the pure
           // applier (single integrity boundary, shared with create).
-          const baseline = snapshotFromRevisionJson(
-            head.exercises_json,
-            head.plan_meta_json,
-          );
+          const baseline = snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json);
           let snapshot: PlanSnapshot;
           try {
             snapshot = applyWorkoutDiff(baseline, payload.diff);
@@ -279,8 +259,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
               plan_meta_json: {
                 name: snapshot.meta.name,
                 type: snapshot.meta.type,
-                duration_estimate_minutes:
-                  snapshot.meta.duration_estimate_minutes,
+                duration_estimate_minutes: snapshot.meta.duration_estimate_minutes,
               } as unknown as Prisma.InputJsonValue,
               author_id: requesterId,
               author_kind: 'ai',
@@ -296,8 +275,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
               head_revision_id: newRevision.id,
               name: snapshot.meta.name,
               type: snapshot.meta.type,
-              duration_estimate_minutes:
-                snapshot.meta.duration_estimate_minutes,
+              duration_estimate_minutes: snapshot.meta.duration_estimate_minutes,
               version: { increment: 1 },
             },
           });
@@ -383,11 +361,15 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
       });
     }
 
-    const assignments = await this.prisma.clientWorkoutAssignment.findMany({
-      where: { workout_plan_id: planId },
-      select: { client_id: true },
-      distinct: ['client_id'],
-    });
+    const assignments = (
+      await this.prisma.clientWorkoutAssignment.findMany({
+        // S8-D3: person-owned (imported) assignments have no client user; only
+        // user-owned rows carry a client to authorise against.
+        where: { workout_plan_id: planId, person_id: null },
+        select: { client_id: true },
+        distinct: ['client_id'],
+      })
+    ).flatMap((a) => (a.client_id === null ? [] : [{ client_id: a.client_id }]));
 
     if (assignments.length === 0) {
       // Unassigned plan: scope on tenant ownership. A head coach (coach_id ===
@@ -410,10 +392,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
     // (deny-by-default — a sub-coach must not edit a plan shared with a client
     // outside their roster).
     for (const a of assignments) {
-      const ok = await this.subCoachScope.canAccessClient(
-        requesterId,
-        a.client_id,
-      );
+      const ok = await this.subCoachScope.canAccessClient(requesterId, a.client_id);
       if (!ok) {
         this.logger.warn(
           {
@@ -428,8 +407,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
         throw new ForbiddenException({
           error: 'AI_LIVE_CREATE_CLIENT_SCOPE_FORBIDDEN',
           capability: this.capability,
-          message:
-            'Requester is not authorized to edit a plan for this client.',
+          message: 'Requester is not authorized to edit a plan for this client.',
         });
       }
     }

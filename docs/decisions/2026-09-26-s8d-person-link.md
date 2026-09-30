@@ -162,6 +162,45 @@ exactly what these policies exist to defend.
      person-owned row through direct access; the flip is service-role only.
    - `ClientWorkoutAssignment`: `assignment_coach_manage` (USING and WITH CHECK) and
      `assignment_client_read` gain `AND "person_id" IS NULL`.
+     **Implementation addendum (2026-09-29, PR #587 fix round 1, orchestrator decision):** the
+     D3 live matrix surfaced a **latent base defect** in `assignment_coach_manage` as shipped in
+     `20260702000000` — its WITH CHECK reads `WorkoutPlan`, whose `client_read_assigned_plans`
+     (`20260620000000`) reads `ClientWorkoutAssignment`, so PostgreSQL refused **every** direct
+     INSERT/UPDATE on `ClientWorkoutAssignment` by a non-BYPASSRLS role with 42P17 ("infinite
+     recursion detected in policy") before evaluating any predicate; the designed coach-manage
+     write branch was unusable through direct access (the app writes as service_role, so it
+     never observed it). Reproduced on `integration/importer` without S8-D3. Fixed inside the D3
+     slice as a twelfth directory `20270125000011_cwa_coach_manage_plan_owner_helper`: the
+     plan-ownership test moves, predicate unchanged, into a `SECURITY DEFINER` `STABLE` helper
+     `app.current_user_owns_workout_plan(plan_id text)` (`SET search_path = ''`,
+     schema-qualified, EXECUTE revoked from PUBLIC and granted to `service_role`, `authenticated`,
+     `anon`, precedent `20261212000000`). SECURITY DEFINER SQL functions are never inlined, so
+     the rewriter no longer sees the cycle. Nobody gains read or write access: the helper returns
+     only whether the **caller** owns **one** plan id, and the rest of the policy is byte-identical
+     to D3-1. Reversible (`down.sql` restores the D3-1 text verbatim). Live-tested in
+     `test/rls-s8d3-person-owned-policies.spec.ts` (the 23 formerly-42P17 matrix cells pass as
+     written; coach A on coach B's plan → 42501; clients/students/anon cannot write; unlinked
+     Person rows service-role only). **Pre-existing gap, decided by the owner (D8, 2026-09-29):** the
+     policy has never checked the _client's_ tenancy — a coach can assign their own plan to another
+     coach's student through direct access (the application layer guards this today). The owner
+     decided that `assignment_coach_manage` MUST apply the same coach-client tenancy check the app
+     applies (D8, a tightening). D8 is implemented in the stacked slice PR #593 (migration
+     `20270125000012_cwa_coach_manage_client_tenancy`, branch `d8/assignment-tenancy`, based on
+     this PR's head), which flips this PR's "coach B assigns own plan to coach A's client → allowed"
+     matrix cell to DENY. Until #593 lands, no SHA containing `20270125000011` is to be deployed
+     (merge is not deploy; backend deploy is a manual SHA-pinned dispatch): the cycle fix turns a
+     dead direct-access write path into a working one, and only D8 closes the tenancy gap on it.
+     **Rollout and rollback on populated data (R587-c7B-04):** the forward chain validates sixteen
+     constraints in `20270125000010` (SHARE UPDATE EXCLUSIVE, no write block) under a 30 s statement
+     timeout; if a VALIDATE times out, `prisma migrate deploy` leaves the directory in the failed
+     state — recover with `prisma migrate resolve --rolled-back 20270125000010_scout_person_owned_validate`
+     and re-run `migrate deploy` (every VALIDATE is idempotent; validating an already-valid constraint
+     is a no-op, so partial progress is kept). The step-1 `down.sql` runs in three transactions so the
+     only full scans of the five hot parents happen under SHARE UPDATE EXCLUSIVE (a temporary
+     `CHECK (owner IS NOT NULL)` validated before `SET NOT NULL`, which PostgreSQL then satisfies
+     without a scan). CI job `person-owned-migration-rehearsal` proves forward → full down chain →
+     forward on populated synthetic fixtures (row counts stated in the job log), asserting row counts
+     and per-table checksums unchanged and every CONCURRENTLY index valid.
    - `WorkoutSession`, `WeightLog`, `Habit`: D3 **recreates** the three out-of-band policies inside
      the migration directory (`ENABLE`/`FORCE` + idempotent `DROP POLICY IF EXISTS` + `CREATE POLICY`)
      with `"user_id" = cur AND "person_id" IS NULL`. This also closes the harness gap and
@@ -170,13 +209,36 @@ exactly what these policies exist to defend.
      (L226-249) and the out-of-band file is marked superseded for these three tables.
    - Children: the non-owner `EXISTS(…)` branch of `p_exerciseset_*`, `p_habitlog_*` and
      `p_clientworkoutassignmentsnapshot_*` gains `AND <parent>."person_id" IS NULL`.
-2. **Owner exception, stated truthfully.** The `app.is_owner()` branches on `ExerciseSet`,
-   `HabitLog`, `CheckIn` and the snapshot are **kept unchanged**: the backend `owner` role can
-   read person-owned rows directly, as it can read every other row on those tables today. D3
-   does not add an owner branch to `WorkoutSession`/`WeightLog`/`Habit` (none exists). If the
-   owner wants the operator role excluded from imported history, that is a one-line change per
-   policy and a product decision — recorded as a note, not an OQ, because the default is the
-   existing behaviour.
+2. **No owner exception for person-owned rows** (superseded 2026-09-29, PR #587/#593 fix round 3,
+   independent review finding S4-A-587-593-01, class A). The first D3 text kept the inherited
+   `app.is_owner()` branches on `ExerciseSet`, `HabitLog`, `CheckIn` (`check_in_owner_all`) and the
+   snapshot unchanged as a "stated owner exception". That predicate reads two session GUCs
+   (`app.current_user_id`, `app.current_user_role`; `20261212000000` L59-86) that any SQL session
+   running as `anon` or `authenticated` can `set_config()` itself — the same GUC D8
+   (`20270125000012`) already treats as untrusted for the JWT principal class — so a student JWT
+   plus a forged owner GUC reached every coach's imported person-owned history. Checked before
+   choosing the closure: the application reaches these tables only through Prisma as the database
+   owner (BYPASSRLS; `RlsContextInterceptor` sets the GUCs on that connection, where RLS never runs)
+   and the mobile app uses supabase-js for auth and realtime broadcast only (no direct table reads),
+   so **no real owner read of these tables goes through RLS**. Closure (in `20270125000000`, edited
+   in place, not deployed anywhere): person-owned rows are `service_role`-only on all eight tables for
+   every RLS-bound principal. `check_in_owner_all` gains `AND "person_id" IS NULL` (USING and WITH
+   CHECK); the three child owner branches become `app.is_owner() AND app.<parent>_is_user_owned(fk)`
+   with three new `SECURITY DEFINER` `STABLE` `search_path = ''` helpers
+   (`app.workout_session_is_user_owned(text)`, `app.habit_is_user_owned(text)`,
+   `app.assignment_is_user_owned(text)`; EXECUTE revoked from PUBLIC, granted to `service_role`,
+   `anon`, `authenticated`) that answer one fact about one id — "does a user-owned parent with this id
+   exist" — and are false for a missing parent (fail-closed). A definer helper is needed because the
+   parents' own policies (`WorkoutSession`/`Habit` admit no owner) would hide the parent from an
+   inline check, and a `NOT EXISTS` form would be fail-open on the invisible person-owned parent.
+   The owner branch is **unchanged for user-owned rows**; whether the GUC-keyed identity should be
+   trusted at all for the API roles on user-owned rows is a platform-wide question outside this
+   slice (recorded in the PR). `down.sql` restores `check_in_owner_all` verbatim and drops the three
+   helpers after the child policies that name them are restored. The §2.2 item 4 matrix row for
+   `owner` and the live spec's owner-positive cells flipped from allow to deny; the spec's
+   "S4-A-587-593-01" block is the negative matrix (forged owner GUC under student / other coach /
+   anon JWT class, the genuine JWT owner, a backend-class owner; SELECT / INSERT / UPDATE / DELETE on
+   each affected table), every cell of which was admitted at 798208b7.
 3. **Cross-tenant `coach_id` protection on `CheckIn`.** `CheckIn.coach_id` is nullable and
    independent of `user_id` (`schema.prisma` L1102-1107). For person-owned rows D3 enforces it in
    the database: `CHECK ("person_id" IS NULL OR "coach_id" IS NOT NULL)` plus a composite
@@ -201,7 +263,7 @@ exactly what these policies exist to defend.
    | a different coach                                        | deny                                                                              | deny                                                                                                                       |
    | the client, before link / after unlink                   | allow own rows                                                                    | deny (not theirs)                                                                                                          |
    | the linked client, after link (row now `user_id = cur`)  | allow                                                                             | n/a — the row is user-owned once linked                                                                                    |
-   | `owner` role                                             | as today                                                                          | allow on `ExerciseSet`, `HabitLog`, `CheckIn`, snapshot (stated exception); deny on `WorkoutSession`, `WeightLog`, `Habit` |
+   | `owner` role (genuine, any RLS-bound class) or a forged owner GUC | as today (owner branch unchanged for user-owned rows)                     | **deny all verbs on all eight tables** (fix round 3, S4-A-587-593-01; formerly allowed on `ExerciseSet`, `HabitLog`, `CheckIn`, snapshot) |
    | any non-bypass principal, INSERT/UPDATE with `person_id` | —                                                                                 | WITH CHECK deny (flip and person-owned writes are service-role only)                                                       |
 
    Plus: `CheckIn` insert with `person_id` set and `coach_id` ≠ `person.coach_id` fails the
@@ -506,6 +568,17 @@ unique constraint, `DROP INDEX CONCURRENTLY` each D3-2 index, drop columns, drop
 each with the same timeouts (precedent `20270118000000_…/down.sql` L5-6). The type ripple (§2.1)
 ships in the same slice because the generated client changes at D3-1. **All four directories count
 against the S11 pin (§6): 173 → 177 at D3, 178 after S8-E1a, 179 after S8-D6.**
+
+_Implementation note (2026-09-29):_ the landed tree is twelve directories (`20270125000000` …
+`20270125000011`): the four planned steps split so that each `CONCURRENTLY` index is its own
+non-transactional directory, plus `20270125000011_cwa_coach_manage_plan_owner_helper` for the
+base policy-cycle fix recorded in §2.2 item 4. The pin arithmetic in §6 counts the landed number:
+173 → 185 at D3. **S11 harness re-pin (R587-c7B-05, §6 "Migration sequencing" second option):**
+this PR re-pins the S11 proof harness in the same landing — `EXPECTED_MIGRATIONS` 173 → 185, the
+last accepted directory `20270124000000_scout_run_observation_expand` → `20270125000011_…`, and the
+byte-identity base head → this PR's schema commit — in `test/utils/g2-s11-bootstrap.sh`,
+`test/utils/g2-s11-pg-harness.ts`, `test/utils/g2-s11-db.ts` and `test/utils/g2-s11-db-guard.spec.ts`.
+The stacked D8 slice (#593) re-pins again to 186 / `20270125000012_…`.
 
 ## 3. Link flow against the existing machinery
 

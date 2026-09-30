@@ -508,6 +508,22 @@ model User {
   roman_sessions RomanSession[] @relation("RomanSessionUser")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
+  // S8-D3 (docs/decisions/2026-09-26-s8d-person-link.md §2.3-2.5): back-relations for the
+  // imported-Person link rails. FKs live on the Person/link-side rows; nothing here changes
+  // how an existing User row behaves.
+  linked_persons                 Person[]                @relation("PersonLinkedUser")
+  person_invites_created         PersonInvite[]          @relation("PersonInviteCreatedBy")
+  person_invites_targeted        PersonInvite[]          @relation("PersonInviteTargetUser")
+  person_invites_revoked         PersonInvite[]          @relation("PersonInviteRevokedBy")
+  person_invite_challenges       PersonInviteChallenge[] @relation("PersonInviteChallengeClaimant")
+  person_links                   PersonLink[]            @relation("PersonLinkUser")
+  person_links_coach_confirmed   PersonLink[]            @relation("PersonLinkCoachConfirmedBy")
+  person_links_unlinked          PersonLink[]            @relation("PersonLinkUnlinkedBy")
+  person_link_proposals          PersonLinkProposal[]    @relation("PersonLinkProposalUser")
+  person_link_proposals_proposed PersonLinkProposal[]    @relation("PersonLinkProposalProposedBy")
+  person_link_proposals_decided  PersonLinkProposal[]    @relation("PersonLinkProposalDecidedBy")
+  person_link_outbox_received    PersonLinkOutbox[]      @relation("PersonLinkOutboxRecipient")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -861,8 +877,15 @@ model LoggedFoodEntry {
 
 model WorkoutSession {
   id               String        @id @default(uuid())
-  user_id          String
-  user             User          @relation(fields: [user_id], references: [id])
+  // S8-D3 (D-S8-2 option a): exactly one owner — a signed-up User OR an imported Person. The
+  // database carries CHECK ((user_id IS NULL) <> (person_id IS NULL)) (hand-written,
+  // 20270125000000_scout_person_owned_schema); a link/unlink flips the pair in one UPDATE.
+  user_id          String?
+  // onDelete: Restrict is the database's action (baseline WorkoutSession_user_id_fkey); it must stay
+  // explicit now that the relation is optional, or Prisma's implied action flips to SetNull (drift).
+  user             User?         @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  person_id        String?
+  person           Person?       @relation(fields: [person_id], references: [id], onDelete: Restrict)
   date             DateTime      @db.Date
   workout_name     String
   workout_type     String
@@ -874,6 +897,7 @@ model WorkoutSession {
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
+  @@index([person_id, date])
 }
 
 model ExerciseSet {
@@ -929,8 +953,13 @@ model FastingWindow {
 
 model WeightLog {
   id         String   @id @default(uuid())
-  user_id    String
-  user       User     @relation(fields: [user_id], references: [id])
+  // S8-D3: exactly one owner (User XOR Person); CHECK in 20270125000000_scout_person_owned_schema.
+  user_id    String?
+  // onDelete: Restrict = the database's action (baseline WeightLog_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  person_id  String?
+  person     Person?  @relation(fields: [person_id], references: [id], onDelete: Restrict)
   date       DateTime @db.Date
   weight_lbs Float
   notes      String?
@@ -938,6 +967,7 @@ model WeightLog {
 
   // Hot path: weight charts query by (user_id, date desc).
   @@index([user_id, date])
+  @@index([person_id, date])
 }
 
 model NotificationPreferences {
@@ -1035,13 +1065,20 @@ model NotificationPreferences {
 
 model Habit {
   id           String     @id @default(uuid())
-  user_id      String
-  user         User       @relation(fields: [user_id], references: [id])
+  // S8-D3: exactly one owner (User XOR Person); CHECK in 20270125000000_scout_person_owned_schema.
+  user_id      String?
+  // onDelete: Restrict = the database's action (baseline Habit_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user         User?      @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  person_id    String?
+  person       Person?    @relation(fields: [person_id], references: [id], onDelete: Restrict)
   name         String
   category     String     @default("custom")
   target_value Float?
   unit         String?
   logs         HabitLog[]
+
+  @@index([person_id])
 }
 
 model HabitLog {
@@ -1101,8 +1138,17 @@ model LessonCompletion {
 // daily upsert.
 model CheckIn {
   id                String      @id @default(uuid())
-  user_id           String
-  user              User        @relation(fields: [user_id], references: [id])
+  // S8-D3: exactly one owner (User XOR Person). For a person-owned row coach_id is required and
+  // pinned to the Person's tenant by the composite FK (person_id, coach_id) -> Person(id, coach_id)
+  // (CHECK + FK hand-written in 20270125000000 / 20270125000009; MATCH SIMPLE skips user-owned
+  // rows). One-per-day for person-owned rows: partial unique (person_id, date) WHERE person_id
+  // IS NOT NULL (20270125000005), which Prisma cannot express.
+  user_id           String?
+  // onDelete: Restrict = the database's action (baseline CheckIn_user_id_fkey); explicit so the
+  // optional relation does not drift to Prisma's implied SetNull.
+  user              User?       @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  person_id         String?
+  person            Person?     @relation(fields: [person_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
   coach_id          String?
   date              DateTime    @db.Date
   mood              Int? // 1-5, optional
@@ -2324,8 +2370,11 @@ model ClientWorkoutAssignment {
   id                         String      @id @default(uuid())
   workout_plan_id            String
   workout_plan               WorkoutPlan @relation(fields: [workout_plan_id], references: [id], onDelete: Cascade)
-  client_id                  String
-  client                     User        @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  // S8-D3: exactly one owner (client User XOR imported Person); CHECK in 20270125000000.
+  client_id                  String?
+  client                     User?       @relation("ClientWorkoutAssignments", fields: [client_id], references: [id], onDelete: Cascade)
+  person_id                  String?
+  person                     Person?     @relation(fields: [person_id], references: [id], onDelete: Restrict)
   assigned_by_coach_id       String
   assigned_by_coach          User        @relation("CoachWorkoutAssignments", fields: [assigned_by_coach_id], references: [id], onDelete: Cascade)
   scheduled_for              DateTime
@@ -2352,6 +2401,7 @@ model ClientWorkoutAssignment {
   snapshot ClientWorkoutAssignmentSnapshot? @relation()
 
   @@index([client_id, scheduled_for])
+  @@index([person_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
   @@index([assigned_by_coach_id, approved_by_coach_at])
@@ -6965,11 +7015,35 @@ model Person {
   state            PersonState @default(InvitePending)
   created_at       DateTime    @default(now())
   updated_at       DateTime    @default(now()) @updatedAt
+  // S8-D3 (docs/decisions/2026-09-26-s8d-person-link.md §2.3): the current active account, NULL
+  // unless state = Claimed. Redundant with the active PersonLink (§2.5) so roster reads and the
+  // owner flip need no join; the link transaction writes both or neither. Cardinality lives on
+  // PersonLink's partial uniques, not here. Never set by reconstruction replays. No contact or
+  // login column is added (D2 stands).
+  linked_user_id   String?
+  linked_user      User?       @relation("PersonLinkedUser", fields: [linked_user_id], references: [id], onDelete: Restrict)
+
+  // S8-D3 person-owned native rows (§2.1) and the link rails (§2.4-2.5). onDelete Restrict on
+  // every child: a Person with owned rows or link history is never silently dropped.
+  workout_sessions     WorkoutSession[]
+  weight_logs          WeightLog[]
+  habits               Habit[]
+  check_ins            CheckIn[]
+  workout_assignments  ClientWorkoutAssignment[]
+  native_provenance    ImportNativeProvenance[]
+  invites              PersonInvite[]
+  links                PersonLink[]
+  link_proposals       PersonLinkProposal[]
 
   // external_ref idempotency key — a source entity maps to exactly one roster
   // Person per tenant, so reconstruction replays are no-ops.
   @@unique([coach_id, source_platform, source_person_id])
+  // S8-D3 tenant pin: target of the composite FKs (person_id, coach_id) on CheckIn, PersonInvite,
+  // PersonLink and PersonLinkProposal, so a person-owned row can never name another tenant.
+  // Built CONCURRENTLY (20270125000001) and promoted to this constraint (20270125000009).
+  @@unique([id, coach_id])
   @@index([coach_id])
+  @@index([linked_user_id])
 }
 
 // Per-entity reconciliation ledger: honest accounting for one reconstruction
@@ -7023,10 +7097,234 @@ model ImportNativeProvenance {
   outcome          String
   reason           String?
   created_at       DateTime      @default(now())
+  // S8-D3 (§2.6): the Person the S8-E writer resolved as owner AT IMPORT TIME, set only for
+  // client-owned kinds and never cleared. The immutable "which Person did this come from" fact
+  // the unlink join needs; the owner columns on the native row are mutable and cannot serve.
+  person_id        String?
+  person           Person?       @relation(fields: [person_id], references: [id], onDelete: Restrict)
 
   @@unique([coach_id, source_namespace, entity_type, source_id], map: "ImportNativeProvenance_identity_key")
   @@index([coach_id, native_kind, native_id])
   @@index([coach_id, import_intent_id])
+  @@index([person_id])
+}
+
+// ============================================================
+// S8-D3 — imported Person -> signed-up account link rails
+// (docs/decisions/2026-09-26-s8d-person-link.md §2.4-2.5; migration
+// 20270125000000_scout_person_owned_schema and its three staged siblings).
+// Schema-only in D3: no service writes these tables until S8-D4a+. Every table is
+// service_role-only (RLS ENABLE + FORCE, RESTRICTIVE deny-all to anon + authenticated, API-role
+// privileges revoked) exactly as Person. Closed vocabularies, partial uniques, XOR/pairing CHECKs
+// and the composite tenant FKs are hand-written SQL the database carries and Prisma cannot express.
+// ============================================================
+
+// Person-bound, single-use, expiring, revocable claim invite (L2). NOT the coach-attach InviteCode.
+// contact_email / contact_phone are the contacts the COACH confirmed, held for delivery only,
+// scrubbed to NULL at any terminal status, never copied to Person or User, never a lookup key.
+model PersonInvite {
+  id                 String    @id @default(uuid())
+  coach_id           String
+  person_id          String
+  person             Person    @relation(fields: [person_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+  created_by_user_id String
+  created_by         User      @relation("PersonInviteCreatedBy", fields: [created_by_user_id], references: [id], onDelete: Restrict)
+  // sha256 of a >=128-bit random URL token; the raw token is never stored.
+  token_hash         String    @unique
+  contact_email      String?
+  contact_phone      String?
+  // email | phone
+  sent_via           String?
+  sent_at            DateTime?
+  // sent | logged | failed (transport's truthful outcome; `logged` is not delivery)
+  send_status        String?
+  // open | claimed | declined | revoked | expired; at most one `open` per Person (partial unique)
+  status             String    @default("open")
+  // Set when minted for an accepted L5/L8 proposal: only this user may request a challenge.
+  target_user_id     String?
+  target_user        User?     @relation("PersonInviteTargetUser", fields: [target_user_id], references: [id], onDelete: Restrict)
+  expires_at         DateTime
+  revoked_at         DateTime?
+  revoked_by_user_id String?
+  revoked_by         User?     @relation("PersonInviteRevokedBy", fields: [revoked_by_user_id], references: [id], onDelete: Restrict)
+  // coach | admin | locked | superseded (why status = revoked)
+  revoke_reason      String?
+  claimed_at         DateTime?
+  claimed_link_id    String?
+  claimed_link       PersonLink? @relation("PersonInviteClaimedLink", fields: [claimed_link_id], references: [id], onDelete: Restrict)
+  declined_at        DateTime?
+  // Wrong codes on this invite's challenges, incremented atomically; locked (revoked) at 5.
+  failed_attempts    Int       @default(0)
+  resend_count       Int       @default(0)
+  last_sent_at       DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @default(now()) @updatedAt
+
+  challenges  PersonInviteChallenge[]
+  links       PersonLink[]            @relation("PersonLinkInvite")
+  proposals   PersonLinkProposal[]    @relation("PersonLinkProposalInvite")
+  outbox      PersonLinkOutbox[]      @relation("PersonLinkOutboxInvite")
+
+  @@index([coach_id])
+  @@index([person_id])
+  @@index([target_user_id])
+}
+
+// One-time code sent to the invite's coach-held contact on the channel the CLIENT chose (L3).
+// One non-voided challenge per (invite, claimant); usable only by claimant_user_id.
+model PersonInviteChallenge {
+  id               String       @id @default(uuid())
+  invite_id        String
+  invite           PersonInvite @relation(fields: [invite_id], references: [id], onDelete: Cascade)
+  coach_id         String
+  claimant_user_id String
+  claimant         User         @relation("PersonInviteChallengeClaimant", fields: [claimant_user_id], references: [id], onDelete: Restrict)
+  // email | phone
+  channel          String
+  // HMAC-SHA256 (server key) of the 6-digit code; constant-time compare on verify.
+  code_hash        String
+  expires_at       DateTime
+  sent_at          DateTime?
+  send_status      String?
+  failed_attempts  Int          @default(0)
+  verified_at      DateTime?
+  voided_at        DateTime?
+  created_at       DateTime     @default(now())
+
+  links PersonLink[] @relation("PersonLinkChallenge")
+
+  @@index([invite_id])
+  @@index([claimant_user_id])
+}
+
+// The record of a COMPLETED link, inserted only by the link transaction with linked_at set, in
+// the same transaction as the re-own: the durable primary audit (L6). Active = linked_at IS NOT
+// NULL AND unlinked_at IS NULL; the database holds one active account per Person and one Person
+// per account per coach (strict, no merge exemption until OQ-1) via partial uniques.
+model PersonLink {
+  id                         String    @id @default(uuid())
+  coach_id                   String
+  person_id                  String
+  person                     Person    @relation(fields: [person_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+  user_id                    String
+  user                       User      @relation("PersonLinkUser", fields: [user_id], references: [id], onDelete: Restrict)
+  // invite | proposal_match | proposal_merge; every path ends in invite + challenge + confirmation
+  path                       String
+  invite_id                  String
+  invite                     PersonInvite          @relation("PersonLinkInvite", fields: [invite_id], references: [id], onDelete: Restrict)
+  challenge_id               String
+  challenge                  PersonInviteChallenge @relation("PersonLinkChallenge", fields: [challenge_id], references: [id], onDelete: Restrict)
+  proposal_id                String?
+  proposal                   PersonLinkProposal?   @relation("PersonLinkProposalLink", fields: [proposal_id], references: [id], onDelete: Restrict)
+  // email | phone, and sha256 of the verified contact — never the raw contact.
+  verified_channel           String
+  verified_contact_digest    String
+  client_confirmed_at        DateTime
+  coach_confirmed_at         DateTime
+  coach_confirmed_by_user_id String
+  coach_confirmed_by         User      @relation("PersonLinkCoachConfirmedBy", fields: [coach_confirmed_by_user_id], references: [id], onDelete: Restrict)
+  linked_at                  DateTime
+  // linked_at + 30 days (L7), computed once and never moved (CHECK).
+  undo_deadline_at           DateTime
+  // Per-table counts only, no ids or contents.
+  records_moved              Json
+  unlinked_at                DateTime?
+  // client | coach | admin
+  unlinked_by_role           String?
+  unlinked_by_user_id        String?
+  unlinked_by                User?     @relation("PersonLinkUnlinkedBy", fields: [unlinked_by_user_id], references: [id], onDelete: Restrict)
+  // not_me | wrong_person | changed_mind | coach_error | support_request | other
+  unlink_reason_code         String?
+  // Support-only free text; never pushed to the other side.
+  unlink_note                String?
+  records_returned           Json?
+  // proposal_merge only: the earlier active link this one joins (same coach, same account by
+  // composite FK). Activation is refused by the strict (coach_id, user_id) unique until OQ-1 (D6).
+  merge_anchor_link_id       String?
+  merge_anchor               PersonLink?  @relation("PersonLinkMergeAnchor", fields: [merge_anchor_link_id, coach_id, user_id], references: [id, coach_id, user_id], onDelete: Restrict, onUpdate: Cascade)
+  merge_dependants           PersonLink[] @relation("PersonLinkMergeAnchor")
+  // pending | delivered | failed — mirror of this link's outbox rows (B5).
+  notify_status              String    @default("pending")
+  notify_attempts            Int       @default(0)
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @default(now()) @updatedAt
+
+  claimed_invites  PersonInvite[]       @relation("PersonInviteClaimedLink")
+  anchored_proposals PersonLinkProposal[] @relation("PersonLinkProposalAnchor")
+  outbox           PersonLinkOutbox[]
+
+  // Backs the self-referencing anchor FK; created before that FK in the same statement list.
+  @@unique([id, coach_id, user_id])
+  @@index([coach_id])
+  @@index([user_id])
+  @@index([person_id])
+  @@index([invite_id])
+}
+
+// L5/L8 "coach says: this imported Person is this client" object. Its own lifecycle, no effect on
+// PersonLink uniqueness; it activates only through a Person-bound invite + challenge + "yes".
+model PersonLinkProposal {
+  id                   String    @id @default(uuid())
+  coach_id             String
+  person_id            String
+  person               Person    @relation(fields: [person_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Cascade)
+  user_id              String
+  user                 User      @relation("PersonLinkProposalUser", fields: [user_id], references: [id], onDelete: Restrict)
+  // match | merge
+  kind                 String
+  proposed_by_user_id  String
+  proposed_by          User      @relation("PersonLinkProposalProposedBy", fields: [proposed_by_user_id], references: [id], onDelete: Restrict)
+  // Required when kind = merge: an active link of the same (coach_id, user_id).
+  merge_anchor_link_id String?
+  merge_anchor         PersonLink? @relation("PersonLinkProposalAnchor", fields: [merge_anchor_link_id], references: [id], onDelete: Restrict)
+  // open | accepted | declined | expired | revoked | superseded; one `open` per Person (partial unique)
+  status               String    @default("open")
+  expires_at           DateTime
+  // Set when the client taps "yes, start verification": the Person-bound invite minted for it.
+  invite_id            String?
+  invite               PersonInvite? @relation("PersonLinkProposalInvite", fields: [invite_id], references: [id], onDelete: Restrict)
+  decided_at           DateTime?
+  decided_by_user_id   String?
+  decided_by           User?     @relation("PersonLinkProposalDecidedBy", fields: [decided_by_user_id], references: [id], onDelete: Restrict)
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @default(now()) @updatedAt
+
+  links  PersonLink[]       @relation("PersonLinkProposalLink")
+  outbox PersonLinkOutbox[] @relation("PersonLinkOutboxProposal")
+
+  @@index([coach_id])
+  @@index([person_id])
+  @@index([user_id])
+}
+
+// Durable delivery of the L4/L7 notifications (B5): one row per (subject, event, recipient,
+// channel), inserted inside the link/unlink/decline transaction; a cron worker drains
+// delivered_at IS NULL AND next_attempt_at <= now() with back-off. Payloads carry ids, display
+// names and reason CODES only. The subject is the link (linked|unlinked), the invite (declined) or
+// the proposal (proposal_*); the database CHECKs the event/subject pairing.
+model PersonLinkOutbox {
+  id                String      @id @default(uuid())
+  link_id           String?
+  link              PersonLink? @relation(fields: [link_id], references: [id], onDelete: Restrict)
+  invite_id         String?
+  invite            PersonInvite? @relation("PersonLinkOutboxInvite", fields: [invite_id], references: [id], onDelete: Restrict)
+  proposal_id       String?
+  proposal          PersonLinkProposal? @relation("PersonLinkOutboxProposal", fields: [proposal_id], references: [id], onDelete: Restrict)
+  // linked | unlinked | declined | proposal_created | proposal_declined | proposal_revoked |
+  // proposal_expired | proposal_superseded
+  event             String
+  recipient_user_id String
+  recipient         User        @relation("PersonLinkOutboxRecipient", fields: [recipient_user_id], references: [id], onDelete: Restrict)
+  // in_app | email
+  channel           String
+  attempts          Int         @default(0)
+  next_attempt_at   DateTime    @default(now())
+  delivered_at      DateTime?
+  last_error        String?
+  created_at        DateTime    @default(now())
+
+  @@index([link_id])
+  @@index([recipient_user_id])
 }
 
 // S10-B run declaration / observation evidence / settled basis (docs/decisions/2026-09-26-s10-induction.md
