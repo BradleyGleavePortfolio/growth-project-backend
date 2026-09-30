@@ -18,9 +18,10 @@ import { ScoutReconstructService } from '../../../src/scout/scout-reconstruct.se
  * S9-C (D-S9-1): the tail now asks the facts service for the S9 facts AFTER the lock and CAS check
  * and hands `reconcile(facts).verdict` to the arbiter, so step 4's `reconciliation_not_performed`
  * is no longer reachable from this hook. The facts service is a double here that returns an EMPTY
- * staged partition — the S9-A reconciler's verdict for that is `partial / coverage_basis_unknown`
- * (C-COV: required families undeterminable, unknown never zero) — so every case below keeps its
- * S8-G meaning with that code substituted. The S9 order marker `facts` sits between `lock` and
+ * staged partition — the S9-A reconciler's verdict for that was `partial / coverage_basis_unknown`
+ * (C-COV: required families undeterminable, unknown never zero); since S15a (N-03) a partition with
+ * no usable result settles `failed / no_usable_result` instead, the conditions staying in the
+ * report — so every case below keeps its S8-G meaning with that verdict substituted. The S9 order marker `facts` sits between `lock` and
  * `terminal`; a CAS miss never reaches it.
  */
 
@@ -175,15 +176,15 @@ describe('onTransferSettled — S8-G body', () => {
     );
     expect(d.reconstructRun.mock.calls[0][3]).toMatchObject({ pinned: null, pinDigest: null });
     expect(terminalCall(d)?.slice(1)).toEqual(
-      expect.arrayContaining(['partial', 'partial', 'coverage_basis_unknown', COACH, INTENT, 1]),
+      expect.arrayContaining(['failed', 'failed', 'no_usable_result', COACH, INTENT, 1]),
     );
     expect(d.capture).toHaveBeenCalledWith(
       COACH,
       Events.SCOUT_RUN_SETTLED,
       expect.objectContaining({
         intent_id: INTENT,
-        terminal_status: 'partial',
-        reason_code: 'coverage_basis_unknown',
+        terminal_status: 'failed',
+        reason_code: 'no_usable_result',
       }),
     );
     // `complete` never appears in any write argument (S7-L invariant kept).
@@ -227,7 +228,7 @@ describe('onTransferSettled — S8-G body', () => {
     expect(d.stagedGroupBy).toHaveBeenCalledTimes(1);
     expect(d.ledgerGroupBy).toHaveBeenCalledTimes(1);
     expect(terminalCall(d)?.slice(1)).toEqual(
-      expect.arrayContaining(['partial', 'coverage_basis_unknown']),
+      expect.arrayContaining(['failed', 'no_usable_result']),
     );
   });
 
@@ -327,7 +328,7 @@ describe('onTransferSettled — S8-G body', () => {
     expect(d.capture).not.toHaveBeenCalled();
   });
 
-  it('G06: claim failed with zero staged → failed/transfer_failed; with staged rows → partial', async () => {
+  it('G06: claim failed with zero staged → failed/transfer_failed; with staged rows → the S9 verdict (step 3), never transfer_failed', async () => {
     const a = make(open);
     a.d.completionFindUnique.mockResolvedValue({ terminal_status: 'failed' });
     a.d.stagedGroupBy.mockResolvedValue([]);
@@ -341,8 +342,9 @@ describe('onTransferSettled — S8-G body', () => {
     b.d.completionFindUnique.mockResolvedValue({ terminal_status: 'failed' });
     await b.service.onTransferSettled(COACH, INTENT, 1);
     expect(terminalCall(b.d)?.slice(1)).toEqual(
-      expect.arrayContaining(['partial', 'coverage_basis_unknown']),
+      expect.arrayContaining(['failed', 'no_usable_result']),
     );
+    expect(terminalCall(b.d)?.slice(1)).not.toContain('transfer_failed');
   });
 
   it('an unexpected pass failure propagates; nothing is locked or written (run left open)', async () => {

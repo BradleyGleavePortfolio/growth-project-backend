@@ -349,11 +349,14 @@ suite('s10_unseen — NEW SOURCE → CORE DIFF = 0, live on PG17 (R39, R41)', ()
     expect(again.run.terminal_status).toBe('complete');
   });
 
-  it("R39 (b) nativeRules 'absent' → partial / unresolved_identities", async () => {
+  it("R39 (b) nativeRules 'absent' → no usable result: failed / no_usable_result (S15a, N-03)", async () => {
     const coach = 's10u-b';
     const { run, basis } = await chain(coach, NATIVE_CLEAN, { nativeRulesAbsent: true });
-    expect(run.terminal_status).toBe('partial');
-    expect(run.reason_code).toBe('unresolved_identities');
+    // S15a: every staged row lands as evidence, so nothing usable was imported — `failed`, never
+    // `partial`; the report still says why (the D-S9-2 condition is unchanged).
+    expect(run.terminal_status).toBe('failed');
+    expect(run.reason_code).toBe('no_usable_result');
+    expect(basis.report.conditions[0]).toBe('unresolved_identities');
     // The ONLY difference from (a) is the withheld rule set: the same two rows land as evidence.
     expect(familyOf(basis, 'workouts')).toMatchObject({
       native_present_verified: 0,

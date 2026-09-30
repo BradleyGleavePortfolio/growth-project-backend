@@ -219,11 +219,13 @@ describe('importer contract (R80 freeze)', () => {
         'transferring',
       ]);
       expect(rec(en.phase).nullable).toBe(true);
-      // S7-L's six codes plus the three S9 reconciliation codes (S9-C, D-S9-7; append-only).
+      // S7-L's six codes plus the three S9 reconciliation codes (S9-C, D-S9-7) and the S15a
+      // `no_usable_result` verdict code (N-03); append-only.
       expect((rec(en.reason_code).enum as string[]).sort()).toEqual([
         'cancelled_by_coach',
         'coverage_basis_unknown',
         'deadline_exceeded',
+        'no_usable_result',
         'reconciliation_not_performed',
         'relationship_unverified',
         'revoked',

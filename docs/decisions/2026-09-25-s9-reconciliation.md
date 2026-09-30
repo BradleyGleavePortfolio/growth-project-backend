@@ -717,3 +717,34 @@ Relative to the D-S9-8 S9-C row, the landing also touches, by parent grant:
 - The settle-tail isolation / timeout / retry edits in `onTransferSettled` (B.2), beyond "the
   `reconciliation:` argument", granted by the parent for A-1/B-2.
 - The C-9 subset deviation (B.1).
+
+## Addendum C — S15a: a settle with no usable result is `failed` (finding N-03, 2026-09-29)
+
+Appended only; nothing above this heading changed except as this addendum states. Base:
+`integration/importer` @ `249fd0d4`.
+
+**Why.** The master prompt defines `partial` as "useful native results exist, and every missing,
+skipped, unsupported or unverified item is visible" and `failed` as "no usable result or a
+definitive unrecoverable failure". D-S9-1's outcome set let a run with zero usable results settle
+`partial` (for example R18: an empty run, claim `success`, → `partial/coverage_basis_unknown`).
+
+**Rule (amends D-S9-1 "Outcome set" and D-S9-2 "Run-level conditions").**
+
+- `complete` is unchanged: it holds iff `conditions` is empty.
+- Otherwise the verdict is `partial` with `reason_code = conditions[0]` **only if** the run has a
+  usable result: at least one staged identity, in any family, is `native_present_verified`
+  (bucket j). When the FAM-0 PRESERVE destination lands, a verified preserved record is also a
+  usable result; `hasUsableResult` in `reconcile.ts` is the one predicate to extend.
+- With no usable result the verdict is `failed` with `reason_code = 'no_usable_result'`.
+- `no_usable_result` is a verdict code, not a D-S9-2 condition: `report.conditions` still lists
+  every condition that holds, in D-S9-2 order, so the report still says why nothing was usable.
+  For these runs `run.reason_code ≠ report.conditions[0]`.
+- `no_usable_result` is appended to `RUN_REASON_CODES` (after `coverage_basis_unknown`); the
+  importer contract is regenerated with `npm run contract:importer`.
+- Precedence is unchanged: a fence (step 1) still wins, and claim `failed` with zero staged rows
+  (step 2) is still `failed/transfer_failed`. `blocked`, `cancelled` and `timed_out` are unchanged.
+- The rule is a pure function of the facts, so a re-driven settle (S11) gives the same verdict.
+
+**Acceptance.** R18/R18b and every other verdict-table case with zero bucket-j identities now
+expect `failed/no_usable_result`, with their D-S9-2 conditions asserted unchanged. New cases: one
+verified native result plus gaps → `partial`; zero-result run → `failed/no_usable_result`.

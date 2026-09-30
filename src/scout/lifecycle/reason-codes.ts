@@ -45,7 +45,8 @@ export type RunConflictCode = (typeof RUN_CONFLICT_CODES)[number];
 /**
  * Outcome reason codes persisted in `ScoutImport.reason_code` (D-S7L-5). The last three are the
  * S9 reconciliation codes (D-S9-7), appended by S9-C in D-S9-2 condition order after the six
- * S7-L codes; the list is append-only and the existing order is preserved.
+ * S7-L codes; `no_usable_result` is the S15a (N-03) verdict code for a settle with no usable
+ * result (`failed`, never `partial`). The list is append-only and the existing order is preserved.
  */
 export const RUN_REASON_CODES = [
   'reconciliation_not_performed',
@@ -57,6 +58,7 @@ export const RUN_REASON_CODES = [
   'unresolved_identities',
   'relationship_unverified',
   'coverage_basis_unknown',
+  'no_usable_result',
 ] as const;
 export type RunReasonCode = (typeof RUN_REASON_CODES)[number];
 

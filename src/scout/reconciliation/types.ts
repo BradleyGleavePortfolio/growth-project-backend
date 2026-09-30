@@ -45,6 +45,16 @@ export const S9_REASON_CODES: readonly S9ReasonCode[] = [
 ];
 
 /**
+ * S15a (N-03) — the verdict-only code for a run whose settle produced no usable result: no staged
+ * identity in any family is `native_present_verified` (bucket j) and nothing was preserved. It is
+ * NOT a D-S9-2 condition (it never appears in `report.conditions`); it replaces the `partial`
+ * outcome, whose definition requires at least one useful native result. Appended to
+ * `RUN_REASON_CODES`; a compile-time proof in `lifecycle.service.ts` keeps it a `RunReasonCode`.
+ */
+export const S9_NO_USABLE_RESULT = 'no_usable_result' as const;
+export type S9NoUsableResultCode = typeof S9_NO_USABLE_RESULT;
+
+/**
  * `RunReasonCode` is the S7-L closed list. After S9-C appends the three S9 codes, every
  * `S9ReasonCode` is a `RunReasonCode` and a v1 verdict is an S7-L `ReconciliationVerdict`
  * verbatim; until then this union names the widened set.
@@ -54,16 +64,21 @@ export type ReconciliationReasonCode = RunReasonCode | S9ReasonCode;
 // ── Verdict (D-S9-1 outcome set) ────────────────────────────────────────────────────────
 
 /**
- * S9 emits only `complete` or `partial`. `blocked` comes only from the `revoked` fence (D-S9-6),
- * `cancelled`/`timed_out` only from fences and `failed` only from arbiter step 2.
+ * S9 emits `complete`, `partial` or (S15a, N-03) `failed` / `no_usable_result`. `blocked` comes
+ * only from the `revoked` fence (D-S9-6), `cancelled`/`timed_out` only from fences, and the
+ * arbiter's step 2 still owns `failed` / `transfer_failed` (claim `failed`, zero staged rows).
  */
-export type ReconciliationOutcome = Extract<ServerTerminalStatus, 'complete' | 'partial'>;
+export type ReconciliationOutcome = Extract<ServerTerminalStatus, 'complete' | 'partial' | 'failed'>;
 
-/** S9's output for arbiter step 3; see `ReconciliationReasonCode` for the S7-L seam. */
-export interface ReconciliationVerdictV1 {
-  outcome: ReconciliationOutcome;
-  reason_code: S9ReasonCode | null;
-}
+/**
+ * S9's output for arbiter step 3; see `ReconciliationReasonCode` for the S7-L seam. The union ties
+ * each outcome to its codes: `complete` carries no code, `partial` a D-S9-2 condition, and
+ * `failed` only `no_usable_result` (S15a).
+ */
+export type ReconciliationVerdictV1 =
+  | { outcome: 'complete'; reason_code: null }
+  | { outcome: 'partial'; reason_code: S9ReasonCode }
+  | { outcome: 'failed'; reason_code: S9NoUsableResultCode };
 
 /** The S7-L seam type, re-exported so S9-C wires `reconciliation:` from one import path. */
 export type { ReconciliationVerdict };

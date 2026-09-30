@@ -14,6 +14,7 @@ import {
   type ReconciliationVerdictV1,
   REJECTION_PREFIX_UNSUPPORTED_PLATFORM,
   type RelationshipClosure,
+  S9_NO_USABLE_RESULT,
   S9_REASON_CODES,
   S9_REPORT_CODE,
   UNRESOLVED_FAMILY_PREFIX,
@@ -122,6 +123,8 @@ interface LockedRow {
  * (S9-C appends `unresolved_identities`, `relationship_unverified`, `coverage_basis_unknown`.)
  */
 export const S9_RUN_REASON_CODES: readonly RunReasonCode[] = S9_REASON_CODES;
+/** S15a (N-03): the same compile-time proof for the verdict-only `no_usable_result` code. */
+export const S9_NO_USABLE_RESULT_RUN_CODE: RunReasonCode = S9_NO_USABLE_RESULT;
 
 /**
  * The DTO enums (`reason-codes.ts`) are typed against the S9-A report literals: these two

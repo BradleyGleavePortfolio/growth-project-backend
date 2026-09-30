@@ -714,6 +714,54 @@ describe('ScoutLifecycleService', () => {
       expect(flatArgs(terminalWrites(d)[0])).not.toContain('complete');
     });
 
+    it('S15a (N-03): a settle with no usable result writes failed / no_usable_result, never partial, and records the conditions', async () => {
+      const none = facts([
+        family('workouts', [
+          identity('routines', 1, skipped('unresolved:missing_required_field:name')),
+          identity('routines', 2, { status: 'failed' }),
+        ]),
+      ]);
+      const { service: svc } = wired(d, none);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      const writes = terminalWrites(d);
+      expect(writes).toHaveLength(1);
+      expect(flatArgs(writes[0])).toEqual(expect.arrayContaining(['failed', 'no_usable_result', 1]));
+      expect(flatArgs(writes[0])).not.toContain('partial');
+      expect(isRunReasonCode('no_usable_result')).toBe(true);
+      expect(d.capture).toHaveBeenCalledWith(COACH, Events.SCOUT_RUN_SETTLED, {
+        intent_id: INTENT,
+        terminal_status: 'failed',
+        reason_code: 'no_usable_result',
+      });
+      // The settled basis still says why nothing was usable (the D-S9-2 conditions, unchanged).
+      expect(d.basisCreate.mock.calls[0][0].data.report.conditions).toEqual([
+        'unresolved_identities',
+        'coverage_basis_unknown',
+      ]);
+    });
+
+    it('S15a (N-03): one verified native result plus gaps still settles partial with the first condition', async () => {
+      const { service: svc } = wired(d, MIXED);
+      d.queryRaw.mockResolvedValue([lockedOpen]);
+      d.completionFindUnique.mockResolvedValue({ terminal_status: 'success' });
+      d.executeRaw.mockResolvedValue(1);
+      await svc.onTransferSettled(COACH, INTENT, 1);
+      expect(flatArgs(terminalWrites(d)[0])).toEqual(
+        expect.arrayContaining(['partial', 'unresolved_identities']),
+      );
+    });
+
+    it('S15a (N-03): the status projection keeps no_usable_result (a closed code, not narrowed to null)', () => {
+      expect(
+        ScoutLifecycleService.projectLifecycle(
+          openRun({ terminal_status: 'failed', reason_code: 'no_usable_result' }),
+        ),
+      ).toMatchObject({ reason_code: 'no_usable_result' });
+    });
+
     it('R09: a fence on the locked row wins over the S9 verdict', async () => {
       const { service: svc, s9 } = wired(d, MIXED);
       d.queryRaw.mockResolvedValue([

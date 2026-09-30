@@ -15,6 +15,7 @@ import {
   type RelationshipFacts,
   REJECTION_MISSING_SOURCE_ID,
   REJECTION_PREFIX_UNSUPPORTED_PLATFORM,
+  S9_NO_USABLE_RESULT,
   S9_REASON_CODE,
   S9_REASON_CODES,
   type S9ReasonCode,
@@ -34,7 +35,10 @@ import {
 //          ledger rows without a staged identity → `unresolved_identities`
 //   C-REL  a bucket-j identity whose closure edge fails → `relationship_unverified`
 //   C-COV  coverage unknown for any family, or the claim is not `success` → `coverage_basis_unknown`
-// `reason_code` is the first condition that holds; the report lists them all. Per-row detail lives
+// `reason_code` is the first condition that holds; the report lists them all. S15a (N-03): a run
+// that is not `complete` and has no usable result (no bucket-j identity in any family, nothing
+// preserved) is `failed` / `no_usable_result`, never `partial` — `partial` requires a useful
+// native result. The report and its `conditions` are unchanged by that rule. Per-row detail lives
 // in the D-S9-7 histogram, never in the run-level code (CQ-17), and no identity, name, email,
 // label or payload is ever copied into the report (R14).
 
@@ -367,6 +371,26 @@ const declaredOnly = (family: string): FamilyFacts => ({
   qualifiers: [],
 });
 
+/**
+ * S15a (N-03): does the run hold at least one usable result? Today that is a bucket-j
+ * (`native_present_verified`) identity in any family. When the FAM-0 PRESERVE destination lands,
+ * a verified preserved record is also a usable result and must be counted here — this is the one
+ * predicate the `partial` / `failed` split reads.
+ */
+export function hasUsableResult(families: readonly ReconciliationFamilyV1[]): boolean {
+  return families.some((f) => f.native_present_verified > 0);
+}
+
+/** D-S9-2 + S15a: `complete` iff no condition holds; else `partial` only with a usable result. */
+export function verdictOf(
+  held: readonly S9ReasonCode[],
+  families: readonly ReconciliationFamilyV1[],
+): ReconciliationVerdictV1 {
+  if (held.length === 0) return { outcome: 'complete', reason_code: null };
+  if (!hasUsableResult(families)) return { outcome: 'failed', reason_code: S9_NO_USABLE_RESULT };
+  return { outcome: 'partial', reason_code: held[0] };
+}
+
 export function reconcile(facts: ReconciliationFacts): ReconciliationResult {
   const required = requiredFamilies(facts);
   const staged = new Set(facts.families.map((f) => f.family));
@@ -408,10 +432,7 @@ export function reconcile(facts: ReconciliationFacts): ReconciliationResult {
   });
 
   const held = conditions(facts, families);
-  const verdict: ReconciliationVerdictV1 =
-    held.length === 0
-      ? { outcome: 'complete', reason_code: null }
-      : { outcome: 'partial', reason_code: held[0] };
+  const verdict = verdictOf(held, families);
   const report: ReconciliationReportV1 = {
     report_version: 1,
     basis: 'recomputed',

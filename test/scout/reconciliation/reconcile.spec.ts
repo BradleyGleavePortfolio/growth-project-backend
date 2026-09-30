@@ -24,6 +24,7 @@ import {
   type ReconciliationFamilyV1,
   type ReconciliationResult,
   type RelationshipFacts,
+  S9_NO_USABLE_RESULT,
   S9_REASON_CODE,
   S9_REASON_CODES,
   S9_REPORT_CODE,
@@ -180,16 +181,29 @@ const inCatalogue = (key: string): boolean => {
   return shape === (m[2] === undefined ? 'bare' : 'qualified');
 };
 
-/** Invariants every verdict/report pair must satisfy (D-S9-1 outcome set, R12, R14, R17). */
+/** Does the report hold a usable result (a bucket-j identity in any family; S15a, N-03)? */
+const usable = (result: ReconciliationResult): boolean =>
+  result.report.families.some((f) => f.native_present_verified > 0);
+
+/** Invariants every verdict/report pair must satisfy (D-S9-1 outcome set, R12, R14, R17; S15a). */
 function expectWellFormed(result: ReconciliationResult): void {
   const { verdict, report } = result;
-  expect(['complete', 'partial']).toContain(verdict.outcome);
+  expect(['complete', 'partial', 'failed']).toContain(verdict.outcome);
   if (verdict.outcome === 'complete') {
     expect(verdict.reason_code).toBeNull();
     expect(report.conditions).toEqual([]);
   } else {
-    expect(S9_CODES).toContain(verdict.reason_code);
-    expect(report.conditions[0]).toBe(verdict.reason_code);
+    // S15a (N-03): `partial` iff a usable result exists; otherwise `failed` / `no_usable_result`.
+    // The report's conditions still list every D-S9-2 condition that holds, in order.
+    expect(report.conditions.length).toBeGreaterThan(0);
+    if (verdict.outcome === 'partial') {
+      expect(usable(result)).toBe(true);
+      expect(S9_CODES).toContain(verdict.reason_code);
+      expect(report.conditions[0]).toBe(verdict.reason_code);
+    } else {
+      expect(usable(result)).toBe(false);
+      expect(verdict.reason_code).toBe(S9_NO_USABLE_RESULT);
+    }
     // conditions follow the D-S9-2 order and are unique
     const order = report.conditions.map((c) => S9_REASON_CODES.indexOf(c));
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -681,7 +695,7 @@ describe('S9-A familyCoverage (F1)', () => {
 interface VerdictCase {
   label: string;
   input: ReconciliationFacts;
-  outcome: 'complete' | 'partial';
+  outcome: 'complete' | 'partial' | 'failed';
   reason: string | null;
   conditions?: readonly string[];
   check?: (result: ReconciliationResult) => void;
@@ -1541,6 +1555,75 @@ const cases: readonly VerdictCase[] = [
       });
     },
   },
+  // ── S15a (N-03): `partial` requires a usable result; none → `failed` / `no_usable_result` ──
+  {
+    label:
+      'S15a zero usable results: every staged identity unresolved, rejected or failed → failed / no_usable_result',
+    input: covered([
+      fam('clients', [
+        id('clients-0', null),
+        id('clients-1', skippedRow('missing_source_id')),
+        id('clients-2', failedRow),
+      ]),
+    ]),
+    outcome: 'failed',
+    reason: S9_NO_USABLE_RESULT,
+    conditions: [S9_REASON_CODE.unresolved_identities],
+    check: (r) => {
+      expect(row(r, 'clients')).toMatchObject({
+        staged_unique: 3,
+        native_present_verified: 0,
+        unresolved: 1,
+        rejected: 1,
+        failed: 1,
+      });
+    },
+  },
+  {
+    label:
+      'S15a zero usable results: evidence-only rows (scout_entity) are not a native result → failed / no_usable_result',
+    input: facts([fam('workouts', [id('workouts-0', evidenceRow('scout_entity'))])]),
+    outcome: 'failed',
+    reason: S9_NO_USABLE_RESULT,
+    conditions: [S9_REASON_CODE.unresolved_identities, S9_REASON_CODE.coverage_basis_unknown],
+  },
+  {
+    label:
+      'S15a zero usable results: only unmapped entries → failed / no_usable_result, C-FAM still reported',
+    input: facts([unmapped('notes', 2)]),
+    outcome: 'failed',
+    reason: S9_NO_USABLE_RESULT,
+    conditions: [S9_REASON_CODE.unresolved_family, S9_REASON_CODE.coverage_basis_unknown],
+  },
+  {
+    label:
+      'S15a one verified native result plus gaps (unresolved, rejected, unmapped) → partial / first condition',
+    input: facts([
+      fam('clients', [
+        id('clients-0', verifiedRow()),
+        id('clients-1', null),
+        id('clients-2', skippedRow('missing_source_id')),
+      ]),
+      unmapped('notes', 1),
+    ]),
+    outcome: 'partial',
+    reason: S9_REASON_CODE.unresolved_family,
+    conditions: [
+      S9_REASON_CODE.unresolved_family,
+      S9_REASON_CODE.unresolved_identities,
+      S9_REASON_CODE.coverage_basis_unknown,
+    ],
+    check: (r) => {
+      expect(row(r, 'clients')).toMatchObject({ native_present_verified: 1, unresolved: 1, rejected: 1 });
+    },
+  },
+  {
+    label: 'S15a one verified native result, coverage unknown only → partial / coverage_basis_unknown',
+    input: facts([cleanFamily('clients', 1)]),
+    outcome: 'partial',
+    reason: S9_REASON_CODE.coverage_basis_unknown,
+    conditions: [S9_REASON_CODE.coverage_basis_unknown],
+  },
 ];
 
 describe('S9-A reconcile — verdict table', () => {
@@ -1552,10 +1635,20 @@ describe('S9-A reconcile — verdict table', () => {
     c.check?.(result);
   });
 
-  it('never emits blocked, failed, cancelled or timed_out (D-S9-1, D-S9-6)', () => {
+  it('never emits blocked, cancelled or timed_out (D-S9-1, D-S9-6); failed only as no_usable_result (S15a)', () => {
     for (const c of cases) {
-      const outcome: string = reconcile(c.input).verdict.outcome;
-      expect(['blocked', 'failed', 'cancelled', 'timed_out']).not.toContain(outcome);
+      const { verdict } = reconcile(c.input);
+      const outcome: string = verdict.outcome;
+      expect(['blocked', 'cancelled', 'timed_out']).not.toContain(outcome);
+      if (outcome === 'failed') expect(verdict.reason_code).toBe(S9_NO_USABLE_RESULT);
+    }
+  });
+
+  it('S15a: partial always carries a usable result; a run with none is failed / no_usable_result', () => {
+    for (const c of cases) {
+      const result = reconcile(c.input);
+      if (result.verdict.outcome === 'complete') continue;
+      expect(result.verdict.outcome).toBe(usable(result) ? 'partial' : 'failed');
     }
   });
 
@@ -1569,6 +1662,67 @@ describe('S9-A reconcile — verdict table', () => {
       for (const f of report.families)
         expect(f.completeness_basis).not.toBe(COMPLETENESS_BASIS_NONE);
     }
+  });
+});
+
+describe('S15a reconcile — no usable result (N-03)', () => {
+  it('a re-driven settle over the same facts gives the same failed verdict and the same report bytes', () => {
+    const zero = covered([fam('clients', [id('clients-0', null), id('clients-1', failedRow)])]);
+    const first = reconcile(zero);
+    const second = reconcile(zero);
+    expect(first.verdict).toEqual({ outcome: 'failed', reason_code: S9_NO_USABLE_RESULT });
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  it('a re-driven settle over the same facts gives the same partial verdict when one result is usable', () => {
+    const one = covered([fam('clients', [id('clients-0', verifiedRow()), id('clients-1', null)])]);
+    expect(reconcile(one).verdict).toEqual({
+      outcome: 'partial',
+      reason_code: S9_REASON_CODE.unresolved_identities,
+    });
+    expect(JSON.stringify(reconcile(one))).toBe(JSON.stringify(reconcile(one)));
+  });
+
+  it('complete is unchanged: native-clean with a known basis is complete even though the rule exists', () => {
+    expect(reconcile(covered([cleanFamily('clients', 1)])).verdict).toEqual({
+      outcome: 'complete',
+      reason_code: null,
+    });
+  });
+
+  it('no_usable_result is a closed RunReasonCode, appended last, and never a D-S9-2 condition', () => {
+    expect(isRunReasonCode(S9_NO_USABLE_RESULT)).toBe(true);
+    expect(RUN_REASON_CODES[RUN_REASON_CODES.length - 1]).toBe('no_usable_result');
+    expect(S9_REASON_CODES as readonly string[]).not.toContain(S9_NO_USABLE_RESULT);
+  });
+
+  it('the arbiter takes the failed verdict verbatim; fences and step 2 still win over it', () => {
+    const failed = { outcome: 'failed' as const, reason_code: S9_NO_USABLE_RESULT };
+    const base = {
+      claim: 'success' as const,
+      staged_by_family: { clients: 1 },
+      ledger_by_family: {},
+      unmapped_families: [],
+    };
+    expect(arbitrate({ ...base, fence: null, reconciliation: failed })).toEqual({
+      terminal_status: 'failed',
+      reason_code: 'no_usable_result',
+    });
+    expect(arbitrate({ ...base, fence: 'cancelled', reconciliation: failed })).toEqual({
+      terminal_status: 'cancelled',
+      reason_code: 'cancelled_by_coach',
+    });
+    expect(arbitrate({ ...base, fence: 'timed_out', reconciliation: failed })).toEqual({
+      terminal_status: 'timed_out',
+      reason_code: 'deadline_exceeded',
+    });
+    expect(arbitrate({ ...base, fence: 'revoked', reconciliation: failed })).toEqual({
+      terminal_status: 'blocked',
+      reason_code: 'revoked',
+    });
+    expect(
+      arbitrate({ ...base, claim: 'failed', staged_by_family: {}, fence: null, reconciliation: failed }),
+    ).toEqual({ terminal_status: 'failed', reason_code: 'transfer_failed' });
   });
 });
 
