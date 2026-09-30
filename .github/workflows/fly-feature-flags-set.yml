@@ -6,56 +6,76 @@ name: Fly Feature Flags Set (operator)
 # the existing Fly Secrets Set (operator) workflow.
 #
 # What it does:
-#   1. Pushes ONLY the flags/allowlist the operator explicitly set this
-#      dispatch — never all four unconditionally (S12-B6 review closure,
-#      S12B6-SOL-B1). Every one of the four inputs below defaults to the
-#      empty string, meaning "leave this one alone" (same convention as
-#      fly-deploy.yml's `migrations` acknowledgement input: an empty
-#      default is not a default-on switch). An input left at its empty
-#      default is OMITTED from the `flyctl secrets set` invocation
-#      entirely, so Fly leaves that secret's current value untouched —
-#      `flyctl secrets set` only ever touches the names you pass it, it is
-#      not a full-replace. An operator who wants only to change the
-#      allowlist, or only flip reconstruct off, can do exactly that without
-#      silently re-asserting (or worse, resetting) the other three.
-#   2. If at least one flag/allowlist was set, pushes those in one
-#      `flyctl secrets set` invocation (so machines restart once for this
-#      dispatch) and validates by running `fly secrets list`, checking
-#      only the names actually pushed this run are present. Only names and
-#      digests are printed, never values.
+#   1. Pushes ONLY the names the operator explicitly set this dispatch —
+#      never all of them unconditionally (S12-B6 review closure,
+#      S12B6-SOL-B1). Every flag/deadline input below defaults to the empty
+#      string, and the allowlist choice defaults to `unchanged`, meaning
+#      "leave this one alone" (same convention as fly-deploy.yml's
+#      `migrations` acknowledgement input: an empty default is not a
+#      default-on switch). A name that was not set is OMITTED from the
+#      `flyctl secrets set` invocation entirely, so Fly leaves that secret's
+#      current value untouched — `flyctl secrets set` only ever touches the
+#      names you pass it, it is not a full-replace.
+#   2. If at least one name was set, pushes those in ONE `flyctl secrets set`
+#      invocation (so machines restart once for this dispatch) and then
+#      verifies with `fly secrets list --json`, checking that every name
+#      pushed this run is present. Only the pushed NAMES and their Fly
+#      deployment status are printed — never values, never digests, never
+#      the rest of the app's secret listing (S9B-584-B1 / C4).
 #
-# S12-B6 note on the allowlist input: this workflow does NOT re-implement
-# S12-B1's UUID parser (parsePilotCoachAllowlist in
-# src/common/feature-flag/pilot-coach-allowlist.ts). An explicitly-set value
-# is passed through to Fly unchanged, byte for byte — bash has no
-# equivalent of the app's fail-closed UUID/CSV parsing, and a
-# re-implementation could drift from it. The app is the single source of
-# truth: at request time it FAILS CLOSED (empty allowlist, nobody admitted)
-# on anything malformed, exactly as it does today for a hand-edited Fly
-# secret. This workflow only adds a light shape check (reject obvious
-# non-UUID junk like `*`/`true`/spaces-only segments) so an operator gets
-# fast feedback before machines restart, without duplicating or diverging
-# from the app's parser. To deliberately go dark, set the allowlist input
-# to the literal string `__CLEAR__` (see the allowlist step below) — the
-# empty-string DEFAULT means "leave alone", so plain emptiness can no
-# longer be used to mean "clear it", and this workflow needs a way to
-# distinguish the two.
+# Where the allowlist VALUE comes from (S9B-584-A1 closure):
+#   GitHub renders every workflow_dispatch input value, and every step
+#   `env:` value that is not a secret, in PLAIN TEXT in the public Actions
+#   run log (the "Run ..." group prints the `env:` map; see real run
+#   29031011035 of this workflow). This repository is public. So the pilot
+#   coach allowlist — a list of client User.id UUIDs — is NOT a workflow
+#   input at all. It is read from the encrypted GitHub Actions secret
+#   `FEATURE_SCOUT_PILOT_COACH_IDS`, which GitHub masks (`***`) wherever it
+#   would otherwise appear, and which this workflow never prints anyway (it
+#   prints only an entry COUNT). The operator sets that secret with
+#   `gh secret set FEATURE_SCOUT_PILOT_COACH_IDS --env production` (an
+#   environment secret, readable only by jobs bound to `production`, like
+#   this one) and then dispatches with `pilot_allowlist=push-from-secret`.
 #
-# How to run (operator) — set only what you mean to change, e.g. just the
-# allowlist:
+#   The remaining inputs (three booleans, one integer, the app name, the
+#   confirm word, the allowlist choice) are non-sensitive by design and DO
+#   appear in the public run log. Never paste anything sensitive into a
+#   workflow_dispatch input of this workflow. Validators below still avoid
+#   echoing a rejected value themselves, but that is defence in depth, not a
+#   guarantee that a mis-pasted input stays out of the log.
+#
+# S12-B6 / S9A584-B1 note on the allowlist grammar: the app's parser
+# (parsePilotCoachAllowlist in src/common/feature-flag/pilot-coach-allowlist.ts)
+# is fail-closed — ONE malformed entry empties the WHOLE list and nobody is
+# admitted. A workflow that pushes a value the app rejects therefore causes
+# a silent pilot outage. So the validator below accepts a value ONLY if the
+# app would admit every entry: it splits on commas exactly like the app,
+# trims each entry, and requires the app's canonical 8-4-4-4-12 hex UUID
+# (case-insensitive). It is deliberately STRICTER than the app in the
+# harmless direction: it also rejects newlines, carriage returns, tabs,
+# quotes and backslashes anywhere in the value, and empty segments
+# (leading/trailing/double commas), which the app would merely drop. The
+# app remains the source of truth at request time; this check only stops a
+# bad value from reaching Fly. test/ci/s12b6-fly-feature-flags.spec.ts runs
+# this exact step and the app parser over one shared case table.
+#
+# How to run (operator) — set only what you mean to change, e.g. push the
+# allowlist from the secret and nothing else:
+#   gh secret set FEATURE_SCOUT_PILOT_COACH_IDS --env production   # prompts; paste the CSV of UUIDs
 #   gh workflow run "Fly Feature Flags Set (operator)" \
 #     -f app=backend-spring-lake-3890 \
 #     -f confirm=SET \
-#     -f feature_scout_pilot_coach_ids=11111111-1111-1111-1111-111111111111
+#     -f pilot_allowlist=push-from-secret
 #
-# ...or set every flag explicitly, as before:
+# ...or set every name explicitly:
 #   gh workflow run "Fly Feature Flags Set (operator)" \
 #     -f app=backend-spring-lake-3890 \
 #     -f confirm=SET \
 #     -f feature_scout_ingest=true \
 #     -f feature_scout_reconstruct=false \
 #     -f feature_extension_pairing=true \
-#     -f feature_scout_pilot_coach_ids=__CLEAR__
+#     -f pilot_allowlist=clear \
+#     -f scout_run_deadline_ms=300000
 
 on:
   workflow_dispatch:
@@ -86,15 +106,30 @@ on:
           keep its CURRENT Fly value unchanged (no default-on mutation).
         required: false
         default: ''
-      feature_scout_pilot_coach_ids:
+      pilot_allowlist:
         description: >-
-          FEATURE_SCOUT_PILOT_COACH_IDS: comma-separated coach User.id
-          UUIDs (S12-B1 allowlist). Leave EMPTY to keep the CURRENT Fly
-          value unchanged (no default-on mutation) — this no longer means
-          "clear the allowlist". To deliberately clear it (go dark for
-          everyone), set the literal string __CLEAR__. Passed through to
-          Fly unchanged; the app's parser (fail-closed) is the source of
-          truth.
+          FEATURE_SCOUT_PILOT_COACH_IDS (S12-B1 allowlist). The VALUE is never
+          an input (this log is public): `unchanged` keeps the CURRENT Fly
+          value; `push-from-secret` pushes the value of the GitHub Actions
+          secret FEATURE_SCOUT_PILOT_COACH_IDS (set it first with `gh secret
+          set FEATURE_SCOUT_PILOT_COACH_IDS --env production`), after
+          validating it with the app's exact grammar; `clear` sets it to
+          empty (pilot surface goes dark for everyone).
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - push-from-secret
+          - clear
+      scout_run_deadline_ms:
+        description: >-
+          Value for SCOUT_RUN_DEADLINE_MS: the run deadline window in
+          milliseconds, a positive integer with no leading zeros and at most
+          10 digits (exactly what ScoutLifecycleService.readDeadlineMs
+          accepts; anything else makes the app silently fall back to its
+          300000 ms default). Leave empty to keep the CURRENT Fly value
+          unchanged (no default-on mutation).
         required: false
         default: ''
 
@@ -107,8 +142,15 @@ jobs:
     runs-on: ubuntu-latest
     # Production-mutating: bound to the same `production` environment as Fly Deploy
     # so required reviewers (once configured) gate this too, not only image deploys.
+    # The FEATURE_SCOUT_PILOT_COACH_IDS environment secret is only readable here.
     environment: production
     concurrency: fly-secrets-${{ inputs.app }}
+    defaults:
+      run:
+        # Explicit so every step runs as `bash --noprofile --norc -eo pipefail`
+        # and the spec can execute each run: block under exactly the same
+        # shell options (S9B-584-B3).
+        shell: bash
     steps:
       - name: Validate Fly app target
         env:
@@ -145,12 +187,10 @@ jobs:
           # true/false, and it never reaches the flyctl command below. Any
           # NON-empty value must be exactly 'true' or 'false'.
           #
-          # S12B6-SOL-B2 closure: on rejection, name the OFFENDING INPUT by
-          # position/name only — never interpolate the invalid value itself
-          # into the log. An operator can paste anything into a
-          # workflow_dispatch text field (including, by mistake, a
-          # credential or other sensitive text); this validator must not
-          # become a way to get that value echoed into Actions logs.
+          # On rejection, name the OFFENDING INPUT by name only; this script
+          # never interpolates the value into its own output. (GitHub still
+          # prints every non-secret input in the run log's env: header, so
+          # these inputs are booleans by design — see the file header.)
           check_one() {
             local input_name="$1" v="$2"
             if [ -z "${v}" ]; then
@@ -162,7 +202,7 @@ jobs:
                 echo "${input_name}: valid boolean, will be set."
                 ;;
               *)
-                echo "::error::${input_name} must be exactly 'true', 'false', or empty (unchanged) — the supplied value is invalid. Value withheld from this log intentionally."
+                echo "::error::${input_name} must be exactly 'true', 'false', or empty (unchanged) — the supplied value is invalid."
                 return 1
                 ;;
             esac
@@ -175,48 +215,102 @@ jobs:
             exit 1
           fi
 
-      - name: Validate pilot coach allowlist shape (empty = leave unchanged, S12B6-SOL-B1)
+      - name: Validate scout run deadline (empty = leave unchanged)
         env:
-          COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
+          DEADLINE: ${{ inputs.scout_run_deadline_ms }}
         run: |
-          # Light shape check only — NOT the app's parser. Anything that
-          # slips through still fails closed at request time in
-          # src/common/feature-flag/pilot-coach-allowlist.ts.
-          #
-          # Three distinct meanings, S12B6-SOL-B1 closure:
-          #   ''         -> not specified this dispatch; leave the current
-          #                 Fly value unchanged (no default-on mutation).
-          #   '__CLEAR__' -> deliberately go dark for everyone (the old
-          #                 meaning of leaving this field empty).
-          #   anything else -> the new allowlist value, validated below.
-          if [ -z "${COACH_IDS}" ]; then
-            echo "feature_scout_pilot_coach_ids: not specified, leaving current Fly value unchanged."
-          elif [ "${COACH_IDS}" = "__CLEAR__" ]; then
-            echo "feature_scout_pilot_coach_ids: __CLEAR__ — will set the allowlist to empty (pilot surface goes dark for everyone)."
+          # Mirrors ScoutLifecycleService.readDeadlineMs exactly
+          # (src/scout/lifecycle/lifecycle.service.ts): the app accepts only
+          # /^[1-9][0-9]{0,9}$/ and silently falls back to its 300000 ms
+          # default for anything else — so a value the app would ignore is
+          # rejected HERE, before Fly is touched, instead of producing a
+          # misleading "set" that changes nothing.
+          if [ -z "${DEADLINE}" ]; then
+            echo "scout_run_deadline_ms: not specified, leaving current Fly value unchanged."
+          elif [[ "${DEADLINE}" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "scout_run_deadline_ms: valid positive integer (${#DEADLINE} digits), will be set."
           else
-            uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-            # `read -ra ... <<< "$COACH_IDS"` silently drops a trailing empty
-            # field (bash here-string quirk), so "<uuid>," would pass this
-            # check with only the one good entry ever inspected. Appending a
-            # sentinel before splitting, then stripping it back off the last
-            # field, keeps a real trailing/empty segment visible to the loop.
-            IFS=',' read -ra entries <<< "${COACH_IDS}X_S12B6_SENTINEL_X"
-            last_idx=$((${#entries[@]} - 1))
-            entries[$last_idx]="${entries[$last_idx]%X_S12B6_SENTINEL_X}"
-            bad=0
-            for raw in "${entries[@]}"; do
-              entry="$(echo "${raw}" | xargs)"
-              if [ -z "${entry}" ] || ! [[ "${entry}" =~ ${uuid_re} ]]; then
-                bad=1
-              fi
-            done
-            if [ "${bad}" -eq 1 ]; then
-              # S12B6-SOL-B2: name the input, never echo its value.
-              echo "::error::feature_scout_pilot_coach_ids has an entry that is not a UUID. The app's parser fails the WHOLE list closed on any bad entry (S12-B1) — fix it here first so the pilot is not silently locked out. Value withheld from this log intentionally."
-              exit 1
-            fi
-            echo "feature_scout_pilot_coach_ids: entries look like UUIDs (app still re-validates at request time)."
+            echo "::error::scout_run_deadline_ms must be a positive integer of at most 10 digits with no leading zeros (the exact grammar ScoutLifecycleService.readDeadlineMs accepts), or empty (unchanged) — the supplied value is invalid."
+            exit 1
           fi
+
+      - name: Validate pilot coach allowlist (from secret; never an input)
+        env:
+          ALLOWLIST_MODE: ${{ inputs.pilot_allowlist }}
+          # Secret, not input: GitHub masks it in the rendered log and this
+          # script never prints it (only an entry count). S9B-584-A1.
+          COACH_IDS: ${{ secrets.FEATURE_SCOUT_PILOT_COACH_IDS }}
+        run: |
+          # Three distinct meanings (S12B6-SOL-B1):
+          #   unchanged        -> leave the current Fly value alone.
+          #   clear            -> deliberately go dark for everyone.
+          #   push-from-secret -> push the GitHub secret's value, validated
+          #                       below with the app's exact grammar
+          #                       (S9A584-B1 / S9B-584-B2).
+          case "${ALLOWLIST_MODE}" in
+            unchanged)
+              echo "pilot_allowlist: unchanged, leaving current Fly value untouched."
+              ;;
+            clear)
+              echo "pilot_allowlist: clear — will set FEATURE_SCOUT_PILOT_COACH_IDS to empty (pilot surface goes dark for everyone)."
+              ;;
+            push-from-secret)
+              if [ -z "${COACH_IDS}" ]; then
+                echo "::error::pilot_allowlist=push-from-secret but the GitHub Actions secret FEATURE_SCOUT_PILOT_COACH_IDS is empty or not configured for the production environment. Set it with: gh secret set FEATURE_SCOUT_PILOT_COACH_IDS --env production. Nothing was pushed."
+                exit 1
+              fi
+              # Reject control characters, quotes and backslashes anywhere in
+              # the value up front. The app parser rejects any entry that
+              # still contains them after trim() (a quoted id, a newline in
+              # the middle, a backslash) and would empty the WHOLE list.
+              # Rejecting them everywhere (even a trailing newline the app
+              # would trim away) is stricter only in the harmless direction.
+              if [[ "${COACH_IDS}" == *$'\n'* || "${COACH_IDS}" == *$'\r'* || "${COACH_IDS}" == *$'\t'* \
+                    || "${COACH_IDS}" == *\"* || "${COACH_IDS}" == *\'* || "${COACH_IDS}" == *\\* ]]; then
+                echo "::error::FEATURE_SCOUT_PILOT_COACH_IDS secret contains a newline, carriage return, tab, quote or backslash. The app's parser fails the WHOLE list closed on any such entry (S12-B1) — fix the secret first so the pilot is not silently locked out. Nothing was pushed."
+                exit 1
+              fi
+              uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+              # Split on commas EXACTLY like the app (String.prototype.split).
+              # `read -a` would drop a trailing empty field, so split by
+              # walking the string instead; every segment, including empty
+              # ones from a leading/trailing/double comma, is inspected.
+              rest="${COACH_IDS}"
+              count=0
+              bad=0
+              while :; do
+                if [[ "${rest}" == *,* ]]; then
+                  raw="${rest%%,*}"
+                  rest="${rest#*,}"
+                  more=1
+                else
+                  raw="${rest}"
+                  more=0
+                fi
+                # trim() with pure parameter expansion (no xargs: it would
+                # strip quotes and backslashes and hide them from the check).
+                entry="${raw#"${raw%%[! ]*}"}"
+                entry="${entry%"${entry##*[! ]}"}"
+                if [ -z "${entry}" ] || ! [[ "${entry}" =~ ${uuid_re} ]]; then
+                  bad=1
+                else
+                  count=$((count + 1))
+                fi
+                if [ "${more}" -eq 0 ]; then
+                  break
+                fi
+              done
+              if [ "${bad}" -eq 1 ]; then
+                echo "::error::FEATURE_SCOUT_PILOT_COACH_IDS secret has an entry that is not a canonical UUID (or an empty segment from a leading/trailing/double comma). The app's parser fails the WHOLE list closed on any bad entry (S12-B1) — fix the secret first so the pilot is not silently locked out. Nothing was pushed."
+                exit 1
+              fi
+              echo "pilot_allowlist: push-from-secret — ${count} entr(y/ies) validated with the app's grammar; will be set."
+              ;;
+            *)
+              echo "::error::pilot_allowlist must be one of unchanged, push-from-secret, clear."
+              exit 1
+              ;;
+          esac
 
       - name: Check Fly token configuration
         env:
@@ -237,14 +331,18 @@ jobs:
           SCOUT: ${{ inputs.feature_scout_ingest }}
           RECONSTRUCT: ${{ inputs.feature_scout_reconstruct }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
-          COACH_IDS: ${{ inputs.feature_scout_pilot_coach_ids }}
+          DEADLINE: ${{ inputs.scout_run_deadline_ms }}
+          ALLOWLIST_MODE: ${{ inputs.pilot_allowlist }}
+          COACH_IDS: ${{ secrets.FEATURE_SCOUT_PILOT_COACH_IDS }}
         run: |
           set +x
           # S12B6-SOL-B1 closure: build the `flyctl secrets set` argument
-          # list from only the inputs that were explicitly set. `flyctl
+          # list from only the names that were explicitly set. `flyctl
           # secrets set` only ever touches the names it is given — a name
           # left out keeps its current value on Fly untouched. This is the
           # update-only mechanism the review asked for: no name, no change.
+          # Every element is `NAME=value` with a fixed literal NAME, so no
+          # value can be read as a flyctl option.
           args=()
           pushed=()
           if [ -n "${SCOUT}" ]; then
@@ -259,39 +357,83 @@ jobs:
             args+=("FEATURE_EXTENSION_PAIRING=${PAIRING}")
             pushed+=("FEATURE_EXTENSION_PAIRING")
           fi
-          if [ -n "${COACH_IDS}" ]; then
-            if [ "${COACH_IDS}" = "__CLEAR__" ]; then
-              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=")
-            else
-              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=${COACH_IDS}")
-            fi
-            pushed+=("FEATURE_SCOUT_PILOT_COACH_IDS")
+          if [ -n "${DEADLINE}" ]; then
+            args+=("SCOUT_RUN_DEADLINE_MS=${DEADLINE}")
+            pushed+=("SCOUT_RUN_DEADLINE_MS")
           fi
+          case "${ALLOWLIST_MODE}" in
+            unchanged) ;;
+            clear)
+              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=")
+              pushed+=("FEATURE_SCOUT_PILOT_COACH_IDS")
+              ;;
+            push-from-secret)
+              if [ -z "${COACH_IDS}" ]; then
+                echo "::error::pilot_allowlist=push-from-secret but the FEATURE_SCOUT_PILOT_COACH_IDS secret is empty. Nothing was pushed."
+                exit 1
+              fi
+              args+=("FEATURE_SCOUT_PILOT_COACH_IDS=${COACH_IDS}")
+              pushed+=("FEATURE_SCOUT_PILOT_COACH_IDS")
+              ;;
+            *)
+              echo "::error::pilot_allowlist must be one of unchanged, push-from-secret, clear. Nothing was pushed."
+              exit 1
+              ;;
+          esac
           if [ "${#args[@]}" -eq 0 ]; then
-            echo "::error::No flag or allowlist input was set this dispatch — nothing to push. Set at least one input, or use Fly Secrets List to inspect current values without changing anything."
+            echo "::error::No flag, allowlist or deadline input was set this dispatch — nothing to push. Set at least one input, or use Fly Secrets List to inspect current values without changing anything."
             exit 1
           fi
-          echo "Pushing: ${pushed[*]}"
+          echo "Pushing ${#pushed[@]} name(s): ${pushed[*]}"
           flyctl secrets set -a "${APP}" "${args[@]}"
           echo "PUSHED_NAMES=${pushed[*]}" >> "${GITHUB_ENV}"
 
-      - name: Validate flag names exist on Fly
+      - name: Verify pushed names are present on Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
         run: |
           set +x
-          listing=$(flyctl secrets list -a "${APP}")
-          echo "${listing}"
-          names=$(echo "${listing}" | awk '{print $1}')
+          # S9B-584-B1 closure: parse `flyctl secrets list --json` (an array
+          # of {name, digest[, status]}) with jq instead of the human table,
+          # whose rows begin with a `*`/`!` staging marker and box-drawing
+          # columns that made the old `awk '{print $1}'` never match a name.
+          # Print ONLY the names pushed this run and their status — not the
+          # listing, not digests (a digest of a low-entropy value such as
+          # `true` identifies it, and equal digests reveal equal secrets).
+          # Presence is what this step certifies. Fly's status column
+          # (Deployed / Staged / Partial / Unknown, or absent on older flyctl)
+          # is reported truthfully as-is and does not by itself fail the
+          # step: right after `secrets set`, Fly may still report Staged
+          # while the machines restart.
+          if [ -z "${PUSHED_NAMES:-}" ]; then
+            echo "::error::PUSHED_NAMES is empty — the push step did not record what it set, so nothing can be verified."
+            exit 1
+          fi
+          listing_json="$(flyctl secrets list -a "${APP}" --json)"
+          if ! printf '%s' "${listing_json}" | jq -e 'type == "array"' > /dev/null; then
+            echo "::error::flyctl secrets list --json did not return a JSON array; cannot verify."
+            exit 1
+          fi
           missing=""
+          not_deployed=""
           for name in ${PUSHED_NAMES}; do
-            if ! echo "${names}" | grep -qx "${name}"; then
+            status="$(printf '%s' "${listing_json}" | jq -r --arg n "${name}" '[.[] | select(.name == $n)] | if length == 0 then "__MISSING__" else (.[0].status // "unknown") end')"
+            if [ "${status}" = "__MISSING__" ]; then
+              echo "${name}: MISSING on Fly"
               missing="${missing} ${name}"
+            else
+              echo "${name}: present on Fly (status: ${status})"
+              if [ "${status}" != "Deployed" ]; then
+                not_deployed="${not_deployed} ${name}"
+              fi
             fi
           done
           if [ -n "${missing}" ]; then
-            echo "::error::Flags did not appear on Fly after set:${missing}"
+            echo "::error::Names pushed this run did not appear on Fly after set:${missing}"
             exit 1
+          fi
+          if [ -n "${not_deployed}" ]; then
+            echo "::warning::Present on Fly but Fly does not yet report status Deployed for:${not_deployed}. Machines restart after secrets set; re-check with the Fly Secrets List workflow if the pilot does not see the change."
           fi
           echo "Every name pushed this run (${PUSHED_NAMES}) is present on Fly."
