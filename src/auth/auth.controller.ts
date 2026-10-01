@@ -1,4 +1,5 @@
 import {
+  UnauthorizedException,
   BadRequestException,
   Body,
   Controller,
@@ -88,19 +89,28 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('login')
-  // Two named throttlers: per-minute burst + per-hour sustained cap. Both are
-  // keyed by IP (login is unauthed). UserThrottlerGuard will check both.
-  // A successful login resets BOTH counters via LoginThrottleResetService.
+  // Two named per-IP throttlers (burst + sustained), NEVER reset (C14 fix
+  // round: a success by one account must not clear anyone else's attack
+  // budget). Sized for a room on one network; guessing against one account is
+  // bounded by the per-account failure lock below, whatever the IP.
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_LOGIN_PER_MIN },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_LOGIN_PER_HOUR },
   })
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: LoginDto, @Request() req: AuditableRequest) {
-    const result = await this.authService.login(body.email, body.password, auditContext(req));
-    // Reset the IP-keyed login counters on success so a retry storm from bad
-    // Wi-Fi does not lock out a legitimate user.
-    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    await this.loginThrottleReset.assertAccountNotLocked(body.email);
+    let result: Awaited<ReturnType<AuthService['login']>>;
+    try {
+      result = await this.authService.login(body.email, body.password, auditContext(req));
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        await this.loginThrottleReset.recordAccountFailure(body.email);
+      }
+      throw err;
+    }
+    // Only THIS account's own failure counter is cleared.
+    await this.loginThrottleReset.clearAccountFailures(body.email);
     return result;
   }
 
@@ -172,9 +182,11 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('google')
+  // C14 fix round: own per-IP buckets (provider-signed tokens; nothing to
+  // guess), sized for a 40-person room on one Wi-Fi, never reset.
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+    [THROTTLER_NAMES.AUTH_OAUTH_PER_MIN]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_OAUTH_PER_MIN },
+    [THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_OAUTH_PER_HOUR },
   })
   @HttpCode(HttpStatus.OK)
   async googleAuth(@Body() body: GoogleAuthDto, @Request() req: AuditableRequest) {
@@ -187,12 +199,7 @@ export class AuthController {
       // C13-C1): the coach-signup ceiling keys on the trusted Fly-Client-IP.
       { ...auditContext(req), throttleIp: extractIp(req) },
     );
-    // Grok B5: only a RETURNING user's success clears the login windows. A
-    // brand-new account is not a retried login, and resetting on it made
-    // account minting unbounded per IP.
-    if (!result.is_new_user) {
-      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
-    }
+    // C14 fix round: no reset of any per-IP window on success (Opus C14-A1).
     return result;
   }
 
@@ -211,9 +218,11 @@ export class AuthController {
   @ApiResponse({ status: 503, description: 'Sign in with Apple is not configured.' })
   @Public()
   @Post('apple')
+  // C14 fix round: own per-IP buckets (provider-signed tokens; nothing to
+  // guess), sized for a 40-person room on one Wi-Fi, never reset.
   @Throttle({
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
-    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
+    [THROTTLER_NAMES.AUTH_OAUTH_PER_MIN]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_OAUTH_PER_MIN },
+    [THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_OAUTH_PER_HOUR },
   })
   @HttpCode(HttpStatus.OK)
   async appleAuth(@Body() body: AppleAuthDto, @Request() req: AuditableRequest) {
@@ -225,9 +234,6 @@ export class AuthController {
       body.raw_nonce,
       body.intended_role,
     );
-    if (!result.is_new_user) {
-      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
-    }
     return result;
   }
 
@@ -240,7 +246,12 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Signup policy.' })
   @Public()
   @Get('signup-policy')
-  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 100 } })
+  // C14 — public read hit by every app launch and every /join link; generous
+  // dedicated per-IP bucket (a clinic room behind one NAT). `default` still
+  // applies at its anonymous baseline.
+  @Throttle({
+    [THROTTLER_NAMES.PUBLIC_READS]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.PUBLIC_READS_PER_MIN },
+  })
   @HttpCode(HttpStatus.OK)
   async getSignupPolicy() {
     return this.authService.getSignupPolicy();

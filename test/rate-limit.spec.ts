@@ -44,18 +44,25 @@ function readThrottleMetadata(
 describe('throttler.config -- named limit table', () => {
   const byName = Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
 
-  it('has auth-login-per-min: 5/min default', () => {
+  // C14 fix round: per-IP login windows are never reset, so they are sized for
+  // a room on one network; per-account guessing has its own lock.
+  it('has auth-login-per-min: 20/min default', () => {
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toMatchObject({
       ttl: 60_000,
-      limit: 5,
+      limit: 20,
     });
   });
 
-  it('has auth-login-per-hour: 30/hour default', () => {
+  it('has auth-login-per-hour: 200/hour default', () => {
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toMatchObject({
       ttl: 3_600_000,
-      limit: 30,
+      limit: 200,
     });
+  });
+
+  it('has auth-oauth-per-min 60/min and auth-oauth-per-hour 400/hour defaults', () => {
+    expect(byName[THROTTLER_NAMES.AUTH_OAUTH_PER_MIN]).toMatchObject({ ttl: 60_000, limit: 60 });
+    expect(byName[THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR]).toMatchObject({ ttl: 3_600_000, limit: 400 });
   });
 
   it('has auth-password-reset: 3/hour default', () => {
@@ -127,26 +134,24 @@ describe('throttler.config -- named limit table', () => {
 // ---------------------------------------------------------------------------
 
 describe('AuthController @Throttle metadata', () => {
-  it('POST /auth/login uses auth-login-per-min (5/min)', () => {
+  it('POST /auth/login uses auth-login-per-min (20/min)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.login);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 20 });
   });
 
-  it('POST /auth/login uses auth-login-per-hour (30/hr)', () => {
+  it('POST /auth/login uses auth-login-per-hour (200/hr)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.login);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 30 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 200 });
   });
 
-  it('POST /auth/apple uses auth-login-per-min AND auth-login-per-hour', () => {
-    const meta = readThrottleMetadata(AuthController.prototype.appleAuth);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 5 });
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 30 });
-  });
-
-  it('POST /auth/google uses auth-login-per-min AND auth-login-per-hour', () => {
-    const meta = readThrottleMetadata(AuthController.prototype.googleAuth);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 5 });
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 30 });
+  it.each([
+    ['apple', AuthController.prototype.appleAuth],
+    ['google', AuthController.prototype.googleAuth],
+  ])('POST /auth/%s uses its own auth-oauth-per-min/per-hour buckets, not the password-login ones', (_n, h) => {
+    const meta = readThrottleMetadata(h);
+    expect(meta[THROTTLER_NAMES.AUTH_OAUTH_PER_MIN]).toEqual({ ttl: 60_000, limit: 60 });
+    expect(meta[THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 400 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toBeUndefined();
   });
 
   it('POST /auth/forgot-password uses auth-password-reset (3/hr)', () => {

@@ -24,12 +24,13 @@ import {
 // ------------------------------------------|-------------------------|------------------------
 // Global authenticated default              | default                 | RATELIMIT_AUTHED_PER_MIN / min
 // Global unauthenticated default            | default                 | RATELIMIT_ANON_PER_MIN / min
-// POST /auth/login                          | auth-login-per-min      | AUTH_LOGIN_PER_MIN / min (IP)
-//                                           | auth-login-per-hour     | AUTH_LOGIN_PER_HOUR / hour (IP)
-// POST /auth/apple                          | auth-login-per-min      | shared (IP)
-//                                           | auth-login-per-hour     | shared (IP)
-// POST /auth/google                         | auth-login-per-min      | shared (IP)
-//                                           | auth-login-per-hour     | shared (IP)
+// GET  /auth/signup-policy                   | public-reads            | PUBLIC_READS_PER_MIN / min (IP)
+// GET  /invite/:code/preview                 | public-reads            | PUBLIC_READS_PER_MIN / min (IP)
+// POST /auth/login                          | auth-login-per-min      | AUTH_LOGIN_PER_MIN / min (IP, never reset)
+//                                           | auth-login-per-hour     | AUTH_LOGIN_PER_HOUR / hour (IP, never reset)
+//                                           | (service) per account   | AUTH_LOGIN_ACCOUNT_FAILURES failures / 15 min
+// POST /auth/google, /auth/apple            | auth-oauth-per-min      | AUTH_OAUTH_PER_MIN / min (IP, never reset)
+//                                           | auth-oauth-per-hour     | AUTH_OAUTH_PER_HOUR / hour (IP, never reset)
 // POST /auth/forgot-password                | auth-password-reset     | AUTH_PWD_RESET_PER_HOUR / hour (IP)
 // POST /auth/register                       | auth-signup             | 5 / hour (IP)
 // POST /auth/signup-with-code (no code)     | auth-signup             | shared (IP)
@@ -48,6 +49,9 @@ import {
 export const THROTTLER_NAMES = {
   /** Per-minute hard cap on login attempts per IP (credential stuffing brake). */
   AUTH_LOGIN_PER_MIN: 'auth-login-per-min',
+  /** C14 — per-IP Google/Apple token exchanges (separate from password login). */
+  AUTH_OAUTH_PER_MIN: 'auth-oauth-per-min',
+  AUTH_OAUTH_PER_HOUR: 'auth-oauth-per-hour',
   /** Per-hour rolling cap on login attempts per IP (sustained attack brake). */
   AUTH_LOGIN_PER_HOUR: 'auth-login-per-hour',
   /** Per-hour cap on password-reset requests — keyed by IP, future: by email. */
@@ -108,9 +112,29 @@ export const THROTTLER_NAMES = {
    *  routes fall through to this non-biting baseline AND use the guard's
    *  default tracker, so they are unaffected. */
   STOREFRONT_JOIN_IP: 'storefront-join-ip',
+  /** C14 — generous per-IP bucket for PUBLIC READ endpoints the app hits on
+   *  launch / from a /join link (signup-policy, invite preview). Sized for a
+   *  room of clients behind one NAT. */
+  PUBLIC_READS: 'public-reads',
   /** Catch-all: every route that carries no explicit @Throttle decorator. */
   DEFAULT: 'default',
 } as const;
+
+// ---------------------------------------------------------------------------
+// C14 — THROTTLER ISOLATION RULE (enforced in UserThrottlerGuard.handleRequest)
+//
+// @nestjs/throttler evaluates EVERY named throttler on EVERY route at that
+// throttler's module-level baseline unless the route opts out with
+// @SkipThrottle({ name: true }). With ~25 named buckets that meant an
+// anonymous GET /auth/signup-policy was capped by auth-password-reset (3/h)
+// and auth-login-per-min (5/min) — 3 requests, then 429 — for anyone on
+// shared Wi-Fi. UserThrottlerGuard now applies a NAMED throttler only to
+// routes that declare it via @Throttle({ [name]: {...} }) on the handler or
+// controller. `default` keeps applying everywhere. The module-level `limit`
+// on each row below is therefore only a fallback for routes that declare the
+// name without their own limit; the intended-route table at the top of this
+// file is the source of truth.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Env-var parsing helpers. All values are clamped to sane ranges so a
@@ -130,10 +154,23 @@ function readIntEnv(name: string, defaultVal: number, min: number, max: number):
 // Global defaults
 const RATELIMIT_AUTHED_PER_MIN  = readIntEnv('RATELIMIT_AUTHED_PER_MIN', 300, 1, 10_000);
 const RATELIMIT_ANON_PER_MIN    = readIntEnv('RATELIMIT_ANON_PER_MIN',   100, 1, 10_000);
+// C14 — public read endpoints (signup-policy, invite preview): 120/min/IP by
+// default (a clinic room behind one NAT), clamped to [10, 5000].
+const PUBLIC_READS_PER_MIN      = readIntEnv('PUBLIC_READS_PER_MIN',     120, 10, 5_000);
 
 // Auth route overrides
-const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',    5,   1, 1_000);
-const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR',  30,   1, 5_000);
+// C14 fix round: per-IP password-login ceilings are never reset, so they are
+// sized for a room of ~40 people signing in on one network (20/min, 200/h).
+// Guessing against any one account is bounded separately by the per-account
+// failure lock (AUTH_LOGIN_ACCOUNT_FAILURES, LoginThrottleResetService).
+const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',   20,   1, 1_000);
+const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR', 200,   1, 5_000);
+// C14 fix round: Google / Apple token exchanges get their OWN per-IP buckets.
+// The identity token is provider-signed (nothing to guess), so the ceiling
+// only bounds verification cost; sized for a 40-person room signing up on one
+// Wi-Fi, with retries (60/min, 400/h). Never reset by a success.
+const AUTH_OAUTH_PER_MIN        = readIntEnv('AUTH_OAUTH_PER_MIN',   60,   5, 5_000);
+const AUTH_OAUTH_PER_HOUR       = readIntEnv('AUTH_OAUTH_PER_HOUR', 400,  20, 20_000);
 const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_000);
 // C03 — signup-with-code burst cap for requests carrying a well-formed invite
 // code. 100/hour/IP by default, clamped to [5, 500]. Sized for a clinic event:
@@ -245,6 +282,8 @@ export const SIGNUP_WITH_CODE_SKIP_THROTTLERS = skipAllThrottlersExcept(
 export const THROTTLER_ROUTE_LIMITS = {
   AUTH_LOGIN_PER_MIN,
   AUTH_LOGIN_PER_HOUR,
+  AUTH_OAUTH_PER_MIN,
+  AUTH_OAUTH_PER_HOUR,
   AUTH_PWD_RESET_PER_HOUR,
   AUTH_SIGNUP_WITH_CODE_PER_HOUR,
   COACH_MESSAGES_PER_MIN,
@@ -253,6 +292,7 @@ export const THROTTLER_ROUTE_LIMITS = {
   COACH_CMD_CENTER_PER_MIN,
   RATELIMIT_AUTHED_PER_MIN,
   RATELIMIT_ANON_PER_MIN,
+  PUBLIC_READS_PER_MIN,
   CHECKOUT_MINT_PER_HOUR,
   COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN,
   STOREFRONT_JOIN_IP_PER_MIN,
@@ -273,6 +313,8 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.AUTH_LOGIN_PER_MIN,  ttl: 60_000,       limit: AUTH_LOGIN_PER_MIN  },
   // Per-hour login limit (IP-keyed -- sustained-attack brake)
   { name: THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR, ttl: 3_600_000,    limit: AUTH_LOGIN_PER_HOUR },
+  { name: THROTTLER_NAMES.AUTH_OAUTH_PER_MIN,  ttl: 60_000,       limit: AUTH_OAUTH_PER_MIN  },
+  { name: THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR, ttl: 3_600_000,    limit: AUTH_OAUTH_PER_HOUR },
   // Password-reset: 3/hour by default, keyed by IP
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
   // Signup: 5/hour/IP (unchanged from original). C03: on
@@ -329,11 +371,15 @@ export const THROTTLER_LIMITS = [
   //
   // IMPORTANT: Public (@Public()) endpoints that have no dedicated throttler name
   // MUST carry an explicit @Throttle({ default: { ttl: 60_000, limit: 100 } })
-  // decorator so they are bounded by the anonymous per-IP limit (100/min) rather
-  // than the more permissive authenticated limit (300/min). Without an explicit
-  // decorator the default catch-all uses Math.max(authed, anon) which may be
-  // higher than desired for unauthenticated surfaces.
+  // decorator (or a dedicated name such as public-reads) so they are bounded by
+  // the anonymous per-IP limit rather than the more permissive authenticated
+  // limit (300/min). Without an explicit decorator the default catch-all uses
+  // Math.max(authed, anon) which may be higher than desired for unauthenticated
+  // surfaces.
   { name: THROTTLER_NAMES.DEFAULT,             ttl: 60_000,       limit: Math.max(RATELIMIT_AUTHED_PER_MIN, RATELIMIT_ANON_PER_MIN) },
+  // C14 — public reads: GET /auth/signup-policy, GET /invite/:code/preview.
+  // 120/min/IP; only applies to routes that declare it (isolation rule).
+  { name: THROTTLER_NAMES.PUBLIC_READS,        ttl: 60_000,       limit: PUBLIC_READS_PER_MIN },
 ] as const;
 
 /**
@@ -417,6 +463,85 @@ export interface FailOpenThrottlerStorage extends ThrottlerStorage {
     blockDuration: number,
     throttlerName: string,
   ): Promise<ThrottlerStorageRecord>;
+  /** C14 — is (key, name) currently blocked? Throws on storage error. */
+  isBlockedStrict(key: string, throttlerName: string): Promise<boolean>;
+  /** C14 — clear exactly (key, name). Throws on storage error / unknown backend. */
+  resetStrict(key: string, throttlerName: string): Promise<void>;
+}
+
+/**
+ * C14 fix round (Sol C14-B1, Opus C14-B1) — typed backend operations the
+ * ThrottlerStorage contract lacks (it only has `increment`). Implemented for
+ * the two adapters this app ships with, against their real data layout:
+ *   - @nestjs/throttler ThrottlerStorageService (memory, dev/test): record
+ *     Map keyed by `key`; reset via the adapter's own resetBlockdRequest,
+ *     which clears that throttler NAME's timers (callers use per-key names).
+ *   - @nest-lab/throttler-storage-redis (production): `{key:name}:hits` and
+ *     `{key:name}:blocked`; reset = DEL of exactly those two keys.
+ * Anything else throws: callers fail closed instead of guessing (the old
+ * `increment(limit 0, block 0)` "reset" added a hit and, on Redis, ran
+ * `SET … PX 0`, which errors and was swallowed by the fail-open wrapper).
+ */
+type MemoryBackend = {
+  storage: Map<string, { isBlocked: boolean; blockExpiresAt: number; totalHits: Map<string, number> }>;
+  resetBlockdRequest(key: string, throttlerName: string): void;
+};
+type RedisBackend = {
+  redis: {
+    exists(...keys: string[]): Promise<number>;
+    del(...keys: string[]): Promise<number>;
+  };
+};
+function isMemoryBackend(s: unknown): s is MemoryBackend {
+  const m = s as Partial<MemoryBackend> | null;
+  return !!m && m.storage instanceof Map && typeof m.resetBlockdRequest === 'function';
+}
+function isRedisBackend(s: unknown): s is RedisBackend {
+  const r = (s as Partial<RedisBackend> | null)?.redis;
+  return !!r && typeof r.exists === 'function' && typeof r.del === 'function';
+}
+const redisHitsKey = (key: string, name: string) => `{${key}:${name}}:hits`;
+const redisBlockedKey = (key: string, name: string) => `{${key}:${name}}:blocked`;
+
+export async function backendIsBlocked(storage: unknown, key: string, name: string): Promise<boolean> {
+  if (isMemoryBackend(storage)) {
+    const rec = storage.storage.get(key);
+    return !!rec && rec.isBlocked && rec.blockExpiresAt > Date.now();
+  }
+  if (isRedisBackend(storage)) {
+    return (await storage.redis.exists(redisBlockedKey(key, name))) > 0;
+  }
+  throw new Error('throttler storage backend does not support isBlocked');
+}
+
+export async function backendReset(storage: unknown, key: string, name: string): Promise<void> {
+  if (isMemoryBackend(storage)) {
+    if (storage.storage.has(key)) storage.resetBlockdRequest(key, name);
+    return;
+  }
+  if (isRedisBackend(storage)) {
+    await storage.redis.del(redisHitsKey(key, name), redisBlockedKey(key, name));
+    return;
+  }
+  throw new Error('throttler storage backend does not support reset');
+}
+
+/** Fail-closed isBlocked for the wrapper or a raw adapter. */
+export function blockedCheckFor(
+  storage: ThrottlerStorage,
+): (key: string, throttlerName: string) => Promise<boolean> {
+  const s = storage as Partial<FailOpenThrottlerStorage>;
+  if (typeof s.isBlockedStrict === 'function') return s.isBlockedStrict.bind(storage);
+  return (key, name) => backendIsBlocked(storage, key, name);
+}
+
+/** Fail-closed reset for the wrapper or a raw adapter. */
+export function resetFor(
+  storage: ThrottlerStorage,
+): (key: string, throttlerName: string) => Promise<void> {
+  const s = storage as Partial<FailOpenThrottlerStorage>;
+  if (typeof s.resetStrict === 'function') return s.resetStrict.bind(storage);
+  return (key, name) => backendReset(storage, key, name);
 }
 
 /**
@@ -447,6 +572,12 @@ export function withFailOpenStorage(
       throttlerName: string,
     ): Promise<ThrottlerStorageRecord> {
       return storage.increment(key, ttl, limit, blockDuration, throttlerName);
+    },
+    isBlockedStrict(key: string, throttlerName: string): Promise<boolean> {
+      return backendIsBlocked(storage, key, throttlerName);
+    },
+    resetStrict(key: string, throttlerName: string): Promise<void> {
+      return backendReset(storage, key, throttlerName);
     },
     async increment(
       key: string,
