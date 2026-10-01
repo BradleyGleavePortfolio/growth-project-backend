@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from './auth-request';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
 import { Public } from '../common/decorators/public.decorator';
@@ -44,7 +44,11 @@ import {
   INVITE_CODE_PATTERN,
 } from '../invite-codes/invite-codes.service';
 import { LoginThrottleResetService } from '../throttler/login-throttle-reset.service';
-import { THROTTLER_NAMES } from '../throttler/throttler.config';
+import {
+  SIGNUP_WITH_CODE_SKIP_THROTTLERS,
+  THROTTLER_NAMES,
+  THROTTLER_ROUTE_LIMITS,
+} from '../throttler/throttler.config';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -362,7 +366,23 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('signup-with-code')
-  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
+  // C03: codeless signups keep the 5/hour/IP baseline; requests carrying a
+  // well-formed invite code are counted in the burst bucket instead
+  // (AUTH_SIGNUP_WITH_CODE_PER_HOUR, default 100/hour/IP). The two skipIf
+  // predicates in throttler.config.ts make the buckets mutually exclusive.
+  // @SkipThrottle isolates the route to exactly {default, auth-signup,
+  // auth-signup-with-code}: without it every other named baseline
+  // (auth-password-reset 3/h, auth-login-per-min 5/min, …) would also be
+  // evaluated here and reject the burst long before the cap (see the R2 P1 note
+  // on the storefront join route for the same isolation).
+  @SkipThrottle(SIGNUP_WITH_CODE_SKIP_THROTTLERS)
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 },
+    [THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE]: {
+      ttl: 3_600_000,
+      limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR,
+    },
+  })
   async signupWithCode(@Body() body: SignupWithCodeDto) {
     return this.authService.signupWithCode(body);
   }
