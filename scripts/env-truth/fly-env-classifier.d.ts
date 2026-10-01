@@ -72,7 +72,10 @@ export function classifyEnv(
 ): EnvTruthReport;
 export function extractRegisteredNames(source: string): string[];
 export function renderMarkdown(report: EnvTruthReport, app?: string): string;
-export function buildRemoteProgram(moduleSource: string, names: readonly string[]): string;
+export const NAMES_ENV: string;
+export function buildRemoteProgram(moduleSource: string): string;
+export function encodeNames(names: readonly string[]): string;
+export function namesFromEnv(env: Record<string, string | undefined>): string[];
 export function buildRemoteCommand(moduleSource: string, names: readonly string[]): string;
 export function runRemote(names: readonly string[]): void;
 export function parseRemoteOutput(text: string): EnvTruthReport;

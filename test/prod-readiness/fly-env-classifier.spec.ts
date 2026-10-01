@@ -12,8 +12,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import {
+  NAMES_ENV,
   REPORT_MARKER,
   buildRemoteCommand,
+  encodeNames,
+  namesFromEnv,
   buildRemoteProgram,
   classifyEnv,
   duplicateGroups,
@@ -241,13 +244,15 @@ describe('inline remote program (what fly-env-truth.yml ships over ssh)', () => 
   const source = fs.readFileSync(CLASSIFIER, 'utf8');
 
   it('runs in a child node with a fake env and prints only the value-free report line', () => {
-    const program = buildRemoteProgram(source, REGISTERED);
+    const program = buildRemoteProgram(source);
     const r = spawnSync(process.execPath, ['-e', program], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', ...FAKE_ENV },
+      env: { PATH: process.env.PATH ?? '', ...FAKE_ENV, [NAMES_ENV]: encodeNames(REGISTERED) },
     });
     expect(r.status).toBe(0);
     expect(r.stderr).toBe('');
+    // The names carrier is not itself reported as a machine env var.
+    expect(r.stdout).not.toContain(NAMES_ENV);
     const lines = r.stdout.trim().split('\n');
     expect(lines).toHaveLength(1);
     expect(lines[0].startsWith(REPORT_MARKER)).toBe(true);
@@ -259,23 +264,27 @@ describe('inline remote program (what fly-env-truth.yml ships over ssh)', () => 
     expect(report.rows.find((x) => x.name === 'NEVER_SET_ANYWHERE')?.present).toBe(false);
   });
 
-  it('the ssh -C command is a single shell-safe node -e invocation of the same program', () => {
+  it('the ssh -C command carries the names in an env var and a constant program; runs verbatim under sh', () => {
     const cmd = buildRemoteCommand(source, REGISTERED);
-    const m =
-      /^node -e "eval\(Buffer\.from\('([A-Za-z0-9+/=]+)','base64'\)\.toString\('utf8'\)\)"$/.exec(
-        cmd,
-      );
-    expect(m).not.toBeNull();
-    const decoded = Buffer.from(m![1], 'base64').toString('utf8');
-    expect(decoded).toBe(buildRemoteProgram(source, REGISTERED));
-    // Executing the eval wrapper exactly as the machine would.
-    const inner = `eval(Buffer.from('${m![1]}','base64').toString('utf8'))`;
-    const r = spawnSync(process.execPath, ['-e', inner], {
+    expect(cmd).toMatch(
+      /^env ENV_TRUTH_NAMES_B64=[A-Za-z0-9+/=]+ node -e "eval\(Buffer\.from\('[A-Za-z0-9+/=]+','base64'\)\.toString\('utf8'\)\)"$/,
+    );
+    // Executing the exact command string through a shell, as the machine would.
+    const r = spawnSync('/bin/sh', ['-c', cmd], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', ...FAKE_ENV },
+      env: { PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, ...FAKE_ENV },
     });
     expect(r.status).toBe(0);
     expectNoValues(r.stdout + r.stderr);
+    const report = parseRemoteOutput(r.stdout);
+    expect(report.rows.find((x) => x.name === 'NEVER_SET_ANYWHERE')?.registered).toBe(true);
+  });
+
+  it('namesFromEnv rejects a missing, non-base64 or non-name payload', () => {
+    expect(() => namesFromEnv({})).toThrow(/missing or not base64/);
+    expect(() => namesFromEnv({ [NAMES_ENV]: 'not base64!' })).toThrow(/missing or not base64/);
+    expect(() => namesFromEnv({ [NAMES_ENV]: encodeNames(['ok_lower']) })).toThrow(/not a list/);
+    expect(namesFromEnv({ [NAMES_ENV]: encodeNames(['A_B']) })).toEqual(['A_B']);
   });
 
   it('CLI: names / command / parse / render work on the runner without a TS toolchain', () => {
@@ -289,10 +298,14 @@ describe('inline remote program (what fly-env-truth.yml ships over ssh)', () => 
     );
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'envtruth-'));
     const out = path.join(tmp, 'ssh.txt');
-    const program = buildRemoteProgram(source, ['A_REGISTERED']);
+    const program = buildRemoteProgram(source);
     const run = spawnSync(process.execPath, ['-e', program], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', A_REGISTERED: UNIQUE },
+      env: {
+        PATH: process.env.PATH ?? '',
+        A_REGISTERED: UNIQUE,
+        [NAMES_ENV]: encodeNames(['A_REGISTERED']),
+      },
     });
     fs.writeFileSync(out, run.stdout);
     const parsed = path.join(tmp, 'r.json');
