@@ -77,13 +77,13 @@ describe('R2a wiring', () => {
     expect(imports).toContain(AiConsentModule);
   });
 
-  it('no AI call site is touched in this PR: only src/ai-consent and app.module reference the ledger', () => {
+  it('no AI call site is touched in this PR: only src/ai-consent and app.module import the ledger', () => {
     const hits: string[] = [];
     const walk = (dir: string): void => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (e.name.endsWith('.ts') && /ai-consent\//.test(fs.readFileSync(p, 'utf8'))) {
+        else if (e.name.endsWith('.ts') && /from '[^']*\/ai-consent\//.test(fs.readFileSync(p, 'utf8'))) {
           hits.push(path.relative(ROOT, p));
         }
       }

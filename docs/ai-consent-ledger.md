@@ -174,6 +174,8 @@ empty set on a read failure.
   CacheControlInterceptor.
 - `test/ai-consent/ai-consent-wiring.spec.ts` — migration shape, CI wiring,
   flag registration, module mount, no AI call site touched.
+- `test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts` — a billing-locked
+  client can GET, POST and DELETE through the real lockout guard.
 - `test/rls/ai-processing-consent-ledger-rls.spec.ts` — live Postgres, run by
   the `rls-live-tests` CI job: RLS, append-only trigger, CHECK / unique / FK,
   cascade, down/up.
@@ -191,11 +193,11 @@ Rollback: switch OFF (all reads become "not granted"; no data change).
 decision; it does not restore them. Run it only before real decisions exist or
 after exporting the rows.
 
-## Known limits
+## Billing lockout
 
-- `DunningLockoutGuard` (global `APP_GUARD`, a no-op while `FEATURE_DUNNING_V2`
-  is off) does not allow `/me/ai-consent` while a client is in a billing
-  lockout, so a locked-out client cannot read or withdraw through the API until
-  the lockout clears, while `/roman/*` stays allowed. Clinic clients are on a
-  free package. Changing the lockout allowlist is outside this PR; flagged for
-  an operator decision (recommended: allow `me/ai-consent` while locked).
+`/me/ai-consent` and `/me/ai-consent/roman` are on the `DunningLockoutGuard`
+allow-list (exact route prefix `me/ai-consent`; the rest of `/me/*` stays
+locked). Reading, granting and withdrawing AI consent is a privacy control and
+billing state never blocks it (operator ruling on #622). Proven over HTTP by
+`test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts` and pinned in the
+route-table spec `test/dunning-v2-lockout-allowlist-route-table.spec.ts`.

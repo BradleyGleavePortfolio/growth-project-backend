@@ -37,6 +37,11 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     provider-routing surface is never a client explanation route. (Roman chat
  *     is itself dark behind FEATURE_ROMAN_CHAT_ENABLED — a 404 while OFF — so
  *     allow-listing it is only meaningful once that flag is also ON.)
+ *   - AI processing consent: /me/ai-consent and /me/ai-consent/roman
+ *     (AiConsentController, R2a). Reading, granting and withdrawing the box-2
+ *     AI consent is a privacy control, never a paid value surface, so billing
+ *     state must never block it (operator ruling on #622). Matched as an exact
+ *     route prefix: the rest of /me/* stays locked.
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -82,6 +87,17 @@ const ALLOWED_ROUTE_PREFIXES: readonly string[] = [
  * provider routing, never a client explanation route.
  */
 const ROMAN_CHAT_PREFIXES: readonly string[] = ['roman'] as const;
+
+/**
+ * Privacy controls a locked client must always reach (operator ruling on
+ * #622): reading and withdrawing AI processing consent cannot depend on
+ * billing state. Full normalized route prefixes, like ALLOWED_ROUTE_PREFIXES,
+ * so `me/ai-consent` admits `me/ai-consent` and `me/ai-consent/roman` but not
+ * `me/ai-consent-anything` or any other `/me/*` route.
+ */
+const PRIVACY_ROUTE_PREFIXES: readonly string[] = [
+  'me/ai-consent', // AiConsentController — GET status, POST/DELETE roman
+] as const;
 
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
@@ -188,6 +204,10 @@ export function isAllowedWhileLocked(path: string): boolean {
   // Dedicated Roman chat surface (/roman/*) so Roman can explain the lockout.
   for (const chat of ROMAN_CHAT_PREFIXES) {
     if (matchesRoutePrefix(path, chat)) return true;
+  }
+  // Privacy controls (AI consent read / grant / withdraw).
+  for (const privacy of PRIVACY_ROUTE_PREFIXES) {
+    if (matchesRoutePrefix(path, privacy)) return true;
   }
   return false;
 }

@@ -461,7 +461,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // Posture is unchanged from the guard's self-gating design: it is a HARD
     // no-op while FEATURE_DUNNING_V2 is OFF (returns true before reading any
     // state), fails OPEN on lookup errors, and bypasses billing / auth / health
-    // / Roman-chat (/roman/*) routes via its internal allow-list — so mounting
+    // / Roman-chat (/roman/*) / AI-consent (/me/ai-consent) routes via its
+    // internal allow-list — so mounting
     // it globally ahead of the operator flip cannot brick public/health/auth
     // traffic or the recovery surface.
     //

@@ -24,7 +24,8 @@ import {
 //
 // If this test failed: do NOT paste the new path in to make it green. Answer
 // "may a locked-out, non-paying client call this?" The only yes-answers are
-// payment recovery, auth, liveness probes, and the Roman lockout explanation.
+// payment recovery, auth, liveness probes, the Roman lockout explanation, and
+// the AI processing consent privacy control (/me/ai-consent, ruling on #622).
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
@@ -130,7 +131,8 @@ function scanRouteTable() {
 }
 
 // Every normalized path the guard admits while LOCKED OUT. Reviewed one by one;
-// each is payment recovery, auth, a liveness probe, or the Roman explanation.
+// each is payment recovery, auth, a liveness probe, the Roman explanation, or
+// the AI consent privacy control.
 const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   '', // public landing root (LandingPagePublicController, @Controller() + @Get())
   'auth/apple',
@@ -166,6 +168,8 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'health',
   'health/deep',
   'healthz',
+  'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
+  'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
   'readyz',
   'roman/sessions',
   'roman/sessions/:id',
@@ -281,6 +285,24 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     'talent-marketplace/recover/listing',
   ])('BLOCKS %s — an allow-list token off the head grants nothing', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(false);
+  });
+
+  // Operator ruling on #622: reading and withdrawing AI processing consent is a
+  // privacy right that billing state never blocks. Both routes exist in the
+  // real table and are admitted; the rest of /me/* is not.
+  it('ALLOWS the AI consent routes from the real table and nothing else under /me', () => {
+    const consent = table.routes.filter((r) => r.normalized.startsWith('me/ai-consent'));
+    expect(new Set(consent.map((r) => r.controller))).toEqual(new Set(['AiConsentController']));
+    expect([...new Set(consent.map((r) => r.normalized))].sort()).toEqual([
+      'me/ai-consent',
+      'me/ai-consent/roman',
+    ]);
+    expect(consent.every((r) => isAllowedWhileLocked(r.normalized))).toBe(true);
+    const otherMe = table.routes.filter(
+      (r) => r.normalized.startsWith('me/') && !r.normalized.startsWith('me/ai-consent'),
+    );
+    expect(otherMe.length).toBeGreaterThan(0);
+    expect(otherMe.some((r) => isAllowedWhileLocked(r.normalized))).toBe(false);
   });
 
   // Both coach billing surfaces reach the same BillingService capability; they

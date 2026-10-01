@@ -37,6 +37,8 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'roman', // dedicated Roman chat base (explains the lockout)
     'roman/sessions',
     'roman/sessions/abc/messages',
+    'me/ai-consent', // AI consent privacy control (read)
+    'me/ai-consent/roman', // AI consent grant / withdraw
     '', // root / redirect
   ])('ALLOWS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(true);
@@ -64,6 +66,12 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'admin/auth/impersonate',
     'coach/me', // only the coach BILLING subtree is carved out
     'coach/me/clients',
+    // Only the exact AI consent prefix is a privacy carve-out.
+    'me',
+    'me/profile',
+    'me/ai-consent-export',
+    'me/ai-consentroman',
+    'coach/me/ai-consent',
   ])('BLOCKS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(false);
   });
