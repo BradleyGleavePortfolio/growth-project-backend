@@ -87,6 +87,11 @@ export const GRANT_REVOKED_STATUS = 'revoked';
  */
 export const GRANT_PENDING_CONSENT_STATUS = 'pending_consent';
 
+/** B-595-1: a grant right that revoke must tombstone — active OR still pending. */
+const REVOCABLE_GRANT_WHERE = {
+  OR: [{ entitlement_active: true }, { status: GRANT_PENDING_CONSENT_STATUS }],
+} satisfies Prisma.ClientPurchaseWhereInput;
+
 /** The in-app consent that satisfies the waiver for comp grants (owner ruling). */
 export const GRANT_CONSENT_SCOPE = ConsentScope.ONBOARDING_AGREEMENT;
 
@@ -492,8 +497,18 @@ export class InviteGrantService implements OnModuleInit {
         grant_metadata: { ...prior, granted_at: now.toISOString() } as Prisma.InputJsonValue,
       },
     });
-    // A concurrent activation won: converge on already_active.
-    if (flipped.count !== 1) return { purchase_id: row.id, status: 'already_active' };
+    if (flipped.count !== 1) {
+      // Someone else moved the row first: a concurrent activation
+      // (already_active) or a revoke (B-595-1: the tombstone is final).
+      const now2 = await db.clientPurchase.findUnique({
+        where: { id: row.id },
+        select: { status: true },
+      });
+      if (now2?.status === GRANT_REVOKED_STATUS) {
+        return { purchase_id: row.id, status: 'revoked_not_regranted' };
+      }
+      return { purchase_id: row.id, status: 'already_active' };
+    }
     await this.deliver(row.id, input, now, db);
     return { purchase_id: row.id, status: 'created' };
   }
@@ -931,6 +946,15 @@ export class InviteGrantService implements OnModuleInit {
    * Revoke grant rows (source IS NOT NULL) for a client. Coaches only for
    * their own roster; owner for anyone. Stripe purchases are never touched.
    * Idempotent: already-revoked rows are not counted.
+   *
+   * Sol B-595-1: a PENDING right (`pending_consent`, entitlement inactive
+   * until the onboarding agreement is recorded) is revoked too, so consent
+   * recovery or a claim retry can never activate a right the coach withdrew.
+   * Each row moves to the irreversible `revoked` tombstone with a conditional
+   * write (`status` still active-or-pending), so a concurrent activation and
+   * revoke converge on `revoked` whichever commits first: activation is itself
+   * conditional on `pending_consent`, and the grant upsert never updates an
+   * existing row.
    */
   async revoke(
     actor: GrantActor,
@@ -950,7 +974,7 @@ export class InviteGrantService implements OnModuleInit {
       where: {
         client_user_id: client.id,
         source: { in: [...GRANT_SOURCES] },
-        entitlement_active: true,
+        ...REVOCABLE_GRANT_WHERE,
         ...(coachScope ? { coach_user_id: coachScope } : {}),
         ...(input.package_id ? { package_id: input.package_id } : {}),
       },
@@ -965,10 +989,19 @@ export class InviteGrantService implements OnModuleInit {
     if (rows.length === 0) return { revoked: 0, purchase_ids: [] };
 
     const now = new Date();
+    const revokedIds: string[] = [];
     for (const row of rows) {
       const prior = (row.grant_metadata ?? {}) as Record<string, unknown>;
-      await this.prisma.clientPurchase.update({
-        where: { id: row.id },
+      // Conditional tombstone: same source/tenant scope as the read, and only
+      // while the row is still active or pending (a concurrent revoke wins
+      // once; a concurrent activation is revoked right after it commits).
+      const flipped = await this.prisma.clientPurchase.updateMany({
+        where: {
+          id: row.id,
+          source: { in: [...GRANT_SOURCES] },
+          ...REVOCABLE_GRANT_WHERE,
+          ...(coachScope ? { coach_user_id: coachScope } : {}),
+        },
         data: {
           entitlement_active: false,
           // Not 'canceled': churn / subscription readers key on that status
@@ -984,6 +1017,8 @@ export class InviteGrantService implements OnModuleInit {
           } as Prisma.InputJsonValue,
         },
       });
+      if (flipped.count !== 1) continue;
+      revokedIds.push(row.id);
       // Stop future drops for the grant, mirroring refunds.
       if (this.fanout) {
         await this.fanout.cancelPendingForPurchase(row.id, 'grant_revoked');
@@ -1002,6 +1037,6 @@ export class InviteGrantService implements OnModuleInit {
         metadata: { source: row.source, package_id: row.package_id, reason: input.reason ?? null },
       });
     }
-    return { revoked: rows.length, purchase_ids: rows.map((r) => r.id) };
+    return { revoked: revokedIds.length, purchase_ids: revokedIds };
   }
 }

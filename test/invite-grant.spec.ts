@@ -966,6 +966,107 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
 // ---- 4. revoke ---------------------------------------------------------------
 
 describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)', () => {
+  // Sol B-595-1: a pending prepaid right must be revocable, and a revoke must
+  // be final whichever of revoke / consent activation commits first.
+  async function pendingPrepaidGrant() {
+    const prisma = fixtures();
+    const consent = makeConsent(false);
+    const built = await build(prisma, { consent });
+    await built.grants.setBinding(coachActor, {
+      code: CLINIC_CODE,
+      package_id: PKG_CLINIC,
+      grant_mode: 'prepaid',
+    });
+    await built.inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    expect(prisma._purchases[0]).toMatchObject({
+      status: 'pending_consent',
+      entitlement_active: false,
+    });
+    return { prisma, consent, ...built };
+  }
+
+  it('B-595-1 (Sol sequential reproduction): pending -> revoke -> agreement + recovery / re-attach never activates', async () => {
+    const { prisma, consent, grants, inviteCodes, guard, auditMock, fanoutMock } =
+      await pendingPrepaidGrant();
+    const r = await grants.revoke(coachActor, { client_user_id: 'client-1', reason: 'withdrawn' });
+    expect(r).toEqual({ revoked: 1, purchase_ids: [prisma._purchases[0].id] });
+    expect(prisma._purchases[0]).toMatchObject({ status: 'revoked', entitlement_active: false });
+    expect(prisma._purchases[0].grant_metadata).toMatchObject({
+      revoked_by_user_id: COACH,
+      revoke_reason: 'withdrawn',
+    });
+    expect(auditMock.write).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'entitlement.grant_revoked' }),
+    );
+    expect(fanoutMock.cancelPendingForPurchase).toHaveBeenCalledWith(
+      prisma._purchases[0].id,
+      'grant_revoked',
+    );
+
+    // The client now records the agreement: consent recovery finds nothing.
+    consent.agreed = true;
+    expect(await grants.activatePendingGrants('client-1', COACH)).toEqual([]);
+    // A claim retry through the same-coach replay is refused too.
+    const replay = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    expect(replay.grant).toMatchObject({ status: 'revoked_not_regranted' });
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0]).toMatchObject({ status: 'revoked', entitlement_active: false });
+    expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+    // Idempotent: a second revoke counts nothing.
+    expect((await grants.revoke(coachActor, { client_user_id: 'client-1' })).revoked).toBe(0);
+  });
+
+  it('B-595-1: activation commits inside the revoke window (after its read) -> the revoke still tombstones it', async () => {
+    const { prisma, consent, grants, guard } = await pendingPrepaidGrant();
+    consent.agreed = true;
+    const realFindMany = prisma.clientPurchase.findMany.getMockImplementation();
+    if (!realFindMany) throw new Error('double has no findMany');
+    prisma.clientPurchase.findMany.mockImplementationOnce(async (args) => {
+      const rows = await realFindMany(args); // revoke read the PENDING row
+      const activated = await grants.activatePendingGrants('client-1', COACH);
+      expect(activated).toEqual([expect.objectContaining({ status: 'created' })]);
+      expect(prisma._purchases[0]).toMatchObject({ status: 'active', entitlement_active: true });
+      return rows;
+    });
+    const r = await grants.revoke(coachActor, { client_user_id: 'client-1' });
+    expect(r.revoked).toBe(1);
+    expect(prisma._purchases[0]).toMatchObject({ status: 'revoked', entitlement_active: false });
+    expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  });
+
+  it('B-595-1: revoke commits between the activation read and its conditional flip -> activation is refused, row stays revoked', async () => {
+    const { prisma, consent, grants, guard } = await pendingPrepaidGrant();
+    consent.agreed = true;
+    const realUpsert = prisma.clientPurchase.upsert.getMockImplementation();
+    if (!realUpsert) throw new Error('double has no upsert');
+    prisma.clientPurchase.upsert.mockImplementationOnce(async (args) => {
+      // Activation's snapshot of the row is still pending...
+      const snapshot = { ...(await realUpsert(args)) };
+      // ...then the coach's revoke commits before the conditional flip.
+      expect((await grants.revoke(coachActor, { client_user_id: 'client-1' })).revoked).toBe(1);
+      return snapshot;
+    });
+    const out = await grants.activatePendingGrants('client-1', COACH);
+    expect(out).toEqual([expect.objectContaining({ status: 'revoked_not_regranted' })]);
+    expect(prisma._purchases[0]).toMatchObject({ status: 'revoked', entitlement_active: false });
+    expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  });
+
+  it('B-595-1: revoke of a pending right stays inside the tenant scope (another coach -> 404, nothing changes)', async () => {
+    const { prisma, grants } = await pendingPrepaidGrant();
+    const otherCoach = { id: OTHER_COACH, role: 'coach', email: 'o@example.com' };
+    await expect(grants.revoke(otherCoach, { client_user_id: 'client-1' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma._purchases[0]).toMatchObject({ status: 'pending_consent' });
+  });
+
   it('coach revokes for a roster client: row flips inactive, guard returns 402, re-attach does NOT re-grant', async () => {
     const prisma = fixtures();
     const { grants, inviteCodes, guard, auditMock } = await build(prisma);

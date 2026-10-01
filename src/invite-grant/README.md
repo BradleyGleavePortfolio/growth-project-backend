@@ -65,7 +65,7 @@ Clinic clients pay Bradley outside the app. They must pass the paywall without S
 | `PUT /v1/invite-codes/:code/package-binding` `{ package_id \| null, grant_mode }` | coach (own codes/packages), owner | set / clear binding; audited `invite_code.binding_set` |
 | `POST /v1/packages/:id/claim-free` | student (client of the package's coach) | claim a $0 package; audited `entitlement.granted`; 409 contract / revoked |
 | `POST /v1/invite-codes/:code/claim-grant` | student (already attached to the code's coach) | claim the grant a bound code carries (web `/join` for signed-in clients, retry after signing); idempotent |
-| `POST /v1/entitlements/grants/revoke` `{ client_user_id, package_id?, reason? }` | coach (own roster), owner | revoke grants; audited `entitlement.grant_revoked`; idempotent |
+| `POST /v1/entitlements/grants/revoke` `{ client_user_id, package_id?, reason? }` | coach (own roster), owner | revoke grants — **active and pending** (`pending_consent`) rights, each by a conditional write to the final `revoked` tombstone, so consent recovery / a claim retry can never activate a withdrawn right (B-595-1); audited `entitlement.grant_revoked`; idempotent |
 
 ## Clinic setup (ops)
 
