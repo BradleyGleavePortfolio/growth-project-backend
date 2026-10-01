@@ -1,0 +1,266 @@
+/**
+ * S-ENVTRUTH — unit tests for the in-machine env-truth classifier
+ * (scripts/env-truth/fly-env-classifier.js) against a fake env, including an
+ * end-to-end run of the exact inline program the workflow ships through
+ * `flyctl ssh console -C`, executed here in a child `node` with a fake env.
+ * The central assertion everywhere: no fake value ever appears in any output.
+ */
+
+import { spawnSync } from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import {
+  REPORT_MARKER,
+  buildRemoteCommand,
+  buildRemoteProgram,
+  classifyEnv,
+  duplicateGroups,
+  extractRegisteredNames,
+  lengthBucket,
+  parseRemoteOutput,
+  placeholderPattern,
+  renderMarkdown,
+  suspiciousName,
+} from '../../scripts/env-truth/fly-env-classifier';
+
+const ROOT = path.join(__dirname, '..', '..');
+const CLASSIFIER = path.join(ROOT, 'scripts/env-truth/fly-env-classifier.js');
+
+// Distinctive fake values so a leak is unambiguous.
+const SHARED = 'leakcanary-shared-7f3a9c1e5b2d4f60';
+const UNIQUE = 'leakcanary-unique-0b1c2d3e4f5a6b7c8d9e';
+const FAKE_ENV: Record<string, string> = {
+  GOOGLE_OAUTH_CLIENT_ID: SHARED,
+  GOOGLE_OAUTH_CLIENT_SECRET: SHARED,
+  OOM_OAUTH_CLIENT_ID: SHARED,
+  STRIPE_WEBHOOK_SECRET: UNIQUE,
+  METRICS_AUTH_TOKEN: '',
+  DATA_EXPORT_TOKEN_SECRET: 'change-me-in-production-min32chars!',
+  KMS_MASTER_KEY: '<kms-master-key>',
+  SENTRY_DSN: 'https://abc@example.com/1',
+  E: 'leakcanary-junk',
+  E_MB: 'leakcanary-junk2',
+};
+const REGISTERED = [
+  'GOOGLE_OAUTH_CLIENT_ID',
+  'GOOGLE_OAUTH_CLIENT_SECRET',
+  'STRIPE_WEBHOOK_SECRET',
+  'METRICS_AUTH_TOKEN',
+  'DATA_EXPORT_TOKEN_SECRET',
+  'KMS_MASTER_KEY',
+  'SENTRY_DSN',
+  'NEVER_SET_ANYWHERE',
+];
+
+function expectNoValues(text: string): void {
+  for (const v of Object.values(FAKE_ENV)) {
+    if (v.length >= 6) expect(text).not.toContain(v);
+  }
+  expect(text).not.toMatch(/leakcanary/);
+}
+
+describe('placeholderPattern', () => {
+  it.each([
+    ['<value>', 'angle-brackets'],
+    ['changeme', 'sentinel-word'],
+    ['TODO', 'sentinel-word'],
+    ['sk_test_XXXXXXXXXXXX', 'x-run'],
+    ['aaaaaaa', 'repeated-char'],
+    ['change-me-in-production-min32chars!', 'known-dev-default'],
+    ['test-secret-123', 'placeholder-prefix'],
+    ['https://api.example.com/x', 'example-domain'],
+    ['redis://localhost:6379', 'localhost'],
+    // Key-shaped literals are assembled at runtime so secret scanners do not
+    // mistake these fixtures for real keys.
+    [['sk', 'test', '51Habcdefghijk'].join('_'), 'test-mode-key'],
+    ['"quoted-value-abc"', 'wrapped-in-quotes'],
+    [' padded-value ', 'surrounding-whitespace'],
+  ])('%j -> %s', (value, id) => {
+    expect(placeholderPattern(value)).toBe(id);
+  });
+
+  it.each([
+    ['sk', 'live', '51Hq8ZtJ3kLmNoPqRsTuVwXy'].join('_'),
+    ['whsec', '9f8e7d6c5b4a3f2e1d0c9b8a'].join('_'),
+    'postgresql://user:pw@db.supabase.co:6543/postgres?pgbouncer=true',
+    'https://app.trygrowthproject.com/join',
+    'dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==',
+    'production',
+    '3000',
+  ])('real-shaped value %j is not a placeholder', (value) => {
+    expect(placeholderPattern(value)).toBeNull();
+  });
+
+  it('returns null for empty input (empty is reported separately)', () => {
+    expect(placeholderPattern('')).toBeNull();
+  });
+});
+
+describe('lengthBucket / suspiciousName', () => {
+  it('buckets lengths', () => {
+    expect([0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 4096].map(lengthBucket)).toEqual([
+      '0',
+      '1-7',
+      '1-7',
+      '8-15',
+      '8-15',
+      '16-31',
+      '16-31',
+      '32-63',
+      '32-63',
+      '64-127',
+      '64-127',
+      '128+',
+      '128+',
+    ]);
+  });
+
+  it('flags truncated / malformed names like E and E_MB', () => {
+    expect(suspiciousName('E')).toBe(true);
+    expect(suspiciousName('E_MB')).toBe(false);
+    expect(suspiciousName('lower_case')).toBe(true);
+    expect(suspiciousName('DATABASE_URL')).toBe(false);
+  });
+});
+
+describe('duplicateGroups', () => {
+  it('groups keys sharing one value with opaque ids; ignores empty values', () => {
+    const g = duplicateGroups({ A: 'same', B: 'same', C: 'other', D: '', E: '' }, [
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+    ]);
+    expect(Object.fromEntries(g)).toEqual({ A: 'D1', B: 'D1' });
+  });
+
+  it('uses a random salt per run (same env, two runs, no shared hash state leaks into ids)', () => {
+    const env = { A: 'v', B: 'v' };
+    const s1 = crypto.randomBytes(32);
+    const s2 = crypto.randomBytes(32);
+    expect(Object.fromEntries(duplicateGroups(env, ['A', 'B'], s1))).toEqual(
+      Object.fromEntries(duplicateGroups(env, ['A', 'B'], s2)),
+    );
+  });
+});
+
+describe('classifyEnv against a fake env', () => {
+  const report = classifyEnv(FAKE_ENV, REGISTERED, { now: '2026-10-01T00:00:00.000Z' });
+  const row = (n: string) => report.rows.find((r) => r.name === n)!;
+
+  it('reports present/missing, empty, placeholder, duplicate group, length bucket', () => {
+    expect(row('NEVER_SET_ANYWHERE')).toMatchObject({
+      registered: true,
+      present: false,
+      lengthBucket: '0',
+    });
+    expect(row('METRICS_AUTH_TOKEN')).toMatchObject({ present: true, empty: true });
+    expect(row('KMS_MASTER_KEY').placeholder).toBe('angle-brackets');
+    expect(row('DATA_EXPORT_TOKEN_SECRET').placeholder).toBe('known-dev-default');
+    expect(row('SENTRY_DSN').placeholder).toBe('example-domain');
+    const g = row('GOOGLE_OAUTH_CLIENT_ID').duplicateGroup;
+    expect(g).toMatch(/^D\d+$/);
+    expect(row('GOOGLE_OAUTH_CLIENT_SECRET').duplicateGroup).toBe(g);
+    expect(row('OOM_OAUTH_CLIENT_ID')).toMatchObject({ registered: false, duplicateGroup: g });
+    expect(row('STRIPE_WEBHOOK_SECRET')).toMatchObject({
+      duplicateGroup: null,
+      lengthBucket: '32-63',
+    });
+    expect(row('E')).toMatchObject({ registered: false, suspiciousName: true });
+  });
+
+  it('summarises', () => {
+    expect(report.summary).toMatchObject({
+      registered: 8,
+      registeredMissing: 1,
+      empty: 1,
+      duplicateGroups: 1,
+      duplicateKeys: 3,
+      unregisteredPresent: 3,
+    });
+  });
+
+  it('never carries a value in the report or the rendered markdown', () => {
+    expectNoValues(JSON.stringify(report));
+    const md = renderMarkdown(report, 'backend-spring-lake-3890');
+    expectNoValues(md);
+    expect(md).toContain('| GOOGLE_OAUTH_CLIENT_ID | yes |');
+    expect(md).toContain('`NEVER_SET_ANYWHERE`');
+  });
+});
+
+describe('inline remote program (what fly-env-truth.yml ships over ssh)', () => {
+  const source = fs.readFileSync(CLASSIFIER, 'utf8');
+
+  it('runs in a child node with a fake env and prints only the value-free report line', () => {
+    const program = buildRemoteProgram(source, REGISTERED);
+    const r = spawnSync(process.execPath, ['-e', program], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', ...FAKE_ENV },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe('');
+    const lines = r.stdout.trim().split('\n');
+    expect(lines).toHaveLength(1);
+    expect(lines[0].startsWith(REPORT_MARKER)).toBe(true);
+    expectNoValues(r.stdout);
+    const report = parseRemoteOutput(`Connecting to fdaa::1...\n${r.stdout}`);
+    expect(report.rows.find((x) => x.name === 'GOOGLE_OAUTH_CLIENT_ID')?.duplicateGroup).toMatch(
+      /^D/,
+    );
+    expect(report.rows.find((x) => x.name === 'NEVER_SET_ANYWHERE')?.present).toBe(false);
+  });
+
+  it('the ssh -C command is a single shell-safe node -e invocation of the same program', () => {
+    const cmd = buildRemoteCommand(source, REGISTERED);
+    const m =
+      /^node -e "eval\(Buffer\.from\('([A-Za-z0-9+/=]+)','base64'\)\.toString\('utf8'\)\)"$/.exec(
+        cmd,
+      );
+    expect(m).not.toBeNull();
+    const decoded = Buffer.from(m![1], 'base64').toString('utf8');
+    expect(decoded).toBe(buildRemoteProgram(source, REGISTERED));
+    // Executing the eval wrapper exactly as the machine would.
+    const inner = `eval(Buffer.from('${m![1]}','base64').toString('utf8'))`;
+    const r = spawnSync(process.execPath, ['-e', inner], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', ...FAKE_ENV },
+    });
+    expect(r.status).toBe(0);
+    expectNoValues(r.stdout + r.stderr);
+  });
+
+  it('CLI: names / command / parse / render work on the runner without a TS toolchain', () => {
+    const validation = path.join(ROOT, 'src/common/env-validation.ts');
+    const names = spawnSync(process.execPath, [CLASSIFIER, 'names', validation], {
+      encoding: 'utf8',
+    });
+    expect(names.status).toBe(0);
+    expect(JSON.parse(names.stdout)).toEqual(
+      extractRegisteredNames(fs.readFileSync(validation, 'utf8')),
+    );
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'envtruth-'));
+    const out = path.join(tmp, 'ssh.txt');
+    const program = buildRemoteProgram(source, ['A_REGISTERED']);
+    const run = spawnSync(process.execPath, ['-e', program], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', A_REGISTERED: UNIQUE },
+    });
+    fs.writeFileSync(out, run.stdout);
+    const parsed = path.join(tmp, 'r.json');
+    expect(spawnSync(process.execPath, [CLASSIFIER, 'parse', out, parsed]).status).toBe(0);
+    const md = spawnSync(process.execPath, [CLASSIFIER, 'render', parsed, 'app'], {
+      encoding: 'utf8',
+    });
+    expect(md.status).toBe(0);
+    expect(md.stdout).toContain('# Env truth: app');
+    expectNoValues(fs.readFileSync(parsed, 'utf8') + md.stdout);
+  });
+
+  it('parseRemoteOutput fails loudly when the marker is missing', () => {
+    expect(() => parseRemoteOutput('Error: ssh: handshake failed')).toThrow(/marker not found/);
+  });
+});

@@ -1,0 +1,132 @@
+name: Fly Env Truth (operator, read-only)
+
+# S-ENVTRUTH. Read-only audit of the production Fly app's runtime environment.
+#
+# The classifier (scripts/env-truth/fly-env-classifier.js) runs INSIDE the
+# production machine via `flyctl ssh console -C`. It is shipped inline as a
+# base64 `node -e` program, so it does not depend on what the deployed image
+# contains beyond a `node` binary. Values never leave the machine: the only
+# thing that comes back is a value-free JSON report.
+#
+# For every name registered in src/common/env-validation.ts (ENV_RULES) and
+# every env var present in the machine it reports:
+#   present / missing, empty, placeholder-pattern id, duplicate-group id (keys
+#   sharing one value; hashed in-machine with a random per-run salt that is
+#   never printed), length bucket, registered or not, suspicious name.
+#
+# What it does NOT do:
+#   - It never prints, hashes out, or uploads a value, digest or prefix.
+#   - It never writes to Fly (no secrets set/unset, no deploy, no restart).
+#   - It does not upload the raw ssh output; only the parsed report and the
+#     rendered markdown are kept.
+#
+# Outputs: a job summary and the `env-truth-report` artifact
+# (env-truth-report.json + env-truth.md).
+#
+# How to run (operator):
+#   gh workflow run "Fly Env Truth (operator, read-only)" -f app=backend-spring-lake-3890
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name (production)
+        required: true
+        default: backend-spring-lake-3890
+      machine:
+        description: Optional Fly machine id (defaults to any started machine)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  fly-env-truth:
+    name: Classify env inside the Fly machine
+    runs-on: ubuntu-latest
+    # Shell access to a production machine: bound to the production
+    # environment so its reviewers (once configured) gate this too.
+    environment: production
+    steps:
+      - name: Validate Fly app target
+        env:
+          APP: ${{ inputs.app }}
+          MACHINE: ${{ inputs.machine }}
+        run: |
+          set -euo pipefail
+          case "${APP}" in
+            backend-spring-lake-3890) ;;
+            *)
+              echo "::error::app input is not an allowed Fly app target. Aborting."
+              exit 1
+              ;;
+          esac
+          if [ -n "${MACHINE}" ] && ! printf '%s' "${MACHINE}" | grep -Eq '^[a-z0-9]{8,32}$'; then
+            echo "::error::machine input must be a Fly machine id. Aborting."
+            exit 1
+          fi
+          echo "App target allowed."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot open an ssh session."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Build the inline classifier command
+        run: |
+          set -euo pipefail
+          node scripts/env-truth/fly-env-classifier.js names src/common/env-validation.ts > registered-names.json
+          node scripts/env-truth/fly-env-classifier.js command src/common/env-validation.ts > remote-cmd.txt
+          echo "Registered names: $(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync("registered-names.json","utf8")).length))')"
+          echo "Inline program size (bytes): $(wc -c < remote-cmd.txt)"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+
+      - name: Run the classifier inside the machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+          MACHINE: ${{ inputs.machine }}
+        run: |
+          set +x
+          set -euo pipefail
+          machine_args=()
+          if [ -n "${MACHINE}" ]; then machine_args=(--machine "${MACHINE}"); fi
+          # stdout carries only the value-free report line; it is parsed, not printed.
+          flyctl ssh console -a "${APP}" "${machine_args[@]}" -C "$(cat remote-cmd.txt)" > ssh-output.txt 2> ssh-stderr.txt || {
+            echo "::error::flyctl ssh console failed (exit $?). stderr follows:"
+            cat ssh-stderr.txt
+            exit 1
+          }
+          node scripts/env-truth/fly-env-classifier.js parse ssh-output.txt env-truth-report.json
+          rm -f ssh-output.txt remote-cmd.txt
+
+      - name: Render job summary
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          node scripts/env-truth/fly-env-classifier.js render env-truth-report.json "${APP}" > env-truth.md
+          cat env-truth.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the value-free report
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        with:
+          name: env-truth-report
+          path: |
+            env-truth-report.json
+            env-truth.md
+          retention-days: 30
+          if-no-files-found: error

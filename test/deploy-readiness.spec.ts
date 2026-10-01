@@ -12,6 +12,8 @@
  * Section map (R100 paragraphs 1-7, expanded to the seven sub-scanners):
  *   1. STUB VALUES      — prod-readiness/stub-scanner.ts            (H4.B)
  *   2. PROD SWITCHES    — prod-readiness/registry-loader.ts         (H4.A)
+ *   2b. ENV REGISTRATION — prod-readiness/env-registration.ts      (S-ENVTRUTH;
+ *       code invariant: every env name src/ reads is in ENV_RULES; gates on PR)
  *   3. WIRING           — prod-readiness/provider-wiring.ts         (H4.E + H4.F)
  *   4. ENV DISCOVERY    — prod-readiness/env-discovery.ts           (H4.C)
  *   5. AUTO-FLIPPER     — prod-readiness/auto-flipper.ts            (H4.D, informational)
@@ -42,6 +44,11 @@ import {
   type BoardSection,
 } from './prod-readiness.config';
 
+import {
+  checkRepoRegistration,
+  registrationRedCount,
+  type RegistrationReport,
+} from './prod-readiness/env-registration';
 import {
   scanForStubs,
   describePatterns,
@@ -187,11 +194,17 @@ export interface ExitCounts {
   wiringGaps: number;
   envGaps: number;
   keyGaps: number;
+  /**
+   * S-ENVTRUTH: env names runtime src/ reads that are not registered in
+   * ENV_RULES (plus unrecorded / stale dynamic read sites). A codebase
+   * invariant, so it gates on every PR exactly like stub + prodSwitchesWrong.
+   */
+  envUnregistered: number;
 }
 
 /** Exact regex an exit line in the DO-NOT-DEPLOY form must match. */
 export const EXIT_DO_NOT_DEPLOY_RE =
-  /^EXIT: (\d+) STUB \+ (\d+) PROD SWITCHES WRONG \+ (\d+) PROD SWITCHES WARN \+ (\d+) WIRING GAPS \+ (\d+) ENV GAPS \+ (\d+) KEY GAPS \u2192 DO NOT DEPLOY$/;
+  /^EXIT: (\d+) STUB \+ (\d+) PROD SWITCHES WRONG \+ (\d+) PROD SWITCHES WARN \+ (\d+) WIRING GAPS \+ (\d+) ENV GAPS \+ (\d+) KEY GAPS \+ (\d+) ENV UNREGISTERED \u2192 DO NOT DEPLOY$/;
 
 /** Exact string an exit line in the ALL-CLEAR form must equal. */
 export const EXIT_ALL_CLEAR = 'EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY';
@@ -205,7 +218,7 @@ export const WARN_MARK = '\u26a0\ufe0f';
  * Build the aggregate exit line from the gating counts. Pure and deterministic:
  * zero red lines yields the ALL CLEAR string; any red line yields the itemised
  * DO NOT DEPLOY breakdown in the fixed bucket order. The total is the sum of all
- * five buckets, so the line and {@link sumCounts} can never disagree.
+ * seven buckets, so the line and {@link sumCounts} can never disagree.
  */
 export function buildExitLine(counts: ExitCounts): string {
   if (sumCounts(counts) === 0) return EXIT_ALL_CLEAR;
@@ -216,6 +229,7 @@ export function buildExitLine(counts: ExitCounts): string {
     `+ ${counts.wiringGaps} WIRING GAPS ` +
     `+ ${counts.envGaps} ENV GAPS ` +
     `+ ${counts.keyGaps} KEY GAPS ` +
+    `+ ${counts.envUnregistered} ENV UNREGISTERED ` +
     `\u2192 DO NOT DEPLOY`
   );
 }
@@ -228,7 +242,8 @@ export function sumCounts(counts: ExitCounts): number {
     counts.prodSwitchesWarn +
     counts.wiringGaps +
     counts.envGaps +
-    counts.keyGaps
+    counts.keyGaps +
+    counts.envUnregistered
   );
 }
 
@@ -253,7 +268,7 @@ export function aggregateBoard(
   // Non-strict (PR) gating: only the codebase/value-coherent buckets. Prod-switch
   // WARN is environment-dependent (unset switches / placeholders), so it stays
   // out of the PR gate and joins the strict total only — same as wiring/env/keys.
-  const invariantTotal = counts.stub + counts.prodSwitchesWrong;
+  const invariantTotal = counts.stub + counts.prodSwitchesWrong + counts.envUnregistered;
   const totalRed = strict ? strictTotalRed : invariantTotal;
   // The EXIT line always itemises the full breakdown (every bucket) so the board
   // is honest about the prod-deploy verdict; the flagship assertion uses the
@@ -608,6 +623,36 @@ export function runProdSwitchesSection(
   };
 }
 
+/**
+ * SECTION 2b -- ENV REGISTRATION (S-ENVTRUTH). Code invariant: every env name
+ * runtime src/ reads is registered in src/common/env-validation.ts ENV_RULES,
+ * and every dynamic (non-literal) read site is recorded in DYNAMIC_ENV_SITES.
+ * Environment-independent, so it gates on every PR (not in
+ * ENV_DEPENDENT_SECTIONS). RED = unregistered names + unrecorded dynamic sites
+ * + stale / unregistered DYNAMIC_ENV_SITES entries.
+ */
+export function runEnvRegistrationSection(report: RegistrationReport): SectionResult {
+  const reg = registrationFor('ENV_REGISTRATION');
+  const red = registrationRedCount(report);
+  const lines: string[] = [];
+  lines.push(
+    `env names read by src/: ${report.readCount}   registered in ENV_RULES: ${report.registered.size}   unregistered: ${report.unregistered.length}`,
+  );
+  for (const u of report.unregistered) {
+    lines.push(`[UNREGISTERED] ${u.name}  <- ${u.files.join(', ')}`);
+  }
+  for (const d of report.unknownDynamic) {
+    lines.push(
+      `[DYNAMIC] ${d.file}:${d.line}  process.env[${d.expr}] (record it in DYNAMIC_ENV_SITES)`,
+    );
+  }
+  for (const k of report.staleDynamicSites) lines.push(`[STALE DYNAMIC SITE] ${k}`);
+  for (const n of report.unregisteredDynamicNames) lines.push(`[UNREGISTERED DYNAMIC NAME] ${n}`);
+  lines.push(`registered but not read by src/ (informational): ${report.registeredUnread.length}`);
+  if (red === 0) lines.push('all env reads registered');
+  return { section: reg.section, label: reg.label, red, gating: reg.mode === 'GATING', lines };
+}
+
 /** SECTION 3 — WIRING (H4.E + H4.F). RED = providers imported but STUB. */
 export function runWiringSection(reports: readonly ProviderReport[]): SectionResult {
   const reg = registrationFor('WIRING');
@@ -774,12 +819,14 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
       wiringGaps: 0,
       envGaps: 0,
       keyGaps: 0,
+      envUnregistered: 0,
     };
     return aggregateBoard([stubResult], counts, strict);
   }
 
   const registry = await loadRegistry(registryPath);
   const prodSwitches = runProdSwitchesSection(registry, env);
+  const envRegistration = runEnvRegistrationSection(checkRepoRegistration(opts.repoRoot));
   const providerReports = scanProvidersFromProcess(opts.repoRoot, env);
   const wiringResult = runWiringSection(providerReports);
   const discovery = discoverEnvVars(opts.repoRoot);
@@ -792,6 +839,7 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
   const sections: SectionResult[] = [
     stubResult,
     prodSwitches.result,
+    envRegistration,
     wiringResult,
     envSection.result,
     flipResult,
@@ -806,6 +854,7 @@ export async function runDeployReadiness(opts: RunOptions): Promise<BoardResult>
     wiringGaps: wiringResult.red,
     envGaps: envSection.result.red,
     keyGaps: keysSection.keyGaps,
+    envUnregistered: envRegistration.red,
   };
   return aggregateBoard(sections, counts, strict);
 }
@@ -826,6 +875,7 @@ describe('R100 deploy-readiness orchestrator', () => {
         wiringGaps: 0,
         envGaps: 0,
         keyGaps: 0,
+        envUnregistered: 0,
       };
       expect(buildExitLine(counts)).toBe(EXIT_ALL_CLEAR);
       expect(sumCounts(counts)).toBe(0);
@@ -839,13 +889,14 @@ describe('R100 deploy-readiness orchestrator', () => {
         wiringGaps: 3,
         envGaps: 4,
         keyGaps: 5,
+        envUnregistered: 0,
       };
       const line = buildExitLine(counts);
       expect(line).toMatch(EXIT_DO_NOT_DEPLOY_RE);
       const m = EXIT_DO_NOT_DEPLOY_RE.exec(line);
       expect(m).not.toBeNull();
-      // The six captured numbers must match the six buckets in order.
-      expect(m && m.slice(1, 7).map(Number)).toEqual([2, 1, 6, 3, 4, 5]);
+      // The seven captured numbers must match the seven buckets in order.
+      expect(m && m.slice(1, 8).map(Number)).toEqual([2, 1, 6, 3, 4, 5, 0]);
       expect(sumCounts(counts)).toBe(21);
     });
 
@@ -862,6 +913,7 @@ describe('R100 deploy-readiness orchestrator', () => {
           wiringGaps: 0,
           envGaps: 0,
           keyGaps: 0,
+          envUnregistered: 0,
         },
         1,
       ],
@@ -873,6 +925,7 @@ describe('R100 deploy-readiness orchestrator', () => {
           wiringGaps: 0,
           envGaps: 0,
           keyGaps: 7,
+          envUnregistered: 0,
         },
         7,
       ],
@@ -884,6 +937,7 @@ describe('R100 deploy-readiness orchestrator', () => {
           wiringGaps: 0,
           envGaps: 0,
           keyGaps: 0,
+          envUnregistered: 0,
         },
         4,
       ],
@@ -895,6 +949,7 @@ describe('R100 deploy-readiness orchestrator', () => {
           wiringGaps: 3,
           envGaps: 3,
           keyGaps: 3,
+          envUnregistered: 0,
         },
         18,
       ],
@@ -919,6 +974,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       wiringGaps: 0,
       envGaps: 4,
       keyGaps: 5,
+      envUnregistered: 0,
     };
 
     it('strict mode gates on every bucket and itemises the full breakdown', () => {
@@ -963,6 +1019,7 @@ describe('R100 deploy-readiness orchestrator', () => {
         wiringGaps: 0,
         envGaps: 0,
         keyGaps: 0,
+        envUnregistered: 0,
       };
       // ALL CLEAR holds under both modes when every bucket is zero.
       for (const strict of [false, true]) {
@@ -982,6 +1039,7 @@ describe('R100 deploy-readiness orchestrator', () => {
         wiringGaps: 1,
         envGaps: 0,
         keyGaps: 0,
+        envUnregistered: 0,
       };
       const sections: SectionResult[] = [
         { section: 'WIRING', label: 'OAUTH / INTEGRATION WIRING', red: 1, gating: true, lines: [] },
@@ -1002,6 +1060,38 @@ describe('R100 deploy-readiness orchestrator', () => {
   });
 
   describe('section runners map sub-scanner output to typed red counts', () => {
+    it('env-registration section gates a PR run on an unregistered env read (code invariant)', () => {
+      const report: RegistrationReport = {
+        registered: new Set(['KNOWN']),
+        unregistered: [{ name: 'NEW_UNREGISTERED_FLAG', files: ['src/x.ts'] }],
+        unknownDynamic: [],
+        unregisteredDynamicNames: [],
+        staleDynamicSites: [],
+        registeredUnread: [],
+        readCount: 2,
+      };
+      const r = runEnvRegistrationSection(report);
+      expect(r.section).toBe('ENV_REGISTRATION');
+      expect(r.gating).toBe(true);
+      expect(r.red).toBe(1);
+      expect(r.lines.join('\n')).toContain('[UNREGISTERED] NEW_UNREGISTERED_FLAG  <- src/x.ts');
+      expect(ENV_DEPENDENT_SECTIONS.has('ENV_REGISTRATION')).toBe(false);
+      const counts: ExitCounts = {
+        stub: 0,
+        prodSwitchesWrong: 0,
+        prodSwitchesWarn: 0,
+        wiringGaps: 0,
+        envGaps: 0,
+        keyGaps: 0,
+        envUnregistered: r.red,
+      };
+      const prBoard = aggregateBoard([r], counts, false);
+      expect(prBoard.totalRed).toBe(1);
+      expect(prBoard.exitLine).toMatch(EXIT_DO_NOT_DEPLOY_RE);
+      expect(EXIT_DO_NOT_DEPLOY_RE.exec(prBoard.exitLine)?.[7]).toBe('1');
+      expect(prBoard.board).toContain('--- ENV REGISTRATION (code invariant) [RED=1] ---');
+    });
+
     it('stub section counts only BLOCK_SHIP findings as red', () => {
       const findings: StubFinding[] = [
         {
@@ -1089,14 +1179,14 @@ describe('R100 deploy-readiness orchestrator', () => {
   });
 
   describe('config registry', () => {
-    it('registers all seven board sections in render order', () => {
+    it('registers every board section in render order', () => {
       expect(SCANNER_REGISTRY.map((s) => s.section)).toEqual([...BOARD_SECTIONS]);
     });
 
     it('exactly one section (auto-flipper) is informational; the rest gate', () => {
       const info = SCANNER_REGISTRY.filter((s) => s.mode === 'INFORMATIONAL');
       expect(info.map((s) => s.section)).toEqual(['AUTO_FLIPPER']);
-      expect(gatingSections()).toHaveLength(5);
+      expect(gatingSections()).toHaveLength(6);
     });
 
     it('covers BOTH H4.E (Stripe/Mux/SendGrid) and H4.F provider scopes', () => {
@@ -1135,7 +1225,7 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(board.totalRed).toBe(0);
     });
 
-    it('full mode (PR / informational) runs all six sections and is SAFE TO DEPLOY', async () => {
+    it('full mode (PR / informational) runs every section and is SAFE TO DEPLOY', async () => {
       // PR mode: only the codebase-invariant buckets (stub + prod-switch) gate.
       // Stub red is zero on this repo because every BLOCK_SHIP fingerprint is
       // adjudicated tracked debt in the learning ledger and downgraded to WARN by
@@ -1147,6 +1237,8 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(board.strict).toBe(false);
       expect(board.counts.stub).toBe(0);
       expect(board.counts.prodSwitchesWrong).toBe(0);
+      // S-ENVTRUTH: every env name src/ reads is registered.
+      expect(board.counts.envUnregistered).toBe(0);
       expect(board.exitLine).toBe(EXIT_ALL_CLEAR);
       // THE flagship assertion: zero gating red lines on a PR or the build fails.
       expect(board.totalRed).toBe(0);
@@ -1412,6 +1504,7 @@ describe('R100 deploy-readiness orchestrator', () => {
           wiringGaps: 0,
           envGaps: 0,
           keyGaps: 0,
+          envUnregistered: 0,
         },
         false,
       );
@@ -1451,6 +1544,7 @@ describe('R100 deploy-readiness orchestrator', () => {
         wiringGaps: 0,
         envGaps: 0,
         keyGaps: 0,
+        envUnregistered: 0,
       };
       expect(aggregateBoard([], counts, false).totalRed).toBe(0);
       expect(aggregateBoard([], counts, true).totalRed).toBe(warn);
