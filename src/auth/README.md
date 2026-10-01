@@ -176,7 +176,11 @@ honoured **only** on the branch that inserts a brand-new `User` row
   are canonicalised (`normalizeEmail`: NFKC + trim + lowercase) and the
   duplicate / link lookup is **case-insensitive**, so `Jane@Example.com`
   and `jane@example.com` are the same account. The stored and returned
-  `email` is the canonical form.
+  `email` is the canonical form. Every password sign-in path
+  (`/auth/login`, `/auth/extension/login`) and `/auth/forgot-password`
+  canonicalises the same way (Sol B-597-1), and the local row is resolved
+  by the verified Supabase user id first, then the canonical address, then
+  a case-insensitive match for legacy rows stored as typed.
 - **The first OAuth call fixes the role permanently.** A Google/Apple first
   contact with `intended_role: 'coach'` creates a coach; without it, a
   client. There is no self-service path between the two afterwards
@@ -200,6 +204,21 @@ honoured **only** on the branch that inserts a brand-new `User` row
   after `signUp` succeeded it deletes the orphaned Supabase auth user via
   the admin API (logged by Supabase id only — never email/password) and
   rethrows the original error, so a retry is clean.
+- **Compensation ownership (Sol A-597-1).** Supabase returns the SAME
+  unconfirmed user to every `signUp` for an address and never updates it,
+  so two concurrent registrations share one Supabase id. Each `signUp`
+  sends a random `user_metadata.tgp_signup_attempt`; the request whose
+  marker comes back is the one that **created** the identity. Rules:
+  a `P2002` on `email`/`supabase_id` (a competitor committed) is a `409
+  Email already registered` and never deletes; a request that did not
+  create the identity never deletes; the creator deletes only after
+  re-checking, under a per-email `pg_advisory_xact_lock`, that no local row
+  is bound to the id or the address. A request binding a row to an identity
+  it did not create takes the same lock and first confirms the identity
+  still exists (`admin.getUserById`), else `409 { code: 'signup_retry' }`.
+  So a delete can never strand a committed or committing row, and an
+  identity left behind by a failed earlier attempt is still adopted by the
+  next registration.
 - Google **create or link** requires a verified email
   (`email_confirmed_at` or the Google identity's `email_verified`); an
   unverified first contact is `401`. Returning users matched by

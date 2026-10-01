@@ -27,9 +27,20 @@ jest.mock('@supabase/supabase-js', () => {
       auth: {
         signInWithPassword: (...args: unknown[]) =>
           g.__supaSignIn?.(...args) ?? Promise.resolve({ error: { message: 'not mocked' } }),
+        // A fresh Supabase user carries the metadata of the signUp that
+        // created it (A-597-1 ownership marker).
         signUp: (...args: unknown[]) =>
           g.__supaSignUp?.(...args) ??
-          Promise.resolve({ data: { user: { id: 'sup-new' } }, error: null }),
+          Promise.resolve({
+            data: {
+              user: {
+                id: 'sup-new',
+                user_metadata: (args[0] as { options?: { data?: unknown } } | undefined)?.options
+                  ?.data,
+              },
+            },
+            error: null,
+          }),
         signInWithIdToken: jest.fn(),
         getUser: jest.fn(),
         resetPasswordForEmail: jest.fn(),

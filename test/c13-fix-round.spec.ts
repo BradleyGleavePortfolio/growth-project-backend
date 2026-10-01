@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { AuthController } from '../src/auth/auth.controller';
 import { AdminService } from '../src/admin/admin.service';
 import { PackagesService } from '../src/packages/packages.service';

@@ -59,13 +59,30 @@ jest.mock('@supabase/supabase-js', () => {
     ...actual,
     createClient: jest.fn(() => ({
       auth: {
-        signUp: (...args: any[]) => hooks().__supaSignUp?.(...args),
+        // Models Supabase: a FRESH user carries the metadata of the signUp
+        // that created it (A-597-1 ownership marker). Tests that model a
+        // retained (pre-existing unconfirmed) user set user_metadata
+        // explicitly; obfuscated placeholders (identities: []) are untouched.
+        signUp: async (...args: any[]) => {
+          const res = await hooks().__supaSignUp?.(...args);
+          const u = res?.data?.user;
+          if (
+            u &&
+            Array.isArray(u.identities) &&
+            u.identities.length > 0 &&
+            u.user_metadata === undefined
+          ) {
+            u.user_metadata = args[0]?.options?.data;
+          }
+          return res;
+        },
         signInWithIdToken: (...args: any[]) => hooks().__supaSignInWithIdToken?.(...args),
         signInWithPassword: jest.fn(async () => ({ error: { message: 'not mocked' } })),
         getUser: jest.fn(),
         resetPasswordForEmail: jest.fn(),
         admin: {
           deleteUser: (...args: any[]) => hooks().__supaAdminDeleteUser?.(...args),
+          getUserById: (...args: any[]) => hooks().__supaAdminGetUserById?.(...args),
         },
       },
     })),
@@ -215,6 +232,8 @@ function buildPrisma(seed: { users?: any[]; profiles?: any[]; subs?: any[]; audi
     teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
     subCoachAssignment: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) },
   };
+  // Advisory lock (A-597-1): recorded, no-op in the double.
+  tables.$executeRaw = jest.fn(async () => 1);
   tables.$transaction = jest.fn(async (cb: any) => {
     const snapshot = JSON.parse(JSON.stringify(state));
     try {
@@ -324,6 +343,10 @@ function expectNothingProvisioned(prisma: any) {
 
 beforeEach(() => {
   hooks().__supaAdminDeleteUser = jest.fn(async () => ({ data: {}, error: null }));
+  hooks().__supaAdminGetUserById = jest.fn(async (id: string) => ({
+    data: { user: { id } },
+    error: null,
+  }));
   hooks().__supaSignUp = jest.fn(async ({ email }: any) => ({
     data: { user: { id: `sup-${email}`, identities: [{ provider: 'email' }] } },
     error: null,
@@ -600,11 +623,21 @@ describe('C13 signup-time role choice — POST /auth/register', () => {
     it('a client-path User insert failure also deletes the Supabase user, and the error is rethrown unchanged', async () => {
       const prisma = buildPrisma();
       const { service } = buildService(prisma);
+      prisma._failNext['user.create'] = new Error('db blip');
+      await expect(
+        service.register({ email: 'race@example.test', password: GOOD_PASSWORD, name: 'R' }),
+      ).rejects.toThrow('db blip');
+      expect(hooks().__supaAdminDeleteUser).toHaveBeenCalledWith('sup-race@example.test');
+    });
+
+    it('A-597-1: a P2002 on supabase_id/email (a competing signup committed) is a 409 and NEVER deletes the identity', async () => {
+      const prisma = buildPrisma();
+      const { service } = buildService(prisma);
       prisma._failNext['user.create'] = p2002(['supabase_id']);
       await expect(
         service.register({ email: 'race@example.test', password: GOOD_PASSWORD, name: 'R' }),
-      ).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-      expect(hooks().__supaAdminDeleteUser).toHaveBeenCalledWith('sup-race@example.test');
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
     });
 
     it('compensation failure is logged (id only, no email/password) and the original error still surfaces', async () => {
@@ -662,7 +695,7 @@ describe('C13 signup-time role choice — POST /auth/register', () => {
       expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
     });
 
-    it('an email P2002 (a real duplicate) is NOT retried', async () => {
+    it('an email P2002 (a real duplicate) is NOT retried; 409 and the identity is kept (A-597-1)', async () => {
       const prisma = buildPrisma();
       const { service } = buildService(prisma);
       prisma._failNext['user.create'] = p2002(['email']);
@@ -673,8 +706,9 @@ describe('C13 signup-time role choice — POST /auth/register', () => {
           name: 'D',
           intended_role: 'coach',
         }),
-      ).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+      ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
     });
   });
 });
@@ -1435,5 +1469,203 @@ describe('C13 — tenancy smoke: a brand-new coach sees zero clients', () => {
     expect(clients).toEqual([]);
     const otherClients = await coachService.getClients('other-coach', 'active', 'coach');
     expect(otherClients.map((c: any) => c.id).sort()).toEqual(['s1', 's2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sol A-597-1 — compensation may delete ONLY the Supabase identity this
+// request created, never one a competing signup owns.
+//
+// Supabase model used here (auth signup.go): the first signUp for an address
+// creates the user with ITS metadata; a repeated signUp while the user is
+// unconfirmed returns the SAME user unchanged (same id, the creator's
+// metadata). `supabaseStore` holds that state; deleteUser removes from it and
+// getUserById reads it.
+// ---------------------------------------------------------------------------
+describe('A-597-1 — registration compensation is ownership-safe', () => {
+  let supabaseStore: Map<string, { id: string; user_metadata: any }>;
+  beforeEach(() => {
+    supabaseStore = new Map();
+    hooks().__supaSignUp = jest.fn(async ({ email, options }: any) => {
+      let u = supabaseStore.get(email);
+      if (!u) {
+        u = { id: `sup-${email}`, user_metadata: options?.data };
+        supabaseStore.set(email, u);
+      }
+      return {
+        data: {
+          user: { id: u.id, identities: [{ provider: 'email' }], user_metadata: u.user_metadata },
+        },
+        error: null,
+      };
+    });
+    hooks().__supaAdminDeleteUser = jest.fn(async (id: string) => {
+      for (const [k, v] of supabaseStore) if (v.id === id) supabaseStore.delete(k);
+      return { data: {}, error: null };
+    });
+    hooks().__supaAdminGetUserById = jest.fn(async (id: string) => {
+      const u = [...supabaseStore.values()].find((v) => v.id === id);
+      return u
+        ? { data: { user: { id: u.id } }, error: null }
+        : { data: { user: null }, error: { message: 'User not found' } };
+    });
+  });
+
+  // Both requests pass the no-row check and get the same Supabase id before
+  // either commits; then `first` commits and `second` reaches its insert.
+  async function raceTwoSignups(
+    service: AuthService,
+    email: string,
+    order: 'creator-commits-first' | 'retained-commits-first',
+  ) {
+    const realSignUp = hooks().__supaSignUp;
+    let bothArrived!: () => void;
+    const arrived = new Promise<void>((r) => (bothArrived = r));
+    let firstDone!: () => void;
+    const firstSettled = new Promise<void>((r) => (firstDone = r));
+    let calls = 0;
+    hooks().__supaSignUp = jest.fn(async (args: any) => {
+      const res = await realSignUp(args);
+      calls += 1;
+      const isCreator = calls === 1;
+      if (calls === 2) bothArrived();
+      await arrived;
+      const goesSecond = order === 'creator-commits-first' ? !isCreator : isCreator;
+      if (goesSecond) await firstSettled;
+      return res;
+    });
+    const creator = service.register({
+      email,
+      password: GOOD_PASSWORD,
+      name: 'A',
+      intended_role: 'coach',
+    });
+    // Let the creator's signUp run first so it CREATES the identity.
+    await new Promise((r) => setImmediate(r));
+    const retained = service.register({ email, password: GOOD_PASSWORD, name: 'B' });
+    const firstP = order === 'creator-commits-first' ? creator : retained;
+    void firstP.then(firstDone, firstDone);
+    return Promise.allSettled([creator, retained]);
+  }
+
+  it.each(['creator-commits-first', 'retained-commits-first'] as const)(
+    "Sol reproducer (%s): concurrent registrations on one unconfirmed Supabase id — the loser is a 409 and never deletes the winner's identity",
+    async (order) => {
+      const prisma = buildPrisma();
+      const { service } = buildService(prisma);
+      const email = `same.person.${order}@example.test`;
+      const [creator, retained] = await raceTwoSignups(service, email, order);
+      const winner = order === 'creator-commits-first' ? creator : retained;
+      const loser = order === 'creator-commits-first' ? retained : creator;
+      expect(winner.status).toBe('fulfilled');
+      expect(loser.status).toBe('rejected');
+      expect((loser as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+      // The winner's identity survives and its row is bound to it, role intact.
+      expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
+      expect(supabaseStore.get(email)?.id).toBe(`sup-${email}`);
+      expect(prisma._users).toHaveLength(1);
+      expect(prisma._users[0].supabase_id).toBe(`sup-${email}`);
+      expect(prisma._users[0].role).toBe(order === 'creator-commits-first' ? 'coach' : 'student');
+    },
+  );
+
+  it('creator fails with a non-unique error after a competitor committed a row for the same identity: kept, not deleted', async () => {
+    const prisma = buildPrisma();
+    const { service } = buildService(prisma);
+    const email = 'kept@example.test';
+    const realCreate = prisma.user.create.getMockImplementation();
+    prisma.user.create.mockImplementationOnce(async () => {
+      // A competing binder of the same identity commits while this request's
+      // insert fails for an unrelated reason.
+      prisma._state.users.push({
+        id: 'u-winner',
+        email,
+        supabase_id: `sup-${email}`,
+        role: 'coach',
+        coach_id: null,
+      });
+      throw new Error('db blip');
+    });
+    await expect(service.register({ email, password: GOOD_PASSWORD, name: 'K' })).rejects.toThrow(
+      'db blip',
+    );
+    prisma.user.create.mockImplementation(realCreate);
+    expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
+    expect(supabaseStore.has(email)).toBe(true);
+    expect(prisma._users.map((u: any) => [u.id, u.role])).toEqual([['u-winner', 'coach']]);
+    // The ownership re-check ran under the per-email advisory lock.
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+  });
+
+  it('creator with no committed row anywhere: its own identity IS deleted (retry stays clean)', async () => {
+    const prisma = buildPrisma();
+    const { service } = buildService(prisma);
+    prisma._failNext['user.create'] = new Error('db blip');
+    const email = 'orphan@example.test';
+    await expect(service.register({ email, password: GOOD_PASSWORD, name: 'O' })).rejects.toThrow(
+      'db blip',
+    );
+    expect(hooks().__supaAdminDeleteUser).toHaveBeenCalledWith(`sup-${email}`);
+    expect(supabaseStore.has(email)).toBe(false);
+    // A retry now creates a fresh identity and succeeds.
+    const res = await service.register({ email, password: GOOD_PASSWORD, name: 'O' });
+    expect(res.user_id).toBeDefined();
+    expect(prisma._users).toHaveLength(1);
+  });
+
+  it('a request handed an identity it did NOT create never deletes it, even on a non-unique failure', async () => {
+    const prisma = buildPrisma();
+    const { service } = buildService(prisma);
+    const email = 'retained@example.test';
+    supabaseStore.set(email, {
+      id: `sup-${email}`,
+      user_metadata: { tgp_signup_attempt: 'someone-else' },
+    });
+    prisma._failNext['user.create'] = new Error('db blip');
+    await expect(service.register({ email, password: GOOD_PASSWORD, name: 'R' })).rejects.toThrow(
+      'db blip',
+    );
+    expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
+    expect(supabaseStore.has(email)).toBe(true);
+  });
+
+  it('a retained identity that still exists is bound under the lock (orphan retry self-heals)', async () => {
+    const prisma = buildPrisma();
+    const { service } = buildService(prisma);
+    const email = 'selfheal@example.test';
+    supabaseStore.set(email, {
+      id: `sup-${email}`,
+      user_metadata: { tgp_signup_attempt: 'earlier-attempt' },
+    });
+    const res = await service.register({ email, password: GOOD_PASSWORD, name: 'S' });
+    expect(prisma._users.find((u: any) => u.id === res.user_id)?.supabase_id).toBe(`sup-${email}`);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(hooks().__supaAdminGetUserById).toHaveBeenCalledWith(`sup-${email}`);
+    expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it('a retained identity its creator already compensated away is never bound: 409 signup_retry, no row', async () => {
+    const prisma = buildPrisma();
+    const { service } = buildService(prisma);
+    const email = 'gone@example.test';
+    // signUp hands back the creator's identity, which the creator deletes
+    // before this request reaches its insert.
+    hooks().__supaSignUp = jest.fn(async () => ({
+      data: {
+        user: {
+          id: `sup-${email}`,
+          identities: [{ provider: 'email' }],
+          user_metadata: { tgp_signup_attempt: 'creator' },
+        },
+      },
+      error: null,
+    }));
+    await expect(
+      service.register({ email, password: GOOD_PASSWORD, name: 'G' }),
+    ).rejects.toMatchObject({
+      response: { code: 'signup_retry' },
+    });
+    expect(prisma._users).toHaveLength(0);
+    expect(hooks().__supaAdminDeleteUser).not.toHaveBeenCalled();
   });
 });
