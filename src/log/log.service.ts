@@ -6,6 +6,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
+import { resolveDisplayedTargets } from '../macros/macro-calculator';
 
 @Injectable()
 export class LogService {
@@ -51,9 +52,7 @@ export class LogService {
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,
     });
-    const calories = Math.round(
-      created.food_item.calories * created.quantity_multiplier,
-    );
+    const calories = Math.round(created.food_item.calories * created.quantity_multiplier);
     this.ptm.emit(userId, 'meal_logged', calories, {
       meal_type: data.meal_type,
     });
@@ -71,10 +70,26 @@ export class LogService {
     });
 
     const profile = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
+    // C06: same resolver as GET /me/macros/current (coach MacroTarget, then
+    // profile targets). The legacy 2000/180/200/60 numbers are kept ONLY for
+    // response-shape compatibility when nothing is set, and are labelled via
+    // `macro_targets_source: 'unset'` so no client mistakes them for a plan.
+    const coachTarget = await this.prisma.macroTarget.findFirst({
+      where: { client_id: userId, archived_at: null, effective_from: { lte: new Date() } },
+      orderBy: { effective_from: 'desc' },
+    });
+    const shown = resolveDisplayedTargets(coachTarget, profile);
+    const tCal = shown.calories ?? 2000;
+    const tPro = shown.protein_g ?? 180;
+    const tCarb = shown.carbs_g ?? 200;
+    const tFat = shown.fat_g ?? 60;
 
-    let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
+    let total_calories = 0,
+      total_protein_g = 0,
+      total_carbs_g = 0,
+      total_fat_g = 0;
 
-    entries.forEach(e => {
+    entries.forEach((e) => {
       const q = e.quantity_multiplier;
       total_calories += e.food_item.calories * q;
       total_protein_g += e.food_item.protein_g * q;
@@ -89,16 +104,17 @@ export class LogService {
       total_protein_g: Math.round(total_protein_g),
       total_carbs_g: Math.round(total_carbs_g),
       total_fat_g: Math.round(total_fat_g),
-      remaining_calories: Math.round((profile?.macro_target_calories || 2000) - total_calories),
-      remaining_protein_g: Math.round((profile?.macro_target_protein_g || 180) - total_protein_g),
-      remaining_carbs_g: Math.round((profile?.macro_target_carbs_g || 200) - total_carbs_g),
-      remaining_fat_g: Math.round((profile?.macro_target_fat_g || 60) - total_fat_g),
+      remaining_calories: Math.round(tCal - total_calories),
+      remaining_protein_g: Math.round(tPro - total_protein_g),
+      remaining_carbs_g: Math.round(tCarb - total_carbs_g),
+      remaining_fat_g: Math.round(tFat - total_fat_g),
       macro_targets: {
-        calories: profile?.macro_target_calories || 2000,
-        protein_g: profile?.macro_target_protein_g || 180,
-        carbs_g: profile?.macro_target_carbs_g || 200,
-        fat_g: profile?.macro_target_fat_g || 60,
+        calories: tCal,
+        protein_g: tPro,
+        carbs_g: tCarb,
+        fat_g: tFat,
       },
+      macro_targets_source: shown.source,
     };
   }
 
@@ -145,7 +161,7 @@ export class LogService {
 
     // Group by date
     const byDate: Record<string, any> = {};
-    entries.forEach(e => {
+    entries.forEach((e) => {
       const d = e.date.toISOString().split('T')[0];
       if (!byDate[d]) byDate[d] = { date: d, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
       byDate[d].calories += e.food_item.calories * e.quantity_multiplier;
