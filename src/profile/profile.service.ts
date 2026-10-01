@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { UpdateProfileDto } from './profile.dto';
@@ -21,7 +21,7 @@ export class ProfileService {
     return profile;
   }
 
-  async updateProfile(userId: string, data: UpdateProfileDto) {
+  async updateProfile(userId: string, data: UpdateProfileDto, now: Date = new Date()) {
     // CRITICAL: height_cm stored ONLY in UserProfile — single source of truth
     // SECURITY: explicit allow-list mapping (audit C4). The controller DTO already
     // strips unknown fields via ValidationPipe, but we defend-in-depth by mapping
@@ -66,18 +66,48 @@ export class ProfileService {
       if (v !== undefined && v !== null) (payload as Record<string, unknown>)[k] = v;
     }
 
-    const existing = await this.prisma.userProfile.findUnique({ where: { user_id: userId } });
-
-    if (existing) {
-      return this.prisma.userProfile.update({
-        where: { user_id: userId },
-        data: payload,
-      });
-    } else {
-      return this.prisma.userProfile.create({
-        data: payload,
-      });
-    }
+    // B606-1 / B606-2: the write and the recomputation are one atomic step.
+    // The merged (stored + incoming) profile must carry every calculator
+    // input; otherwise the contract's 409 `consultation_incomplete` is
+    // returned and NOTHING is written (no silent defaults, no partially
+    // applied profile without targets). On success the same write stores the
+    // freshly computed, floor-respecting targets and that row is returned, so
+    // the PUT response, GET /profile and GET /me/macros/current agree.
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.userProfile.findUnique({ where: { user_id: userId } });
+      const merged = { ...(existing ?? {}), ...payload } as Record<string, unknown>;
+      const resolved = resolveMacroInputs(
+        {
+          current_weight_lbs: merged.current_weight_lbs as number | null | undefined,
+          target_weight_lbs: merged.target_weight_lbs as number | null | undefined,
+          height_cm: merged.height_cm as number | null | undefined,
+          date_of_birth: merged.date_of_birth as Date | string | null | undefined,
+          sex: merged.sex as string | null | undefined,
+          activity_level: merged.activity_level as string | null | undefined,
+          goal_type: merged.goal_type as string | null | undefined,
+        },
+        now,
+      );
+      if (!resolved.ok) {
+        throw new ConflictException({
+          code: 'consultation_incomplete',
+          message: 'Profile is missing inputs required to compute targets.',
+          missing: resolved.missing,
+        });
+      }
+      const m = computeMacros(resolved.inputs);
+      const data = {
+        ...payload,
+        macro_target_calories: m.calories,
+        macro_target_protein_g: m.protein_g,
+        macro_target_carbs_g: m.carbs_g,
+        macro_target_fat_g: m.fat_g,
+      };
+      if (existing) {
+        return tx.userProfile.update({ where: { user_id: userId }, data });
+      }
+      return tx.userProfile.create({ data });
+    });
   }
 
   /**

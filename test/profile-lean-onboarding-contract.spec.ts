@@ -148,7 +148,10 @@ describe('legacy field mapping', () => {
 describe('ProfileService.updateProfile + computeAndSaveMacros', () => {
   function makePrisma(existing: Record<string, unknown> | null) {
     let row: Record<string, unknown> | null = existing;
-    const prisma = {
+    const prisma: Record<string, unknown> & {
+      userProfile: Record<string, jest.Mock>;
+    } = {
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
       userProfile: {
         findUnique: jest.fn(async () => row),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -170,14 +173,22 @@ describe('ProfileService.updateProfile + computeAndSaveMacros', () => {
   }
 
   it('never writes null for skipped answers and never trusts client-computed targets', async () => {
-    const h = makePrisma({ user_id: 'u1', sex: 'male', activity_level: 'moderate' });
+    const h = makePrisma({
+      user_id: 'u1',
+      sex: 'male',
+      activity_level: 'moderate',
+      height_cm: 180,
+      date_of_birth: new Date('1990-01-01'),
+    });
     const svc = new ProfileService(asPrisma(h.prisma));
     const dto = await validate(LEGACY_RESULTS_PAYLOAD);
     await svc.updateProfile('u1', dto);
     const written = h.prisma.userProfile.update.mock.calls[0][0].data as Record<string, unknown>;
     expect(written).not.toHaveProperty('sex');
     expect(written).not.toHaveProperty('height_cm');
-    expect(written).not.toHaveProperty('macro_target_calories');
+    // Targets are server-computed by the single calculator, never the
+    // client-sent `tdee` / `calorie_target`.
+    expect(written.macro_target_calories).not.toBe(LEGACY_RESULTS_PAYLOAD.calorie_target);
     expect(written).not.toHaveProperty('tdee');
     expect(written).not.toHaveProperty('calorie_target');
     expect(written).toMatchObject({
@@ -190,8 +201,7 @@ describe('ProfileService.updateProfile + computeAndSaveMacros', () => {
   it('computes targets with the single calculator when inputs are complete', async () => {
     const h = makePrisma(null);
     const svc = new ProfileService(asPrisma(h.prisma));
-    await svc.updateProfile('u1', await validate(LEAN_PAYLOAD));
-    await svc.computeAndSaveMacros('u1', new Date('2026-09-30T12:00:00Z'));
+    await svc.updateProfile('u1', await validate(LEAN_PAYLOAD), new Date('2026-09-30T12:00:00Z'));
     expect(h.row).toMatchObject({ macro_target_calories: expect.any(Number) });
     expect((h.row as Record<string, number>).macro_target_calories).toBeGreaterThanOrEqual(1200);
   });

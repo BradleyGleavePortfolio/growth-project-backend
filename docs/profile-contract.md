@@ -7,7 +7,7 @@ into daily targets. Callers:
 
 | Caller                                                      | Behaviour when inputs are missing                                                     |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PUT /profile` (`ProfileService.computeAndSaveMacros`)      | Leaves the stored targets untouched; writes nothing.                                  |
+| `PUT /profile` (`ProfileService.updateProfile`)             | 409 `{ code: "consultation_incomplete", missing }`; nothing is written.               |
 | `POST /coach/macros/preset` (`MacrosService.computePreset`) | 400 (`Invalid preset input`), including an unknown `activity_level` (no silent 1.55). |
 | `POST /me/onboarding/complete` (C05/C07)                    | 409 `consultation_incomplete`.                                                        |
 
@@ -30,6 +30,18 @@ moderate, fat loss -> BMR 1,477, TDEE 2,289, 1,789 kcal, protein 150 g, fat
 There are no fallback inputs (the old 180 lb / 175 cm / age 30 defaults are
 gone). Plausibility bounds: weight 60-1000 lb, height 90-250 cm, age 13-110;
 outside them the input counts as missing.
+
+## PUT /profile response (fix round)
+
+`PUT /profile` merges the body onto the stored profile, recomputes targets with
+the calculator and writes the profile and its targets in ONE transaction. The
+response is that updated row, so the PUT response, `GET /profile` and
+`GET /me/macros/current` (profile source) always show the same, floor-respecting
+numbers. If the merged profile lacks any calculator input (weight, height,
+date of birth, sex, activity level, goal) the request returns
+`409 { code: "consultation_incomplete", message, missing: [...] }` and no field
+is stored. `missing` uses the calculator's names: `weight`, `height_cm`,
+`date_of_birth`, `sex`, `activity_level`, `goal`.
 
 ## Reading targets
 
