@@ -271,7 +271,7 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
   it('states the owner-approved D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT)', () => {
     const text = visibleText(renderTrustPage('consumer-health'));
     const approved = [
-      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic for Roman or AI drafts; community inbox sorting, if turned on, is separate and is described under Categories we share. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
       'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
     ];
     for (const paragraph of approved) expect(text).toContain(paragraph);
@@ -398,32 +398,52 @@ describe('policy copy hygiene', () => {
     }
   });
 
-  // B-611-1: the community AI disclosure must describe what
-  // src/community/ai-triage actually does (coach inbox sorting: classify into
-  // TRIAGE_CATEGORIES + summarise, fields from inbox-triage.prompt.ts, no box-2
-  // check, coach/owner only, read-only), never "moderation" or "review".
-  it('describes community AI as coach inbox sorting, matching the implemented triage', () => {
+  // B-611-1 (round 2): the community AI disclosure must describe what
+  // src/community/ai-triage does once backend #626 (R2b AI egress gateway,
+  // branch agent/clinic/r2b-ai-consent-gateway) is live: coach inbox sorting
+  // (classify into TRIAGE_CATEGORIES + summarise; fields from
+  // inbox-triage.prompt.ts; coach/owner only; read-only), and ONLY for authors
+  // with a live box-2 grant. The gate is in #626 at
+  //   src/community/ai-triage/ai-triage.service.ts  (`egress.consentedClients`
+  //     drops every item whose author has no grant before the prompt is built)
+  //   src/ai-egress/ai-egress.service.ts            (`consentedClients`, and the
+  //     live grant re-check on every send; fails closed)
+  // and is proven by #626's test/community/ai-triage/ai-triage.service.spec.ts
+  // ("AiTriageService — R2b box-2 consent"). #611 must not ship the triage
+  // flag on before #626: FEATURE_COMMUNITY_AI_TRIAGE stays off until then.
+  // Never "moderation" or "review"; never "does not depend on the AI box".
+  it('describes community AI as coach inbox sorting, only for members who ticked box 2', () => {
     const privacy = visibleText(renderTrustPage('privacy'));
     const health = visibleText(renderTrustPage('consumer-health'));
     for (const text of [privacy, health]) {
       expect(text).not.toMatch(/community content (review|for moderation)/i);
       expect(text).not.toMatch(/review community content/i);
-      expect(text).not.toMatch(/nothing about you is sent to Anthropic[.,]/);
+      expect(text).not.toMatch(/does not depend on the optional AI box/i);
+      expect(text).not.toMatch(/separate from this box/i);
+      expect(text).not.toMatch(/for Roman or AI drafts/);
     }
+    // The owner-approved box-2 sentence is back, byte for byte, in both places.
+    expect(privacy).toContain(
+      'If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
+    );
+    expect(health).toContain('If you leave it unticked, nothing about you is sent to Anthropic.');
     expect(privacy).toContain(
       'Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed)',
     );
     expect(privacy).toContain(
-      'it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It does not depend on the optional AI box.',
+      'Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted.',
+    );
+    expect(privacy).toContain(
+      'it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted.',
     );
     expect(privacy).toContain(
       'it never replies, posts or acts on anything, and only the coach sees the result',
     );
     expect(privacy).toContain(
-      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on.',
+      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed.',
     );
     expect(health).toContain(
-      'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age',
+      'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box)',
     );
   });
 
