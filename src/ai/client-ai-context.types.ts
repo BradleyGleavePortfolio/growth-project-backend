@@ -174,7 +174,7 @@ export interface NextSessionSummary {
   title: string;
   /**
    * Always null. Kept for wire compatibility with the mobile disclosure
-   * screen; private coach notes (CoachingSession.coach_notes_md) are never
+   * screen; private coach notes (coach_notes_md on CoachingSession) are never
    * read into a client-facing or AI context (owner ruling 2026-09-30 #6).
    */
   coach_note: null;
