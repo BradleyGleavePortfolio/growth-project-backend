@@ -1648,6 +1648,20 @@ profile targets with `source: "profile"`. `PUT /profile` accepts the legacy
 mobile field names (`dob`, `current_weight`, `primary_goal`, `fitness_level`,
 `*_target`, ...). Full mapping: [docs/profile-contract.md](docs/profile-contract.md).
 
+### Clinic consultation onboarding (C05 / C07)
+
+`src/onboarding/`: `PUT /me/onboarding/consultation` (versioned, append-only
+answer revisions), `GET /me/onboarding`, `POST /me/onboarding/complete`
+(idempotent; 409 codes `not_attached`, `consultation_incomplete`,
+`consent_missing`, `clinic_not_configured`, `completion_in_progress`), and the
+coach read `GET /coach/clients/:clientId/consultation`. Completion writes the
+initial `MacroTarget`, picks one of three programs with a pure rule table,
+assigns a client clone through `assignProgramToClient`, joins the coach's
+clinic-wide and per-program community cohorts, and flags the coach on any
+screening yes. Programs are seeded by `scripts/seed-clinic-programs.ts` from
+`seed/clinic-programs.v1.json` (draft; production seeding needs owner
+approval). Full shapes: [docs/clinic-onboarding.md](docs/clinic-onboarding.md).
+
 ### Real meal plans
 
 `src/real-meal-plans/` adds reusable `MealTemplate` rows, a
