@@ -1372,6 +1372,17 @@ switches:
     owner: platform
     description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
 
+  # ── R2a AI processing consent ledger (D2 consent contract, box 2;
+  # 2026-10-01). Default OFF: the box-2 copy is pending owner sign-off and may
+  # change in place until the flag is first switched on. Operator flips it with
+  # the copy sign-off; never auto-flipped. ──
+  - name: FEATURE_AI_CONSENT_LEDGER_ENABLED
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "AI processing consent ledger (R2a). 'true' mounts GET /api/me/ai-consent + POST/DELETE /api/me/ai-consent/roman; otherwise 503 AI_CONSENT_UNAVAILABLE and hasClientAiConsent() is false for everyone."
+
   # ── Scout / tgp-importer readiness slice (R-SCOUT-READINESS-1, 2026-07-22):
   # register the three existing importer feature flags in the prod-readiness
   # registry as explicit default-OFF. Config + test only; no runtime change and

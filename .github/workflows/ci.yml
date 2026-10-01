@@ -324,6 +324,18 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run AI consent ledger live RLS suite (R2a)
+        # Applies prisma/migrations/20270203000000_ai_processing_consent_ledger
+        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers
+        # above, then proves self-only reads (client vs stranger vs the client's
+        # coach vs the application owner role vs anon), no non-service writes,
+        # the append-only trigger, CHECK/unique/FK behaviour and down/up. The
+        # spec refuses to skip under CI=true (Sol B-R2-1 on #601: the consent
+        # RLS suite must actually execute in a required job).
+        run: npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
