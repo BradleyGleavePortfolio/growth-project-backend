@@ -1,5 +1,55 @@
 # account-deletion — GDPR right to erasure
 
+## In-app deletion (2026-10, Apple 5.1.1(v))
+
+Deletion is initiated **and completed in the app**; there is no email step.
+
+1. The app re-authenticates the user: `POST /auth/recent-auth-token` with the
+   current password, or a fresh Sign in with Apple / Google identity token
+   (`provider_token` + `provider`). The returned token is single-use, 5 minutes.
+2. `POST /me/delete-account` with `X-Recent-Auth-Token` (RecentAuthGuard) and an
+   optional body `{ apple_authorization_code }`. The deletion is **scheduled
+   immediately**: `deletion_requested_at` and `deletion_confirmed_at` are set in
+   one write, the grace window (`DELETION_GRACE_DAYS`, default 14) starts now,
+   and the response carries `state: 'confirmed'`, `purge_after`, `grace_days`,
+   `cancellable`, `already_scheduled` and `apple_revocation`. Calling again
+   returns the existing schedule.
+3. `GET /me/delete-account/status` and `POST /me/delete-account/cancel` stay
+   reachable during the grace window. The account remains usable until the
+   nightly finalizer runs after `purge_after`.
+4. Sign in with Apple: when `apple_authorization_code` is sent and
+   `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY` (and
+   optionally `APPLE_SIGNIN_CLIENT_ID`, default first `APPLE_AUDIENCES` entry)
+   are configured, `AppleTokenRevocationService` exchanges the code at
+   `appleid.apple.com/auth/token` and revokes the token at `/auth/revoke`. The
+   backend stores no Apple refresh tokens, so this is the only revocation path.
+   Best effort: the outcome is recorded in `deletion_audit`/`AuditLog`
+   metadata and never blocks the request.
+
+The legacy `GET /me/delete-account/confirm?token=` link is still honoured for
+requests created before this change. The previous confirmation email was a
+logging stub and has been removed.
+
+### Finalizer fan-out (`account-deletion.fanout.ts`)
+
+The User row is tombstoned, not deleted, so `onDelete: Cascade` never fires.
+Inside the finalizer transaction, before the tombstone, the fan-out removes:
+wearable samples, connections, insight caches, metric preferences and the
+coach-facing wearable prompts derived from them; holistic insight cache;
+bloodwork panels; macro targets; Roman sessions and messages; AI quota;
+notifications; community voice notes, reactions, RSVPs, challenge entries,
+memberships and search-index rows; message reports filed and block-list rows
+in either direction; and, when the tables exist (open PRs), the consultation
+intake, its revisions and the AI-processing consent. Community posts and
+messages/comments the user authored keep only their row id (so other members'
+threads stay valid): every content column is set to NULL and the row is marked
+`removed` and soft-deleted. Community moderation reports they filed keep the
+audit row with `reported_by_id = NULL`. Lead-diagnostic submissions lose email,
+name, age, IP, user agent and verbatim answers.
+
+Not covered here (operational): object-storage files behind voice notes and
+media, third-party wearable OAuth de-authorization at the provider, backups.
+
 ## What this module does
 
 This module implements the GDPR right-to-erasure (right to be forgotten) flow for The Growth Project backend. It lets users request permanent deletion of their account through a two-phase email-confirmation process, gives them a 14-day grace period to change their mind, and — when the deadline arrives — scrubs all personal data according to the per-model cascade strategy documented below. Admins with the `owner` role can bypass the grace period and force-delete a user immediately. Every significant lifecycle event is written to two audit trails: the module-specific `deletion_audit` table (for GDPR auditors) and the global `AuditLog` table (for the security console).
@@ -8,13 +58,13 @@ This module implements the GDPR right-to-erasure (right to be forgotten) flow fo
 
 ## Endpoints
 
-| Method | Path | Auth | Request body | Response |
-|--------|------|------|-------------|----------|
-| `POST` | `/me/delete-account` | Bearer (any role) | — | `{ message, expires_at }` |
-| `GET` | `/me/delete-account/confirm` | Bearer (any role) | `?token=<hex>` | `{ message, purge_after }` |
-| `POST` | `/me/delete-account/cancel` | Bearer (any role) | — | `{ message }` |
-| `GET` | `/me/delete-account/status` | Bearer (any role) | — | `DeletionStatus` |
-| `POST` | `/admin/users/:id/delete` | Bearer, OWNER role | `{ reason? }` | `{ message }` |
+| Method | Path                         | Auth               | Request body   | Response                   |
+| ------ | ---------------------------- | ------------------ | -------------- | -------------------------- |
+| `POST` | `/me/delete-account`         | Bearer (any role)  | —              | `{ message, expires_at }`  |
+| `GET`  | `/me/delete-account/confirm` | Bearer (any role)  | `?token=<hex>` | `{ message, purge_after }` |
+| `POST` | `/me/delete-account/cancel`  | Bearer (any role)  | —              | `{ message }`              |
+| `GET`  | `/me/delete-account/status`  | Bearer (any role)  | —              | `DeletionStatus`           |
+| `POST` | `/admin/users/:id/delete`    | Bearer, OWNER role | `{ reason? }`  | `{ message }`              |
 
 `DeletionStatus` shape:
 
@@ -64,26 +114,26 @@ Admin shortcut:
 
 ### New columns on `User`
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `deletion_requested_at` | `DateTime?` | Timestamp when user first requested deletion. |
-| `deletion_confirmed_at` | `DateTime?` | Timestamp when user clicked the confirmation link. Grace period starts here. |
-| `deletion_token_hash` | `String?` | SHA-256 hash of the one-time email token. Raw token is NEVER stored. |
-| `deletion_token_expires_at` | `DateTime?` | Token TTL (default 24 h). Expired tokens are rejected even if hash matches. |
+| Column                      | Type        | Purpose                                                                      |
+| --------------------------- | ----------- | ---------------------------------------------------------------------------- |
+| `deletion_requested_at`     | `DateTime?` | Timestamp when user first requested deletion.                                |
+| `deletion_confirmed_at`     | `DateTime?` | Timestamp when user clicked the confirmation link. Grace period starts here. |
+| `deletion_token_hash`       | `String?`   | SHA-256 hash of the one-time email token. Raw token is NEVER stored.         |
+| `deletion_token_expires_at` | `DateTime?` | Token TTL (default 24 h). Expired tokens are rejected even if hash matches.  |
 
 ### New table: `deletion_audit`
 
 Append-only audit trail for the GDPR deletion lifecycle. Separate from `AuditLog` so GDPR auditors get a focused, low-noise report.
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `id` | `text (uuid)` | Primary key. |
-| `user_id` | `text` | The user being acted on. |
-| `event` | `text` | One of the `DeletionAuditEvent` values (see below). |
-| `actor_id` | `text?` | The user/admin who triggered the event. Null for system/cron. |
-| `actor_role` | `text?` | Role at time of action. |
-| `metadata` | `jsonb?` | Email snapshot, reason, IP, etc. |
-| `created_at` | `timestamp` | Event timestamp. |
+| Column       | Type          | Purpose                                                       |
+| ------------ | ------------- | ------------------------------------------------------------- |
+| `id`         | `text (uuid)` | Primary key.                                                  |
+| `user_id`    | `text`        | The user being acted on.                                      |
+| `event`      | `text`        | One of the `DeletionAuditEvent` values (see below).           |
+| `actor_id`   | `text?`       | The user/admin who triggered the event. Null for system/cron. |
+| `actor_role` | `text?`       | Role at time of action.                                       |
+| `metadata`   | `jsonb?`      | Email snapshot, reason, IP, etc.                              |
+| `created_at` | `timestamp`   | Event timestamp.                                              |
 
 Events: `deletion_requested`, `deletion_confirmed`, `deletion_cancelled`, `deletion_finalized`, `admin_force_delete`.
 
@@ -91,59 +141,59 @@ Events: `deletion_requested`, `deletion_confirmed`, `deletion_cancelled`, `delet
 
 ## Per-model cascade table
 
-| Model | Strategy | Rationale |
-|-------|----------|-----------|
-| `User` (row itself) | Tombstone — PII zeroed, `deleted_at` set | Hard-deleting the row would break FK references from coach-side tables (CoachMessage, Invoice, AuditLog). Tombstone keeps FK integrity while removing all PII. Email becomes `deleted-{id}@tombstone.invalid` (RFC 2606 reserved TLD). |
-| `UserProfile` | Hard delete | Pure biometric/personal data. No value to any other party once the user is gone. |
-| `NotificationPreferences` | Hard delete | No cross-user dependency. |
-| `UserPreferences` | Hard delete | Local personalization only. |
-| `LoggedFoodEntry` | Hard delete | Client-owned calorie data. |
-| `WorkoutSession` + `ExerciseSet` | Hard delete (cascade) | Client training records. |
-| `FastingWindow` | Hard delete | Client health log. |
-| `WeightLog` | Hard delete | Biometric PII. |
-| `WaterLog` | Hard delete | Client health log. |
-| `CheckIn` | Hard delete | Daily diary — personal. |
-| `Habit` + `HabitLog` | Hard delete (cascade) | Client habit tracking. |
-| `LessonCompletion` | Hard delete | Client progress. |
-| `CommunityWin` | Hard delete | The user's own posts. |
-| `SavedRecipe` | Hard delete | Client bookmark. |
-| `ListItem` | Hard delete | Client grocery/prep list. |
-| `ClientSignal` | Hard delete | PTM raw signals. Aggregates already captured in `PtmPrediction`. |
-| `ClientOutcome` | Hard delete | PTM teaching label. `labelled_by_id` set to NULL via schema `SetNull`. |
-| `PtmPrediction` | Hard delete | Contains `user_id` and risk scores. |
-| `CoachEffectivenessScore` | Hard delete (if user is coach) | Coach-owned metric. |
-| `CoachAlert` | Hard delete (both parties) | Contains the client's ID as the subject. |
-| `CoachOnboardingProgress` | Hard delete (if user is coach) | Coach setup state. |
-| `CoachProfile` | Hard delete (if user is coach) | Coach business metadata including Stripe IDs. |
-| `CoachSubscription` | Hard delete (if user is coach) | Subscription mirror. |
-| `Invoice` | Nullify `coach_id` (keep row) | **UK / EU financial records retention: 6 years (Companies Act)**. Row is de-linked rather than deleted. |
-| `PaymentFailure` | Hard delete | Diagnostic log, no retention obligation. |
-| `InviteCode` | Hard delete (if user is coach) | Coach-issued codes. |
-| `BuildWeekEnrollment` + `BuildWeekDayCompletion` | Hard delete (cascade) | Client program progress. |
-| `DataExportRequest` | Hard delete | Export payloads contain user's own data. |
-| `ClientCoachConsent` | Hard delete | Consent to use data. No data = consent moot. |
-| `ActivityEvent` | Hard delete (all parties) | Operational events tied to user. |
-| `MessageDraft` | Hard delete | Coach-authored draft linked to client. |
-| `CoachMessage` | Anonymize — sender_id / client_id references replaced; body cleared on sent messages | The OTHER party (coach) still owns their side of the thread. Deleting the row would break the coach's inbox. Body text is cleared so the deleted user's words are removed. |
-| `AuditLog` | Anonymize — `actor_id` set to null; `target_user_id` stays (set null by schema) | Compliance record must survive. Actor attribution removed. Event integrity kept. |
-| `MealPlan` | Nullify `client_id` or `coach_id` as appropriate | Meal plan content was authored by the coach; the plan stays for the coach. |
-| `CoachGuideline` | Delete if user is CLIENT; nullify `coach_id` if user is COACH | Guidelines authored by the coach stay attached to the coach record. |
-| `CoachNudge` | Clear body text; nullify affected party IDs | Nudge content may contain user-addressing language. |
-| `DiagnosticSubmission` | Nullify `user_id` (keep row) | Lead funnel analytics. Per schema comment: no FK cascade by design. |
-| `Recipe` | Nullify `creator_id` | Recipes are shared platform content. |
-| `Lesson` | Nullify `coach_id` | Lessons are shared content. |
-| `WorkoutRoutine` | Nullify `creator_id` | Coach-authored routines are shared content. |
+| Model                                            | Strategy                                                                             | Rationale                                                                                                                                                                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `User` (row itself)                              | Tombstone — PII zeroed, `deleted_at` set                                             | Hard-deleting the row would break FK references from coach-side tables (CoachMessage, Invoice, AuditLog). Tombstone keeps FK integrity while removing all PII. Email becomes `deleted-{id}@tombstone.invalid` (RFC 2606 reserved TLD). |
+| `UserProfile`                                    | Hard delete                                                                          | Pure biometric/personal data. No value to any other party once the user is gone.                                                                                                                                                       |
+| `NotificationPreferences`                        | Hard delete                                                                          | No cross-user dependency.                                                                                                                                                                                                              |
+| `UserPreferences`                                | Hard delete                                                                          | Local personalization only.                                                                                                                                                                                                            |
+| `LoggedFoodEntry`                                | Hard delete                                                                          | Client-owned calorie data.                                                                                                                                                                                                             |
+| `WorkoutSession` + `ExerciseSet`                 | Hard delete (cascade)                                                                | Client training records.                                                                                                                                                                                                               |
+| `FastingWindow`                                  | Hard delete                                                                          | Client health log.                                                                                                                                                                                                                     |
+| `WeightLog`                                      | Hard delete                                                                          | Biometric PII.                                                                                                                                                                                                                         |
+| `WaterLog`                                       | Hard delete                                                                          | Client health log.                                                                                                                                                                                                                     |
+| `CheckIn`                                        | Hard delete                                                                          | Daily diary — personal.                                                                                                                                                                                                                |
+| `Habit` + `HabitLog`                             | Hard delete (cascade)                                                                | Client habit tracking.                                                                                                                                                                                                                 |
+| `LessonCompletion`                               | Hard delete                                                                          | Client progress.                                                                                                                                                                                                                       |
+| `CommunityWin`                                   | Hard delete                                                                          | The user's own posts.                                                                                                                                                                                                                  |
+| `SavedRecipe`                                    | Hard delete                                                                          | Client bookmark.                                                                                                                                                                                                                       |
+| `ListItem`                                       | Hard delete                                                                          | Client grocery/prep list.                                                                                                                                                                                                              |
+| `ClientSignal`                                   | Hard delete                                                                          | PTM raw signals. Aggregates already captured in `PtmPrediction`.                                                                                                                                                                       |
+| `ClientOutcome`                                  | Hard delete                                                                          | PTM teaching label. `labelled_by_id` set to NULL via schema `SetNull`.                                                                                                                                                                 |
+| `PtmPrediction`                                  | Hard delete                                                                          | Contains `user_id` and risk scores.                                                                                                                                                                                                    |
+| `CoachEffectivenessScore`                        | Hard delete (if user is coach)                                                       | Coach-owned metric.                                                                                                                                                                                                                    |
+| `CoachAlert`                                     | Hard delete (both parties)                                                           | Contains the client's ID as the subject.                                                                                                                                                                                               |
+| `CoachOnboardingProgress`                        | Hard delete (if user is coach)                                                       | Coach setup state.                                                                                                                                                                                                                     |
+| `CoachProfile`                                   | Hard delete (if user is coach)                                                       | Coach business metadata including Stripe IDs.                                                                                                                                                                                          |
+| `CoachSubscription`                              | Hard delete (if user is coach)                                                       | Subscription mirror.                                                                                                                                                                                                                   |
+| `Invoice`                                        | Nullify `coach_id` (keep row)                                                        | **UK / EU financial records retention: 6 years (Companies Act)**. Row is de-linked rather than deleted.                                                                                                                                |
+| `PaymentFailure`                                 | Hard delete                                                                          | Diagnostic log, no retention obligation.                                                                                                                                                                                               |
+| `InviteCode`                                     | Hard delete (if user is coach)                                                       | Coach-issued codes.                                                                                                                                                                                                                    |
+| `BuildWeekEnrollment` + `BuildWeekDayCompletion` | Hard delete (cascade)                                                                | Client program progress.                                                                                                                                                                                                               |
+| `DataExportRequest`                              | Hard delete                                                                          | Export payloads contain user's own data.                                                                                                                                                                                               |
+| `ClientCoachConsent`                             | Hard delete                                                                          | Consent to use data. No data = consent moot.                                                                                                                                                                                           |
+| `ActivityEvent`                                  | Hard delete (all parties)                                                            | Operational events tied to user.                                                                                                                                                                                                       |
+| `MessageDraft`                                   | Hard delete                                                                          | Coach-authored draft linked to client.                                                                                                                                                                                                 |
+| `CoachMessage`                                   | Anonymize — sender_id / client_id references replaced; body cleared on sent messages | The OTHER party (coach) still owns their side of the thread. Deleting the row would break the coach's inbox. Body text is cleared so the deleted user's words are removed.                                                             |
+| `AuditLog`                                       | Anonymize — `actor_id` set to null; `target_user_id` stays (set null by schema)      | Compliance record must survive. Actor attribution removed. Event integrity kept.                                                                                                                                                       |
+| `MealPlan`                                       | Nullify `client_id` or `coach_id` as appropriate                                     | Meal plan content was authored by the coach; the plan stays for the coach.                                                                                                                                                             |
+| `CoachGuideline`                                 | Delete if user is CLIENT; nullify `coach_id` if user is COACH                        | Guidelines authored by the coach stay attached to the coach record.                                                                                                                                                                    |
+| `CoachNudge`                                     | Clear body text; nullify affected party IDs                                          | Nudge content may contain user-addressing language.                                                                                                                                                                                    |
+| `DiagnosticSubmission`                           | Nullify `user_id` (keep row)                                                         | Lead funnel analytics. Per schema comment: no FK cascade by design.                                                                                                                                                                    |
+| `Recipe`                                         | Nullify `creator_id`                                                                 | Recipes are shared platform content.                                                                                                                                                                                                   |
+| `Lesson`                                         | Nullify `coach_id`                                                                   | Lessons are shared content.                                                                                                                                                                                                            |
+| `WorkoutRoutine`                                 | Nullify `creator_id`                                                                 | Coach-authored routines are shared content.                                                                                                                                                                                            |
 
 ---
 
 ## Env vars
 
-| Var | Default | Purpose |
-|-----|---------|---------|
-| `DELETION_GRACE_DAYS` | `14` | Calendar days between `deletion_confirmed_at` and PII scrub. GDPR requires "without undue delay" — 14 days gives users a genuine cancel window while satisfying that obligation. |
-| `DELETION_FINALIZE_CRON` | `0 3 * * *` | Cron expression for the nightly finalize job (3:00 AM UTC by default). |
-| `DELETION_TOKEN_TTL_HOURS` | `24` | How long the email confirmation link is valid. Expired links are rejected — the user must re-request. |
-| `APP_BASE_URL` | `https://app.thegrowthproject.io` | Base URL for the confirmation link in the email. |
+| Var                        | Default                           | Purpose                                                                                                                                                                          |
+| -------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DELETION_GRACE_DAYS`      | `14`                              | Calendar days between `deletion_confirmed_at` and PII scrub. GDPR requires "without undue delay" — 14 days gives users a genuine cancel window while satisfying that obligation. |
+| `DELETION_FINALIZE_CRON`   | `0 3 * * *`                       | Cron expression for the nightly finalize job (3:00 AM UTC by default).                                                                                                           |
+| `DELETION_TOKEN_TTL_HOURS` | `24`                              | How long the email confirmation link is valid. Expired links are rejected — the user must re-request.                                                                            |
+| `APP_BASE_URL`             | `https://app.thegrowthproject.io` | Base URL for the confirmation link in the email.                                                                                                                                 |
 
 ---
 
@@ -161,8 +211,8 @@ Events: `deletion_requested`, `deletion_confirmed`, `deletion_cancelled`, `delet
 
 ## Tests
 
-| File | What it tests |
-|------|---------------|
+| File                               | What it tests                                                                                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `account-deletion.service.spec.ts` | Full lifecycle (request → confirm → cancel), 14-day finalize, admin force-delete is audited, token hashing is one-way (SHA-256), expired tokens are rejected, deletion is idempotent (already-deleted user = no-op), cron does nothing when no candidates, cron finalizes past-grace users |
 
 ---

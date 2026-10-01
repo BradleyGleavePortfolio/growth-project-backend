@@ -12,15 +12,21 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import {
+  AppleRevocationOutcome,
+  AppleTokenRevocationService,
+} from './apple-token-revocation.service';
+import { purgeHealthAiAndCommunityData } from './account-deletion.fanout';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
 //
-//   NONE       → REQUESTED   POST /me/delete-account
-//                             token emailed; deletion_requested_at + token_hash set
+//   NONE       → CONFIRMED   POST /me/delete-account (after RecentAuthGuard)
+//                             deletion_requested_at + deletion_confirmed_at set
+//                             in one write; the grace period starts immediately
 //
 //   REQUESTED  → CONFIRMED   GET  /me/delete-account/confirm?token=...
-//                             deletion_confirmed_at set; grace period starts
+//                             legacy email-token path (pre-2026-10 requests only)
 //
 //   CONFIRMED  → DELETED     nightly cron (DELETION_FINALIZE_CRON)
 //                             PII scrubbed after DELETION_GRACE_DAYS
@@ -49,8 +55,7 @@ export const DeletionAuditEvent = {
   ADMIN_FORCE_DELETE: 'admin_force_delete',
 } as const;
 
-export type DeletionAuditEventValue =
-  (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
+export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -59,6 +64,19 @@ export interface DeletionStatus {
   grace_days?: number;
   purge_after?: string;
   deleted_at?: string;
+  cancellable?: boolean;
+}
+
+export interface DeletionScheduledResponse {
+  state: 'confirmed';
+  already_scheduled: boolean;
+  message: string;
+  requested_at: string;
+  confirmed_at: string;
+  grace_days: number;
+  purge_after: string;
+  cancellable: true;
+  apple_revocation: AppleRevocationOutcome;
 }
 
 export interface AdminDeleteOptions {
@@ -81,6 +99,7 @@ export class AccountDeletionService {
     private readonly auditService: AuditService,
     private readonly config: ConfigService,
     private readonly supabase: SupabaseService,
+    private readonly appleRevocation: AppleTokenRevocationService,
   ) {}
 
   // ── Env helpers ─────────────────────────────────────────────────────────────
@@ -91,75 +110,66 @@ export class AccountDeletionService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 14;
   }
 
-  private get tokenTtlHours(): number {
-    const raw = this.config.get<string>('DELETION_TOKEN_TTL_HOURS');
-    const parsed = raw ? parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
-  }
-
   // ── Token helpers ────────────────────────────────────────────────────────────
-
-  /** Generate a cryptographically random single-use token and its SHA-256 hash. */
-  private generateToken(): { token: string; hash: string } {
-    const token = crypto.randomBytes(32).toString('hex');
-    const hash = crypto.createHash('sha256').update(token).digest('hex');
-    return { token, hash };
-  }
 
   /** Hash an inbound token so it can be compared against the stored hash. */
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  // ── Step 1: Request deletion (sends confirmation email) ──────────────────────
+  // ── Step 1: Request deletion (in-app; schedules immediately) ─────────────────
+  //
+  // Apple 5.1.1(v): deletion must be initiable AND completable in the app. The
+  // caller has just passed RecentAuthGuard (a fresh password or Sign in with
+  // Apple / Google re-authentication minted by POST /auth/recent-auth-token,
+  // single-use, 5-minute TTL). That fresh re-auth is the confirmation factor,
+  // so the grace period starts NOW: deletion_confirmed_at is stamped in the
+  // same write. There is no email step (the previous email "confirmation" was
+  // a logging stub, so in-app requests never progressed). The legacy
+  // GET /me/delete-account/confirm?token= path still honours any outstanding
+  // token for backward compatibility.
 
   async requestDeletion(
     userId: string,
-    opts: { ip?: string | null; userAgent?: string | null } = {},
-  ): Promise<{ message: string; expires_at: string }> {
+    opts: {
+      ip?: string | null;
+      userAgent?: string | null;
+      appleAuthorizationCode?: string | null;
+    } = {},
+  ): Promise<DeletionScheduledResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.deleted_at) throw new BadRequestException('Account is already deleted');
 
-    // Idempotent — if a valid token already exists return the same expiry
-    // without sending another email (prevents enumeration / token flooding).
-    if (
-      user.deletion_token_hash &&
-      user.deletion_token_expires_at &&
-      user.deletion_token_expires_at > new Date() &&
-      user.deletion_requested_at
-    ) {
-      return {
-        message: 'A deletion request is already pending for your account. You can cancel it from Settings.',
-        expires_at: user.deletion_token_expires_at.toISOString(),
-      };
+    // Idempotent: an already-scheduled deletion keeps its original date.
+    if (user.deletion_confirmed_at) {
+      const purgeAfter = this.purgeAfterFor(user.deletion_confirmed_at);
+      return this.scheduledResponse(
+        user.deletion_requested_at ?? user.deletion_confirmed_at,
+        user.deletion_confirmed_at,
+        purgeAfter,
+        'not_requested',
+        true,
+      );
     }
 
-    const { token, hash } = this.generateToken();
-    const expiresAt = new Date(Date.now() + this.tokenTtlHours * 60 * 60 * 1000);
     const now = new Date();
+    const purgeAfter = this.purgeAfterFor(now);
 
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         deletion_requested_at: now,
-        // Reset any prior confirmed state so the user has to re-confirm
-        deletion_confirmed_at: null,
-        deletion_token_hash: hash,
-        deletion_token_expires_at: expiresAt,
+        deletion_confirmed_at: now,
+        deletion_token_hash: null,
+        deletion_token_expires_at: null,
       },
     });
 
-    // Send confirmation email via the same infra as Phase 9 digests.
-    // If the email module is not yet wired, we log and continue — a missing
-    // email is operational, not a data-integrity failure.
-    await this.sendConfirmationEmail(user.email, user.name, token, expiresAt).catch(
-      (err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion: failed to send confirmation email to user=${userId}: ${msg}`,
-        );
-      },
+    // Sign in with Apple revocation (best effort, never blocks the request).
+    const appleRevocation = await this.appleRevocation.revokeWithAuthorizationCode(
+      opts.appleAuthorizationCode,
+      userId,
     );
 
     await this.writeDeletionAudit({
@@ -171,7 +181,18 @@ export class AccountDeletionService {
         email_snapshot: user.email,
         ip: opts.ip,
         user_agent: opts.userAgent,
-        token_expires_at: expiresAt.toISOString(),
+        confirmation: 'in_app_recent_auth',
+      },
+    });
+    await this.writeDeletionAudit({
+      userId,
+      event: DeletionAuditEvent.DELETION_CONFIRMED,
+      actorId: userId,
+      actorRole: user.role,
+      metadata: {
+        grace_days: this.graceDays,
+        purge_after: purgeAfter.toISOString(),
+        apple_revocation: appleRevocation,
       },
     });
 
@@ -186,21 +207,49 @@ export class AccountDeletionService {
       targetId: userId,
       ip: opts.ip ?? null,
       userAgent: opts.userAgent ?? null,
-      metadata: { token_expires_at: expiresAt.toISOString() },
+      metadata: {
+        grace_days: this.graceDays,
+        purge_after: purgeAfter.toISOString(),
+        apple_revocation: appleRevocation,
+      },
     });
 
+    return this.scheduledResponse(now, now, purgeAfter, appleRevocation, false);
+  }
+
+  private purgeAfterFor(confirmedAt: Date): Date {
+    return new Date(confirmedAt.getTime() + this.graceDays * 24 * 60 * 60 * 1000);
+  }
+
+  private scheduledResponse(
+    requestedAt: Date,
+    confirmedAt: Date,
+    purgeAfter: Date,
+    appleRevocation: AppleRevocationOutcome,
+    alreadyScheduled: boolean,
+  ): DeletionScheduledResponse {
+    const dateLabel = purgeAfter.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
     return {
-      message:
-        'Your deletion request has been received. A confirmation link will be sent to your email when email delivery is configured. You have 24 hours to confirm. You can cancel at any time from Settings.',
-      expires_at: expiresAt.toISOString(),
+      state: 'confirmed',
+      already_scheduled: alreadyScheduled,
+      message: `Your account and its data will be permanently deleted on ${dateLabel}. You can cancel before then from Settings.`,
+      requested_at: requestedAt.toISOString(),
+      confirmed_at: confirmedAt.toISOString(),
+      grace_days: this.graceDays,
+      purge_after: purgeAfter.toISOString(),
+      cancellable: true,
+      apple_revocation: appleRevocation,
     };
   }
 
   // ── Step 2: Confirm via one-time email link ───────────────────────────────────
 
-  async confirmDeletion(
-    token: string,
-  ): Promise<{ message: string; purge_after: string }> {
+  async confirmDeletion(token: string): Promise<{ message: string; purge_after: string }> {
     const hash = this.hashToken(token);
 
     const user = await this.prisma.user.findFirst({
@@ -350,9 +399,11 @@ export class AccountDeletionService {
       );
       return {
         state: 'confirmed',
+        requested_at: (user.deletion_requested_at ?? user.deletion_confirmed_at).toISOString(),
         confirmed_at: user.deletion_confirmed_at.toISOString(),
         grace_days: this.graceDays,
         purge_after: purgeAfter.toISOString(),
+        cancellable: new Date() <= purgeAfter,
       };
     }
     if (user.deletion_requested_at) {
@@ -374,7 +425,10 @@ export class AccountDeletionService {
    * dual write is intentional so GDPR auditors and security teams each
    * have their own query surface.
    */
-  async adminForceDelete(targetUserId: string, opts: AdminDeleteOptions): Promise<{ message: string }> {
+  async adminForceDelete(
+    targetUserId: string,
+    opts: AdminDeleteOptions,
+  ): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.deleted_at) {
@@ -442,9 +496,7 @@ export class AccountDeletionService {
   async runFinalizeCron(): Promise<void> {
     this.logger.log('AccountDeletion finalize cron: starting');
 
-    const cutoff = new Date(
-      Date.now() - this.graceDays * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - this.graceDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
@@ -499,9 +551,7 @@ export class AccountDeletionService {
         finalized += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`,
-        );
+        this.logger.error(`AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`);
         errors.push({ userId: candidate.id, error: msg });
       }
     }
@@ -592,9 +642,7 @@ export class AccountDeletionService {
       if (!preCheck) return { skipped: 'user-not-found' };
       if (preCheck.deleted_at) return { skipped: 'already-deleted' };
       if (!preCheck.deletion_confirmed_at) {
-        this.logger.warn(
-          `finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`,
-        );
+        this.logger.warn(`finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`);
         return { skipped: 'cancelled' };
       }
     }
@@ -643,8 +691,22 @@ export class AccountDeletionService {
       .catch(() => undefined);
 
     // ── 4. Nullify DiagnosticSubmission.user_id ──────────────────────────────
+    // The submission row stays for funnel scores/buckets only; every
+    // identifying field (email, name, age, IP, user agent, verbatim answers)
+    // is irreversibly overwritten.
     await this.prisma.diagnosticSubmission
-      .updateMany({ where: { user_id: userId }, data: { user_id: null } })
+      .updateMany({
+        where: { user_id: userId },
+        data: {
+          user_id: null,
+          email: tombstoneEmail,
+          name: null,
+          age: null,
+          ip: null,
+          user_agent: null,
+          answers: [],
+        },
+      })
       .catch(() => undefined);
 
     // ── 5. Delete Recipe rows created by this user ──────────────────────
@@ -658,9 +720,7 @@ export class AccountDeletionService {
 
     // ── 6. Delete Lesson rows where this user was the coach ──────────
     // coach_id is non-nullable. LessonCompletion rows cascade via their FK.
-    await this.prisma.lesson
-      .deleteMany({ where: { coach_id: userId } })
-      .catch(() => undefined);
+    await this.prisma.lesson.deleteMany({ where: { coach_id: userId } }).catch(() => undefined);
 
     // ── 7. Delete WorkoutRoutine rows created by this user ────────────
     // creator_id is non-nullable. RoutineExercise rows cascade.
@@ -731,10 +791,7 @@ export class AccountDeletionService {
         where: { id: userId },
         select: { supabase_id: true },
       });
-      if (
-        originalUser?.supabase_id &&
-        !originalUser.supabase_id.startsWith('deleted-')
-      ) {
+      if (originalUser?.supabase_id && !originalUser.supabase_id.startsWith('deleted-')) {
         const adminClient = this.supabase.getClient();
         await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
       }
@@ -821,6 +878,13 @@ export class AccountDeletionService {
       await tx.userPreferences.deleteMany({ where: { user_id: userId } });
       await tx.userProfile.deleteMany({ where: { user_id: userId } });
 
+      // Health, consultation, AI, and community relations (store review
+      // 2026-09-30). These FKs are onDelete: Cascade or Restrict against User,
+      // but the User row is TOMBSTONED below, not deleted, so no cascade ever
+      // fires. Each relation is therefore removed or irreversibly anonymized
+      // explicitly here, inside the same transaction as the tombstone.
+      await purgeHealthAiAndCommunityData(tx, userId, now);
+
       // Detach any students still assigned to this coach so they are not
       // orphaned against a tombstoned coach_id.
       await tx.user.updateMany({
@@ -846,36 +910,6 @@ export class AccountDeletionService {
         },
       });
     });
-  }
-
-  // ── Email ─────────────────────────────────────────────────────────────────────
-
-  private async sendConfirmationEmail(
-    email: string,
-    name: string,
-    token: string,
-    expiresAt: Date,
-  ): Promise<void> {
-    // IMPORTANT: Never log the confirmation URL or the raw token. The token is
-    // a single-use credential; logging it exposes it to anyone with log access.
-    // The token hash is stored in the DB. The user retrieves a fresh status
-    // from the app; email delivery will surface the URL once wired up.
-    //
-    // Phase 9 digest infra: replace the warn below with a MailService call.
-    // Subject: "Confirm your account deletion request — The Growth Project"
-    // Body:    Plain-text + HTML with the confirmation URL, expiry time, and a
-    //          note that clicking starts a 14-day grace period during which the
-    //          deletion can be cancelled from Settings.
-    //
-    // Do not send a second email after confirmation — the mobile client
-    // shows the in-app status instead.
-    // Do not log email, name, token, or any URL derived from the token.
-    void email; void name; void token;
-    this.logger.warn(
-      `AccountDeletion: confirmation pending — email not yet configured. ` +
-        `Token stored in DB, expires ${expiresAt.toISOString()}. ` +
-        'Wire up MailService in Phase 9 to send the confirmation link.',
-    );
   }
 
   // ── deletion_audit write ──────────────────────────────────────────────────────

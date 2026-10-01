@@ -12,6 +12,7 @@ import { PrismaService } from '../src/prisma.service';
 import { AuditService } from '../src/audit/audit.service';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../src/supabase/supabase.service';
+import { AppleTokenRevocationService } from '../src/account-deletion/apple-token-revocation.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
     create: jest.fn().mockResolvedValue({}),
   };
 
-  const txProxy = {
+  const txDelegates = {
     user: {
       findUnique: jest.fn().mockResolvedValue(userRow),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -85,6 +86,17 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
     userPreferences: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     userProfile: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
+  // Models touched by the health/AI/community fan-out (account-deletion.fanout)
+  // resolve to the shared destructiveMethods so a skipped finalization can
+  // still assert that NO destructive call happened.
+  const txProxy: Record<string, unknown> = new Proxy(txDelegates, {
+    get(target, prop: string) {
+      if (prop in target) return target[prop as keyof typeof target];
+      if (prop === '$queryRaw') return jest.fn().mockResolvedValue([{ present: false }]);
+      if (prop === '$executeRaw') return destructiveMethods.create;
+      return destructiveMethods;
+    },
+  });
 
   return {
     txProxy,
@@ -150,6 +162,10 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
         { provide: AuditService, useValue: auditStub },
         { provide: ConfigService, useValue: configStub },
         { provide: SupabaseService, useValue: supabaseStub },
+        {
+          provide: AppleTokenRevocationService,
+          useValue: { revokeWithAuthorizationCode: jest.fn().mockResolvedValue('not_requested') },
+        },
       ],
     }).compile();
 
@@ -175,12 +191,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
 
     // Drive the cron (it uses findMany to get candidates, then calls finalize)
     // We can also test the private method directly via type-cast:
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     expect(result).toEqual({ skipped: 'cancelled' });
 
@@ -194,12 +212,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     const alreadyDeletedUser = buildUserRow({ deleted_at: new Date() });
     const { service: svc, prisma } = await buildService(alreadyDeletedUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     expect(result).toEqual({ skipped: 'already-deleted' });
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -211,12 +231,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     });
     const { service: svc, prisma } = await buildService(confirmedUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     // Returns void (no skipped key) on the normal path
     expect(result).toBeUndefined();
@@ -228,12 +250,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     const cancelledUser = buildUserRow({ deletion_confirmed_at: null });
     const { service: svc, prisma } = await buildService(cancelledUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: true });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: true });
 
     // Admin path should proceed — no skipped result
     expect(result).toBeUndefined();

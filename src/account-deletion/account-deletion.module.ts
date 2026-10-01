@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { AccountDeletionController } from './account-deletion.controller';
 import { AccountDeletionService } from './account-deletion.service';
+import { AppleTokenRevocationService } from './apple-token-revocation.service';
 
 // PrismaService is provided globally via PrismaModule — no need to import here.
 // AuditService is provided globally via AuditModule (see app.module.ts).
@@ -12,7 +13,7 @@ import { AccountDeletionService } from './account-deletion.service';
 @Module({
   imports: [ConfigModule, AuthModule],
   controllers: [AccountDeletionController],
-  providers: [AccountDeletionService],
+  providers: [AccountDeletionService, AppleTokenRevocationService],
   exports: [AccountDeletionService],
 })
 export class AccountDeletionModule {}

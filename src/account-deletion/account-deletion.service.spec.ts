@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { AccountDeletionService, DeletionAuditEvent } from './account-deletion.service';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SupabaseService } from '../supabase/supabase.service';
+import { AppleTokenRevocationService } from './apple-token-revocation.service';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,21 @@ function mockUser(overrides: Record<string, unknown> = {}) {
     first_win_completed_at: null,
     ...overrides,
   };
+}
+
+/** Delegates touched by the health/AI/community fan-out resolve to no-op mocks. */
+function withFanoutDelegates<T extends object>(tx: T): T {
+  return new Proxy(tx, {
+    get(target, prop: string) {
+      if (prop in target) return target[prop as keyof T];
+      if (prop === '$queryRaw') return jest.fn().mockResolvedValue([{ present: false }]);
+      if (prop === '$executeRaw') return jest.fn().mockResolvedValue(1);
+      return {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      };
+    },
+  });
 }
 
 function buildPrisma() {
@@ -82,36 +99,46 @@ function buildPrisma() {
     userProfile: { deleteMany: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       // Run the callback with the same mock so we can assert on individual calls
-      return fn({
-        loggedFoodEntry: { deleteMany: jest.fn().mockResolvedValue({}) },
-        workoutSession: { deleteMany: jest.fn().mockResolvedValue({}) },
-        fastingWindow: { deleteMany: jest.fn().mockResolvedValue({}) },
-        weightLog: { deleteMany: jest.fn().mockResolvedValue({}) },
-        waterLog: { deleteMany: jest.fn().mockResolvedValue({}) },
-        checkIn: { deleteMany: jest.fn().mockResolvedValue({}) },
-        habit: { deleteMany: jest.fn().mockResolvedValue({}) },
-        lessonCompletion: { deleteMany: jest.fn().mockResolvedValue({}) },
-        communityWin: { deleteMany: jest.fn().mockResolvedValue({}) },
-        savedRecipe: { deleteMany: jest.fn().mockResolvedValue({}) },
-        listItem: { deleteMany: jest.fn().mockResolvedValue({}) },
-        clientSignal: { deleteMany: jest.fn().mockResolvedValue({}) },
-        clientOutcome: { deleteMany: jest.fn().mockResolvedValue({}) },
-        ptmPrediction: { deleteMany: jest.fn().mockResolvedValue({}) },
-        coachEffectivenessScore: { deleteMany: jest.fn().mockResolvedValue({}) },
-        coachOnboardingProgress: { deleteMany: jest.fn().mockResolvedValue({}) },
-        coachProfile: { deleteMany: jest.fn().mockResolvedValue({}) },
-        coachSubscription: { deleteMany: jest.fn().mockResolvedValue({}) },
-        invoice: { updateMany: jest.fn().mockResolvedValue({}) },
-        paymentFailure: { deleteMany: jest.fn().mockResolvedValue({}) },
-        inviteCode: { deleteMany: jest.fn().mockResolvedValue({}) },
-        buildWeekEnrollment: { deleteMany: jest.fn().mockResolvedValue({}) },
-        dataExportRequest: { deleteMany: jest.fn().mockResolvedValue({}) },
-        clientCoachConsent: { deleteMany: jest.fn().mockResolvedValue({}) },
-        notificationPreferences: { deleteMany: jest.fn().mockResolvedValue({}) },
-        userPreferences: { deleteMany: jest.fn().mockResolvedValue({}) },
-        userProfile: { deleteMany: jest.fn().mockResolvedValue({}) },
-        user: { update: jest.fn().mockResolvedValue({}) },
-      });
+      return fn(
+        withFanoutDelegates({
+          loggedFoodEntry: { deleteMany: jest.fn().mockResolvedValue({}) },
+          workoutSession: { deleteMany: jest.fn().mockResolvedValue({}) },
+          fastingWindow: { deleteMany: jest.fn().mockResolvedValue({}) },
+          weightLog: { deleteMany: jest.fn().mockResolvedValue({}) },
+          waterLog: { deleteMany: jest.fn().mockResolvedValue({}) },
+          checkIn: { deleteMany: jest.fn().mockResolvedValue({}) },
+          habit: { deleteMany: jest.fn().mockResolvedValue({}) },
+          lessonCompletion: { deleteMany: jest.fn().mockResolvedValue({}) },
+          communityWin: { deleteMany: jest.fn().mockResolvedValue({}) },
+          savedRecipe: { deleteMany: jest.fn().mockResolvedValue({}) },
+          listItem: { deleteMany: jest.fn().mockResolvedValue({}) },
+          clientSignal: { deleteMany: jest.fn().mockResolvedValue({}) },
+          clientOutcome: { deleteMany: jest.fn().mockResolvedValue({}) },
+          ptmPrediction: { deleteMany: jest.fn().mockResolvedValue({}) },
+          coachEffectivenessScore: { deleteMany: jest.fn().mockResolvedValue({}) },
+          coachOnboardingProgress: { deleteMany: jest.fn().mockResolvedValue({}) },
+          coachProfile: { deleteMany: jest.fn().mockResolvedValue({}) },
+          coachSubscription: { deleteMany: jest.fn().mockResolvedValue({}) },
+          invoice: { updateMany: jest.fn().mockResolvedValue({}) },
+          paymentFailure: { deleteMany: jest.fn().mockResolvedValue({}) },
+          inviteCode: { deleteMany: jest.fn().mockResolvedValue({}) },
+          buildWeekEnrollment: { deleteMany: jest.fn().mockResolvedValue({}) },
+          dataExportRequest: { deleteMany: jest.fn().mockResolvedValue({}) },
+          clientCoachConsent: { deleteMany: jest.fn().mockResolvedValue({}) },
+          notificationPreferences: { deleteMany: jest.fn().mockResolvedValue({}) },
+          userPreferences: { deleteMany: jest.fn().mockResolvedValue({}) },
+          userProfile: { deleteMany: jest.fn().mockResolvedValue({}) },
+          user: {
+            update: jest.fn().mockResolvedValue({}),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            findUnique: jest.fn().mockResolvedValue({
+              deletion_confirmed_at: new Date(Date.now() - 15 * 86_400_000),
+              deleted_at: null,
+            }),
+          },
+          message: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        }),
+      );
     }),
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
@@ -133,6 +160,14 @@ describe('AccountDeletionService', () => {
         AccountDeletionService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: auditService },
+        {
+          provide: SupabaseService,
+          useValue: { getClient: () => ({ auth: { admin: { deleteUser: jest.fn() } } }) },
+        },
+        {
+          provide: AppleTokenRevocationService,
+          useValue: { revokeWithAuthorizationCode: jest.fn().mockResolvedValue('not_requested') },
+        },
         {
           provide: ConfigService,
           useValue: {
@@ -163,7 +198,7 @@ describe('AccountDeletionService', () => {
       await expect(service.requestDeletion('user-1')).rejects.toThrow(BadRequestException);
     });
 
-    it('sets deletion_requested_at and a token hash', async () => {
+    it('schedules immediately: requested and confirmed in one write', async () => {
       prisma.user.findUnique.mockResolvedValue(mockUser());
       const result = await service.requestDeletion('user-1');
 
@@ -172,27 +207,23 @@ describe('AccountDeletionService', () => {
           where: { id: 'user-1' },
           data: expect.objectContaining({
             deletion_requested_at: expect.any(Date),
-            deletion_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
-            deletion_token_expires_at: expect.any(Date),
+            deletion_confirmed_at: expect.any(Date),
+            deletion_token_hash: null,
           }),
         }),
       );
-      expect(result.expires_at).toBeDefined();
+      expect(result.state).toBe('confirmed');
+      expect(result.purge_after).toBeDefined();
     });
 
-    it('is idempotent when a valid token already exists', async () => {
-      const tokenExpiresAt = new Date(Date.now() + 1_000_000);
+    it('is idempotent when a deletion is already scheduled', async () => {
+      const confirmedAt = new Date();
       prisma.user.findUnique.mockResolvedValue(
-        mockUser({
-          deletion_requested_at: new Date(),
-          deletion_token_hash: 'existinghash',
-          deletion_token_expires_at: tokenExpiresAt,
-        }),
+        mockUser({ deletion_requested_at: confirmedAt, deletion_confirmed_at: confirmedAt }),
       );
       const result = await service.requestDeletion('user-1');
-      // Should NOT call user.update when token is still valid
       expect(prisma.user.update).not.toHaveBeenCalled();
-      expect(result.expires_at).toBe(tokenExpiresAt.toISOString());
+      expect(result.already_scheduled).toBe(true);
     });
 
     it('writes an audit log entry', async () => {
@@ -267,18 +298,20 @@ describe('AccountDeletionService', () => {
       const rawToken = 'a'.repeat(64);
       const expectedHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-      prisma.user.findFirst.mockImplementation(({ where }: { where: { deletion_token_hash: string } }) => {
-        if (where.deletion_token_hash === expectedHash) {
-          return Promise.resolve(
-            mockUser({
-              deletion_token_expires_at: new Date(Date.now() + 1_000_000),
-              deletion_requested_at: new Date(),
-              deletion_token_hash: expectedHash,
-            }),
-          );
-        }
-        return Promise.resolve(null);
-      });
+      prisma.user.findFirst.mockImplementation(
+        ({ where }: { where: { deletion_token_hash: string } }) => {
+          if (where.deletion_token_hash === expectedHash) {
+            return Promise.resolve(
+              mockUser({
+                deletion_token_expires_at: new Date(Date.now() + 1_000_000),
+                deletion_requested_at: new Date(),
+                deletion_token_hash: expectedHash,
+              }),
+            );
+          }
+          return Promise.resolve(null);
+        },
+      );
 
       // Confirm with raw token — service should hash it internally
       const result = await service.confirmDeletion(rawToken);
@@ -335,9 +368,7 @@ describe('AccountDeletionService', () => {
     });
 
     it('can cancel when only REQUESTED (not yet confirmed)', async () => {
-      prisma.user.findUnique.mockResolvedValue(
-        mockUser({ deletion_requested_at: new Date() }),
-      );
+      prisma.user.findUnique.mockResolvedValue(mockUser({ deletion_requested_at: new Date() }));
       await expect(service.cancelDeletion('user-1')).resolves.toBeDefined();
     });
 
@@ -362,9 +393,7 @@ describe('AccountDeletionService', () => {
     });
 
     it('returns state=requested when only requested', async () => {
-      prisma.user.findUnique.mockResolvedValue(
-        mockUser({ deletion_requested_at: new Date() }),
-      );
+      prisma.user.findUnique.mockResolvedValue(mockUser({ deletion_requested_at: new Date() }));
       const status = await service.getDeletionStatus('user-1');
       expect(status.state).toBe('requested');
     });
@@ -382,9 +411,7 @@ describe('AccountDeletionService', () => {
     });
 
     it('returns state=deleted when deleted_at is set', async () => {
-      prisma.user.findUnique.mockResolvedValue(
-        mockUser({ deleted_at: new Date() }),
-      );
+      prisma.user.findUnique.mockResolvedValue(mockUser({ deleted_at: new Date() }));
       const status = await service.getDeletionStatus('user-1');
       expect(status.state).toBe('deleted');
     });
@@ -449,7 +476,7 @@ describe('AccountDeletionService', () => {
       // Step 1: request
       prisma.user.findUnique.mockResolvedValue(mockUser());
       const req = await service.requestDeletion('user-1');
-      expect(req.expires_at).toBeDefined();
+      expect(req.purge_after).toBeDefined();
 
       // Step 2: confirm
       const validExpiry = new Date(Date.now() + 1_000_000);
@@ -489,8 +516,11 @@ describe('AccountDeletionService', () => {
         { id: 'user-1', email: 'test@example.com' },
         { id: 'user-2', email: 'other@example.com' },
       ]);
-      // Make findUnique succeed for each candidate (called by finalizeUserDeletion)
-      prisma.user.findUnique.mockResolvedValue(mockUser());
+      // Make findUnique succeed for each candidate (called by finalizeUserDeletion);
+      // the pre-flight re-read requires a confirmed (not cancelled) schedule.
+      prisma.user.findUnique.mockResolvedValue(
+        mockUser({ deletion_confirmed_at: new Date(Date.now() - 15 * 86_400_000) }),
+      );
 
       await service.runFinalizeCron();
 

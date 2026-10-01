@@ -35,6 +35,18 @@ export class AdminForceDeleteDto {
   reason?: string;
 }
 
+/**
+ * Body for POST /me/delete-account. Optional: Sign in with Apple users send
+ * the authorization code from the Apple re-authentication they just did, so
+ * the server can revoke the app's Apple tokens (Apple deletion guidance).
+ */
+export class RequestDeletionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  apple_authorization_code?: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -42,9 +54,11 @@ export class AdminForceDeleteDto {
  *
  * Provides the full GDPR right-to-erasure lifecycle for end users and admins.
  *
- * User-initiated flow (two-phase with 14-day grace):
- *   POST   /me/delete-account              → request deletion, sends email with token
- *   GET    /me/delete-account/confirm      → confirm via one-time link (?token=...)
+ * User-initiated flow (in-app, 14-day grace):
+ *   POST /auth/recent-auth-token           → fresh re-auth (password or Apple/Google)
+ *   POST   /me/delete-account              → X-Recent-Auth-Token required; deletion
+ *                                            is scheduled immediately (grace starts)
+ *   GET    /me/delete-account/confirm      → legacy one-time email link (?token=...)
  *   POST   /me/delete-account/cancel       → cancel during grace period
  *   GET    /me/delete-account/status       → machine-readable state
  *
@@ -62,34 +76,47 @@ export class AccountDeletionController {
   // ── User endpoints ────────────────────────────────────────────────────────
 
   @ApiOperation({
-    summary: 'Request account deletion',
+    summary: 'Request account deletion (schedules it immediately)',
     description:
-      'Starts the two-phase GDPR right-to-erasure flow. Sends a single-use confirmation link to your registered email address. Calling again while a valid (unexpired) link exists is a no-op that returns the same expiry.',
+      'Requires X-Recent-Auth-Token from POST /auth/recent-auth-token (fresh password or Sign in with Apple/Google). The deletion is scheduled immediately: the grace period (DELETION_GRACE_DAYS, default 14) starts now and the account can be cancelled from the app until purge_after. Idempotent: calling again returns the existing schedule. Apple users may send apple_authorization_code so the server revokes Sign in with Apple tokens.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Confirmation email sent (or already pending).',
+    description: 'Deletion scheduled (or already scheduled).',
     schema: {
       example: {
-        message: 'A confirmation link has been sent to your email. Click it within 24 hours to start the 14-day grace period.',
-        expires_at: '2026-01-01T03:00:00.000Z',
+        state: 'confirmed',
+        already_scheduled: false,
+        message:
+          'Your account and its data will be permanently deleted on January 15, 2026. You can cancel before then from Settings.',
+        requested_at: '2026-01-01T03:00:00.000Z',
+        confirmed_at: '2026-01-01T03:00:00.000Z',
+        grace_days: 14,
+        purge_after: '2026-01-15T03:00:00.000Z',
+        cancellable: true,
+        apple_revocation: 'not_requested',
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing, expired or invalid X-Recent-Auth-Token.' })
   // C5 PR-A audit: GDPR right-to-erasure entrypoint. Any logged-in user must be
   // able to initiate deletion of their own account, regardless of role. Scoped
   // by req.user.id below — a user cannot start another user's deletion.
-  // RecentAuthGuard: requestDeletion starts the destructive flow; require a
-  // fresh re-auth factor before the email token is even minted (defense in
-  // depth against session-hijack to delete). Resolves the P0 recorded in
-  // STOP_AND_ASK_C5.md for this handler. See the comment above
-  // confirmDeletion for why the guard is intentionally NOT attached there.
+  // RecentAuthGuard: the fresh, single-use re-auth token is the confirmation
+  // factor for this destructive step (Apple 5.1.1(v): deletion must complete
+  // in the app, so there is no email round-trip).
   @Roles('student', 'coach', 'owner')
   @UseGuards(RolesGuard, RecentAuthGuard)
   @Post('me/delete-account')
   @HttpCode(200)
-  requestDeletion(@Request() req: AuditableRequest & AuthedRequest) {
-    return this.deletionService.requestDeletion(req.user.id, auditContext(req));
+  requestDeletion(
+    @Request() req: AuditableRequest & AuthedRequest,
+    @Body() body: RequestDeletionDto,
+  ) {
+    return this.deletionService.requestDeletion(req.user.id, {
+      ...auditContext(req),
+      appleAuthorizationCode: body?.apple_authorization_code ?? null,
+    });
   }
 
   @ApiOperation({
@@ -97,13 +124,18 @@ export class AccountDeletionController {
     description:
       'Validates the single-use token sent by POST /me/delete-account. On success the 14-day grace period starts. The token is invalidated after first use.',
   })
-  @ApiQuery({ name: 'token', required: true, description: '64-char hex token from the confirmation email.' })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    description: '64-char hex token from the confirmation email.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Deletion confirmed. Grace period started.',
     schema: {
       example: {
-        message: 'Your account is scheduled for permanent deletion on January 15, 2026. You have 14 days to cancel.',
+        message:
+          'Your account is scheduled for permanent deletion on January 15, 2026. You have 14 days to cancel.',
         purge_after: '2026-01-15T03:00:00.000Z',
       },
     },
@@ -211,10 +243,12 @@ export class AccountDeletionController {
 
 function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
   const xffRaw = req?.headers?.['x-forwarded-for'];
-  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw ?? '';
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : (xffRaw ?? '');
   const fwdIp = (xff as string).split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
   const uaRaw = req?.headers?.['user-agent'];
-  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : (uaRaw as string | undefined) ?? null;
+  const userAgent = Array.isArray(uaRaw)
+    ? (uaRaw[0] ?? null)
+    : ((uaRaw as string | undefined) ?? null);
   return { ip: ip ?? null, userAgent: userAgent ?? null };
 }
