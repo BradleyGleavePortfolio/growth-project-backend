@@ -27,7 +27,7 @@ import type { AuthedRequest } from '../../src/auth/auth-request';
 const FIXTURE_PATH = path.join(__dirname, '..', '_fixtures', 'wearables-ingest-v1.mobile.json');
 
 /** Pinned in both repos. Update both together, never one. */
-const FIXTURE_SHA256 = '033301173cc52458d4a1d2ee98a24df6b10aeac6137487e18f5c335687e4ec9e';
+const FIXTURE_SHA256 = '3c8701f9f9f592a188115bb6eea63b0417d38eba306d238465ac02de51579cfb';
 
 /** Nest's default JSON body limit (main.ts sets no custom limit). */
 const DEFAULT_JSON_BODY_LIMIT_BYTES = 100 * 1024;

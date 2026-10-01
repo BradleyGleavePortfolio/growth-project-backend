@@ -18,13 +18,18 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { WearableMetricBucket, WearableMetricType } from '@prisma/client';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PrismaService } from '../../prisma.service';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
+import {
+  WEARABLES_INGEST_PER_MIN,
+  WEARABLES_READ_PER_MIN,
+  WEARABLES_SKIP_THROTTLERS,
+} from '../wearables-throttle';
 import { WearableSamplesService } from './wearable-samples.service';
 import { GetSamplesQuerySchema } from './dto/get-samples.query';
 import {
@@ -77,7 +82,9 @@ export class WearableSamplesController {
 
   @Roles('student', 'coach', 'owner')
   @UseGuards(JwtAuthGuard)
-  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
+  // S14 (B-623-1): governed only by its own per-user default bucket.
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: WEARABLES_READ_PER_MIN } })
   @Get()
   @ApiOperation({
     summary: 'Read normalized wearable samples for a bucket',
@@ -184,7 +191,8 @@ export class WearableSamplesController {
    * so an outdated client sees a precise code. The subject is never read from
    * the body.
    *
-   * Throttle: 60 requests / 60s per user. The mobile client splits a history
+   * Throttle: 60 requests / 60s per user, and ONLY that bucket (every other
+   * named throttler is skipped, see ../wearables-throttle.ts). The mobile client splits a history
    * import into sequential batches that each fit the default 100 KB JSON body
    * limit (about 250 samples), so a 30-day import of a watch wearer can need
    * several dozen requests; 60/min lets it finish in about a minute while still
@@ -196,7 +204,10 @@ export class WearableSamplesController {
    */
   @Roles('student')
   @UseGuards(JwtAuthGuard)
-  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
+  // S14 (B-623-1): governed only by its own per-user default bucket, never by
+  // the auth throttlers (password reset 3/hour, signup, recent-auth).
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: WEARABLES_INGEST_PER_MIN } })
   @Post('ingest')
   @ApiOperation({ summary: 'Ingest normalized on-device wearable samples' })
   @ApiResponse({ status: 201, description: 'Accepted normalized sample batch.' })

@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { WearableProvider } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -24,6 +24,11 @@ import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
 import { RegisterOnDeviceDto } from './dto/register-on-device.dto';
 import { assertOnDeviceIngestEnabled } from '../on-device-ingest.feature';
+import {
+  WEARABLES_CONNECTIONS_LIST_PER_MIN,
+  WEARABLES_ON_DEVICE_REGISTER_PER_MIN,
+  WEARABLES_SKIP_THROTTLERS,
+} from '../wearables-throttle';
 import {
   DisconnectResult,
   OauthCallbackResult,
@@ -103,7 +108,9 @@ export class ConnectionsController {
   @Post('on-device')
   @Roles('student')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  // S14 (B-623-1): own per-user default bucket only; auth throttlers skipped.
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ default: { ttl: 60_000, limit: WEARABLES_ON_DEVICE_REGISTER_PER_MIN } })
   async registerOnDevice(
     @Request() req: AuthedRequest,
     @Body() body: RegisterOnDeviceDto,
@@ -119,6 +126,10 @@ export class ConnectionsController {
    */
   @Get()
   @Roles('student', 'coach')
+  // S14 (B-623-1): read on every Connect / Health screen open; own per-user
+  // default bucket only, auth throttlers skipped.
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ default: { ttl: 60_000, limit: WEARABLES_CONNECTIONS_LIST_PER_MIN } })
   async list(
     @Request() req: AuthedRequest,
   ): Promise<SafeWearableConnection[]> {
