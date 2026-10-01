@@ -452,8 +452,13 @@ async function captureHttp(p: Promise<unknown>): Promise<HttpException> {
 }
 
 /** In-app onboarding agreement double (ConsentService.isGranted / onGranted). */
-function makeConsent(agreed: boolean) {
-  const c = {
+type ConsentDouble = {
+  agreed: boolean;
+  isGranted: jest.Mock<Promise<boolean>, []>;
+  onGranted: jest.Mock;
+};
+function makeConsent(agreed: boolean): ConsentDouble {
+  const c: ConsentDouble = {
     agreed,
     isGranted: jest.fn(async () => c.agreed),
     onGranted: jest.fn(),
