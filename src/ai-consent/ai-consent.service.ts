@@ -21,6 +21,7 @@
  * text.
  */
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -157,6 +158,28 @@ export class AiConsentService implements ClientAiConsentReader {
     });
   }
 
+  private unavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: AI_CONSENT_ERROR_UNAVAILABLE,
+      message: 'This choice is unavailable right now.',
+    });
+  }
+
+  /**
+   * The latest decision for an HTTP operation (GET status, or the read that
+   * precedes every grant / withdraw attempt). Any read failure is the
+   * contract's 503 AI_CONSENT_UNAVAILABLE, never a generic 500 (Sol B-622-2);
+   * the log carries the operation, user id and Prisma error code only.
+   */
+  private async latestOr503(userId: string, op: string): Promise<AiConsentLatestRow | null> {
+    try {
+      return await this.latest(userId);
+    } catch (err) {
+      this.logger.error(`ai_consent.${op}_read_failed user=${userId} code=${prismaErrorCode(err)}`);
+      throw this.unavailable();
+    }
+  }
+
   private toStatus(row: AiConsentLatestRow | null): ClientAiConsentStatus {
     const granted = isCurrentGrant(row);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
@@ -181,7 +204,7 @@ export class AiConsentService implements ClientAiConsentReader {
 
   async getStatus(userId: string): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
-    return this.toStatus(await this.latest(userId));
+    return this.toStatus(await this.latestOr503(userId, 'status'));
   }
 
   /**
@@ -196,6 +219,11 @@ export class AiConsentService implements ClientAiConsentReader {
     meta: AiConsentRequestMeta = {},
   ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
+    // Defence in depth behind the DTO (Sol B-622-3): a supplied digest must be
+    // a string; null or any other type is a malformed request, never a crash.
+    if (dto.copy_sha256 !== undefined && typeof dto.copy_sha256 !== 'string') {
+      throw new BadRequestException('copy_sha256 must be a 64-character hex string');
+    }
     const shaMismatch =
       dto.copy_sha256 !== undefined &&
       dto.copy_sha256.toLowerCase() !== CLIENT_AI_CONSENT_COPY_SHA256;
@@ -233,7 +261,9 @@ export class AiConsentService implements ClientAiConsentReader {
     meta: { platform: string | null; app_version: string | null; locale: string | null },
   ): Promise<ClientAiConsentStatus> {
     for (let attempt = 1; attempt <= AI_CONSENT_WRITE_ATTEMPTS; attempt += 1) {
-      const row = await this.latest(userId);
+      // Re-read on every attempt (a P2002 means another writer won); a failed
+      // read is 503 like a failed write.
+      const row = await this.latestOr503(userId, action);
       if (action === AI_CONSENT_ACTION_GRANT && isCurrentGrant(row)) {
         return this.toStatus(row);
       }
@@ -282,14 +312,11 @@ export class AiConsentService implements ClientAiConsentReader {
           });
         }
         this.logger.error(`ai_consent.${action}_failed user=${userId} code=${prismaErrorCode(err)}`);
-        throw new ServiceUnavailableException({
-          code: AI_CONSENT_ERROR_UNAVAILABLE,
-          message: 'This choice is unavailable right now.',
-        });
+        throw this.unavailable();
       }
     }
     // Unreachable: the loop either returns or throws on its last attempt.
-    throw new ServiceUnavailableException({ code: AI_CONSENT_ERROR_UNAVAILABLE });
+    throw this.unavailable();
   }
 
   // ---------------------------------------------------------------------------

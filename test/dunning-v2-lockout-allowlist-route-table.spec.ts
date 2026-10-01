@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import {
   isAllowedWhileLocked,
+  isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
 
@@ -34,6 +35,7 @@ const CONTROLLER_NAMES: ReadonlySet<string> = new Set(['Controller']);
 const HTTP_METHOD_NAMES: ReadonlySet<string> = new Set(HTTP_METHODS.split('|'));
 
 interface MountedRoute {
+  readonly method: string; // HTTP method from the decorator (GET, POST, ...)
   readonly normalized: string; // path after the guard's normalizePath
   readonly controller: string; // declaring @Controller class
   readonly file: string; // repo-relative source
@@ -91,7 +93,9 @@ export function parseControllerSource(sourceText: string, fileName: string): Par
           // The global prefix is `/api` (src/main.ts:148 setGlobalPrefix), which
           // is what the guard sees on a live request.
           const normalized = normalizePath(`/api/${mounted}`);
-          routes.push({ normalized, controller: className, file: fileName });
+          const target = httpMethod.expression;
+          const method = ts.isIdentifier(target) ? target.text.toUpperCase() : '';
+          routes.push({ method, normalized, controller: className, file: fileName });
         }
         parsed.push({ className, prefix, file: fileName, routes });
       }
@@ -237,7 +241,13 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
   it('admits EXACTLY the reviewed recovery routes and nothing else', () => {
     const reachable = [
       ...new Set(
-        table.routes.filter((r) => isAllowedWhileLocked(r.normalized)).map((r) => r.normalized),
+        table.routes
+          .filter(
+            (r) =>
+              isAllowedWhileLocked(r.normalized) ||
+              isPrivacyOperationWhileLocked(r.method, r.normalized),
+          )
+          .map((r) => r.normalized),
       ),
     ].sort();
     expect(reachable).toEqual([...EXPECTED_REACHABLE_WHILE_LOCKED].sort());
@@ -287,22 +297,49 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     expect(isAllowedWhileLocked(p)).toBe(false);
   });
 
-  // Operator ruling on #622: reading and withdrawing AI processing consent is a
-  // privacy right that billing state never blocks. Both routes exist in the
-  // real table and are admitted; the rest of /me/* is not.
-  it('ALLOWS the AI consent routes from the real table and nothing else under /me', () => {
-    const consent = table.routes.filter((r) => r.normalized.startsWith('me/ai-consent'));
-    expect(new Set(consent.map((r) => r.controller))).toEqual(new Set(['AiConsentController']));
-    expect([...new Set(consent.map((r) => r.normalized))].sort()).toEqual([
-      'me/ai-consent',
-      'me/ai-consent/roman',
+  // Operator ruling on #622 + Sol B-622-1: the AI consent carve-out is exactly
+  // three METHOD + PATH operations, matched by equality. The inventory keeps
+  // the method, so a GET/POST/DELETE distinction cannot collapse.
+  it('admits exactly GET me/ai-consent, POST and DELETE me/ai-consent/roman from the real table', () => {
+    const admitted = table.routes
+      .filter((r) => isPrivacyOperationWhileLocked(r.method, r.normalized))
+      .map((r) => `${r.method} ${r.normalized} ${r.controller}`)
+      .sort();
+    expect(admitted).toEqual([
+      'DELETE me/ai-consent/roman AiConsentController',
+      'GET me/ai-consent AiConsentController',
+      'POST me/ai-consent/roman AiConsentController',
     ]);
-    expect(consent.every((r) => isAllowedWhileLocked(r.normalized))).toBe(true);
+    // The method-blind path rules never admit these paths on their own.
+    expect(isAllowedWhileLocked('me/ai-consent')).toBe(false);
+    expect(isAllowedWhileLocked('me/ai-consent/roman')).toBe(false);
+    // Every other /me route in the real table stays locked for every method.
     const otherMe = table.routes.filter(
       (r) => r.normalized.startsWith('me/') && !r.normalized.startsWith('me/ai-consent'),
     );
     expect(otherMe.length).toBeGreaterThan(0);
-    expect(otherMe.some((r) => isAllowedWhileLocked(r.normalized))).toBe(false);
+    expect(
+      otherMe.some(
+        (r) =>
+          isAllowedWhileLocked(r.normalized) ||
+          isPrivacyOperationWhileLocked(r.method, r.normalized),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['GET', 'me/ai-consent/export'],
+    ['POST', 'me/ai-consent/roman/messages'],
+    ['POST', 'me/ai-consent'],
+    ['GET', 'me/ai-consent/roman'],
+    ['PUT', 'me/ai-consent/roman'],
+    ['PATCH', 'me/ai-consent/roman'],
+    ['DELETE', 'me/ai-consent'],
+    ['HEAD', 'me/ai-consent'],
+    ['GET', 'me/ai-consent/'],
+    ['GET', 'coach/me/ai-consent'],
+  ])('LOCKS %s %s — no descendant or other method rides the consent carve-out', (m, p) => {
+    expect(isAllowedWhileLocked(p) || isPrivacyOperationWhileLocked(m, p)).toBe(false);
   });
 
   // Both coach billing surfaces reach the same BillingService capability; they

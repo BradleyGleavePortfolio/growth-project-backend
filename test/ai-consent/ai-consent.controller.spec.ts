@@ -245,6 +245,43 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     ).toBe(200);
   });
 
+  // Sol B-622-3: optional means omitted. A null digest (or any null optional
+  // field) is a malformed request -> 400, never an internal error.
+  it.each(['copy_sha256', 'platform', 'app_version', 'locale'])(
+    'POST with %s: null -> 400, nothing written',
+    async (field) => {
+      const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
+        version: 'client-ai-v3',
+        [field]: null,
+      });
+      expect(r.status).toBe(400);
+      expect(fake.rows).toHaveLength(0);
+    },
+  );
+
+  it('POST with an uppercase matching digest still succeeds (only null changed)', async () => {
+    const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
+      version: 'client-ai-v3',
+      copy_sha256: COPY_SHA.toUpperCase(),
+    });
+    expect(r.status).toBe(200);
+    expect(fake.rows).toHaveLength(1);
+  });
+
+  // Sol B-622-2: a ledger read failure is the contract's 503, over the wire.
+  it.each([
+    ['GET', '/me/ai-consent', undefined],
+    ['POST', '/me/ai-consent/roman', { version: 'client-ai-v3' }],
+    ['DELETE', '/me/ai-consent/roman', undefined],
+  ])('%s %s: a ledger read failure -> 503 AI_CONSENT_UNAVAILABLE', async (method, path, body) => {
+    fake.failNext = { method: 'findFirst', times: 1, error: new Error('READ_CANARY') };
+    const r = await call(method, path, 'u_a', body);
+    expect(r.status).toBe(503);
+    expect(r.body).toMatchObject({ statusCode: 503, code: 'AI_CONSENT_UNAVAILABLE' });
+    expect(JSON.stringify(r.body)).not.toContain('READ_CANARY');
+    expect(fake.rows).toHaveLength(0);
+  });
+
   describe('flag off (default)', () => {
     it.each([
       ['GET', '/me/ai-consent', undefined],

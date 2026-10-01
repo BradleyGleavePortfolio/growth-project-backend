@@ -87,6 +87,8 @@ Request (JSON; only these fields):
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |
 | `locale` | no | max 16 chars, BCP-47 shape (e.g. `en-US`) |
 
+Optional fields are OMITTED when not sent; `null` for any of them is a 400.
+
 Idempotent: if the latest decision is already a grant of the current copy,
 nothing is written and the current status (with the original `granted_at`)
 returns. Two concurrent identical grants record one row.
@@ -109,7 +111,7 @@ is machine-readable.
 | 401 | (none) | no or invalid JWT | re-authenticate |
 | 409 | `CONSENT_VERSION_MISMATCH` | `version` is not current, or `copy_sha256` differs | `GET /api/me/ai-consent`, show the new copy, ask again |
 | 409 | `AI_CONSENT_CONFLICT` | concurrent writers kept colliding (bounded retries exhausted) | retry once |
-| 503 | `AI_CONSENT_UNAVAILABLE` | switch off, or a database write failed | treat as "unavailable right now"; never block onboarding |
+| 503 | `AI_CONSENT_UNAVAILABLE` | switch off, or any ledger read or write failed | treat as "unavailable right now"; never block onboarding |
 
 A 404 means the backend predates this PR; treat it like 503.
 
@@ -195,9 +197,14 @@ after exporting the rows.
 
 ## Billing lockout
 
-`/me/ai-consent` and `/me/ai-consent/roman` are on the `DunningLockoutGuard`
-allow-list (exact route prefix `me/ai-consent`; the rest of `/me/*` stays
-locked). Reading, granting and withdrawing AI consent is a privacy control and
-billing state never blocks it (operator ruling on #622). Proven over HTTP by
-`test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts` and pinned in the
-route-table spec `test/dunning-v2-lockout-allowlist-route-table.spec.ts`.
+Exactly three operations are on the `DunningLockoutGuard` allow-list, matched
+by method AND normalized path equality (`isPrivacyOperationWhileLocked`):
+`GET /api/me/ai-consent`, `POST /api/me/ai-consent/roman`,
+`DELETE /api/me/ai-consent/roman`. Any other method on those paths, any
+descendant path (for example `/api/me/ai-consent/export`) and the rest of
+`/me/*` stay locked. Reading, granting and withdrawing AI consent is a privacy
+control and billing state never blocks it (operator ruling on #622). Proven by
+`test/dunning-v2-lockout-privacy-exact.spec.ts` (real guard),
+`test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts` (over HTTP, including
+mounted lookalike routes) and the method-aware route-table spec
+`test/dunning-v2-lockout-allowlist-route-table.spec.ts`.

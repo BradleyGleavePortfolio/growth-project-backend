@@ -244,6 +244,91 @@ describe('AiConsentService (R2a ledger)', () => {
     });
   });
 
+  // Sol B-622-2: every ledger read an HTTP operation depends on sits inside the
+  // 503 AI_CONSENT_UNAVAILABLE boundary (not a generic 500), the log carries
+  // the error code only, and nothing is appended.
+  describe('unavailable boundary (B-622-2)', () => {
+    const readFailure = (): void => {
+      fake.failNext = { method: 'findFirst', times: 1, error: new Error(CANARY) };
+    };
+    const unavailable = { status: 503, response: { code: 'AI_CONSENT_UNAVAILABLE' } };
+
+    it('GET status: a read failure is 503, code-only log', async () => {
+      readFailure();
+      await expect(service.getStatus('u_a')).rejects.toMatchObject(unavailable);
+      expect(logLines.join('\n')).toContain('ai_consent.status_read_failed user=u_a code=unknown');
+      expect(logLines.join('\n')).not.toContain(CANARY);
+    });
+
+    it('grant: the prerequisite read failing is 503 and nothing is written', async () => {
+      readFailure();
+      await expect(service.grant('u_a', grantDto)).rejects.toMatchObject(unavailable);
+      expect(fake.calls.create).toBe(0);
+      expect(fake.rows).toHaveLength(0);
+      expect(logLines.join('\n')).toContain('ai_consent.grant_read_failed');
+      expect(logLines.join('\n')).not.toContain(CANARY);
+    });
+
+    it('withdraw: the prerequisite read failing is 503 and nothing is written', async () => {
+      fake.plant({ user_id: 'u_a', seq: 1, action: 'grant' });
+      readFailure();
+      await expect(service.withdraw('u_a')).rejects.toMatchObject(unavailable);
+      expect(fake.calls.create).toBe(0);
+      expect(fake.rows.map((r) => r.action)).toEqual(['grant']);
+      expect(logLines.join('\n')).toContain('ai_consent.withdraw_read_failed');
+      expect(logLines.join('\n')).not.toContain(CANARY);
+    });
+
+    it.each(['grant', 'withdraw'] as const)(
+      '%s: a read failing AFTER a P2002 retry is 503, not 500 or 409',
+      async (op) => {
+        if (op === 'withdraw') fake.plant({ user_id: 'u_a', seq: 1, action: 'grant' });
+        const before = fake.rows.length;
+        fake.failNext = {
+          method: 'create',
+          times: 1,
+          error: new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: 'test',
+          }),
+        };
+        const realFindFirst = fake.aiProcessingConsentEvent.findFirst;
+        let reads = 0;
+        jest
+          .spyOn(fake.aiProcessingConsentEvent, 'findFirst')
+          .mockImplementation(async (args) => {
+            reads += 1;
+            if (reads === 2) throw new Error(CANARY);
+            return realFindFirst(args);
+          });
+        const run = op === 'grant' ? service.grant('u_a', grantDto) : service.withdraw('u_a');
+        await expect(run).rejects.toMatchObject(unavailable);
+        expect(reads).toBe(2);
+        expect(fake.calls.create).toBe(1);
+        expect(fake.rows).toHaveLength(before);
+        expect(logLines.join('\n')).toContain(`ai_consent.${op}_read_failed`);
+        expect(logLines.join('\n')).not.toContain(CANARY);
+      },
+    );
+
+    it('intended 409s are unchanged (version mismatch is decided before any read)', async () => {
+      readFailure();
+      await expect(service.grant('u_a', { version: 'client-ai-v2' })).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'CONSENT_VERSION_MISMATCH' },
+      });
+      expect(fake.calls.findFirst).toBe(0);
+    });
+  });
+
+  // Sol B-622-3 (defence in depth behind the DTO): a null digest that somehow
+  // reaches the service is a 400, never a TypeError / 500.
+  it('grant with copy_sha256 null at the service is 400, nothing written', async () => {
+    const dto = JSON.parse('{"version":"client-ai-v3","copy_sha256":null}');
+    await expect(service.grant('u_a', dto)).rejects.toMatchObject({ status: 400 });
+    expect(fake.calls.findFirst + fake.calls.create).toBe(0);
+  });
+
   describe('withdraw', () => {
     it('appends a withdraw row that refers to the grant it ends', async () => {
       await service.grant('u_a', grantDto);

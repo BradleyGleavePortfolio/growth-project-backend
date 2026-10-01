@@ -19,6 +19,8 @@ import {
   type ExecutionContext,
   Get,
   type INestApplication,
+  Post,
+  Put,
   UnauthorizedException,
   ValidationPipe,
 } from '@nestjs/common';
@@ -52,6 +54,39 @@ class HeaderAuthGuard implements CanActivate {
 class LockedSurfaceController {
   @Get('feed')
   feed(): { ok: true } {
+    return { ok: true };
+  }
+}
+
+/**
+ * Hypothetical later controller colliding with the consent paths (other
+ * methods, descendants). Unmatched routes never reach guards in Nest, so these
+ * are mounted to prove the GUARD locks them, not merely the router.
+ */
+@Controller('me/ai-consent')
+class ConsentLookalikeController {
+  @Get('roman')
+  getRoman(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Put('roman')
+  putRoman(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post()
+  postRoot(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Get('export')
+  exportAll(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post('roman/messages')
+  postMessages(): { ok: true } {
     return { ok: true };
   }
 }
@@ -116,7 +151,7 @@ describe('AI consent routes while billing-locked (DunningLockoutGuard, #622 ruli
     };
     const moduleRef = await Test.createTestingModule({
       imports: [fakePrismaModule, AiConsentModule],
-      controllers: [LockedSurfaceController],
+      controllers: [LockedSurfaceController, ConsentLookalikeController],
       providers: [
         // Production order: authentication first, lockout guard after it.
         { provide: APP_GUARD, useClass: HeaderAuthGuard },
@@ -178,5 +213,28 @@ describe('AI consent routes while billing-locked (DunningLockoutGuard, #622 ruli
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ granted: true, state: 'granted' });
     expect(fake.dunningLookups).toBe(0);
+  });
+
+  // Sol B-622-1: only the three exact operations ride the carve-out. Any other
+  // method on the consent paths, or any descendant, meets the lockout first
+  // (403 LOCKED_DUNNING, one DunningState read) rather than reaching routing.
+  it('control: the lookalike routes are mounted (an unlocked caller reaches them)', async () => {
+    fake.lockedUserIds.clear();
+    const res = await call('GET', '/api/me/ai-consent/export');
+    expect(res.status).toBe(200);
+    expect(fake.dunningLookups).toBe(1);
+  });
+
+  it.each([
+    ['GET', '/api/me/ai-consent/roman'],
+    ['PUT', '/api/me/ai-consent/roman'],
+    ['POST', '/api/me/ai-consent'],
+    ['GET', '/api/me/ai-consent/export'],
+    ['POST', '/api/me/ai-consent/roman/messages'],
+  ])('a locked-out client is 403 LOCKED_DUNNING on %s %s', async (method, path) => {
+    const res = await call(method, path, method === 'GET' ? undefined : {});
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: LOCKED_DUNNING_CODE });
+    expect(fake.dunningLookups).toBe(1);
   });
 });
