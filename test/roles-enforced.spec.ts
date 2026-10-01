@@ -58,6 +58,10 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'AuthController', method: 'getMe', reason: 'JwtAuthGuard per-handler; student-accessible' },
   { controller: 'AuthController', method: 'becomeCoach', reason: 'JwtAuthGuard per-handler; student-accessible' },
   { controller: 'AuthController', method: 'issueRecentAuthToken', reason: 'JwtAuthGuard per-handler; student-accessible' },
+  { controller: 'AccountDeletionController', method: 'requestDeletion', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'confirmDeletion', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'cancelDeletion', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'getStatus', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
   // ── CoachController ── CoachGuard at class level enforces coach|owner ──
   { controller: 'CoachController', method: 'getDashboard', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getClients', reason: 'CoachGuard at class level' },
