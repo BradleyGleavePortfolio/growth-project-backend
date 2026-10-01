@@ -21,9 +21,9 @@ export class ProfileController {
 
   @Put()
   async updateProfile(@Request() req: AuthedRequest, @Body() body: UpdateProfileDto) {
-    const profile = await this.profileService.updateProfile(req.user.id, body);
-    // Recompute macros whenever profile is updated
-    await this.profileService.computeAndSaveMacros(req.user.id);
-    return profile;
+    // Writes the profile and its recomputed targets atomically and returns the
+    // updated row (B606-2). Missing calculator inputs -> 409
+    // { code: 'consultation_incomplete', missing } with nothing written (B606-1).
+    return this.profileService.updateProfile(req.user.id, body);
   }
 }

@@ -45,7 +45,9 @@ describe('MacrosService.computePreset', () => {
     expect(bulk.calories_kcal).toBeGreaterThan(cut.calories_kcal);
   });
 
-  it('respects the 800 kcal floor', () => {
+  // C06: the preset now uses the single calculator, whose clinical-safety
+  // floor is 1,200 kcal (female) / 1,500 kcal (male, prefer not to say).
+  it('respects the 1,200 kcal female floor', () => {
     const out = service.computePreset({
       weight_kg: 40,
       height_cm: 150,
@@ -54,10 +56,12 @@ describe('MacrosService.computePreset', () => {
       activity_level: 'sedentary',
       goal: 'cut',
     });
-    expect(out.calories_kcal).toBeGreaterThanOrEqual(800);
+    expect(out.calories_kcal).toBe(1200);
+    expect(out.rationale).toContain('1200 kcal floor');
   });
 
-  it('sets protein at ~1.8 g/kg of body weight', () => {
+  // C06: one protein rule everywhere: 1 g per lb of body weight.
+  it('sets protein at 1 g per lb of body weight', () => {
     const out = service.computePreset({
       weight_kg: 80,
       height_cm: 180,
@@ -66,7 +70,7 @@ describe('MacrosService.computePreset', () => {
       activity_level: 'moderate',
       goal: 'maintain',
     });
-    expect(out.protein_g).toBe(Math.round(80 * 1.8));
+    expect(out.protein_g).toBe(Math.round(80 * 2.2046226218));
   });
 
   it('returns a non-empty rationale string for audit logs', () => {
