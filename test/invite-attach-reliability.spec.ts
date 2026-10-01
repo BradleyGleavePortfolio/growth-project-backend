@@ -4,8 +4,10 @@ import { ThrottlerException, ThrottlerStorageService } from '@nestjs/throttler';
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import {
+  INVITE_ATTACH_COACH_CANNOT_REDEEM,
   INVITE_ATTACH_ERROR,
   InviteCodesService,
+  coachCannotRedeemBody,
   inviteAttachErrorCode,
   isWellFormedInviteCode,
 } from '../src/invite-codes/invite-codes.service';
@@ -226,6 +228,10 @@ describe('C03 — attachUserToCoachByCode re-parent rules', () => {
       );
       expect(err.getStatus()).toBe(403);
       expect(inviteAttachErrorCode(err)).toBe('coach_cannot_redeem');
+      // Merge train (#597 + #599): one constant and one body for coach_cannot_redeem,
+      // identical to /auth/select-role, with an actionable next step.
+      expect(err.getResponse()).toEqual(coachCannotRedeemBody());
+      expect(INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM).toBe(INVITE_ATTACH_COACH_CANNOT_REDEEM);
       expect(prisma.user.update).not.toHaveBeenCalled();
       expect(prisma.user.updateMany).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
