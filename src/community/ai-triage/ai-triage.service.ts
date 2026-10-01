@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import type { User } from '@prisma/client';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../inbox/community-coach-inbox.repository';
 import { CommunityAccessService } from '../community-access.service';
 import { TriageCacheService } from './triage-cache.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import buildInboxTriagePrompt, {
   PROMPT_VERSION as INBOX_TRIAGE_VERSION,
   TriagePromptItem,
@@ -79,6 +81,9 @@ const ALARMIST_PATTERNS: readonly RegExp[] = [
 interface Candidate {
   id: string;
   kind: 'message' | 'post';
+  // R2b — the client whose words these are; only authors with a live box-2
+  // grant enter the prompt. Never sent to the provider.
+  authorId: string;
   preview: string;
   cohortName: string;
   authorDisplayName: string;
@@ -95,6 +100,8 @@ export class AiTriageService {
     private readonly repo: CommunityCoachInboxRepository,
     private readonly access: CommunityAccessService,
     private readonly cache: TriageCacheService,
+    // R2b — box-2 consent filter for the authors in the prompt.
+    private readonly egress: AiEgressService,
   ) {}
 
   /**
@@ -109,11 +116,29 @@ export class AiTriageService {
       throw new ForbiddenException(NOT_COACH);
     }
 
-    const candidates = await this.fetchCandidates(cohortIds);
-    const freshnessKey = TriageCacheService.freshnessKey({
+    const fetched = await this.fetchCandidates(cohortIds);
+    // R2b — only items whose author holds a live box-2 grant reach the AI
+    // (D2 box 2: "only your own data is used", processed by Anthropic). The
+    // rest stay in the regular inbox, untriaged. The grant is read live here
+    // and again by the gateway at send time.
+    const consented = await this.egress.consentedClients(fetched.map((c) => c.authorId));
+    const candidates = fetched.filter((c) => consented.has(c.authorId));
+    // The cache key covers the exact consented item set, so a withdrawal
+    // changes the key and a cached triage built from that author's words is
+    // never served again.
+    const freshnessKey = `${TriageCacheService.freshnessKey({
       itemCount: candidates.length,
       newestCreatedAt: newestCreatedAt(candidates),
-    });
+    })}:${createHash('sha256')
+      .update(
+        candidates
+          .map((c) => c.id)
+          .sort()
+          .join(','),
+      )
+      .digest('hex')
+      .slice(0, 16)}`;
+    const authorIds = [...new Set(candidates.map((c) => c.authorId))];
 
     // Cache check — a fresh (non-expired, same-freshness) row short-circuits
     // the whole pipeline. A new unanswered message changes freshnessKey → miss.
@@ -135,7 +160,7 @@ export class AiTriageService {
 
     let raw: string;
     try {
-      raw = await this.invokeWithTimeout(user, prompt.system, prompt.user);
+      raw = await this.invokeWithTimeout(user, prompt.system, prompt.user, authorIds);
     } catch (err) {
       this.logger.warn(
         `triage LLM failed/timed out coach=${user.id}: ${(err as Error).message}`,
@@ -148,7 +173,7 @@ export class AiTriageService {
       const repairUser = this.repairPrompt(prompt.user, raw);
       let repaired: string;
       try {
-        repaired = await this.invokeWithTimeout(user, prompt.system, repairUser);
+        repaired = await this.invokeWithTimeout(user, prompt.system, repairUser, authorIds);
       } catch (err) {
         this.logger.warn(
           `triage repair failed coach=${user.id}: ${(err as Error).message}`,
@@ -293,6 +318,7 @@ export class AiTriageService {
     return {
       id: m.id,
       kind: 'message',
+      authorId: m.sender.id,
       preview: preview(m.body),
       cohortName,
       authorDisplayName: m.sender.name,
@@ -304,6 +330,7 @@ export class AiTriageService {
     return {
       id: p.id,
       kind: 'post',
+      authorId: p.author.id,
       preview: preview(p.body ?? p.title ?? ''),
       cohortName,
       authorDisplayName: p.author.name,
@@ -334,11 +361,14 @@ export class AiTriageService {
     user: User,
     systemPrompt: string,
     userMessage: string,
+    authorIds: readonly string[],
   ): Promise<string> {
     const invocation = this.gateway.invoke({
       capability: COMMUNITY_AI_TRIAGE_CAPABILITY,
       requester: { id: user.id, role: user.role },
       tenantCoachId: user.id,
+      // R2b — every author in the prompt (cohort-scoped above).
+      dataClientIds: authorIds,
       userMessage,
       systemPrompt,
       maxTokens: 1200,

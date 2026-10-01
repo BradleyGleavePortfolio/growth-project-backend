@@ -113,6 +113,10 @@ export class RomanController {
     }
 
     const session = await this.roman.getOwnedSession(caller, id);
+    // R2b — a client without a live box-2 grant gets a plain 403
+    // ai_consent_required (Settings > Privacy) before the turn is stored or
+    // the stream opens.
+    await this.roman.assertMayUseAi(caller);
     await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,

@@ -24,6 +24,7 @@ import {
   ROMAN_RATE_LIMIT_PRO_PER_DAY,
 } from '../../src/roman/roman.constants';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 // ─── In-memory fake Prisma ──────────────────────────────────────────────────
 interface SessionRow {
@@ -219,7 +220,7 @@ const CALLER: RomanCaller = { id: 'u_a', role: 'student', tier: 'free' };
 describe('RomanService — sessions', () => {
   it('opens a new session for (user, surface, day)', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     expect(s.user_id).toBe('u_a');
     expect(s.surface).toBe('client');
@@ -228,7 +229,7 @@ describe('RomanService — sessions', () => {
 
   it('resumes the SAME session on a second open (idempotent on day-key)', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const first = await svc.openOrResumeSession(CALLER, 'client');
     const second = await svc.openOrResumeSession(CALLER, 'client');
     expect(second.id).toBe(first.id);
@@ -237,7 +238,7 @@ describe('RomanService — sessions', () => {
 
   it('routes coach and client surfaces to distinct sessions', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const client = await svc.openOrResumeSession(CALLER, 'client');
     const coach = await svc.openOrResumeSession(CALLER, 'coach');
     expect(client.id).not.toBe(coach.id);
@@ -246,7 +247,7 @@ describe('RomanService — sessions', () => {
 
   it('getOwnedSession throws 404 for a session the caller does not own', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     await expect(
       svc.getOwnedSession({ id: 'u_b', role: 'student' }, s.id),
@@ -255,7 +256,7 @@ describe('RomanService — sessions', () => {
 
   it('soft-deletes a session (sets deleted_at, hides from resume)', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     await svc.softDeleteSession(CALLER, s.id);
     expect(prisma._state.sessions[0].deleted_at).toBeInstanceOf(Date);
@@ -268,7 +269,7 @@ describe('RomanService — sessions', () => {
 describe('RomanService — messages', () => {
   it('appends a turn and bumps message_count + last_activity_at', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'Hello' });
     expect(prisma._state.sessions[0].message_count).toBe(1);
@@ -278,7 +279,7 @@ describe('RomanService — messages', () => {
 
   it('paginates messages newest-first with a cursor', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     for (let i = 0; i < 5; i++) {
       await svc.appendMessage(CALLER, s.id, {
@@ -300,7 +301,7 @@ describe('RomanService — messages', () => {
 
   it('builds a tail-slice of context turns, oldest-first', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'first' });
     await svc.appendMessage(CALLER, s.id, { role: 'roman', content: 'reply' });
@@ -312,7 +313,7 @@ describe('RomanService — messages', () => {
 
 describe('RomanService — rate limiting', () => {
   it('selects the free vs pro cap by tier', () => {
-    const svc = new RomanService(asPrisma(makeFakePrisma()));
+    const svc = new RomanService(asPrisma(makeFakePrisma()), grantAllEgress());
     expect(svc.rateLimitCapFor({ id: 'x', role: 'student', tier: 'free' })).toBe(
       ROMAN_RATE_LIMIT_FREE_PER_DAY,
     );
@@ -323,7 +324,7 @@ describe('RomanService — rate limiting', () => {
 
   it('throws a structured 429 once the cap is exhausted', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
     for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
       await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
@@ -344,7 +345,7 @@ describe('RomanService — rate limiting', () => {
 
   it('exempts the owner from the rate limit', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma));
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     await expect(
       svc.assertWithinRateLimit({ id: 'u_owner', role: 'owner' }),
     ).resolves.toBeUndefined();
@@ -387,7 +388,7 @@ describe('RomanService — streaming', () => {
   it('streams deltas then persists the full assistant turn on completion', async () => {
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['Good ', 'day.']);
-    const svc = new RomanService(asPrisma(prisma), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
     const s = await svc.openOrResumeSession(CALLER, 'client');
 
     const chunks: string[] = [];
@@ -408,7 +409,7 @@ describe('RomanService — streaming', () => {
   it('persists a partial turn with interrupted=true on client disconnect', async () => {
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['Part', 'ial', ' text']);
-    const svc = new RomanService(asPrisma(prisma), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
     const s = await svc.openOrResumeSession(CALLER, 'client');
 
     const abort = new AbortController();
@@ -432,7 +433,7 @@ describe('RomanService — streaming', () => {
     process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = 'false';
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['x']);
-    const svc = new RomanService(asPrisma(prisma), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
     const s = await svc.openOrResumeSession(CALLER, 'client');
     const gen = svc.streamAssistantTurn(CALLER, s);
     await expect(gen.next()).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -440,7 +441,7 @@ describe('RomanService — streaming', () => {
 
   it('surfaces ROMAN_UNAVAILABLE when no Anthropic client is configured', async () => {
     const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma), null);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), null);
     const s = await svc.openOrResumeSession(CALLER, 'client');
     const gen = svc.streamAssistantTurn(CALLER, s);
     await expect(gen.next()).rejects.toMatchObject({

@@ -91,6 +91,10 @@ function makeService() {
   const assertWithinRateLimit = jest.fn((..._a: unknown[]) =>
     Promise.resolve(undefined),
   );
+  // R2b — box-2 consent pre-check (resolves = allowed).
+  const assertMayUseAi = jest.fn((..._a: unknown[]): Promise<void> =>
+    Promise.resolve(undefined),
+  );
   const appendMessage = jest.fn((..._a: unknown[]) =>
     Promise.resolve({
       id: 'msg_1',
@@ -135,6 +139,7 @@ function makeService() {
     getOwnedSession,
     softDeleteSession,
     assertWithinRateLimit,
+    assertMayUseAi,
     appendMessage,
     listMessages,
     streamAssistantTurn,

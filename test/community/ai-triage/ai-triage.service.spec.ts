@@ -13,6 +13,7 @@ import {
   TRIAGE_CATEGORIES,
   TriageResponseSchema,
 } from '../../../src/community/ai-triage/triage-output.schema';
+import { egressWithGrants, grantAllEgress } from '../../ai-egress/ai-egress.fakes';
 
 // v2-4 — AiTriageService orchestration contract tests.
 //
@@ -76,12 +77,17 @@ function makeMocks(): Mocks {
   };
 }
 
-function build(mocks: Mocks, cache = new TriageCacheService()): AiTriageService {
+function build(
+  mocks: Mocks,
+  cache = new TriageCacheService(),
+  egress = grantAllEgress(),
+): AiTriageService {
   return new AiTriageService(
     mocks.gateway as unknown as AiGatewayService,
     mocks.repo as unknown as CommunityCoachInboxRepository,
     mocks.access as unknown as CommunityAccessService,
     cache,
+    egress,
   );
 }
 
@@ -588,5 +594,74 @@ describe('AiTriageService', () => {
       expect(mocks.access.findCohortsByIds).not.toHaveBeenCalled();
       expect(mocks.access.findCohort).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('AiTriageService — R2b box-2 consent', () => {
+  function seed(mocks: ReturnType<typeof makeMocks>) {
+    const now = new Date('2026-06-10T12:00:00Z');
+    // MSG_1 by sender-1, POST_1 by author-1 (see messageRow / postRow).
+    mocks.repo.unansweredMessages.mockResolvedValue([
+      messageRow(MSG_1, COHORT_A, 'When is my next check-in call?', now),
+    ]);
+    mocks.repo.unansweredPosts.mockResolvedValue([postRow(POST_1, COHORT_A, 'New squat PB today!', now)]);
+    mocks.gateway.invoke.mockResolvedValue(gatewayReply(validModelJson({ msg: MSG_1, post: POST_1 })));
+  }
+  const promptOf = (mocks: ReturnType<typeof makeMocks>): string =>
+    mocks.gateway.invoke.mock.calls
+      .map((c: Array<{ userMessage: string }>) => c[0].userMessage)
+      .join('\n');
+
+  it('grant (both authors): both items reach the prompt; both authors declared to the gateway', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['sender-1', 'author-1']);
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(promptOf(mocks)).toContain(MSG_1);
+    expect(promptOf(mocks)).toContain(POST_1);
+    expect([...mocks.gateway.invoke.mock.calls[0][0].dataClientIds].sort()).toEqual(['author-1', 'sender-1']);
+  });
+
+  it('no grant for one author: their words never enter the prompt', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['author-1']);
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(promptOf(mocks)).not.toContain(MSG_1);
+    expect(promptOf(mocks)).not.toContain('When is my next check-in call?');
+    expect(mocks.gateway.invoke.mock.calls[0][0].dataClientIds).toEqual(['author-1']);
+  });
+
+  it('no grant for anyone: no AI call at all', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants([]);
+    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(out.is_empty).toBe(true);
+    expect(mocks.gateway.invoke).not.toHaveBeenCalled();
+  });
+
+  it('revoked: a cached triage built from that author is not served again', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    const svc = build(mocks, new TriageCacheService(), egress);
+    await svc.generateForCoach(coach());
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(1);
+    reader.revoke('sender-1');
+    const out = await svc.generateForCoach(coach());
+    // Cache key changed with the consented set: rebuilt without MSG_1.
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.gateway.invoke.mock.calls[1][0].userMessage).not.toContain(MSG_1);
+    expect(out.source_item_ids).not.toContain(MSG_1);
+  });
+
+  it('ledger error: fails closed, no AI call', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    reader.failWith = new Error('db down');
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(mocks.gateway.invoke).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,9 @@ import 'reflect-metadata';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanService } from '../../src/roman/roman.service';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
+import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
+import type Anthropic from '@anthropic-ai/sdk';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
@@ -205,7 +208,7 @@ describe('Roman SSE streaming — happy path', () => {
   it('translates Anthropic deltas into SSE frames and persists the full turn', async () => {
     const { prisma, messages } = makePrisma();
     const anthropic = makeAnthropic(['Push ', 'harder', '.']);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
 
     const session = await service.getOwnedSession(FREE, 'sess_1');
     const frames: unknown[] = [];
@@ -238,7 +241,7 @@ describe('Roman SSE streaming — happy path', () => {
   it('writes correctly-framed SSE through the controller (data: …\\n\\n + done)', async () => {
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['Let', "'s go"]);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -279,7 +282,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       }
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -316,7 +319,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       }
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -342,7 +345,7 @@ describe('Roman SSE streaming — client disconnect', () => {
   it('aborts the upstream signal even on a clean completion (no leak)', async () => {
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['done ', 'now']);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
 
     const session = await service.getOwnedSession(FREE, 'sess_1');
     for await (const _chunk of service.streamAssistantTurn(FREE, session)) {
@@ -365,7 +368,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       await Promise.resolve();
     };
     const anthropic = makeAnthropic(['never-seen'], gap);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -386,7 +389,7 @@ describe('Roman SSE streaming — defence in depth', () => {
     delete process.env[FLAG];
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['hi']);
-    const service = new RomanService(prisma as never, anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
     const session = await service.getOwnedSession(FREE, 'sess_1').catch(() => null);
     // getOwnedSession does not gate on the flag (the guard does), so it returns
     // the session; the stream itself must refuse.
@@ -400,11 +403,93 @@ describe('Roman SSE streaming — defence in depth', () => {
 
   it('surfaces ROMAN_UNAVAILABLE when no Anthropic client is configured', async () => {
     const { prisma } = makePrisma();
-    const service = new RomanService(prisma as never, null as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), null as never);
     const session = await service.getOwnedSession(FREE, 'sess_1');
     const gen = service.streamAssistantTurn(FREE, session);
     await expect(gen.next()).rejects.toMatchObject({
       response: { code: 'ROMAN_UNAVAILABLE' },
     });
+  });
+});
+
+describe('Roman — R2b box-2 consent', () => {
+  function setup(granted: string[]) {
+    const { prisma, messages } = makePrisma();
+    const anthropic = makeAnthropic(['Hi', '.']);
+    const { egress, reader } = egressWithGrants(granted);
+    const service = new RomanService(fakeOf(prisma), egress, fakeOf<Anthropic>(anthropic));
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    return { service, ctrl, messages, anthropic, reader };
+  }
+
+  it('grant: the client chat streams', async () => {
+    const { ctrl, anthropic } = setup(['user-A']);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' });
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    expect(parseFrames(writes).some((f) => f.data?.type === 'done')).toBe(true);
+  });
+
+  it('no grant: 403 ai_consent_required before the turn is stored or the stream opens', async () => {
+    const { ctrl, anthropic, messages } = setup([]);
+    const { res } = makeRes();
+    const before = messages.length;
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect((err as AiConsentRequiredException).getResponse()).toEqual({
+      code: 'ai_consent_required',
+      message: "You haven't allowed AI help yet. You can turn it on in Settings > Privacy.",
+    });
+    expect(messages.length).toBe(before);
+    expect(res.writeHead).not.toHaveBeenCalled();
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+  });
+
+  it('revoked after the pre-check: the stream is refused at send, no Roman turn is stored', async () => {
+    const { service, anthropic, messages, reader } = setup(['user-A']);
+    const session = await service.getOwnedSession(FREE, 'sess_1');
+    reader.revoke('user-A');
+    const consume = async () => {
+      for await (const _chunk of service.streamAssistantTurn(FREE, session)) {
+        // drain
+      }
+    };
+    await expect(consume()).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.some((m) => m.role === 'roman')).toBe(false);
+  });
+
+  it('revoked mid-request through the controller: a structured error event, not a generic one', async () => {
+    const { ctrl, service, reader } = setup(['user-A']);
+    const pre = service.assertMayUseAi.bind(service);
+    jest.spyOn(service, 'assertMayUseAi').mockImplementation(async (caller) => {
+      await pre(caller);
+      reader.revoke('user-A');
+    });
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' });
+    const error = parseFrames(writes).find((f) => f.event === 'error');
+    expect(error?.data).toMatchObject({ code: 'ai_consent_required' });
+  });
+
+  it('ledger error: fails closed', async () => {
+    const { ctrl, anthropic, reader } = setup(['user-A']);
+    reader.failWith = new Error('db down');
+    const { res } = makeRes();
+    await expect(
+      ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' }),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+  });
+
+  it('coach caller: own scope, no client consent read', async () => {
+    const { service, reader } = setup([]);
+    await expect(service.assertMayUseAi({ id: 'coach-1', role: 'coach', tier: 'free' })).resolves.toBeUndefined();
+    expect(reader.calls).toHaveLength(0);
   });
 });

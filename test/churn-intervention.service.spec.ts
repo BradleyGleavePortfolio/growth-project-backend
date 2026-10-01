@@ -9,6 +9,8 @@ import {
   bucketDateLocal,
 } from '../src/coach/command-center/churn-intervention.service';
 import { Prisma } from '@prisma/client';
+import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
   constructor(target: string) {
@@ -292,6 +294,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildPrisma() as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -327,6 +330,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       anthropic,
     );
@@ -365,6 +369,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       anthropic,
     );
@@ -409,6 +414,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       anthropic,
     );
@@ -426,6 +432,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -449,6 +456,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       anthropic as any,
     );
@@ -479,6 +487,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient('Hey Alice, missed you this week.'),
     );
@@ -487,6 +496,76 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
     expect(out.draft_text).toBe('Hey Alice, missed you this week.');
     expect(prisma.rows.interventions.length).toBe(1);
     expect(prisma.rows.interventions[0].idempotency_key).toBe(VALID_UUID);
+  });
+});
+
+describe('ChurnInterventionService.generateChurnDraft — R2b box-2 consent', () => {
+  function build(granted: string[], ptm = buildPtmService()) {
+    const prisma = buildPrisma({
+      users: [{ id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null }],
+    });
+    const { egress, reader } = egressWithGrants(granted);
+    const anthropic = buildAnthropicClient('Hey Alice, missed you this week.');
+    const svc = new ChurnInterventionService(
+      prisma,
+      ptm,
+      buildConfig(),
+      egress,
+      buildNotifications(),
+      anthropic,
+    );
+    return { svc, prisma, reader, anthropic };
+  }
+
+  it('grant: the draft is generated', async () => {
+    const { svc, anthropic } = build(['u1']);
+    const out = await svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID });
+    expect(out.status).toBe('draft');
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('no grant: 403 ai_consent_required, nothing sent, no draft row claimed', async () => {
+    const { svc, prisma, anthropic } = build([]);
+    const err = await svc
+      .generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect((err as AiConsentRequiredException).getResponse()).toMatchObject({ code: 'ai_consent_required' });
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+    expect(prisma.rows.interventions).toHaveLength(0);
+  });
+
+  it('revoked after the pre-check: the send is refused, the claimed row is marked draft_failed', async () => {
+    const ptm = buildPtmService();
+    const latest = ptm.getLatestPrediction;
+    const { svc, prisma, reader, anthropic } = build(['u1'], ptm);
+    // Withdraw between the pre-check and the provider call (PTM read).
+    ptm.getLatestPrediction = jest.fn(async (uid: string) => {
+      reader.revoke('u1');
+      return latest(uid);
+    });
+    await expect(
+      svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID }),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+    expect(prisma.rows.interventions.map((r: { status: string }) => r.status)).toEqual(['draft_failed']);
+  });
+
+  it('ledger error: fails closed (403), nothing sent', async () => {
+    const { svc, reader, anthropic } = build(['u1']);
+    reader.failWith = new Error('db down');
+    await expect(
+      svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID }),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('client not in roster: 404 before any consent read (no cross-tenant oracle)', async () => {
+    const { svc, reader } = build(['u1']);
+    await expect(
+      svc.generateChurnDraft('c2', 'u1', { idempotency_key: VALID_UUID }),
+    ).rejects.toThrow(/not found/i);
+    expect(reader.calls).toHaveLength(0);
   });
 });
 
@@ -523,6 +602,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       notif,
       buildAnthropicClient(),
     );
@@ -545,6 +625,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -568,6 +649,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -585,6 +667,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -611,6 +694,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -652,6 +736,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -687,6 +772,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );
@@ -721,6 +807,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       prisma as any,
       buildPtmService(),
       buildConfig(),
+      grantAllEgress(),
       buildNotifications(),
       buildAnthropicClient(),
     );

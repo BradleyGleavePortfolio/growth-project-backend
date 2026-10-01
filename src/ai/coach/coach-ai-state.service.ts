@@ -6,7 +6,10 @@ import {
   Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { noClientDataSubject } from '../../ai-egress/ai-egress.types';
+import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { COACH_AI_MODEL, COACH_AI_CAPABILITIES } from './coach-ai.constants';
 import { ANTHROPIC_CLIENT_TOKEN } from '../adapters/anthropic.adapter';
 
@@ -37,6 +40,7 @@ export class CoachAIStateService implements OnApplicationBootstrap {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly egress: AiEgressService,
     @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) private readonly injectedClient?: Anthropic,
   ) {}
 
@@ -66,12 +70,18 @@ export class CoachAIStateService implements OnApplicationBootstrap {
     }
 
     try {
-      const client = this.injectedClient ?? new Anthropic({ apiKey });
-      await client.messages.create({
-        model: COACH_AI_MODEL,
-        max_tokens: 4,
-        messages: [{ role: 'user', content: 'ping' }],
-      });
+      const client = this.injectedClient ?? createAnthropicClient(apiKey);
+      // R2b — fixed "ping" text, no client data (health_probe exemption).
+      await this.egress.anthropicMessagesCreate(
+        client,
+        noClientDataSubject('health_probe'),
+        'coach_ai.health_probe',
+        {
+          model: COACH_AI_MODEL,
+          max_tokens: 4,
+          messages: [{ role: 'user', content: 'ping' }],
+        },
+      );
       this.status = {
         ready: true,
         modelUsed: COACH_AI_MODEL,

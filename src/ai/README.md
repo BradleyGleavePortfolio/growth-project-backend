@@ -44,9 +44,12 @@ endpoint always returns a usable answer.
    the `CLIENT_CONTEXT` block. The prompt forbids contradicting
    `APP_PRESCRIBED` macros and refers questions about medical /
    injury / extreme restriction to the coach.
-4. `chat.completions.create` hits Perplexity with the system prompt,
-   the last 10 turns of conversation history, and the user message.
-   Failures fall back to the deterministic responder.
+4. R2b: the client's live box-2 AI consent is checked (403
+   `ai_consent_required` when absent). When the Coach AI engine is ready,
+   the prompt goes to Anthropic through `AiEgressService`
+   (`src/ai-egress/`), which re-reads the grant immediately before the
+   request. Client data is never sent to Perplexity. With no engine, or on
+   a provider failure, the deterministic responder answers.
 5. `AIGuardrailsService.validate(userMessage, rawReply, ctx)` rewrites
    the reply if needed (calorie floor, macro contradiction, referral,
    banned substance, AI-tell scrub). The list of applied guardrails

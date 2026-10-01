@@ -60,6 +60,7 @@ import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
 import { AiConsentModule } from './ai-consent/ai-consent.module';
+import { AiEgressModule } from './ai-egress/ai-egress.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -293,6 +294,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // Mounted always; /me/ai-consent returns 503 AI_CONSENT_UNAVAILABLE while
     // FEATURE_AI_CONSENT_LEDGER_ENABLED is OFF (default). See src/ai-consent/.
     AiConsentModule,
+    // R2b — global AI egress gate (box-2 consent on every provider request).
+    AiEgressModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and

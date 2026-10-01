@@ -27,8 +27,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import {
+  AiDataSubject,
+  clientDataSubject,
+  noClientDataSubject,
+} from '../../ai-egress/ai-egress.types';
+import { createAnthropicClient } from '../../ai-egress/provider-clients';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -202,8 +209,21 @@ export function sanitizePromptIdentifier(
   return stripped.length > 80 ? stripped.slice(0, 80) : stripped;
 }
 
+/**
+ * R2b — what the AI may see for one brief. `ctx` is built ONLY from the
+ * clients in `subject` (solo / sub-coach), or is the business-only head-coach
+ * context (no client data). `scope` is set when some roster clients have not
+ * allowed AI help and were left out of the AI context.
+ */
+export interface BriefAiInput {
+  ctx: BriefContext | BriefContextHeadCoach;
+  subject: AiDataSubject;
+  scope?: { consented: number; roster: number };
+}
+
 export function buildBriefPrompt(
   ctx: BriefContext | BriefContextHeadCoach,
+  scope?: { consented: number; roster: number },
 ): string {
   // P1-8: produce a sanitized shallow copy so the prompt builders
   // cannot see raw user-controlled name strings. The original ctx is
@@ -212,7 +232,10 @@ export function buildBriefPrompt(
   if (ctx.brief_mode === 'head_coach') {
     return buildHeadCoachPrompt(sanitizeHeadCoachCtxForPrompt(ctx));
   }
-  return buildSoloOrSubCoachPrompt(sanitizeSoloCtxForPrompt(ctx));
+  const prompt = buildSoloOrSubCoachPrompt(sanitizeSoloCtxForPrompt(ctx));
+  if (!scope || scope.consented >= scope.roster) return prompt;
+  // R2b — counts above come only from clients who allowed AI help.
+  return `${prompt}\n\nNote: the client counts above cover only the ${scope.consented} of ${scope.roster} clients who allowed AI help. Do not state a total for the whole roster.`;
 }
 
 function sanitizeSoloCtxForPrompt(ctx: BriefContext): BriefContext {
@@ -683,6 +706,8 @@ export class CoachBriefService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    // R2b — box-2 consent gate for the clients behind the brief's AI context.
+    private readonly egress: AiEgressService,
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: Anthropic,
@@ -696,7 +721,7 @@ export class CoachBriefService {
     if (!apiKey || !apiKey.trim()) {
       throw new InternalServerErrorException('ANTHROPIC_API_KEY not configured');
     }
-    this.anthropic = new Anthropic({ apiKey });
+    this.anthropic = createAnthropicClient(apiKey);
     return this.anthropic;
   }
 
@@ -1330,11 +1355,45 @@ export class CoachBriefService {
     return { context, actionItems };
   }
 
+  /**
+   * R2b — the AI context for a solo / sub-coach brief comes ONLY from
+   * clients holding a live box-2 grant (read now, re-read at send time).
+   * Everyone else still appears in the deterministic action items and
+   * fallback narrative, which never leave the server. No consenting client
+   * -> null (no AI call). Some consenting -> the counts are re-aggregated
+   * over just those clients.
+   */
+  private async buildSoloAiInput(
+    coachId: string,
+    clientIds: string[],
+    fullContext: BriefContext,
+    timezone: string,
+    briefDate: string,
+    briefMode: BriefMode,
+  ): Promise<BriefAiInput | null> {
+    if (clientIds.length === 0) return null;
+    const granted = await this.egress.consentedClients(clientIds);
+    const aiIds = clientIds.filter((id) => granted.has(id));
+    if (aiIds.length === 0) return null;
+    const subject = clientDataSubject(aiIds, 'coach');
+    if (aiIds.length === clientIds.length) return { ctx: fullContext, subject };
+    const restricted = await this.aggregateSoloContext(coachId, aiIds, timezone, briefDate, briefMode);
+    restricted.context.brief_mode = fullContext.brief_mode;
+    return {
+      ctx: restricted.context,
+      subject,
+      scope: { consented: aiIds.length, roster: clientIds.length },
+    };
+  }
+
   // ── Anthropic call with AbortController + 15s timeout + mode-aware
   // system prompt. NEVER throws — Claude failures fall back to a
   // deterministic narrative.
   async callClaude(
     ctx: BriefContext | BriefContextHeadCoach,
+    // R2b — REQUIRED. null = no client in scope allowed AI help: the
+    // deterministic narrative is used and nothing is sent.
+    ai: BriefAiInput | null,
   ): Promise<{ narrative: string; generated_by: 'ai' | 'fallback' }> {
     // Fast-path fallback for zero-action briefs — no Claude call needed.
     // Solo/sub-coach mode keys off client-level action counters; head-
@@ -1366,6 +1425,13 @@ export class CoachBriefService {
       }
     }
 
+    if (!ai) {
+      return {
+        narrative: buildFallbackNarrative(ctx),
+        generated_by: 'fallback',
+      };
+    }
+
     let client: Anthropic;
     try {
       client = this.getAnthropicClient();
@@ -1384,7 +1450,8 @@ export class CoachBriefService {
       ctx.brief_mode === 'head_coach'
         ? buildHeadCoachSystemPrompt()
         : buildSoloCoachSystemPrompt();
-    const userPrompt = buildBriefPrompt(ctx);
+    // R2b — the prompt is built from the AI context only (consented clients).
+    const userPrompt = buildBriefPrompt(ai.ctx, ai.scope);
     // P1-8: every downstream prompt-or-log interpolation of the
     // coach's name (repair prompt, contract validator, log lines)
     // must run through sanitizePromptIdentifier so a malicious
@@ -1400,6 +1467,7 @@ export class CoachBriefService {
     // appended, then fall back to the deterministic narrative.
     const firstAttempt = await this.invokeClaudeOnce(
       client,
+      ai.subject,
       systemPrompt,
       userPrompt,
     );
@@ -1419,6 +1487,7 @@ export class CoachBriefService {
 
       const secondAttempt = await this.invokeClaudeOnce(
         client,
+        ai.subject,
         systemPrompt,
         repairPrompt,
       );
@@ -1455,6 +1524,7 @@ export class CoachBriefService {
   // success vs. error without `try/catch` plumbing.
   private async invokeClaudeOnce(
     client: Anthropic,
+    subject: AiDataSubject,
     systemPrompt: string,
     userPrompt: string,
   ):
@@ -1468,7 +1538,13 @@ export class CoachBriefService {
       BRIEF_ANTHROPIC_TIMEOUT_MS,
     );
     try {
-      const resp = await client.messages.create(
+      // R2b — consent re-read per attempt; a refusal (grant withdrawn since
+      // the scope was computed) lands in the catch below -> fallback
+      // narrative, nothing sent.
+      const resp = await this.egress.anthropicMessagesCreate(
+        client,
+        subject,
+        'coach.brief',
         {
           model: BRIEF_CLAUDE_MODEL,
           max_tokens: BRIEF_MAX_TOKENS,
@@ -1682,6 +1758,8 @@ export class CoachBriefService {
 
       let context: BriefContext | BriefContextHeadCoach;
       let actionItems: ActionItem[] | HeadCoachActionItem[];
+      // R2b — what the AI may see (null = deterministic narrative only).
+      let aiInput: BriefAiInput | null;
 
       if (briefMode === 'head_coach') {
         // P1-3: head-coach is business-only. No client scope queries,
@@ -1693,6 +1771,9 @@ export class CoachBriefService {
         );
         context = headRes.context;
         actionItems = headRes.actionItems;
+        // Business metrics only (headcounts, money totals): no client
+        // identifier and no health / activity field, pinned by the spec.
+        aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
       } else {
         const clientIds = await this.resolveClientScope(coachId, briefMode);
         const agg = await this.aggregateSoloContext(
@@ -1712,9 +1793,17 @@ export class CoachBriefService {
           flaggedWeightLogs: agg.flaggedWeightLogs,
           missingCheckinClients: agg.missingCheckinClients,
         });
+        aiInput = await this.buildSoloAiInput(
+          coachId,
+          clientIds,
+          agg.context,
+          timezone,
+          briefDate,
+          briefMode,
+        );
       }
 
-      const { narrative, generated_by } = await this.callClaude(context);
+      const { narrative, generated_by } = await this.callClaude(context, aiInput);
 
       const updated = await this.prisma.coachBrief.update({
         where: {

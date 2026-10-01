@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
+import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { noClientDataSubject } from '../ai-egress/ai-egress.types';
+import { createPerplexityClient } from '../ai-egress/provider-clients';
 
 export type WinType =
   | 'logged_first_weight'
@@ -46,15 +49,19 @@ export class FirstWinService {
   private getPerplexityClient(): OpenAI | null {
     if (!this._perplexityInitialized) {
       const key = process.env.PERPLEXITY_API_KEY?.trim();
-      this._perplexity = key
-        ? new OpenAI({ apiKey: key, baseURL: 'https://api.perplexity.ai' })
-        : null;
+      this._perplexity = key ? createPerplexityClient(key) : null;
       this._perplexityInitialized = true;
     }
     return this._perplexity;
   }
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // R2b — every provider request goes through the egress gate. This one is
+    // the fixed_template exemption: the prompt is one of four fixed strings
+    // chosen by the WinType enum; no user id, name or value is sent.
+    private readonly egress: AiEgressService,
+  ) {}
 
   /**
    * Marks the Day 1 Win as completed for the given user and generates a
@@ -151,7 +158,11 @@ export class FirstWinService {
     const userMessage = `The client has just ${winLabel[winType]}. Write the 2-sentence message.`;
 
     try {
-      const response = await perplexity.chat.completions.create({
+      const response = await this.egress.perplexityChatCreate(
+        perplexity,
+        noClientDataSubject('fixed_template'),
+        'first_win',
+        {
         model: 'sonar-pro',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -159,7 +170,8 @@ export class FirstWinService {
         ],
         temperature: 0.4,
         max_tokens: 120,
-      });
+        },
+      );
 
       const text = response.choices[0]?.message?.content?.trim() ?? '';
       if (text.length > 10) return text;

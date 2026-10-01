@@ -15,6 +15,7 @@ import {
   EmptyInsightSchema,
   isEmptyInsight,
 } from './insight-output.schema';
+import { grantAllEgress } from '../../../test/ai-egress/ai-egress.fakes';
 
 // PR-HK-4 service contract tests. The gateway, cache, and prisma are all
 // mocked so we exercise the orchestration: cache short-circuit, LLM
@@ -103,11 +104,12 @@ function makeMocks(): Mocks {
   };
 }
 
-function build(mocks: Mocks): WearableInsightsService {
+function build(mocks: Mocks, egress = grantAllEgress()): WearableInsightsService {
   return new WearableInsightsService(
     mocks.prisma as unknown as PrismaService,
     mocks.gateway as unknown as AiGatewayService,
     mocks.cache as unknown as InsightCacheService,
+    egress,
   );
 }
 

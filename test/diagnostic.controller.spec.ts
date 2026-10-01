@@ -4,6 +4,8 @@ import { DiagnosticService } from '../src/diagnostic/diagnostic.service';
 import { AiRoadmapService } from '../src/diagnostic/ai-roadmap.service';
 import { PrismaService } from '../src/prisma.service';
 import { SubmitDiagnosticDto } from '../src/diagnostic/diagnostic.dto';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 
 /**
  * Light controller-level coverage. Rate-limit enforcement is exercised
@@ -45,6 +47,7 @@ describe('DiagnosticController', () => {
         DiagnosticService,
         AiRoadmapService,
         { provide: PrismaService, useValue: prismaStub },
+        { provide: AiEgressService, useValue: grantAllEgress() },
       ],
     }).compile();
     controller = module.get(DiagnosticController);

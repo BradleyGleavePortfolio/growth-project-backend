@@ -35,7 +35,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
+import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
+import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -145,6 +149,8 @@ export class ChurnInterventionService {
     private readonly prisma: PrismaService,
     private readonly ptm: PtmService,
     private readonly config: ConfigService,
+    // R2b — box-2 consent gate for the client named in the draft.
+    private readonly egress: AiEgressService,
     @Optional() private readonly notifications?: NotificationsService,
     @Optional()
     @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
@@ -159,7 +165,7 @@ export class ChurnInterventionService {
     if (!apiKey || !apiKey.trim()) {
       throw new InternalServerErrorException('ANTHROPIC_API_KEY not configured');
     }
-    this.anthropic = new Anthropic({ apiKey });
+    this.anthropic = createAnthropicClient(apiKey);
     return this.anthropic;
   }
 
@@ -310,6 +316,14 @@ export class ChurnInterventionService {
     });
     if (!client) throw new NotFoundException('Client not found');
 
+    // R2b — the draft sends this client's name, risk signals and last
+    // check-in to Anthropic: their live box-2 grant is required. Checked
+    // after the roster check (no cross-tenant oracle) and before the
+    // idempotency claim, so a refusal leaves no draft row behind. The grant
+    // is read again immediately before the provider request.
+    const dataSubject = clientDataSubject(clientId, 'coach');
+    await this.egress.assertMaySend(dataSubject, 'anthropic', 'coach.churn_draft');
+
     // Pull PTM context (used both for the prompt and as the row's
     // top_factor / risk_score_at_draft snapshot).
     const latestPrediction = await this.ptm.getLatestPrediction(clientId);
@@ -394,7 +408,7 @@ export class ChurnInterventionService {
     // status reflects reality, then surface a sanitized 503.
     let draftText: string;
     try {
-      draftText = await this.draftWithAnthropic({
+      draftText = await this.draftWithAnthropic(dataSubject, {
         clientName: client.name,
         topFactor,
         topFactors: factors.slice(0, 3).map((f) => f.label),
@@ -403,7 +417,8 @@ export class ChurnInterventionService {
         timeZone: coachTimeZone,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const refused = isAiEgressRefusal(err);
+      const msg = refused ? 'ai_egress_refused' : err instanceof Error ? err.message : String(err);
       this.logger.warn(
         `Churn draft generation failed coach=${coachId} client=${clientId}: ${msg}`,
       );
@@ -417,6 +432,9 @@ export class ChurnInterventionService {
           `Failed to mark intervention=${claimed.id} draft_failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
         );
       }
+      // R2b — the client withdrew between the check above and the send:
+      // nothing was sent; return the specific refusal, not a generic 503.
+      if (refused) throw err;
       throw new ServiceUnavailableException({
         statusCode: 503,
         error: 'AI_GENERATION_FAILED',
@@ -685,7 +703,7 @@ export class ChurnInterventionService {
   }
 
   // ── Anthropic call with timeout ──────────────────────────────────────
-  private async draftWithAnthropic(ctx: {
+  private async draftWithAnthropic(dataSubject: AiDataSubject, ctx: {
     clientName: string;
     topFactor: string;
     topFactors: string[];
@@ -731,7 +749,10 @@ Do not include any markdown formatting. Write in plain conversational text.
 Output ONLY the message text — no preamble, no explanation.`;
 
     try {
-      const resp = await client.messages.create(
+      const resp = await this.egress.anthropicMessagesCreate(
+        client,
+        dataSubject,
+        'coach.churn_draft',
         {
           model: COACH_AI_MODEL,
           max_tokens: 400,
