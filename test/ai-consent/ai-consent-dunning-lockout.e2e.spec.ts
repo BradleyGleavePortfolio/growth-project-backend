@@ -91,17 +91,24 @@ class ConsentLookalikeController {
   }
 }
 
-/** Ledger stand-in plus the one DunningState read the lockout guard makes. */
+/** Ledger stand-in plus the DunningState and other-live-grant reads the lockout guard makes. */
 class LockableLedgerPrisma extends FakeLedgerPrisma {
   lockedUserIds = new Set<string>();
   dunningLookups = 0;
   readonly dunningState = {
     findFirst: async (args: {
       where: { purchase: { client_user_id: string } };
-    }): Promise<{ id: string } | null> => {
+    }): Promise<{ id: string; purchase_id: string } | null> => {
       this.dunningLookups += 1;
-      return this.lockedUserIds.has(args.where.purchase.client_user_id) ? { id: 'ds_1' } : null;
+      return this.lockedUserIds.has(args.where.purchase.client_user_id)
+        ? { id: 'ds_1', purchase_id: 'cp_1' }
+        : null;
     },
+  };
+  // S-DUNNING F6: the guard also checks for another live grant (comp /
+  // invite-code / kept access) before locking. This caller has none.
+  readonly clientPurchase = {
+    findMany: async (): Promise<never[]> => [],
   };
 }
 

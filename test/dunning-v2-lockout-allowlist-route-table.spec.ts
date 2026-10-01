@@ -327,9 +327,17 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     // The method-blind path rules never admit these paths on their own.
     expect(isAllowedWhileLocked('me/ai-consent')).toBe(false);
     expect(isAllowedWhileLocked('me/ai-consent/roman')).toBe(false);
-    // Every other /me route in the real table stays locked for every method.
+    // Every other /me route in the real table stays locked for every method,
+    // except the account-rights surfaces (data export, account deletion)
+    // that S-DUNNING F8 keeps reachable; those are pinned in the exact
+    // admitted-set test above.
+    const isAccountRights = (p: string): boolean =>
+      ['me/data-export', 'me/delete-account'].some((pre) => p === pre || p.startsWith(`${pre}/`));
     const otherMe = table.routes.filter(
-      (r) => r.normalized.startsWith('me/') && !r.normalized.startsWith('me/ai-consent'),
+      (r) =>
+        r.normalized.startsWith('me/') &&
+        !r.normalized.startsWith('me/ai-consent') &&
+        !isAccountRights(r.normalized),
     );
     expect(otherMe.length).toBeGreaterThan(0);
     expect(
