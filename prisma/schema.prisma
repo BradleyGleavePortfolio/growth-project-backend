@@ -2417,36 +2417,41 @@ model MacroTarget {
 // client's CURRENT coach may read it (app.is_current_coach_of); Roman reads it
 // only in that client's own request context. Never exposed to anyone else.
 model ClientOnboardingIntake {
-  id                      String    @id @default(uuid())
-  client_id               String    @unique
-  client                  User      @relation("OnboardingIntakeClient", fields: [client_id], references: [id], onDelete: Cascade)
+  id                        String    @id @default(uuid())
+  client_id                 String    @unique
+  client                    User      @relation("OnboardingIntakeClient", fields: [client_id], references: [id], onDelete: Cascade)
   // Consultation contract version, e.g. "consult-v1".
-  version                 String
+  version                   String
   // { <screen_key>: <value> } exactly as validated by consultation-answers.ts.
-  answers                 Json
-  completed_chapters      String[]  @default([])
+  answers                   Json
+  completed_chapters        String[]  @default([])
   // Server-stamped P0 acknowledgement (copy version + server time).
-  disclaimer_version      String?
-  disclaimer_accepted_at  DateTime?
+  disclaimer_version        String?
+  disclaimer_accepted_at    DateTime?
   // True when any P1-P7 answer is "yes" (or T3 injury is yes); drives the
   // coach flag. Recomputed on every save.
-  screening_any_yes       Boolean   @default(false)
-  screening_flagged_at    DateTime?
-  saved_at                DateTime  @default(now())
+  screening_any_yes         Boolean   @default(false)
+  screening_flagged_at      DateTime?
+  saved_at                  DateTime  @default(now())
   // Head of the append-only revision history (ClientOnboardingIntakeRevision).
-  current_revision        Int       @default(0)
+  current_revision          Int       @default(0)
   // Engagement inputs (C1 first session date, S2 preferred time), denormalised
   // for the engagement jobs (welcome message, reminders) so they need not
   // parse the answer JSON.
-  first_session_date      DateTime? @db.Date
-  preferred_training_time String?
+  first_session_date        DateTime? @db.Date
+  preferred_training_time   String?
   // Completion claim (idempotency/concurrency) and the frozen result.
-  completion_claimed_at   DateTime?
-  selected_program_key    String?
-  completed_at            DateTime?
-  completion_result       Json?
-  created_at              DateTime  @default(now())
-  updated_at              DateTime  @updatedAt
+  // completion_claim_token is the fencing token of the attempt holding the
+  // claim; finalisation is conditional on (token, current_revision) so a
+  // worker whose lease expired can never write completion effects.
+  completion_claimed_at     DateTime?
+  completion_claim_token    String?
+  completion_claim_revision Int?
+  selected_program_key      String?
+  completed_at              DateTime?
+  completion_result         Json?
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
 
   revisions ClientOnboardingIntakeRevision[]
 

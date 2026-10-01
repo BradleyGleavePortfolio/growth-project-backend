@@ -1,6 +1,8 @@
+import { createHash, randomUUID } from 'crypto';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -42,6 +44,10 @@ import {
   type PlanContent,
 } from './clinic-programs';
 import { writeProgramTree } from './program-writer';
+import {
+  ONBOARDING_COMPLETION_HOOKS,
+  type OnboardingCompletionHook,
+} from './onboarding-completion-hooks';
 
 /** Machine codes returned in 409 bodies: `{ code, message, missing? }`. */
 export type OnboardingConflictCode =
@@ -49,7 +55,8 @@ export type OnboardingConflictCode =
   | 'consultation_incomplete'
   | 'consent_missing'
   | 'clinic_not_configured'
-  | 'completion_in_progress';
+  | 'completion_in_progress'
+  | 'save_conflict';
 
 export interface CompletionResult {
   macros: {
@@ -78,6 +85,52 @@ export interface CompletionResult {
 
 /** Stale completion claims (crashed worker) can be re-taken after this. */
 export const COMPLETION_CLAIM_TTL_MS = 120_000;
+
+/** Bounded optimistic-concurrency retries for PUT /me/onboarding/consultation. */
+export const SAVE_MAX_ATTEMPTS = 5;
+
+/** Thrown inside a save transaction when the compare-and-swap lost a race. */
+class StaleRevisionError extends Error {
+  constructor() {
+    super('stale intake revision');
+    this.name = 'StaleRevisionError';
+  }
+}
+
+/** Thrown inside the completion transaction when this worker's claim was fenced off. */
+class FencedClaimError extends Error {
+  constructor() {
+    super('completion claim no longer held');
+    this.name = 'FencedClaimError';
+  }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
+
+/**
+ * Stable fingerprint of everything that shapes the assigned prescription.
+ * A different fingerprint means a previously materialised clone is stale and
+ * must never be reused (A607-2).
+ */
+export function selectionFingerprint(
+  sel: ProgramSelection,
+  masterProgramId: string,
+  startDate: string,
+): string {
+  const canonical = JSON.stringify([
+    sel.program_key,
+    sel.selected_days,
+    sel.equipment_variant,
+    sel.overlay,
+    sel.rule_priority,
+    sel.coach_review_required,
+    masterProgramId,
+    startDate,
+  ]);
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 32);
+}
 
 const COACH_FLAG_BODY =
   'A new client finished their consultation and asked for extra care. Please review before their first session.';
@@ -134,6 +187,9 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
     @Optional() private readonly subCoachScope?: SubCoachScopeService,
+    @Optional()
+    @Inject(ONBOARDING_COMPLETION_HOOKS)
+    private readonly completionHooks: OnboardingCompletionHook[] = [],
   ) {}
 
   // ─── GET /coach/clients/:clientId/consultation ─────────────────────────
@@ -144,19 +200,51 @@ export class OnboardingService {
    * oracle).
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
+    // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
+    // request. Nothing is cached and no assignment row is trusted on its own:
+    // a sub-coach assignment only counts when its head is the client's
+    // current head AND the reader is currently on that head's team. The same
+    // predicate is implemented in SQL as app.can_read_client_consultation()
+    // and used by the intake RLS policies (API/RLS audience parity, B607-3).
+    if (readerId === clientId) return false;
     const client = await this.prisma.user.findUnique({
       where: { id: clientId },
-      select: { coach_id: true, role: true },
+      select: { coach_id: true, role: true, deleted_at: true },
     });
-    if (!client || client.role !== 'student' || !client.coach_id || readerId === clientId)
-      return false;
-    if (client.coach_id === readerId) return true;
-    const clientCoach = await this.prisma.user.findUnique({
-      where: { id: client.coach_id },
-      select: { coach_id: true },
+    if (!client || client.role !== 'student' || client.deleted_at || !client.coach_id) return false;
+    const [reader, clientCoach] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: readerId },
+        select: { id: true, role: true, coach_id: true, deleted_at: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: client.coach_id },
+        select: { id: true, role: true, coach_id: true, deleted_at: true },
+      }),
+    ]);
+    if (!reader || reader.deleted_at) return false;
+    if (!clientCoach || clientCoach.deleted_at) return false;
+    const coachRoles = ['coach', 'owner', 'sub_coach'];
+    if (!coachRoles.includes(reader.role) || !coachRoles.includes(clientCoach.role)) return false;
+
+    // 1) The client's current coach.
+    if (clientCoach.id === reader.id) return true;
+    // 2) The current head coach of the client's current coach.
+    if (clientCoach.coach_id && clientCoach.coach_id === reader.id && !reader.coach_id) return true;
+    // 3) A sub-coach currently on the client's head's team with an open
+    //    assignment issued by that same head for this client.
+    const head = clientCoach.coach_id ?? clientCoach.id;
+    if (!reader.coach_id || reader.coach_id !== head) return false;
+    const open = await this.prisma.subCoachAssignment.findFirst({
+      where: {
+        sub_coach_id: reader.id,
+        client_id: clientId,
+        head_coach_id: head,
+        unassigned_at: null,
+      },
+      select: { id: true },
     });
-    if (clientCoach?.coach_id === readerId) return true;
-    return this.subCoachScope ? this.subCoachScope.canAccessClient(readerId, clientId) : false;
+    return Boolean(open);
   }
 
   async getCoachConsultation(
@@ -231,9 +319,49 @@ export class OnboardingService {
       });
     }
 
+    // B607-1: optimistic concurrency. Each attempt reads the head, merges the
+    // patch onto THAT revision, and commits only if the head is still at the
+    // same revision (compare-and-swap inside one transaction that also
+    // appends the revision and syncs the profile). A lost race re-reads and
+    // re-merges, so concurrent disjoint chapter saves both survive. Two
+    // simultaneous FIRST saves race on the unique client_id; the loser gets
+    // P2002, re-reads and merges onto the winner (never a 500).
+    for (let attempt = 0; attempt < SAVE_MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.saveConsultationOnce(clientId, body.answers, now);
+      } catch (err) {
+        if (err instanceof StaleRevisionError || isUniqueViolation(err)) continue;
+        throw err;
+      }
+    }
+    throw conflict('save_conflict', 'Your answers changed on another device. Please try again');
+  }
+
+  private async saveConsultationOnce(
+    clientId: string,
+    patch: Record<string, unknown>,
+    now: Date,
+  ): Promise<{ saved_at: string; completed_chapters: string[]; revision: number }> {
     const existing = await this.prisma.clientOnboardingIntake.findUnique({
       where: { client_id: clientId },
     });
+
+    // A607-2: while a completion attempt holds a live claim, the answers it
+    // is assigning from are frozen. Edits wait (409, retry) instead of
+    // racing the assignment. An expired claim does not block; its worker is
+    // fenced off at finalisation because the revision moves.
+    if (
+      existing &&
+      !existing.completed_at &&
+      existing.completion_claim_token &&
+      existing.completion_claimed_at &&
+      existing.completion_claimed_at.getTime() > now.getTime() - COMPLETION_CLAIM_TTL_MS
+    ) {
+      throw conflict(
+        'completion_in_progress',
+        'Your plan is being prepared. Try again in a moment',
+      );
+    }
 
     // Privacy (operator ruling 2026-09-30 18:24): consent is recorded BEFORE
     // any answer is stored. Without a current-version consent on file, the
@@ -243,7 +371,7 @@ export class OnboardingService {
     // record verified here is the server-stamped P0 acknowledgement on the
     // intake (disclaimer_version + disclaimer_accepted_at).
     const accepted = acceptedConsentVersions();
-    const patchP0 = body.answers.P0;
+    const patchP0 = patch.P0;
     if (patchP0 === null) {
       throw new BadRequestException({
         statusCode: 400,
@@ -261,7 +389,7 @@ export class OnboardingService {
       accepted.includes(existing.disclaimer_version),
     );
     if (!consentOnFile) {
-      const otherKeys = Object.keys(body.answers).filter((k) => k !== 'P0');
+      const otherKeys = Object.keys(patch).filter((k) => k !== 'P0');
       if (!isRecord(patchP0) || otherKeys.length > 0) {
         throw conflict('consent_missing', 'Please accept the agreement before answering');
       }
@@ -269,7 +397,7 @@ export class OnboardingService {
     const stored: Answers = isRecord(existing?.answers)
       ? (JSON.parse(JSON.stringify(existing?.answers)) as Answers)
       : {};
-    const merged = mergeAnswers(stored, body.answers);
+    const merged = mergeAnswers(stored, patch);
     const chapters = completedChapters(merged);
 
     // P0: server-stamped acknowledgement. Re-stamped only when the copy
@@ -301,11 +429,24 @@ export class OnboardingService {
     // Owner ruling: forms are kept as submitted. Every save appends an
     // immutable revision; the intake row is only the head pointer.
     const revision = await this.prisma.$transaction(async (tx) => {
-      const head = await tx.clientOnboardingIntake.upsert({
-        where: { client_id: clientId },
-        create: { client_id: clientId, ...data, current_revision: 1 },
-        update: { ...data, current_revision: { increment: 1 } },
-      });
+      let head: { id: string; current_revision: number };
+      if (!existing) {
+        head = await tx.clientOnboardingIntake.create({
+          data: { client_id: clientId, ...data, current_revision: 1 },
+          select: { id: true, current_revision: true },
+        });
+      } else {
+        const cas = await tx.clientOnboardingIntake.updateMany({
+          where: {
+            client_id: clientId,
+            current_revision: existing.current_revision,
+            completion_claim_token: existing.completion_claim_token,
+          },
+          data: { ...data, current_revision: existing.current_revision + 1 },
+        });
+        if (cas.count !== 1) throw new StaleRevisionError();
+        head = { id: existing.id, current_revision: existing.current_revision + 1 };
+      }
       await tx.clientOnboardingIntakeRevision.create({
         data: {
           intake_id: head.id,
@@ -315,15 +456,23 @@ export class OnboardingService {
           ...snapshot,
         },
       });
+      // Profile sync is bound to the committed revision: it runs in the same
+      // transaction as the CAS, so an older save can never overwrite fields
+      // derived from a newer one.
+      await this.writeProfileFromAnswers(tx, clientId, merged, now);
       return head.current_revision;
     });
 
-    await this.writeProfileFromAnswers(clientId, merged, now);
     return { saved_at: now.toISOString(), completed_chapters: chapters, revision };
   }
 
   /** Map answers onto the profile (never screening) and refresh profile targets. */
-  private async writeProfileFromAnswers(clientId: string, answers: Answers, now: Date) {
+  private async writeProfileFromAnswers(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+    answers: Answers,
+    now: Date,
+  ) {
     const fields = profileFieldsFromAnswers(answers);
     const resolved = resolveMacroInputs(macroRawFromAnswers(answers), now);
     if (resolved.ok) {
@@ -336,7 +485,7 @@ export class OnboardingService {
       });
     }
     if (Object.keys(fields).length === 0) return;
-    await this.prisma.userProfile.upsert({
+    await tx.userProfile.upsert({
       where: { user_id: clientId },
       create: { user_id: clientId, ...fields },
       update: fields,
@@ -423,50 +572,51 @@ export class OnboardingService {
       throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
     }
 
-    // A previous failed attempt froze its program choice; reuse it so a retry
-    // can never produce a second, different assignment.
-    const fresh = selectProgram(selectionAnswersFrom(answers));
-    const frozenKey = (PROGRAM_KEYS as readonly string[]).includes(
-      intake.selected_program_key ?? '',
-    )
-      ? (intake.selected_program_key as ProgramKey)
-      : null;
-    const sel: ProgramSelection =
-      frozenKey && frozenKey !== fresh.program_key ? { ...fresh, program_key: frozenKey } : fresh;
+    // A607-2: the selection is ALWAYS recomputed from the answers being
+    // completed. Nothing from an earlier, failed attempt (program key, clone,
+    // days, overlay) is replayed; a stale clone is retired in the fenced
+    // final transaction below.
+    const sel: ProgramSelection = selectProgram(selectionAnswersFrom(answers));
     const entry = readProgramEntry(set.programs, sel.program_key);
     if (!entry) throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
+    const startDate = String(answers.C1);
+    const fingerprint = selectionFingerprint(sel, entry.program_id, startDate);
+    const claimRevision = intake.current_revision;
+    const masterIds = PROGRAM_KEYS.map((k) => readProgramEntry(set.programs, k)?.program_id).filter(
+      (id): id is string => typeof id === 'string',
+    );
 
-    // Concurrency claim: one in-flight completion per client.
+    // B607-2: concurrency claim with a fencing token. The claim is bound to
+    // the exact revision being completed; every later write of this attempt
+    // is conditional on still holding (token, revision).
+    const token = randomUUID();
     const claim = await this.prisma.clientOnboardingIntake.updateMany({
       where: {
         client_id: clientId,
         completed_at: null,
+        current_revision: claimRevision,
         OR: [
           { completion_claimed_at: null },
           { completion_claimed_at: { lt: new Date(now.getTime() - COMPLETION_CLAIM_TTL_MS) } },
         ],
       },
-      data: { completion_claimed_at: now, selected_program_key: sel.program_key },
+      data: {
+        completion_claimed_at: now,
+        completion_claim_token: token,
+        completion_claim_revision: claimRevision,
+        selected_program_key: sel.program_key,
+      },
     });
-    if (claim.count === 0) {
-      const again = await this.prisma.clientOnboardingIntake.findUnique({
-        where: { client_id: clientId },
-      });
-      if (again?.completed_at && isRecord(again.completion_result)) {
-        return this.replay(again.completion_result, now);
-      }
-      throw conflict(
-        'completion_in_progress',
-        'Your plan is being prepared. Try again in a moment',
-      );
-    }
+    if (claim.count === 0) return this.replayOrInProgress(clientId, now);
 
+    let assigned: { program_id: string; name: string; assignment_ids: string[] } | null = null;
     try {
-      const startDate = String(answers.C1);
-      const assigned = await this.workoutBuilder.withIdempotency(
+      // Idempotency is scoped to (revision, selection): a plain retry of the
+      // same answers reuses the clone; any edit yields a fresh one.
+      assigned = await this.workoutBuilder.withIdempotency(
         coach.id,
         'onboarding:complete:program',
-        `client:${clientId}`,
+        `client:${clientId}:rev:${claimRevision}:sel:${fingerprint}`,
         () =>
           this.materialiseAndAssign(
             coach,
@@ -477,12 +627,46 @@ export class OnboardingService {
             startDate,
           ),
       );
+      const program = assigned;
 
       const flagCoach =
         screeningAnyYes(answers) || injuryFlag(answers) || sel.coach_review_required;
       const cohortIds = [set.all_members_cohort_id, entry.cohort_id];
 
       const result = await this.prisma.$transaction(async (tx) => {
+        // FENCE FIRST: completing the row is the first statement and is
+        // conditional on this worker's token and the claimed revision. It
+        // takes the row lock, so a second worker (lease expired) serialises
+        // here and fails the same predicate; on failure the transaction rolls
+        // back and none of the effects below (macro target, spaces, coach
+        // alert, completion hooks) are written.
+        const fenced = await tx.clientOnboardingIntake.updateMany({
+          where: {
+            client_id: clientId,
+            completed_at: null,
+            completion_claim_token: token,
+            current_revision: claimRevision,
+          },
+          data: {
+            completed_at: now,
+            screening_flagged_at: flagCoach ? now : null,
+            completion_claim_token: null,
+            current_revision: claimRevision + 1,
+          },
+        });
+        if (fenced.count !== 1) throw new FencedClaimError();
+
+        // Retire any other onboarding clone assigned to this client (an older
+        // attempt with different answers, or a fenced-off worker's clone).
+        await this.retireOnboardingClones(
+          tx,
+          coach.id,
+          clientId,
+          masterIds,
+          program.program_id,
+          now,
+        );
+
         await tx.macroTarget.create({
           data: {
             coach_id: coach.id,
@@ -539,9 +723,9 @@ export class OnboardingService {
             floor_applied: macros.floor_applied,
           },
           program: {
-            id: assigned.program_id,
+            id: program.program_id,
             key: sel.program_key,
-            name: assigned.name,
+            name: program.name,
             days_per_week: sel.selected_days,
             weeks: 4,
             start_date: startDate,
@@ -554,7 +738,7 @@ export class OnboardingService {
 
         if (flagCoach) {
           // In-app coach item. The body carries no screening details; the coach
-          // opens the client's intake (RLS: current coach only) for the answers.
+          // opens the client's intake for the answers.
           await tx.notification.create({
             data: {
               user_id: coach.id,
@@ -571,21 +755,16 @@ export class OnboardingService {
           create: { user_id: clientId, onboardingCompleted: true },
           update: { onboardingCompleted: true },
         });
-        const head = await tx.clientOnboardingIntake.update({
+        await tx.clientOnboardingIntake.update({
           where: { client_id: clientId },
-          data: {
-            completed_at: now,
-            completion_result: toJson(out),
-            screening_flagged_at: flagCoach ? now : null,
-            current_revision: { increment: 1 },
-          },
+          data: { completion_result: toJson(out) },
         });
         // The submitted form, frozen as its own immutable revision.
         await tx.clientOnboardingIntakeRevision.create({
           data: {
-            intake_id: head.id,
+            intake_id: intake.id,
             client_id: clientId,
-            revision: head.current_revision,
+            revision: claimRevision + 1,
             cause: 'complete',
             version: intake.version,
             answers: toJson(answers),
@@ -595,21 +774,118 @@ export class OnboardingService {
             screening_any_yes: intake.screening_any_yes,
           },
         });
+        // Engagement hooks (welcome message scheduling, reminders) run inside
+        // the same fenced transaction, so they happen exactly once.
+        for (const hook of this.completionHooks) {
+          await hook.onCompleted(tx, {
+            client_id: clientId,
+            coach_id: coach.id,
+            completed_at: now,
+            first_session_date: startDate,
+            preferred_training_time: typeof answers.S2 === 'string' ? answers.S2 : null,
+          });
+        }
         return out;
       });
       return result;
     } catch (err) {
+      // Release only OUR claim (never a newer worker's).
       await this.prisma.clientOnboardingIntake
         .updateMany({
-          where: { client_id: clientId, completed_at: null },
-          data: { completion_claimed_at: null },
+          where: { client_id: clientId, completed_at: null, completion_claim_token: token },
+          data: { completion_claimed_at: null, completion_claim_token: null },
         })
         .catch((releaseErr: unknown) => {
           this.logger.warn(
             `onboarding claim release failed client=${clientId} (${releaseErr instanceof Error ? releaseErr.name : 'unknown'})`,
           );
         });
+      if (err instanceof FencedClaimError) {
+        // Another worker finalised (or the answers moved on). If someone
+        // completed with a different clone, retire ours so the client keeps
+        // exactly one onboarding program.
+        const done = await this.prisma.clientOnboardingIntake.findUnique({
+          where: { client_id: clientId },
+        });
+        const winner = done?.completed_at ? this.resultProgramId(done.completion_result) : null;
+        if (winner && assigned && winner !== assigned.program_id) {
+          await this.prisma
+            .$transaction((tx) =>
+              this.retireOnboardingClones(tx, coach.id, clientId, masterIds, winner, now),
+            )
+            .catch((retireErr: unknown) => {
+              this.logger.warn(
+                `onboarding stale clone retire failed client=${clientId} (${retireErr instanceof Error ? retireErr.name : 'unknown'})`,
+              );
+            });
+        }
+        return this.replayOrInProgress(clientId, now);
+      }
       throw err;
+    }
+  }
+
+  private async replayOrInProgress(clientId: string, now: Date): Promise<CompletionResult> {
+    const again = await this.prisma.clientOnboardingIntake.findUnique({
+      where: { client_id: clientId },
+    });
+    if (again?.completed_at && isRecord(again.completion_result)) {
+      return this.replay(again.completion_result, now);
+    }
+    throw conflict('completion_in_progress', 'Your plan is being prepared. Try again in a moment');
+  }
+
+  private resultProgramId(stored: unknown): string | null {
+    if (!isRecord(stored) || !isRecord(stored.program)) return null;
+    return typeof stored.program.id === 'string' ? stored.program.id : null;
+  }
+
+  /**
+   * Remove every not-yet-started onboarding assignment for this client that
+   * belongs to a clone of the coach's clinic masters other than `keepProgramId`,
+   * and archive those clones. Never touches started/completed workouts,
+   * templates, or programs that are not clinic-master clones.
+   */
+  private async retireOnboardingClones(
+    tx: Prisma.TransactionClient,
+    coachId: string,
+    clientId: string,
+    masterIds: string[],
+    keepProgramId: string,
+    now: Date,
+  ): Promise<void> {
+    if (masterIds.length === 0) return;
+    const stale = await tx.clientWorkoutAssignment.findMany({
+      where: {
+        client_id: clientId,
+        assigned_by_coach_id: coachId,
+        started_at: null,
+        completed_at: null,
+        workout_plan: {
+          program: {
+            id: { not: keepProgramId },
+            owner_user_id: coachId,
+            is_template: false,
+            cloned_from_id: { in: masterIds },
+          },
+        },
+      },
+      select: { id: true, workout_plan: { select: { program_id: true } } },
+    });
+    if (stale.length === 0) return;
+    await tx.clientWorkoutAssignment.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+    const programIds = [
+      ...new Set(
+        stale
+          .map((r) => r.workout_plan.program_id)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    ];
+    if (programIds.length > 0) {
+      await tx.workoutProgram.updateMany({
+        where: { id: { in: programIds }, archived_at: null },
+        data: { archived_at: now },
+      });
     }
   }
 

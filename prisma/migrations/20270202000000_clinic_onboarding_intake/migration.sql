@@ -9,10 +9,20 @@
 --   app.current_user_id()          session GUC set by RlsContextInterceptor
 --   app.is_owner()                 platform owner context
 --   app.is_current_coach_of(text)  caller is the client's CURRENT coach
+--   app.can_read_client_consultation(text)  (defined below) the CURRENT-tenancy
+--     coach audience of a client's consultation, identical to the API rule in
+--     OnboardingService.canCoachRead (fix round A607-1 / B607-3):
+--       a) the client's current coach, or
+--       b) the current head coach of the client's current coach, or
+--       c) a sub-coach whose CURRENT head is the client's current head AND who
+--          holds an open SubCoachAssignment for this client issued by that head.
+--     The client must be a live student; the reader and the client's coach must
+--     be live coach-type users. A transfer (User.coach_id change) or a
+--     revoked/moved sub-coach loses access in the same statement.
 --
 -- ClientOnboardingIntake (health-adjacent screening answers; T4):
 --   p_clientonboardingintake_service_role_all  service_role ALL
---   p_clientonboardingintake_select            SELECT owner OR client self OR current coach of client
+--   p_clientonboardingintake_select            SELECT owner OR client self OR can_read_client_consultation
 --   p_clientonboardingintake_insert            INSERT owner OR client self
 --   p_clientonboardingintake_update            UPDATE owner OR client self (USING + CHECK)
 --   no public DELETE (account deletion cascades through the FK)
@@ -20,18 +30,16 @@
 --   Roman reads the intake only inside the client's own request context
 --   (current_user_id = the client), so it is covered by "client self" and
 --   can never read another client's row. A former coach loses read access the
---   moment User.coach_id changes, because the check is is_current_coach_of,
+--   moment User.coach_id changes, because the check reads live User rows,
 --   not a denormalised coach id.
 --
 -- ClientOnboardingIntakeRevision (append-only history; owner ruling 18:11):
 --   p_clientonboardingintakerevision_service_role_all  service_role ALL
---   p_clientonboardingintakerevision_select            SELECT owner OR client self OR current coach
+--   p_clientonboardingintakerevision_select            SELECT owner OR client self OR can_read_client_consultation
 --   p_clientonboardingintakerevision_insert            INSERT owner OR client self
 --   NO UPDATE / DELETE policy: rows are immutable for every non-service role
 --   RESTRICTIVE anon deny-all
---   Sub-coaches with an open assignment read through the server-side
---   SubCoachScopeService check (GET /coach/clients/:id/consultation); the
---   is_current_coach_of helper covers the head coach that owns the roster.
+--   Same coach audience as the intake (app.can_read_client_consultation).
 --
 -- ClinicProgramSet (seeded configuration, coach tenancy):
 --   p_clinicprogramset_service_role_all        service_role ALL
@@ -58,6 +66,8 @@ CREATE TABLE "ClientOnboardingIntake" (
     "first_session_date" DATE,
     "preferred_training_time" TEXT,
     "completion_claimed_at" TIMESTAMP(3),
+    "completion_claim_token" TEXT,
+    "completion_claim_revision" INTEGER,
     "selected_program_key" TEXT,
     "completed_at" TIMESTAMP(3),
     "completion_result" JSONB,
@@ -137,6 +147,54 @@ ALTER TABLE "ClientOnboardingIntakeRevision" ADD CONSTRAINT "ClientOnboardingInt
 ALTER TABLE "ClinicProgramSet" ADD CONSTRAINT "ClinicProgramSet_coach_id_fkey" FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ═════════════════════════════════════════════════════════════════════════
+-- CONSULTATION AUDIENCE HELPER (API/RLS parity)
+-- ═════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION app.can_read_client_consultation(client_user_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, app, pg_temp
+AS $fn$
+  SELECT app.current_user_id() IS NOT NULL AND EXISTS (
+    SELECT 1
+      FROM "User" c
+      JOIN "User" cc ON cc.id = c.coach_id
+      JOIN "User" r  ON r.id = app.current_user_id()
+     WHERE c.id = client_user_id
+       AND r.id <> c.id
+       AND c.role::text = 'student'
+       AND c.deleted_at IS NULL
+       AND cc.deleted_at IS NULL
+       AND cc.role::text IN ('coach', 'owner', 'sub_coach')
+       AND r.deleted_at IS NULL
+       AND r.role::text IN ('coach', 'owner', 'sub_coach')
+       AND (
+             r.id = cc.id
+          OR (cc.coach_id IS NOT NULL AND r.id = cc.coach_id AND r.coach_id IS NULL)
+          OR (
+                r.coach_id IS NOT NULL
+            AND r.coach_id = COALESCE(cc.coach_id, cc.id)
+            AND EXISTS (
+                  SELECT 1
+                    FROM "SubCoachAssignment" a
+                   WHERE a.sub_coach_id = r.id
+                     AND a.client_id = c.id
+                     AND a.head_coach_id = COALESCE(cc.coach_id, cc.id)
+                     AND a.unassigned_at IS NULL
+                )
+          )
+       )
+  )
+$fn$;
+
+REVOKE ALL ON FUNCTION app.can_read_client_consultation(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION app.can_read_client_consultation(text) FROM anon;
+GRANT EXECUTE ON FUNCTION app.can_read_client_consultation(text) TO authenticated, service_role;
+COMMENT ON FUNCTION app.can_read_client_consultation(text) IS
+  'Current-tenancy coach audience of a client consultation: current coach, current head of that coach, or a sub-coach on the current head''s team with an open assignment from that head. Mirrors OnboardingService.canCoachRead.';
+
+-- ═════════════════════════════════════════════════════════════════════════
 -- ROW-LEVEL SECURITY
 -- ═════════════════════════════════════════════════════════════════════════
 
@@ -149,7 +207,7 @@ CREATE POLICY "p_clientonboardingintake_service_role_all" ON "ClientOnboardingIn
 COMMENT ON POLICY "p_clientonboardingintake_service_role_all" ON "ClientOnboardingIntake" IS 'Primitive A: service_role bypass for server-side jobs/migrations/seeds.';
 
 DROP POLICY IF EXISTS "p_clientonboardingintake_select" ON "ClientOnboardingIntake";
-CREATE POLICY "p_clientonboardingintake_select" ON "ClientOnboardingIntake" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("client_id" = app.current_user_id() OR app.is_current_coach_of("client_id")))));
+CREATE POLICY "p_clientonboardingintake_select" ON "ClientOnboardingIntake" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("client_id" = app.current_user_id() OR app.can_read_client_consultation("client_id")))));
 COMMENT ON POLICY "p_clientonboardingintake_select" ON "ClientOnboardingIntake" IS 'Client reads own intake (also the only context Roman reads it in); the client''s CURRENT coach reads it; platform owner reads all. Other clients, other coaches and anon see zero rows.';
 
 DROP POLICY IF EXISTS "p_clientonboardingintake_insert" ON "ClientOnboardingIntake";
@@ -172,7 +230,7 @@ DROP POLICY IF EXISTS "p_clientonboardingintakerevision_service_role_all" ON "Cl
 CREATE POLICY "p_clientonboardingintakerevision_service_role_all" ON "ClientOnboardingIntakeRevision" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "p_clientonboardingintakerevision_select" ON "ClientOnboardingIntakeRevision";
-CREATE POLICY "p_clientonboardingintakerevision_select" ON "ClientOnboardingIntakeRevision" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("client_id" = app.current_user_id() OR app.is_current_coach_of("client_id")))));
+CREATE POLICY "p_clientonboardingintakerevision_select" ON "ClientOnboardingIntakeRevision" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("client_id" = app.current_user_id() OR app.can_read_client_consultation("client_id")))));
 COMMENT ON POLICY "p_clientonboardingintakerevision_select" ON "ClientOnboardingIntakeRevision" IS 'Same audience as the intake: client self, current coach, platform owner.';
 
 DROP POLICY IF EXISTS "p_clientonboardingintakerevision_insert" ON "ClientOnboardingIntakeRevision";

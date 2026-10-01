@@ -6,6 +6,7 @@ import { redactObject } from '../src/observability/log-redaction';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { OnboardingService } from '../src/onboarding/onboarding.service';
 import { parseFixture } from '../src/onboarding/clinic-programs';
 import type { PrismaService } from '../src/prisma.service';
@@ -58,6 +59,18 @@ function makeWorld() {
     },
   ];
   const masterIds: Record<string, string> = {};
+  // Open sub-coach assignments (current-tenancy predicate reads these).
+  const subAssignments: Row[] = [
+    {
+      id: 'sca-1',
+      sub_coach_id: 'sub-1',
+      client_id: 'client-1',
+      head_coach_id: 'coach-1',
+      unassigned_at: null,
+    },
+  ];
+  // Client workout assignments created by assignProgramToClient.
+  const workoutAssignments: Row[] = [];
   for (const p of fx.programs) {
     const pid = `master-${p.fixture_key}`;
     masterIds[p.fixture_key] = pid;
@@ -130,6 +143,8 @@ function makeWorld() {
         return r instanceof Date && r < ((v as Row).lt as Date);
       }
       if (v && typeof v === 'object' && 'not' in (v as Row)) return row[k] !== (v as Row).not;
+      if (v && typeof v === 'object' && 'in' in (v as Row))
+        return ((v as Row).in as unknown[]).includes(row[k]);
       if (v === null) return row[k] === null || row[k] === undefined;
       return row[k] === v;
     });
@@ -140,11 +155,53 @@ function makeWorld() {
         async ({ where }: { where: Row }) => users.find((u) => u.id === where.id) ?? null,
       ),
     },
-    clientOnboardingIntake: {
-      findUnique: jest.fn(
-        async ({ where }: { where: Row }) =>
-          intakes.find((i) => i.client_id === where.client_id) ?? null,
+    subCoachAssignment: {
+      findFirst: jest.fn(
+        async ({ where }: { where: Row }) => subAssignments.find((a) => match(a, where)) ?? null,
       ),
+    },
+    clientWorkoutAssignment: {
+      findMany: jest.fn(async ({ where }: { where: Row & { workout_plan: { program: Row } } }) => {
+        const { workout_plan: wp, ...flat } = where;
+        return workoutAssignments
+          .filter((a) => match(a, flat))
+          .filter((a) => {
+            const prog = programs.find((p) => p.id === a.program_id);
+            return Boolean(prog) && match(prog as Row, wp.program);
+          })
+          .map((a) => ({ id: a.id, workout_plan: { program_id: a.program_id } }));
+      }),
+      deleteMany: jest.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
+        const before = workoutAssignments.length;
+        for (let i = workoutAssignments.length - 1; i >= 0; i--)
+          if (where.id.in.includes(String(workoutAssignments[i].id)))
+            workoutAssignments.splice(i, 1);
+        return { count: before - workoutAssignments.length };
+      }),
+    },
+    clientOnboardingIntake: {
+      findUnique: jest.fn(async ({ where }: { where: Row }) => {
+        const r = intakes.find((i) => i.client_id === where.client_id);
+        return r ? { ...r } : null;
+      }),
+      create: jest.fn(async ({ data }: { data: Row }) => {
+        if (intakes.some((i) => i.client_id === data.client_id))
+          throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: 'test',
+          });
+        const row = {
+          id: id('intake'),
+          completed_at: null,
+          completion_claimed_at: null,
+          completion_claim_token: null,
+          selected_program_key: null,
+          completion_result: null,
+          ...data,
+        };
+        intakes.push(row);
+        return { ...row };
+      }),
       upsert: jest.fn(
         async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
           const ex = intakes.find((i) => i.client_id === where.client_id);
@@ -222,6 +279,11 @@ function makeWorld() {
           data,
         ),
       ),
+      updateMany: jest.fn(async ({ where, data }: { where: Row; data: Row }) => {
+        const rows = programs.filter((p) => match(p, where));
+        rows.forEach((r) => Object.assign(r, data));
+        return { count: rows.length };
+      }),
     },
     workoutPlan: {
       findMany: jest.fn(async ({ where }: { where: Row }) =>
@@ -273,8 +335,32 @@ function makeWorld() {
       }),
     },
   };
+  // Transactions roll back on throw, like Postgres: every mutable table is
+  // snapshotted and restored, so a fenced-off attempt leaves no effects.
+  const tables: Row[][] = [
+    intakes,
+    revisions,
+    macroTargets,
+    notifications,
+    memberships,
+    profiles,
+    workoutAssignments,
+    programs,
+    subAssignments,
+  ];
   Object.assign(prisma, {
-    $transaction: jest.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(prisma)),
+    $transaction: jest.fn(async (fn: (t: unknown) => Promise<unknown>) => {
+      const snap = tables.map((t) => t.map((r) => ({ ...r })));
+      try {
+        return await fn(prisma);
+      } catch (err) {
+        tables.forEach((t, i) => {
+          t.length = 0;
+          snap[i].forEach((r) => t.push(r));
+        });
+        throw err;
+      }
+    }),
   });
 
   const cache = new Map<string, unknown>();
@@ -288,12 +374,26 @@ function makeWorld() {
         return v;
       },
     ),
-    assignProgramToClient: jest.fn(async () => ({
-      assignments: [{ id: 'asg-1' }, { id: 'asg-2' }],
-    })),
+    assignProgramToClient: jest.fn(
+      async (coachId: string, programId: string, dto: { client_id: string }) => {
+        const created = [1, 2].map(() => ({
+          id: id('asg'),
+          client_id: dto.client_id,
+          assigned_by_coach_id: coachId,
+          program_id: programId,
+          started_at: null,
+          completed_at: null,
+        }));
+        workoutAssignments.push(...created);
+        return { assignments: created.map((a) => ({ id: a.id })) };
+      },
+    ),
   };
   // Sub-coach overlay: sub-1 (under coach-1) is assigned client-1;
-  // sub-x belongs to another head and has no assignment here.
+  // sub-x belongs to another head and has no assignment here. The service no
+  // longer consults this legacy scope for the consultation read (A607-1):
+  // the double answers true for sub-1 regardless of tenancy, which is
+  // exactly the stale grant the current-tenancy predicate must ignore.
   const subCoachScope = {
     canAccessClient: jest.fn(
       async (reader: string, client: string) => reader === 'sub-1' && client === 'client-1',
@@ -332,6 +432,11 @@ function makeWorld() {
     createdClones,
     sets,
     plans,
+    users,
+    subAssignments,
+    workoutAssignments,
+    programs,
+    masterIds,
   };
 }
 
@@ -800,5 +905,290 @@ describe('consultation answers never reach logs', () => {
     }) as Record<string, unknown>;
     expect(out.answers).toBe('[REDACTED]');
     expect(out.nested).toEqual({ completion_result: '[REDACTED]', screening: '[REDACTED]' });
+  });
+});
+
+// ─── Fix round (independent audit of #607) ─────────────────────────────────
+// Each block turns an audit reproduction (wt/audit-606-607-sol/evidence/
+// sol-onboarding.spec.ts) into a permanent regression, inverted to assert the
+// fixed behaviour.
+
+const ADVANCED_GYM_4 = { ...COMPLETE, T1: 'advanced', S1: '4', S3: 'gym' };
+
+function deferred() {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  return { gate, release };
+}
+
+describe('A607-1: consultation read uses CURRENT tenancy only', () => {
+  async function saved() {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    return w;
+  }
+  const notFound = async (p: Promise<unknown>) => {
+    await expect(p).rejects.toMatchObject({ status: 404 });
+  };
+  const user = (w: ReturnType<typeof makeWorld>, uid: string) => w.users.find((u) => u.id === uid)!;
+
+  it('audit reproduction: stale head-A assignment, client now attached to head B -> 404 for the old sub-coach', async () => {
+    const w = await saved();
+    user(w, 'client-1').coach_id = 'other-coach';
+    await notFound(w.svc.getCoachConsultation('sub-1', 'client-1', undefined, NOW));
+    await notFound(w.svc.listCoachConsultationRevisions('sub-1', 'client-1'));
+    // The old head coach loses access too; the new head gains it.
+    await notFound(w.svc.getCoachConsultation('coach-1', 'client-1', undefined, NOW));
+    await expect(
+      w.svc.getCoachConsultation('other-coach', 'client-1', undefined, NOW),
+    ).resolves.toMatchObject({ version: 'consult-v1' });
+  });
+
+  it('a sub-coach moved to another team loses access even with the assignment row still open', async () => {
+    const w = await saved();
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(true);
+    user(w, 'sub-1').coach_id = 'other-coach';
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(false);
+  });
+
+  it('a revoked assignment loses access immediately', async () => {
+    const w = await saved();
+    w.subAssignments[0].unassigned_at = NOW;
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(false);
+  });
+
+  it("no cross-head grant: an assignment issued by a different head than the client's current head is ignored", async () => {
+    const w = await saved();
+    w.subAssignments.push({
+      id: 'sca-x',
+      sub_coach_id: 'sub-x',
+      client_id: 'client-1',
+      head_coach_id: 'other-coach',
+      unassigned_at: null,
+    });
+    await expect(w.svc.canCoachRead('sub-x', 'client-1')).resolves.toBe(false);
+  });
+
+  it('deleted readers, deleted clients and deleted coaches are refused', async () => {
+    const w = await saved();
+    user(w, 'sub-1').deleted_at = NOW;
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(false);
+    user(w, 'client-1').deleted_at = NOW;
+    await expect(w.svc.canCoachRead('coach-1', 'client-1')).resolves.toBe(false);
+  });
+
+  it('a sub_coach-role reader on the current team with an open assignment can read', async () => {
+    const w = await saved();
+    user(w, 'sub-1').role = 'sub_coach';
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(true);
+  });
+});
+
+describe('A607-2: a safety-screen change after a failed completion re-runs assignment', () => {
+  it('audit reproduction: advanced 4-day clone assigned, finalisation fails, P1=yes, retry -> Foundations 2 days with extra care; old clone retired', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
+    // Finalisation fails after the assignment (community space missing once).
+    w.prisma.communityCohort.findFirst.mockResolvedValueOnce(null);
+    expect(await code(w.svc.complete('client-1', NOW))).toBe('clinic_not_configured');
+    expect(w.createdClones).toHaveLength(1);
+    const oldClone = w.createdClones[0];
+    expect(w.workoutAssignments.filter((a) => a.program_id === oldClone.id)).toHaveLength(2);
+    expect(w.macroTargets).toHaveLength(0); // rolled back with the fenced transaction
+
+    const later = new Date(NOW.getTime() + 60_000);
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P1: 'yes' } },
+      later,
+    );
+    const res = await w.svc.complete('client-1', later);
+
+    expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    expect(res.program.id).not.toBe(oldClone.id);
+    expect(w.createdClones).toHaveLength(2);
+    // The older, higher-intensity prescription is gone: no assignments left,
+    // clone archived. Exactly one onboarding program remains assigned.
+    expect(w.workoutAssignments.filter((a) => a.program_id === oldClone.id)).toHaveLength(0);
+    // (rows are re-read: the fake's rollback restores copies)
+    expect(w.programs.find((p) => p.id === oldClone.id)!.archived_at).toBeInstanceOf(Date);
+    expect(new Set(w.workoutAssignments.map((a) => a.program_id))).toEqual(
+      new Set([res.program.id]),
+    );
+    expect(w.notifications).toHaveLength(1);
+  });
+
+  it('a plain retry with unchanged answers reuses the same clone (no second assignment)', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
+    w.prisma.communityCohort.findFirst.mockResolvedValueOnce(null);
+    await code(w.svc.complete('client-1', NOW));
+    const res = await w.svc.complete('client-1', NOW);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.builder.assignProgramToClient).toHaveBeenCalledTimes(1);
+    expect(res.program.id).toBe(w.createdClones[0].id);
+  });
+
+  it('edits are refused with 409 completion_in_progress while a live completion claim is held', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    Object.assign(w.intakes[0], {
+      completion_claimed_at: new Date(NOW.getTime() - 1000),
+      completion_claim_token: 'other-worker',
+    });
+    expect(
+      await code(
+        w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P1: 'yes' } }, NOW),
+      ),
+    ).toBe('completion_in_progress');
+  });
+});
+
+describe('B607-1: concurrent partial saves never lose answers', () => {
+  it('audit reproduction: G1 and B1 saved concurrently -> both survive, revisions strictly increase', async () => {
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    const [a, b] = await Promise.all([
+      w.svc.saveConsultation(
+        'client-1',
+        { version: 'consult-v1', answers: { G1: 'fat_loss' } },
+        NOW,
+      ),
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { B1: 'female' } }, NOW),
+    ]);
+    expect(new Set([a.revision, b.revision])).toEqual(new Set([2, 3]));
+    const head = w.intakes[0].answers as Record<string, unknown>;
+    expect(head).toMatchObject({ G1: 'fat_loss', B1: 'female' });
+    const last = w.revisions.find((r) => r.revision === 3)!;
+    expect(last.answers).toMatchObject({ G1: 'fat_loss', B1: 'female' });
+    expect(w.intakes[0].current_revision).toBe(3);
+  });
+
+  it('two simultaneous FIRST saves: no 500 from the unique constraint, both recorded', async () => {
+    const w = makeWorld();
+    const results = await Promise.all([
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: CONSENT } }, NOW),
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: CONSENT } }, NOW),
+    ]);
+    expect(results.map((r) => r.revision).sort()).toEqual([1, 2]);
+    expect(w.intakes).toHaveLength(1);
+  });
+
+  it('gives up with 409 save_conflict after bounded retries (never a silent overwrite)', async () => {
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    const upd = w.prisma.clientOnboardingIntake.updateMany;
+    upd.mockResolvedValue({ count: 0 });
+    expect(
+      await code(
+        w.svc.saveConsultation(
+          'client-1',
+          { version: 'consult-v1', answers: { G1: 'fat_loss' } },
+          NOW,
+        ),
+      ),
+    ).toBe('save_conflict');
+    upd.mockReset();
+  });
+});
+
+describe('B607-2: completion effects are fenced; lease expiry cannot duplicate them', () => {
+  it('audit reproduction: worker 1 paused after assignment, worker 2 completes at +120001ms, worker 1 resumes -> one MacroTarget, one coach alert', async () => {
+    const w = makeWorld();
+    await w.consentThenSave(
+      'client-1',
+      { version: 'consult-v1', answers: { ...COMPLETE, P2: 'yes' } },
+      NOW,
+    );
+    const real = w.builder.withIdempotency.getMockImplementation()!;
+    const pause = deferred();
+    let calls = 0;
+    w.builder.withIdempotency.mockImplementation(
+      async (u: string, r: string, k: string, op: () => Promise<unknown>) => {
+        const v = await real(u, r, k, op);
+        if (++calls === 1) await pause.gate;
+        return v;
+      },
+    );
+    const worker1 = w.svc.complete('client-1', NOW);
+    await new Promise((r) => setImmediate(r));
+    const worker2 = await w.svc.complete('client-1', new Date(NOW.getTime() + 120_001));
+    pause.release();
+    const r1 = await worker1;
+
+    expect(r1).toEqual(worker2);
+    expect(w.macroTargets).toHaveLength(1);
+    expect(w.notifications).toHaveLength(1);
+    expect(w.revisions.filter((r) => r.cause === 'complete')).toHaveLength(1);
+    expect(w.builder.assignProgramToClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('a stale worker that assigns AFTER the winner finalised retires its own clone', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
+    const real = w.builder.withIdempotency.getMockImplementation()!;
+    const pause = deferred();
+    let calls = 0;
+    w.builder.withIdempotency.mockImplementation(
+      async (u: string, r: string, k: string, op: () => Promise<unknown>) => {
+        if (++calls === 1) await pause.gate; // worker 1 paused BEFORE assigning
+        return real(u, r, k, op);
+      },
+    );
+    const worker1 = w.svc.complete('client-1', NOW);
+    await new Promise((r) => setImmediate(r));
+    // Lease expires; the client changes a safety answer; worker 2 completes.
+    const t2 = new Date(NOW.getTime() + 120_001);
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P3: 'yes' } }, t2);
+    const won = await w.svc.complete('client-1', t2);
+    expect(won.program.key).toBe('steady-foundations');
+    pause.release();
+    const r1 = await worker1;
+
+    expect(r1.program.id).toBe(won.program.id);
+    expect(w.createdClones).toHaveLength(2);
+    expect(new Set(w.workoutAssignments.map((a) => a.program_id))).toEqual(
+      new Set([won.program.id]),
+    );
+    expect(w.macroTargets).toHaveLength(1);
+  });
+
+  it('completion hooks (welcome-message scheduling) run once, inside the fenced transaction', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const hook = { onCompleted: jest.fn(async () => undefined) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    await svc.complete('client-1', NOW);
+    await svc.complete('client-1', new Date(NOW.getTime() + 1000));
+    expect(hook.onCompleted).toHaveBeenCalledTimes(1);
+    expect(hook.onCompleted).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        client_id: 'client-1',
+        coach_id: 'coach-1',
+        first_session_date: '2026-10-05',
+      }),
+    );
+  });
+
+  it('a failing hook rolls back every completion effect and releases the claim', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const hook = { onCompleted: jest.fn(async () => Promise.reject(new Error('hook down'))) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    await expect(svc.complete('client-1', NOW)).rejects.toThrow('hook down');
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.intakes[0].completed_at).toBeNull();
+    expect(w.intakes[0].completion_claim_token).toBeNull();
   });
 });

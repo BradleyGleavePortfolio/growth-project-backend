@@ -47,8 +47,10 @@ export class OnboardingController {
 }
 
 /**
- * Coach read of a client's consultation. @Roles admits every signed-in role
- * on purpose (students included) so the route never answers 403: the
+ * Coach read of a client's consultation. @Roles lists EVERY Role enum value
+ * on purpose (coach, student, owner, sub_coach) so the route never answers
+ * 403 for any signed-in role (test/coach-onboarding.controller.spec.ts
+ * enumerates the enum, so a new role cannot silently reintroduce a 403): the
  * tenancy check in OnboardingService.canCoachRead decides, and every refusal
  * (foreign coach, sub-coach of another head, the client themselves, other
  * clients) is the same 404, which does not reveal whether a client exists.
@@ -56,7 +58,7 @@ export class OnboardingController {
 @ApiTags('onboarding')
 @Controller('coach/clients')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('coach', 'student')
+@Roles('coach', 'student', 'owner', 'sub_coach')
 export class CoachConsultationController {
   constructor(private readonly onboarding: OnboardingService) {}
 
