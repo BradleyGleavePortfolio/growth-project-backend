@@ -79,6 +79,24 @@ export interface SubscribersPage {
   total_returned: number;
 }
 
+/**
+ * S-FEE — smallest price a PAID package can have, in cents ($19.99). A
+ * package is either free (exactly 0, one-time) or at least this much.
+ */
+export const PAID_PACKAGE_MIN_CENTS = 1999;
+// Stripe's minimum USD charge. Only packages saved before the $19.99 floor
+// (price unchanged since) are checked against this instead.
+const STRIPE_MIN_CHARGE_CENTS = 50;
+
+interface PricingFloorOptions {
+  enforcePrimaryMinimum: boolean;
+  enforceRecurringMinimum: boolean;
+}
+const ENFORCE_ALL_FLOORS: PricingFloorOptions = {
+  enforcePrimaryMinimum: true,
+  enforceRecurringMinimum: true,
+};
+
 @Injectable()
 export class PackagesService {
   private readonly logger = new Logger(PackagesService.name);
@@ -169,6 +187,13 @@ export class PackagesService {
         'recurring_interval_count' in data
           ? (data.recurring_interval_count as number | null)
           : row.recurring_interval_count,
+    }, {
+      // S-FEE — the $19.99 floor applies to a price the coach is setting now.
+      enforcePrimaryMinimum:
+        'amount_cents' in data && data.amount_cents !== row.amount_cents,
+      enforceRecurringMinimum:
+        'recurring_amount_cents' in data &&
+        data.recurring_amount_cents !== row.recurring_amount_cents,
     });
 
     // If price-shaping fields changed, clear the cached Stripe Price id so
@@ -343,6 +368,11 @@ export class PackagesService {
         | 'year'
         | null,
       recurring_interval_count: row.recurring_interval_count,
+    }, {
+      // S-FEE — a package newly put on sale must meet the $19.99 floor; an
+      // already-published package saved before the floor is left as is.
+      enforcePrimaryMinimum: !row.published_at,
+      enforceRecurringMinimum: !row.published_at,
     });
     // TODO(PR-8): once content-attach lands, gate sellable packages
     // here on `is_sellable === false || contents.length > 0`. Allowed
@@ -523,7 +553,7 @@ export class PackagesService {
     recurring_amount_cents?: number | null;
     recurring_interval?: string | null;
     recurring_interval_count?: number | null;
-  }) {
+  }, opts: PricingFloorOptions = ENFORCE_ALL_FLOORS) {
     if (!input.name?.trim()) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
@@ -540,13 +570,38 @@ export class PackagesService {
       input.recurring_amount_cents != null ||
       input.recurring_interval != null ||
       input.recurring_interval_count != null;
-    if (!Number.isInteger(input.amount_cents) || input.amount_cents < 50) {
-      // Stripe minimum charge for USD is 50 cents; under that the API rejects.
+    // S-FEE (owner ruling 2026-09-30) — a package is either FREE (exactly 0,
+    // one-time, no recurring companion) or PAID at PAID_PACKAGE_MIN_CENTS or
+    // more. The floor keeps the coach's net meaningful after the card fee and
+    // the TGP 2%. On update the floor applies only when the price changes, so
+    // packages saved before this rule keep working until the coach edits the
+    // price (never silently rewritten); they still need the Stripe minimum.
+    if (!Number.isInteger(input.amount_cents) || input.amount_cents < 0) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
+        message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99.',
+      });
+    }
+    if (input.amount_cents === 0) {
+      if (input.billing_type === 'recurring' || hasRecurringCompanion) {
+        throw new BadRequestException({
+          error: 'PACKAGE_FREE_MUST_BE_ONE_TIME',
+          message:
+            input.billing_type === 'recurring'
+              ? 'Free packages are one-time. Switch the package to one-time, or set a price of $19.99 or more.'
+              : 'Free packages cannot have a recurring price. Remove the recurring price, or set a price of $19.99 or more.',
+        });
+      }
+    } else if (
+      input.amount_cents <
+      (opts.enforcePrimaryMinimum ? PAID_PACKAGE_MIN_CENTS : STRIPE_MIN_CHARGE_CENTS)
+    ) {
+      throw new BadRequestException({
+        error: 'PACKAGE_PRICE_BELOW_MINIMUM',
         message: hasRecurringCompanion
-          ? 'one-time amount_cents must be an integer ≥ 50 (Stripe minimum)'
-          : 'amount_cents must be an integer ≥ 50 (Stripe minimum)',
+          ? 'Paid packages start at $19.99. Set the one-time price to $19.99 or more.'
+          : 'Paid packages start at $19.99, or make it free.',
+        minimum_cents: PAID_PACKAGE_MIN_CENTS,
       });
     }
     if (input.currency && !/^[a-z]{3}$/i.test(input.currency)) {
@@ -624,11 +679,16 @@ export class PackagesService {
             'recurring companion requires recurring_amount_cents and recurring_interval',
         });
       }
-      if (!Number.isInteger(r.amt!) || (r.amt as number) < 50) {
+      if (
+        !Number.isInteger(r.amt!) ||
+        (r.amt as number) <
+          (opts.enforceRecurringMinimum ? PAID_PACKAGE_MIN_CENTS : STRIPE_MIN_CHARGE_CENTS)
+      ) {
         throw new BadRequestException({
-          error: 'PACKAGE_INVALID',
+          error: 'PACKAGE_RECURRING_PRICE_BELOW_MINIMUM',
           message:
-            'recurring_amount_cents must be an integer ≥ 50 (Stripe minimum for the recurring companion)',
+            'The recurring price starts at $19.99. Set it to $19.99 or more, or remove the recurring price.',
+          minimum_cents: PAID_PACKAGE_MIN_CENTS,
         });
       }
       if (r.interval !== 'week' && r.interval !== 'month' && r.interval !== 'year') {
