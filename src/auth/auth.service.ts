@@ -105,7 +105,15 @@ function isSignupIdentityUniqueViolation(err: unknown): boolean {
 // metadata at signUp. Supabase never updates an existing unconfirmed user on
 // a repeated signUp ("do not update the user because we can't be sure of
 // their claimed identity", auth signup.go), so the marker on the returned
-// user names the request that CREATED the identity. Not a secret.
+// user names the request that CREATED the identity.
+//
+// Fix round 4: the marker is `<nonce>.<HMAC-SHA256(server key, nonce, email)>`
+// so only THIS server can mint one. `user_metadata` is writable through the
+// public anon `signUp`, so an unauthenticated marker would let anyone label an
+// identity "created by /auth/register"; the MAC makes stranded-identity
+// adoption (`adoptStrandedSignupIdentity`) no wider than a normal register.
+// Keyed with the service-role key (never sent anywhere); without a key no
+// marker verifies and adoption is simply off.
 export const SIGNUP_ATTEMPT_METADATA_KEY = 'tgp_signup_attempt';
 function signupAttemptMarker(user: { user_metadata?: unknown } | null | undefined): string | null {
   const meta = user?.user_metadata;
@@ -113,14 +121,41 @@ function signupAttemptMarker(user: { user_metadata?: unknown } | null | undefine
   const v = (meta as Record<string, unknown>)[SIGNUP_ATTEMPT_METADATA_KEY];
   return typeof v === 'string' ? v : null;
 }
-// Advisory-lock namespace for per-canonical-email signup serialisation
-// (ASCII 'sgnu'). Distinct from the package/MWB namespaces.
-export const ADVISORY_LOCK_NAMESPACE_SIGNUP_EMAIL = 0x73_67_6e_75;
-type SignupTx = Pick<Prisma.TransactionClient, '$executeRaw' | 'user'>;
-async function lockSignupEmail(tx: SignupTx, canonicalEmail: string): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_SIGNUP_EMAIL}::int4, hashtext(${canonicalEmail}))`;
+function signupAttemptMac(nonce: string, canonicalEmail: string): string | null {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  if (key.length < 16) return null;
+  return crypto
+    .createHmac('sha256', key)
+    .update(`tgp-signup-attempt:v1:${nonce}:${canonicalEmail}`)
+    .digest('base64url');
+}
+export function mintSignupAttemptMarker(canonicalEmail: string): string {
+  const nonce = crypto.randomUUID();
+  return `${nonce}.${signupAttemptMac(nonce, canonicalEmail) ?? 'unsigned'}`;
+}
+export function isServerMintedSignupMarker(marker: string | null, canonicalEmail: string): boolean {
+  if (!marker) return false;
+  const dot = marker.indexOf('.');
+  if (dot <= 0) return false;
+  const expected = signupAttemptMac(marker.slice(0, dot), canonicalEmail);
+  if (!expected) return false;
+  const got = Buffer.from(marker.slice(dot + 1));
+  const want = Buffer.from(expected);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
+// Opus B-597-2: proof that the caller knows the password of a Supabase
+// identity it did NOT create. GoTrue checks the password BEFORE the
+// confirmation state (auth token.go: `invalid_credentials` first, then
+// `email_not_confirmed`), so `email_not_confirmed` means "right password,
+// still unconfirmed". Anything else is not proof.
+function isEmailNotConfirmedError(
+  error: { code?: unknown; message?: unknown } | null | undefined,
+): boolean {
+  if (!error) return false;
+  if (error.code === 'email_not_confirmed') return true;
+  return typeof error.message === 'string' && /email not confirmed/i.test(error.message);
+}
 function isInviteCodeUniqueViolation(err: unknown): boolean {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false;
   const target = (err.meta as { target?: unknown } | undefined)?.target;
@@ -218,19 +253,10 @@ export class AuthService {
     intendedRole: IntendedRole | undefined,
     provider: SignupProvider,
     ctx: AuditCtx = {},
-    opts: {
-      inviteCode?: string;
-      /** A-597-1: runs first inside the create transaction (lock + identity check). */
-      beforeCreate?: (tx: Prisma.TransactionClient) => Promise<void>;
-    } = {},
+    opts: { inviteCode?: string } = {},
   ) {
     if (this.effectiveIntendedRole(intendedRole) !== 'coach') {
-      const beforeCreate = opts.beforeCreate;
-      if (!beforeCreate) return this.prisma.user.create({ data: { ...data, role: 'student' } });
-      return this.prisma.$transaction(async (tx) => {
-        await beforeCreate(tx);
-        return tx.user.create({ data: { ...data, role: 'student' } });
-      });
+      return this.prisma.user.create({ data: { ...data, role: 'student' } });
     }
 
     let inviteCode = opts.inviteCode ?? (await this.pickUnusedCoachInviteCode());
@@ -249,7 +275,6 @@ export class AuthService {
     for (let attempt = 1; ; attempt++) {
       try {
         const user = await this.prisma.$transaction(async (tx) => {
-          if (opts.beforeCreate) await opts.beforeCreate(tx);
           const created = await tx.user.create({
             data: { ...data, role: 'coach', coach_id: null },
           });
@@ -339,84 +364,76 @@ export class AuthService {
     });
   }
 
-  // Grok B3 / Opus C1, made ownership-safe for Sol A-597-1. A Supabase auth
-  // user created by THIS request's `signUp` whose local row could not be
-  // committed would be stranded; delete it so the caller can retry. The
-  // caller only invokes this when the returned user carries this request's
-  // own attempt marker (this request created it) and the failure was not a
-  // competing commit (P2002). Under the per-email advisory lock it then
-  // re-checks that no local row is bound to the id or the address; a
-  // concurrent binder of the same identity takes the same lock and verifies
-  // the identity still exists before it commits, so a delete can never strand
-  // a committed or committing row. Best effort; the original error is
-  // rethrown by the caller either way. Logs carry the Supabase user id only.
-  private async compensateOrphanedSupabaseUser(
+  // Sol A-597-1 (fix round 4): registration NEVER deletes a Supabase
+  // identity. Any delete issued after a failed local insert races every
+  // other binder of the same identity — a retried registration, and the
+  // Google/Apple create/link paths that Supabase auto-links by verified
+  // email — and a database lock cannot fence an external delete that outlives
+  // its transaction. So an identity whose local row could not be committed is
+  // RETAINED and recovered without any destructive step:
+  //   * unconfirmed: the next /auth/register for the address gets the same
+  //     identity back from Supabase and binds it (same path as today);
+  //   * confirmed (the user clicked the verification link first): the first
+  //     successful password sign-in adopts it as a client
+  //     (`adoptStrandedSignupIdentity`), exactly like Google/Apple first
+  //     contact; Google/Apple sign-in for the address binds it too.
+  // Logged by Supabase id only, for reconciliation.
+  private logRetainedSignupIdentity(
     supabaseUserId: string,
-    canonicalEmail: string,
+    createdByThisRequest: boolean,
     reason: string,
   ) {
-    try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          await lockSignupEmail(tx, canonicalEmail);
-          const boundById = await tx.user.findUnique({
-            where: { supabase_id: supabaseUserId },
-            select: { id: true },
-          });
-          const boundByEmail = boundById
-            ? null
-            : await tx.user.findFirst({
-                where: { email: { equals: canonicalEmail, mode: 'insensitive' } },
-                select: { id: true },
-              });
-          if (boundById || boundByEmail) {
-            this.logger.warn(
-              `register: kept Supabase user ${supabaseUserId} after ${reason}: a local row now owns it`,
-            );
-            return;
-          }
-          const { error } = await this.supabaseAdmin.auth.admin.deleteUser(supabaseUserId);
-          if (error) {
-            this.logger.error(
-              `register: could not delete orphaned Supabase user ${supabaseUserId} after ${reason}: ${error.message}`,
-            );
-          } else {
-            this.logger.warn(
-              `register: deleted orphaned Supabase user ${supabaseUserId} after ${reason}`,
-            );
-          }
-        },
-        { timeout: 15_000 },
-      );
-    } catch (err) {
-      this.logger.error(
-        `register: compensation for Supabase user ${supabaseUserId} threw after ${reason}: ${(err as Error).message}`,
-      );
-    }
+    this.logger.warn(
+      `register: retained Supabase user ${supabaseUserId} without a local row after ${reason} ` +
+        `(created_by_this_request=${createdByThisRequest}); recovered by retry, OAuth or first password sign-in`,
+    );
   }
 
-  // A-597-1: binding a local row to a Supabase identity this request did NOT
-  // create (Supabase returned an existing unconfirmed user). Inside the create
-  // transaction, under the same per-email lock the compensation takes, confirm
-  // the identity still exists, so a row is never committed for an identity
-  // that its creator has just compensated away. Fails closed.
-  private retainedIdentityGuard(supabaseUserId: string, canonicalEmail: string) {
-    return async (tx: Prisma.TransactionClient): Promise<void> => {
-      await lockSignupEmail(tx, canonicalEmail);
-      let exists = false;
-      try {
-        const { data, error } = await this.supabaseAdmin.auth.admin.getUserById(supabaseUserId);
-        exists = !error && !!data?.user && data.user.id === supabaseUserId;
-      } catch {
-        exists = false;
-      }
-      if (!exists) {
-        throw new ConflictException({
-          code: 'signup_retry',
-          message: 'Sign-up did not complete. Please try again.',
-        });
-      }
-    };
+  // A-597-1 recovery for a CONFIRMED stranded identity. Only reached after
+  // Supabase verified the password and no local row matches the verified id
+  // or the canonical address. Only identities that carry the register marker
+  // are adopted (a Supabase user created some other way still gets 401), and
+  // always as a client with no coach: role choice and invite attach are not
+  // replayed from user-editable metadata. A concurrent adopter/binder that
+  // commits first wins (P2002 → re-read).
+  private async adoptStrandedSignupIdentity(
+    supaUser: { id?: unknown; email?: unknown; user_metadata?: unknown } | null | undefined,
+    canonicalEmail: string,
+    ctx: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const supabaseUserId = typeof supaUser?.id === 'string' ? supaUser.id : '';
+    const verifiedEmail = typeof supaUser?.email === 'string' ? normalizeEmail(supaUser.email) : '';
+    if (
+      !supabaseUserId ||
+      verifiedEmail !== canonicalEmail ||
+      !isServerMintedSignupMarker(signupAttemptMarker(supaUser), canonicalEmail)
+    ) {
+      return null;
+    }
+    const meta = supaUser?.user_metadata as Record<string, unknown> | undefined;
+    const fullName = typeof meta?.full_name === 'string' ? meta.full_name.trim() : '';
+    try {
+      const created = await this.createSignupUser(
+        {
+          supabase_id: supabaseUserId,
+          email: canonicalEmail,
+          name: fullName || canonicalEmail.split('@')[0],
+          phone: null,
+          signup_ref: null,
+        },
+        undefined,
+        'email',
+        ctx,
+      );
+      this.logger.warn(`login: adopted stranded Supabase user ${supabaseUserId} as a client`);
+      return this.prisma.user.findUnique({ where: { id: created.id }, include: { profile: true } });
+    } catch (err) {
+      if (!isSignupIdentityUniqueViolation(err)) throw err;
+      return this.prisma.user.findUnique({
+        where: { supabase_id: supabaseUserId },
+        include: { profile: true },
+      });
+    }
   }
 
   // Grok B4: never create or link a local row for a Google identity whose
@@ -500,7 +517,7 @@ export class AuthService {
     );
 
     // A-597-1: per-request ownership marker (see SIGNUP_ATTEMPT_METADATA_KEY).
-    const signupAttempt = crypto.randomUUID();
+    const signupAttempt = mintSignupAttemptMarker(email);
     const { data: signupData, error } = await supaClient.auth.signUp({
       email,
       password: data.password,
@@ -524,7 +541,26 @@ export class AuthService {
     const supabaseUserId = signupData.user.id;
     // A-597-1: did THIS request create the Supabase identity, or did Supabase
     // hand back an existing unconfirmed one (a concurrent or earlier signup)?
+    // Nothing is ever deleted either way (fix round 4).
     const createdByThisRequest = signupAttemptMarker(signupData.user) === signupAttempt;
+    if (!createdByThisRequest) {
+      // Opus B-597-2: Supabase handed back an EXISTING unconfirmed identity
+      // whose password it did not update. Bind it only if this caller proves
+      // it knows that password; otherwise someone else (possibly an attacker
+      // using the public anon signUp) set it, and binding would let them sign
+      // in to this account once the owner confirms. Nothing is bound or
+      // deleted on refusal.
+      const proof = await supaClient.auth.signInWithPassword({ email, password: data.password });
+      if (!isEmailNotConfirmedError(proof.error)) {
+        this.logger.warn(
+          `register: retained Supabase user ${supabaseUserId} not bound: caller did not prove its password`,
+        );
+        throw new ConflictException({
+          code: 'signup_pending',
+          message: 'Check your email to finish signing up, or reset your password.',
+        });
+      }
+    }
     let user;
     try {
       user = await this.createSignupUser(
@@ -538,33 +574,21 @@ export class AuthService {
         intendedRole,
         'email',
         ctx,
-        {
-          inviteCode,
-          beforeCreate: createdByThisRequest
-            ? undefined
-            : this.retainedIdentityGuard(supabaseUserId, email),
-        },
+        { inviteCode },
       );
     } catch (err) {
       const reason = `local user create failed (${err instanceof Error ? err.constructor.name : 'error'})`;
       if (isSignupIdentityUniqueViolation(err)) {
-        // A competing signup for this address committed first and owns the
-        // identity (and its fixed role). Never delete it; answer like our own
+        // A competing signup / OAuth binder for this address committed first
+        // and owns the identity (and its fixed role). Answer like our own
         // duplicate check.
         this.logger.warn(
           `register: competing signup won for Supabase user ${supabaseUserId}; identity kept`,
         );
         throw new ConflictException('Email already registered');
       }
-      if (createdByThisRequest) {
-        // This request created the identity and no row was committed for it:
-        // delete it (ownership re-checked under the lock) so a retry is clean.
-        await this.compensateOrphanedSupabaseUser(supabaseUserId, email, reason);
-      } else {
-        this.logger.warn(
-          `register: Supabase user ${supabaseUserId} was not created by this request; not compensated after ${reason}`,
-        );
-      }
+      // A-597-1: retain, never delete (see logRetainedSignupIdentity).
+      this.logRetainedSignupIdentity(supabaseUserId, createdByThisRequest, reason);
       throw err;
     }
 
@@ -693,6 +717,15 @@ export class AuthService {
         orderBy: { created_at: 'asc' },
         include: { profile: true },
       });
+    }
+    if (!user) {
+      // A-597-1 fix round 4: a confirmed identity stranded by a failed
+      // registration is adopted here instead of being deleted at signup.
+      user = await this.adoptStrandedSignupIdentity(
+        (data as { user?: { id?: unknown; email?: unknown; user_metadata?: unknown } | null }).user,
+        email,
+        ctx,
+      );
     }
 
     if (!user) throw new UnauthorizedException('User not found');

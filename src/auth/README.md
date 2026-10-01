@@ -198,27 +198,45 @@ honoured **only** on the branch that inserts a brand-new `User` row
   if it fails the whole signup fails and rolls back. Only an
   `invite_code` P2002 (a race on the pre-checked code) is retried, with a
   fresh code, up to 3 attempts; any other error propagates.
-- `/auth/register` picks the invite code **before** Supabase `signUp`,
+- `/auth/register` picks the invite code **before** Supabase `signUp` and
   treats Supabase's obfuscated "already exists" reply (`identities: []`)
-  as `409 Email already registered`, and if the local transaction fails
-  after `signUp` succeeded it deletes the orphaned Supabase auth user via
-  the admin API (logged by Supabase id only — never email/password) and
-  rethrows the original error, so a retry is clean.
-- **Compensation ownership (Sol A-597-1).** Supabase returns the SAME
-  unconfirmed user to every `signUp` for an address and never updates it,
-  so two concurrent registrations share one Supabase id. Each `signUp`
-  sends a random `user_metadata.tgp_signup_attempt`; the request whose
-  marker comes back is the one that **created** the identity. Rules:
-  a `P2002` on `email`/`supabase_id` (a competitor committed) is a `409
-  Email already registered` and never deletes; a request that did not
-  create the identity never deletes; the creator deletes only after
-  re-checking, under a per-email `pg_advisory_xact_lock`, that no local row
-  is bound to the id or the address. A request binding a row to an identity
-  it did not create takes the same lock and first confirms the identity
-  still exists (`admin.getUserById`), else `409 { code: 'signup_retry' }`.
-  So a delete can never strand a committed or committing row, and an
-  identity left behind by a failed earlier attempt is still adopted by the
-  next registration.
+  as `409 Email already registered`.
+- **Registration never deletes a Supabase identity (Sol A-597-1, fix
+  round 4).** Supabase returns the SAME unconfirmed user to every `signUp`
+  for an address, and Google/Apple sign-in auto-links a verified address to
+  it, so any delete issued after a failed local insert could remove the
+  identity of a request that just bound it — and a database lock cannot
+  fence an external delete that outlives its transaction. Rules:
+  - a `P2002` on `email`/`supabase_id` (a competing signup or OAuth binder
+    committed first) is `409 Email already registered`;
+  - any other local failure rethrows the original error and **retains** the
+    identity (logged by Supabase id only, for reconciliation);
+  - a retained **unconfirmed** identity is bound by the next
+    `/auth/register` for the address (Supabase hands the same id back)
+    **only if that caller proves it knows the identity's password** (Opus
+    B-597-2): Supabase never updates the password of an existing
+    unconfirmed user, so an identity pre-created through the public anon
+    `signUp` with someone else's password must never be bound to a new
+    account. Proof = `signInWithPassword` answering `email_not_confirmed`
+    (GoTrue checks the password before the confirmation state). Anything
+    else is `409 { code: 'signup_pending' }` ("Check your email to finish
+    signing up, or reset your password."); nothing is bound or deleted;
+  - a retained **confirmed** identity (user clicked the link first) is
+    adopted on the first successful password sign-in (`/auth/login` or
+    `/auth/extension/login`) **as a client with no coach**, but only if it
+    carries a **server-minted** register marker
+    `user_metadata.tgp_signup_attempt = <nonce>.<HMAC-SHA256(service-role
+    key, nonce, canonical email)>`; `user_metadata` is writable through the
+    anon `signUp`, so an unauthenticated marker would not prove the identity
+    came from `/auth/register`. Without the key nothing verifies and
+    adoption is off. Google /
+    Apple first contact for the address binds it the same way. Role choice
+    and invite attach are not replayed from user-editable metadata: a coach
+    who hit this (a database failure during signup) is promoted by an OWNER,
+    and a client re-enters the invite code in the app.
+  - Each `signUp` sends a fresh marker; whether the returned user carries
+    this request's value decides whether the password proof above is
+    needed.
 - Google **create or link** requires a verified email
   (`email_confirmed_at` or the Google identity's `email_verified`); an
   unverified first contact is `401`. Returning users matched by
