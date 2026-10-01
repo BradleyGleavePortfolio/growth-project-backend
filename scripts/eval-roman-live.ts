@@ -4,7 +4,7 @@
  *
  *   ROMAN_LIVE_EVAL=1 ANTHROPIC_API_KEY=... npm run eval:roman:live -- --model claude-sonnet-5-5
  *
- * NOT run in CI. Runs G1–G30 (test/roman/eval/golden-set.ts) against the REAL
+ * NOT run in CI. Runs G1–G37 (test/roman/eval/golden-set.ts) against the REAL
  * model through the real Roman stack (R1 model config, R3 context builder,
  * R4 router + post-check) with the seeded in-memory personas — no database and
  * no production data. Writes eval-results/roman-<model>-<date>.json.

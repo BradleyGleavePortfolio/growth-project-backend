@@ -15,6 +15,7 @@ import {
   P1,
   P2,
   P3,
+  P4,
   NOW,
   LOCAL_TODAY_PT,
   type PersonaDb,
@@ -22,7 +23,7 @@ import {
 import { makeStubModel, type StubModel } from './stub-model';
 import type { GoldenItem, GoldenPersona } from './golden-set';
 
-export const PERSONA_ID: Record<GoldenPersona, string> = { P1, P2, P3 };
+export const PERSONA_ID: Record<GoldenPersona, string> = { P1, P2, P3, P4 };
 
 export interface HarnessWorld {
   db: PersonaDb;
