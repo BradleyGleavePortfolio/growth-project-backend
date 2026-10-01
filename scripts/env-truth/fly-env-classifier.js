@@ -256,7 +256,7 @@ function extractRegisteredNames(source) {
 }
 
 function mdEscape(s) {
-  return String(s).replace(/\|/g, '\\|');
+  return String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
 /** Render a value-free markdown summary (job summary / artifact). */
@@ -320,26 +320,59 @@ function renderMarkdown(report, app) {
   return out.join('\n');
 }
 
+/** Env var that carries the registered names (base64 JSON) into the machine. */
+const NAMES_ENV = 'ENV_TRUTH_NAMES_B64';
+
 /**
  * Build the self-contained JS program that runs inside the machine: this
- * module's source followed by a call to runRemote with the registered names.
- * The names travel base64-encoded so no shell quoting is involved.
+ * module's source followed by a FIXED call to runRemote. No data is spliced
+ * into the program text; the registered names travel separately in the
+ * ENV_TRUTH_NAMES_B64 env var (see buildRemoteCommand).
  */
-function buildRemoteProgram(moduleSource, names) {
-  const namesB64 = Buffer.from(JSON.stringify(names), 'utf8').toString('base64');
-  return `${moduleSource}\n;module.exports.runRemote(JSON.parse(Buffer.from('${namesB64}','base64').toString('utf8')));\n`;
+function buildRemoteProgram(moduleSource) {
+  return `${moduleSource}\n;module.exports.runRemote(module.exports.namesFromEnv(process.env));\n`;
 }
 
-/** Wrap the program for `flyctl ssh console -C`: one shell-safe argument. */
+/** Base64 JSON of the registered names, for the ENV_TRUTH_NAMES_B64 env var. */
+function encodeNames(names) {
+  return Buffer.from(JSON.stringify([...names]), 'utf8').toString('base64');
+}
+
+/** Decode the registered names from ENV_TRUTH_NAMES_B64 (strict: array of env-name strings). */
+function namesFromEnv(env) {
+  const raw = env[NAMES_ENV];
+  if (typeof raw !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(raw)) {
+    throw new Error(`${NAMES_ENV} missing or not base64`);
+  }
+  const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every((n) => typeof n === 'string' && ENV_NAME_RE.test(n))
+  ) {
+    throw new Error(`${NAMES_ENV} is not a list of env names`);
+  }
+  return parsed;
+}
+
+/**
+ * The `flyctl ssh console -C` command: `env ENV_TRUTH_NAMES_B64=<b64> node -e
+ * "eval(<base64 program>)"`. Both payloads are base64 ([A-Za-z0-9+/=] only), so
+ * the command needs no shell escaping; the program text itself is constant.
+ */
 function buildRemoteCommand(moduleSource, names) {
-  const prog = Buffer.from(buildRemoteProgram(moduleSource, names), 'utf8').toString('base64');
-  // base64 is [A-Za-z0-9+/=] only, so it needs no escaping inside double quotes.
-  return `node -e "eval(Buffer.from('${prog}','base64').toString('utf8'))"`;
+  const prog = Buffer.from(buildRemoteProgram(moduleSource), 'utf8').toString('base64');
+  const namesB64 = encodeNames(names);
+  if (!/^[A-Za-z0-9+/=]+$/.test(prog) || !/^[A-Za-z0-9+/=]+$/.test(namesB64)) {
+    throw new Error('payload is not base64');
+  }
+  return `env ${NAMES_ENV}=${namesB64} node -e "eval(Buffer.from('${prog}','base64').toString('utf8'))"`;
 }
 
 /** Entry point inside the machine: classify process.env and print one marked line. */
 function runRemote(names) {
-  const report = classifyEnv(process.env, names);
+  const env = { ...process.env };
+  delete env[NAMES_ENV];
+  const report = classifyEnv(env, names);
   process.stdout.write(`${REPORT_MARKER}${JSON.stringify(report)}\n`);
 }
 
@@ -368,8 +401,11 @@ module.exports = {
   classifyEnv,
   extractRegisteredNames,
   renderMarkdown,
+  NAMES_ENV,
   buildRemoteProgram,
   buildRemoteCommand,
+  encodeNames,
+  namesFromEnv,
   runRemote,
   parseRemoteOutput,
 };
