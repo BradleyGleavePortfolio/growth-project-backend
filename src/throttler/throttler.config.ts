@@ -339,12 +339,51 @@ export function recordThrottlerStorageFailures(
  * blocked) so the request is allowed and the user flow is never broken by a
  * transient infra hiccup.
  */
+/**
+ * The fail-open wrapper also exposes `incrementStrict`: the SAME backend call
+ * with NO fail-open. Security ceilings that must fail CLOSED (e.g. the OAuth
+ * coach-signup ceiling, Sol SOL-C13-A2) use it so a Redis outage or an
+ * adapter error can never be read as "0 hits, allowed".
+ */
+export interface FailOpenThrottlerStorage extends ThrottlerStorage {
+  incrementStrict(
+    key: string,
+    ttl: number,
+    limit: number,
+    blockDuration: number,
+    throttlerName: string,
+  ): Promise<ThrottlerStorageRecord>;
+}
+
+/**
+ * Resolve a fail-CLOSED increment for any storage the module may inject:
+ * the production fail-open wrapper (uses its `incrementStrict`) or a raw
+ * adapter (the in-memory ThrottlerStorageService in dev/test, whose errors
+ * already propagate).
+ */
+export function strictIncrementFor(
+  storage: ThrottlerStorage,
+): FailOpenThrottlerStorage['incrementStrict'] {
+  const s = storage as Partial<FailOpenThrottlerStorage>;
+  if (typeof s.incrementStrict === 'function') return s.incrementStrict.bind(storage);
+  return storage.increment.bind(storage);
+}
+
 export function withFailOpenStorage(
   storage: ThrottlerStorage,
   hooks: ThrottlerStorageDegradeHooks = {},
-): ThrottlerStorage {
+): FailOpenThrottlerStorage {
   const logger = hooks.logger ?? new Logger('ThrottlerConfig');
   return {
+    incrementStrict(
+      key: string,
+      ttl: number,
+      limit: number,
+      blockDuration: number,
+      throttlerName: string,
+    ): Promise<ThrottlerStorageRecord> {
+      return storage.increment(key, ttl, limit, blockDuration, throttlerName);
+    },
     async increment(
       key: string,
       ttl: number,

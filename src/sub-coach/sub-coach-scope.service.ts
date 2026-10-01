@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 /**
@@ -19,21 +19,74 @@ import { PrismaService } from '../prisma.service';
  * a user is a coach pass in their id and we figure out head vs sub from the
  * data.
  *
- * Detection rule: a user is a SUB-COACH iff role='coach' AND coach_id is
- * non-null (i.e. they themselves are scoped under another head coach). A
- * head coach has role='coach' AND coach_id IS NULL.
+ * Detection rule (tightened in the clinic C13 fix round, audit Opus A1): a
+ * user is a SUB-COACH iff role='coach' AND coach_id is non-null AND the head
+ * coach has an EXPLICIT membership relation with them — an active
+ * `TeamSubCoachAssignment(head_coach_id = coach_id, sub_coach_id = user)`
+ * (Team Mode seat / accepted sub-coach invite) or an open
+ * `SubCoachAssignment(head_coach_id = coach_id, sub_coach_id = user)` (the
+ * head coach delegated a client to them). A bare `coach_id` on a coach row
+ * is NOT enough: guest checkout used to stamp `coach_id` onto any buyer, so a
+ * self-serve coach who bought another coach's package became a phantom
+ * sub-coach with tenant-wide access. Without a membership row the caller is
+ * treated as a head coach of their own (possibly empty) roster — never as a
+ * member of someone else's tenant.
  */
 @Injectable()
 export class SubCoachScopeService {
+  private readonly logger = new Logger(SubCoachScopeService.name);
+  // Warn once per process per anomalous row (coach_id set, no membership) so
+  // the A1 chain is visible in logs without flooding them on every request.
+  private readonly warnedNoMembership = new Set<string>();
+
   constructor(private readonly prisma: PrismaService) {}
 
-  /** True if this coach user is a sub-coach (has a parent head coach). */
-  async isSubCoach(userId: string): Promise<boolean> {
+  /**
+   * Head coach id for `userId` when — and only when — they are a sub-coach
+   * with an explicit membership relation to that head coach. Null for head
+   * coaches, non-coaches, unknown ids, and coach rows whose `coach_id` has no
+   * backing membership row.
+   */
+  private async resolveMembershipHeadCoachId(userId: string): Promise<string | null> {
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, coach_id: true },
     });
-    return !!u && u.role === 'coach' && !!u.coach_id;
+    return this.membershipHeadCoachIdFor(userId, u);
+  }
+
+  /** Same as above for an already-loaded `{ role, coach_id }` row. */
+  private async membershipHeadCoachIdFor(
+    userId: string,
+    u: { role: string; coach_id: string | null } | null,
+  ): Promise<string | null> {
+    if (!u || u.role !== 'coach' || !u.coach_id) return null;
+
+    const teamSeat = await this.prisma.teamSubCoachAssignment.findFirst({
+      where: { head_coach_id: u.coach_id, sub_coach_id: userId, archived_at: null },
+      select: { id: true },
+    });
+    if (teamSeat) return u.coach_id;
+
+    const delegation = await this.prisma.subCoachAssignment.findFirst({
+      where: { head_coach_id: u.coach_id, sub_coach_id: userId, unassigned_at: null },
+      select: { id: true },
+    });
+    if (delegation) return u.coach_id;
+
+    if (!this.warnedNoMembership.has(userId)) {
+      this.warnedNoMembership.add(userId);
+      if (this.warnedNoMembership.size > 5_000) this.warnedNoMembership.clear();
+      this.logger.warn(
+        `sub-coach scope: user=${userId} has role=coach and coach_id=${u.coach_id} but no membership relation (TeamSubCoachAssignment / SubCoachAssignment); treating as head coach of own roster, NOT as a sub-coach`,
+      );
+    }
+    return null;
+  }
+
+  /** True if this coach user is a sub-coach (has a parent head coach). */
+  async isSubCoach(userId: string): Promise<boolean> {
+    return (await this.resolveMembershipHeadCoachId(userId)) !== null;
   }
 
   /**
@@ -54,7 +107,8 @@ export class SubCoachScopeService {
     });
     if (!u || u.role !== 'coach') return [];
 
-    if (u.coach_id) {
+    const headCoachId = await this.membershipHeadCoachIdFor(userId, u);
+    if (headCoachId) {
       // Sub-coach: scope through SubCoachAssignment overlay.
       const open = await this.prisma.subCoachAssignment.findMany({
         where: { sub_coach_id: userId, unassigned_at: null },
@@ -86,15 +140,12 @@ export class SubCoachScopeService {
    * which sub-coach actually sent.
    *
    * Returns null if the caller isn't a sub-coach (caller should use their
-   * own id as coach_id in that case).
+   * own id as coach_id in that case). This is the tenant-promotion hook used
+   * by packages / coach-media / command-center / workout-builder, so it
+   * requires the explicit membership relation described above.
    */
   async getHeadCoachIdForSubCoach(userId: string): Promise<string | null> {
-    const u = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true, coach_id: true },
-    });
-    if (!u || u.role !== 'coach' || !u.coach_id) return null;
-    return u.coach_id;
+    return this.resolveMembershipHeadCoachId(userId);
   }
 
   /**

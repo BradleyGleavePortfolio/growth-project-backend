@@ -9,6 +9,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Live Redis for the throttler-storage proofs (test/support/live-redis.ts):
+    # the production limiter is the @nest-lab Redis adapter's Lua script behind
+    # withFailOpenStorage, which a mock cannot reproduce. Only the suites that
+    # read THROTTLER_LIVE_REDIS_URL connect to it; REDIS_URL stays unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
 
@@ -75,6 +89,7 @@ jobs:
         run: npm test --if-present
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
 
       # Confirm the env-validation rules accept a fully-populated prod env.
       # Catches accidental rule additions that would brick the next deploy
@@ -306,6 +321,18 @@ jobs:
         # this single spec under --runInBand overruns Node's ~2GB default and
         # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
         run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run AI consent ledger live RLS suite (R2a)
+        # Applies prisma/migrations/20270203000000_ai_processing_consent_ledger
+        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers
+        # above, then proves self-only reads (client vs stranger vs the client's
+        # coach vs the application owner role vs anon), no non-service writes,
+        # the append-only trigger, CHECK/unique/FK behaviour and down/up. The
+        # spec refuses to skip under CI=true (Sol B-R2-1 on #601: the consent
+        # RLS suite must actually execute in a required job).
+        run: npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 

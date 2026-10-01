@@ -508,6 +508,10 @@ model User {
   roman_sessions RomanSession[] @relation("RomanSessionUser")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
+  // R2a — AI processing consent ledger (box 2 of the onboarding consent
+  // screen). Append-only grant / withdraw history; see AiProcessingConsentEvent.
+  ai_processing_consent_events AiProcessingConsentEvent[] @relation("AiProcessingConsentEventUser")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -7235,4 +7239,49 @@ model ScoutReconstructedEntity {
 
   @@unique([coach_id, source_platform, entity_type, source_id])
   @@index([coach_id, entity_type])
+}
+
+// ============================================================
+// AI processing consent ledger (R2a, box 2 of the D2 consent screen)
+// ============================================================
+//
+// Append-only history of a user's grant / withdraw decisions for sending
+// their data to a third-party AI processor (processor 'anthropic', purpose
+// 'client_ai_processing'). One row per decision; rows are never updated
+// (a BEFORE UPDATE trigger rejects every UPDATE, for every role). The current
+// state is the row with the highest `seq` for (user_id, processor, purpose);
+// the unique index on that tuple + seq serialises concurrent writers.
+//
+// Effective consent: latest row is a 'grant' whose consent_version AND
+// copy_sha256 equal the server's current copy, and the ledger flag is on.
+// Read it only through AiConsentService.hasClientAiConsent / the
+// CLIENT_AI_CONSENT_READER interface (src/ai-consent).
+//
+// RLS (migration 20270203000000_ai_processing_consent_ledger): service_role
+// full access; every other principal may SELECT only its own rows; no INSERT,
+// UPDATE or DELETE policy for non-service principals; anon denied. Coaches and
+// the application owner role read nothing here.
+model AiProcessingConsentEvent {
+  id              String   @id @default(uuid())
+  user_id         String
+  user            User     @relation("AiProcessingConsentEventUser", fields: [user_id], references: [id], onDelete: Cascade)
+  /// Processor key, e.g. 'anthropic'.
+  processor       String
+  /// Purpose key, e.g. 'client_ai_processing'.
+  purpose         String
+  /// 1-based position in this user's history for (processor, purpose).
+  seq             Int
+  /// 'grant' or 'withdraw' (CHECK constraint in the migration).
+  action          String
+  /// Copy version the decision refers to (the version shown for a grant; the
+  /// withdrawn grant's version for a withdraw).
+  consent_version String
+  /// sha256 (hex) of the server copy the decision refers to.
+  copy_sha256     String
+  platform        String?
+  app_version     String?
+  locale          String?
+  created_at      DateTime @default(now())
+
+  @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
 }

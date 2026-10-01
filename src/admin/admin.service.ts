@@ -4,17 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { CoachOnboardingService } from '../coach/coach-onboarding.service';
-
-const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-const CODE_LENGTH = 6;
-const CODE_PREFIX = 'GP-';
+import { generateInviteCodeCandidate } from '../invite-codes/invite-codes.service';
 
 // Keyset pagination cursor for the coach/user rosters. Ordering by
 // `created_at` alone is NOT stable: when multiple rows share the same
@@ -63,13 +59,10 @@ export class AdminService {
     private coachOnboarding?: CoachOnboardingService,
   ) {}
 
+  // Clinic C13 fix round (Grok C6): same uniform sampler as InviteCodesService
+  // (crypto.randomInt) instead of the biased `byte % alphabet.length`.
   private generateInviteCode(): string {
-    const bytes = randomBytes(CODE_LENGTH);
-    let out = CODE_PREFIX;
-    for (let i = 0; i < CODE_LENGTH; i++) {
-      out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
-    }
-    return out;
+    return generateInviteCodeCandidate();
   }
 
   // Phase 1A: ensure a CoachProfile exists for the given user. Idempotent

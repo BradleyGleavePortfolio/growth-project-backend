@@ -1485,7 +1485,7 @@ export class GuestCheckoutService {
           },
           update: {},
         });
-        if (dbUser.coach_id == null) {
+        if (dbUser.coach_id == null && dbUser.role === 'student') {
           // User existed but had no coach (rare — orphaned account).
           // Attach them to the package's coach.  Done as a separate
           // update so the upsert's 'update' branch stays a strict no-op
@@ -1494,6 +1494,17 @@ export class GuestCheckoutService {
             where: { id: dbUser.id },
             data: { coach_id: checkout.package.coach_id },
           });
+        } else if (dbUser.coach_id == null) {
+          // Clinic C13 fix round (Opus A1): the buyer is a coach / owner /
+          // sub-coach buying another coach's package. Record the purchase
+          // but NEVER write coach_id — `role='coach' AND coach_id=X` is
+          // the sub-coach detection rule, so re-parenting here silently
+          // made the buyer a phantom sub-coach of X with tenant-wide read
+          // access. Buyers are self-serve coaches since C13, so this is a
+          // normal purchase, not an anomaly.
+          this.logger.log(
+            `convertGuestToUser: buyer user=${dbUser.id} role=${dbUser.role} is not a student; purchase recorded without re-parenting to coach=${checkout.package.coach_id}`,
+          );
         }
 
         // Create the ClientPurchase row. The idempotency_key prefix

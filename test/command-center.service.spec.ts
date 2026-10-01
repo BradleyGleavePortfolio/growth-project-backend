@@ -63,6 +63,23 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           return true;
         });
       }),
+      // Clinic C13 fix round: SubCoachScopeService now requires an explicit
+      // membership relation (team seat OR an open Phase 11 delegation from
+      // the head coach) before treating a `coach_id`-bearing coach as a
+      // sub-coach. The fixture rows carry head_coach_id for that lookup.
+      findFirst: jest.fn(async ({ where }: any) => {
+        return (
+          rows.assignments.find((a) => {
+            if (where.sub_coach_id && a.sub_coach_id !== where.sub_coach_id) return false;
+            if (where.head_coach_id && a.head_coach_id !== where.head_coach_id) return false;
+            if (where.unassigned_at === null && a.unassigned_at != null) return false;
+            return true;
+          }) ?? null
+        );
+      }),
+    },
+    teamSubCoachAssignment: {
+      findFirst: jest.fn(async () => null),
     },
     clientSignal: {
       groupBy: jest.fn(async (args: any) => {
@@ -722,7 +739,7 @@ describe('SC-2: roster scoping differs for head coach vs sub-coach', () => {
         { id: 'u3', name: 'Carol', coach_id: 'head', role: 'student', deleted_at: null },
       ],
       assignments: [
-        { sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null },
+        { head_coach_id: 'head', sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null },
       ],
       checkIns: [
         { user_id: 'u1', logged_at: recent },
@@ -828,7 +845,9 @@ function ccscScopedRows() {
       { id: 'u2', name: 'Bob', coach_id: 'head', role: 'student', deleted_at: null },
       { id: 'u3', name: 'Carol', coach_id: 'head', role: 'student', deleted_at: null },
     ],
-    assignments: [{ sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null }],
+    assignments: [
+      { head_coach_id: 'head', sub_coach_id: 'sub', client_id: 'u2', unassigned_at: null },
+    ],
     now,
   };
 }

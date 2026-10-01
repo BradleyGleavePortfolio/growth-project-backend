@@ -784,6 +784,109 @@ describe('GuestCheckoutService', () => {
         service.handlePaymentSucceeded('pi_xyz'),
       ).resolves.toBeUndefined();
     });
+
+    // Clinic C13 fix round — audit Opus A1. Since C13 anyone can self-serve a
+    // `role='coach', coach_id=null` account. Guest checkout used to stamp
+    // `coach_id = package.coach_id` on ANY existing buyer without a coach,
+    // which made a coach buyer a phantom sub-coach of the seller (the
+    // sub-coach detection rule is `role='coach' AND coach_id IS NOT NULL`).
+    // Only students may be (re-)parented by a purchase.
+    describe('buyer re-parenting guard (C13 fix round, Opus A1)', () => {
+      function existingBuyerCheckout(id: string, pi: string) {
+        return {
+          id,
+          package_id: 'pkg-1',
+          package: {
+            coach: { id: 'coach-victim' },
+            coach_id: 'coach-victim',
+            amount_cents: 29700,
+            currency: 'usd',
+            billing_type: 'one_time',
+            name: 'Pack',
+          },
+          idempotency_key: IDEMP_KEY,
+          guest_email: 'freecoach@example.com',
+          guest_name: 'Free Coach',
+          stripe_payment_intent_id: pi,
+          stripe_customer_id: null,
+          status: 'paid',
+        };
+      }
+
+      function armExistingSupabaseUser(checkoutRow: any) {
+        prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+        prisma.guestCheckout.findUnique
+          .mockResolvedValueOnce(checkoutRow)
+          .mockResolvedValueOnce(checkoutRow);
+        // The buyer already has a Supabase auth user (they signed up as a
+        // coach through C13) — createUser reports it, listUsers finds it.
+        supabaseAdminMock.createUser.mockResolvedValueOnce({
+          data: null,
+          error: { message: 'User already registered' },
+        });
+        supabaseAdminMock.listUsers.mockResolvedValueOnce({
+          data: { users: [{ id: 'sb-freecoach', email: 'freecoach@example.com' }] },
+        });
+        prisma.user.findUnique.mockResolvedValueOnce(null);
+        prisma.clientPurchase.findFirst.mockResolvedValueOnce(null);
+        prisma.clientPurchase.create.mockResolvedValueOnce({ id: 'cp-a1' });
+        prisma.guestCheckout.update.mockResolvedValueOnce({});
+      }
+
+      for (const role of ['coach', 'owner', 'sub_coach'] as const) {
+        it(`an existing ${role} buying another coach's package keeps coach_id=null (no phantom sub-coach)`, async () => {
+          const checkoutRow = existingBuyerCheckout(`gc-a1-${role}`, `pi_a1_${role}`);
+          armExistingSupabaseUser(checkoutRow);
+          // The upsert's update:{} branch returns the buyer's existing row:
+          // a self-serve head coach with no coach_id.
+          prisma.user.upsert.mockResolvedValueOnce({
+            id: `usr-${role}`,
+            role,
+            coach_id: null,
+            supabase_id: 'sb-freecoach',
+          });
+
+          await service.handlePaymentSucceeded(`pi_a1_${role}`);
+
+          // The purchase itself is recorded for the buyer...
+          expect(prisma.clientPurchase.create).toHaveBeenCalledTimes(1);
+          expect(prisma.clientPurchase.create.mock.calls[0][0].data.client_user_id).toBe(
+            `usr-${role}`,
+          );
+          // ...but coach_id is never written on a coach-like row.
+          expect(prisma.user.update).not.toHaveBeenCalled();
+          // And the upsert's create side (only used for brand-new rows) still
+          // says student — the guard is about existing rows.
+          expect(prisma.user.upsert.mock.calls[0][0].create.role).toBe('student');
+          expect(prisma.user.upsert.mock.calls[0][0].update).toEqual({});
+        });
+      }
+
+      it('an existing orphaned STUDENT (coach_id null) is still attached to the package coach', async () => {
+        const checkoutRow = existingBuyerCheckout('gc-a1-student', 'pi_a1_student');
+        armExistingSupabaseUser(checkoutRow);
+        prisma.user.upsert.mockResolvedValueOnce({
+          id: 'usr-orphan',
+          role: 'student',
+          coach_id: null,
+          supabase_id: 'sb-freecoach',
+        });
+        prisma.user.update.mockResolvedValueOnce({
+          id: 'usr-orphan',
+          role: 'student',
+          coach_id: 'coach-victim',
+        });
+
+        await service.handlePaymentSucceeded('pi_a1_student');
+
+        expect(prisma.user.update).toHaveBeenCalledTimes(1);
+        expect(prisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'usr-orphan' },
+          data: { coach_id: 'coach-victim' },
+        });
+        expect(prisma.clientPurchase.create).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   // A276-P0-2 — Stripe-hosted receipt URL is the canonical buyer-facing

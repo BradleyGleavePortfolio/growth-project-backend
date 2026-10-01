@@ -56,9 +56,26 @@ function buildPrismaMock(opts: {
     },
   );
 
+  // C13 fix round: sub-coach detection requires an explicit membership
+  // relation. The fixture gives SUB_COACH an active Team Mode seat under
+  // HEAD_COACH; OTHER_SUB / anyone else has none.
+  const teamSubCoachAssignmentFindFirst = jest.fn().mockImplementation(
+    ({ where }: { where: { head_coach_id: string; sub_coach_id: string } }) => {
+      if (where.sub_coach_id === SUB_COACH && where.head_coach_id === HEAD_COACH) {
+        return Promise.resolve({ id: 'seat-1' });
+      }
+      return Promise.resolve(null);
+    },
+  );
+  const subCoachAssignmentFindFirst = jest.fn().mockResolvedValue(null);
+
   return {
     user: { findUnique: userFindUnique, findMany: userFindMany },
-    subCoachAssignment: { findMany: subCoachAssignmentFindMany },
+    subCoachAssignment: {
+      findMany: subCoachAssignmentFindMany,
+      findFirst: subCoachAssignmentFindFirst,
+    },
+    teamSubCoachAssignment: { findFirst: teamSubCoachAssignmentFindFirst },
   } as unknown as PrismaService;
 }
 
@@ -179,5 +196,76 @@ describe('SubCoachScopeService', () => {
     const svc = await build(prisma);
     const ids = await svc.getAuthorizedClientIds(OTHER_SUB);
     expect(ids).toEqual([]);
+  });
+
+  // Clinic C13 fix round (audit Opus A1): a coach row that merely carries a
+  // coach_id — e.g. a self-serve coach who bought another coach's storefront
+  // package before the guest-checkout guard existed — is NOT a sub-coach.
+  // Without a membership row the caller must never be promoted to the head
+  // coach's tenant.
+  describe('phantom sub-coach (coach_id set, no membership relation)', () => {
+    const PHANTOM = 'phantom-coach';
+    function phantomPrisma() {
+      const prisma = buildPrismaMock({
+        callerRole: 'coach',
+        callerCoachId: HEAD_COACH,
+        assignedToSub: [],
+      });
+      (prisma.user.findUnique as jest.Mock).mockImplementation(({ where }: any) => {
+        if (where.id === PHANTOM) return Promise.resolve({ role: 'coach', coach_id: HEAD_COACH });
+        if (where.id === HEAD_COACH) return Promise.resolve({ role: 'coach', coach_id: null });
+        return Promise.resolve(null);
+      });
+      return prisma;
+    }
+
+    it('getHeadCoachIdForSubCoach returns null (no tenant promotion)', async () => {
+      const prisma = phantomPrisma();
+      const svc = await build(prisma);
+      expect(await svc.getHeadCoachIdForSubCoach(PHANTOM)).toBeNull();
+      expect(prisma.teamSubCoachAssignment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { head_coach_id: HEAD_COACH, sub_coach_id: PHANTOM, archived_at: null },
+        }),
+      );
+      expect(prisma.subCoachAssignment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { head_coach_id: HEAD_COACH, sub_coach_id: PHANTOM, unassigned_at: null },
+        }),
+      );
+    });
+
+    it('isSubCoach is false and the roster is their OWN (empty), not the head coach\u2019s', async () => {
+      const prisma = phantomPrisma();
+      const svc = await build(prisma);
+      expect(await svc.isSubCoach(PHANTOM)).toBe(false);
+      expect(await svc.getAuthorizedClientIds(PHANTOM)).toEqual([]);
+      expect(await svc.canAccessClient(PHANTOM, CLIENT_A)).toBe(false);
+      // The head coach's roster query was never issued for the phantom.
+      const rosterCalls = (prisma.user.findMany as jest.Mock).mock.calls.filter(
+        (c: any[]) => c[0]?.where?.coach_id === HEAD_COACH,
+      );
+      expect(rosterCalls).toHaveLength(0);
+    });
+
+    it('an OPEN Phase 11 client delegation from the head coach counts as membership', async () => {
+      const prisma = phantomPrisma();
+      (prisma.subCoachAssignment.findFirst as jest.Mock).mockResolvedValue({ id: 'delegation-1' });
+      const svc = await build(prisma);
+      expect(await svc.getHeadCoachIdForSubCoach(PHANTOM)).toBe(HEAD_COACH);
+    });
+
+    it('an ARCHIVED team seat does not count', async () => {
+      const prisma = buildPrismaMock({
+        callerRole: 'coach',
+        callerCoachId: HEAD_COACH,
+        assignedToSub: [CLIENT_A],
+      });
+      // The fixture's seat lookup already filters archived_at: null in the
+      // where clause; simulate the DB answering "no active row".
+      (prisma.teamSubCoachAssignment.findFirst as jest.Mock).mockResolvedValue(null);
+      const svc = await build(prisma);
+      expect(await svc.getHeadCoachIdForSubCoach(SUB_COACH)).toBeNull();
+    });
   });
 });
