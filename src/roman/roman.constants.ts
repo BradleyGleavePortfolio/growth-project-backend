@@ -26,8 +26,11 @@ export const ROMAN_MESSAGES_DEFAULT_LIMIT = 30;
 export const ROMAN_MESSAGES_MAX_LIMIT = 100;
 
 /**
- * Max tokens for a single Roman completion (plan §2.4). Up-front thinking is
- * off on the primary model (`thinking.type=between_tools`), so this is text.
+ * Max tokens for a single Roman completion (plan §2.4) on a text-only model
+ * (Sonnet 5.5 with `thinking.type=between_tools`, Sonnet 4.6). Always-adaptive
+ * models (Opus 5.5) use the thinking-inclusive budget on their model profile;
+ * see `ROMAN_MODEL_ALLOWLIST[...].maxOutputTokens`. Kept as an alias so
+ * existing readers of the text budget keep compiling.
  */
 export const ROMAN_MAX_OUTPUT_TOKENS = 2048;
 
