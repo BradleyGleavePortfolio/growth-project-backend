@@ -60,16 +60,21 @@ function lockSuite(name: string, makeStorage: () => { storage: ThrottlerStorage;
     const limit = resolveAccountFailureLimit();
     // Unique emails per run so a shared live Redis never carries state between runs.
     const run = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Fresh identities per test: a live Redis keeps state between tests.
+    let seq = 0;
+    let victim = '';
+    let attacker = '';
     beforeEach(() => {
       ({ storage, teardown } = makeStorage());
-      PASSWORDS[`victim-${run}@example.test`] = 'right-v';
-      PASSWORDS[`attacker-${run}@example.test`] = 'right-a';
+      seq += 1;
+      victim = `victim-${run}-${seq}@example.test`;
+      attacker = `attacker-${run}-${seq}@example.test`;
+      PASSWORDS[victim] = 'right-v';
+      PASSWORDS[attacker] = 'right-a';
     });
     afterEach(async () => {
       await teardown();
     });
-    const victim = `victim-${run}@example.test`;
-    const attacker = `attacker-${run}@example.test`;
 
     it(`locks an account after ${limit} failures — even the right password is then refused`, async () => {
       const { login, authService } = buildController(storage);
