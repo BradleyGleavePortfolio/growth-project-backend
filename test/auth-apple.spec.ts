@@ -59,6 +59,8 @@ function buildService(opts: { configured: boolean }) {
   const prismaMock: any = {
     user: {
       findUnique: jest.fn(),
+      // C13 fix round: the email-link lookup is case-insensitive (findFirst).
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -183,9 +185,8 @@ describe('AuthService.appleAuth', () => {
       },
       error: null,
     });
-    prismaMock.user.findUnique
-      .mockResolvedValueOnce(null) // by supabase_id
-      .mockResolvedValueOnce(null); // by email
+    prismaMock.user.findUnique.mockResolvedValueOnce(null); // by supabase_id
+    prismaMock.user.findFirst.mockResolvedValueOnce(null); // by email (insensitive)
     prismaMock.user.create.mockResolvedValue({
       id: 'local-1',
       email: 'jane@example.com',
@@ -248,18 +249,17 @@ describe('AuthService.appleAuth', () => {
       },
       error: null,
     });
-    prismaMock.user.findUnique
-      .mockResolvedValueOnce(null) // by supabase_id
-      .mockResolvedValueOnce({
-        id: 'local-1',
-        email: 'jane@example.com',
-        // Placeholder: name === email, so first-contact full_name should
-        // upgrade it.
-        name: 'jane@example.com',
-        role: 'student',
-        coach_id: null,
-        supabase_id: null,
-      });
+    prismaMock.user.findUnique.mockResolvedValueOnce(null); // by supabase_id
+    prismaMock.user.findFirst.mockResolvedValueOnce({
+      id: 'local-1',
+      email: 'jane@example.com',
+      // Placeholder: name === email, so first-contact full_name should
+      // upgrade it.
+      name: 'jane@example.com',
+      role: 'student',
+      coach_id: null,
+      supabase_id: null,
+    });
     prismaMock.user.update.mockResolvedValue({
       id: 'local-1',
       email: 'jane@example.com',
@@ -333,9 +333,9 @@ describe('AuthService.appleAuth', () => {
       error: null,
     });
     prismaMock.user.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null) // by supabase_id
       .mockResolvedValueOnce({
+        // refreshed after attach
         id: 'local-1',
         email: 'jane@example.com',
         name: 'Jane Doe',
@@ -343,6 +343,7 @@ describe('AuthService.appleAuth', () => {
         coach_id: 'coach-1',
         supabase_id: 'supa-user-1',
       });
+    prismaMock.user.findFirst.mockResolvedValueOnce(null); // by email (insensitive)
     prismaMock.user.create.mockResolvedValue({
       id: 'local-1',
       email: 'jane@example.com',
@@ -380,9 +381,8 @@ describe('AuthService.appleAuth', () => {
       },
       error: null,
     });
-    prismaMock.user.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
+    prismaMock.user.findUnique.mockResolvedValueOnce(null); // by supabase_id
+    prismaMock.user.findFirst.mockResolvedValueOnce(null); // by email (insensitive)
     prismaMock.user.create.mockResolvedValue({
       id: 'local-1',
       email: 'jane@example.com',

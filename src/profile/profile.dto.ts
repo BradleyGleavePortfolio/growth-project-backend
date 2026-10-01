@@ -9,7 +9,52 @@ import {
   IsInt,
   Min,
   Max,
+  MaxLength,
+  ArrayMaxSize,
 } from 'class-validator';
+
+// Legacy mobile vocabularies (growth-project-mobile lib/finalizeLeanOnboarding,
+// lib/profileCompletion, screens/client/EditProfileScreen). Both the legacy
+// names and the lean names are listed so an older build never 400s.
+export const LEGACY_PRIMARY_GOALS = [
+  'lose_fast',
+  'lose_moderate',
+  'maintain',
+  'gain',
+  'gain_fast',
+  'mobility',
+  'lose_weight',
+  'build_muscle',
+  'fat_loss',
+  'muscle_gain',
+  'maintenance',
+  'performance',
+] as const;
+export const LEGACY_FITNESS_LEVELS = [
+  'beginner',
+  'intermediate',
+  'advanced',
+  'new',
+  'some',
+  'experienced',
+] as const;
+export const LEGACY_DIET_TYPES = [
+  'omnivore',
+  'none',
+  'vegetarian',
+  'vegan',
+  'pescatarian',
+  'keto',
+  'paleo',
+  'mediterranean',
+  'other',
+] as const;
+export const LEGACY_GYM_MEMBERSHIP = [
+  'yes_regular',
+  'yes_occasional',
+  'home_gym',
+  'no_gym',
+] as const;
 
 // SECURITY: allow-list DTO for profile updates. The previous endpoint accepted
 // `@Body() body: any` and spread it straight into prisma.userProfile.update, which
@@ -74,14 +119,7 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   @IsIn(['none', 'vegan', 'vegetarian', 'keto', 'pescatarian', 'paleo', 'other'])
-  dietary_pattern?:
-    | 'none'
-    | 'vegan'
-    | 'vegetarian'
-    | 'keto'
-    | 'pescatarian'
-    | 'paleo'
-    | 'other';
+  dietary_pattern?: 'none' | 'vegan' | 'vegetarian' | 'keto' | 'pescatarian' | 'paleo' | 'other';
 
   @IsOptional()
   @IsArray()
@@ -166,4 +204,106 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsBoolean()
   onboardingCompleted?: boolean;
+
+  // ── C05 additive allow-list (columns already exist on UserProfile) ─────
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  @ArrayMaxSize(20)
+  injuries?: string[];
+
+  @IsOptional()
+  @IsIn(['morning', 'midday', 'evening', 'varies'])
+  preferred_training_time?: 'morning' | 'midday' | 'evening' | 'varies';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  @ArrayMaxSize(30)
+  food_preferences?: string[];
+
+  // ── C06: legacy mobile field names (lean onboarding, legacy results
+  // screen, EditProfile). Before C06 these keys were not on the allow-list
+  // and forbidNonWhitelisted rejected the whole request with a 400, so the
+  // lean onboarding save never landed. They are now accepted and mapped onto
+  // the canonical columns by ProfileService.mapLegacyFields; see
+  // docs/profile-contract.md for the exact mapping. `null` means "not
+  // answered" and never overwrites a stored value.
+  //
+  // Client-computed targets (tdee, calorie_target, protein_target,
+  // carbs_target, fat_target) are accepted for compatibility and IGNORED:
+  // the server computes targets with the single calculator.
+  @IsOptional()
+  @IsDateString()
+  dob?: string | null;
+
+  /** Interpreted in `weight_unit` when sent in the same body, else lbs. */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(1000)
+  current_weight?: number | null;
+
+  /** Interpreted in `weight_unit` when sent in the same body, else lbs. */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(1000)
+  target_weight?: number | null;
+
+  @IsOptional()
+  @IsIn(LEGACY_PRIMARY_GOALS)
+  primary_goal?: (typeof LEGACY_PRIMARY_GOALS)[number] | null;
+
+  @IsOptional()
+  @IsIn(LEGACY_FITNESS_LEVELS)
+  fitness_level?: (typeof LEGACY_FITNESS_LEVELS)[number] | null;
+
+  @IsOptional()
+  @IsIn(LEGACY_DIET_TYPES)
+  diet_type?: (typeof LEGACY_DIET_TYPES)[number] | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  @ArrayMaxSize(30)
+  diet_restrictions?: string[] | null;
+
+  @IsOptional()
+  @IsIn(LEGACY_GYM_MEMBERSHIP)
+  gym_membership?: (typeof LEGACY_GYM_MEMBERSHIP)[number] | null;
+
+  @IsOptional()
+  @IsBoolean()
+  onboarding_completed?: boolean | null;
+
+  /** Lean Q3 intent. Accepted and ignored (no column). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  lean_intent?: string | null;
+
+  // Accepted and ignored: the server is the only macro calculator.
+  @IsOptional()
+  @IsNumber()
+  tdee?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  calorie_target?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  protein_target?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  carbs_target?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  fat_target?: number | null;
 }

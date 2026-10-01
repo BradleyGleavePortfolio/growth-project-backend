@@ -7,7 +7,16 @@ client reassignment.
 ## Data Model
 
 Sub-coaches are `User` rows with `role = 'coach'` and a `coach_id` pointing at
-their head coach.
+their head coach **plus an explicit membership relation** created by that head
+coach: an active `TeamSubCoachAssignment` (Team Mode seat) or at least one open
+`SubCoachAssignment` (client delegation). Since clinic C13 (self-serve coach
+signup) `role = 'coach' AND coach_id IS NOT NULL` alone is **not** sufficient —
+a self-serve coach who ends up with a `coach_id` through some other path (e.g.
+a historical guest-checkout purchase) must not inherit another coach's tenant.
+`SubCoachScopeService` enforces this (fail-closed: without a membership row the
+user is treated as the head coach of their own, usually empty, roster and a
+one-time warning is logged). The RLS helper `app.is_subcoach_on_coach_team`
+still uses the bare rule and is a documented follow-up.
 
 **Client → sub-coach delegation is an overlay** stored in the
 `SubCoachAssignment` join table:

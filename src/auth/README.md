@@ -48,7 +48,13 @@ hierarchy. Every authenticated request in the API passes through this module.
    atomically link the user to the coach via `InviteCodesService`.
 5. `/auth/select-role` is the post-signup role picker. Self-service is
    restricted to `student` — coach elevation is operator-only (see
-   `auth.service.ts` `selectRole` for the audit trail).
+   `auth.service.ts` `selectRole` for the audit trail). It is **not** an
+   invite writer: without a code it is a read-only acknowledgement (role is
+   fixed at signup); with a code it delegates to the one canonical attach
+   operation, `InviteCodesService.attachUserToCoachByCode`, so it can never
+   re-parent a client attached to another coach (409
+   `already_attached_to_different_coach`), never demote a coach/sub-coach/
+   owner, and applies the same recipient / subscription / seat checks.
 6. `/auth/become-coach` is **hard-gated off by default** on every
    deployment. It returns a structured `403 self_service_promotion_disabled`
    pointing the caller at the canonical owner-only path
@@ -150,6 +156,128 @@ can gate input client-side. `/auth/validate-invite-code` rejects
 out-of-spec input with a polished structured 400 carrying
 `code: 'invite_code_invalid_format'` — no input echo, no DB lookup, the
 same shape regardless of which constraint failed.
+
+### Signup-time role choice (C13, owner direction 2026-09-30)
+
+`/auth/signup-policy` advertises `role_choice: <bool>`,
+`role_choice_field: 'intended_role'` and `role_choice_values: ['client','coach']`.
+The optional body field `intended_role` (`client` default | `coach`) is
+accepted by `/auth/register`, `/auth/google` and `/auth/apple`, and is
+honoured **only** on the branch that inserts a brand-new `User` row
+(`AuthService.createSignupUser`). Rules that keep the escalation hole closed
+(tightened in the PR #597 fix round after two independent audits):
+
+- **Kill switch** `SIGNUP_ROLE_CHOICE_ENABLED` (default `true`). Any of
+  `false|0|off` makes `intended_role: 'coach'` a plain client signup on
+  every endpoint and flips `signup-policy.role_choice` to `false`; the
+  contradiction check below is also disabled (nothing to contradict).
+- Existing accounts are never changed by `intended_role`: google/apple
+  sign-ins for a known `supabase_id` or a linked email ignore it. Emails
+  are canonicalised (`normalizeEmail`: NFKC + trim + lowercase) and the
+  duplicate / link lookup is **case-insensitive**, so `Jane@Example.com`
+  and `jane@example.com` are the same account. The stored and returned
+  `email` is the canonical form. Every password sign-in path
+  (`/auth/login`, `/auth/extension/login`) and `/auth/forgot-password`
+  canonicalises the same way (Sol B-597-1), and the local row is resolved
+  by the verified Supabase user id first, then the canonical address, then
+  a case-insensitive match for legacy rows stored as typed.
+- **The first OAuth call fixes the role permanently.** A Google/Apple first
+  contact with `intended_role: 'coach'` creates a coach; without it, a
+  client. There is no self-service path between the two afterwards
+  (`/auth/become-coach` is hard-gated, `/auth/select-role` refuses
+  coaches); the only recovery is an OWNER `promote`/demote in the admin
+  surface. Mobile must therefore ask the question **before** the OAuth
+  round-trip.
+- `coach` runs one transaction: `User.role='coach', coach_id=null`
+  (forced), `CoachSubscription` upsert `{tier:'free', status:'active',
+  update:{}}` (same as `becomeCoach`; never overwrites a row), a
+  `CoachProfile` with a fresh `GP-` invite code, **and** the
+  `user.role_changed` audit row (`AuditService.writeTx`, actor = target,
+  `actor_role = null`, `metadata.via='signup_role_choice'`, request IP /
+  user-agent on every provider). The audit write is not best-effort here:
+  if it fails the whole signup fails and rolls back. Only an
+  `invite_code` P2002 (a race on the pre-checked code) is retried, with a
+  fresh code, up to 3 attempts; any other error propagates.
+- `/auth/register` picks the invite code **before** Supabase `signUp` and
+  treats Supabase's obfuscated "already exists" reply (`identities: []`)
+  as `409 Email already registered`.
+- **Registration never deletes a Supabase identity (Sol A-597-1, fix
+  round 4).** Supabase returns the SAME unconfirmed user to every `signUp`
+  for an address, and Google/Apple sign-in auto-links a verified address to
+  it, so any delete issued after a failed local insert could remove the
+  identity of a request that just bound it — and a database lock cannot
+  fence an external delete that outlives its transaction. Rules:
+  - a `P2002` on `email`/`supabase_id` (a competing signup or OAuth binder
+    committed first) is `409 Email already registered`;
+  - any other local failure rethrows the original error and **retains** the
+    identity (logged by Supabase id only, for reconciliation);
+  - a retained **unconfirmed** identity is bound by the next
+    `/auth/register` for the address (Supabase hands the same id back)
+    **only if that caller proves it knows the identity's password** (Opus
+    B-597-2): Supabase never updates the password of an existing
+    unconfirmed user, so an identity pre-created through the public anon
+    `signUp` with someone else's password must never be bound to a new
+    account. Proof = `signInWithPassword` answering `email_not_confirmed`
+    (GoTrue checks the password before the confirmation state). Anything
+    else is `409 { code: 'signup_pending' }` ("Check your email to finish
+    signing up, or reset your password."); nothing is bound or deleted;
+  - a retained **confirmed** identity (user clicked the link first) is
+    adopted on the first successful password sign-in (`/auth/login` or
+    `/auth/extension/login`) **as a client with no coach**, but only if it
+    carries a **server-minted** register marker
+    `user_metadata.tgp_signup_attempt = <nonce>.<HMAC-SHA256(service-role
+    key, canonical email)>` (the nonce only makes each request's marker
+    unique); `user_metadata` is writable through the
+    anon `signUp`, so an unauthenticated marker would not prove the identity
+    came from `/auth/register`. Without the key nothing verifies and
+    adoption is off. Google /
+    Apple first contact for the address binds it the same way. Role choice
+    and invite attach are not replayed from user-editable metadata: a coach
+    who hit this (a database failure during signup) is promoted by an OWNER,
+    and a client re-enters the invite code in the app.
+  - Each `signUp` sends a fresh marker; whether the returned user carries
+    this request's value decides whether the password proof above is
+    needed.
+- Google **create or link** requires a verified email
+  (`email_confirmed_at` or the Google identity's `email_verified`); an
+  unverified first contact is `401`. Returning users matched by
+  `supabase_id` are unaffected. Apple identity tokens are verified locally
+  (`AppleTokenVerifierService`) and Apple only issues verified addresses.
+- Each OAuth-minted **coach** consumes a per-IP slot
+  (`AUTH_OAUTH_COACH_SIGNUP_PER_HOUR`, default 5/h, key
+  `oauth-coach-signup:ip:<ip>`, 429 on overflow); client intake through QR
+  codes is not counted. The IP is the trusted `Fly-Client-IP` (same as the
+  guard), never the client-controlled first `X-Forwarded-For` hop. Over the
+  limit the key stays **blocked for the full hour** (positive block
+  duration; a zero block let the real adapters reset the count), and the
+  ceiling **fails closed**: a throttler-storage error returns 503
+  `coach_signup_temporarily_unavailable` instead of minting a coach
+  (`withFailOpenStorage(...).incrementStrict`). Proven against the real
+  in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. A successful OAuth call that **created** an
+  account no longer resets the login-throttle counters — only a
+  returning user's success does.
+- A coach can never be demoted or re-parented by a client invite code.
+  `InviteCodesService.attachUserToCoachByCode` refuses `coach`,
+  `sub_coach` (and, as before, `owner`) with
+  `403 { code: 'coach_cannot_redeem' }` (exported as
+  `INVITE_ATTACH_COACH_CANNOT_REDEEM`); `/auth/select-role` returns the
+  same body for coach-like callers; google/apple skip the attach for
+  coach-like users and return `invite_attached: false`. C03 (#599) is
+  expected to fold this code into its `INVITE_ATTACH_ERROR` map — the
+  guard itself lives here.
+- `/auth/signup-with-code` always creates a client; `intended_role: 'coach'`
+  is refused with `400 { error: 'intended_role_not_allowed_with_invite_code' }`
+  when a code is present and `400 { error:
+  'coach_signup_requires_register_endpoint' }` when it is not. The first
+  code is also returned when google/apple receive both `invite_code`
+  and `intended_role: 'coach'` (checked before any provider round-trip).
+- `/auth/become-coach` and `/auth/select-role` are unchanged for students.
+- Email verification is unchanged (`register` still returns
+  `requires_verification: true`; the response additionally carries
+  `role`). A coach therefore exists before the email is verified. There is
+  currently **no** verified-email check in front of coach-only money /
+  payout actions (Stripe Connect onboarding, storefront publishing) — that
+  is a documented follow-up, not part of this change.
 
 `JWT_SECRET` is reserved and currently unused — verification is JWKS-based.
 

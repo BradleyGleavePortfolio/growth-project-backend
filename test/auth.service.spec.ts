@@ -92,6 +92,10 @@ describe('AuthService.googleAuth', () => {
 });
 
 describe('AuthService.selectRole', () => {
+  // Sol SOL-C13-A1: selectRole is no longer an invite writer. Its redemption
+  // semantics (tenant guard, recipient, subscription, seats, races) are
+  // proven on persisted state in test/select-role-canonical-attach.spec.ts;
+  // these tests pin the delegation contract.
   let prismaMock: any;
   let inviteCodesMock: any;
   let service: AuthService;
@@ -99,19 +103,21 @@ describe('AuthService.selectRole', () => {
   beforeEach(() => {
     prismaMock = {
       user: {
-        update: jest.fn().mockResolvedValue({ role: 'student', coach_id: null }),
-        // Default to a non-owner student. Tests that need OWNER override this.
-        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', role: 'student' }),
-      },
-      inviteCode: {
-        findUnique: jest.fn(),
+        update: jest.fn(),
         updateMany: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', role: 'student', coach_id: null }),
       },
-      // Interactive transaction: run the callback with a tx client. We expose
-      // the same shape on prismaMock so the callback works against the mocks.
+      inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
-    inviteCodesMock = makeInviteCodesMock();
+    inviteCodesMock = {
+      ...makeInviteCodesMock(),
+      attachUserToCoachByCode: jest.fn(async () => ({
+        role: 'student',
+        coach_id: 'coach-1',
+        already_attached: false,
+      })),
+    };
     service = new AuthService(
       prismaMock as any,
       inviteCodesMock as any,
@@ -122,134 +128,44 @@ describe('AuthService.selectRole', () => {
     );
   });
 
-  it('allows selecting student role without any code', async () => {
+  it('codeless student selection writes nothing', async () => {
     const result = await service.selectRole('user-1', 'student');
-    expect(result.role).toBe('student');
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { role: 'student' },
-    });
-    expect(inviteCodesMock.validate).not.toHaveBeenCalled();
+    expect(result).toEqual({ role: 'student' });
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+    expect(inviteCodesMock.attachUserToCoachByCode).not.toHaveBeenCalled();
   });
 
-  // Round-1: the CaboRules backdoor is removed. ANY coach_code passed to
-  // /auth/select-role must be rejected — coach provisioning is out-of-band.
-  // OWNER must never become a student (with or without a coach attached) via
-  // the public selectRole path. Without this guard an OWNER who happened to
-  // POST /auth/select-role with role=student + a valid invite code would be
-  // silently demoted and added to a coach's roster.
-  it('refuses to demote an OWNER to student even with a valid invite code', async () => {
+  it('refuses to demote an OWNER and never reaches the attach writer', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'owner-1', role: 'owner' });
-    inviteCodesMock.validate.mockResolvedValue({
-      valid: true,
-      coach_id: 'coach-1',
-      coach_name: 'Coach One',
-      invite_code_id: 'ic-1',
-    });
-    await expect(
-      service.selectRole('owner-1', 'student', 'GP-ABC123'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    // Crucially: the invite code is NOT consumed and the user row is NOT
-    // touched — the guard runs before any side-effecting work.
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
-    expect(prismaMock.inviteCode.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('rejects coach role elevation via invite code (backdoor stays closed)', async () => {
-    await expect(
-      service.selectRole('user-1', 'coach', 'CaboRules'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(
-      service.selectRole('user-1', 'coach', 'GP-ABC123'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.selectRole('owner-1', 'student', 'GP-ABC123')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(inviteCodesMock.attachUserToCoachByCode).not.toHaveBeenCalled();
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
-  it('redeems a valid invite code and links the student to the coach', async () => {
-    inviteCodesMock.validate.mockResolvedValue({
-      valid: true,
-      coach_id: 'coach-1',
-      coach_name: 'Coach One',
-      invite_code_id: 'ic-1',
-    });
-    prismaMock.inviteCode.findUnique.mockResolvedValue({
-      id: 'ic-1',
-      revoked: false,
-      expires_at: null,
-      max_uses: 5,
-      used_count: 0,
-    });
-    prismaMock.inviteCode.updateMany.mockResolvedValue({ count: 1 });
-    prismaMock.user.update.mockResolvedValue({ role: 'student', coach_id: 'coach-1' });
+  it('rejects coach role elevation (backdoor stays closed)', async () => {
+    await expect(service.selectRole('user-1', 'coach', 'CaboRules')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(service.selectRole('user-1', 'coach', 'GP-ABC123')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(inviteCodesMock.attachUserToCoachByCode).not.toHaveBeenCalled();
+  });
 
+  it('delegates a code to the canonical attach writer and performs no write of its own', async () => {
     const result = await service.selectRole('user-1', 'student', 'GP-ABC123');
     expect(result).toEqual({ role: 'student', coach_id: 'coach-1' });
-
-    expect(inviteCodesMock.validate).toHaveBeenCalledWith('GP-ABC123');
-    expect(prismaMock.inviteCode.updateMany).toHaveBeenCalledWith({
-      where: { id: 'ic-1', revoked: false, used_count: 0 },
-      data: { used_count: { increment: 1 } },
-    });
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { role: 'student', coach_id: 'coach-1' },
-    });
-  });
-
-  it('rejects an invalid invite code with 400', async () => {
-    inviteCodesMock.validate.mockResolvedValue({ valid: false, reason: 'not_found' });
-
-    await expect(
-      service.selectRole('user-1', 'student', 'GP-NOPE'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(inviteCodesMock.attachUserToCoachByCode).toHaveBeenCalledWith('user-1', 'GP-ABC123');
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
-  it('loses the race on concurrent last-seat redemption and rejects', async () => {
-    inviteCodesMock.validate.mockResolvedValue({
-      valid: true,
-      coach_id: 'coach-1',
-      coach_name: 'Coach One',
-      invite_code_id: 'ic-1',
-    });
-    prismaMock.inviteCode.findUnique.mockResolvedValue({
-      id: 'ic-1',
-      revoked: false,
-      expires_at: null,
-      max_uses: 1,
-      used_count: 0,
-    });
-    // Another redemption beat us to it — updateMany matches 0 rows.
-    prismaMock.inviteCode.updateMany.mockResolvedValue({ count: 0 });
-
-    await expect(
-      service.selectRole('user-1', 'student', 'GP-ABC123'),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
-  });
-
-  it('rejects a code that has hit max_uses before the increment', async () => {
-    inviteCodesMock.validate.mockResolvedValue({
-      valid: true,
-      coach_id: 'coach-1',
-      coach_name: 'Coach One',
-      invite_code_id: 'ic-1',
-    });
-    // validate() passed, but by the time the transaction reads the row,
-    // used_count has reached max_uses. Defense-in-depth inside the tx catches it.
-    prismaMock.inviteCode.findUnique.mockResolvedValue({
-      id: 'ic-1',
-      revoked: false,
-      expires_at: null,
-      max_uses: 2,
-      used_count: 2,
-    });
-
-    await expect(
-      service.selectRole('user-1', 'student', 'GP-ABC123'),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prismaMock.inviteCode.updateMany).not.toHaveBeenCalled();
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  it('propagates the attach writer refusal (e.g. different coach) unchanged', async () => {
+    const refusal = new BadRequestException({ code: 'invite_code_invalid' });
+    inviteCodesMock.attachUserToCoachByCode.mockRejectedValueOnce(refusal);
+    await expect(service.selectRole('user-1', 'student', 'GP-NOPE')).rejects.toBe(refusal);
   });
 });

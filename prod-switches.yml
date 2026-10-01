@@ -1412,3 +1412,15 @@ switches:
     auto_flip_on_in_prod: false
     owner: importer
     description: "S12-B1 pilot-coach allowlist (IMPORTER). Comma-separated User.id UUIDs admitted to the flag-gated importer surface; unset/empty/malformed = nobody (fail closed). Value is a list, not a boolean, so STUB_ALLOWED rather than OFF; never auto-flipped."
+  - name: SIGNUP_ROLE_CHOICE_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker."
+  - name: AUTH_OAUTH_COACH_SIGNUP_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."

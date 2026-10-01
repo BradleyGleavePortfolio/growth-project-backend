@@ -2,16 +2,15 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { PrismaService } from '../prisma.service';
 import { CreateMacroTargetDto } from './macros.dto';
 
-// Activity multipliers for resting energy expenditure. Used by the
-// quick-set preset endpoint. Values from Mifflin-St Jeor + standard
-// activity factors; we round inputs to whole numbers in the response.
-const ACTIVITY_FACTORS: Record<string, number> = {
-  sedentary: 1.2,
-  light: 1.375,
-  moderate: 1.55,
-  active: 1.725,
-  very_active: 1.9,
-};
+import {
+  ACTIVITY_FACTORS,
+  computeMacros,
+  LBS_PER_KG,
+  resolveDisplayedTargets,
+  type MacroActivity,
+  type MacroGoal,
+  type TargetsSource,
+} from './macro-calculator';
 
 export type Goal = 'cut' | 'maintain' | 'bulk';
 
@@ -19,9 +18,29 @@ export interface PresetInput {
   weight_kg: number;
   height_cm: number;
   age_years: number;
-  sex: 'male' | 'female';
-  activity_level: keyof typeof ACTIVITY_FACTORS;
+  sex: 'male' | 'female' | 'prefer_not_to_say';
+  activity_level: MacroActivity;
   goal: Goal;
+}
+
+/**
+ * GET /me/macros/current response. A live coach MacroTarget row is returned
+ * unchanged plus `source: 'coach_target'`. When there is none, the profile's
+ * server-computed targets are returned in the SAME field names with
+ * `source: 'profile'` and `id: null`. `null` only when neither exists.
+ */
+export interface CurrentMacrosForSelf {
+  id: string | null;
+  client_id: string;
+  coach_id: string | null;
+  calories_kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fats_g: number;
+  fiber_g: number | null;
+  notes: string | null;
+  effective_from: Date | null;
+  source: Exclude<TargetsSource, 'unset'>;
 }
 
 export interface PresetOutput {
@@ -50,11 +69,7 @@ export class MacrosService {
     if (!client) throw new NotFoundException('Client not found');
   }
 
-  async createForClient(
-    coachId: string,
-    clientId: string,
-    dto: CreateMacroTargetDto,
-  ) {
+  async createForClient(coachId: string, clientId: string, dto: CreateMacroTargetDto) {
     await this.assertClientOfCoach(coachId, clientId);
     const effective = dto.effective_from ? new Date(dto.effective_from) : new Date();
     const target = await this.prisma.macroTarget.create({
@@ -99,8 +114,50 @@ export class MacrosService {
   }
 
   // Client-side read: a client always reads their *own* current target.
-  async getCurrentForSelf(userId: string) {
-    return this.getCurrentForClient(userId);
+  // Falls back to the profile's computed targets (C06) so Home, Log and
+  // Macros read the same numbers whether or not a coach row exists yet.
+  async getCurrentForSelf(userId: string): Promise<CurrentMacrosForSelf | null> {
+    const target = await this.getCurrentForClient(userId);
+    if (target) {
+      return {
+        id: target.id,
+        client_id: target.client_id,
+        coach_id: target.coach_id,
+        calories_kcal: target.calories_kcal,
+        protein_g: target.protein_g,
+        carbs_g: target.carbs_g,
+        fats_g: target.fats_g,
+        fiber_g: target.fiber_g,
+        notes: target.notes,
+        effective_from: target.effective_from,
+        source: 'coach_target',
+      };
+    }
+    const profile = await this.prisma.userProfile.findUnique({
+      where: { user_id: userId },
+      select: {
+        macro_target_calories: true,
+        macro_target_protein_g: true,
+        macro_target_carbs_g: true,
+        macro_target_fat_g: true,
+        updated_at: true,
+      },
+    });
+    const shown = resolveDisplayedTargets(null, profile);
+    if (shown.source !== 'profile' || shown.calories === null) return null;
+    return {
+      id: null,
+      client_id: userId,
+      coach_id: null,
+      calories_kcal: shown.calories,
+      protein_g: shown.protein_g ?? 0,
+      carbs_g: shown.carbs_g ?? 0,
+      fats_g: shown.fat_g ?? 0,
+      fiber_g: null,
+      notes: null,
+      effective_from: profile?.updated_at ?? null,
+      source: 'profile',
+    };
   }
 
   // Coach-side read of a single target. 404 if missing or owned by a
@@ -122,31 +179,34 @@ export class MacrosService {
     return { archived: result.count };
   }
 
-  // Quick-set preset. Calculates a target from anthropometric inputs
-  // using Mifflin-St Jeor BMR + activity factor + goal adjustment.
-  // Output is purely advisory — the coach can edit before saving.
+  // Quick-set preset. Delegates to the single calculator
+  // (macro-calculator.ts) so the coach preset, PUT /profile and onboarding
+  // complete can never disagree. Output is advisory; the coach can edit
+  // before saving. Unknown activity levels are rejected by the controller.
   computePreset(input: PresetInput): PresetOutput {
-    const bmr =
-      input.sex === 'male'
-        ? 10 * input.weight_kg + 6.25 * input.height_cm - 5 * input.age_years + 5
-        : 10 * input.weight_kg + 6.25 * input.height_cm - 5 * input.age_years - 161;
-    const factor = ACTIVITY_FACTORS[input.activity_level] ?? 1.55;
-    const tdee = bmr * factor;
-    let kcal: number;
-    if (input.goal === 'cut') kcal = tdee - 500;
-    else if (input.goal === 'bulk') kcal = tdee + 350;
-    else kcal = tdee;
-    kcal = Math.max(800, Math.round(kcal));
-
-    // Macro split: protein at 1.8 g/kg, fats at 25% of calories, carbs
-    // fill the remainder. Fiber recommended at 14g/1000kcal.
-    const protein_g = Math.round(input.weight_kg * 1.8);
-    const fats_g = Math.round((kcal * 0.25) / 9);
-    const carbs_g = Math.max(0, Math.round((kcal - protein_g * 4 - fats_g * 9) / 4));
-    const fiber_g = Math.round((kcal / 1000) * 14);
+    const goal: MacroGoal =
+      input.goal === 'cut' ? 'fat_loss' : input.goal === 'bulk' ? 'muscle_gain' : 'maintenance';
+    const m = computeMacros({
+      weight_lbs: input.weight_kg * LBS_PER_KG,
+      height_cm: input.height_cm,
+      age_years: input.age_years,
+      sex: input.sex,
+      activity_level: input.activity_level,
+      goal,
+    });
+    const fiber_g = Math.round((m.calories / 1000) * 14);
+    const factor = ACTIVITY_FACTORS[input.activity_level];
     const rationale =
-      `Mifflin-St Jeor BMR ${Math.round(bmr)} kcal, activity factor ${factor}, goal ${input.goal}. ` +
-      'Protein 1.8 g/kg, fats 25% of kcal, carbs fill remainder. Fiber 14 g per 1000 kcal.';
-    return { calories_kcal: kcal, protein_g, carbs_g, fats_g, fiber_g, rationale };
+      `Mifflin-St Jeor BMR ${m.bmr} kcal, activity factor ${factor}, goal ${input.goal}` +
+      `${m.floor_applied ? `, raised to the ${m.floor_kcal} kcal floor` : ''}. ` +
+      'Protein 1 g per lb of body weight, fats 25% of kcal, carbs fill remainder. Fiber 14 g per 1000 kcal.';
+    return {
+      calories_kcal: m.calories,
+      protein_g: m.protein_g,
+      carbs_g: m.carbs_g,
+      fats_g: m.fat_g,
+      fiber_g,
+      rationale,
+    };
   }
 }
