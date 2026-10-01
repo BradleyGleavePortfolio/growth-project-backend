@@ -271,7 +271,7 @@ describe(`${NAME}: down.sql`, () => {
     expect(d).not.toMatch(/\b(TRUNCATE|DELETE\s+FROM|UPDATE\s+"|INSERT\s+INTO)\b/i);
   });
 
-  it('is marked as never-for-production in its header', () => {
+  it('carries the never-run-in-production warning in its header', () => {
     expect(DOWN).toContain('NEVER RUN AGAINST PRODUCTION');
   });
 });

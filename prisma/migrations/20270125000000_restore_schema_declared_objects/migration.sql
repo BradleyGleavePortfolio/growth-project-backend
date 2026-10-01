@@ -260,7 +260,7 @@ DECLARE
 BEGIN
   -- Columns: (table, column, pg_type.typname, NOT NULL, has default, typmod).
   FOR r IN
-    SELECT e.tbl, e.col, e.typ, e.notnull, e.hasdef, e.typmod,
+    SELECT e.tbl, e.col, e.typ, e.nonnull, e.hasdef, e.typmod,
            ty.typname::text AS a_typ, a.attnotnull AS a_notnull,
            a.atthasdef AS a_hasdef, a.atttypmod AS a_typmod
       FROM (VALUES
@@ -313,14 +313,14 @@ BEGIN
         ('ListItem', 'is_checked', 'bool', true, true, -1),
         ('ListItem', 'source_recipe_id', 'text', false, false, -1),
         ('ListItem', 'added_at', 'timestamp', true, true, 3)
-      ) AS e(tbl, col, typ, notnull, hasdef, typmod)
+      ) AS e(tbl, col, typ, nonnull, hasdef, typmod)
       LEFT JOIN pg_catalog.pg_attribute a
         ON a.attrelid = pg_catalog.to_regclass(pg_catalog.quote_ident(e.tbl))
        AND a.attname = e.col AND a.attnum > 0 AND NOT a.attisdropped
       LEFT JOIN pg_catalog.pg_type ty ON ty.oid = a.atttypid
   LOOP
     IF r.a_typ IS DISTINCT FROM r.typ
-       OR r.a_notnull IS DISTINCT FROM r.notnull
+       OR r.a_notnull IS DISTINCT FROM r.nonnull
        OR r.a_hasdef IS DISTINCT FROM r.hasdef
        OR r.a_typmod IS DISTINCT FROM r.typmod THEN
       bad := array_append(bad, format('column %s.%s', r.tbl, r.col));
