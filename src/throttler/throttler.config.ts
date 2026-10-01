@@ -2,6 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-storage-record.interface';
+import {
+  skipSignupBaselineWhenCodePresent,
+  skipSignupBurstUnlessCodePresent,
+} from './signup-code-burst';
 
 // Named throttler limits applied across the API.
 //
@@ -28,7 +32,8 @@ import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-st
 //                                           | auth-login-per-hour     | shared (IP)
 // POST /auth/forgot-password                | auth-password-reset     | AUTH_PWD_RESET_PER_HOUR / hour (IP)
 // POST /auth/register                       | auth-signup             | 5 / hour (IP)
-// POST /auth/signup-with-code               | auth-signup             | shared (IP)
+// POST /auth/signup-with-code (no code)     | auth-signup             | shared (IP)
+// POST /auth/signup-with-code (with code)   | auth-signup-with-code   | AUTH_SIGNUP_WITH_CODE_PER_HOUR / hour (IP)
 // POST /coach/clients/:id/messages          | coach-messages          | COACH_MESSAGES_PER_MIN / min (user)
 // PUT  /notifications/preferences           | notifications-prefs     | NOTIF_PREFS_PER_MIN / min (user)
 // POST /bloodwork/:id                       | bloodwork-write         | BLOODWORK_WRITE_PER_MIN / min (user)
@@ -49,6 +54,10 @@ export const THROTTLER_NAMES = {
   AUTH_PASSWORD_RESET: 'auth-password-reset',
   /** Per-hour cap on signup attempts per IP. */
   AUTH_SIGNUP: 'auth-signup',
+  /** C03 — per-hour cap on signup attempts per IP that carry a well-formed
+   *  invite code (clinic QR bursts behind one NAT). Replaces auth-signup for
+   *  those requests only; see signup-code-burst.ts. */
+  AUTH_SIGNUP_WITH_CODE: 'auth-signup-with-code',
   /** Per-minute cap on POST /auth/recent-auth-token (sensitive re-auth) per user/IP. */
   AUTH_RECENT_AUTH: 'auth-recent-auth',
   /** Per-minute cap on coach->client messages per user. */
@@ -126,6 +135,9 @@ const RATELIMIT_ANON_PER_MIN    = readIntEnv('RATELIMIT_ANON_PER_MIN',   100, 1,
 const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',    5,   1, 1_000);
 const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR',  30,   1, 5_000);
 const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_000);
+// C03 — signup-with-code burst cap for requests carrying a well-formed invite
+// code. 30/hour/IP by default (a clinic intake room), clamped to [5, 500].
+const AUTH_SIGNUP_WITH_CODE_PER_HOUR = readIntEnv('AUTH_SIGNUP_WITH_CODE_PER_HOUR', 30, 5, 500);
 
 // Route-level overrides for write-heavy endpoints
 const COACH_MESSAGES_PER_MIN    = readIntEnv('COACH_MESSAGES_PER_MIN',  30,  1, 1_000);
@@ -187,12 +199,43 @@ const COMMUNITY_READS_PER_MIN       = readIntEnv('COMMUNITY_READS_PER_MIN',     
 // min/IP instead of the previously-unbounded (one fresh bucket per token).
 const STOREFRONT_JOIN_IP_PER_MIN = readIntEnv('STOREFRONT_JOIN_IP_PER_MIN', 120, 1, 5_000);
 
+/**
+ * Build a `@SkipThrottle()` map that disables every named throttler EXCEPT
+ * the given ones. The NestJS throttler evaluates every named bucket on every
+ * route at its baseline limit; a route that must be governed by an exact set
+ * of buckets (storefront join, C03 signup-with-code) uses this so unrelated
+ * low-ceiling baselines (auth-password-reset 3/h, auth-login-per-min 5/min …)
+ * cannot reject it. Same construction as STOREFRONT_JOIN_SKIP_THROTTLERS.
+ */
+export function skipAllThrottlersExcept(...active: string[]): Record<string, boolean> {
+  const keep = new Set(active);
+  return Object.freeze(
+    Object.values(THROTTLER_NAMES)
+      .filter((name) => !keep.has(name))
+      .reduce<Record<string, boolean>>((acc, name) => {
+        acc[name] = true;
+        return acc;
+      }, {}),
+  );
+}
+
+/** C03 — POST /auth/signup-with-code is governed by exactly these buckets. */
+export const SIGNUP_WITH_CODE_ACTIVE_THROTTLERS = [
+  THROTTLER_NAMES.DEFAULT,
+  THROTTLER_NAMES.AUTH_SIGNUP,
+  THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE,
+] as const;
+export const SIGNUP_WITH_CODE_SKIP_THROTTLERS = skipAllThrottlersExcept(
+  ...SIGNUP_WITH_CODE_ACTIVE_THROTTLERS,
+);
+
 // Export per-route constants so controllers can reference them for @Throttle
 // decorators without repeating magic numbers inline.
 export const THROTTLER_ROUTE_LIMITS = {
   AUTH_LOGIN_PER_MIN,
   AUTH_LOGIN_PER_HOUR,
   AUTH_PWD_RESET_PER_HOUR,
+  AUTH_SIGNUP_WITH_CODE_PER_HOUR,
   COACH_MESSAGES_PER_MIN,
   NOTIF_PREFS_PER_MIN,
   BLOODWORK_WRITE_PER_MIN,
@@ -221,8 +264,18 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR, ttl: 3_600_000,    limit: AUTH_LOGIN_PER_HOUR },
   // Password-reset: 3/hour by default, keyed by IP
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
-  // Signup: 5/hour/IP (unchanged from original)
-  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5 },
+  // Signup: 5/hour/IP (unchanged from original). C03: on
+  // POST /auth/signup-with-code a request carrying a well-formed invite code
+  // is skipped here and counted in auth-signup-with-code instead.
+  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5,
+    skipIf: skipSignupBaselineWhenCodePresent },
+  // C03 — signup WITH a well-formed invite code. The GLOBAL baseline is
+  // non-biting (10_000/hour) for the same reason as STOREFRONT_JOIN_IP below;
+  // the real ceiling (AUTH_SIGNUP_WITH_CODE_PER_HOUR) is set by the
+  // route-level @Throttle on signupWithCode, and skipIf excludes every
+  // request that is not a code-bearing signup-with-code POST.
+  { name: THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE, ttl: 3_600_000,  limit: 10_000,
+    skipIf: skipSignupBurstUnlessCodePresent },
   // Recent-auth token issuance: 5/min, per authenticated user (UserThrottlerGuard
   // keys by user id when a JWT is present, falling back to IP). Tighter than
   // /auth/login because it gates sensitive actions like account deletion.

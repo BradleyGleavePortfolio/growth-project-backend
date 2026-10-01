@@ -118,6 +118,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: auth
     description: "Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000]."
+  - name: AUTH_SIGNUP_WITH_CODE_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 30; clamped to [5, 500]."
   - name: AUTH_LOGIN_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
