@@ -2,7 +2,13 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
-import { AiController } from '../../src/ai/ai.controller';
+import { GoneException } from '@nestjs/common';
+import {
+  AiController,
+  AI_GUIDE_RETIRED_CODE,
+  AI_GUIDE_RETIRED_MESSAGE,
+} from '../../src/ai/ai.controller';
+import { ALLOW_ALL_CONSENT_GATE } from '../helpers/ai-consent-gate.double';
 import {
   ChatRequestDto,
   CHAT_MESSAGE_MAX_LENGTH,
@@ -140,6 +146,9 @@ describe('A9 — ai.service Perplexity branch never folds a system role into the
         ctxSvc as any,
         new AIGuardrailsService(),
         { capture: jest.fn(), identify: jest.fn() } as any,
+        undefined,
+        undefined,
+        ALLOW_ALL_CONSENT_GATE,
       );
 
       process.env.PERPLEXITY_API_KEY = 'test-key';
@@ -166,11 +175,20 @@ describe('A9 — ai.service Perplexity branch never folds a system role into the
   });
 });
 
-describe('A7 — /ai/chat hides the provider name in production', () => {
+// A7 — originally: the /ai/chat response must not name the upstream provider
+// (model / debug block) in production. R2 (Sol audit of #601, finding A1)
+// RETIRED the route: it is a deterministic 410 AI_GUIDE_RETIRED in every
+// environment and never reaches AiService.chat. The security property is
+// kept and strengthened: no environment (production OR development) returns
+// a provider name, model id, debug block or reply, and no provider is called.
+describe('A7 — /ai/chat is retired and never leaks the provider name', () => {
   const ORIGINAL_ENV = process.env;
   afterEach(() => {
     process.env = ORIGINAL_ENV;
   });
+
+  // Every provider / model identifier the old response could carry.
+  const PROVIDER_LEAK = /anthropic|perplexity|openai|claude|sonnet|opus|sonar|gpt|fallback/i;
 
   function makeController() {
     const aiService = {
@@ -182,26 +200,44 @@ describe('A7 — /ai/chat hides the provider name in production', () => {
         degraded: false,
       }),
     } as any;
-    return new AiController(aiService);
+    return { ctrl: new AiController(aiService), aiService };
   }
 
   const req = { user: { id: 'u1' } } as any;
   const body = { message: 'hi' } as any;
 
-  it('omits model + debug when NODE_ENV=production', async () => {
-    process.env = { ...ORIGINAL_ENV, NODE_ENV: 'production' };
-    const res = await makeController().chat(req, body);
-    expect(res).not.toHaveProperty('model');
-    expect(res).not.toHaveProperty('debug');
-    // The buyer-facing degraded flag is still present.
-    expect(res).toHaveProperty('degraded', false);
-  });
+  function captureGone(env: string): { err: GoneException; aiService: { chat: jest.Mock } } {
+    process.env = { ...ORIGINAL_ENV, NODE_ENV: env };
+    const { ctrl, aiService } = makeController();
+    let caught: unknown;
+    try {
+      ctrl.chat(req, body);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(GoneException);
+    return { err: caught as GoneException, aiService };
+  }
 
-  it('includes model + debug outside production', async () => {
-    process.env = { ...ORIGINAL_ENV, NODE_ENV: 'development' };
-    const res = await makeController().chat(req, body);
-    expect(res).toHaveProperty('model', 'anthropic');
-    expect(res).toHaveProperty('debug');
+  it.each(['production', 'development'])(
+    'NODE_ENV=%s: 410 AI_GUIDE_RETIRED, provider never called, no model/debug/reply in the body',
+    (env) => {
+      const { err, aiService } = captureGone(env);
+      expect(err.getStatus()).toBe(410);
+      expect(aiService.chat).not.toHaveBeenCalled();
+      const resBody = err.getResponse() as Record<string, unknown>;
+      expect(resBody).toMatchObject({ code: AI_GUIDE_RETIRED_CODE });
+      expect(resBody).not.toHaveProperty('model');
+      expect(resBody).not.toHaveProperty('debug');
+      expect(resBody).not.toHaveProperty('model_used');
+      expect(resBody).not.toHaveProperty('reply');
+      // Nothing in the serialized 410 body names a provider or model.
+      expect(JSON.stringify(resBody)).not.toMatch(PROVIDER_LEAK);
+    },
+  );
+
+  it('the retirement message itself names no provider', () => {
+    expect(AI_GUIDE_RETIRED_MESSAGE).not.toMatch(PROVIDER_LEAK);
   });
 });
 

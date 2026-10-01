@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, GoneException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Throttle } from '@nestjs/throttler';
@@ -9,6 +9,11 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
+/** Structured code for the retired AI Guide chat route (ENGINEERING_RULES §3). */
+export const AI_GUIDE_RETIRED_CODE = 'AI_GUIDE_RETIRED';
+export const AI_GUIDE_RETIRED_MESSAGE =
+  'AI Guide chat has been retired. Please use Roman from the app home screen.';
+
 @ApiTags('ai')
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
@@ -16,37 +21,20 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class AiController {
   constructor(private aiService: AiService) {}
 
-  // Rate limited: 20 requests per hour per user (anti-abuse)
+  // R2 (Sol audit of #601, finding A1): AI Guide is RETIRED on this surface.
+  // The route used to send the assembled client context (including coach
+  // private notes and other clients' community wins) to a second, non-Anthropic
+  // AI provider under a consent that names Anthropic as the only processor. No consent
+  // grant authorises that, so the handler is a deterministic 410 and NEVER
+  // reaches AiService.chat. Roman (/roman/*) is the consented AI surface.
+  // The handler body is intentionally unreachable by any provider code.
   @Post('chat')
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
-  async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
-    const result = await this.aiService.chat(
-      req.user.id,
-      body.message,
-      body.conversation_history || [],
-    );
-    const includeDebug = process.env.NODE_ENV !== 'production';
-    const isFallback = result.model_used === 'fallback';
-    return {
-      reply: result.reply,
-      timestamp: new Date().toISOString(),
-      // A7 — `model` names the upstream provider (perplexity/anthropic/
-      // fallback). It is debug-only: leaking it in prod tells an attacker
-      // which provider (and which fallback state) backs the request. Keep
-      // the buyer-facing `degraded` flag, but gate the provider name behind
-      // the dev/debug block.
-      degraded: isFallback,
-      ...(includeDebug
-        ? {
-            model: result.model_used,
-            debug: {
-              guardrails_applied: result.guardrails_applied,
-              context_generated_at: result.context_generated_at,
-              model_used: result.model_used,
-            },
-          }
-        : {}),
-    };
+  chat(@Request() _req: AuthedRequest, @Body() _body: ChatRequestDto): never {
+    throw new GoneException({
+      code: AI_GUIDE_RETIRED_CODE,
+      message: AI_GUIDE_RETIRED_MESSAGE,
+    });
   }
 
   // A8 — heavy multi-join context build. Throttle the abuse vector

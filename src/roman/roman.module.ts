@@ -18,10 +18,42 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
+import { RomanModelHealthService } from './model/roman-model-health.service';
+import { RomanHealthController } from './model/roman-health.controller';
+import { RomanConsentController } from './consent/roman-consent.controller';
+import { RomanConsentService } from './consent/roman-consent.service';
+import { RomanRetentionService } from './roman-retention.service';
+import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
+import { RomanClientContextService } from './context/roman-client-context.service';
+import { RomanContextController } from './context/roman-context.controller';
 
 @Module({
-  controllers: [RomanController],
-  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
-  exports: [RomanService],
+  // RomanHealthController serves GET /health/roman (@Public, no feature gate)
+  // so the operator and the deploy smoke can see model health while the chat
+  // surface itself stays dark behind RomanFeatureGuard.
+  // RomanConsentController serves /me/ai-consent (R2). RomanConsentService and
+  // AiProcessingConsentGuard are exported so /ai/chat can enforce the same
+  // consent while AI Guide lives (plan §6.2). AuditService comes from the
+  // @Global AuditModule.
+  // R3: RomanClientContextService grounds every client-surface turn and
+  // serves GET /roman/context/me (RomanContextController).
+  controllers: [RomanController, RomanHealthController, RomanConsentController, RomanContextController],
+  providers: [
+    RomanService,
+    RomanFeatureGuard,
+    romanAnthropicClientProvider,
+    RomanModelHealthService,
+    RomanConsentService,
+    AiProcessingConsentGuard,
+    RomanClientContextService,
+    RomanRetentionService,
+  ],
+  exports: [
+    RomanService,
+    RomanModelHealthService,
+    RomanConsentService,
+    AiProcessingConsentGuard,
+    RomanClientContextService,
+  ],
 })
 export class RomanModule {}

@@ -1,6 +1,11 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
+import {
+  AI_SUBJECT_CONSENT_GATE,
+  AiSubjectConsentGate,
+  consentedAiSubjects,
+} from '../../ai/adapters/ai-subject-consent.gate';
 import {
   CommunityCoachInboxRepository,
   MessageWithSender,
@@ -81,6 +86,7 @@ interface Candidate {
   kind: 'message' | 'post';
   preview: string;
   cohortName: string;
+  authorId: string;
   authorDisplayName: string;
   createdAt: Date;
 }
@@ -95,6 +101,12 @@ export class AiTriageService {
     private readonly repo: CommunityCoachInboxRepository,
     private readonly access: CommunityAccessService,
     private readonly cache: TriageCacheService,
+    // Data-subject consent gate (RomanConsentService via the @Global
+    // CoachAIModule). Absent = fail closed: no author counts as consented,
+    // so nothing is sent to the provider.
+    @Optional()
+    @Inject(AI_SUBJECT_CONSENT_GATE)
+    private readonly consentGate?: AiSubjectConsentGate,
   ) {}
 
   /**
@@ -109,7 +121,14 @@ export class AiTriageService {
       throw new ForbiddenException(NOT_COACH);
     }
 
-    const candidates = await this.fetchCandidates(cohortIds);
+    // Data-subject consent (R2 / owner ruling #5). The triage prompt carries
+    // each item's text and author name, i.e. that CLIENT's personal data.
+    // Only items whose author holds a live current-version AI-processing
+    // grant are sent; everything else stays in the ordinary (non-AI) inbox.
+    // Filtering happens before the cache key so a withdrawal changes the key.
+    const candidates = await this.consentedCandidates(
+      await this.fetchCandidates(cohortIds),
+    );
     const freshnessKey = TriageCacheService.freshnessKey({
       itemCount: candidates.length,
       newestCreatedAt: newestCreatedAt(candidates),
@@ -240,6 +259,21 @@ export class AiTriageService {
     return collapsed.slice(0, 280);
   }
 
+  private async consentedCandidates(all: Candidate[]): Promise<Candidate[]> {
+    if (all.length === 0) return all;
+    const consented = await consentedAiSubjects(
+      this.consentGate,
+      all.map((c) => c.authorId),
+    );
+    const kept = all.filter((c) => consented.has(c.authorId));
+    if (kept.length !== all.length) {
+      this.logger.debug(
+        `triage consent filter excluded=${all.length - kept.length} kept=${kept.length}`,
+      );
+    }
+    return kept;
+  }
+
   private toPromptItem(c: Candidate): TriagePromptItem {
     const ageMs = Date.now() - c.createdAt.getTime();
     return {
@@ -295,6 +329,7 @@ export class AiTriageService {
       kind: 'message',
       preview: preview(m.body),
       cohortName,
+      authorId: m.sender.id,
       authorDisplayName: m.sender.name,
       createdAt: m.created_at,
     };
@@ -306,6 +341,7 @@ export class AiTriageService {
       kind: 'post',
       preview: preview(p.body ?? p.title ?? ''),
       cohortName,
+      authorId: p.author.id,
       authorDisplayName: p.author.name,
       createdAt: p.created_at,
     };

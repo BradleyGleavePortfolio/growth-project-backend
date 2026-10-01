@@ -22,6 +22,7 @@
 import 'reflect-metadata';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanService } from '../../src/roman/roman.service';
+import type { RomanConsentService } from '../../src/roman/consent/roman-consent.service';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
@@ -90,9 +91,7 @@ function makePrisma(sessionOwner = 'user-A') {
       return row;
     }),
     findMany: jest.fn(async () =>
-      [...messages].sort(
-        (a, b) => b.created_at.getTime() - a.created_at.getTime(),
-      ),
+      [...messages].sort((a, b) => b.created_at.getTime() - a.created_at.getTime()),
     ),
     count: jest.fn(async () => 0),
     findFirst: jest.fn(async () => null),
@@ -144,9 +143,7 @@ function makeAnthropic(deltas: string[], gap: () => Promise<void> = async () => 
   };
   return {
     messages: {
-      stream: jest.fn(
-        (_body: unknown, _options?: { signal?: AbortSignal }) => stream,
-      ),
+      stream: jest.fn((_body: unknown, _options?: { signal?: AbortSignal }) => stream),
     },
   };
 }
@@ -201,6 +198,13 @@ function parseFrames(writes: string[]) {
 
 const FREE = { id: 'user-A', role: 'student', tier: 'free' as const };
 
+/** R2: consent double that ALLOWS every turn (the 403 path is covered in roman-consent.spec.ts). */
+function consentAllow(): RomanConsentService {
+  const double = { assertAiConsent: jest.fn(async () => undefined) };
+  // @ts-expect-error partial structural mock of RomanConsentService — only assertAiConsent is read by the controller.
+  return double;
+}
+
 describe('Roman SSE streaming — happy path', () => {
   it('translates Anthropic deltas into SSE frames and persists the full turn', async () => {
     const { prisma, messages } = makePrisma();
@@ -213,14 +217,17 @@ describe('Roman SSE streaming — happy path', () => {
       frames.push(chunk);
     }
 
+    // R4 (plan §2.7): the server buffers the model stream, post-checks it and
+    // emits ONE delta carrying the full text. The raw per-token stream is
+    // still available through `streamModelTurn`.
     const deltas = (frames as Array<{ type: string; text?: string }>).filter(
       (f) => f.type === 'delta',
     );
-    expect(deltas.map((d) => d.text)).toEqual(['Push ', 'harder', '.']);
+    expect(deltas.map((d) => d.text)).toEqual(['Push harder.']);
 
-    const done = (frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>).find(
-      (f) => f.type === 'done',
-    );
+    const done = (
+      frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>
+    ).find((f) => f.type === 'done');
     expect(done).toBeDefined();
     expect(done?.interrupted).toBe(false);
     expect(done?.messageId).toBeTruthy();
@@ -232,7 +239,7 @@ describe('Roman SSE streaming — happy path', () => {
     expect(assistant?.interrupted).toBe(false);
     expect(assistant?.prompt_tokens).toBe(42);
     expect(assistant?.completion_tokens).toBe(7);
-    expect(assistant?.model_id).toBe('claude-3-7-sonnet-20250219');
+    expect(assistant?.model_id).toBe('claude-sonnet-5-5');
   });
 
   it('writes correctly-framed SSE through the controller (data: …\\n\\n + done)', async () => {
@@ -242,6 +249,7 @@ describe('Roman SSE streaming — happy path', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const req = makeReq();
     const { res, writes, isEnded } = makeRes();
@@ -254,7 +262,7 @@ describe('Roman SSE streaming — happy path', () => {
     const deltaTexts = frames
       .filter((f) => f.event === 'message' && f.data?.type === 'delta')
       .map((f) => f.data.text);
-    expect(deltaTexts).toEqual(['Let', "'s go"]);
+    expect(deltaTexts).toEqual(["Let's go"]); // R4: buffered, one delta
     const done = frames.find((f) => f.data?.type === 'done');
     expect(done?.data.interrupted).toBe(false);
     expect(isEnded()).toBe(true);
@@ -283,6 +291,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res, writes, isEnded } = makeRes();
 
@@ -320,6 +329,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res } = makeRes();
 
@@ -331,8 +341,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     // the upstream provider request can be cancelled (brief §7).
     expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
     const options = anthropic.messages.stream.mock.calls[0][1] as
-      | { signal?: AbortSignal }
-      | undefined;
+      { signal?: AbortSignal } | undefined;
     expect(options?.signal).toBeInstanceOf(AbortSignal);
     // After the client disconnected, that upstream signal must be aborted so
     // Anthropic stops generating — no orphaned stream.
@@ -350,8 +359,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     }
 
     const options = anthropic.messages.stream.mock.calls[0][1] as
-      | { signal?: AbortSignal }
-      | undefined;
+      { signal?: AbortSignal } | undefined;
     expect(options?.signal).toBeInstanceOf(AbortSignal);
     expect(options?.signal?.aborted).toBe(true);
   });
@@ -369,6 +377,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
+      consentAllow(),
     );
     const { res } = makeRes();
 

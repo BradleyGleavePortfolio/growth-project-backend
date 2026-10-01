@@ -165,8 +165,10 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'coach/me/billing/portal-session', // the Stripe portal a locked coach needs
   'health',
   'health/deep',
+  'health/roman', // R1 — public Roman model health probe (RomanHealthController)
   'healthz',
   'readyz',
+  'roman/context/me', // R3 — own-data disclosure (RomanContextController)
   'roman/sessions',
   'roman/sessions/:id',
   'roman/sessions/:id/messages',

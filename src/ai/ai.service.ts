@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -11,6 +11,11 @@ import { Events } from '../analytics/events';
 import { AnthropicAdapter } from './adapters/anthropic.adapter';
 import { CoachAIStateService } from './coach/coach-ai-state.service';
 import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
+import {
+  AI_SUBJECT_CONSENT_GATE,
+  AiSubjectConsentGate,
+  assertSubjectAiConsent,
+} from './adapters/ai-subject-consent.gate';
 
 // Legacy payload kept exported because other code (e.g. /ai/context for the
 // mobile debug screen) still types against this shape. Internally the
@@ -197,6 +202,11 @@ export class AiService {
     // tests that boot a stripped-down AiModule still construct.
     @Optional() private anthropic?: AnthropicAdapter,
     @Optional() private coachAIState?: CoachAIStateService,
+    // Data-subject consent gate (RomanConsentService via the @Global
+    // CoachAIModule). Absent = chat() fails closed before any context build.
+    @Optional()
+    @Inject(AI_SUBJECT_CONSENT_GATE)
+    private consentGate?: AiSubjectConsentGate,
   ) {}
 
   // M3 — Intent-based word budget. Returns the word cap to embed in the
@@ -391,6 +401,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // entry can never be folded into the prompt WITH a system role.
     conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
+    // R2 — POST /ai/chat is retired (410, the controller never calls this
+    // method; removal is scheduled with the Perplexity client in R7). Until it
+    // is deleted, any internal caller still has to clear the CLIENT's live
+    // current-version AI-processing consent BEFORE the context is built or
+    // any provider (Perplexity or the Anthropic fallback) is reached.
+    await assertSubjectAiConsent(this.consentGate, userId, 'client_chat');
     // A1 — build context first (this performs NO provider calls and burns no
     // billable tokens) so we can assemble + clamp the prompt and reserve the
     // best-effort worst-case TOTAL-token estimate before any model call.

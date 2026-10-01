@@ -15,6 +15,7 @@
  */
 
 import { RomanSurface } from '@prisma/client';
+import { ROMAN_GUARDRAIL_CONTRACT } from './guardrails/roman-guardrail.contract';
 
 /**
  * The voice contract, verbatim per brief §2. Kept as a single exported
@@ -68,6 +69,8 @@ export interface BuildSystemPromptInput {
   voice: RomanSessionVoiceState;
   /** Optional subject context (e.g. a coach brief) the session was opened against. */
   subjectContext?: string | null;
+  /** R4: per-turn SafetyRouter hint (eating_disorder_risk / medical_scope / injury_pain). */
+  routerHint?: string | null;
 }
 
 /** One line of surface-specific framing. The voice contract is identical on both. */
@@ -87,7 +90,7 @@ function surfaceFraming(surface: RomanSurface): string {
  * and (optionally) the subject context.
  */
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
-  const { surface, voice, subjectContext } = input;
+  const { surface, voice, subjectContext, routerHint } = input;
 
   const remainingExclamation = voice.exclamationUsed
     ? 'The single per-session exclamation has already been spent. Do not use an exclamation point for the rest of this session.'
@@ -97,10 +100,18 @@ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
     ? `Your previous turn carried a dry quip, so this turn MUST NOT. (Quips used this session: ${voice.quipsInSession}.)`
     : `Quips used this session: ${voice.quipsInSession}. Keep dry humour rare — roughly one message in eight, most turns carry none.`;
 
+  // R4: the client surface carries the reply contract (scope, grounding,
+  // coach targets, calorie floor, injury, tone). It is static text — no
+  // per-user data — so the block stays byte-identical across users and is
+  // safe to prompt-cache. The coach surface keeps the voice contract only
+  // (coach-side grounding is phase 2 / R14).
   const sections: string[] = [
     ROMAN_VOICE_CONTRACT,
+    ...(surface === 'client' ? [ROMAN_GUARDRAIL_CONTRACT] : []),
     `# SURFACE\n${surfaceFraming(surface)}`,
-    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}`,
+    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}${
+      routerHint && routerHint.trim().length > 0 ? `\n${routerHint.trim()}` : ''
+    }`,
   ];
 
   if (subjectContext && subjectContext.trim().length > 0) {

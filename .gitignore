@@ -13,3 +13,6 @@ node_modules
 # Wave status scratch files — local progress notes, never commit
 .h*-status.txt
 
+
+# Roman live eval output (scripts/eval-roman-live.ts); attach to the go/no-go, never commit
+eval-results/

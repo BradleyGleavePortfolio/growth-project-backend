@@ -22,6 +22,7 @@ import {
   AI_DAILY_QUOTA_EXCEEDED,
 } from '../src/ai/ai.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { ALLOW_ALL_CONSENT_GATE } from './helpers/ai-consent-gate.double';
 import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { AIGuardrailsService } from '../src/ai/ai-guardrails.service';
 import { ClientAIContext } from '../src/ai/client-ai-context.types';
@@ -153,7 +154,9 @@ function makeService(prismaOverride?: any) {
   const quota = makeQuotaStub();
   const prisma = (prismaOverride ?? quota) as any;
   const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
-  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub), ctxSvc, quota: prisma };
+  // R2: every chat() case here models a client holding a live AI grant; the
+  // refusal paths are covered in test/ai/ai-consent-boundaries.spec.ts.
+  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub, undefined, undefined, ALLOW_ALL_CONSENT_GATE), ctxSvc, quota: prisma };
 }
 
 describe('AiService.chat', () => {
@@ -743,6 +746,7 @@ describe('AiService.chat Anthropic output cap (A1 P3)', () => {
       analyticsStub,
       anthropic,
       coachAIState,
+      ALLOW_ALL_CONSENT_GATE,
     );
 
     await svc.chat('u1', 'how am I doing today', []);

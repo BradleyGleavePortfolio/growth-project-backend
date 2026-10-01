@@ -161,6 +161,16 @@ function makeFakePrisma() {
           return typeof take === 'number' ? rows.slice(0, take) : rows;
         },
       ),
+      deleteMany: jest.fn(
+        async ({ where }: { where: { session_id: string; user_id: string } }) => {
+          const before = messages.length;
+          for (let i = messages.length - 1; i >= 0; i -= 1) {
+            if (messages[i].session_id === where.session_id && messages[i].user_id === where.user_id)
+              messages.splice(i, 1);
+          }
+          return { count: before - messages.length };
+        },
+      ),
       count: jest.fn(
         async ({ where }: { where: Record<string, unknown> }) =>
           messages.filter((m) => {
@@ -253,11 +263,17 @@ describe('RomanService — sessions', () => {
     ).rejects.toThrow('Roman session not found');
   });
 
-  it('soft-deletes a session (sets deleted_at, hides from resume)', async () => {
+  it('client delete removes the transcript content now (messages hard-deleted, scoped to caller), sets deleted_at, hides from resume', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma));
     const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'DELETE-ME-CANARY' });
+    expect(prisma._state.messages).toHaveLength(1);
     await svc.softDeleteSession(CALLER, s.id);
+    expect(prisma._state.messages).toHaveLength(0);
+    expect(prisma.romanMessage.deleteMany).toHaveBeenCalledWith({
+      where: { session_id: s.id, user_id: CALLER.id },
+    });
     expect(prisma._state.sessions[0].deleted_at).toBeInstanceOf(Date);
     // A subsequent open creates a fresh session (the deleted one is hidden).
     const next = await svc.openOrResumeSession(CALLER, 'client');
@@ -414,7 +430,10 @@ describe('RomanService — streaming', () => {
     const abort = new AbortController();
     let interrupted: boolean | undefined;
     let count = 0;
-    for await (const c of svc.streamAssistantTurn(CALLER, s, {
+    // R4: `streamAssistantTurn` buffers the whole reply (one delta after the
+    // stream ends), so "abort after the first delta" is exercised on the raw
+    // model stream, which is where the disconnect handling lives.
+    for await (const c of svc.streamModelTurn(CALLER, s, {
       signal: abort.signal,
     })) {
       if (c.type === 'delta') {

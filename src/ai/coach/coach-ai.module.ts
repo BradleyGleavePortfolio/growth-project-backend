@@ -12,6 +12,9 @@ import { MealPlansModule } from '../../meal-plans/meal-plans.module';
 import { WorkoutBuilderModule } from '../../workout-builder/workout-builder.module';
 // Stream 2 — coach-side gateway-backed AI execution endpoints.
 import { CoachAIExecutionController } from './coach-ai-execution.controller';
+import { RomanModule } from '../../roman/roman.module';
+import { RomanConsentService } from '../../roman/consent/roman-consent.service';
+import { AI_SUBJECT_CONSENT_GATE } from '../adapters/ai-subject-consent.gate';
 
 // Coach AI v1 module.
 //
@@ -20,15 +23,35 @@ import { CoachAIExecutionController } from './coach-ai-execution.controller';
 // without re-importing this module everywhere.
 @Global()
 @Module({
-  imports: [ConfigModule, AuthModule, BillingModule, MealPlansModule, WorkoutBuilderModule],
+  // RomanModule supplies RomanConsentService, bound here as the data-subject
+  // consent gate the AnthropicAdapter consults before every client-data
+  // request (R2 / Sol A2). RomanModule imports nothing, so no cycle.
+  imports: [
+    ConfigModule,
+    AuthModule,
+    BillingModule,
+    MealPlansModule,
+    WorkoutBuilderModule,
+    RomanModule,
+  ],
   controllers: [CoachAIController, CoachAIExecutionController],
   providers: [
+    { provide: AI_SUBJECT_CONSENT_GATE, useExisting: RomanConsentService },
     AnthropicAdapter,
     ClientContextService,
     CoachAIStateService,
     CoachAIService,
     WeeklyInsightCron,
   ],
-  exports: [AnthropicAdapter, ClientContextService, CoachAIStateService, CoachAIService],
+  // AI_SUBJECT_CONSENT_GATE is exported (this module is @Global) so every AI
+  // provider boundary outside the adapter (AiGatewayService, churn drafts,
+  // community triage, AiService.chat) can inject the same data-subject gate.
+  exports: [
+    AnthropicAdapter,
+    ClientContextService,
+    CoachAIStateService,
+    CoachAIService,
+    AI_SUBJECT_CONSENT_GATE,
+  ],
 })
 export class CoachAIModule {}
