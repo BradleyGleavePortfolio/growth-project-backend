@@ -13,6 +13,8 @@ import {
   type TrustPage,
 } from '../src/public-pages/trust-pages.html';
 import { renderHelpPage } from '../src/public-pages/help-pages.html';
+import { TRIAGE_CATEGORIES } from '../src/community/ai-triage/triage-output.schema';
+import buildInboxTriagePrompt from '../src/community/ai-triage/prompts/inbox-triage.prompt';
 import { renderDownloadPage, renderSignupPage } from '../src/public-pages/public-pages.html';
 
 const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
@@ -269,7 +271,7 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
   it('states the owner-approved D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT)', () => {
     const text = visibleText(renderTrustPage('consumer-health'));
     const approved = [
-      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic for Roman or AI drafts; community inbox sorting, if turned on, is separate and is described under Categories we share. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
       'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
     ];
     for (const paragraph of approved) expect(text).toContain(paragraph);
@@ -394,6 +396,62 @@ describe('policy copy hygiene', () => {
       expect(text).not.toMatch(/single “I agree” box/);
       expect(text).not.toMatch(/single "I agree" box/);
     }
+  });
+
+  // B-611-1: the community AI disclosure must describe what
+  // src/community/ai-triage actually does (coach inbox sorting: classify into
+  // TRIAGE_CATEGORIES + summarise, fields from inbox-triage.prompt.ts, no box-2
+  // check, coach/owner only, read-only), never "moderation" or "review".
+  it('describes community AI as coach inbox sorting, matching the implemented triage', () => {
+    const privacy = visibleText(renderTrustPage('privacy'));
+    const health = visibleText(renderTrustPage('consumer-health'));
+    for (const text of [privacy, health]) {
+      expect(text).not.toMatch(/community content (review|for moderation)/i);
+      expect(text).not.toMatch(/review community content/i);
+      expect(text).not.toMatch(/nothing about you is sent to Anthropic[.,]/);
+    }
+    expect(privacy).toContain(
+      'Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed)',
+    );
+    expect(privacy).toContain(
+      'it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It does not depend on the optional AI box.',
+    );
+    expect(privacy).toContain(
+      'it never replies, posts or acts on anything, and only the coach sees the result',
+    );
+    expect(privacy).toContain(
+      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on.',
+    );
+    expect(health).toContain(
+      'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age',
+    );
+  });
+
+  it('keeps the community AI disclosure tied to the code it describes', () => {
+    // Five groups named in the policy == the implemented categories.
+    expect(TRIAGE_CATEGORIES).toEqual([
+      'urgent',
+      'win_to_celebrate',
+      'form_check',
+      'general',
+      'no_action_needed',
+    ]);
+    // The fields the policy lists are exactly the ones rendered into the prompt.
+    const prompt = buildInboxTriagePrompt([
+      {
+        id: 'item-1',
+        kind: 'post',
+        preview: 'x'.repeat(300),
+        cohortName: 'Spring plan',
+        authorDisplayName: 'Sam Member',
+        ageHours: 5,
+      },
+    ]).user;
+    expect(prompt).toContain('cohort: Spring plan');
+    expect(prompt).toContain('from: Sam Member');
+    expect(prompt).toContain('age_hours: 5');
+    expect(prompt).toContain(`text: ${'x'.repeat(240)}`);
+    expect(prompt).not.toContain('x'.repeat(241));
   });
 
   it('describes box 2 as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
