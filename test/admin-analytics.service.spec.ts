@@ -59,6 +59,8 @@ function matchWhere(row: any, where: any): boolean {
       if (v.not !== undefined) return row[k] !== v.not;
       return true;
     }
+    // `{ col: null }` matches SQL NULL; fixture rows that omit the column are NULL too.
+    if (v === null) return row[k] == null;
     return row[k] === v;
   });
 }
@@ -139,8 +141,18 @@ describe('AdminAnalyticsService', () => {
       { coach_user_id: 'c1', readiness_status: 'ready' },
     );
 
+    // C01 — a $0 invite grant is not a purchase and must not count.
+    prisma._purchases.push({
+      id: 'p_grant',
+      amount_cents: 0,
+      coach_user_id: 'c1',
+      status: 'active',
+      source: 'invite_grant:prepaid',
+      created_at: earlier,
+    });
     const svc = new AdminAnalyticsService(prisma as any);
     const rollup = await svc.getEnterpriseRollup({});
+    expect(rollup.purchases_count).toBe(2);
     expect(rollup.gmv_cents).toBe(15_000);
     expect(rollup.platform_fee_cents).toBe(300);
     expect(rollup.head_coach_split_cents).toBe(250);
