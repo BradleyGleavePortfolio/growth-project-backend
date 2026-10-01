@@ -38,6 +38,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
+import { RomanConsentService } from './consent/roman-consent.service';
+import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
 import {
   RomanCaller,
   RomanService,
@@ -54,6 +56,7 @@ export class RomanController {
   constructor(
     private readonly roman: RomanService,
     private readonly prisma: PrismaService,
+    private readonly consent: RomanConsentService,
   ) {}
 
   // ─── POST /roman/sessions — open or resume ─────────────────────────────────
@@ -88,6 +91,11 @@ export class RomanController {
   // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
   @Post('sessions/:id/messages')
   @Roles('student', 'coach', 'owner')
+  // Apple 5.1.2(i) / store review: the ONLY Roman route that sends user data
+  // to a model carries the consent guard at the route level as well as the
+  // in-handler assert below (defence in depth; both fail closed, incl. for
+  // existing users with no consent row).
+  @UseGuards(AiProcessingConsentGuard)
   async sendMessage(
     @Req() req: Request & AuthedRequest,
     @Res() res: Response,
@@ -111,6 +119,13 @@ export class RomanController {
       }
       throw err;
     }
+
+    // AI processing consent (R2, plan §6.2): enforced on EVERY turn, before
+    // the user turn is persisted, before any context is built and before any
+    // model call. Throws a structured 403 ROMAN_CONSENT_REQUIRED that the
+    // mobile uses to show the consent sheet. Nothing reaches Anthropic
+    // without a live grant of the current consent version.
+    await this.consent.assertAiConsent(caller.id);
 
     const session = await this.roman.getOwnedSession(caller, id);
     await this.roman.appendMessage(caller, session.id, {

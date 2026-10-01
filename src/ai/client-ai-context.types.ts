@@ -172,7 +172,12 @@ export interface FastingSummary {
 export interface NextSessionSummary {
   date: string; // ISO-8601
   title: string;
-  coach_note: string | null;
+  /**
+   * Always null. Kept for wire compatibility with the mobile disclosure
+   * screen; private coach notes (coach_notes_md on CoachingSession) are never
+   * read into a client-facing or AI context (owner ruling 2026-09-30 #6).
+   */
+  coach_note: null;
 }
 
 // M1 — A single community win (anonymised, roster-scoped).

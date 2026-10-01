@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   Optional,
@@ -40,6 +41,12 @@ import {
 } from './materialisers/edit-workout-plan.materialiser';
 import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
 import { AuditService } from '../../audit/audit.service';
+import {
+  AI_SUBJECT_CONSENT_GATE,
+  AiSubjectConsentGate,
+  assertSubjectAiConsent,
+  isSubjectConsentRefusal,
+} from '../adapters/ai-subject-consent.gate';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
 import {
@@ -119,7 +126,29 @@ export class AiGatewayService {
     // refused because the requester role is not coach/owner — primary
     // defence for the spec §3 hard role boundary.
     @Optional() private audit?: AuditService,
+    // Data-subject consent gate (RomanConsentService, exported by the
+    // @Global CoachAIModule). @Optional() so legacy unit tests still boot —
+    // but its ABSENCE fails closed: a request that names a client and
+    // resolves to a real provider is refused with 403
+    // AI_CONSENT_GATE_UNAVAILABLE.
+    @Optional()
+    @Inject(AI_SUBJECT_CONSENT_GATE)
+    private consentGate?: AiSubjectConsentGate,
   ) {}
+
+  /**
+   * The client whose personal data this request carries. An explicit
+   * `subjectUserId` wins; otherwise a client (student) invoking a
+   * self-capability is the subject. Coach/owner calls with no subject carry
+   * no single client's context (multi-subject callers such as community
+   * triage filter by consent before building the prompt).
+   */
+  static dataSubjectOf(req: Pick<AiGatewayRequest, 'subjectUserId' | 'requester'>): string | null {
+    const explicit = req.subjectUserId?.trim();
+    if (explicit) return explicit;
+    if (req.requester?.role === 'student' && req.requester.id) return req.requester.id;
+    return null;
+  }
 
   async invoke(req: AiGatewayRequest): Promise<AiGatewayResult> {
     if (!req.requester || !req.requester.id) {
@@ -206,6 +235,16 @@ export class AiGatewayService {
 
     const adapter = this.providers.resolve(resolved.provider);
 
+    // Data-subject consent (R2 / owner ruling #5). Any request that resolves
+    // to a REAL provider and names a client requires that client's live
+    // current-version AI-processing grant. Checked BEFORE the budget gate,
+    // redaction or any provider call; fails closed with a structured 403.
+    // The stub provider never leaves the process, so it is not gated.
+    const dataSubject = AiGatewayService.dataSubjectOf(req);
+    if (dataSubject && adapter.name !== 'stub') {
+      await assertSubjectAiConsent(this.consentGate, dataSubject, req.capability);
+    }
+
     // Stream 1 — pre-call budget gate. Skip for capabilities not in the
     // metered set (e.g. internal admin probes) and when the gateway is
     // disabled (no real provider call will happen, so no Anthropic cost).
@@ -283,8 +322,13 @@ export class AiGatewayService {
         maxTokens: req.maxTokens ?? 600,
         temperature: req.temperature ?? 0.7,
         requestId,
+        subjectUserId: dataSubject,
       });
     } catch (e) {
+      // A consent refusal raised inside the provider (grant withdrawn
+      // between the pre-check and a retry) is NOT a provider outage: it must
+      // surface as the 403, never degrade to a stub reply.
+      if (isSubjectConsentRefusal(e)) throw e;
       errorMsg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`Gateway provider call failed (${resolved.provider}): ${errorMsg}`);
       // Fail closed — return the stub even if a real provider blew up,

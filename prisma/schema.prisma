@@ -508,6 +508,11 @@ model User {
   roman_sessions RomanSession[] @relation("RomanSessionUser")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
+  // R2 — third-party AI processing consent (PLAN_roman_intelligence §6.2).
+  // One row per (user, processor, purpose); the effective state is derived
+  // like ClientCoachConsent (granted_at set AND revoked_at null-or-older).
+  ai_processing_consents AiProcessingConsent[] @relation("AiProcessingConsentUser")
+
   @@index([coach_id])
   @@index([deletion_scheduled_at])
 }
@@ -6316,6 +6321,49 @@ model RomanSession {
 // A single chat turn within a Roman session. Append-only in practice; an
 // assistant turn may be marked `interrupted` when the client disconnects
 // mid-stream (partial content persisted).
+// ============================================================
+// AI processing consent (R2, PLAN_roman_intelligence §6.2)
+// ============================================================
+//
+// Server-authoritative record that a user allowed their messages and client
+// data to be sent to a third-party AI processor (today: Anthropic, purpose
+// 'roman_chat'). Roman refuses every turn with 403 ROMAN_CONSENT_REQUIRED
+// until a live row for the CURRENT consent version exists — no context is
+// built and nothing reaches the processor. Every transition writes an
+// AuditLog row (ai_consent.granted / ai_consent.revoked).
+//
+// Effective state (mirrors ClientCoachConsent): granted when granted_at is
+// set AND (revoked_at IS NULL OR revoked_at < granted_at) AND the stored
+// consent_version equals the server's ROMAN_CONSENT_CURRENT_VERSION.
+// RLS: owner-self select/insert/update + service_role bypass (migration
+// 20270201000000_ai_processing_consent).
+model AiProcessingConsent {
+  id              String    @id @default(uuid())
+  user_id         String
+  user            User      @relation("AiProcessingConsentUser", fields: [user_id], references: [id], onDelete: Cascade)
+  /** Processor key, e.g. 'anthropic'. */
+  processor       String
+  /** Purpose key, e.g. 'roman_chat'. */
+  purpose         String
+  /** The consent copy version the user accepted, e.g. 'roman-ai-v1'. */
+  consent_version String
+  /** sha256 of the exact sheet text shown (mobile-supplied; audit aid). */
+  copy_sha256     String?
+  granted_at      DateTime?
+  revoked_at      DateTime?
+  /** Personal-training waiver version accepted with the same onboarding box (ruling #5). */
+  waiver_version     String?
+  waiver_accepted_at DateTime?
+  platform        String?
+  app_version     String?
+  locale          String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @default(now()) @updatedAt
+
+  @@unique([user_id, processor, purpose], name: "AiProcessingConsent_user_processor_purpose_key")
+  @@index([user_id])
+}
+
 model RomanMessage {
   id         String           @id @default(cuid())
   session_id String

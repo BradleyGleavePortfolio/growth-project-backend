@@ -548,6 +548,18 @@ switches:
     auto_flip_on_in_prod: false
     owner: unowned
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: ROMAN_CONSENT_CURRENT_VERSION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: roman
+    description: "Client AI processing consent copy version (default client-ai-v2; one onboarding box covers waiver + AI processing by Anthropic). Set to client-ai-v2 at launch; bump only with a copy change (forces re-consent)."
+  - name: PT_WAIVER_CURRENT_VERSION
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: roman
+    description: "Personal-training waiver version accepted with the onboarding box (default pt-waiver-v1). Bump only with a waiver text change."
   - name: FEATURE_WEARABLES_INGEST_POST
     tier: optional
     prod_default: STUB_ALLOWED

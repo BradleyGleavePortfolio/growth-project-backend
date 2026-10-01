@@ -25,6 +25,7 @@ import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import type { RomanConsentService } from '../../src/roman/consent/roman-consent.service';
 import type { RomanCaller } from '../../src/roman/roman.service';
 
 // ─── flag harness ────────────────────────────────────────────────────────────
@@ -149,10 +150,18 @@ function makePrisma() {
   };
 }
 
+/** R2: consent double that ALLOWS every turn (consent behaviour is covered in roman-consent.spec.ts). */
+function makeConsentAllow(): RomanConsentService {
+  const double = { assertAiConsent: jest.fn(async () => undefined) };
+  // @ts-expect-error partial structural mock of RomanConsentService — only assertAiConsent is read by the controller.
+  return double;
+}
+
 function makeController() {
   const service = makeService();
   const prisma = makePrisma();
-  const ctrl = new RomanController(service as never, prisma as never);
+  const consent = makeConsentAllow();
+  const ctrl = new RomanController(service as never, prisma as never, consent);
   const req = {
     user: { id: 'user-A', role: 'student' },
     on: jest.fn(),

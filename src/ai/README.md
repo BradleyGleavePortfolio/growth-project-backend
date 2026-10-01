@@ -1,5 +1,14 @@
 # ai
 
+> **Status (R2, 2026-09-30):** `POST /api/ai/chat` is **retired**. It returns a
+> deterministic `410 { code: "AI_GUIDE_RETIRED" }` in every environment and
+> never reaches `AiService.chat` or any provider; the response carries no
+> model, debug block or provider name. The client assistant is Roman
+> (`src/roman`). `AiService.chat` and the Perplexity client stay only until
+> R7 removes them, and `chat()` now asserts the client's AI-processing consent
+> before it builds context. The request-flow notes below describe the retired
+> path and are kept for the R7 removal.
+
 GP — the in-app coach assistant. Builds a typed context bundle from the
 client's profile / macros / recent activity, hands it to a Perplexity
 chat model, and runs every reply through a guardrail pass before it
@@ -109,6 +118,49 @@ legitimate users.
   disclose that if asked. The post-check does not police this — the
   prompt does.
 
+## Data-subject AI consent at every provider boundary (R2)
+
+Any code that sends a **named client's** personal data to a model provider
+must first clear that client's live, current-version AI-processing grant
+(`AiProcessingConsent`, processor `anthropic`, purpose `client_ai_processing`,
+version `client-ai-v2`). The check is shared and fails closed:
+
+- `src/ai/adapters/ai-subject-consent.gate.ts`
+  - `AI_SUBJECT_CONSENT_GATE` — DI token, bound to `RomanConsentService` in the
+    `@Global` `CoachAIModule` and exported so every boundary can inject it.
+  - `assertSubjectAiConsent(gate, subjectUserId, capability)` — no gate bound or
+    blank subject → `403 AI_CONSENT_GATE_UNAVAILABLE`; no live current grant →
+    `403 CLIENT_AI_CONSENT_REQUIRED`; any other gate error (database down)
+    propagates and also stops the call.
+  - `consentedAiSubjects(gate, ids)` — batch form for multi-subject prompts.
+    No gate → empty set (nobody's data is sent).
+  - `isSubjectConsentRefusal(err)` — callers rethrow these, never degrade.
+
+| Boundary | Subject | Where the check runs |
+|---|---|---|
+| `AnthropicAdapter.complete` / `completeStructured` | `opts.clientId` | Inside the retry loop, before every upstream attempt (retries and JSON repair included) |
+| `AiGatewayService.invoke` | `subjectUserId`, else a `student` requester | After provider resolution, before the budget gate, redaction or any non-stub provider call. The stub never leaves the process and is not gated. A refusal raised inside the provider (grant withdrawn mid-request) surfaces as the 403 — never a silent stub reply. `AnthropicProviderAdapter` forwards the subject so the adapter re-checks |
+| `ChurnInterventionService.generateChurnDraft` | the roster client | After the roster (IDOR) check, before the idempotency draft row, the PTM / check-in reads and the Anthropic call |
+| `AiTriageService.generateForCoach` | each item's author | Batch filter before the cache key and prompt: only consented authors' items are sent; the rest stay in the normal inbox. No gate → empty triage, no call |
+| `AiService.chat` (retired path) | the caller | First statement, before context build, Perplexity or the Anthropic fallback |
+| Roman `POST /roman/sessions/:id/messages` | the caller | `AiProcessingConsentGuard` on the route plus `assertAiConsent` in the handler |
+
+Provider calls that carry **no client personal data** are not gated and are
+pinned by tests instead: the coach daily brief (counts and coach names only;
+client names from the aggregation feed action items, never the prompt), the
+first-win message (win type only) and the public diagnostic roadmap (scores and
+catalogue question text; never the submitter's name, email, age or source).
+
+Every `src` file that imports a provider SDK (`@anthropic-ai/sdk`, `openai`,
+…) is listed with a reason in `REVIEWED_PROVIDER_SDK_IMPORTERS` in
+`test/ai/ai-consent-boundaries.spec.ts`. A new importer fails that test until
+it is reviewed: either it routes a named client through the gate, or it gets a
+no-personal-data pin.
+
+Test doubles: `test/helpers/ai-consent-gate.double.ts` (`consentGateFor(ids)`,
+`ALLOW_ALL_CONSENT_GATE`). Suites that test provider behaviour bind the
+allow-all gate; refusal paths live in the boundaries spec.
+
 ## Environment variables
 
 | Var | Tier | Purpose |
@@ -136,6 +188,8 @@ the API key is configured.
 | `test/ai.service.spec.ts` | Prompt assembly, fallback responder, end-to-end chat with guardrails |
 | `test/ai-guardrails.service.spec.ts` | Each guardrail rule on representative inputs |
 | `test/client-ai-context.service.spec.ts` | Builder shape, trim points, cache TTL |
+| `test/ai/ai-consent-boundaries.spec.ts` | Consent refusal at every client-data provider boundary; no-personal-data pins (coach brief, first win, diagnostic); provider SDK importer allowlist |
+| `test/ai/ai-gateway-hardening.spec.ts` | A7: `/ai/chat` 410 `AI_GUIDE_RETIRED`, no provider call, no provider name in the body |
 
 ## Operational notes
 
