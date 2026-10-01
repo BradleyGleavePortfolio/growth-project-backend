@@ -108,12 +108,26 @@ export function classifySafety(message: string): SafetyRouteResult {
 
 // ─── fixed templates (no model call) ─────────────────────────────────────────
 
+/**
+ * Owner ruling 2026-09-30 16:38: the safety copy is "butlered up" (warm,
+ * composed, Alfred-like) and gives something genuinely useful beyond "talk
+ * to your doctor". The 911 / 988 routing stays. These two templates are
+ * DETERMINISTIC: no model call is ever made for them, so what follows is the
+ * exact text the client sees. No contractions, no exclamation marks, no
+ * emoji, no promise of an action Roman does not perform.
+ */
 export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> = {
   emergency:
-    'Please stop and call 911 now, or your local emergency number. I am not able to help with this, and it should not wait.',
+    'Please stop what you are doing and call 911 now, or your local emergency number. ' +
+    'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
+    'This is beyond what I can help with, and it should not wait. ' +
+    'Once you are safe, your coach would want to hear from you in Messages, and I will be here.',
   self_harm:
-    'I am sorry you are carrying this. Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour. ' +
-    'If you are in immediate danger, call 911. You matter, and talking to a person right now is the right next step.',
+    'I am sorry you are carrying this, and I am glad you said it here rather than holding it alone. ' +
+    'Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer. ' +
+    'If you are in immediate danger, call 911. ' +
+    'If you can, let someone you trust know where you are so they can sit with you. ' +
+    'You matter, and talking to a person right now is the right next step.',
 };
 
 /** Model id recorded on a short-circuited turn. */
@@ -121,22 +135,45 @@ export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
 
 // ─── per-class hints appended to the system block ────────────────────────────
 
+/**
+ * Per-class hints appended to SESSION STATE. The model composes the reply, so
+ * these describe the SHAPE of a useful answer (owner ruling 16:38): general,
+ * non-diagnostic guidance first, then a safe next step inside the client's
+ * own plan, then the offer to message the coach, then the physician line.
+ * The exact closing lines are also what the post-check enforces.
+ */
+export const ROMAN_PHYSICIAN_LINE_MEDICAL =
+  'For the medical side of it, please check with your physician.';
+export const ROMAN_PHYSICIAN_LINE_INJURY =
+  'If it persists, gets worse, or is severe, please see a physician.';
+
 export const ROMAN_ROUTER_HINTS: Record<
   Exclude<SafetyClass, 'emergency' | 'self_harm' | 'normal'>,
   string
 > = {
   eating_disorder_risk:
-    'ROUTER HINT (eating_disorder_risk): the message signals disordered eating or extreme restriction. Be supportive and calm. ' +
+    'ROUTER HINT (eating_disorder_risk): the message signals disordered eating or extreme restriction. Be warm, supportive and calm. ' +
     'Do not give any calorie number below the floor, do not praise restriction, do not suggest compensatory exercise. ' +
-    'Suggest talking with a physician or a qualified professional, and messaging the coach. Keep it short.',
+    'Offer one steadying next step inside their plan (for example, the next regular meal with protein, logged as usual), ' +
+    'offer to help them message their coach, and suggest talking with a physician or a qualified professional. Keep it short.',
   medical_scope:
     'ROUTER HINT (medical_scope): the message touches medication, labs, pregnancy, diabetes, blood pressure, a heart condition or a diagnosis. ' +
-    'Stay in general fitness and nutrition context only. Do not interpret, diagnose or advise on any of it. ' +
-    'You MUST include this line: "For that, please check with your physician."',
+    'Stay within general fitness and nutrition; do not interpret, diagnose or advise on the medical matter itself, and do not change or time any medication. ' +
+    'Be genuinely useful first, in this order: ' +
+    '(1) give the general, non-diagnostic principle that applies to anyone (for example: keep effort at a level you could hold a conversation at, build intensity gradually, drink water through the day, eat regular meals with protein, and do not change food, water or training sharply around a medication without the prescriber); ' +
+    '(2) name one safe next step inside their current plan (keep today\'s session as written or at a lower intensity, keep logging, hold the coach-set targets); ' +
+    '(3) offer to help them message their coach so the plan can be adjusted around it; ' +
+    `(4) then close with this exact line: "${ROMAN_PHYSICIAN_LINE_MEDICAL}" ` +
+    'Warm and composed; no alarm, no lecture.',
   injury_pain:
-    'ROUTER HINT (injury_pain): the message reports pain or a possible injury. Apply the injury rules: tell them to stop the movement that hurts, ' +
-    'do not diagnose or prescribe rehab, suggest messaging the coach. ' +
-    'You MUST include this line: "If it persists or is severe, please see a physician."',
+    'ROUTER HINT (injury_pain): the message reports pain or a possible injury. Do not diagnose, name a condition or prescribe rehab. ' +
+    'Be genuinely useful first, in this order: ' +
+    '(1) tell them to stop the movement that hurts for today; pain is not effort; ' +
+    '(2) offer a pain-free alternative or a lower-intensity version of the same session (for example a bodyweight or machine version, a smaller range of motion, less load, or a walk and gentle mobility work instead), and note that mild soreness a day or two after training is normal while sharp, joint, or persistent pain is a reason to stop; ' +
+    '(3) suggest resting the area today and keeping any movement pain-free; ' +
+    '(4) offer to help them message their coach so the next sessions can be adjusted; ' +
+    `(5) then close with this exact line: "${ROMAN_PHYSICIAN_LINE_INJURY}" ` +
+    'Warm and composed; no alarm, no lecture.',
 };
 
 export function routerHintFor(cls: SafetyClass): string | null {
