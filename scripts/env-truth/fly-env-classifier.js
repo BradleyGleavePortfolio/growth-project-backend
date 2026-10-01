@@ -8,7 +8,9 @@
  * env var actually present in the process environment it reports:
  *
  *   present / missing, empty, placeholder-pattern id, duplicate-group id
- *   (keys that share one value), length bucket, registered or not.
+ *   (keys that share one value), length bucket, registered or not, plus
+ *   pass/fail value-shape checks for APPLE_AUDIENCES (first entry is the iOS
+ *   bundle id) and ANDROID_CERT_SHA256_FINGERPRINTS (colon-hex SHA-256 list).
  *
  * VALUE SAFETY (the whole point of this file):
  *   - Values are read only to compute booleans, a pattern id, a length bucket
@@ -93,6 +95,45 @@ const PLACEHOLDER_PATTERNS = [
   ['surrounding-whitespace', (v) => v.length > 0 && v !== v.trim() && v.trim().length > 0],
 ];
 
+/**
+ * Value-shape checks (operator 2026-10-01). Each returns true/false only; the
+ * report carries 'pass' | 'fail' | 'missing', never the value or the entry
+ * that failed.
+ */
+const IOS_BUNDLE_ID = 'com.growthproject.app';
+const COLON_HEX_SHA256 = /^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$/;
+const SHAPE_CHECKS = [
+  {
+    name: 'APPLE_AUDIENCES',
+    check: 'first-entry-is-ios-bundle-id',
+    describe: `comma list whose first entry is exactly ${IOS_BUNDLE_ID} (Sign in with Apple + deletion-time token revocation)`,
+    test: (v) => v.split(',')[0].trim() === IOS_BUNDLE_ID,
+  },
+  {
+    name: 'ANDROID_CERT_SHA256_FINGERPRINTS',
+    check: 'non-empty-colon-hex-sha256',
+    describe: 'non-empty; every comma entry is a colon-separated SHA-256 (32 hex byte pairs)',
+    test: (v) => {
+      const entries = v
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0);
+      return entries.length > 0 && entries.every((e) => COLON_HEX_SHA256.test(e));
+    },
+  },
+];
+
+/** Run the value-shape checks. Returns [{name, check, describe, result}] with result pass|fail|missing. */
+function shapeChecks(env) {
+  return SHAPE_CHECKS.map((c) => {
+    const v = env[c.name];
+    let result;
+    if (typeof v !== 'string' || v.trim().length === 0) result = 'missing';
+    else result = c.test(v) ? 'pass' : 'fail';
+    return { name: c.name, check: c.check, describe: c.describe, result };
+  });
+}
+
 /** Return the first matching placeholder pattern id, or null. Never returns the value. */
 function placeholderPattern(value) {
   if (typeof value !== 'string' || value.length === 0) return null;
@@ -175,6 +216,7 @@ function classifyEnv(env, registered, opts) {
   });
   const count = (f) => rows.filter(f).length;
   const groupIds = new Set(rows.map((r) => r.duplicateGroup).filter(Boolean));
+  const shapes = shapeChecks(env);
   return {
     schema: 'env-truth/v1',
     generatedAt: options.now || new Date().toISOString(),
@@ -188,7 +230,9 @@ function classifyEnv(env, registered, opts) {
       duplicateKeys: count((r) => r.duplicateGroup !== null),
       unregisteredPresent: count((r) => r.present && !r.registered),
       suspiciousNames: count((r) => r.present && r.suspiciousName),
+      shapeChecksFailing: shapes.filter((c) => c.result !== 'pass').length,
     },
+    shapeChecks: shapes,
     rows,
   };
 }
@@ -235,6 +279,15 @@ function renderMarkdown(report, app) {
   out.push(`| Duplicate groups (keys) | ${s.duplicateGroups} (${s.duplicateKeys}) |`);
   out.push(`| Present but unregistered | ${s.unregisteredPresent} |`);
   out.push(`| Suspicious names | ${s.suspiciousNames} |`);
+  out.push(`| Value-shape checks not passing | ${s.shapeChecksFailing} |`);
+  out.push('');
+  out.push('## Value-shape checks');
+  out.push('');
+  out.push('| Name | Check | Result |');
+  out.push('|---|---|---|');
+  for (const c of report.shapeChecks || []) {
+    out.push(`| ${mdEscape(c.name)} | ${mdEscape(c.describe)} | ${c.result} |`);
+  }
   out.push('');
   const flagged = report.rows.filter(
     (r) => r.present && (r.empty || r.placeholder || r.duplicateGroup || r.suspiciousName),
@@ -305,6 +358,9 @@ module.exports = {
   ENV_NAME_RE,
   REPORT_MARKER,
   PLACEHOLDER_PATTERNS,
+  IOS_BUNDLE_ID,
+  SHAPE_CHECKS,
+  shapeChecks,
   placeholderPattern,
   lengthBucket,
   suspiciousName,
