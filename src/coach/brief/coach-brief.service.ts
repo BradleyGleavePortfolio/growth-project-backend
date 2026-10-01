@@ -27,9 +27,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import type Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
-import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import {
   AiDataSubject,
   clientDataSubject,
@@ -701,7 +700,7 @@ export function buildHeadCoachActionItems(
 @Injectable()
 export class CoachBriefService {
   private readonly logger = new Logger(CoachBriefService.name);
-  private anthropic: Anthropic | null = null;
+  private anthropic: AnthropicHandle | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -710,12 +709,12 @@ export class CoachBriefService {
     private readonly egress: AiEgressService,
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
-    injectedClient?: Anthropic,
+    injectedClient?: AnthropicHandle,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
 
-  private getAnthropicClient(): Anthropic {
+  private getAnthropicClient(): AnthropicHandle {
     if (this.anthropic) return this.anthropic;
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey || !apiKey.trim()) {
@@ -1432,7 +1431,7 @@ export class CoachBriefService {
       };
     }
 
-    let client: Anthropic;
+    let client: AnthropicHandle;
     try {
       client = this.getAnthropicClient();
     } catch (err) {
@@ -1523,7 +1522,7 @@ export class CoachBriefService {
   // throws — returns a discriminated result so callers can branch on
   // success vs. error without `try/catch` plumbing.
   private async invokeClaudeOnce(
-    client: Anthropic,
+    client: AnthropicHandle,
     subject: AiDataSubject,
     systemPrompt: string,
     userPrompt: string,

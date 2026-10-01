@@ -152,7 +152,12 @@ export class RomanController {
         err && typeof err === 'object' && 'response' in err
           ? (err as { response?: unknown }).response
           : { code: 'ROMAN_UNAVAILABLE', message: 'Roman is not available right now.' };
-      res.write(`event: error\ndata: ${JSON.stringify(body)}\n\n`);
+      // B-626-1 — carry the request reference the support path asks for
+      // (the HTTP error envelope has it as `requestId`; SSE errors did not).
+      const requestId = (req as { requestId?: string }).requestId;
+      const payload =
+        body && typeof body === 'object' && requestId ? { ...body, requestId } : body;
+      res.write(`event: error\ndata: ${JSON.stringify(payload)}\n\n`);
     } finally {
       req.off('close', onClose);
       res.end();

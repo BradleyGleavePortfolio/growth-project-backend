@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
-import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { AiEgressService, PerplexityHandle } from '../ai-egress/ai-egress.service';
 import { noClientDataSubject } from '../ai-egress/ai-egress.types';
 import { createPerplexityClient } from '../ai-egress/provider-clients';
 
@@ -44,9 +43,9 @@ export class FirstWinService {
   // so we defer construction until first use and read the env var at call
   // time. Returns null when the key is unset so callers can fall back to
   // the deterministic message without an exception path.
-  private _perplexity: OpenAI | null = null;
+  private _perplexity: PerplexityHandle | null = null;
   private _perplexityInitialized = false;
-  private getPerplexityClient(): OpenAI | null {
+  private getPerplexityClient(): PerplexityHandle | null {
     if (!this._perplexityInitialized) {
       const key = process.env.PERPLEXITY_API_KEY?.trim();
       this._perplexity = key ? createPerplexityClient(key) : null;

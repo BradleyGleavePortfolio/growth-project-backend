@@ -24,8 +24,14 @@ import { RomanController } from '../../src/roman/roman.controller';
 import { RomanService } from '../../src/roman/roman.service';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
-import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
-import type Anthropic from '@anthropic-ai/sdk';
+import {
+  AI_EGRESS_POLICY_CODE,
+  AI_EGRESS_POLICY_MESSAGE,
+  AiConsentRequiredException,
+  AiEgressPolicyException,
+} from '../../src/ai-egress/ai-consent-required.exception';
+import { SUPPORT_EMAIL } from '../../src/public-pages/trust-pages.html';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
@@ -208,7 +214,7 @@ describe('Roman SSE streaming — happy path', () => {
   it('translates Anthropic deltas into SSE frames and persists the full turn', async () => {
     const { prisma, messages } = makePrisma();
     const anthropic = makeAnthropic(['Push ', 'harder', '.']);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
 
     const session = await service.getOwnedSession(FREE, 'sess_1');
     const frames: unknown[] = [];
@@ -241,7 +247,7 @@ describe('Roman SSE streaming — happy path', () => {
   it('writes correctly-framed SSE through the controller (data: …\\n\\n + done)', async () => {
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['Let', "'s go"]);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -282,7 +288,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       }
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -319,7 +325,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       }
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -345,7 +351,7 @@ describe('Roman SSE streaming — client disconnect', () => {
   it('aborts the upstream signal even on a clean completion (no leak)', async () => {
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['done ', 'now']);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
 
     const session = await service.getOwnedSession(FREE, 'sess_1');
     for await (const _chunk of service.streamAssistantTurn(FREE, session)) {
@@ -368,7 +374,7 @@ describe('Roman SSE streaming — client disconnect', () => {
       await Promise.resolve();
     };
     const anthropic = makeAnthropic(['never-seen'], gap);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
     const ctrl = new RomanController(
       service as never,
       { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
@@ -389,7 +395,7 @@ describe('Roman SSE streaming — defence in depth', () => {
     delete process.env[FLAG];
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['hi']);
-    const service = new RomanService(prisma as never, grantAllEgress(), anthropic as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
     const session = await service.getOwnedSession(FREE, 'sess_1').catch(() => null);
     // getOwnedSession does not gate on the flag (the guard does), so it returns
     // the session; the stream itself must refuse.
@@ -403,7 +409,7 @@ describe('Roman SSE streaming — defence in depth', () => {
 
   it('surfaces ROMAN_UNAVAILABLE when no Anthropic client is configured', async () => {
     const { prisma } = makePrisma();
-    const service = new RomanService(prisma as never, grantAllEgress(), null as never);
+    const service = new RomanService(prisma as never, grantAllEgress(), null);
     const session = await service.getOwnedSession(FREE, 'sess_1');
     const gen = service.streamAssistantTurn(FREE, session);
     await expect(gen.next()).rejects.toMatchObject({
@@ -417,7 +423,11 @@ describe('Roman — R2b box-2 consent', () => {
     const { prisma, messages } = makePrisma();
     const anthropic = makeAnthropic(['Hi', '.']);
     const { egress, reader } = egressWithGrants(granted);
-    const service = new RomanService(fakeOf(prisma), egress, fakeOf<Anthropic>(anthropic));
+    const service = new RomanService(
+      fakeOf(prisma),
+      egress,
+      AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
+    );
     const ctrl = new RomanController(
       fakeOf(service),
       fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
@@ -475,6 +485,25 @@ describe('Roman — R2b box-2 consent', () => {
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' });
     const error = parseFrames(writes).find((f) => f.event === 'error');
     expect(error?.data).toMatchObject({ code: 'ai_consent_required' });
+  });
+
+  it('B-626-1: a policy refusal mid-stream is a specific error event with the support step and the reference', async () => {
+    const { ctrl, service } = setup(['user-A']);
+    jest.spyOn(service, 'streamAssistantTurn').mockImplementation(async function* () {
+      yield* [];
+      throw new AiEgressPolicyException();
+    });
+    const { res, writes } = makeRes();
+    const req = Object.assign(makeReq(), { requestId: 'req_7f3a' });
+    await ctrl.sendMessage(fakeOf(req), fakeOf(res), 'sess_1', { content: 'hello' });
+    const error = parseFrames(writes).find((f) => f.event === 'error');
+    expect(error?.data).toEqual({
+      code: AI_EGRESS_POLICY_CODE,
+      message: AI_EGRESS_POLICY_MESSAGE,
+      requestId: 'req_7f3a',
+    });
+    expect(error?.data.message).toContain(SUPPORT_EMAIL);
+    expect(error?.data.message).not.toContain('Settings');
   });
 
   it('ledger error: fails closed', async () => {

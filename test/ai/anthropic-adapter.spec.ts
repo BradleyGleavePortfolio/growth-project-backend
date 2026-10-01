@@ -16,7 +16,8 @@ jest.mock('@anthropic-ai/sdk', () => {
 
 import { ConfigService } from '@nestjs/config';
 import { AnthropicAdapter, ANTHROPIC_CLIENT_TOKEN } from '../../src/ai/adapters/anthropic.adapter';
-import { egressWithGrants, grantAllEgress } from '../ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
 import type { AiEgressService } from '../../src/ai-egress/ai-egress.service';
 import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
@@ -168,7 +169,7 @@ describe('AnthropicAdapter constructor', () => {
       usage: { input_tokens: 1, output_tokens: 1 },
       model: 'claude-sonnet-4-6',
     });
-    const fakeClient = { messages: { create: customCreate } } as any;
+    const fakeClient = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create: customCreate } }));
     const config = { get: jest.fn().mockReturnValue('test-key') } as unknown as ConfigService;
     const prisma = { aICallLog: { create: jest.fn() } } as any;
     const adapter = new AnthropicAdapter(config, prisma, grantAllEgress(), fakeClient);

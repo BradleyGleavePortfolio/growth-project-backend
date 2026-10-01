@@ -24,7 +24,8 @@ import {
   ROMAN_RATE_LIMIT_PRO_PER_DAY,
 } from '../../src/roman/roman.constants';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
-import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
+import { grantAllEgress, fakeOf } from '../ai-egress/ai-egress.fakes';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 
 // ─── In-memory fake Prisma ──────────────────────────────────────────────────
 interface SessionRow {
@@ -388,7 +389,7 @@ describe('RomanService — streaming', () => {
   it('streams deltas then persists the full assistant turn on completion', async () => {
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['Good ', 'day.']);
-    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(fake)));
     const s = await svc.openOrResumeSession(CALLER, 'client');
 
     const chunks: string[] = [];
@@ -409,7 +410,7 @@ describe('RomanService — streaming', () => {
   it('persists a partial turn with interrupted=true on client disconnect', async () => {
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['Part', 'ial', ' text']);
-    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(fake)));
     const s = await svc.openOrResumeSession(CALLER, 'client');
 
     const abort = new AbortController();
@@ -433,7 +434,7 @@ describe('RomanService — streaming', () => {
     process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = 'false';
     const prisma = makeFakePrisma();
     const fake = makeFakeStream(['x']);
-    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), fake as never);
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(fake)));
     const s = await svc.openOrResumeSession(CALLER, 'client');
     const gen = svc.streamAssistantTurn(CALLER, s);
     await expect(gen.next()).rejects.toBeInstanceOf(ServiceUnavailableException);

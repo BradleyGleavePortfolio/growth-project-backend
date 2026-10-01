@@ -6,6 +6,7 @@ import {
 } from '../../../src/community/ai-triage/ai-triage.service';
 import { TriageCacheService } from '../../../src/community/ai-triage/triage-cache.service';
 import type { AiGatewayService } from '../../../src/ai/gateway/ai-gateway.service';
+import { AiConsentRequiredException } from '../../../src/ai-egress/ai-consent-required.exception';
 import type { CommunityCoachInboxRepository } from '../../../src/community/inbox/community-coach-inbox.repository';
 import type { CommunityAccessService } from '../../../src/community/community-access.service';
 import { COACH_AI_METERED_CAPABILITIES } from '../../../src/ai-credits/ai-credits.constants';
@@ -654,6 +655,33 @@ describe('AiTriageService — R2b box-2 consent', () => {
     expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
     expect(mocks.gateway.invoke.mock.calls[1][0].userMessage).not.toContain(MSG_1);
     expect(out.source_item_ids).not.toContain(MSG_1);
+  });
+
+  it('C-626-3: an author withdraws between the filter and the send -> re-filtered once, the rest still triaged', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    // The gateway's send-time check sees the withdrawal and refuses the prompt.
+    mocks.gateway.invoke.mockImplementationOnce(async () => {
+      reader.revoke('sender-1');
+      throw new AiConsentRequiredException('coach');
+    });
+    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.gateway.invoke.mock.calls[1][0].dataClientIds).toEqual(['author-1']);
+    expect(mocks.gateway.invoke.mock.calls[1][0].userMessage).not.toContain(MSG_1);
+    expect(out.is_empty).toBe(false);
+    expect(out.source_item_ids).toEqual([POST_1]);
+  });
+
+  it('C-626-3: a second refusal is not retried again (bounded to one re-filter)', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['sender-1', 'author-1']);
+    mocks.gateway.invoke.mockRejectedValue(new AiConsentRequiredException('coach'));
+    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    expect(out.is_empty).toBe(true);
   });
 
   it('ledger error: fails closed, no AI call', async () => {

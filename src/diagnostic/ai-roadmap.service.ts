@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
-import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { AiEgressService, PerplexityHandle } from '../ai-egress/ai-egress.service';
 import { noClientDataSubject } from '../ai-egress/ai-egress.types';
 import { createPerplexityClient } from '../ai-egress/provider-clients';
 import {
@@ -66,8 +65,8 @@ export class AiRoadmapService {
   // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
   // so the client cannot be built at provider construction (env var is
   // unset in test boots and any environment without diagnostic AI).
-  private _client: OpenAI | null = null;
-  private getClient(): OpenAI {
+  private _client: PerplexityHandle | null = null;
+  private getClient(): PerplexityHandle {
     if (!this._client) {
       const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
       if (!apiKey) {

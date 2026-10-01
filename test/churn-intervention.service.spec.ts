@@ -9,7 +9,8 @@ import {
   bucketDateLocal,
 } from '../src/coach/command-center/churn-intervention.service';
 import { Prisma } from '@prisma/client';
-import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
@@ -270,6 +271,12 @@ function buildConfig(): any {
   };
 }
 
+// R2b (C-626-1) — the service holds an opaque handle; only the egress gate
+// can reach the fake client behind it.
+function handleOf(client: object): AnthropicHandle {
+  return AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(client));
+}
+
 function buildAnthropicClient(text: string = 'Hi Alice, I noticed it has been quiet on your end. — Coach'): any {
   return {
     messages: {
@@ -296,7 +303,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(
       svc.generateChurnDraft('c1', 'u1', { idempotency_key: 'not-a-uuid' }),
@@ -332,7 +339,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      anthropic,
+      handleOf(anthropic),
     );
     const out = await svc.generateChurnDraft('c1', 'u1', {
       idempotency_key: VALID_UUID,
@@ -371,7 +378,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      anthropic,
+      handleOf(anthropic),
     );
     const out = await svc.generateChurnDraft('c1', 'u1', {
       idempotency_key: VALID_UUID,
@@ -416,7 +423,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      anthropic,
+      handleOf(anthropic),
     );
     await expect(
       svc.generateChurnDraft('c1', 'u2', { idempotency_key: VALID_UUID }),
@@ -434,7 +441,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(
       svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID }),
@@ -458,7 +465,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      anthropic as any,
+      handleOf(anthropic),
     );
     let caught: any = null;
     try {
@@ -489,7 +496,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient('Hey Alice, missed you this week.'),
+      handleOf(buildAnthropicClient('Hey Alice, missed you this week.')),
     );
     const out = await svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID });
     expect(out.status).toBe('draft');
@@ -512,7 +519,7 @@ describe('ChurnInterventionService.generateChurnDraft — R2b box-2 consent', ()
       buildConfig(),
       egress,
       buildNotifications(),
-      anthropic,
+      handleOf(anthropic),
     );
     return { svc, prisma, reader, anthropic };
   }
@@ -604,7 +611,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       notif,
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     const out = await svc.sendIntervention('c1', 'int-1', {
       message_text: 'Hi Alice, missed you. Drop me a line when you can.',
@@ -627,7 +634,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     const first = await svc.sendIntervention('c1', 'int-1', {
       message_text: 'msg 1',
@@ -651,7 +658,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(
       svc.sendIntervention('c1', 'int-1', {
@@ -669,7 +676,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(
       svc.sendIntervention('c1', 'int-1', { message_text: '', idempotency_key: VALID_UUID_2 }),
@@ -696,7 +703,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(
       svc.sendIntervention('c1', 'int-1', {
@@ -738,7 +745,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     const out = await svc.dismissIntervention('c1', 'int-1');
     expect(out.ok).toBe(true);
@@ -774,7 +781,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     const out = await svc.dismissIntervention('c1', 'int-1');
     expect(out.ok).toBe(true);
@@ -809,7 +816,7 @@ describe('ChurnInterventionService.dismissIntervention', () => {
       buildConfig(),
       grantAllEgress(),
       buildNotifications(),
-      buildAnthropicClient(),
+      handleOf(buildAnthropicClient()),
     );
     await expect(svc.dismissIntervention('c1', 'int-1')).rejects.toThrow(
       /already sent/,

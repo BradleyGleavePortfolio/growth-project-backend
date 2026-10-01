@@ -10,6 +10,7 @@ import {
 import { CommunityAccessService } from '../community-access.service';
 import { TriageCacheService } from './triage-cache.service';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { AiConsentRequiredException } from '../../ai-egress/ai-consent-required.exception';
 import buildInboxTriagePrompt, {
   PROMPT_VERSION as INBOX_TRIAGE_VERSION,
   TriagePromptItem,
@@ -115,7 +116,21 @@ export class AiTriageService {
     if (cohortIds.length === 0) {
       throw new ForbiddenException(NOT_COACH);
     }
+    return this.triageOnce(user, cohortIds, true);
+  }
 
+  /**
+   * One triage pass. C-626-3 — if an author withdraws box 2 between the
+   * consent filter and the send, the gateway refuses the whole prompt; the
+   * pass is then re-run ONCE from a fresh candidate fetch and consent read,
+   * so the remaining consenting authors still get triage instead of an
+   * unexplained empty result.
+   */
+  private async triageOnce(
+    user: User,
+    cohortIds: string[],
+    mayRefilter: boolean,
+  ): Promise<TriageResponse> {
     const fetched = await this.fetchCandidates(cohortIds);
     // R2b — only items whose author holds a live box-2 grant reach the AI
     // (D2 box 2: "only your own data is used", processed by Anthropic). The
@@ -162,6 +177,10 @@ export class AiTriageService {
     try {
       raw = await this.invokeWithTimeout(user, prompt.system, prompt.user, authorIds);
     } catch (err) {
+      if (mayRefilter && err instanceof AiConsentRequiredException) {
+        this.logger.log(`triage consent changed before send coach=${user.id}; re-filtering once`);
+        return this.triageOnce(user, cohortIds, false);
+      }
       this.logger.warn(
         `triage LLM failed/timed out coach=${user.id}: ${(err as Error).message}`,
       );
@@ -175,6 +194,10 @@ export class AiTriageService {
       try {
         repaired = await this.invokeWithTimeout(user, prompt.system, repairUser, authorIds);
       } catch (err) {
+        if (mayRefilter && err instanceof AiConsentRequiredException) {
+          this.logger.log(`triage consent changed before repair coach=${user.id}; re-filtering once`);
+          return this.triageOnce(user, cohortIds, false);
+        }
         this.logger.warn(
           `triage repair failed coach=${user.id}: ${(err as Error).message}`,
         );

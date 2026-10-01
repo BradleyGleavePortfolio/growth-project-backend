@@ -13,8 +13,12 @@
  * same gate call the real one does, so grant / no grant / revoked / ledger
  * error are observable per surface.
  */
-import type Anthropic from '@anthropic-ai/sdk';
-import type OpenAI from 'openai';
+import {
+  AnthropicHandle,
+  PerplexityHandle,
+  type AnthropicMessagesClient,
+  type PerplexityChatClient,
+} from '../../src/ai-egress/ai-egress.service';
 import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
 import { WeeklyInsightCron } from '../../src/ai/coach/weekly-insight.cron';
 import { CoachAIStateService } from '../../src/ai/coach/coach-ai-state.service';
@@ -180,13 +184,13 @@ describe('CoachAIStateService probe — health_probe exemption (no client data)'
     const state = new CoachAIStateService(
       fakeOf({ get: () => 'sk-test' }),
       egress,
-      fakeOf<Anthropic>({ messages: { create } }),
+      AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create } })),
     );
     await state.onApplicationBootstrap();
     expect(state.isReady()).toBe(true);
     expect(create.mock.calls[0]).toEqual([
       { model: expect.any(String), max_tokens: 4, messages: [{ role: 'user', content: 'ping' }] },
-      undefined,
+      { maxRetries: 0 },
     ]);
     expect(reader.calls).toHaveLength(0);
   });
@@ -236,7 +240,9 @@ describe('No-client-data exemptions (proof)', () => {
       },
     };
     const svc = new FirstWinService(fakeOf(prisma), egress);
-    svc['_perplexity'] = fakeOf<OpenAI>({ chat: { completions: { create } } });
+    svc['_perplexity'] = PerplexityHandle.bind(
+      fakeOf<PerplexityChatClient>({ chat: { completions: { create } } }),
+    );
     svc['_perplexityInitialized'] = true;
     for (const win of [
       'logged_first_weight',

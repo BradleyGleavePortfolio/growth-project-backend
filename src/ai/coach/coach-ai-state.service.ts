@@ -6,8 +6,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type Anthropic from '@anthropic-ai/sdk';
-import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { noClientDataSubject } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { COACH_AI_MODEL, COACH_AI_CAPABILITIES } from './coach-ai.constants';
@@ -41,7 +40,7 @@ export class CoachAIStateService implements OnApplicationBootstrap {
   constructor(
     private readonly config: ConfigService,
     private readonly egress: AiEgressService,
-    @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) private readonly injectedClient?: Anthropic,
+    @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) private readonly injectedClient?: AnthropicHandle,
   ) {}
 
   // Called once by Nest after every module's onModuleInit. We do the

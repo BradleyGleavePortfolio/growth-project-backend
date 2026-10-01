@@ -35,8 +35,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import type Anthropic from '@anthropic-ai/sdk';
-import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
@@ -143,7 +142,7 @@ export function bucketDateLocal(d: Date, timeZone = 'America/Los_Angeles'): stri
 @Injectable()
 export class ChurnInterventionService {
   private readonly logger = new Logger(ChurnInterventionService.name);
-  private anthropic: Anthropic | null = null;
+  private anthropic: AnthropicHandle | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -154,12 +153,12 @@ export class ChurnInterventionService {
     @Optional() private readonly notifications?: NotificationsService,
     @Optional()
     @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
-    injectedClient?: Anthropic,
+    injectedClient?: AnthropicHandle,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
 
-  private getAnthropicClient(): Anthropic {
+  private getAnthropicClient(): AnthropicHandle {
     if (this.anthropic) return this.anthropic;
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey || !apiKey.trim()) {

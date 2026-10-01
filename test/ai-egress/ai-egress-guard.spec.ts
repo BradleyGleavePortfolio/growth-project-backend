@@ -17,6 +17,18 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { AiEgressPolicyException } from '../../src/ai-egress/ai-consent-required.exception';
+import {
+  AiEgressService,
+  AnthropicHandle,
+  PerplexityHandle,
+} from '../../src/ai-egress/ai-egress.service';
+import { noClientDataSubject } from '../../src/ai-egress/ai-egress.types';
+import {
+  createAnthropicClient,
+  createPerplexityClient,
+} from '../../src/ai-egress/provider-clients';
+import { romanAnthropicClientProvider } from '../../src/roman/anthropic-client.provider';
 
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'src');
@@ -58,7 +70,10 @@ const RULES: Array<{ name: string; re: RegExp }> = [
     name: 'ai-sdk-value-import',
     // The specifier must be the whole quoted module string after `from` (or
     // a bare side-effect import); no match may start at a closing quote.
-    re: new RegExp(`^\\s*import\\s+(?!type\\b)(?:[^;'"]*?\\bfrom\\s*)?['"]${SDK_IMPORT_TARGET}['"]`, 'm'),
+    re: new RegExp(
+      `^\\s*import\\s+(?!type\\b)(?:[^;'"]*?\\bfrom\\s*)?['"]${SDK_IMPORT_TARGET}['"]`,
+      'm',
+    ),
   },
   { name: 'ai-sdk-require', re: new RegExp(`require\\(\\s*['"]${SDK_IMPORT_TARGET}['"]\\s*\\)`) },
   {
@@ -124,13 +139,19 @@ describe('AI egress guard (R2b)', () => {
     expect(scanSource(service)).toEqual(
       expect.arrayContaining(['provider-messages-call', 'provider-chat-completions-call']),
     );
-    // Every send method in the gate checks the subject first.
+    // Every send method goes through sendGated, which checks the subject
+    // before EVERY attempt, and every SDK request forces SDK retries off.
     const sends =
       service.match(
         /async (anthropicMessagesCreate|anthropicMessagesStream|perplexityChatCreate)\([\s\S]*?\n {2}\}/g,
       ) ?? [];
     expect(sends).toHaveLength(3);
-    for (const body of sends) expect(body).toMatch(/await this\.assertMaySend\(/);
+    for (const body of sends) {
+      expect(body).toMatch(/return this\.sendGated\(/);
+      expect(body).toMatch(/maxRetries: 0 \}/);
+    }
+    const gated = service.match(/private async sendGated<T>\([\s\S]*?\n {2}\}/)?.[0] ?? '';
+    expect(gated).toMatch(/for \(let retry = 0; ; retry\+\+\) \{\s*await this\.assertMaySend\(/);
   });
 
   it('package.json has no AI SDK the guard does not know about', () => {
@@ -174,5 +195,105 @@ describe('AI egress guard (R2b)', () => {
     ])('allowed: %s', (code) => {
       expect(scanSource(code)).toEqual([]);
     });
+  });
+});
+
+// C-626-1 — the boundary is enforced, not only scanned: call sites hold
+// opaque handles, ESLint rejects AI SDK value imports outside src/ai-egress
+// (CI runs `npm run lint`), and the factories never hand out an SDK client.
+describe('AI provider capability boundary (C-626-1)', () => {
+  // Loaded untyped on purpose: the full eslint type graph is large and only
+  // this small surface is used.
+  interface LintApi {
+    lintText(
+      code: string,
+      o: { filePath: string },
+    ): Promise<Array<{ messages: Array<{ ruleId: string | null }> }>>;
+  }
+  const { ESLint } = require('eslint') as {
+    ESLint: new (o: {
+      cwd: string;
+      overrideConfigFile: boolean;
+      overrideConfig: unknown;
+    }) => LintApi;
+  };
+  // The repo's real flat config, passed in directly (jest cannot run
+  // ESLint's dynamic config-file import without --experimental-vm-modules).
+  const repoConfig: unknown = require(path.join(ROOT, 'eslint.config.js'));
+
+  async function lint(code: string, rel: string) {
+    const eslint = new ESLint({ cwd: ROOT, overrideConfigFile: true, overrideConfig: repoConfig });
+    const [result] = await eslint.lintText(code, { filePath: path.join(ROOT, rel) });
+    return result.messages
+      .filter((m) => m.ruleId === '@typescript-eslint/no-restricted-imports')
+      .map((m) => m.ruleId);
+  }
+
+  it('ESLint rejects an AI SDK value import anywhere in src/ outside src/ai-egress', async () => {
+    const anthropic =
+      "import Anthropic from '@anthropic-ai/sdk';\nexport const c = new Anthropic();\n";
+    const openai = "import OpenAI from 'openai';\nexport const c = new OpenAI();\n";
+    const deep =
+      "import { Messages } from '@anthropic-ai/sdk/resources/messages';\nexport const m = Messages;\n";
+    expect(await lint(anthropic, 'src/roman/probe.ts')).toHaveLength(1);
+    expect(await lint(openai, 'src/first-win/probe.ts')).toHaveLength(1);
+    expect(await lint(deep, 'src/coach/brief/probe.ts')).toHaveLength(1);
+    // Type-only imports cannot send anything and stay allowed.
+    expect(
+      await lint(
+        "import type Anthropic from '@anthropic-ai/sdk';\nexport type A = Anthropic;\n",
+        'src/roman/probe.ts',
+      ),
+    ).toEqual([]);
+    // The egress module itself may use the SDK.
+    expect(await lint(anthropic, 'src/ai-egress/probe.ts')).toEqual([]);
+  }, 30_000);
+
+  it('a handle exposes nothing: no SDK surface, no own properties, frozen', () => {
+    const create = jest.fn();
+    const handle = AnthropicHandle.bind({ messages: { create, stream: jest.fn() } });
+    expect(Object.getOwnPropertyNames(handle)).toEqual([]);
+    expect(Object.getOwnPropertySymbols(handle)).toEqual([]);
+    expect(Object.isFrozen(handle)).toBe(true);
+    expect('messages' in handle).toBe(false);
+    expect(JSON.stringify(handle)).toBe('{}');
+    const p = PerplexityHandle.bind({ chat: { completions: { create } } });
+    expect('chat' in p).toBe(false);
+    expect(Object.getOwnPropertyNames(p)).toEqual([]);
+  });
+
+  it('the factories and the Roman DI provider return handles, never SDK clients', () => {
+    const a = createAnthropicClient('test-key-not-a-secret');
+    const p = createPerplexityClient('test-key-not-a-secret');
+    expect(a).toBeInstanceOf(AnthropicHandle);
+    expect(p).toBeInstanceOf(PerplexityHandle);
+    expect('messages' in a).toBe(false);
+    expect('chat' in p).toBe(false);
+    const provider = romanAnthropicClientProvider as {
+      useFactory: (config: { get: (k: string) => string | undefined }) => unknown;
+    };
+    expect(provider.useFactory({ get: () => 'test-key-not-a-secret' })).toBeInstanceOf(
+      AnthropicHandle,
+    );
+  });
+
+  it('the gate refuses anything that is not a bound handle (503, nothing sent)', async () => {
+    const reader = { hasClientAiConsent: jest.fn(), clientsWithAiConsent: jest.fn() };
+    const egress = new AiEgressService(reader);
+    const create = jest.fn();
+    const forged = Object.create(AnthropicHandle.prototype);
+    await expect(
+      egress.anthropicMessagesCreate(
+        forged,
+        noClientDataSubject('health_probe'),
+        'coach_ai.health_probe',
+        {
+          model: 'm',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'ping' }],
+        },
+      ),
+    ).rejects.toBeInstanceOf(AiEgressPolicyException);
+    expect(create).not.toHaveBeenCalled();
   });
 });

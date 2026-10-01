@@ -20,7 +20,6 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type Anthropic from '@anthropic-ai/sdk';
 import type {
   Prisma,
   RomanMessage,
@@ -28,7 +27,7 @@ import type {
   RomanSurface,
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle } from '../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
 import {
   AiDataSubject,
@@ -97,7 +96,7 @@ export class RomanService {
     private readonly egress: AiEgressService,
     @Optional()
     @Inject(ROMAN_ANTHROPIC_CLIENT)
-    private readonly anthropic: Anthropic | null = null,
+    private readonly anthropic: AnthropicHandle | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────

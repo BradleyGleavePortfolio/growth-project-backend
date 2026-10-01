@@ -24,9 +24,11 @@ import {
   clientDataSubject,
   noClientDataSubject,
 } from '../../src/ai-egress/ai-egress.types';
-import type {
-  AnthropicMessagesClient,
-  PerplexityChatClient,
+import {
+  AnthropicHandle,
+  PerplexityHandle,
+  type AnthropicMessagesClient,
+  type PerplexityChatClient,
 } from '../../src/ai-egress/ai-egress.service';
 import { egressWithGrants } from './ai-egress.fakes';
 
@@ -35,15 +37,15 @@ function fakeAnthropic() {
   create.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
   const stream = jest.fn();
   stream.mockReturnValue({ kind: 'stream' });
-  const client: AnthropicMessagesClient = { messages: { create, stream } };
-  return { client, create, stream };
+  const raw: AnthropicMessagesClient = { messages: { create, stream } };
+  return { client: AnthropicHandle.bind(raw), create, stream };
 }
 
 function fakePerplexity() {
   const create = jest.fn();
   create.mockResolvedValue({ choices: [{ message: { content: 'ok' } }] });
-  const client: PerplexityChatClient = { chat: { completions: { create } } };
-  return { client, create };
+  const raw: PerplexityChatClient = { chat: { completions: { create } } };
+  return { client: PerplexityHandle.bind(raw), create };
 }
 
 const PARAMS = {
@@ -72,7 +74,8 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
       PARAMS,
     );
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith(PARAMS, undefined);
+    // SDK auto-retry is forced off on every request (A-626-1).
+    expect(create).toHaveBeenCalledWith(PARAMS, { maxRetries: 0 });
   });
 
   it('no grant: refused with ai_consent_required, provider never called', async () => {
