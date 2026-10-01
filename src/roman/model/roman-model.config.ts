@@ -18,8 +18,17 @@
  *         `output_config.effort` (low|medium|high). `thinking.type='disabled'`,
  *         `temperature`, `top_p`, `top_k`, prefill and forced tool_choice
  *         return 400.
+ *       * Opus 5.5: thinking is ALWAYS adaptive. The request must omit
+ *         `thinking` or send `thinking: {type: 'adaptive'}`; `between_tools`
+ *         is a Sonnet 5.5 setting and returns 400 on Opus (Sol audit of
+ *         #598, finding B1). Because the model may think before answering,
+ *         `max_tokens` must cover thinking + text, so the Opus profile carries
+ *         a larger turn budget and a larger probe budget.
  *       * 4.6: the plain request. No `thinking` (off by default there) and no
  *         `output_config`.
+ *   - resolves ids with an OWN-property check (`Object.hasOwn`), so inherited
+ *     names such as `constructor`, `toString` or `__proto__` fail boot as
+ *     unknown models instead of resolving to a function (Sol finding C1).
  *   - carries the public price card per model so each call can write an
  *     `AICallLog.costCents` row and the daily USD cap can be computed.
  *
@@ -43,7 +52,7 @@ export type RomanEffort = 'low' | 'medium' | 'high';
 export const ROMAN_EFFORT_VALUES: readonly RomanEffort[] = ['low', 'medium', 'high'];
 
 /** Which request shape a model takes. */
-export type RomanRequestFamily = 'sonnet_5_5' | 'legacy_plain';
+export type RomanRequestFamily = 'sonnet_5_5' | 'opus_5_5' | 'legacy_plain';
 
 export interface RomanModelProfile {
   id: string;
@@ -51,33 +60,77 @@ export interface RomanModelProfile {
   /** Public price card, USD per million tokens. */
   inputUsdPerMTok: number;
   outputUsdPerMTok: number;
+  /**
+   * `max_tokens` for one Roman turn. Thinking-inclusive for families whose
+   * thinking cannot be switched off (Opus 5.5); text-only otherwise.
+   */
+  maxOutputTokens: number;
+  /** `max_tokens` for the boot/health probe ("ping"), thinking-inclusive. */
+  probeMaxTokens: number;
 }
+
+/** Text-only turn budget (plan §2.4) for models that do not think up front. */
+export const ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS = 2048;
+/**
+ * Thinking-inclusive turn budget for always-adaptive models (Opus 5.5): the
+ * same 2,048 tokens of text plus headroom for the adaptive thinking block.
+ */
+export const ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS = 4096;
+/** 4 tokens is enough for "pong" when nothing is thought up front. */
+export const ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS = 4;
+/** Adaptive models may think before "pong"; give the probe room to finish. */
+export const ROMAN_ADAPTIVE_PROBE_MAX_TOKENS = 256;
 
 /**
  * Allow-list of model ids Roman may be configured with. Anything else — and
  * every id in `ROMAN_RETIRED_MODELS` — is rejected at boot. Prices from the
  * Anthropic models overview (plan §3 table).
  */
-export const ROMAN_MODEL_ALLOWLIST: Readonly<Record<string, RomanModelProfile>> = {
-  'claude-sonnet-5-5': {
-    id: 'claude-sonnet-5-5',
-    family: 'sonnet_5_5',
-    inputUsdPerMTok: 2,
-    outputUsdPerMTok: 10,
-  },
-  'claude-opus-5-5': {
-    id: 'claude-opus-5-5',
-    family: 'sonnet_5_5',
-    inputUsdPerMTok: 4,
-    outputUsdPerMTok: 20,
-  },
-  'claude-sonnet-4-6': {
-    id: 'claude-sonnet-4-6',
-    family: 'legacy_plain',
-    inputUsdPerMTok: 3,
-    outputUsdPerMTok: 15,
-  },
-};
+export const ROMAN_MODEL_ALLOWLIST: Readonly<Record<string, RomanModelProfile>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<string, RomanModelProfile>, {
+    'claude-sonnet-5-5': {
+      id: 'claude-sonnet-5-5',
+      family: 'sonnet_5_5',
+      inputUsdPerMTok: 2,
+      outputUsdPerMTok: 10,
+      maxOutputTokens: ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS,
+      probeMaxTokens: ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS,
+    },
+    'claude-opus-5-5': {
+      id: 'claude-opus-5-5',
+      family: 'opus_5_5',
+      inputUsdPerMTok: 4,
+      outputUsdPerMTok: 20,
+      maxOutputTokens: ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS,
+      probeMaxTokens: ROMAN_ADAPTIVE_PROBE_MAX_TOKENS,
+    },
+    'claude-sonnet-4-6': {
+      id: 'claude-sonnet-4-6',
+      family: 'legacy_plain',
+      inputUsdPerMTok: 3,
+      outputUsdPerMTok: 15,
+      maxOutputTokens: ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS,
+      probeMaxTokens: ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS,
+    },
+  } satisfies Record<string, RomanModelProfile>),
+);
+
+/** Allowed ids, in allow-list order (own keys only — the object has no prototype). */
+export function allowedRomanModelIds(): string[] {
+  return Object.keys(ROMAN_MODEL_ALLOWLIST);
+}
+
+/**
+ * Own-property lookup. `ROMAN_MODEL_ALLOWLIST` is a null-prototype object AND
+ * the lookup checks `Object.hasOwn`, so `constructor` / `toString` /
+ * `__proto__` / `hasOwnProperty` can never resolve to anything (Sol C1).
+ */
+export function lookupRomanModel(id: string): RomanModelProfile | null {
+  if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(ROMAN_MODEL_ALLOWLIST, id))
+    return null;
+  const profile = ROMAN_MODEL_ALLOWLIST[id];
+  return profile && typeof profile === 'object' && profile.id === id ? profile : null;
+}
 
 /**
  * Ids that are known-retired or whose retirement window opens too close to
@@ -121,13 +174,13 @@ export function resolveRomanModel(
   const id = (raw ?? '').trim() || fallback;
   if (ROMAN_RETIRED_MODELS.has(id)) {
     throw new RomanModelConfigError(
-      `[roman] ${envName}=${id} is RETIRED by Anthropic. Use one of: ${Object.keys(ROMAN_MODEL_ALLOWLIST).join(', ')}.`,
+      `[roman] ${envName}=${id} is RETIRED by Anthropic. Use one of: ${allowedRomanModelIds().join(', ')}.`,
     );
   }
-  const profile = ROMAN_MODEL_ALLOWLIST[id];
+  const profile = lookupRomanModel(id);
   if (!profile) {
     throw new RomanModelConfigError(
-      `[roman] ${envName}=${id} is not an allowed Roman model. Use one of: ${Object.keys(ROMAN_MODEL_ALLOWLIST).join(', ')}.`,
+      `[roman] ${envName}=${id} is not an allowed Roman model. Use one of: ${allowedRomanModelIds().join(', ')}.`,
     );
   }
   return profile;
@@ -173,6 +226,10 @@ export function resolveRomanModelConfig(env: NodeJS.ProcessEnv = process.env): R
  * Per-model request fields merged into the Messages API body. Returned as a
  * plain record so the caller can spread it; the `thinking.type='between_tools'`
  * value is newer than the SDK's typed union and is cast at the call site.
+ *
+ *   sonnet_5_5   thinking.between_tools + output_config.effort
+ *   opus_5_5     thinking.adaptive      + output_config.effort  (never between_tools)
+ *   legacy_plain nothing
  */
 export function requestProfileFor(
   profile: RomanModelProfile,
@@ -184,10 +241,44 @@ export function requestProfileFor(
         thinking: { type: 'between_tools' },
         output_config: { effort },
       };
+    case 'opus_5_5':
+      return {
+        thinking: { type: 'adaptive' },
+        output_config: { effort },
+      };
     case 'legacy_plain':
     default:
       return {};
   }
+}
+
+/**
+ * The complete per-model body fields for ONE Roman turn: `model`, a
+ * thinking-inclusive `max_tokens` and the request profile. Used by both the
+ * turn path and (with `probeRequestFor`) the boot probe so the two can never
+ * disagree on a model's contract.
+ */
+export function turnRequestFor(
+  profile: RomanModelProfile,
+  effort: RomanEffort,
+): { model: string; max_tokens: number } & Record<string, unknown> {
+  return {
+    model: profile.id,
+    max_tokens: profile.maxOutputTokens,
+    ...requestProfileFor(profile, effort),
+  };
+}
+
+/** The complete per-model body fields for the boot/health probe. */
+export function probeRequestFor(
+  profile: RomanModelProfile,
+  effort: RomanEffort,
+): { model: string; max_tokens: number } & Record<string, unknown> {
+  return {
+    model: profile.id,
+    max_tokens: profile.probeMaxTokens,
+    ...requestProfileFor(profile, effort),
+  };
 }
 
 /** Cost in integer cents for one call, rounded up so the cap is conservative. */

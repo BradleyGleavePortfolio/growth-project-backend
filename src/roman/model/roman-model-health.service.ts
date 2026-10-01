@@ -3,7 +3,9 @@
  * (PLAN_roman_intelligence §3 "Startup and health check", slice R1).
  *
  * Pattern copied (not shared) from `CoachAIStateService`: on boot, send a
- * 4-token probe to the PRIMARY and the FALLBACK model. States:
+ * tiny "ping" probe (budget per model profile) to the PRIMARY and the
+ * FALLBACK model, using exactly the per-model request profile the turn path
+ * sends. States:
  *
  *   ready         primary answered (fallback may or may not have)
  *   degraded      only the fallback answered → logged at error + Sentry
@@ -39,7 +41,7 @@ import { isRomanChatEnabled } from '../roman.feature';
 import {
   RomanModelConfig,
   RomanModelProfile,
-  requestProfileFor,
+  probeRequestFor,
   resolveRomanModelConfig,
 } from './roman-model.config';
 import { describeUpstreamError } from './roman-upstream-error';
@@ -61,7 +63,10 @@ export interface RomanModelHealthStatus {
 export const ROMAN_ENV_OVERRIDE = 'ROMAN_ENV_OVERRIDE';
 export const ROMAN_HEALTH_REPROBE_MS = 15 * 60 * 1000;
 export const ROMAN_HEALTH_NOT_FOUND_THRESHOLD = 3;
-const PROBE_MAX_TOKENS = 4;
+/**
+ * Probe budget comes from the model profile (`probeMaxTokens`): 4 tokens for
+ * text-only families, more for always-adaptive Opus so thinking + "pong" fit.
+ */
 const PROBE_TIMEOUT_MS = 15_000;
 
 @Injectable()
@@ -236,10 +241,8 @@ export class RomanModelHealthService implements OnApplicationBootstrap, OnModule
     try {
       await this.anthropic.messages.create(
         {
-          model: profile.id,
-          max_tokens: PROBE_MAX_TOKENS,
+          ...probeRequestFor(profile, this.config.effort),
           messages: [{ role: 'user', content: 'ping' }],
-          ...(requestProfileFor(profile, this.config.effort) as object),
         } as Anthropic.MessageCreateParamsNonStreaming,
         { signal: controller.signal },
       );

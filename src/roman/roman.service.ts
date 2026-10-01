@@ -33,7 +33,6 @@ import {
   ROMAN_HISTORY_MAX_TOKENS,
   ROMAN_HISTORY_TURN_MAX_CHARS,
   ROMAN_MAX_CONTEXT_TURNS,
-  ROMAN_MAX_OUTPUT_TOKENS,
   ROMAN_MESSAGES_DEFAULT_LIMIT,
   ROMAN_MESSAGES_MAX_LIMIT,
   ROMAN_RATE_LIMIT_FREE_PER_DAY,
@@ -59,8 +58,8 @@ import {
   RomanModelConfig,
   RomanModelProfile,
   costCentsFor,
-  requestProfileFor,
   resolveRomanModelConfig,
+  turnRequestFor,
 } from './model/roman-model.config';
 import {
   UpstreamErrorDescription,
@@ -624,13 +623,14 @@ export class RomanService {
         const profile = order[attempt];
         const startedAt = Date.now();
         try {
+          // Per-model body (model, thinking-inclusive max_tokens, thinking /
+          // output_config profile) comes from ONE place shared with the boot
+          // probe, so an allowed model can never get another family's shape.
           const stream = this.anthropic.messages.stream(
             {
-              model: profile.id,
-              max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
+              ...turnRequestFor(profile, this.modelConfig.effort),
               system,
               messages,
-              ...requestProfileFor(profile, this.modelConfig.effort),
             } as Anthropic.MessageStreamParams,
             { signal: upstream.signal },
           );

@@ -22,14 +22,23 @@ import { RomanService } from '../../src/roman/roman.service';
 import { RomanController } from '../../src/roman/roman.controller';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import {
+  ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS,
+  ROMAN_ADAPTIVE_PROBE_MAX_TOKENS,
   ROMAN_GLOBAL_DAILY_USD_CAP_ENV,
+  ROMAN_MODEL_ALLOWLIST,
   ROMAN_MODEL_EFFORT_ENV,
   ROMAN_MODEL_FALLBACK_ENV,
   ROMAN_MODEL_PRIMARY_ENV,
+  ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS,
+  ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS,
   RomanModelConfigError,
+  allowedRomanModelIds,
   costCentsFor,
+  lookupRomanModel,
+  probeRequestFor,
   requestProfileFor,
   resolveRomanModelConfig,
+  turnRequestFor,
 } from '../../src/roman/model/roman-model.config';
 import {
   describeUpstreamError,
@@ -244,6 +253,114 @@ describe('R1 model config', () => {
     expect(requestProfileFor(c.fallback, 'low')).toEqual({});
   });
 
+  // Sol audit of #598, finding B1: Opus 5.5 is always-adaptive. It must never
+  // receive the Sonnet-only `between_tools` profile, and its budgets must be
+  // thinking-inclusive.
+  it('gives opus-5-5 an ADAPTIVE thinking profile (never between_tools) with thinking-inclusive budgets', () => {
+    const opus = lookupRomanModel('claude-opus-5-5')!;
+    expect(opus.family).toBe('opus_5_5');
+    expect(requestProfileFor(opus, 'medium')).toEqual({
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
+    });
+    expect(opus.maxOutputTokens).toBe(ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS);
+    expect(opus.probeMaxTokens).toBe(ROMAN_ADAPTIVE_PROBE_MAX_TOKENS);
+    expect(opus.maxOutputTokens).toBeGreaterThan(ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS);
+    expect(opus.probeMaxTokens).toBeGreaterThan(ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS);
+    // Opus accepted as primary or fallback resolves to the adaptive family.
+    const c = resolveRomanModelConfig({
+      [ROMAN_MODEL_PRIMARY_ENV]: 'claude-opus-5-5',
+      [ROMAN_MODEL_FALLBACK_ENV]: 'claude-sonnet-5-5',
+    });
+    expect(c.primary.family).toBe('opus_5_5');
+    expect(turnRequestFor(c.primary, c.effort).thinking).toEqual({ type: 'adaptive' });
+  });
+
+  // B1 fix acceptance: probe AND turn payloads for EVERY allowed model match
+  // that model's documented contract.
+  const EXPECTED_CONTRACT: Record<
+    string,
+    { thinking: unknown; effort: boolean; turnMax: number; probeMax: number }
+  > = {
+    'claude-sonnet-5-5': {
+      thinking: { type: 'between_tools' },
+      effort: true,
+      turnMax: ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS,
+      probeMax: ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS,
+    },
+    'claude-opus-5-5': {
+      thinking: { type: 'adaptive' },
+      effort: true,
+      turnMax: ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS,
+      probeMax: ROMAN_ADAPTIVE_PROBE_MAX_TOKENS,
+    },
+    'claude-sonnet-4-6': {
+      thinking: undefined,
+      effort: false,
+      turnMax: ROMAN_TEXT_ONLY_MAX_OUTPUT_TOKENS,
+      probeMax: ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS,
+    },
+  };
+
+  it.each(allowedRomanModelIds())(
+    'probe and turn payloads for %s match the documented contract',
+    (id) => {
+      expect(EXPECTED_CONTRACT).toHaveProperty(id); // every allowed model has a pinned contract
+      const want = EXPECTED_CONTRACT[id];
+      const profile = lookupRomanModel(id)!;
+      for (const body of [turnRequestFor(profile, 'low'), probeRequestFor(profile, 'low')]) {
+        expect(body.model).toBe(id);
+        if (want.thinking === undefined) expect(body).not.toHaveProperty('thinking');
+        else expect(body.thinking).toEqual(want.thinking);
+        if (want.effort) expect(body.output_config).toEqual({ effort: 'low' });
+        else expect(body).not.toHaveProperty('output_config');
+        // Fields Anthropic 400s on for the 5.x families are never present.
+        expect(body).not.toHaveProperty('temperature');
+        expect(body).not.toHaveProperty('top_p');
+        expect(body).not.toHaveProperty('top_k');
+        expect(JSON.stringify(body)).not.toContain('"disabled"');
+        // between_tools is Sonnet-only; adaptive is Opus-only.
+        if (profile.family === 'opus_5_5')
+          expect(JSON.stringify(body)).not.toContain('between_tools');
+        if (profile.family === 'sonnet_5_5') expect(JSON.stringify(body)).not.toContain('adaptive');
+      }
+      expect(turnRequestFor(profile, 'low').max_tokens).toBe(want.turnMax);
+      expect(probeRequestFor(profile, 'low').max_tokens).toBe(want.probeMax);
+    },
+  );
+
+  it('every allowed model has a contract pinned in this spec (no untested family)', () => {
+    expect(Object.keys(EXPECTED_CONTRACT).sort()).toEqual(allowedRomanModelIds().sort());
+  });
+
+  // Sol audit of #598, finding C1: inherited Object.prototype names must not
+  // pass the allow-list.
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf', 'prototype'])(
+    'rejects the inherited property name %s as an unknown model at boot',
+    (name) => {
+      expect(lookupRomanModel(name)).toBeNull();
+      expect(() => resolveRomanModelConfig({ [ROMAN_MODEL_PRIMARY_ENV]: name })).toThrow(
+        /not an allowed Roman model/,
+      );
+      expect(() => resolveRomanModelConfig({ [ROMAN_MODEL_FALLBACK_ENV]: name })).toThrow(
+        RomanModelConfigError,
+      );
+      expect(() => new RomanModelHealthService(null, { [ROMAN_MODEL_PRIMARY_ENV]: name })).toThrow(
+        RomanModelConfigError,
+      );
+    },
+  );
+
+  it('the allow-list has no prototype and only lists real model ids', () => {
+    expect(Object.getPrototypeOf(ROMAN_MODEL_ALLOWLIST)).toBeNull();
+    expect(allowedRomanModelIds()).toEqual([
+      'claude-sonnet-5-5',
+      'claude-opus-5-5',
+      'claude-sonnet-4-6',
+    ]);
+    expect(Object.isFrozen(ROMAN_MODEL_ALLOWLIST)).toBe(true);
+  });
+
   it('prices calls from the model card in whole cents, rounded up', () => {
     const c = resolveRomanModelConfig({});
     // 5,000 in @ $2/MTok = $0.01; 250 out @ $10/MTok = $0.0025 → $0.0125 → 2 cents
@@ -313,6 +430,26 @@ describe('R1 request shape and fallback', () => {
     expect(body).not.toHaveProperty('temperature');
     expect(body).not.toHaveProperty('top_p');
     expect(body).not.toHaveProperty('top_k');
+  });
+
+  it('sends opus-5-5 turns with thinking.adaptive and a thinking-inclusive max_tokens (B1)', async () => {
+    process.env[ROMAN_MODEL_PRIMARY_ENV] = 'claude-opus-5-5';
+    process.env[ROMAN_MODEL_EFFORT_ENV] = 'medium';
+    const { prisma, messages } = makePrisma();
+    const anthropic = makeAnthropic([{ kind: 'ok', deltas: ['Good evening.'] }]);
+    const service = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
+    await drain(service);
+
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    const body = anthropic.messages.stream.mock.calls[0][0] as Record<string, unknown>;
+    expect(body.model).toBe('claude-opus-5-5');
+    expect(body.max_tokens).toBe(ROMAN_ADAPTIVE_MAX_OUTPUT_TOKENS);
+    expect(body.thinking).toEqual({ type: 'adaptive' });
+    expect(body.output_config).toEqual({ effort: 'medium' });
+    expect(JSON.stringify(body)).not.toContain('between_tools');
+    expect(body).not.toHaveProperty('temperature');
+    const assistant = messages.find((m) => m.role === 'roman');
+    expect(assistant?.model_id).toBe('claude-opus-5-5');
   });
 
   it('reads the model from env and sends the plain request for sonnet-4-6', async () => {
@@ -596,7 +733,27 @@ describe('R1 RomanModelHealthService', () => {
     expect(primary.max_tokens).toBe(4);
     expect(primary.thinking).toEqual({ type: 'between_tools' });
     expect(fallback).not.toHaveProperty('thinking');
+    expect(fallback.max_tokens).toBe(4);
     expect(h.preferredOrder().map((p) => p.id)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-4-6']);
+  });
+
+  it('probes opus-5-5 with the ADAPTIVE profile and a thinking-inclusive budget (B1)', async () => {
+    const client = makeProbeClient({ 'claude-opus-5-5': true, 'claude-sonnet-5-5': true });
+    const h = new RomanModelHealthService(asAnthropicDouble(client), {
+      [ROMAN_MODEL_PRIMARY_ENV]: 'claude-opus-5-5',
+      [ROMAN_MODEL_FALLBACK_ENV]: 'claude-sonnet-5-5',
+    });
+    await h.probe();
+    expect(h.getStatus()).toMatchObject({ status: 'ready', primary_model: 'claude-opus-5-5' });
+    const bodies = client.messages.create.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    const opus = bodies.find((b) => b.model === 'claude-opus-5-5')!;
+    const sonnet = bodies.find((b) => b.model === 'claude-sonnet-5-5')!;
+    expect(opus.thinking).toEqual({ type: 'adaptive' });
+    expect(opus.output_config).toEqual({ effort: 'low' });
+    expect(opus.max_tokens).toBe(ROMAN_ADAPTIVE_PROBE_MAX_TOKENS);
+    expect(JSON.stringify(opus)).not.toContain('between_tools');
+    expect(sonnet.thinking).toEqual({ type: 'between_tools' });
+    expect(sonnet.max_tokens).toBe(ROMAN_TEXT_ONLY_PROBE_MAX_TOKENS);
   });
 
   it('is degraded when only the fallback answers, and routes straight to it', async () => {
