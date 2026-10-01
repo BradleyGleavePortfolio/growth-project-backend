@@ -8,7 +8,7 @@
 // The audit probe showed the submitted zero block duration let 12/12 calls
 // through at limit 5 on the real in-memory adapter (hits 1..5,1..5,1,2).
 import 'reflect-metadata';
-import { ThrottlerException, ThrottlerStorageService } from '@nestjs/throttler';
+import { ThrottlerException, ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import {
@@ -16,10 +16,16 @@ import {
   OAUTH_COACH_SIGNUP_BLOCK_MS,
   oauthCoachSignupKey,
 } from '../src/throttler/login-throttle-reset.service';
-import { withFailOpenStorage } from '../src/throttler/throttler.config';
+import {
+  ThrottlerStorageDegradeHooks,
+  withFailOpenStorage,
+} from '../src/throttler/throttler.config';
 import { describeLiveRedis, liveRedisClient } from './support/live-redis';
 
-async function attempt(svc: LoginThrottleResetService, ip: string | null): Promise<'ok' | '429' | '503'> {
+async function attempt(
+  svc: LoginThrottleResetService,
+  ip: string | null,
+): Promise<'ok' | '429' | '503'> {
   try {
     await svc.consumeOAuthCoachSignupSlot(ip);
     return 'ok';
@@ -30,7 +36,7 @@ async function attempt(svc: LoginThrottleResetService, ip: string | null): Promi
   }
 }
 
-const quietLogger = { warn: () => undefined } as any;
+const quietLogger: NonNullable<ThrottlerStorageDegradeHooks['logger']> = { warn: () => undefined };
 
 describe('OAuth coach-signup ceiling on the real in-memory @nestjs/throttler storage', () => {
   let storage: ThrottlerStorageService;
@@ -48,7 +54,20 @@ describe('OAuth coach-signup ceiling on the real in-memory @nestjs/throttler sto
     const svc = new LoginThrottleResetService(storage);
     const results: string[] = [];
     for (let i = 0; i < 12; i++) results.push(await attempt(svc, '192.0.2.1'));
-    expect(results).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', '429', '429', '429', '429', '429', '429', '429']);
+    expect(results).toEqual([
+      'ok',
+      'ok',
+      'ok',
+      'ok',
+      'ok',
+      '429',
+      '429',
+      '429',
+      '429',
+      '429',
+      '429',
+      '429',
+    ]);
   });
 
   it('is keyed per IP and a missing IP shares one bucket instead of skipping the ceiling', async () => {
@@ -65,12 +84,20 @@ describe('OAuth coach-signup ceiling on the real in-memory @nestjs/throttler sto
   it('honours AUTH_OAUTH_COACH_SIGNUP_PER_HOUR', async () => {
     process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR = '2';
     const svc = new LoginThrottleResetService(storage);
-    const r = [await attempt(svc, '198.51.100.9'), await attempt(svc, '198.51.100.9'), await attempt(svc, '198.51.100.9')];
+    const r = [
+      await attempt(svc, '198.51.100.9'),
+      await attempt(svc, '198.51.100.9'),
+      await attempt(svc, '198.51.100.9'),
+    ];
     expect(r).toEqual(['ok', 'ok', '429']);
   });
 
   it('fails CLOSED through the production fail-open wrapper when the backend errors', async () => {
-    const broken = { increment: async () => { throw new Error('Stream isn\'t writeable'); } } as any;
+    const broken: ThrottlerStorage = {
+      increment: async () => {
+        throw new Error("Stream isn't writeable");
+      },
+    };
     const svc = new LoginThrottleResetService(withFailOpenStorage(broken, { logger: quietLogger }));
     expect(await attempt(svc, '203.0.113.5')).toBe('503');
   });
@@ -80,29 +107,45 @@ describe('OAuth coach-signup ceiling on the real in-memory @nestjs/throttler sto
   });
 });
 
-describeLiveRedis('OAuth coach-signup ceiling on live Redis behind withFailOpenStorage (production shape)', () => {
-  const redis = liveRedisClient();
-  const adapter = new ThrottlerStorageRedisService(redis as any);
-  const storage = withFailOpenStorage(adapter, { logger: quietLogger });
-  const ip = `203.0.113.${Math.floor(Math.random() * 200) + 1}-${Date.now()}`;
+describeLiveRedis(
+  'OAuth coach-signup ceiling on live Redis behind withFailOpenStorage (production shape)',
+  () => {
+    const redis = liveRedisClient();
+    const adapter = new ThrottlerStorageRedisService(redis);
+    const storage = withFailOpenStorage(adapter, { logger: quietLogger });
+    const ip = `203.0.113.${Math.floor(Math.random() * 200) + 1}-${Date.now()}`;
 
-  beforeAll(async () => {
-    delete process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR;
-    await redis.ping();
-  });
-  afterAll(async () => {
-    const keys = await redis.keys(`*oauth-coach-signup:ip:${ip}*`);
-    if (keys.length) await redis.del(...keys);
-    redis.disconnect();
-  });
+    beforeAll(async () => {
+      delete process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR;
+      await redis.ping();
+    });
+    afterAll(async () => {
+      const keys = await redis.keys(`*oauth-coach-signup:ip:${ip}*`);
+      if (keys.length) await redis.del(...keys);
+      redis.disconnect();
+    });
 
-  it('admits 5 of 12 and the overflow is a real Redis block (not a fail-open zero record)', async () => {
-    const svc = new LoginThrottleResetService(storage);
-    const results: string[] = [];
-    for (let i = 0; i < 12; i++) results.push(await attempt(svc, ip));
-    expect(results).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', '429', '429', '429', '429', '429', '429', '429']);
-    const blockKey = `{${oauthCoachSignupKey(ip)}:oauth-coach-signup}:blocked`;
-    const pttl = await redis.pttl(blockKey);
-    expect(pttl).toBeGreaterThan(3_500_000);
-  });
-});
+    it('admits 5 of 12 and the overflow is a real Redis block (not a fail-open zero record)', async () => {
+      const svc = new LoginThrottleResetService(storage);
+      const results: string[] = [];
+      for (let i = 0; i < 12; i++) results.push(await attempt(svc, ip));
+      expect(results).toEqual([
+        'ok',
+        'ok',
+        'ok',
+        'ok',
+        'ok',
+        '429',
+        '429',
+        '429',
+        '429',
+        '429',
+        '429',
+        '429',
+      ]);
+      const blockKey = `{${oauthCoachSignupKey(ip)}:oauth-coach-signup}:blocked`;
+      const pttl = await redis.pttl(blockKey);
+      expect(pttl).toBeGreaterThan(3_500_000);
+    });
+  },
+);

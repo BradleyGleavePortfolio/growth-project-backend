@@ -17,16 +17,32 @@ function matchValue(actual: any, cond: any): boolean {
   if (cond === null) return actual === null || actual === undefined;
   if (cond instanceof Date) return actual instanceof Date && actual.getTime() === cond.getTime();
   if (typeof cond === 'object' && !Array.isArray(cond)) {
-    for (const [op, v] of Object.entries(cond)) {
+    const ops: Row = cond;
+    for (const [op, v] of Object.entries(ops)) {
       switch (op) {
-        case 'lt': if (!(actual < (v as any))) return false; break;
-        case 'lte': if (!(actual <= (v as any))) return false; break;
-        case 'gt': if (!(actual > (v as any))) return false; break;
-        case 'gte': if (!(actual >= (v as any))) return false; break;
-        case 'in': if (!(v as any[]).includes(actual)) return false; break;
-        case 'not': if (matchValue(actual, v)) return false; break;
-        case 'equals': if (!matchValue(actual, v)) return false; break;
-        default: throw new Error(`stateful-prisma: unsupported operator ${op}`);
+        case 'lt':
+          if (!(actual < v)) return false;
+          break;
+        case 'lte':
+          if (!(actual <= v)) return false;
+          break;
+        case 'gt':
+          if (!(actual > v)) return false;
+          break;
+        case 'gte':
+          if (!(actual >= v)) return false;
+          break;
+        case 'in':
+          if (!(v as unknown[]).includes(actual)) return false;
+          break;
+        case 'not':
+          if (matchValue(actual, v)) return false;
+          break;
+        case 'equals':
+          if (!matchValue(actual, v)) return false;
+          break;
+        default:
+          throw new Error(`stateful-prisma: unsupported operator ${op}`);
       }
     }
     return true;
@@ -37,11 +53,27 @@ function matchValue(actual: any, cond: any): boolean {
 export function matchWhere(row: Row, where: Row | undefined): boolean {
   if (!where) return true;
   for (const [k, cond] of Object.entries(where)) {
-    if (k === 'OR') { if (!(cond as Row[]).some((w) => matchWhere(row, w))) return false; continue; }
-    if (k === 'AND') { if (!(cond as Row[]).every((w) => matchWhere(row, w))) return false; continue; }
-    if (k === 'NOT') { if (matchWhere(row, cond)) return false; continue; }
-    if (cond !== null && typeof cond === 'object' && !(cond instanceof Date) && !Array.isArray(cond) &&
-        Object.keys(cond).some((op) => !['lt', 'lte', 'gt', 'gte', 'in', 'not', 'equals'].includes(op))) {
+    if (k === 'OR') {
+      if (!(cond as Row[]).some((w) => matchWhere(row, w))) return false;
+      continue;
+    }
+    if (k === 'AND') {
+      if (!(cond as Row[]).every((w) => matchWhere(row, w))) return false;
+      continue;
+    }
+    if (k === 'NOT') {
+      if (matchWhere(row, cond)) return false;
+      continue;
+    }
+    if (
+      cond !== null &&
+      typeof cond === 'object' &&
+      !(cond instanceof Date) &&
+      !Array.isArray(cond) &&
+      Object.keys(cond).some(
+        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'not', 'equals'].includes(op),
+      )
+    ) {
       // compound unique selector, e.g. { user_id_code: { user_id, code } }
       if (!matchWhere(row, cond)) return false;
       continue;
@@ -54,8 +86,14 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
 function applyData(row: Row, data: Row): Row {
   const out = { ...row };
   for (const [k, v] of Object.entries(data)) {
-    if (v && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v) && 'increment' in v) {
-      out[k] = (out[k] ?? 0) + (v as any).increment;
+    if (
+      v &&
+      typeof v === 'object' &&
+      !(v instanceof Date) &&
+      !Array.isArray(v) &&
+      'increment' in v
+    ) {
+      out[k] = (out[k] ?? 0) + v.increment;
     } else if (v !== undefined) {
       out[k] = v;
     }
@@ -70,14 +108,14 @@ function pick(row: Row | null, select?: Row, include?: Row, db?: StatefulPrisma)
   if (include && db) {
     for (const [rel, spec] of Object.entries(include)) {
       const resolver = db.relations[rel];
-      if (resolver) out[rel] = pick(resolver(row), (spec as any)?.select);
+      if (resolver) out[rel] = pick(resolver(row), spec?.select);
     }
   }
   if (select) {
     const s: Row = {};
     for (const [k, v] of Object.entries(select)) {
       if (!v) continue;
-      if (typeof v === 'object' && db?.relations[k]) s[k] = pick(db.relations[k](row), (v as any).select);
+      if (typeof v === 'object' && db?.relations[k]) s[k] = pick(db.relations[k](row), v.select);
       else s[k] = out[k];
     }
     out = s;
@@ -92,10 +130,18 @@ export class Model {
     readonly uniques: string[][],
     readonly defaults: () => Row = () => ({}),
   ) {}
-  get rows(): Row[] { return this.db.state[this.name]; }
+  get rows(): Row[] {
+    return this.db.state[this.name];
+  }
   private violates(candidate: Row, ignore?: Row): boolean {
     return this.uniques.some((cols) =>
-      this.rows.some((r) => r !== ignore && cols.every((c) => candidate[c] !== undefined && candidate[c] !== null && r[c] === candidate[c])),
+      this.rows.some(
+        (r) =>
+          r !== ignore &&
+          cols.every(
+            (c) => candidate[c] !== undefined && candidate[c] !== null && r[c] === candidate[c],
+          ),
+      ),
     );
   }
   private uniqueError(): Error {
@@ -111,7 +157,9 @@ export class Model {
     let rows = this.rows.filter((r) => matchWhere(r, where));
     if (orderBy) {
       const [[k, dir]] = Object.entries(orderBy as Row);
-      rows = [...rows].sort((a, b) => (a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0) * (dir === 'desc' ? -1 : 1));
+      rows = [...rows].sort(
+        (a, b) => (a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0) * (dir === 'desc' ? -1 : 1),
+      );
     }
     return pick(rows[0] ?? null, select, include, this.db);
   };
@@ -119,14 +167,24 @@ export class Model {
     this.rows.filter((r) => matchWhere(r, where)).map((r) => pick(r, select) as Row);
   count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where)).length;
   create = async ({ data, select }: any) => {
-    const row = { id: randomUUID(), created_at: new Date(), updated_at: new Date(), ...this.defaults(), ...data };
+    const row = {
+      id: randomUUID(),
+      created_at: new Date(),
+      updated_at: new Date(),
+      ...this.defaults(),
+      ...data,
+    };
     if (this.violates(row)) throw this.uniqueError();
     this.rows.push(row);
     return pick(row, select);
   };
   update = async ({ where, data, select }: any) => {
     const idx = this.rows.findIndex((r) => matchWhere(r, where));
-    if (idx < 0) { const e: any = new Error(`${this.name} not found`); e.code = 'P2025'; throw e; }
+    if (idx < 0) {
+      const e: any = new Error(`${this.name} not found`);
+      e.code = 'P2025';
+      throw e;
+    }
     const next = applyData(this.rows[idx], data);
     if (this.violates(next, this.rows[idx])) throw this.uniqueError();
     this.rows[idx] = next;
@@ -135,7 +193,10 @@ export class Model {
   updateMany = async ({ where, data }: any) => {
     let count = 0;
     this.rows.forEach((r, i) => {
-      if (matchWhere(r, where)) { this.rows[i] = applyData(r, data); count++; }
+      if (matchWhere(r, where)) {
+        this.rows[i] = applyData(r, data);
+        count++;
+      }
     });
     this.db.hit(this.name, 'updateMany', where);
     return { count };
@@ -168,7 +229,7 @@ export class StatefulPrisma {
   model(name: string, uniques: string[][] = [['id']], defaults?: () => Row): Model {
     this.state[name] = this.state[name] ?? [];
     const m = new Model(this, name, uniques, defaults);
-    (this as any)[name] = m;
+    this[name] = m;
     return m;
   }
 
@@ -180,14 +241,20 @@ export class StatefulPrisma {
   hit(model: string, op: string, where: any): void {
     this.calls.push({ model, op, where });
     const i = this.hooks.findIndex((h) => h.model === model && h.op === op);
-    if (i >= 0) { const [h] = this.hooks.splice(i, 1); void h.fn(); this.firedInTx.push(h.fn); }
+    if (i >= 0) {
+      const [h] = this.hooks.splice(i, 1);
+      void h.fn();
+      this.firedInTx.push(h.fn);
+    }
   }
 
   $transaction = async (fnOrArray: any): Promise<any> => {
     const run = async () => {
       this.transactions++;
       const snapshot = JSON.parse(JSON.stringify(this.state), (_k, v) =>
-        typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) ? new Date(v) : v,
+        typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v)
+          ? new Date(v)
+          : v,
       );
       this.firedInTx = [];
       try {
@@ -203,7 +270,9 @@ export class StatefulPrisma {
       }
     };
     const p = this.queue.then(run, run);
-    this.queue = p.catch(() => undefined);
+    // The caller receives p's rejection; the queue only needs p to SETTLE
+    // before the next transaction starts.
+    this.queue = Promise.allSettled([p]);
     return p;
   };
 }
