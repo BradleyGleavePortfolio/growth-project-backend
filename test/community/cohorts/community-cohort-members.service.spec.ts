@@ -9,6 +9,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunityCohortMembersService } from '../../../src/community/cohorts/community-cohort-members.service';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import type { MembershipWithUser } from '../../../src/community/cohorts/community-cohort-members.repository';
 
 const WS_A = '11111111-1111-1111-1111-111111111111';
@@ -74,7 +75,7 @@ describe('CommunityCohortMembersService', () => {
       upsertMembership: jest.fn(),
       removeMembership: jest.fn(),
     };
-    service = new CommunityCohortMembersService(access as never, repo as never);
+    service = new CommunityCohortMembersService(access as never, repo as never, safetyWithBlocks());
   });
 
   describe('list (roster)', () => {
@@ -97,7 +98,8 @@ describe('CommunityCohortMembersService', () => {
       repo.listMembers.mockResolvedValue([membership()]);
 
       const res = await service.list(student, COHORT_A, {} as never);
-      expect(res.members[0].display_name).toBe('Jane Client');
+      // client privacy: other members see the first name only
+      expect(res.members[0].display_name).toBe('Jane');
       expect(res.members[0].status).toBeNull();
       expect(res.members[0].email).toBeNull();
       expect(res.members[0].joined_at).toBeNull();

@@ -177,8 +177,19 @@ export class CommunityPostsService {
     return post;
   }
 
-  async getOne(user: User, postId: string): Promise<CommunityPostResponse> {
+  /**
+   * A readable post that is also not hidden by a block in either direction
+   * (404, same body). Used by every read of a single post and its thread;
+   * edit/remove stay on readablePost (author-only / coach paths).
+   */
+  private async visiblePost(user: User, postId: string): Promise<CommunityPost> {
     const post = await this.readablePost(user, postId);
+    await this.safety.assertVisibleTo(user.id, post.author_id, POST_NOT_FOUND);
+    return post;
+  }
+
+  async getOne(user: User, postId: string): Promise<CommunityPostResponse> {
+    const post = await this.visiblePost(user, postId);
     return CommunityPostResponseSchema.parse({ post: this.postView(post) });
   }
 
@@ -230,7 +241,9 @@ export class CommunityPostsService {
   // ── Comments ───────────────────────────────────────────────────────────────
 
   async addComment(user: User, postId: string, body: string): Promise<CommunityCommentResponse> {
-    const post = await this.readablePost(user, postId);
+    // A blocked pair can neither see nor reply to each other's posts, so the
+    // reply push below can never reach the other side of a block.
+    const post = await this.visiblePost(user, postId);
     // Any active workspace member (client or coach) may comment.
     this.safety.assertAllowed(body);
     const created = await this.messages.createComment({
@@ -270,7 +283,7 @@ export class CommunityPostsService {
   }
 
   async listComments(user: User, postId: string): Promise<CommunityCommentListResponse> {
-    const post = await this.readablePost(user, postId);
+    const post = await this.visiblePost(user, postId);
     const rows = await this.messages.listComments(post.id);
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
     return CommunityCommentListResponseSchema.parse({

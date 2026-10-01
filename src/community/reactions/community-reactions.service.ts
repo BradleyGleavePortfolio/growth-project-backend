@@ -7,6 +7,10 @@ import { CommunityMessagesRepository } from '../messages/community-messages.repo
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
 import { CommunityReactionsRepository } from './community-reactions.repository';
+import {
+  assertDmParticipantIfDm,
+  CommunitySafetyService,
+} from '../safety/community-safety.service';
 import { reactionKindForEmoji } from './community-emoji.allowlist';
 import {
   CommunityReactionState,
@@ -47,6 +51,7 @@ export class CommunityReactionsService {
     private readonly messagesRepo: CommunityMessagesRepository,
     private readonly postsRepo: CommunityPostsRepository,
     private readonly realtime: CommunityRealtimeService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   /**
@@ -100,6 +105,8 @@ export class CommunityReactionsService {
       if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
         throw new NotFoundException(NOT_FOUND);
       }
+      // Two-way block: content the caller cannot see cannot be reacted to.
+      await this.safety.assertVisibleTo(user.id, post.author_id, NOT_FOUND);
       return {
         workspaceId: post.workspace_id,
         targetType: 'post',
@@ -129,6 +136,10 @@ export class CommunityReactionsService {
     } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // DM rows are only addressable by their two participants.
+    assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
+    // Two-way block: content the caller cannot see cannot be reacted to.
+    await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND);
 
     return {
       workspaceId: msg.workspace_id,
@@ -136,6 +147,12 @@ export class CommunityReactionsService {
       targetId: msg.id,
       targetCreatedAt: msg.created_at,
     };
+  }
+
+  /** Reactions on the target, minus those by anyone in a block relation with the caller. */
+  private async visibleReactions(user: User, t: ResolvedTarget): Promise<CommunityResponse[]> {
+    const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
+    return this.safety.filterBlocked(user.id, rows, (r) => r.user_id);
   }
 
   private summarise(
@@ -177,7 +194,7 @@ export class CommunityReactionsService {
       userId: user.id,
       emoji,
     });
-    const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
+    const rows = await this.visibleReactions(user, t);
     // `kind` is the OPAQUE NAMED reaction discriminator (like, fire, love…),
     // NOT the target type and NOT the raw emoji glyph (no-PII doctrine — the
     // glyph stays in the DB / authenticated REST refetch only).
@@ -198,7 +215,7 @@ export class CommunityReactionsService {
       userId: user.id,
       emoji,
     });
-    const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
+    const rows = await this.visibleReactions(user, t);
     // `kind` is the OPAQUE NAMED reaction discriminator — see react(); never
     // the target type, never the raw emoji glyph.
     void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);

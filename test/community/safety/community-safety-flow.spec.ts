@@ -59,6 +59,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
   let coach: User;
   let alice: User;
   let bob: User;
+  let carol: User;
   let otherCoach: User;
   let wsId: string;
   let cohortId: string;
@@ -84,6 +85,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     coach = user('coach', 'Coach One');
     alice = user('student', 'Alice Member');
     bob = user('student', 'Bob Member');
+    carol = user('student', 'Carol Member');
     otherCoach = user('coach', 'Other Coach');
     const ws = db.seed('communityWorkspace', {
       coach_id: coach.id,
@@ -100,7 +102,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     });
     const cohort = db.seed('communityCohort', { workspace_id: wsId, name: 'Spring plan' });
     cohortId = cohort.id as string;
-    for (const u of [alice, bob]) {
+    for (const u of [alice, bob, carol]) {
       db.seed('communityMembership', {
         workspace_id: wsId,
         cohort_id: cohortId,
@@ -249,11 +251,12 @@ describe('community UGC safety flow (Apple 1.2)', () => {
 
   // ── block ────────────────────────────────────────────────────────────────
 
-  it("block hides the blocked user's messages and comments for the blocker only", async () => {
+  it('block hides messages and comments both ways (blocker and blocked), bystanders unaffected', async () => {
     const post = await posts.create(coach, wsId, { title: 'Check in', body: 'How was the week' });
     const bobMsg = await messages.send(bob, cohortId, 'Bob in the cohort');
     const aliceMsg = await messages.send(alice, cohortId, 'Alice in the cohort');
     const bobComment = await posts.addComment(bob, post.post.id, 'Bob comment');
+    const aliceComment = await posts.addComment(alice, post.post.id, 'Alice comment');
 
     await safety.block(alice, bob.id);
 
@@ -262,22 +265,27 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     const commentsForAlice = await posts.listComments(alice, post.post.id);
     expect(commentsForAlice.comments.map((c) => c.id)).not.toContain(bobComment.comment.id);
 
-    // the blocked user and everyone else still see everything
+    // "If you block someone, they can no longer see your posts": the blocked
+    // user no longer sees the blocker either.
     const forBob = await messages.list(bob, cohortId, {});
-    expect(forBob.messages.map((x) => x.id)).toEqual(
-      expect.arrayContaining([bobMsg.message.id, aliceMsg.message.id]),
-    );
+    expect(forBob.messages.map((x) => x.id)).toEqual([bobMsg.message.id]);
+    const commentsForBob = await posts.listComments(bob, post.post.id);
+    expect(commentsForBob.comments.map((c) => c.id)).not.toContain(aliceComment.comment.id);
+
+    // everyone else still sees everything
     const forCoach = await messages.list(coach, cohortId, {});
     expect(forCoach.messages).toHaveLength(2);
 
     expect((await safety.listBlocks(alice)).blocks).toEqual([
-      expect.objectContaining({ user_id: bob.id, name: 'Bob Member' }),
+      // client privacy: first name only
+      expect.objectContaining({ user_id: bob.id, name: 'Bob' }),
     ]);
     await safety.unblock(alice, bob.id);
     expect((await messages.list(alice, cohortId, {})).messages).toHaveLength(2);
+    expect((await messages.list(bob, cohortId, {})).messages).toHaveLength(2);
   });
 
-  it('block closes DMs in both directions and hides the thread from the blocker', async () => {
+  it('block closes DMs in both directions and hides the thread from both sides', async () => {
     await dms.send(bob, wsId, alice.id, 'hello');
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(1);
     await safety.block(alice, bob.id);
@@ -289,6 +297,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     await expect(dms.listThread(alice, wsId, bob.id, {})).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
   });
 
   it('block rejects self, strangers outside the community and the member’s own coach', async () => {
@@ -303,6 +312,49 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     await safety.block(alice, bob.id);
     await safety.block(alice, bob.id);
     expect(db.table('userBlock')).toHaveLength(1);
+  });
+
+  it('every block refusal carries a stable code and a human message with a next step', async () => {
+    const refusals = [
+      safety.block(alice, alice.id),
+      safety.block(alice, otherCoach.id),
+      safety.block(alice, coach.id),
+    ];
+    const bodies = await Promise.all(
+      refusals.map((p) => p.then(() => null).catch((e: { response: unknown }) => e.response)),
+    );
+    expect(bodies).toEqual([
+      expect.objectContaining({ code: 'community.block.self', message: expect.any(String) }),
+      expect.objectContaining({ code: 'community.block.not_found', message: expect.any(String) }),
+      expect.objectContaining({
+        code: 'community.block.workspace_coach',
+        message: expect.stringContaining('report'),
+      }),
+    ]);
+    await safety.block(alice, bob.id);
+    await expect(dms.send(bob, wsId, alice.id, 'hi')).rejects.toMatchObject({
+      response: {
+        code: 'community.dm.blocked',
+        message: expect.stringContaining('Community safety'),
+      },
+    });
+    for (const body of bodies) {
+      const msg = (body as { message: string }).message;
+      expect(msg).not.toMatch(/!/);
+      expect(msg).not.toMatch(/something went wrong/i);
+    }
+  });
+
+  it('a DM can be reported only by one of its two participants', async () => {
+    const sent = await dms.send(bob, wsId, alice.id, 'just between us');
+    // a third member of the same workspace cannot pull it into the queue by id
+    await expect(
+      moderation.report(carol, 'message', sent.message.id, 'harassment', undefined),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    // the recipient can
+    await expect(
+      moderation.report(alice, 'message', sent.message.id, 'harassment', undefined),
+    ).resolves.toBeDefined();
   });
 
   // ── published contact path ──────────────────────────────────────────────

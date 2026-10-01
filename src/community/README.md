@@ -30,7 +30,12 @@ where each lives. Code: `src/community/safety/` and
   the message and keeps the draft.
 - Limits: a word list is not a classifier. Misses are handled by Report ->
   queue -> hide/warn/ban below. **Voice notes are not filtered** (audio; no
-  transcription) — they are covered by block + report only.
+  transcription), and they are **not reportable yet**: the moderation target
+  enum has no voice-note member, so `POST /community/moderation/reports`
+  accepts `post | comment | message` only. Voice notes are covered by block
+  (two-way) only. Keep `FEATURE_COMMUNITY_VOICE_NOTES` off (its default) until
+  a follow-up adds a voice-note report target (schema enum + migration + app
+  menu); Apple 1.2 needs report on every piece of user content.
 
 ### 2. Report -> review -> action
 
@@ -65,15 +70,41 @@ notes? }` — any member; reasons are the codes in `COMMUNITY_REPORT_REASONS`
   list coach-client messaging already honours).
 - `GET /community/blocks`, `POST /community/blocks { user_id }` (idempotent),
   `DELETE /community/blocks/:userId`.
-- A block hides the blocked user's posts, comments, cohort messages, challenge
-  comments, voice notes and search results from the blocker, and closes DMs in
-  **both** directions (`403 community.dm.blocked` on open/read/send; the
-  thread disappears from the blocker's DM list). The blocked user is not told.
+- A block is **two-way** (owner-approved copy: "If you block someone, they can
+  no longer see your posts or message you, and they are not told"). The
+  blocker no longer sees anything the blocked user authored, and the blocked
+  user no longer sees anything the blocker authored, on every member-facing
+  read surface: Hall posts, post comments and replies, cohort messages (list
+  and by id), DMs, challenge comments and leaderboard rows, voice notes (list
+  and by id), the cohort roster, the workout leaderboard, wins, search, the
+  Today card (pinned post, event, challenge), reaction counts, and
+  coach-authored lessons, events and challenges (a coach can block a member,
+  and coach messaging blocks share the `UserBlock` row in either direction).
+  Single reads by id answer 404 with the same body as "does not exist".
+- Interactions that target the other side are refused the same way (404):
+  comment on their post, react to their content, RSVP to their event, join or
+  comment on their challenge. DMs are closed in **both** directions
+  (`403 community.dm.blocked` with a message on open/read/send) and the thread
+  disappears from both DM lists. No community push can cross a block (reply
+  pushes need a visible post; event reminders skip blocked recipients).
+- Coach/owner moderation surfaces stay complete so reports can be actioned:
+  moderation queue, flagged list, coach inbox, AI triage, the coach roster
+  view. Unblocking restores both directions at once (one row).
+- Realtime pings carry ids only (never bodies); the app always refetches
+  content through the filtered REST routes above.
+- DM rows are addressable only by their two participants on the reaction and
+  report routes (a third member gets 404).
 - Guard rails: no self-block; only users who share a community workspace can
   be blocked (others get 404, so the endpoint does not reveal accounts); a
   member cannot block their own workspace coach
   (`403 community.block.workspace_coach`) — they report the coach to the
-  platform contact instead.
+  platform contact instead. Every refusal carries a stable `code` and a human
+  `message` with the next step (`community.block.self`,
+  `community.block.not_found`, `community.block.workspace_coach`,
+  `community.dm.blocked`).
+- Client privacy: other members only ever see first names (roster, block
+  list, workout leaderboard, wins). Full names and emails stay on coach/owner
+  surfaces.
 - List pagination cursors are computed from the unfiltered page, so a page may
   hold fewer rows than `limit` when blocked authors are dropped.
 
@@ -119,7 +150,13 @@ module enforces a timer.
   an in-memory Prisma: filter on every write surface, report -> flagged queue,
   hide / warn / ban, coach cannot be banned (and nothing is written), only the
   owning coach can act, block on every read surface and DMs both ways, block
-  guard rails, safety info, route metadata + feature-flag guard.
+  guard rails and refusal messages, DM report participants only, safety info,
+  route metadata + feature-flag guard.
+- `test/community/safety/community-block-two-way.spec.ts` — two-way block on
+  every surface (both directions, bystanders unaffected, unblock restores),
+  first-name privacy, reactions, Today, and a regression guard that
+  enumerates every community GET route from Nest metadata and fails when one
+  is neither block-filtered nor exempt with a written reason.
 - `test/community/safety/community-safety-copy.spec.ts` — pins the
   owner-approved guidelines, the 24-hour commitment, the report reasons and
   the default safety contact byte for byte.

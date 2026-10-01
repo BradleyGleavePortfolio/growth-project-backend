@@ -41,6 +41,7 @@ import { SupabaseService } from '../../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { NotificationsService } from '../../../src/notifications/notifications.service';
 import { liveDbUrl } from '../_support/community-db';
+import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -137,6 +138,7 @@ itLive('community v2-3 events (live DB)', () => {
       controllers: [CommunityEventsController],
       providers: [
         CommunityEventsService,
+        CommunitySafetyService,
         CommunityEventsRepository,
         CommunityAccessService,
         CommunityFeatureFlagGuard,

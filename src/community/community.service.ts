@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { CommunityMembership, CommunityWorkspace, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
+import { CommunitySafetyService } from './safety/community-safety.service';
+import { memberFirstName } from './member-display-name';
 import { resolveCommunityFlag } from './community-feature-flag.guard';
 import {
   CommunityMeResponse,
@@ -19,13 +21,6 @@ import {
   CommunityCohortResponse,
   CommunityCohortResponseSchema,
 } from './dto/community-cohort.dto';
-
-// Helper: anonymise a display name to "first-name + last initial" e.g. "Alex M."
-function anonymiseName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
-}
 
 const FORBIDDEN_WORKSPACE = {
   error: 'forbidden',
@@ -53,6 +48,7 @@ export class CommunityService {
   constructor(
     private prisma: PrismaService,
     private readonly repo: CommunityRepository,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Effective-role + tri-state helpers ────────────────────────────────────
@@ -225,10 +221,21 @@ export class CommunityService {
         ? await this.repo.findCohortById(membership.cohort_id)
         : null;
 
-    const { event, pinnedPost, challenge } = await this.repo.findTodayContent(
-      workspace.id,
-      new Date(),
-    );
+    const {
+      event: eventRow,
+      pinnedPost: pinnedRow,
+      challenge: challengeRow,
+    } = await this.repo.findTodayContent(workspace.id, new Date());
+    // Two-way block: Today never surfaces a pinned post, event or challenge
+    // authored by someone in a block relation with the caller (the Hall,
+    // events and challenges lists hide them too). One block lookup.
+    const hidden =
+      pinnedRow || eventRow || challengeRow ? await this.safety.hiddenFromViewer(user.id) : null;
+    const visibleTo = (authorId: string | null | undefined) =>
+      !hidden || !authorId || !hidden.has(authorId);
+    const pinnedPost = pinnedRow && visibleTo(pinnedRow.author_id) ? pinnedRow : null;
+    const event = eventRow && visibleTo(eventRow.created_by_id) ? eventRow : null;
+    const challenge = challengeRow && visibleTo(challengeRow.created_by_id) ? challengeRow : null;
 
     const cohortCard = cohort
       ? {
@@ -394,9 +401,13 @@ export class CommunityService {
     const countByUser = new Map<string, number>();
     for (const g of grouped) countByUser.set(g.user_id, g._count._all);
 
-    const leaderboard = students.map((s) => ({
+    // Two-way block: hide roster rows in a block relation with the caller.
+    const visibleStudents = await this.safety.filterBlocked(userId, students, (s) => s.id);
+    // Client privacy: members see first names only; the coach sees full names.
+    const isCoachView = user?.role === 'coach';
+    const leaderboard = visibleStudents.map((s) => ({
       user_id: s.id,
-      name: s.name,
+      name: isCoachView ? s.name : memberFirstName(s.name),
       workouts_completed: countByUser.get(s.id) ?? 0,
     }));
 
@@ -404,7 +415,7 @@ export class CommunityService {
   }
 
   /**
-   * GET /community/feed — last 30 anonymised community wins.
+   * GET /community/feed — last 30 community wins (first names only).
    * Returns: [{ id, displayName, action, createdAt }]
    */
   async getFeed(userId: string) {
@@ -423,9 +434,12 @@ export class CommunityService {
       },
     });
 
-    return wins.map((w) => ({
+    // Two-way block: hide wins by anyone in a block relation with the caller.
+    const visibleWins = await this.safety.filterBlocked(userId, wins, (w) => w.user_id);
+    return visibleWins.map((w) => ({
       id: w.id,
-      displayName: anonymiseName(w.user.name),
+      // Client privacy: other members see first names only.
+      displayName: memberFirstName(w.user.name),
       action: w.title, // "title" is the win action text
       createdAt: w.created_at,
     }));

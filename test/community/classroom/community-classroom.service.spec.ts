@@ -21,6 +21,7 @@ import type { CommunityClassroomMediaAsset, CommunityClassroomPost } from '@pris
 import { CommunityClassroomService } from '../../../src/community/classroom/community-classroom.service';
 import type { ClassroomPostWithMedia } from '../../../src/community/classroom/community-classroom.repository';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -116,6 +117,8 @@ describe('CommunityClassroomService', () => {
   let config: ConfigMock;
   let storage: StorageMock;
   let service: CommunityClassroomService;
+  // [blocker, blocked] pairs seen by the real CommunitySafetyService.
+  const blocks: Array<[string, string]> = [];
 
   beforeEach(() => {
     access = {
@@ -139,19 +142,18 @@ describe('CommunityClassroomService', () => {
     config = { get: jest.fn().mockReturnValue(undefined) };
     storage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      createSignedUploadUrl: jest
-        .fn()
-        .mockResolvedValue({
-          signedUrl: 'https://signed.upload',
-          storageKey: 'k',
-          provider: 'supabase',
-        }),
+      createSignedUploadUrl: jest.fn().mockResolvedValue({
+        signedUrl: 'https://signed.upload',
+        storageKey: 'k',
+        provider: 'supabase',
+      }),
       createSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed.download'),
     };
     // Structural mocks stub only the methods the service calls; the partials are
     // intentional (R0 permits @ts-expect-error with a one-line justification).
+    const blockSafety = safetyWithBlocks(blocks);
     // @ts-expect-error mocks are partial implementations of the injected deps
-    service = new CommunityClassroomService(access, repo, config, storage);
+    service = new CommunityClassroomService(access, repo, config, storage, blockSafety);
   });
 
   // ── Create / media size cap / workspace-bound key ──────────────────────────
@@ -245,6 +247,42 @@ describe('CommunityClassroomService', () => {
   });
 
   // ── Read / release lock / signed download ──────────────────────────────────
+
+  describe('two-way block (owner-approved copy: they can no longer see your posts)', () => {
+    beforeEach(() => {
+      blocks.length = 0;
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(true);
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.listAccessibleCohortIds.mockResolvedValue([]);
+      repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: PAST }));
+      repo.listForStudent.mockResolvedValue({ items: [post()], nextCursor: null });
+    });
+    afterEach(() => {
+      blocks.length = 0;
+    });
+
+    it.each([
+      ['the coach blocked the member', [COACH_A_ID, MEMBER_ID]],
+      ['the member blocked the coach (coach messaging block)', [MEMBER_ID, COACH_A_ID]],
+    ] as Array<[string, [string, string]]>)(
+      'when %s, the lesson is gone from the feed and 404s by id; unblock restores',
+      async (_label, pair) => {
+        blocks.push(pair);
+        expect((await service.listFeed(member, WS_A, {})).posts).toEqual([]);
+        await expect(service.getOne(member, POST_A)).rejects.toBeInstanceOf(NotFoundException);
+        blocks.length = 0;
+        expect((await service.listFeed(member, WS_A, {})).posts).toHaveLength(1);
+        await expect(service.getOne(member, POST_A)).resolves.toBeDefined();
+      },
+    );
+
+    it('a block between two other people does not hide the lesson', async () => {
+      blocks.push([STRANGER_ID, MEMBER_ID]);
+      expect((await service.listFeed(member, WS_A, {})).posts).toHaveLength(1);
+      await expect(service.getOne(member, POST_A)).resolves.toBeDefined();
+    });
+  });
 
   describe('getOne', () => {
     it('returns a released lesson to a workspace member with a signed media URL', async () => {

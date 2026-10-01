@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import type { CommunityClassroomMediaAsset, CommunityClassroomPost, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import {
   STORAGE_PROVIDER,
   StorageNotConfiguredError,
@@ -77,6 +78,7 @@ export class CommunityClassroomService {
     private readonly repo: CommunityClassroomRepository,
     private readonly config: ConfigService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Config ───────────────────────────────────────────────────────────────
@@ -209,6 +211,9 @@ export class CommunityClassroomService {
     } else if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Two-way block: a lesson by a coach in a block relation with the member
+    // (either direction) reads as "does not exist", like the feed hides it.
+    await this.safety.assertVisibleTo(user.id, post.coach_id, NOT_FOUND);
     return post;
   }
 
@@ -540,7 +545,10 @@ export class CommunityClassroomService {
           cursor: query.cursor,
         });
 
-    const posts = await Promise.all(page.items.map((p) => this.postView(p, now)));
+    // Two-way block: drop lessons authored by anyone in a block relation with
+    // the caller (cursor stays on the unfiltered page, as on every list).
+    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.coach_id);
+    const posts = await Promise.all(visibleItems.map((p) => this.postView(p, now)));
     return ClassroomFeedResponseSchema.parse({
       posts,
       next_cursor: page.nextCursor,

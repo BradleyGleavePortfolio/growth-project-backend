@@ -181,6 +181,10 @@ export class CommunityChallengesService {
     } else if (!(await this.access.canAccessWorkspace(challenge.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Two-way block: a challenge created by someone in a block relation with
+    // the caller reads as "does not exist" (read, join, progress, leaderboard,
+    // comments and reports all resolve through here).
+    await this.safety.assertVisibleTo(user.id, challenge.created_by_id, NOT_FOUND);
     return challenge;
   }
 
@@ -358,8 +362,15 @@ export class CommunityChallengesService {
       cursor: query.cursor,
     });
 
+    // Two-way block: drop challenges created by anyone in a block relation with
+    // the caller (cursor stays on the unfiltered page, as on every list).
+    const visibleChallenges = await this.safety.filterBlocked(
+      user.id,
+      page.items,
+      (c) => c.created_by_id,
+    );
     return ChallengeListResponseSchema.parse({
-      challenges: page.items.map((c) => this.challengeView(c)),
+      challenges: visibleChallenges.map((c) => this.challengeView(c)),
       next_cursor: page.nextCursor,
     });
   }
@@ -554,9 +565,12 @@ export class CommunityChallengesService {
       limit: query.limit,
       cursor: query.cursor,
     });
+    // Two-way block: drop participants in a block relation with the caller
+    // (cursor stays on the unfiltered page, as on every other list).
+    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.user_id);
     // Every returned row is already opted in, so ranks are simply page-local
     // (1-based within the returned page).
-    const rows: LeaderboardRowView[] = page.items.map((p, i) => ({
+    const rows: LeaderboardRowView[] = visibleItems.map((p, i) => ({
       user_id: p.user_id,
       rank: i + 1,
       progress_value: p.progress_value.toNumber(),

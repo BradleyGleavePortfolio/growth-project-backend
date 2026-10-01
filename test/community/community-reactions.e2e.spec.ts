@@ -41,6 +41,7 @@ import { CommunityRealtimeService } from '../../src/community/realtime/community
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -139,6 +140,7 @@ itLive('community v1-3 reactions (live DB)', () => {
       controllers: [CommunityReactionsController],
       providers: [
         CommunityReactionsService,
+        CommunitySafetyService,
         CommunityReactionsRepository,
         CommunityMessagesRepository,
         CommunityPostsRepository,

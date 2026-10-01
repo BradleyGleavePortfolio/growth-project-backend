@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { checkCommunityText } from './community-content-filter';
+import { memberFirstName } from '../member-display-name';
 
 export const CONTENT_REJECTED = {
   error: 'content_rejected',
@@ -18,6 +19,33 @@ export const CONTENT_REJECTED = {
 export const DM_BLOCKED = {
   error: 'forbidden',
   code: 'community.dm.blocked',
+  message:
+    'You cannot message this member. If you need help, email the safety contact in Community safety.',
+} as const;
+
+/**
+ * Block route refusals: stable machine `code` plus a human `message` the app
+ * can show as-is (owner rule 13:34: every failure says what happened and what
+ * to do next).
+ */
+export const BLOCK_SELF = {
+  error: 'bad_request',
+  code: 'community.block.self',
+  message: 'You cannot block yourself.',
+} as const;
+
+export const BLOCK_NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.block.not_found',
+  message:
+    'This member could not be found in your community. They may have left. Refresh and try again.',
+} as const;
+
+export const BLOCK_WORKSPACE_COACH = {
+  error: 'forbidden',
+  code: 'community.block.workspace_coach',
+  message:
+    'You cannot block your coach. You can report a message or post, or email the safety contact in Community safety.',
 } as const;
 
 /** Report reasons offered by the app (stored verbatim in the moderation row). */
@@ -57,16 +85,42 @@ export const COMMUNITY_RESPONSE_COMMITMENT =
   'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you, and they are not told.';
 
 /**
+ * A DM row (dm_key set) is only addressable by its two participants. Used by
+ * every path that resolves a CommunityMessage by id outside the DM routes
+ * (reactions, reports), so a third member cannot react to or pull someone
+ * else's DM into the moderation queue by id. Same 404 body as "not found".
+ */
+export function assertDmParticipantIfDm(
+  message: { dm_key: string | null; sender_id: string; recipient_user_id: string | null },
+  viewerId: string,
+  notFoundBody: object,
+): void {
+  if (message.dm_key === null) return;
+  if (viewerId === message.sender_id || viewerId === message.recipient_user_id) return;
+  throw new NotFoundException(notFoundBody);
+}
+
+/**
  * Community safety primitives (Apple 1.2): user blocking across every
  * community surface, the pre-publication content filter, and the published
  * contact path.
  *
  * Blocks reuse the existing `UserBlock` table (one block list per user, the
  * same list coach-client messaging already honours), so blocking someone in
- * the community also stops them messaging you there. A block hides the
- * blocked user's posts, comments, cohort messages, challenge comments, voice
- * notes and search results from the blocker, and stops DMs in both
- * directions. The blocked user is never told.
+ * the community also stops them messaging you there. A block is TWO-WAY on
+ * every member-facing community read surface: the blocker no longer sees
+ * anything the blocked user authored (posts, comments and replies, cohort
+ * messages, DMs, challenge comments, voice notes, roster and leaderboard rows,
+ * wins, search results, reaction counts, and coach-authored lessons, events
+ * and challenges), AND the blocked user no longer sees the blocker's. Single
+ * reads by id answer 404 (same body as "does not exist"), and every
+ * interaction that targets the other side (reply, react, RSVP, join, DM) is
+ * refused the same way, so no push can cross a block. Unblocking restores
+ * both directions at once (one row). The blocked user is never told.
+ * Coach/owner moderation surfaces (queue, flagged list, coach inbox, AI
+ * triage, the coach roster view) stay complete so reports can be actioned.
+ * This makes the owner-approved copy true: "If you block someone, they can no
+ * longer see your posts or message you, and they are not told."
  */
 @Injectable()
 export class CommunitySafetyService {
@@ -83,15 +137,6 @@ export class CommunitySafetyService {
 
   // ── Blocks ───────────────────────────────────────────────────────────────
 
-  /** Ids of users the viewer has blocked. */
-  async blockedByViewer(viewerId: string): Promise<Set<string>> {
-    const rows = await this.prisma.userBlock.findMany({
-      where: { blocker_id: viewerId },
-      select: { blocked_id: true },
-    });
-    return new Set(rows.map((r) => r.blocked_id));
-  }
-
   /** True when either user has blocked the other. */
   async isBlockedEitherWay(a: string, b: string): Promise<boolean> {
     const row = await this.prisma.userBlock.findFirst({
@@ -106,19 +151,56 @@ export class CommunitySafetyService {
     return row !== null;
   }
 
-  /** Drop rows authored by users the viewer blocked. */
+  /**
+   * Ids hidden from the viewer in BOTH directions: users the viewer blocked
+   * and users who blocked the viewer. One query over both columns.
+   */
+  async hiddenFromViewer(viewerId: string): Promise<Set<string>> {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
+      select: { blocker_id: true, blocked_id: true },
+    });
+    const hidden = new Set<string>();
+    for (const r of rows) {
+      if (r.blocker_id === viewerId) hidden.add(r.blocked_id);
+      else if (r.blocked_id === viewerId) hidden.add(r.blocker_id);
+    }
+    hidden.delete(viewerId);
+    return hidden;
+  }
+
+  /**
+   * Drop rows authored by anyone in a block relation with the viewer, in
+   * either direction (the viewer blocked them, or they blocked the viewer).
+   */
   async filterBlocked<T>(
     viewerId: string,
     rows: T[],
     authorOf: (row: T) => string | null | undefined,
   ): Promise<T[]> {
     if (rows.length === 0) return rows;
-    const blocked = await this.blockedByViewer(viewerId);
-    if (blocked.size === 0) return rows;
+    const hidden = await this.hiddenFromViewer(viewerId);
+    if (hidden.size === 0) return rows;
     return rows.filter((r) => {
       const author = authorOf(r);
-      return !author || !blocked.has(author);
+      return !author || !hidden.has(author);
     });
+  }
+
+  /**
+   * Single-item reads: 404 (same body as "does not exist") when the viewer
+   * and the author are in a block relation either way, so a direct link or
+   * id cannot be used to read around the list filter.
+   */
+  async assertVisibleTo(
+    viewerId: string,
+    authorId: string | null | undefined,
+    notFoundBody: object,
+  ): Promise<void> {
+    if (!authorId || authorId === viewerId) return;
+    if (await this.isBlockedEitherWay(viewerId, authorId)) {
+      throw new NotFoundException(notFoundBody);
+    }
   }
 
   async assertDmAllowed(senderId: string, recipientId: string): Promise<void> {
@@ -137,17 +219,17 @@ export class CommunitySafetyService {
     targetUserId: string,
   ): Promise<{ blocked_user_id: string; blocked: true }> {
     if (viewer.id === targetUserId) {
-      throw new BadRequestException({ error: 'bad_request', code: 'community.block.self' });
+      throw new BadRequestException(BLOCK_SELF);
     }
     const target = await this.prisma.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, deleted_at: true },
     });
     if (!target || target.deleted_at) {
-      throw new NotFoundException({ error: 'not_found', code: 'community.block.not_found' });
+      throw new NotFoundException(BLOCK_NOT_FOUND);
     }
     if (!(await this.sharesWorkspace(viewer.id, targetUserId))) {
-      throw new NotFoundException({ error: 'not_found', code: 'community.block.not_found' });
+      throw new NotFoundException(BLOCK_NOT_FOUND);
     }
     const coachesViewer = await this.prisma.communityWorkspace.findFirst({
       where: {
@@ -157,10 +239,7 @@ export class CommunitySafetyService {
       select: { id: true },
     });
     if (coachesViewer) {
-      throw new ForbiddenException({
-        error: 'forbidden',
-        code: 'community.block.workspace_coach',
-      });
+      throw new ForbiddenException(BLOCK_WORKSPACE_COACH);
     }
     await this.prisma.userBlock.upsert({
       where: {
@@ -197,7 +276,8 @@ export class CommunitySafetyService {
     return {
       blocks: rows.map((r) => ({
         user_id: r.blocked_id,
-        name: r.blocked?.name ?? 'Member',
+        // Client privacy: other members see first names only.
+        name: memberFirstName(r.blocked?.name),
         blocked_at: r.created_at.toISOString(),
       })),
     };

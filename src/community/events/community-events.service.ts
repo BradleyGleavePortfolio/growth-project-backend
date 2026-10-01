@@ -14,6 +14,7 @@ import {
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityEventsRepository } from './community-events.repository';
@@ -74,6 +75,7 @@ export class CommunityEventsService {
     private readonly events: CommunityEventsRepository,
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── View mapping ──────────────────────────────────────────────────────────
@@ -168,6 +170,9 @@ export class CommunityEventsService {
         )
       : await this.access.canAccessWorkspace(event.workspace_id, user);
     if (!canRead) throw new NotFoundException(EVENT_NOT_FOUND);
+    // Two-way block: an event created by someone in a block relation with the
+    // caller reads as "does not exist" (read, RSVP and every other action).
+    await this.safety.assertVisibleTo(user.id, event.created_by_id, EVENT_NOT_FOUND);
     return event;
   }
 
@@ -284,7 +289,10 @@ export class CommunityEventsService {
       limit,
     });
 
-    const views = await Promise.all(rows.map((e) => this.buildView(e, user.id)));
+    // Two-way block: drop events created by anyone in a block relation with
+    // the caller (cursor stays on the unfiltered page, as on every list).
+    const visibleRows = await this.safety.filterBlocked(user.id, rows, (e) => e.created_by_id);
+    const views = await Promise.all(visibleRows.map((e) => this.buildView(e, user.id)));
     const next = rows.length === limit ? rows[rows.length - 1].starts_at.toISOString() : null;
     return CommunityEventListResponseSchema.parse({
       events: views,
@@ -710,7 +718,11 @@ export class CommunityEventsService {
       at: new Date(),
     });
     if (claimed.length === 0) return;
+    // Two-way block: never page someone about an event created by a person
+    // they blocked or who blocked them (they can no longer see the event).
+    const hidden = await this.safety.hiddenFromViewer(event.created_by_id);
     for (const r of claimed) {
+      if (hidden.has(r.user_id)) continue;
       void this.communityPush.sendCommunityPush({
         recipientId: r.user_id,
         kind: NotificationKind.COMMUNITY_EVENT_STARTING_SOON,

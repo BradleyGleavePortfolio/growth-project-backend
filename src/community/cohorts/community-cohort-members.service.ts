@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import type { CommunityCohort, CommunityMembershipRole, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
+import { memberFirstName } from '../member-display-name';
 import {
   CommunityCohortMembersRepository,
   MemberPageCursor,
@@ -79,6 +81,7 @@ export class CommunityCohortMembersService {
   constructor(
     private readonly access: CommunityAccessService,
     private readonly repo: CommunityCohortMembersRepository,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   private parseLimit(limit: string | undefined): number {
@@ -122,12 +125,15 @@ export class CommunityCohortMembersService {
     };
   }
 
-  /** Sanitized roster view for a non-coach member (no PII/status). */
+  /**
+   * Sanitized roster view for a non-coach member (no PII/status). Client
+   * privacy: other members see first names only.
+   */
   private rosterView(m: MembershipWithUser): CohortMemberView {
     return {
       id: m.id,
       user_id: m.user_id,
-      display_name: m.user.name,
+      display_name: memberFirstName(m.user.name),
       role: PRISMA_TO_API_ROLE[m.role],
       status: null,
       email: null,
@@ -185,8 +191,15 @@ export class CommunityCohortMembersService {
     });
     const nextCursor = rows.length === limit ? this.encodeCursor(rows[rows.length - 1]) : null;
 
+    // Two-way block on the member roster: a member does not see people they
+    // blocked or who blocked them. The coach's management view stays complete
+    // (the coach administers every membership; moderation and ban act on it).
+    const visible = isCoach
+      ? rows
+      : await this.safety.filterBlocked(user.id, rows, (m) => m.user_id);
+
     return CohortMemberListResponseSchema.parse({
-      members: rows.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
+      members: visible.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
       next_cursor: nextCursor,
     });
   }

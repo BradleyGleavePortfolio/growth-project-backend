@@ -15,7 +15,9 @@
 import 'reflect-metadata';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CommunityEvent, CommunityEventState } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { CommunityEventsService } from '../../../src/community/events/community-events.service';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 type AnyUser = { id: string; role: string };
 
@@ -31,6 +33,10 @@ const stranger: AnyUser = {
   id: '33333333-3333-4333-8333-333333333333',
   role: 'student',
 };
+
+function asUser(u: AnyUser): User {
+  return u as User;
+}
 
 const WS = '44444444-4444-4444-8444-444444444444';
 const EVT = '55555555-5555-4555-8555-555555555555';
@@ -58,7 +64,7 @@ function baseEvent(over: Partial<CommunityEvent> = {}): CommunityEvent {
   };
 }
 
-function makeService() {
+function makeService(blocks: Array<[string, string]> = []) {
   const store: Record<string, CommunityEvent> = {
     [EVT]: baseEvent(),
   };
@@ -132,9 +138,11 @@ function makeService() {
     // count actually flipped (1 = this worker won); claimReminderRecipients
     // returns ONLY the rows this call claimed (atomic stamp).
     casPromoteState: jest.fn(async () => 1),
-    claimReminderRecipients: jest.fn(async () => []),
+    claimReminderRecipients: jest.fn(
+      async (): Promise<Array<{ id: string; user_id: string }>> => [],
+    ),
     activeCohortIds: jest.fn(async () => []),
-    findScheduledStartingBefore: jest.fn(async () => []),
+    findScheduledStartingBefore: jest.fn(async (): Promise<CommunityEvent[]> => []),
     findDueForLive: jest.fn(async () => []),
   };
 
@@ -149,6 +157,7 @@ function makeService() {
     repo as never,
     realtime as never,
     push as never,
+    safetyWithBlocks(blocks),
   );
   return { service, access, repo, realtime, push, store };
 }
@@ -581,6 +590,59 @@ describe('CommunityEventsService (v2-3)', () => {
       const promoted = await service.runLivePromotion(now, 100);
       expect(promoted).toBe(0);
       expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Two-way block (owner-approved copy: they can no longer see your posts) ──
+
+  describe('two-way block on coach-created events', () => {
+    // The service takes a Prisma User; the fixture carries the two fields read.
+    const clientUser = asUser(client);
+    const pairs: Array<[string, [string, string]]> = [
+      ['the coach blocked the client', [coach.id, client.id]],
+      ['the client blocked the coach (coach messaging block)', [client.id, coach.id]],
+    ];
+
+    it.each(pairs)(
+      'when %s: hidden from the list, 404 by id and on RSVP; unblock restores',
+      async (_l, pair) => {
+        const blocks: Array<[string, string]> = [pair];
+        const { service, repo } = makeService(blocks);
+        repo.list.mockResolvedValue([baseEvent()]);
+        expect((await service.list(clientUser, WS, {})).events).toEqual([]);
+        await expect(service.getOne(clientUser, EVT)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.rsvp(clientUser, EVT, 'going')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+        expect(repo.upsertRsvp).not.toHaveBeenCalled();
+        blocks.length = 0;
+        expect((await service.list(clientUser, WS, {})).events).toHaveLength(1);
+        await expect(service.getOne(clientUser, EVT)).resolves.toBeDefined();
+      },
+    );
+
+    it('never sends an "event starting soon" push across a block', async () => {
+      const blocked = '77777777-7777-4777-8777-777777777777';
+      const { service, repo, push } = makeService([[coach.id, blocked]]);
+      const soon = baseEvent({
+        id: 'evt-soon',
+        starts_at: new Date('2026-07-01T20:00:00.000Z'),
+      });
+      // casPromoteState defaults to 1 (this worker wins the transition).
+      repo.findScheduledStartingBefore.mockResolvedValue([soon]);
+      repo.claimReminderRecipients.mockResolvedValue([
+        { id: 'r1', user_id: client.id },
+        { id: 'r2', user_id: blocked },
+      ]);
+      const now = new Date('2026-07-01T12:00:00.000Z');
+      await service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100);
+      await new Promise((r) => setImmediate(r));
+      expect(push.sendCommunityPush).toHaveBeenCalledWith(
+        expect.objectContaining({ recipientId: client.id }),
+      );
+      expect(push.sendCommunityPush).not.toHaveBeenCalledWith(
+        expect.objectContaining({ recipientId: blocked }),
+      );
     });
   });
 });

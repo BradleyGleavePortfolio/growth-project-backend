@@ -14,6 +14,7 @@ import { CommunityMessagesRepository } from '../messages/community-messages.repo
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { CommunityModerationRepository } from './community-moderation.repository';
 import { PrismaService } from '../../prisma.service';
+import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -157,6 +158,9 @@ export class CommunityModerationService {
     } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // A DM can be reported only by one of its two participants, so a third
+    // member cannot pull someone else's DM into the coach's queue by id.
+    assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
     return {
       workspaceId: msg.workspace_id,
       targetType: 'message',

@@ -416,6 +416,8 @@ export class CommunityVoiceService {
 
   async getOne(user: User, voiceNoteId: string): Promise<VoiceNoteResponse> {
     const row = await this.readableNote(user, voiceNoteId);
+    // Two-way block: a direct id read cannot go around the list filter.
+    await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
     return VoiceNoteResponseSchema.parse({
       voice_note: await this.noteView(row),
     });
