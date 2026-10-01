@@ -1,0 +1,231 @@
+name: Fly Env Sync (operator)
+
+# S-ENVTRUTH. Operator workflow that copies an explicit allowlist of GitHub
+# Actions secrets to the production Fly app with `fly secrets set --stage`.
+#
+# Why --stage: staged secrets do NOT restart machines. They are applied at the
+# next `fly deploy` (or an explicit `fly secrets deploy`), so this workflow can
+# run during the day without bouncing production.
+#
+# What it does:
+#   1. Guards: app allowlist, confirm=SET, `production` environment (same
+#      pattern as fly-secrets-set.yml), FLY_API_TOKEN present.
+#   2. For every allowlisted name, reads the GitHub secret of the SAME name.
+#      Unset or empty secrets are SKIPPED (never pushed as empty, never fail
+#      the run) so the operator can fill the list in over time.
+#   3. Stages the non-empty ones in one `fly secrets set --stage` call.
+#   4. Confirms the staged names appear in `fly secrets list` and prints
+#      NAMES ONLY (no digests, no values).
+#
+# Optional apply (deploy_staged=true): after staging, runs `fly secrets deploy`
+# so the staged values take effect immediately (rolling machine restart).
+# Off by default; when off, the next `fly deploy` applies them.
+#
+# What it does NOT do:
+#   - It does not deploy or restart machines unless deploy_staged=true.
+#   - It does not generate, rotate or delete any secret.
+#   - It does not print any value. `set +x` everywhere; values only ever live in
+#     env vars and the argv array handed to flyctl.
+#   - It does not push the Apple sign-in keys; the account-deletion lane's own
+#     workflow owns those.
+#
+# Every allowlisted name must be registered in src/common/env-validation.ts;
+# test/ci/fly-env-workflows.spec.ts enforces that plus the guards above.
+#
+# How to run (operator):
+#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET
+#   # stage and apply now (rolling restart):
+#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET -f deploy_staged=true
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name (production)
+        required: true
+        default: backend-spring-lake-3890
+      confirm:
+        description: Type SET to confirm you intend to stage production secrets
+        required: true
+        default: ''
+      deploy_staged:
+        description: Also run `fly secrets deploy` after staging (restarts machines to apply now). Default false = apply at the next deploy.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  fly-env-sync:
+    name: Stage allowlisted secrets on Fly
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: fly-secrets-${{ inputs.app }}
+    steps:
+      - name: Validate Fly app target
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          case "${APP}" in
+            backend-spring-lake-3890) ;;
+            *)
+              echo "::error::app input is not an allowed Fly app target. Aborting."
+              exit 1
+              ;;
+          esac
+          echo "App target allowed."
+
+      - name: Confirm operator intent
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "${CONFIRM}" != "SET" ]; then
+            echo "::error::confirm input must be the literal string 'SET' — got something else. Aborting."
+            exit 1
+          fi
+          echo "Operator confirmed."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot manage secrets."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+
+      - name: Stage allowlisted secrets (names only in output)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+          # BEGIN ALLOWLIST (each maps to the GitHub secret of the same name)
+          GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
+          METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
+          DATA_EXPORT_DOWNLOAD_SECRET: ${{ secrets.DATA_EXPORT_DOWNLOAD_SECRET }}
+          CONTRACT_PDF_URL_SECRET: ${{ secrets.CONTRACT_PDF_URL_SECRET }}
+          SCHEDULING_WEBHOOK_SECRET: ${{ secrets.SCHEDULING_WEBHOOK_SECRET }}
+          GARMIN_WEBHOOK_SALT: ${{ secrets.GARMIN_WEBHOOK_SALT }}
+          WHOOP_WEBHOOK_SALT: ${{ secrets.WHOOP_WEBHOOK_SALT }}
+          FITBIT_CLIENT_ID: ${{ secrets.FITBIT_CLIENT_ID }}
+          FITBIT_CLIENT_SECRET: ${{ secrets.FITBIT_CLIENT_SECRET }}
+          GARMIN_CLIENT_ID: ${{ secrets.GARMIN_CLIENT_ID }}
+          GARMIN_CLIENT_SECRET: ${{ secrets.GARMIN_CLIENT_SECRET }}
+          OURA_CLIENT_ID: ${{ secrets.OURA_CLIENT_ID }}
+          OURA_CLIENT_SECRET: ${{ secrets.OURA_CLIENT_SECRET }}
+          POLAR_CLIENT_ID: ${{ secrets.POLAR_CLIENT_ID }}
+          POLAR_CLIENT_SECRET: ${{ secrets.POLAR_CLIENT_SECRET }}
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          WAHOO_CLIENT_ID: ${{ secrets.WAHOO_CLIENT_ID }}
+          WAHOO_CLIENT_SECRET: ${{ secrets.WAHOO_CLIENT_SECRET }}
+          WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
+          WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+          WITHINGS_CLIENT_ID: ${{ secrets.WITHINGS_CLIENT_ID }}
+          WITHINGS_CLIENT_SECRET: ${{ secrets.WITHINGS_CLIENT_SECRET }}
+          # END ALLOWLIST
+        run: |
+          set +x
+          set -euo pipefail
+          allowlist=(
+            GOOGLE_CLIENT_IDS
+            GOOGLE_OAUTH_CLIENT_ID
+            GOOGLE_OAUTH_CLIENT_SECRET
+            GOOGLE_OAUTH_REDIRECT_URI
+            METRICS_AUTH_TOKEN
+            DATA_EXPORT_DOWNLOAD_SECRET
+            CONTRACT_PDF_URL_SECRET
+            SCHEDULING_WEBHOOK_SECRET
+            GARMIN_WEBHOOK_SALT
+            WHOOP_WEBHOOK_SALT
+            FITBIT_CLIENT_ID
+            FITBIT_CLIENT_SECRET
+            GARMIN_CLIENT_ID
+            GARMIN_CLIENT_SECRET
+            OURA_CLIENT_ID
+            OURA_CLIENT_SECRET
+            POLAR_CLIENT_ID
+            POLAR_CLIENT_SECRET
+            STRAVA_CLIENT_ID
+            STRAVA_CLIENT_SECRET
+            WAHOO_CLIENT_ID
+            WAHOO_CLIENT_SECRET
+            WHOOP_CLIENT_ID
+            WHOOP_CLIENT_SECRET
+            WITHINGS_CLIENT_ID
+            WITHINGS_CLIENT_SECRET
+          )
+          args=()
+          staged=()
+          skipped=()
+          for name in "${allowlist[@]}"; do
+            # Indirect expansion reads the value without ever printing it.
+            if [ -n "${!name:-}" ]; then
+              args+=("${name}=${!name}")
+              staged+=("${name}")
+            else
+              skipped+=("${name}")
+            fi
+          done
+          printf 'skipped (unset or empty in GitHub secrets): %s\n' "${skipped[*]:-none}"
+          if [ "${#staged[@]}" -eq 0 ]; then
+            echo "Nothing to stage."
+            exit 0
+          fi
+          printf 'staging: %s\n' "${staged[*]}"
+          # --stage: no machine restart; applied at the next deploy.
+          flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null
+          unset args
+          printf '%s\n' "${staged[@]}" > staged-names.txt
+          echo "Staged ${#staged[@]} secret(s). They apply at the next deploy."
+
+      - name: Confirm staged names are listed on Fly (names only)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+        run: |
+          set +x
+          set -euo pipefail
+          if [ ! -s staged-names.txt ]; then
+            echo "No staged names to confirm."
+            exit 0
+          fi
+          # Keep only the NAME column; never print digests or values.
+          names=$(flyctl secrets list -a "${APP}" | awk -F'│' '{gsub(/^[[:space:]!]+|[[:space:]]+$/, "", $1); print $1}')
+          missing=()
+          while IFS= read -r name; do
+            if ! printf '%s\n' "${names}" | grep -qx "${name}"; then
+              missing+=("${name}")
+            fi
+          done < staged-names.txt
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Staged names not listed on Fly: ${missing[*]}"
+            exit 1
+          fi
+          echo "All staged names are listed on Fly:"
+          cat staged-names.txt
+
+      - name: Apply staged secrets now (only when deploy_staged=true)
+        if: ${{ inputs.deploy_staged }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+        run: |
+          set +x
+          set -euo pipefail
+          if [ ! -s staged-names.txt ]; then
+            echo "Nothing was staged; skipping fly secrets deploy."
+            exit 0
+          fi
+          # Rolling restart that applies the staged secrets. Output is names /
+          # machine ids only; flyctl never prints secret values.
+          flyctl secrets deploy -a "${APP}"
+          echo "Staged secrets applied."

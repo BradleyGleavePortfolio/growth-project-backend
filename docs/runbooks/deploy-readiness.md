@@ -8,14 +8,15 @@
 
 ## What the board is
 
-There is a single test, `test/deploy-readiness.spec.ts`, that runs seven checks and prints one board. Each check came from an earlier piece of work (labelled H4.A through H4.G); the board ties them together so you get one yes-or-no answer instead of seven separate reports.
+There is a single test, `test/deploy-readiness.spec.ts`, that runs eight checks and prints one board. Most checks came from an earlier piece of work (labelled H4.A through H4.G); ENV REGISTRATION was added by S-ENVTRUTH. The board ties them together so you get one yes-or-no answer instead of separate reports.
 
-The seven sections are:
+The sections are:
 
 | Section | Question it answers |
 | --- | --- |
 | STUB VALUES | Are there any leftover placeholder or stub values in production code that must be removed before launch |
 | PROD SWITCHES | Is every production safety switch declared coherently in the registry, and is every must-set switch actually set |
+| ENV REGISTRATION | Is every environment variable name the code reads (directly, through ConfigService, through a helper, or built from a template such as `${PROVIDER}_CLIENT_ID`) registered in `src/common/env-validation.ts` with a tier, real default and reason |
 | WIRING | Is every third-party integration (Stripe, Mux, SendGrid, Supabase, OpenAI, Twilio, Cloudflare, AWS S3, Fly, Sentry) actually credentialed rather than stubbed |
 | ENV DISCOVERY | Is every environment variable referenced in the code also registered in the switch registry |
 | AUTO-FLIPPER | Which switches would automatically flip to their production value on a production deploy (informational, never blocks) |
@@ -25,9 +26,11 @@ The seven sections are:
 The board ends with one of two lines:
 
 - `EXIT: ALL CLEAR -> SAFE TO DEPLOY` when there are no blocking red lines.
-- `EXIT: N STUB + N PROD SWITCHES WRONG + N PROD SWITCHES WARN + N WIRING GAPS + N ENV GAPS + N KEY GAPS -> DO NOT DEPLOY` when there is at least one.
+- `EXIT: N STUB + N PROD SWITCHES WRONG + N PROD SWITCHES WARN + N WIRING GAPS + N ENV GAPS + N KEY GAPS + N ENV UNREGISTERED -> DO NOT DEPLOY` when there is at least one.
 
 **WRONG vs WARN.** The exit line carries two prod-switch buckets, and they gate differently. `PROD SWITCHES WRONG` counts switches whose declaration is genuinely incoherent — a codebase-invariant defect that does not depend on which secrets are loaded — so it blocks on both surfaces: it gates the informational PR check and the strict prod-deploy gate alike. `PROD SWITCHES WARN` counts environment-dependent switch findings (for example an unset or placeholder switch the runner has no secret for); like WIRING, ENV, and KEY gaps it is surfaced everywhere but only counts toward the gate under strict mode (the prod-deploy gate), not on a pull request. So a non-zero WARN bucket will fail the prod-deploy gate but is informational-only on the PR check, where the runner carries no production secrets.
+
+**ENV UNREGISTERED** counts env names that runtime `src/` reads but `ENV_RULES` does not register (plus unrecorded dynamic reads). It depends only on committed code, so like STUB and PROD SWITCHES WRONG it blocks on the pull request check as well as on the prod-deploy gate. The same invariant is enforced on its own by `test/prod-readiness/env-registration.spec.ts`, which runs in the normal `build-and-test` job.
 
 ---
 
@@ -39,7 +42,7 @@ The same test runs on two surfaces, and it behaves differently on each. This is 
 
 The `test-deploy-readiness` job runs on each pull request. It is informational: it posts the board as a comment on the pull request and does not block the merge during the pre-launch burn-down.
 
-On a pull request it gates only the two checks that depend purely on the committed code: STUB VALUES and PROD SWITCHES. The other three blocking checks (WIRING, ENV DISCOVERY, OPERATOR KEYS) depend on which secrets are loaded into the environment. A pull request runner has no production secrets, so it would always see every integration as un-credentialed. Failing the pull request on that would be a false alarm, so those sections are printed for your awareness but do not block.
+On a pull request it gates only the checks that depend purely on the committed code: STUB VALUES, PROD SWITCHES, and ENV REGISTRATION. The other three blocking checks (WIRING, ENV DISCOVERY, OPERATOR KEYS) depend on which secrets are loaded into the environment. A pull request runner has no production secrets, so it would always see every integration as un-credentialed. Failing the pull request on that would be a false alarm, so those sections are printed for your awareness but do not block.
 
 ### On a production deploy: hard block
 
@@ -79,11 +82,50 @@ Read the exit line. It tells you exactly which bucket has the problem and how ma
 
 3. **WIRING GAPS N** — open the WIRING section. Each `[STUB]` line names an integration and which environment variables are missing or still placeholders. Provide the real credentials as Fly secrets.
 
-4. **ENV GAPS N** — open the ENV DISCOVERY section. Each `[GAP]` line names an environment variable the code reads but the registry does not declare. Add it to `prod-switches.yml`.
+4. **ENV UNREGISTERED N** — open the ENV REGISTRATION section. Each `[UNREGISTERED]` line names an env var and the files that read it. Add a rule to `ENV_RULES` in `src/common/env-validation.ts` with `tier`, `default` (what the code really does when it is unset) and `reason`. Providers that are not used in v1 are `optional` with a reason that says so. A `[DYNAMIC]` line is a read whose name is not a literal; record the names it can take in `DYNAMIC_ENV_SITES` in `test/prod-readiness/env-registration.ts`.
 
-5. **KEY GAPS N** — open the OPERATOR KEYS section. It lists, as ready-to-run `fly secrets set` lines, every secret you still owe. Run them.
+5. **ENV GAPS N** — open the ENV DISCOVERY section. Each `[GAP]` line names an environment variable the code reads but the registry does not declare. Add it to `prod-switches.yml`.
+
+6. **KEY GAPS N** — open the OPERATOR KEYS section. It lists, as ready-to-run `fly secrets set` lines, every secret you still owe. Run them.
 
 After any fix, re-run the board until the exit line reads ALL CLEAR.
+
+---
+
+## Checking and filling the real Fly environment (S-ENVTRUTH)
+
+The board checks the code. Two operator workflows check and fill the real production machine. Both are manual (`workflow_dispatch`), both are restricted to the `backend-spring-lake-3890` app, and both are bound to the `production` GitHub environment. Neither ever prints a secret value.
+
+### 1. Fly Env Truth (read-only): what is actually set
+
+`.github/workflows/fly-env-truth.yml`. Run it first, and again after any change.
+
+```
+gh workflow run "Fly Env Truth (operator, read-only)" -f app=backend-spring-lake-3890
+# optional: -f machine=<fly machine id> to pick a specific machine
+```
+
+What it does: it builds the list of registered names from `ENV_RULES`, ships the classifier in `scripts/env-truth/fly-env-classifier.js` into the production machine as an inline `node -e` program over `flyctl ssh console -C`, and runs it there. For every registered name and every env var present in the machine it reports present or missing, empty, placeholder pattern (for example angle brackets, `changeme`, a run of X characters, a known development default, an `example.com` URL, a Stripe test-mode key), duplicate group (keys that share one value, compared in-machine with a random per-run salt that never leaves the machine), length bucket, whether the name is registered, and whether the name looks truncated (for example `E`). Only that value-free report comes back. It is shown as the job summary and kept as the `env-truth-report` artifact (JSON plus markdown) for 30 days. The workflow never writes to Fly.
+
+How to read it: `Registered but missing` is your fill-in list (check each name's tier and reason in `ENV_RULES`; `optional` names marked "Not used in v1" can stay unset). Anything under `Flagged` with a placeholder pattern or an unexpected duplicate group needs a real value. `Present but unregistered` lists Fly-side names no code reads (cleanup candidates; nothing is removed automatically).
+
+Requirement: `FLY_API_TOKEN` must be allowed to open an ssh session on the app (an org or app deploy token is enough; a read-only token is not).
+
+### 2. Fly Env Sync: push allowlisted GitHub secrets to Fly
+
+`.github/workflows/fly-env-sync.yml`. Use it after you have added the values as GitHub Actions secrets with the same names.
+
+```
+gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET
+```
+
+What it does: for each name on its allowlist (Google sign-in and calendar OAuth, `METRICS_AUTH_TOKEN`, `DATA_EXPORT_DOWNLOAD_SECRET`, `CONTRACT_PDF_URL_SECRET`, `SCHEDULING_WEBHOOK_SECRET`, `GARMIN_WEBHOOK_SALT`, `WHOOP_WEBHOOK_SALT`, and the eight wearables providers' `*_CLIENT_ID` / `*_CLIENT_SECRET`) it reads the GitHub secret of the same name. Unset or empty secrets are skipped. The rest are staged on Fly in one `fly secrets set --stage` call, which does **not** restart any machine; they take effect at the next deploy. To apply them immediately instead, add `-f deploy_staged=true`: the workflow then runs `fly secrets deploy` after staging, which does a rolling restart. It then confirms the staged names are listed on Fly and prints names only. The Apple sign-in keys are not on this list; their own workflow handles them.
+
+`GOOGLE_CLIENT_IDS` is marked required for launch (`launch: 'required'` in `ENV_RULES`). The Google Calendar names (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_CALENDAR_WEBHOOK_TOKEN` and the calendar flags) are an optional integration, not a launch dependency: leave them unset or false. They stay on the allowlist only so a real value can be pushed later; when their GitHub secrets are unset the sync skips them.
+
+To add a name to the allowlist, add it to both the `env:` block and the `allowlist=( ... )` array of the staging step, and register it in `ENV_RULES`. `test/ci/fly-env-workflows.spec.ts` fails if the two lists disagree, if a name is not registered, if `--stage` or a guard is removed, or if any step echoes a value.
+
+After a sync, deploy as usual, then run Fly Env Truth again to confirm.
 
 ---
 
@@ -108,7 +150,10 @@ With that in mind, the operator actions after this merges:
 | --- | --- |
 | The orchestrator board and its tests | `test/deploy-readiness.spec.ts` |
 | The section registry (which scanners run, in what order, gating or informational) | `test/prod-readiness.config.ts` |
-| The seven sub-scanners | `test/prod-readiness/` |
+| The sub-scanners (including `env-registration.ts`) | `test/prod-readiness/` |
+| The env registry (tier, real default, reason for every env name) | `src/common/env-validation.ts` (`ENV_RULES`) |
+| The in-machine env-truth classifier | `scripts/env-truth/fly-env-classifier.js` |
+| The env workflows | `.github/workflows/fly-env-truth.yml`, `.github/workflows/fly-env-sync.yml` |
 | The switch registry | `prod-switches.yml` |
 | The learning ledger (false positives and tracked debt) | `test/prod-readiness/__fixtures__/learning-ledger.json` |
 | The CI workflow with both jobs | `.github/workflows/h4-readiness.yml` |
