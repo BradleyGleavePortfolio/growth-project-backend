@@ -16,20 +16,16 @@
  *   - Comments: visible-challenge gate; report delegates to the public moderation
  *     service's existing comment path (no moderation internals touched).
  */
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
   CommunityChallenge,
   CommunityChallengeParticipation,
   CommunityMessage,
-  User,
 } from '@prisma/client';
 import { CommunityChallengesService } from '../../../src/community/challenges/community-challenges.service';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -70,7 +66,6 @@ const CH_A = '44444444-4444-4444-4444-444444444444';
 const COACH_A_ID = '55555555-5555-5555-5555-555555555555';
 const MEMBER_ID = '66666666-6666-6666-6666-666666666666';
 const STRANGER_ID = '77777777-7777-7777-7777-777777777777';
-const OWNER_ID = '88888888-8888-8888-8888-888888888888';
 const PEER_ID = '99999999-9999-9999-9999-999999999999';
 const PART_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const MSG_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -78,7 +73,6 @@ const MSG_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const coachA = makeUser({ id: COACH_A_ID, role: 'coach' });
 const member = makeUser({ id: MEMBER_ID, role: 'student' });
 const stranger = makeUser({ id: STRANGER_ID, role: 'student' });
-const owner = makeUser({ id: OWNER_ID, role: 'owner' });
 
 const NOW = new Date('2026-03-01T00:00:00.000Z');
 
@@ -172,6 +166,7 @@ describe('CommunityChallengesService', () => {
       moderation as never,
       realtime as never,
       push as never,
+      safetyWithBlocks(),
     );
   });
 
@@ -197,18 +192,18 @@ describe('CommunityChallengesService', () => {
       access.findWorkspace.mockResolvedValue({ id: WS_A });
       access.canAccessWorkspace.mockResolvedValue(true);
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.create(member, WS_A, { title: 'X' }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.create(member, WS_A, { title: 'X' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(repo.createChallenge).not.toHaveBeenCalled();
     });
 
     it('404s a non-member before any write (existence never leaks)', async () => {
       access.findWorkspace.mockResolvedValue({ id: WS_A });
       access.canAccessWorkspace.mockResolvedValue(false);
-      await expect(
-        service.create(stranger, WS_A, { title: 'X' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.create(stranger, WS_A, { title: 'X' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(repo.createChallenge).not.toHaveBeenCalled();
     });
 
@@ -230,20 +225,14 @@ describe('CommunityChallengesService', () => {
 
   describe('getOne tenancy', () => {
     it('404s a cohort-scoped challenge for a non-member of that cohort', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ cohort_id: COHORT_A }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ cohort_id: COHORT_A }));
       access.findCohort.mockResolvedValue({ id: COHORT_A });
       access.canAccessCohort.mockResolvedValue(false);
-      await expect(
-        service.getOne(stranger, CH_A),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getOne(stranger, CH_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('returns a cohort challenge to an active cohort member', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ cohort_id: COHORT_A }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ cohort_id: COHORT_A }));
       access.findCohort.mockResolvedValue({ id: COHORT_A });
       access.canAccessCohort.mockResolvedValue(true);
       repo.findParticipation.mockResolvedValue(null);
@@ -254,12 +243,8 @@ describe('CommunityChallengesService', () => {
     });
 
     it('404s an archived challenge', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ archived_at: NOW }),
-      );
-      await expect(
-        service.getOne(member, CH_A),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      repo.findChallengeById.mockResolvedValue(challenge({ archived_at: NOW }));
+      await expect(service.getOne(member, CH_A)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -296,9 +281,9 @@ describe('CommunityChallengesService', () => {
 
     it('403s progress before joining', async () => {
       repo.findParticipation.mockResolvedValue(null);
-      await expect(
-        service.updateProgress(member, CH_A, 10),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.updateProgress(member, CH_A, 10)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(repo.updateParticipation).not.toHaveBeenCalled();
     });
 
@@ -401,9 +386,7 @@ describe('CommunityChallengesService', () => {
 
   describe('getLeaderboard', () => {
     it('returns available:false with no rows by DEFAULT even if the coach enabled it', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ leaderboard_enabled: true }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ leaderboard_enabled: true }));
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(null); // caller has NOT opted in
 
@@ -415,9 +398,7 @@ describe('CommunityChallengesService', () => {
     });
 
     it('returns available:false when opted in but the coach has NOT enabled it', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ leaderboard_enabled: false }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ leaderboard_enabled: false }));
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
 
@@ -428,9 +409,7 @@ describe('CommunityChallengesService', () => {
     });
 
     it('lists ONLY opted-in participants, ranked, for an opted-in caller', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ leaderboard_enabled: true }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ leaderboard_enabled: true }));
       access.canAccessWorkspace.mockResolvedValue(true);
       repo.findOptIn.mockResolvedValue(optInRow());
       // B-PAG-1 R4: the consent predicate is pushed INTO the repository as a
@@ -463,17 +442,15 @@ describe('CommunityChallengesService', () => {
 
   describe('setLeaderboardOptIn', () => {
     beforeEach(() => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ leaderboard_enabled: true }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ leaderboard_enabled: true }));
       access.canAccessWorkspace.mockResolvedValue(true);
     });
 
     it('403s opting in before joining', async () => {
       repo.findParticipation.mockResolvedValue(null);
-      await expect(
-        service.setLeaderboardOptIn(member, CH_A, true),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.setLeaderboardOptIn(member, CH_A, true)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(repo.setOptIn).not.toHaveBeenCalled();
     });
 
@@ -511,14 +488,12 @@ describe('CommunityChallengesService', () => {
     });
 
     it('404s commenting on a challenge the caller cannot see', async () => {
-      repo.findChallengeById.mockResolvedValue(
-        challenge({ cohort_id: COHORT_A }),
-      );
+      repo.findChallengeById.mockResolvedValue(challenge({ cohort_id: COHORT_A }));
       access.findCohort.mockResolvedValue({ id: COHORT_A });
       access.canAccessCohort.mockResolvedValue(false);
-      await expect(
-        service.addComment(stranger, CH_A, 'hi'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.addComment(stranger, CH_A, 'hi')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(repo.createComment).not.toHaveBeenCalled();
     });
 

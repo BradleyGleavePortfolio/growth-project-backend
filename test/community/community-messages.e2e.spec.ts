@@ -41,14 +41,13 @@ import { CommunityRealtimeService } from '../../src/community/realtime/community
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-messages] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-messages] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -145,6 +144,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
         CommunityMessagesService,
         CommunityMessagesRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
         CommunityRealtimeService,
@@ -243,13 +243,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [
-      ids.coachA,
-      ids.coachB,
-      ids.studentA,
-      ids.studentA2,
-      ids.studentB,
-    ].filter(Boolean);
+    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentA2, ids.studentB].filter(
+      Boolean,
+    );
     await prisma.communityMessage.deleteMany({
       where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
     });
@@ -263,9 +259,14 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   }
 
   it('1. anonymous send → 401', async () => {
-    const res = await call('POST', `/api/community/cohorts/${ids.cohortA}/messages`, {}, {
-      body: 'hi',
-    });
+    const res = await call(
+      'POST',
+      `/api/community/cohorts/${ids.cohortA}/messages`,
+      {},
+      {
+        body: 'hi',
+      },
+    );
     expect(res.status).toBe(401);
   });
 
@@ -290,9 +291,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   });
 
   it('2b. v1-4: send emits an IDs-only community.message.created broadcast', async () => {
-    const spy = jest
-      .spyOn(realtime, 'broadcastCommunityEvent')
-      .mockResolvedValue(undefined);
+    const spy = jest.spyOn(realtime, 'broadcastCommunityEvent').mockResolvedValue(undefined);
     try {
       const sent = await call(
         'POST',
@@ -306,14 +305,10 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       expect(spy).toHaveBeenCalled();
       const [channel, event, payload] = spy.mock.calls[0];
       expect(event).toBe('community.message.created');
-      expect(channel).toMatch(
-        new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`),
-      );
+      expect(channel).toMatch(new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`));
       // IDs only — the user-authored body must NEVER reach the payload.
       expect(JSON.stringify(payload)).not.toContain('SECRET-LEAK-TOKEN-XYZ');
-      expect(JSON.stringify(payload)).not.toMatch(
-        /body|content|text|emoji|reason/i,
-      );
+      expect(JSON.stringify(payload)).not.toMatch(/body|content|text|emoji|reason/i);
       expect(Object.keys(payload as object).sort()).toEqual(
         ['authorId', 'cohortId', 'createdAt', 'id'].sort(),
       );
@@ -350,12 +345,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     );
     const id = sent.body.message.id;
 
-    const edit = await call(
-      'PATCH',
-      `/api/community/messages/${id}`,
-      asUser(ids.studentA),
-      { body: 'edited' },
-    );
+    const edit = await call('PATCH', `/api/community/messages/${id}`, asUser(ids.studentA), {
+      body: 'edited',
+    });
     expect(edit.status).toBe(200);
     expect(edit.body.message.body).toBe('edited');
 
@@ -456,11 +448,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     expect(bodies).toContain('real cohort message');
 
     // The comment is unreachable through every /messages/:id path → 404.
-    const get = await call(
-      'GET',
-      `/api/community/messages/${comment.id}`,
-      asUser(ids.studentA),
-    );
+    const get = await call('GET', `/api/community/messages/${comment.id}`, asUser(ids.studentA));
     expect(get.status).toBe(404);
 
     const patch = await call(
@@ -471,11 +459,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     );
     expect(patch.status).toBe(404);
 
-    const del = await call(
-      'DELETE',
-      `/api/community/messages/${comment.id}`,
-      asUser(ids.studentA),
-    );
+    const del = await call('DELETE', `/api/community/messages/${comment.id}`, asUser(ids.studentA));
     expect(del.status).toBe(404);
   });
 

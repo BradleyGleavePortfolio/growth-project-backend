@@ -49,14 +49,13 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-dms] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-dms] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -150,6 +149,7 @@ itLive('community v1-3 direct messages (live DB)', () => {
         CommunityDmsService,
         CommunityDmsRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityDmEnabledGuard,
         CommunityRealtimeService,
@@ -260,13 +260,9 @@ itLive('community v1-3 direct messages (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [
-      ids.coachA,
-      ids.studentA,
-      ids.studentA2,
-      ids.coachB,
-      ids.studentB,
-    ].filter(Boolean);
+    const userIds = [ids.coachA, ids.studentA, ids.studentA2, ids.coachB, ids.studentB].filter(
+      Boolean,
+    );
     await prisma.communityMessage.deleteMany({
       where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
     });
