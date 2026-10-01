@@ -17,6 +17,7 @@ import { CoachGuard } from '../auth/coach.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { CreateMacroTargetDto } from './macros.dto';
 import { MacrosService, type Goal } from './macros.service';
+import { ACTIVITY_FACTORS, type MacroActivity } from './macro-calculator';
 
 @ApiTags('macros')
 @Controller()
@@ -48,10 +49,7 @@ export class CoachMacrosController {
   // the active target only.
   @Get('coach/clients/:clientId/macros/current')
   @UseGuards(JwtAuthGuard, CoachGuard)
-  async current(
-    @Req() req: AuthedRequest,
-    @Param('clientId') clientId: string,
-  ) {
+  async current(@Req() req: AuthedRequest, @Param('clientId') clientId: string) {
     // Tenancy check happens via list() pathway above; reuse list to get
     // the current row without a second guard call.
     const all = await this.macros.listForClientByCoach(req.user.id, clientId);
@@ -76,7 +74,7 @@ export class CoachMacrosController {
       weight_kg: number;
       height_cm: number;
       age_years: number;
-      sex: 'male' | 'female';
+      sex: 'male' | 'female' | 'prefer_not_to_say';
       activity_level: string;
       goal: Goal;
     },
@@ -88,7 +86,9 @@ export class CoachMacrosController {
       body.height_cm <= 0 ||
       typeof body.age_years !== 'number' ||
       body.age_years <= 0 ||
-      (body.sex !== 'male' && body.sex !== 'female') ||
+      !['male', 'female', 'prefer_not_to_say'].includes(body.sex) ||
+      // C06: no silent 1.55 fallback for an unknown activity level.
+      !Object.prototype.hasOwnProperty.call(ACTIVITY_FACTORS, body.activity_level) ||
       !['cut', 'maintain', 'bulk'].includes(body.goal)
     ) {
       throw new BadRequestException('Invalid preset input');
@@ -98,12 +98,7 @@ export class CoachMacrosController {
       height_cm: body.height_cm,
       age_years: body.age_years,
       sex: body.sex,
-      activity_level: body.activity_level as
-        | 'sedentary'
-        | 'light'
-        | 'moderate'
-        | 'active'
-        | 'very_active',
+      activity_level: body.activity_level as MacroActivity,
       goal: body.goal,
     });
   }
