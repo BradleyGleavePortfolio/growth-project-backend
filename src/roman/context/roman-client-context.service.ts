@@ -15,13 +15,18 @@
  *   `invalidateForUser` and by the process-wide hook in
  *   roman-context-invalidation.ts.
  *
- * MINIMISATION
- * - Strings pass `sanitizePromptInput` plus a length clamp.
- * - Screening: only { completed, clearance_recommended } — never answers or
- *   categories (operator ruling 2026-09-30).
- * - Excluded by construction: email, phone, last name, raw ids, exact DOB,
- *   coach-private notes, other users' data, bloodwork, wearables, payments,
- *   the raw food-item list.
+ * SCOPE (owner ruling 2026-09-30 16:31 #6)
+ * - Roman sees ALL of the client's OWN data: profile, full consultation incl.
+ *   safety-screen answers, macros, food logs (today's entries + 7-day
+ *   totals), workouts and history, check-ins, wearable/health/sleep
+ *   summaries, the recent client ↔ coach thread (both directions), and the
+ *   community posts the client authored.
+ * - Strings pass `sanitizePromptInput` plus a length clamp; lists use recency
+ *   windows so the block stays inside the renderer's token cap.
+ * - Excluded by construction: other users' data (every query is scoped to
+ *   the caller), coach-private notes (CoachingSession is never read), email,
+ *   phone, last name, raw ids, exact DOB, bloodwork, payments, wearable
+ *   credentials/tokens (WearableConnection is read for provider + status only).
  */
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -34,22 +39,54 @@ import {
   ROMAN_SAFETY_INTAKE_SOURCE,
   RomanClientContext,
   RomanClientContextBundle,
+  RomanConsultationSummary,
   RomanCtxCheckIn,
+  RomanCtxCoachMessage,
+  RomanCtxCommunityPost,
   RomanCtxCompletion,
   RomanCtxDayTotals,
   RomanCtxExercise,
+  RomanCtxFoodEntry,
   RomanCtxLoggedWorkout,
   RomanCtxPlan,
-  RomanCtxSafetyIntake,
+  RomanCtxQA,
   RomanCtxSession,
   RomanCtxTargets,
+  RomanCtxWearableDay,
+  RomanCtxWearables,
   RomanCtxWeightTrend,
   RomanSafetyIntakeSource,
 } from './roman-client-context.types';
 import { onRomanContextInvalidate } from './roman-context-invalidation';
 
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
-export const ROMAN_CONTEXT_MAX_QUERIES = 12;
+export const ROMAN_CONTEXT_MAX_QUERIES = 16;
+
+/** Recency windows / caps (ruling #6 scope, kept inside the token budget). */
+export const ROMAN_CTX_LIMITS = {
+  today_food_entries: 16,
+  logged_workouts: 8,
+  check_ins: 7,
+  coach_messages: 8,
+  community_posts: 5,
+  wearable_days: 7,
+  wearable_samples: 600,
+  consultation_answers: 30,
+  screen_answers: 12,
+} as const;
+
+/** Wearable metrics summarised for Roman (daily aggregates only; never raw HR streams). */
+export const ROMAN_WEARABLE_METRICS = [
+  'STEPS',
+  'ACTIVE_ENERGY_KCAL',
+  'RESTING_HEART_RATE_BPM',
+  'HRV_MS',
+  'SLEEP_TOTAL_MIN',
+  'SLEEP_DURATION_MIN',
+  'SLEEP_EFFICIENCY_PCT',
+  'RECOVERY_SCORE',
+  'READINESS_SCORE',
+] as const;
 const DEFAULT_TZ = 'America/Los_Angeles';
 
 /** Calorie floors per plan §4.4 (owner default: 1,500 for prefer-not-to-say). */
@@ -136,10 +173,23 @@ const firstName = (name: string | null | undefined): string => {
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 class DefaultSafetyIntakeSource implements RomanSafetyIntakeSource {
-  async summarize(): Promise<RomanCtxSafetyIntake> {
-    return { completed: false, clearance_recommended: false };
+  async summarize(): Promise<RomanConsultationSummary> {
+    return {
+      safety_intake: { completed: false, clearance_recommended: false, screen_answers: [] },
+      consultation: { completed: false, completed_at: null, answers: [] },
+    };
   }
 }
+
+const clampQA = (xs: RomanCtxQA[] | null | undefined, max: number): RomanCtxQA[] =>
+  (xs ?? [])
+    .map((qa) => ({
+      question: clamp(qa.question, 80) ?? '',
+      answer: clamp(qa.answer, 200) ?? '',
+      ...(qa.flagged ? { flagged: true } : {}),
+    }))
+    .filter((qa) => qa.question.length > 0 && qa.answer.length > 0)
+    .slice(0, max);
 
 // ─── the service ─────────────────────────────────────────────────────────────
 
@@ -264,7 +314,10 @@ export class RomanClientContextService {
       guideline,
       coachMessages,
       mealAssignment,
-      intake,
+      consult,
+      communityPosts,
+      wearableConnections,
+      wearableSamples,
     ] = await Promise.all([
       coachId
         ? (queries++,
@@ -284,8 +337,11 @@ export class RomanClientContextService {
         select: {
           date: true,
           logged_at: true,
+          meal_type: true,
           quantity_multiplier: true,
-          food_item: { select: { calories: true, protein_g: true, carbs_g: true, fat_g: true } },
+          food_item: {
+            select: { name: true, calories: true, protein_g: true, carbs_g: true, fat_g: true },
+          },
         },
       })),
       coachId
@@ -329,7 +385,7 @@ export class RomanClientContextService {
       this.prisma.workoutSession.findMany({
         where: { user_id: userId },
         orderBy: { date: 'desc' },
-        take: 5,
+        take: ROMAN_CTX_LIMITS.logged_workouts,
         select: {
           date: true,
           workout_name: true,
@@ -349,7 +405,7 @@ export class RomanClientContextService {
       this.prisma.checkIn.findMany({
         where: { user_id: userId },
         orderBy: { date: 'desc' },
-        take: 5,
+        take: ROMAN_CTX_LIMITS.check_ins,
         select: {
           date: true,
           type: true,
@@ -367,18 +423,21 @@ export class RomanClientContextService {
             select: { content: true },
           }))
         : null,
+      // Ruling #6: the recent client ↔ coach thread, BOTH directions. Still
+      // scoped to (current coach, this client); a sender outside the pair is
+      // impossible by the thread's own invariant and is dropped if seen.
       coachId
         ? (queries++,
           this.prisma.coachMessage.findMany({
             where: {
               coach_id: coachId,
               client_id: userId,
-              sender_id: coachId,
+              sender_id: { in: [coachId, userId] },
               body: { not: null },
             },
             orderBy: { created_at: 'desc' },
-            take: 3,
-            select: { created_at: true, body: true },
+            take: ROMAN_CTX_LIMITS.coach_messages,
+            select: { created_at: true, body: true, sender_id: true },
           }))
         : [],
       coachId
@@ -412,6 +471,33 @@ export class RomanClientContextService {
           }))
         : null,
       this.intake.summarize(userId),
+      // Ruling #6: the client's OWN community posts (author_id = caller).
+      (queries++,
+      this.prisma.communityPost.findMany({
+        where: { author_id: userId, deleted_at: null, visibility: 'active' },
+        orderBy: { created_at: 'desc' },
+        take: ROMAN_CTX_LIMITS.community_posts,
+        select: { created_at: true, scope: true, title: true, body: true },
+      })),
+      // Ruling #6: wearables / health / sleep. Connection rows for provider +
+      // status + last sync ONLY (never the token columns); samples as daily
+      // aggregates for a fixed metric set over the last 7 local days.
+      (queries++,
+      this.prisma.wearableConnection.findMany({
+        where: { user_id: userId, disconnected_at: null },
+        select: { provider: true, status: true, last_synced_at: true },
+      })),
+      (queries++,
+      this.prisma.wearableSample.findMany({
+        where: {
+          user_id: userId,
+          metric: { in: [...ROMAN_WEARABLE_METRICS] },
+          start_at: { gte: new Date(`${addDays(today, -7)}T00:00:00.000Z`) },
+        },
+        orderBy: { start_at: 'desc' },
+        take: ROMAN_CTX_LIMITS.wearable_samples,
+        select: { metric: true, value: true, start_at: true, end_at: true, source_tz: true },
+      })),
     ]);
 
     // Exercise names for the next/today session (one catalog lookup).
@@ -495,8 +581,18 @@ export class RomanClientContextService {
     // ── food totals: today + last 7 local days ──
     const byDay = new Map<string, RomanCtxDayTotals>();
     let lastLoggedAt: Date | null = null;
+    const todayEntries: RomanCtxFoodEntry[] = [];
     for (const e of foodEntries) {
       const day = ymdOf(e.date);
+      if (day === today) {
+        todayEntries.push({
+          meal: String(e.meal_type ?? 'meal').toLowerCase(),
+          name: clamp(e.food_item.name, 60) ?? 'Food',
+          kcal: Math.round(e.food_item.calories * e.quantity_multiplier),
+          protein_g: Math.round(e.food_item.protein_g * e.quantity_multiplier),
+          logged_at: e.logged_at.toISOString(),
+        });
+      }
       const t = byDay.get(day) ?? {
         date: day,
         kcal: 0,
@@ -530,6 +626,8 @@ export class RomanClientContextService {
       meals_logged: 0,
     };
     if (todayTotals.meals_logged === 0) missing.push('today_logs');
+    todayEntries.sort((a, b) => a.logged_at.localeCompare(b.logged_at));
+    const entries = todayEntries.slice(-ROMAN_CTX_LIMITS.today_food_entries);
     const rem = (target: number | null, used: number) =>
       target == null ? null : Math.round(target - used);
     const pct = (target: number | null, used: number) =>
@@ -601,15 +699,46 @@ export class RomanClientContextService {
     }));
 
     // ── coach ──
+    const recent_messages: RomanCtxCoachMessage[] = [...coachMessages]
+      .reverse() // oldest first for the model
+      .filter((m) => m.sender_id === coachId || m.sender_id === userId)
+      .map((m) => ({
+        date: ymdOf(m.created_at),
+        from: (m.sender_id === coachId ? 'coach' : 'client') as 'coach' | 'client',
+        excerpt: clamp(m.body, 200),
+      }))
+      .filter((m): m is RomanCtxCoachMessage => m.excerpt !== null);
     const coachBlock = {
       has_coach: coachId !== null,
       coach_first_name: coachId ? firstName(coach?.name) : null,
       guidelines: clamp(guideline?.content, 1500),
-      recent_messages: coachMessages
-        .map((m) => ({ date: ymdOf(m.created_at), excerpt: clamp(m.body, 200) }))
-        .filter((m): m is { date: string; excerpt: string } => m.excerpt !== null),
+      recent_messages,
     };
     if (!coachId) missing.push('coach');
+
+    // ── community posts (own only) ──
+    const community_posts: RomanCtxCommunityPost[] = communityPosts.map((p) => ({
+      date: ymdOf(p.created_at),
+      scope: String(p.scope),
+      title: clamp(p.title, 80),
+      excerpt: clamp(p.body, 200),
+    }));
+
+    // ── wearables ──
+    const wearables = summarizeWearables(wearableConnections, wearableSamples, today);
+    if (!wearables.connected) missing.push('wearables');
+
+    // ── consultation ──
+    const safety_intake = {
+      completed: consult.safety_intake.completed === true,
+      clearance_recommended: consult.safety_intake.clearance_recommended === true,
+      screen_answers: clampQA(consult.safety_intake.screen_answers, ROMAN_CTX_LIMITS.screen_answers),
+    };
+    const consultation = {
+      completed: consult.consultation.completed === true,
+      completed_at: consult.consultation.completed_at ?? null,
+      answers: clampQA(consult.consultation.answers, ROMAN_CTX_LIMITS.consultation_answers),
+    };
 
     // ── meal plan ──
     const meal_plan = mealAssignment
@@ -625,7 +754,8 @@ export class RomanClientContextService {
         }
       : null;
 
-    if (!intake.completed) missing.push('intake');
+    if (!safety_intake.completed) missing.push('intake');
+    if (!consultation.completed) missing.push('consultation');
 
     const context: RomanClientContext = {
       version: ROMAN_CONTEXT_VERSION,
@@ -661,10 +791,8 @@ export class RomanClientContextService {
           profile?.target_weight_lbs != null ? round1(profile.target_weight_lbs) : null,
         bio: clamp(profile?.bio, 240),
       },
-      safety_intake: {
-        completed: intake.completed === true,
-        clearance_recommended: intake.clearance_recommended === true,
-      },
+      consultation,
+      safety_intake,
       targets,
       macro_method: {
         summary: ROMAN_MACRO_METHOD_SUMMARY,
@@ -680,6 +808,7 @@ export class RomanClientContextService {
         pct_kcal: pct(targets.calories, todayTotals.kcal),
         pct_protein: pct(targets.protein_g, todayTotals.protein_g),
         last_logged_at: lastLoggedAt ? (lastLoggedAt as Date).toISOString() : null,
+        entries,
       },
       last_7_days: {
         days_logged: logged,
@@ -692,7 +821,9 @@ export class RomanClientContextService {
       logged_workouts,
       weight_trend,
       check_ins,
+      wearables,
       coach: coachBlock,
+      community_posts,
       meal_plan,
       data_quality: { generated_at: now.toISOString(), missing, truncated: [] },
     };
@@ -729,7 +860,8 @@ export class RomanClientContextService {
         target_weight_lbs: null,
         bio: null,
       },
-      safety_intake: { completed: false, clearance_recommended: false },
+      consultation: { completed: false, completed_at: null, answers: [] },
+      safety_intake: { completed: false, clearance_recommended: false, screen_answers: [] },
       targets: {
         source: 'none',
         calories: null,
@@ -757,6 +889,7 @@ export class RomanClientContextService {
         pct_kcal: null,
         pct_protein: null,
         last_logged_at: null,
+        entries: [],
       },
       last_7_days: {
         days_logged: 0,
@@ -769,7 +902,9 @@ export class RomanClientContextService {
       logged_workouts: [],
       weight_trend: { unit: 'lbs', points: [], avg_7d: null, change_14d: null, change_30d: null },
       check_ins: [],
+      wearables: emptyWearables(),
       coach: { has_coach: false, coach_first_name: null, guidelines: null, recent_messages: [] },
+      community_posts: [],
       meal_plan: null,
       data_quality: {
         generated_at: now.toISOString(),
@@ -888,5 +1023,135 @@ function buildPlan(
     adherence_14d: recent.length
       ? { completed: recent.filter((a) => a.completed_at).length, scheduled: recent.length }
       : null,
+  };
+}
+
+// ─── wearables ───────────────────────────────────────────────────────────────
+
+type WearableConnRow = { provider: string; status: string; last_synced_at: Date | null };
+type WearableSampleRow = {
+  metric: string;
+  value: number;
+  start_at: Date;
+  end_at: Date;
+  source_tz: string | null;
+};
+
+const EMPTY_WEARABLE_DAY: Omit<RomanCtxWearableDay, 'date'> = {
+  steps: null,
+  active_kcal: null,
+  resting_hr_bpm: null,
+  hrv_ms: null,
+  sleep_hours: null,
+  sleep_efficiency_pct: null,
+  recovery_score: null,
+  readiness_score: null,
+};
+
+export function emptyWearables(): RomanCtxWearables {
+  return {
+    connected: false,
+    providers: [],
+    last_synced_at: null,
+    avg_7d: { ...EMPTY_WEARABLE_DAY },
+    last_night_sleep_hours: null,
+    days: [],
+  };
+}
+
+/** Sum metrics accumulate across a day; the rest are averaged. */
+const SUM_METRICS = new Set(['STEPS', 'ACTIVE_ENERGY_KCAL', 'SLEEP_TOTAL_MIN', 'SLEEP_DURATION_MIN']);
+
+/**
+ * Daily aggregates for the last 7 local days, oldest first. Sleep is keyed to
+ * the day the sample ENDS (the night "before" that morning). Values are
+ * rounded; no raw sample, timestamp, device id or token leaves this function.
+ */
+export function summarizeWearables(
+  connections: WearableConnRow[],
+  samples: WearableSampleRow[],
+  today: string,
+): RomanCtxWearables {
+  const active = connections.filter((c) => c.status === 'connected');
+  const providers = [...new Set(active.map((c) => String(c.provider).toLowerCase()))].sort();
+  // Duck-typed: rows may cross a vm realm in tests, where instanceof Date fails.
+  const lastSync = active
+    .map((c) => c.last_synced_at)
+    .filter((d): d is Date => d != null && typeof (d as Date).getTime === 'function')
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  if (active.length === 0 && samples.length === 0) return emptyWearables();
+
+  type Acc = Record<string, { sum: number; n: number }>;
+  const perDay = new Map<string, Acc>();
+  const since = addDays(today, -(ROMAN_CTX_LIMITS.wearable_days - 1));
+  for (const smp of samples) {
+    const metric = String(smp.metric);
+    const isSleep = metric.startsWith('SLEEP_');
+    const day = ymdOf(isSleep ? smp.end_at : smp.start_at);
+    if (day < since || day > today) continue;
+    if (!Number.isFinite(smp.value)) continue;
+    const acc = perDay.get(day) ?? {};
+    const cell = acc[metric] ?? { sum: 0, n: 0 };
+    cell.sum += smp.value;
+    cell.n += 1;
+    acc[metric] = cell;
+    perDay.set(day, acc);
+  }
+  const value = (acc: Acc, metric: string): number | null => {
+    const cell = acc[metric];
+    if (!cell || cell.n === 0) return null;
+    return SUM_METRICS.has(metric) ? cell.sum : cell.sum / cell.n;
+  };
+  const sleepMin = (acc: Acc): number | null =>
+    value(acc, 'SLEEP_TOTAL_MIN') ?? value(acc, 'SLEEP_DURATION_MIN');
+
+  const days: RomanCtxWearableDay[] = [];
+  for (let i = ROMAN_CTX_LIMITS.wearable_days - 1; i >= 0; i--) {
+    const day = addDays(today, -i);
+    const acc = perDay.get(day);
+    if (!acc) continue;
+    const sleep = sleepMin(acc);
+    const rhr = value(acc, 'RESTING_HEART_RATE_BPM');
+    const hrv = value(acc, 'HRV_MS');
+    const eff = value(acc, 'SLEEP_EFFICIENCY_PCT');
+    const rec = value(acc, 'RECOVERY_SCORE');
+    const rdy = value(acc, 'READINESS_SCORE');
+    const steps = value(acc, 'STEPS');
+    const kcal = value(acc, 'ACTIVE_ENERGY_KCAL');
+    days.push({
+      date: day,
+      steps: steps === null ? null : Math.round(steps),
+      active_kcal: kcal === null ? null : Math.round(kcal),
+      resting_hr_bpm: rhr === null ? null : Math.round(rhr),
+      hrv_ms: hrv === null ? null : Math.round(hrv),
+      sleep_hours: sleep === null ? null : round1(sleep / 60),
+      sleep_efficiency_pct: eff === null ? null : Math.round(eff),
+      recovery_score: rec === null ? null : Math.round(rec),
+      readiness_score: rdy === null ? null : Math.round(rdy),
+    });
+  }
+  const avg = (pick: (d: RomanCtxWearableDay) => number | null, digits: 0 | 1 = 0) => {
+    const xs = days.map(pick).filter((x): x is number => x !== null);
+    if (xs.length === 0) return null;
+    const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+    return digits === 1 ? round1(m) : Math.round(m);
+  };
+  const lastNight = [...days].reverse().find((d) => d.sleep_hours !== null);
+  return {
+    connected: active.length > 0,
+    providers,
+    last_synced_at: lastSync ? lastSync.toISOString() : null,
+    avg_7d: {
+      steps: avg((d) => d.steps),
+      active_kcal: avg((d) => d.active_kcal),
+      resting_hr_bpm: avg((d) => d.resting_hr_bpm),
+      hrv_ms: avg((d) => d.hrv_ms),
+      sleep_hours: avg((d) => d.sleep_hours, 1),
+      sleep_efficiency_pct: avg((d) => d.sleep_efficiency_pct),
+      recovery_score: avg((d) => d.recovery_score),
+      readiness_score: avg((d) => d.readiness_score),
+    },
+    last_night_sleep_hours: lastNight?.sleep_hours ?? null,
+    days,
   };
 }
