@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import {
   DEFAULT_WELCOME_TEMPLATE,
   validateWelcomeTemplate,
-  WELCOME_PLACEHOLDERS,
+  WELCOME_TEMPLATE_VARIABLES,
 } from './welcome-template';
 
 // Shared by the owner endpoint (PUT /api/admin/coaches/:coachId/welcome-message)
@@ -64,7 +64,7 @@ function view(
     template: row?.template ?? null,
     effective_template: row?.template ?? DEFAULT_WELCOME_TEMPLATE,
     default_template: DEFAULT_WELCOME_TEMPLATE,
-    placeholders: WELCOME_PLACEHOLDERS,
+    placeholders: WELCOME_TEMPLATE_VARIABLES,
     enabled_at: row?.enabled_at?.toISOString() ?? null,
     updated_at: row?.updated_at?.toISOString() ?? null,
   };

@@ -19,7 +19,7 @@ export const WELCOME_DELAY_MS = 13 * 60 * 1000;
 
 export const WELCOME_TEMPLATE_MAX_LENGTH = 1000;
 
-export const WELCOME_PLACEHOLDERS = ['first_name', 'coach_first_name'] as const;
+export const WELCOME_TEMPLATE_VARIABLES = ['first_name', 'coach_first_name'] as const;
 
 const TOKEN_RE = /\{([^{}]*)\}/g;
 
@@ -40,7 +40,7 @@ export function validateWelcomeTemplate(raw: unknown): TemplateValidation {
   const template = raw.replace(/\r\n/g, '\n').trim();
   if (template.length === 0) return { ok: false, code: 'empty' };
   if (template.length > WELCOME_TEMPLATE_MAX_LENGTH) return { ok: false, code: 'too_long' };
-  const allowed: readonly string[] = WELCOME_PLACEHOLDERS;
+  const allowed: readonly string[] = WELCOME_TEMPLATE_VARIABLES;
   for (const m of template.matchAll(TOKEN_RE)) {
     if (!allowed.includes(m[1])) {
       return { ok: false, code: 'unknown_placeholder', detail: m[1].slice(0, 40) };
