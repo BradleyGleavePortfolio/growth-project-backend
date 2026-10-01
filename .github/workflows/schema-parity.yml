@@ -146,15 +146,25 @@ jobs:
           if git cat-file -e "${BASE_SHA}:prisma/schema-parity-baseline.sql" 2>/dev/null; then
             git show "${BASE_SHA}:prisma/schema-parity-baseline.sql" > approved_baseline.sql
             echo "Approved baseline: prisma/schema-parity-baseline.sql at $BASE_SHA"
-            echo "PARITY_APPROVED_ARGS=--approved-baseline approved_baseline.sql" >> "$GITHUB_ENV"
+            echo "PARITY_MODE=approved" >> "$GITHUB_ENV"
           else
             echo "::notice::schema-parity: base commit $BASE_SHA has no baseline file; this change creates it (bootstrap, allowed only while the base has none)."
-            echo "PARITY_APPROVED_ARGS=--bootstrap-baseline" >> "$GITHUB_ENV"
+            echo "PARITY_MODE=bootstrap" >> "$GITHUB_ENV"
           fi
 
       - name: Gate on drift (missing objects never pass; baseline only shrinks)
-        # PARITY_APPROVED_ARGS is unquoted on purpose: it is a flag plus a fixed file name.
-        run: node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql $PARITY_APPROVED_ARGS
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${PARITY_MODE:-}" in
+            approved) set -- --approved-baseline approved_baseline.sql ;;
+            bootstrap) set -- --bootstrap-baseline ;;
+            *)
+              echo "::error::schema-parity: PARITY_MODE is '${PARITY_MODE:-}' (expected approved or bootstrap); the approved-baseline step did not run or failed."
+              exit 1
+              ;;
+          esac
+          node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql "$@"
 
       - name: Upload drift script
         if: always()

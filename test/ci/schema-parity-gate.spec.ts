@@ -258,8 +258,12 @@ describe('committed baseline and workflow wiring', () => {
     expect(wf).toContain('npx prisma migrate deploy');
     expect(wf).toContain('--to-schema-datamodel prisma/schema.prisma');
     expect(wf).toContain(
-      'node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql $PARITY_APPROVED_ARGS',
+      'node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql "$@"',
     );
+    // Arguments are built as an array per mode (no unquoted expansion; actionlint SC2086, Sol B-625-3).
+    expect(wf).toContain('approved) set -- --approved-baseline approved_baseline.sql ;;');
+    expect(wf).toContain('bootstrap) set -- --bootstrap-baseline ;;');
+    expect(wf).not.toMatch(/PARITY_APPROVED_ARGS/);
   });
 
   it('schema-parity.yml compares the baseline with the base commit and bootstraps only when the base has none', () => {
@@ -268,9 +272,9 @@ describe('committed baseline and workflow wiring', () => {
     expect(wf).toContain('PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}');
     expect(wf).toContain('PUSH_BEFORE_SHA: ${{ github.event.before }}');
     expect(wf).toContain('git show "${BASE_SHA}:prisma/schema-parity-baseline.sql" > approved_baseline.sql');
-    expect(wf).toContain('PARITY_APPROVED_ARGS=--approved-baseline approved_baseline.sql');
+    expect(wf).toContain('echo "PARITY_MODE=approved" >> "$GITHUB_ENV"');
     // Bootstrap is reachable only from the branch where the base commit lacks the file.
-    const bootIdx = wf.indexOf('PARITY_APPROVED_ARGS=--bootstrap-baseline');
+    const bootIdx = wf.indexOf('echo "PARITY_MODE=bootstrap" >> "$GITHUB_ENV"');
     const elseIdx = wf.lastIndexOf('else', bootIdx);
     const ifIdx = wf.lastIndexOf('if git cat-file -e "${BASE_SHA}:prisma/schema-parity-baseline.sql"', bootIdx);
     expect(bootIdx).toBeGreaterThan(-1);
