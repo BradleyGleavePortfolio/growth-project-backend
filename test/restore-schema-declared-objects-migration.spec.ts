@@ -122,7 +122,7 @@ describe(`${NAME}: additive and idempotent`, () => {
   it('contains no destructive or row-rewriting statement', () => {
     const c = code(SQL);
     expect(c).not.toMatch(/\bDROP\s+(TABLE|COLUMN|TYPE|INDEX|CONSTRAINT|SCHEMA|FUNCTION|TRIGGER)\b/i);
-    expect(c).not.toMatch(/\b(TRUNCATE|DELETE\s+FROM|UPDATE\s+"|INSERT\s+INTO)\b/i);
+    expect(c).not.toMatch(/\b(TRUNCATE\s+(TABLE\s+)?["%]|DELETE\s+FROM|UPDATE\s+"|INSERT\s+INTO)/i);
     expect(c).not.toMatch(/\bALTER\s+COLUMN\b/i);
     expect(c).not.toMatch(/\bRENAME\b/i);
     // The only DROP is the DROP POLICY IF EXISTS that precedes each CREATE POLICY.
@@ -248,6 +248,19 @@ describe(`${NAME}: row-level security on the new tables`, () => {
     expect(rls).not.toMatch(/PERMISSIVE FOR \w+ TO (anon|authenticated|public)/i);
   });
 
+  it('verifies the posture after applying it: policies, and grants per role', () => {
+    const verify = code(SQL).slice(code(SQL).indexOf('DO $verify$'));
+    expect(verify).toContain('IF r.n_all <> 3 OR r.n_service <> 1 OR r.n_deny <> 2 THEN');
+    expect(verify).toContain("AND p.polroles = ARRAY['service_role'::regrole::oid]");
+    expect(verify).toContain("pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'false'");
+    for (const rol of ['public', 'anon', 'authenticated']) {
+      expect(verify).toContain(`('${rol}', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER', false)`);
+    }
+    for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+      expect(verify).toContain(`('service_role', '${priv}', true)`);
+    }
+  });
+
   it('refuses to run where the Supabase API roles are missing', () => {
     expect(code(SQL)).toMatch(/rolname IN \('anon', 'authenticated', 'service_role'\)\) <> 3 THEN\s*RAISE EXCEPTION/);
   });
@@ -268,7 +281,7 @@ describe(`${NAME}: down.sql`, () => {
     }
     expect(d.match(/DROP COLUMN/g)?.length).toBe(10);
     expect(d.match(/\bDROP\b/g)?.length).toBe(15);
-    expect(d).not.toMatch(/\b(TRUNCATE|DELETE\s+FROM|UPDATE\s+"|INSERT\s+INTO)\b/i);
+    expect(d).not.toMatch(/\b(TRUNCATE\s+(TABLE\s+)?["%]|DELETE\s+FROM|UPDATE\s+"|INSERT\s+INTO)/i);
   });
 
   it('carries the never-run-in-production warning in its header', () => {

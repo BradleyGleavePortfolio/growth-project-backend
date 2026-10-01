@@ -414,6 +414,53 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Policies: exactly the three server-only policies on each new table.
+  FOR r IN
+    SELECT t AS tbl,
+           (SELECT count(*) FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid) AS n_all,
+           (SELECT count(*) FROM pg_catalog.pg_policy p
+             WHERE p.polrelid = c.oid AND p.polname = 'p_' || t || '_service_role_all'
+               AND p.polpermissive AND p.polcmd = '*'
+               AND p.polroles = ARRAY['service_role'::regrole::oid]
+               AND pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'true'
+               AND pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) = 'true') AS n_service,
+           (SELECT count(*) FROM pg_catalog.pg_policy p
+             WHERE p.polrelid = c.oid AND p.polname IN ('deny_all_anon_' || t, 'deny_all_authenticated_' || t)
+               AND NOT p.polpermissive AND p.polcmd = '*'
+               AND p.polroles = ARRAY[(CASE WHEN p.polname = 'deny_all_anon_' || t
+                                            THEN 'anon' ELSE 'authenticated' END)::regrole::oid]
+               AND pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'false'
+               AND pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) = 'false') AS n_deny
+      FROM unnest(ARRAY['UserPreferences', 'Recipe', 'SavedRecipe', 'ListItem']) AS t
+      LEFT JOIN pg_catalog.pg_class c
+        ON c.oid = pg_catalog.to_regclass(pg_catalog.quote_ident(t))
+  LOOP
+    IF r.n_all <> 3 OR r.n_service <> 1 OR r.n_deny <> 2 THEN
+      bad := array_append(bad, format('policies on %s (total %s, service_role %s, deny %s)',
+                                      r.tbl, r.n_all, r.n_service, r.n_deny));
+    END IF;
+  END LOOP;
+
+  -- Table privileges: none for PUBLIC/anon/authenticated, DML for service_role.
+  FOR r IN
+    SELECT t AS tbl, g.rol, g.priv, g.want,
+           pg_catalog.has_table_privilege(g.rol, pg_catalog.to_regclass(pg_catalog.quote_ident(t)), g.priv) AS got
+      FROM unnest(ARRAY['UserPreferences', 'Recipe', 'SavedRecipe', 'ListItem']) AS t
+      CROSS JOIN (VALUES
+        ('public', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER', false),
+        ('anon', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER', false),
+        ('authenticated', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER', false),
+        ('service_role', 'SELECT', true),
+        ('service_role', 'INSERT', true),
+        ('service_role', 'UPDATE', true),
+        ('service_role', 'DELETE', true)
+      ) AS g(rol, priv, want)
+  LOOP
+    IF r.got IS DISTINCT FROM r.want THEN
+      bad := array_append(bad, format('privilege %s for %s on %s is %s', r.priv, r.rol, r.tbl, r.got));
+    END IF;
+  END LOOP;
+
   IF cardinality(bad) > 0 THEN
     RAISE EXCEPTION 'restore_schema_declared_objects: objects missing or not in the declared shape: %',
       array_to_string(bad, '; ');
