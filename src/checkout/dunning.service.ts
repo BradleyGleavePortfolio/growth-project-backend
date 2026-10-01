@@ -9,6 +9,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { PrismaService } from '../prisma.service';
+import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dunning v1 — webhook-driven failed-payment recovery.
@@ -430,6 +431,10 @@ export class DunningService {
     skipped: number;
     failed: number;
   }> {
+    // S-DUNNING: with Smart Dunning v2 on, v2 owns every client notice
+    // (Days 0/1/3/7, time-driven by the v2 sweep). Draining the v1 cadence
+    // too would send a second, differently-timed email sequence.
+    if (isDunningV2Enabled()) return { sent: 0, skipped: 0, failed: 0 };
     // Two query passes so we don't have to OR over status — keeps the index
     // scan on (status, scheduled_for) and (status, next_retry_at) clean.
     //   1. status='pending' and scheduled_for <= now  — first-time sends.
@@ -844,6 +849,14 @@ export class DunningService {
     final_warned: number;
     cadence_sent: number;
   }> {
+    // S-DUNNING: with Smart Dunning v2 on, the v1 grace window (7 days, then
+    // cancel the Stripe subscription) contradicts the v2 sequence (access
+    // through Day 9, lock on Day 10, subscription left past_due so Stripe's
+    // retries and the hosted invoice keep working). Never cancel under v2.
+    if (isDunningV2Enabled()) {
+      this.logEvent('dunning.sweeper_skipped_v2', {});
+      return { scanned: 0, canceled: 0, final_warned: 0, cadence_sent: 0 };
+    }
     // First drain the cadence so any due attempts fire before we check
     // for expired-grace rows.
     const tickResult = await this.tick(now);

@@ -25,8 +25,10 @@ import {
 //
 // If this test failed: do NOT paste the new path in to make it green. Answer
 // "may a locked-out, non-paying client call this?" The only yes-answers are
-// payment recovery, auth, liveness probes, the Roman lockout explanation, and
-// the AI processing consent privacy control (/me/ai-consent, ruling on #622).
+// payment recovery, auth, liveness probes, the Roman lockout explanation, the
+// AI processing consent privacy control (/me/ai-consent, ruling on #622),
+// account rights (data export and account deletion, S-DUNNING F8), and the
+// exact 1:1 coach-thread routes so the client can contact their coach.
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
@@ -158,6 +160,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'auth/validate-invite-code',
   'checkout', // public landing checkout page (LandingPagePublicController)
   'checkout/billing-portal', // CheckoutController owns the rest of this block
+  'checkout/dunning', // DunningStatusController — the lockout screen's status read (S-DUNNING)
   'checkout/entitlement',
   'checkout/payment-intent',
   'checkout/payment-method',
@@ -174,6 +177,17 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'healthz',
   'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
   'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
+  'me/data-export/download', // DataExportController — account rights (S-DUNNING F8)
+  'me/data-export/request',
+  'me/data-export/status',
+  'me/delete-account', // AccountDeletionController — account rights (S-DUNNING F8)
+  'me/delete-account/cancel',
+  'me/delete-account/confirm',
+  'me/delete-account/status',
+  'messages', // ClientMessagingController GET + POST — contact the coach (S-DUNNING F8)
+  'messages/read',
+  'messages/report', // MessagesSafetyController — report a message
+  'messages/unread-count',
   'readyz',
   'roman/sessions',
   'roman/sessions/:id',

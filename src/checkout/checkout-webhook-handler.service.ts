@@ -232,11 +232,8 @@ export class CheckoutWebhookHandlerService {
         // never alters the v1 refund/dispute result. The v2 service applies
         // the one-active-cycle-per-state guard (§6.4) so a dispute→refund
         // pair never double-opens.
-        if (
-          this.dunningV2 &&
-          (event.type === 'charge.dispute.created' ||
-            event.type === 'charge.refunded')
-        ) {
+        // S-DUNNING F11: disputes only; a refund is never non-payment.
+        if (this.dunningV2 && event.type === 'charge.dispute.created') {
           this.fireLateReversalProbe(event);
         }
         // Bank-Account Payouts v2 (spec §2.5) — additive routing branch on the
@@ -272,10 +269,13 @@ export class CheckoutWebhookHandlerService {
       payment_intent?: string | null;
       created?: number | null;
     };
-    // For charge.refunded the object IS the charge; for dispute.created the
-    // object is the dispute carrying a `charge` ref.
-    const chargeId =
-      event.type === 'charge.refunded' ? (obj.id ?? null) : (obj.charge ?? null);
+    // S-DUNNING F11: only a DISPUTE reverses a cleared payment against the
+    // client's will. A refund (charge.refunded) is issued by the coach or the
+    // platform; treating it as non-payment would dun and lock a client who
+    // was refunded on purpose.
+    if (event.type !== 'charge.dispute.created') return;
+    // For dispute.created the object is the dispute carrying a `charge` ref.
+    const chargeId = obj.charge ?? null;
     const reversedAt =
       typeof obj.created === 'number'
         ? new Date(obj.created * 1000)
@@ -1066,6 +1066,10 @@ export class CheckoutWebhookHandlerService {
           this.logger.warn(
             `invoice.paid resync skipped for sub=${inv.subscription}: outer tx held without a prefetched subscription (no Stripe HTTP in tx)`,
           );
+          // S-DUNNING F5: the payment still cleared, so the dunning window
+          // must still close (a locked client who paid stays locked
+          // otherwise; the event is marked processed and never redelivered).
+          await this.resolveDunningOnPaid(purchase.id, tx);
           return { claimed: true, purchase_id: purchase.id };
         }
         sub = await this.stripeConnect.retrieveSubscription(inv.subscription);
@@ -1115,29 +1119,44 @@ export class CheckoutWebhookHandlerService {
       invoice_amount_cents: inv.amount_paid ?? undefined,
       invoice_charge_id: inv.charge ?? null,
     });
-    // Phase 5 — clear any active dunning window.
+    // Phase 5 — clear any active dunning window (v1 + v2).
+    await this.resolveDunningOnPaid(updated.id, tx);
+    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+  }
+
+  /**
+   * Close the dunning window for a paid invoice: v1 `recordResolution`, then
+   * the v2 immediate clear (lift a Day-10 lockout, restore entitlement,
+   * dismiss this client's blockers, revoke recovery tokens; no-op with the
+   * flag off).
+   *
+   * S-DUNNING F3: the v2 clear writes the SAME ClientPurchase row the renewal
+   * resync just updated on the caller's outer tx, so it must join that tx.
+   * Opening a second transaction on another connection waited on our own row
+   * lock until the outer tx timed out, on every Stripe redelivery.
+   */
+  private async resolveDunningOnPaid(
+    purchaseId: string,
+    tx?: WebhookTx,
+  ): Promise<void> {
     if (this.dunning) {
       try {
-        await this.dunning.recordResolution(updated.id);
+        await this.dunning.recordResolution(purchaseId);
       } catch (err) {
         this.logger.warn(
-          `dunning.recordResolution failed purchase=${updated.id}: ${(err as Error).message}`,
+          `dunning.recordResolution failed purchase=${purchaseId}: ${(err as Error).message}`,
         );
       }
     }
-    // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
-    // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
-    // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
     if (this.dunningV2) {
       try {
-        await this.dunningV2.applyImmediateClear(updated.id, 'retry');
+        await this.dunningV2.applyImmediateClear(purchaseId, 'retry', tx);
       } catch (err) {
         this.logger.warn(
-          `dunningV2.applyImmediateClear failed purchase=${updated.id}: ${(err as Error).message}`,
+          `dunningV2.applyImmediateClear failed purchase=${purchaseId}: ${(err as Error).message}`,
         );
       }
     }
-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
   private async applyInvoicePaymentFailed(
@@ -1179,6 +1198,21 @@ export class CheckoutWebhookHandlerService {
       } catch (err) {
         this.logger.warn(
           `dunning.recordFailure failed purchase=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    // S-DUNNING F1: drive Smart Dunning v2 (no-op with the flag off). The
+    // step claim is a short DB write; the notices go out after it,
+    // fire-and-forget, so no push/email HTTP runs while the caller's
+    // webhook transaction is open.
+    if (this.dunningV2) {
+      const v2 = this.dunningV2;
+      try {
+        const claim = await v2.recordPaymentFailed(updated.id);
+        if (claim) void v2.dispatchClaim(claim);
+      } catch (err) {
+        this.logger.warn(
+          `dunningV2.recordPaymentFailed failed purchase=${updated.id}: ${(err as Error).message}`,
         );
       }
     }
