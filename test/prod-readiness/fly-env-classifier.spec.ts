@@ -22,6 +22,7 @@ import {
   parseRemoteOutput,
   placeholderPattern,
   renderMarkdown,
+  shapeChecks,
   suspiciousName,
 } from '../../scripts/env-truth/fly-env-classifier';
 
@@ -189,6 +190,50 @@ describe('classifyEnv against a fake env', () => {
     expectNoValues(md);
     expect(md).toContain('| GOOGLE_OAUTH_CLIENT_ID | yes |');
     expect(md).toContain('`NEVER_SET_ANYWHERE`');
+  });
+});
+
+describe('value-shape checks (pass/fail only)', () => {
+  const FP = Array.from({ length: 32 }, (_, i) =>
+    (i * 7 + 16).toString(16).toUpperCase().padStart(2, '0'),
+  ).join(':');
+
+  it.each([
+    ['com.growthproject.app', 'pass'],
+    ['com.growthproject.app, com.growthproject.app.service', 'pass'],
+    ['com.growthproject.app.service,com.growthproject.app', 'fail'],
+    ['com.thegrowthproject.app', 'fail'],
+    ['Com.growthproject.app', 'fail'],
+    ['', 'missing'],
+  ])('APPLE_AUDIENCES %j -> %s', (value, result) => {
+    const r = shapeChecks(value === '' ? {} : { APPLE_AUDIENCES: value });
+    expect(r.find((c) => c.name === 'APPLE_AUDIENCES')?.result).toBe(result);
+  });
+
+  it.each([
+    [FP, 'pass'],
+    [`${FP},${FP.toLowerCase()}`, 'pass'],
+    [FP.replace(/:/g, ''), 'fail'],
+    [FP.slice(0, -3), 'fail'],
+    [`${FP},not-a-fingerprint`, 'fail'],
+    [' , ', 'fail'],
+    ['', 'missing'],
+  ])('ANDROID_CERT_SHA256_FINGERPRINTS %j -> %s', (value, result) => {
+    const r = shapeChecks(value === '' ? {} : { ANDROID_CERT_SHA256_FINGERPRINTS: value });
+    expect(r.find((c) => c.name === 'ANDROID_CERT_SHA256_FINGERPRINTS')?.result).toBe(result);
+  });
+
+  it('the report and markdown carry the result but never the value', () => {
+    const env = {
+      APPLE_AUDIENCES: 'com.leakcanary.audience-value',
+      ANDROID_CERT_SHA256_FINGERPRINTS: 'leakcanary-fingerprint',
+    };
+    const report = classifyEnv(env, ['APPLE_AUDIENCES', 'ANDROID_CERT_SHA256_FINGERPRINTS']);
+    expect(report.shapeChecks.map((c) => c.result)).toEqual(['fail', 'fail']);
+    expect(report.summary.shapeChecksFailing).toBe(2);
+    const text = JSON.stringify(report) + renderMarkdown(report, 'app');
+    expect(text).not.toMatch(/leakcanary/);
+    expect(text).toContain('first entry is exactly com.growthproject.app');
   });
 });
 

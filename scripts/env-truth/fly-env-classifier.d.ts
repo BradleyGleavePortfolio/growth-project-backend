@@ -23,12 +23,21 @@ export interface EnvTruthSummary {
   duplicateKeys: number;
   unregisteredPresent: number;
   suspiciousNames: number;
+  shapeChecksFailing: number;
+}
+
+export interface ShapeCheckResult {
+  name: string;
+  check: string;
+  describe: string;
+  result: 'pass' | 'fail' | 'missing';
 }
 
 export interface EnvTruthReport {
   schema: 'env-truth/v1';
   generatedAt: string;
   summary: EnvTruthSummary;
+  shapeChecks: ShapeCheckResult[];
   rows: EnvTruthRow[];
 }
 
@@ -40,6 +49,14 @@ export interface ClassifyOptions {
 export const ENV_NAME_RE: RegExp;
 export const REPORT_MARKER: string;
 export const PLACEHOLDER_PATTERNS: ReadonlyArray<[string, (value: string) => boolean]>;
+export const IOS_BUNDLE_ID: string;
+export const SHAPE_CHECKS: ReadonlyArray<{
+  name: string;
+  check: string;
+  describe: string;
+  test: (value: string) => boolean;
+}>;
+export function shapeChecks(env: Record<string, string | undefined>): ShapeCheckResult[];
 export function placeholderPattern(value: string): string | null;
 export function lengthBucket(len: number): string;
 export function suspiciousName(name: string): boolean;
