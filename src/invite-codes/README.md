@@ -114,6 +114,14 @@ Both refuse:
    `updateMany({ id, role: 'student', coach_id: null })`. A lost race rolls
    the seat back and resolves to `already_attached` (same coach) or 409.
 
+Response contract for callers (mobile): `already_attached: true` means "this
+client already belongs to this coach"; it is **not** a fresh redemption. A
+returning Google/Apple sign-in that still carries a cached code gets
+`invite_attached: true` from this replay path. The replay does not re-check
+the coach's subscription, because it changes no state. Do not show
+"you joined" UI or count a new client from it; only `already_attached: false`
+is a new redemption.
+
 Tests: `test/invite-attach-idempotent-replay.spec.ts`,
 `test/select-role-canonical-attach.spec.ts`,
 `test/invite-attach-reliability.spec.ts`.

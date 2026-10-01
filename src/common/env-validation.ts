@@ -598,7 +598,7 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
     tier: 'optional',
-    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 30; clamped to [5, 500].',
+    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
   },
   {
     name: 'AUTH_PWD_RESET_PER_HOUR',

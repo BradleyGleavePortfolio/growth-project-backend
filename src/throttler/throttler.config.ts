@@ -136,8 +136,19 @@ const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',    5,   1, 1_
 const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR',  30,   1, 5_000);
 const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_000);
 // C03 — signup-with-code burst cap for requests carrying a well-formed invite
-// code. 30/hour/IP by default (a clinic intake room), clamped to [5, 500].
-const AUTH_SIGNUP_WITH_CODE_PER_HOUR = readIntEnv('AUTH_SIGNUP_WITH_CODE_PER_HOUR', 30, 5, 500);
+// code. 100/hour/IP by default, clamped to [5, 500]. Sized for a clinic event:
+// 40+ patients sign up from the clinic Wi-Fi (one public IP) inside the same
+// hour, and retries / mistyped passwords draw from the same bucket, so the
+// default leaves ~2.5x headroom over a 40-person room. Abuse stays bounded:
+// codeless signups keep the 5/hour auth-signup baseline, and every request
+// still has to pass previewCode before any account is created.
+export const AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT = 100;
+const AUTH_SIGNUP_WITH_CODE_PER_HOUR = readIntEnv(
+  'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
+  AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT,
+  5,
+  500,
+);
 
 // Route-level overrides for write-heavy endpoints
 const COACH_MESSAGES_PER_MIN    = readIntEnv('COACH_MESSAGES_PER_MIN',  30,  1, 1_000);

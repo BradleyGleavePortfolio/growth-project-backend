@@ -368,12 +368,12 @@ export class AuthController {
   @Post('signup-with-code')
   // C03: codeless signups keep the 5/hour/IP baseline; requests carrying a
   // well-formed invite code are counted in the burst bucket instead
-  // (AUTH_SIGNUP_WITH_CODE_PER_HOUR, default 30/hour/IP). The two skipIf
+  // (AUTH_SIGNUP_WITH_CODE_PER_HOUR, default 100/hour/IP). The two skipIf
   // predicates in throttler.config.ts make the buckets mutually exclusive.
   // @SkipThrottle isolates the route to exactly {default, auth-signup,
   // auth-signup-with-code}: without it every other named baseline
   // (auth-password-reset 3/h, auth-login-per-min 5/min, …) would also be
-  // evaluated here and reject the burst long before 30 (see the R2 P1 note
+  // evaluated here and reject the burst long before the cap (see the R2 P1 note
   // on the storefront join route for the same isolation).
   @SkipThrottle(SIGNUP_WITH_CODE_SKIP_THROTTLERS)
   @Throttle({

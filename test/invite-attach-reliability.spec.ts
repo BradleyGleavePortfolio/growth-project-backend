@@ -10,6 +10,7 @@ import {
   isWellFormedInviteCode,
 } from '../src/invite-codes/invite-codes.service';
 import {
+  AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT,
   SIGNUP_WITH_CODE_ACTIVE_THROTTLERS,
   THROTTLER_LIMITS,
   THROTTLER_NAMES,
@@ -35,8 +36,10 @@ import type { EmailService } from '../src/email/email.service';
 //   2. Every attach failure carries a safe machine-readable code, and the auth
 //      flows (signup-with-code / Google / Apple) return
 //      `invite_attached` + `invite_attach_error` instead of swallowing it.
-//   3. Signup throttle: 5/hour/IP without a code, 30/hour/IP with a well-formed
-//      code, enforced by the real UserThrottlerGuard over in-memory storage.
+//   3. Signup throttle: 5/hour/IP without a code, 100/hour/IP (default) with a
+//      well-formed code, enforced by the real UserThrottlerGuard over in-memory
+//      storage. A 40-patient clinic event on one Wi-Fi IP completes inside an
+//      hour while the codeless baseline and the burst ceiling still hold.
 
 // ---- typed doubles ----------------------------------------------------------
 
@@ -553,7 +556,7 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
   });
 });
 
-// ---- 3. signup throttle: 5/h codeless, 30/h with a well-formed code ---------
+// ---- 3. signup throttle: 5/h codeless, 100/h with a well-formed code --------
 
 describe('C03 — signup-with-code throttle burst for invite-code holders', () => {
   function makeCtx(opts: {
@@ -640,13 +643,17 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE].skipIf).toBe(
       skipSignupBurstUnlessCodePresent,
     );
-    expect(THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR).toBe(30); // default
+    // B1 (#599 Opus final): the default must admit a 40+ patient clinic event.
+    expect(AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT).toBe(100);
+    expect(THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR).toBe(
+      AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT,
+    );
 
     const handler = AuthController.prototype.signupWithCode;
     const limit = (name: string) =>
       Reflect.getMetadata(`THROTTLER:LIMIT${name}`, handler) as number;
     expect(limit(THROTTLER_NAMES.AUTH_SIGNUP)).toBe(5);
-    expect(limit(THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE)).toBe(30);
+    expect(limit(THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE)).toBe(100);
     // /auth/register keeps only the baseline bucket.
     expect(
       Reflect.getMetadata(
@@ -712,7 +719,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
     expect(await hammer(guard, build, 6)).toEqual({ allowed: 5, blocked: 1 });
   });
 
-  it('signups carrying a well-formed code from one IP: 30 allowed, the 31st is 429', async () => {
+  it('signups carrying a well-formed code from one IP: 100 allowed, the 101st is 429', async () => {
     const { guard } = buildGuard();
     await guard.onModuleInit();
     const build = () =>
@@ -721,7 +728,66 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
         body: { email: 'a@b.c', invite_code: 'GP-CLINIC' },
         ip: '10.0.0.2',
       }).ctx;
-    expect(await hammer(guard, build, 31)).toEqual({ allowed: 30, blocked: 1 });
+    expect(await hammer(guard, build, 101)).toEqual({ allowed: 100, blocked: 1 });
+  });
+
+  it('B1: a 40-patient clinic event on one Wi-Fi IP signs up inside an hour while abuse limits still hold', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-07T16:00:00Z') });
+    try {
+      const { guard } = buildGuard();
+      await guard.onModuleInit();
+      const clinicIp = '203.0.113.7';
+      const patient = (i: number) => () =>
+        makeCtx({
+          path: '/auth/signup-with-code',
+          body: {
+            email: `patient${i}@example.test`,
+            password: 'correct-horse',
+            invite_code: 'GP-CLINIC',
+          },
+          ip: clinicIp,
+        }).ctx;
+
+      // 40 patients spread over 50 minutes (one every 75 s), all from the
+      // clinic's single public IP, all inside one hourly window.
+      let admitted = 0;
+      for (let i = 0; i < 40; i += 1) {
+        const r = await hammer(guard, patient(i), 1);
+        admitted += r.allowed;
+        jest.advanceTimersByTime(75_000);
+      }
+      expect(admitted).toBe(40);
+
+      // A burst of retries (mistyped passwords, a flaky connection) in the
+      // same hour still fits: another 40 attempts are admitted.
+      expect(await hammer(guard, patient(99), 40)).toEqual({ allowed: 40, blocked: 0 });
+
+      // Abuse limit 1: codeless signups from the same IP keep the 5/hour
+      // baseline, untouched by the 80 code-bearing requests above.
+      const codeless = () =>
+        makeCtx({
+          path: '/auth/signup-with-code',
+          body: { email: 'bot@example.test', password: 'x' },
+          ip: clinicIp,
+        }).ctx;
+      expect(await hammer(guard, codeless, 6)).toEqual({ allowed: 5, blocked: 1 });
+
+      // Abuse limit 2: a malformed code does not unlock the burst bucket; it
+      // lands on the (now exhausted) 5/hour baseline.
+      const malformed = () =>
+        makeCtx({
+          path: '/auth/signup-with-code',
+          body: { email: 'bot@example.test', invite_code: 'not a code!!' },
+          ip: clinicIp,
+        }).ctx;
+      expect(await hammer(guard, malformed, 1)).toEqual({ allowed: 0, blocked: 1 });
+
+      // Abuse limit 3: the code-bearing ceiling still bites at 100/hour/IP
+      // (80 used above, 20 left, then 429).
+      expect(await hammer(guard, patient(100), 21)).toEqual({ allowed: 20, blocked: 1 });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('the two buckets are independent: exhausting the codeless cap does not block code-bearing signups, and vice versa', async () => {
@@ -733,7 +799,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
     const withCode = () =>
       makeCtx({ path: '/auth/signup-with-code', body: { invite_code: 'GP-CLINIC' }, ip }).ctx;
     expect(await hammer(guard, codeless, 6)).toEqual({ allowed: 5, blocked: 1 });
-    expect(await hammer(guard, withCode, 30)).toEqual({ allowed: 30, blocked: 0 });
+    expect(await hammer(guard, withCode, 100)).toEqual({ allowed: 100, blocked: 0 });
     // Codeless is still blocked; code-bearing is now blocked too.
     expect(await hammer(guard, codeless, 1)).toEqual({ allowed: 0, blocked: 1 });
     expect(await hammer(guard, withCode, 1)).toEqual({ allowed: 0, blocked: 1 });
