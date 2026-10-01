@@ -603,11 +603,13 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
     tier: 'optional',
+    default: '5 per IP per hour (unset, unparseable or < 1 fall back; clamped to 500)',
     reason: 'Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500].',
   },
   {
     name: 'SIGNUP_ROLE_CHOICE_ENABLED',
     tier: 'optional',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
   },
   {
@@ -1224,6 +1226,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: '3600000 = 1 h (non-positive / unparseable fall back)',
     reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
+  },
+  {
+    name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
+    tier: 'optional',
+    default: "off (on only when exactly 'true', case-insensitive)",
+    reason:
+      "AI processing consent ledger master switch (src/ai-consent, #622). While off every /me/ai-consent route returns 503 AI_CONSENT_UNAVAILABLE and hasClientAiConsent() is false for everyone. prod-switches.yml: feature, prod_default OFF.",
   },
   {
     name: 'MEDIA_SIGNED_URL_TTL_SEC',
