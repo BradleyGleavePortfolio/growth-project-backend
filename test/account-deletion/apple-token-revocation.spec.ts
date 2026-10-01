@@ -3,6 +3,7 @@ import {
   APPLE_REVOKE_URL,
   APPLE_TOKEN_URL,
   AppleTokenRevocationService,
+  DEFAULT_APPLE_SIGNIN_CLIENT_ID,
 } from '../../src/account-deletion/apple-token-revocation.service';
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -36,6 +37,25 @@ describe('AppleTokenRevocationService (Sign in with Apple revocation on deletion
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+  });
+
+  it('C-608-6: the client id is explicit (named config, bundle-id default), never APPLE_AUDIENCES order', () => {
+    const svc = new AppleTokenRevocationService();
+    expect(DEFAULT_APPLE_SIGNIN_CLIENT_ID).toBe('com.growthproject.app');
+    process.env.APPLE_AUDIENCES = 'host.exp.Exponent,com.growthproject.app';
+    expect(svc.readConfig()?.clientId).toBe('com.growthproject.app');
+    delete process.env.APPLE_AUDIENCES;
+    expect(svc.readConfig()?.clientId).toBe('com.growthproject.app');
+    process.env.APPLE_SIGNIN_CLIENT_ID = '  com.example.other  ';
+    expect(svc.readConfig()?.clientId).toBe('com.example.other');
+    process.env.APPLE_SIGNIN_CLIENT_ID = '   ';
+    expect(svc.readConfig()?.clientId).toBe('com.growthproject.app');
+  });
+
+  it('C-608-6: still not_configured without the key, whatever the client id', () => {
+    delete process.env.APPLE_SIGNIN_KEY_ID;
+    process.env.APPLE_SIGNIN_CLIENT_ID = 'com.growthproject.app';
+    expect(new AppleTokenRevocationService().readConfig()).toBeNull();
   });
 
   it('returns not_requested without a code and makes no network call', async () => {

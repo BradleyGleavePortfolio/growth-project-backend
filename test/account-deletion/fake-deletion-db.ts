@@ -41,7 +41,7 @@ export interface DelegateCall {
   args: unknown;
 }
 
-interface Pending {
+export interface Pending {
   userWrites: Array<{ id: string; data: Record<string, unknown> }>;
   calls: DelegateCall[];
   audit: AuditRow[];
@@ -53,6 +53,8 @@ type Hook = () => Promise<void>;
 export class FakeDeletionDb {
   readonly users = new Map<string, FakeUser>();
   readonly committedCalls: DelegateCall[] = [];
+  /** Uncommitted state of the transaction that is running, for ordering checks. */
+  inFlight: Pending | null = null;
   readonly audit: AuditRow[] = [];
   readonly hooks: { afterCandidates?: Hook; afterLock?: Hook } = {};
   commits = 0;
@@ -206,6 +208,7 @@ export class FakeDeletionDb {
   private async runTx(fn: (tx: unknown) => Promise<unknown>): Promise<unknown> {
     const txId = this.nextTx++;
     const pending: Pending = { userWrites: [], calls: [], audit: [], auditDeletes: [] };
+    this.inFlight = pending;
     const txUser = {
       findUnique: async (args: { where: { id: string } }) => {
         const u = this.users.get(args.where.id);
@@ -283,6 +286,7 @@ export class FakeDeletionDb {
       this.rollbacks += 1;
       throw err;
     } finally {
+      if (this.inFlight === pending) this.inFlight = null;
       for (const [userId, holder] of [...this.locks])
         if (holder === txId) this.locks.delete(userId);
       const waiting = this.waiters;

@@ -104,12 +104,18 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'UserPreferences', field: 'user_id', action: del },
   { model: 'NotificationPreferences', field: 'user_id', action: del },
   { model: 'LoggedFoodEntry', field: 'user_id', action: del },
+  // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
+  // (baseline migration), so the children go first (A-608-3).
+  // test/account-deletion/manifest-fk-order.spec.ts derives every FK from
+  // prisma/migrations and fails when a parent is deleted before such a child.
+  { model: 'ExerciseSet', field: 'workout.user_id', action: del },
   { model: 'WorkoutSession', field: 'user_id', action: del },
   { model: 'FastingWindow', field: 'user_id', action: del },
   { model: 'WeightLog', field: 'user_id', action: del },
   { model: 'WaterLog', field: 'user_id', action: del },
   { model: 'CheckIn', field: 'user_id', action: del },
   { model: 'CheckIn', field: 'coach_id', action: detach('coach_id') },
+  { model: 'HabitLog', field: 'habit.user_id', action: del },
   { model: 'Habit', field: 'user_id', action: del },
   { model: 'LessonCompletion', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
@@ -156,7 +162,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachNudge', field: 'client_id', action: del },
 
   // ── Health / wearables. Coach prompts derived from samples go first: their
-  // source rows hold a RESTRICT FK to WearableSample.
+  // source rows hold a RESTRICT FK to WearableSample (sources of other
+  // people's prompts that cite this person's samples: RESTRICT_CHILD_PRE_STEPS).
   { model: 'CommunityWearablePrompt', field: 'clientId', action: del },
   { model: 'CommunityWearablePrompt', field: 'coachId', action: del },
   { model: 'WearableInsightCache', field: 'user_id', action: del },
@@ -508,6 +515,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunitySearchEntry', field: 'authorId', action: del, uuid: true },
   { model: 'CommunityModerationAction', field: 'reported_by_id', action: detach('reported_by_id') },
   { model: 'CommunityModerationAction', field: 'actor_id', action: detach('actor_id') },
+  // Media rows go with their bytes (storage service, C-608-1); the post is scrubbed.
+  { model: 'CommunityClassroomMediaAsset', field: 'post.coach_id', action: del },
   {
     model: 'CommunityClassroomPost',
     field: 'coach_id',
@@ -602,6 +611,22 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
       },
     },
   },
+  // Rows that name the user only through the free-form target_id (written
+  // without target_user_id) (C-608-3).
+  {
+    model: 'AuditLog',
+    field: 'target_id',
+    action: {
+      op: 'update',
+      data: {
+        target_id: null,
+        actor_email_snapshot: null,
+        ip: null,
+        user_agent: null,
+        metadata: Prisma.DbNull,
+      },
+    },
+  },
   {
     model: 'AuditLog',
     field: 'actor_email_snapshot',
@@ -621,6 +646,30 @@ export const OPTIONAL_USER_TABLES: ReadonlyArray<{ table: string; column: string
   { table: 'ClientOnboardingIntakeRevision', column: 'client_id' },
   { table: 'ClientOnboardingIntake', column: 'client_id' },
   { table: 'AiProcessingConsent', column: 'user_id' },
+];
+
+/**
+ * RESTRICT children that are not Prisma relations, so the manifest cannot
+ * reach them through a dotted path (A-608-3). Each runs before the manifest:
+ * DELETE FROM child WHERE childColumn IN (SELECT id FROM parent WHERE
+ * parentUserColumn = userId). Identifiers are fixed constants (never input).
+ * test/account-deletion/manifest-fk-order.spec.ts reads this list.
+ */
+export const RESTRICT_CHILD_PRE_STEPS: ReadonlyArray<{
+  childTable: string;
+  childColumn: string;
+  parentTable: string;
+  parentUserColumn: string;
+}> = [
+  // A prompt source pins the sample that drove a coach prompt (RESTRICT, so
+  // the sample cannot vanish under the audit trail). The person's samples go,
+  // so the sources pointing at them go first, whoever's prompt they are in.
+  {
+    childTable: 'community_wearable_prompt_sources',
+    childColumn: 'sampleId',
+    parentTable: 'WearableSample',
+    parentUserColumn: 'user_id',
+  },
 ];
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -716,6 +765,17 @@ export async function executeErasureManifest(
       op: 'delete',
       count: grants.count,
     });
+  }
+
+  for (const step of RESTRICT_CHILD_PRE_STEPS) {
+    const count = await tx.$executeRaw`
+      DELETE FROM ${Prisma.raw(`"${step.childTable}"`)}
+       WHERE ${Prisma.raw(`"${step.childColumn}"`)} IN (
+         SELECT "id" FROM ${Prisma.raw(`"${step.parentTable}"`)}
+          WHERE ${Prisma.raw(`"${step.parentUserColumn}"`)} = ${ctx.userId}
+       )
+    `;
+    results.push({ model: step.childTable, field: step.childColumn, op: 'delete', count });
   }
 
   for (const entry of manifest) {

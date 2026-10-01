@@ -50,11 +50,11 @@ import { AccountDeletionBillingService } from './account-deletion.billing';
 //     transition, so an event exists if and only if the transition committed.
 //
 // Finalization order inside the locked transaction: collect storage keys and
-// Stripe subscription ids from the rows, remove the bytes and cancel the
-// subscriptions (both idempotent; any failure throws and rolls everything
-// back for the next run), tombstone the User row, run the erasure manifest
-// (account-deletion.manifest.ts), replace the lifecycle audit rows with one
-// non-identifying outcome row. After commit the Supabase auth identity is
+// Stripe subscription ids from the rows, tombstone the User row, run the
+// erasure manifest (account-deletion.manifest.ts), delete the lifecycle audit
+// rows, THEN remove the bytes and cancel the subscriptions (only after every
+// DB statement succeeded; both idempotent, any failure throws and rolls the
+// DB back for the next run), and write one non-identifying outcome row. After commit the Supabase auth identity is
 // removed; the original supabase_id stays on the tombstone (the only retry
 // handle) until that succeeds, and the cron retries it every night.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -628,8 +628,15 @@ export class AccountDeletionService {
       select: { id: true, supabase_id: true },
       take: 100,
     });
+    // One row's failure must not stop the rest of tonight's retries (C-608-5).
     for (const row of pendingAuth) {
-      await this.removeAuthIdentity(row.id, row.supabase_id);
+      try {
+        await this.removeAuthIdentity(row.id, row.supabase_id);
+      } catch (err) {
+        this.logger.error(
+          `AccountDeletion auth retry: failed for user=${row.id}, will retry next run: ${(err as Error).message}`,
+        );
+      }
     }
 
     this.logger.log(
@@ -673,12 +680,10 @@ export class AccountDeletionService {
         const now = new Date();
         const tombstoneEmail = `deleted-${userId}@tombstone.invalid`;
 
-        // 1. External side effects first, from keys still on the rows. Both
-        //    are idempotent and throw on failure (rollback + retry).
+        // 1. Collect object keys and Stripe subscription ids while the rows
+        //    that hold them still exist. Nothing external happens yet.
         const objects = await this.storage.collect(tx, userId);
         const subscriptionIds = await this.billing.collectSubscriptionIds(tx, userId);
-        const storage = await this.storage.purge(objects);
-        const billing = await this.billing.cancelAll(subscriptionIds);
 
         // 2. Tombstone. Runs before the manifest because it clears User-row
         //    FKs (default payout method) to rows the manifest deletes.
@@ -717,6 +722,17 @@ export class AccountDeletionService {
         // 4. Audit: lifecycle rows carry the user id, so they go; one outcome
         //    row with a random subject id stays (B-608-4).
         await tx.$executeRaw`DELETE FROM "deletion_audit" WHERE "user_id" = ${userId}`;
+
+        // 5. External side effects last (A-608-3): every DB statement above
+        //    has already succeeded, so a constraint or data error can no
+        //    longer leave the bytes removed and billing stopped on an account
+        //    that did not finish. Both are idempotent (a missing object or an
+        //    already-canceled subscription counts as done), so if one throws
+        //    (rollback, nightly retry) or the commit itself fails, repeating
+        //    them is safe. Past purge_after the deletion cannot be cancelled.
+        const storage = await this.storage.purge(objects);
+        const billing = await this.billing.cancelAll(subscriptionIds);
+
         await this.insertDeletionAudit(tx, {
           subjectId: crypto.randomUUID(),
           event:

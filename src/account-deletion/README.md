@@ -85,19 +85,28 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
 
 ## Finalization (one transaction, 120 s timeout)
 
-1. Collect storage objects (voice notes and voice-message files, the
-   `${userId}/` voice prefix, coach media on Supabase and Mux, Supabase
-   bloodwork attachments, local data-export archives) and live Stripe
-   subscription ids.
-2. Remove the objects and cancel the subscriptions. Any failure throws, the
-   transaction rolls back and tomorrow's run retries (object removal and
-   Stripe cancellation are idempotent).
-3. Tombstone the `User` row: email `deleted-<id>@tombstone.invalid`, name
+1. Collect storage objects (voice notes and voice-message files and the
+   `${userId}/` voice prefix, only ever inside that prefix; coach media on
+   Supabase and Mux; a coach's classroom media; Supabase bloodwork
+   attachments, only `bloodwork/<userId>/…`; local data-export archives) and
+   live Stripe subscription ids. Nothing external happens yet.
+2. Tombstone the `User` row: email `deleted-<id>@tombstone.invalid`, name
    "Deleted user", phone, coach link, push token, leaderboard name, signup
    ref and payout method cleared, `deleted_at` set.
-4. Run the erasure manifest (`account-deletion.manifest.ts`).
-5. Delete the person's `deletion_audit` rows and insert one outcome row with a
-   random subject id (no email, IP or user agent).
+3. Run the erasure manifest (`account-deletion.manifest.ts`), including the
+   RESTRICT-child pre-steps.
+4. Delete the person's `deletion_audit` rows.
+5. Only now, with every DB statement done, remove the objects and cancel the
+   subscriptions (A-608-3). A constraint or data error therefore never leaves
+   bytes removed and billing stopped on an account that did not finish. Any
+   external failure throws, the transaction rolls back and the next nightly
+   run retries; removal and cancellation are idempotent (a missing object or
+   an already-canceled subscription counts as done), so repeating them after
+   a rollback or a failed commit is safe. Past `purge_after` the deletion
+   cannot be cancelled, so the person never gets back an account whose bytes
+   are gone.
+   Then insert one outcome row with a random subject id (no email, IP or
+   user agent).
 6. After commit, remove the Supabase auth identity. A returned or thrown
    error is logged, recorded as `auth_identity_cleanup_failed`, and retried
    by every nightly run until it succeeds (`supabase_id` becomes
@@ -115,6 +124,17 @@ entry, if an entry names a missing model/field, or if executing the manifest
 against a seeded store leaves the person's id behind (outside documented
 retention) or changes anyone else's rows. Adding a table that stores user data
 therefore requires adding a manifest entry in the same PR.
+
+Delete order is checked against the real database constraints:
+`test/account-deletion/manifest-fk-order.spec.ts` replays every
+`prisma/migrations/**/migration.sql` (ADD/DROP CONSTRAINT, DROP TABLE) and
+fails if a manifest step deletes a parent (or anything in its ON DELETE
+CASCADE closure) while an ON DELETE RESTRICT / NO ACTION child can still point
+at it. Children that are Prisma relations are deleted by an earlier step
+through that relation (`ExerciseSet` via `workout.user_id` before
+`WorkoutSession`, `HabitLog` via `habit.user_id` before `Habit`); children
+that are not (wearable prompt sources -> `WearableSample`) are deleted by
+`RESTRICT_CHILD_PRE_STEPS` before the manifest runs.
 
 Retained rows (all keyed only by the tombstone id): finance mirrors (Invoice,
 ConnectAccount, ClientPurchase deactivated, SplitLedgerEntry, ConnectTransfer,
@@ -147,8 +167,8 @@ insert-only import ledgers (digests only; a DB trigger refuses DELETE).
 | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `DELETION_GRACE_DAYS`                                                                                                     | `14`                         | Days between scheduling and finalization.                                                                                  |
 | `DELETION_FINALIZE_CRON`                                                                                                  | `0 3 * * *`                  | Nightly finalize job (03:00 UTC slot).                                                                                     |
-| `APPLE_TEAM_ID`, `APPLE_SIGNIN_CLIENT_ID` (or first `APPLE_AUDIENCES`), `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY` | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
-| `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`                                                                          | `voice-notes`, `coach-media` | Buckets purged at finalization.                                                                                            |
+| `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`; optional `APPLE_SIGNIN_CLIENT_ID` (default `com.growthproject.app`, the iOS bundle id; never read from `APPLE_AUDIENCES`) | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
+| `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`, `SUPABASE_BLOODWORK_BUCKET`                                             | `voice-notes`, `coach-media`, `bloodwork` | Buckets purged at finalization. A bloodwork `supabase` ref must be `<bloodwork bucket>/<client id>/<file>` (validated at registration; anything else is skipped and counted at deletion). |
 | `STRIPE_SECRET_KEY`, Mux credentials                                                                                      | —                            | Needed only if the person has live subscriptions or Mux assets; without them finalization fails closed, logs, and retries. |
 
 ## Tests
@@ -157,7 +177,8 @@ insert-only import ledgers (digests only; a DB trigger refuses DELETE).
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test/account-deletion/lifecycle-races.spec.ts`           | Request/cancel/finalize state machine on an in-memory DB with row locks and rollback; Sol's six probes inverted (scrub failure rollback, Supabase returned error, fan-out failure, cancel after snapshot, re-request after snapshot, concurrent requests), cancel vs finalize 409, two cron workers, cutoff boundaries, non-identifying audit, admin delete, legacy link. |
 | `test/account-deletion/erasure-manifest-coverage.spec.ts` | Schema coverage, entry validity, seeded execution (A erased, B byte-identical).                                                                                                                                                                                                                                                                                           |
-| `test/account-deletion/storage-billing.spec.ts`           | Storage collection/purge and Stripe cancellation, fail-closed paths.                                                                                                                                                                                                                                                                                                      |
+| `test/account-deletion/manifest-fk-order.spec.ts`         | Delete order vs. FK constraints parsed from the migrations (RESTRICT / NO ACTION children first), pre-step SQL order.                                                                                                                                                                                                                                                       |
+| `test/account-deletion/storage-billing.spec.ts`           | Storage collection/purge and Stripe cancellation, fail-closed paths; own-prefix rule for bloodwork and voice keys.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/controller-roles.spec.ts`          | No role restriction on self endpoints (sub-coach), owner-only admin.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/drip-fence.spec.ts`                | Drip dispatcher never selects drops for deleted accounts.                                                                                                                                                                                                                                                                                                                 |
 | `test/auth-recent-auth-google-session.spec.ts`            | Google re-auth via a fresh Supabase OAuth session; replay refused.                                                                                                                                                                                                                                                                                                        |

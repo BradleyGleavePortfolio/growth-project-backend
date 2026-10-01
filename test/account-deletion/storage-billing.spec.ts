@@ -40,6 +40,7 @@ function tx(rows: Record<string, unknown[]>): Prisma.TransactionClient {
     coachMessage: delegate('coachMessage'),
     communityMessage: delegate('communityMessage'),
     coachMediaAsset: delegate('coachMediaAsset'),
+    communityClassroomMediaAsset: delegate('communityClassroomMediaAsset'),
     bloodworkAttachment: delegate('bloodworkAttachment'),
     dataExportRequest: delegate('dataExportRequest'),
     coachSubscription: delegate('coachSubscription'),
@@ -65,7 +66,7 @@ describe('AccountDeletionStorageService', () => {
           { storage_key: 'mux-asset-1', provider: 'mux' },
         ],
         bloodworkAttachment: [
-          { storage_ref: 'bloodwork/u/panel.pdf', storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}/panel.pdf`, storage_backend: 'supabase' },
           { storage_ref: 'https://lab.example.com/r.pdf', storage_backend: 'external' },
         ],
         dataExportRequest: [{ file_url: 'local:///tmp/export-1.zip' }],
@@ -79,12 +80,78 @@ describe('AccountDeletionStorageService', () => {
         { kind: 'supabase', bucket: 'voice-notes', key: `${UID}/orphan.m4a` },
         { kind: 'supabase', bucket: 'coach-media', key: 'coach/vid.mp4' },
         { kind: 'mux', assetId: 'mux-asset-1' },
-        { kind: 'supabase', bucket: 'bloodwork', key: 'u/panel.pdf' },
+        { kind: 'supabase', bucket: 'bloodwork', key: `${UID}/panel.pdf` },
         { kind: 'local', path: '/tmp/export-1.zip' },
       ]),
     );
     expect(objects).toHaveLength(7);
     expect(h.list).toHaveBeenCalledWith(UID, expect.objectContaining({ offset: 0 }));
+  });
+
+  it('Opus probe P2 inverted (B-608-8): never schedules a client-supplied ref outside bloodwork/<own id>/', async () => {
+    const h = storageHarness();
+    const objects = await h.service.collect(
+      tx({
+        bloodworkAttachment: [
+          { storage_ref: 'coach-media/other-coach/video.mp4', storage_backend: 'supabase' },
+          { storage_ref: 'voice-notes/another-user-id/clip.m4a', storage_backend: 'supabase' },
+          { storage_ref: 'bloodwork/another-user-id/panel.pdf', storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}/../another-user-id/x.pdf`, storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}/`, storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}`, storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}/ok/lab.pdf`, storage_backend: 'supabase' },
+          { storage_ref: `bloodwork/${UID}/upper.pdf`, storage_backend: 'Supabase' },
+        ],
+      }),
+      UID,
+    );
+    expect(objects).toEqual([{ kind: 'supabase', bucket: 'bloodwork', key: `${UID}/ok/lab.pdf` }]);
+    expect(
+      objects.filter(
+        (o) => o.kind !== 'supabase' || o.bucket !== 'bloodwork' || !o.key.startsWith(`${UID}/`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("B-608-8: voice keys from rows and URLs are only removed under the user's own prefix", async () => {
+    const h = storageHarness();
+    const objects = await h.service.collect(
+      tx({
+        communityVoiceNote: [
+          { storage_key: 'someone-else/note.m4a' },
+          { storage_key: `${UID}/mine.m4a` },
+        ],
+        coachMessage: [
+          {
+            voice_url:
+              'https://x.supabase.co/storage/v1/object/public/voice-notes/someone-else/clip.m4a',
+          },
+        ],
+        communityMessage: [
+          {
+            voice_url: `https://x.supabase.co/storage/v1/object/public/voice-notes/${UID}/../someone-else/c.m4a`,
+          },
+        ],
+      }),
+      UID,
+    );
+    expect(objects).toEqual([{ kind: 'supabase', bucket: 'voice-notes', key: `${UID}/mine.m4a` }]);
+  });
+
+  it('C-608-1: collects classroom media a deleted coach posted', async () => {
+    const h = storageHarness();
+    const objects = await h.service.collect(
+      tx({
+        communityClassroomMediaAsset: [
+          { storage_key: 'community-classroom/ws-1/post-1/image/abc' },
+          { storage_key: 'elsewhere/key' },
+        ],
+      }),
+      UID,
+    );
+    expect(objects).toEqual([
+      { kind: 'supabase', bucket: 'coach-media', key: 'community-classroom/ws-1/post-1/image/abc' },
+    ]);
   });
 
   it('refuses an export archive it cannot delete (fail closed)', async () => {

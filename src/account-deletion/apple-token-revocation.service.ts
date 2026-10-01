@@ -25,8 +25,12 @@ import * as crypto from 'crypto';
  *   APPLE_TEAM_ID              Apple Developer Team ID (already used by AASA)
  *   APPLE_SIGNIN_KEY_ID        Key ID of the Sign in with Apple private key
  *   APPLE_SIGNIN_PRIVATE_KEY   The .p8 private key (PEM; literal "\n" allowed)
- *   APPLE_SIGNIN_CLIENT_ID     Optional. Defaults to the first APPLE_AUDIENCES
- *                              entry (the iOS bundle id).
+ *   APPLE_SIGNIN_CLIENT_ID     Optional. The client id the device's
+ *                              authorization code was issued to: the iOS
+ *                              bundle id. Defaults to
+ *                              DEFAULT_APPLE_SIGNIN_CLIENT_ID. It is NOT read
+ *                              from APPLE_AUDIENCES, whose order is not a
+ *                              contract (it also lists Expo Go).
  */
 export type AppleRevocationOutcome =
   'revoked' | 'not_requested' | 'not_configured' | 'exchange_failed' | 'revoke_failed';
@@ -34,6 +38,8 @@ export type AppleRevocationOutcome =
 export const APPLE_TOKEN_URL = 'https://appleid.apple.com/auth/token';
 export const APPLE_REVOKE_URL = 'https://appleid.apple.com/auth/revoke';
 const APPLE_AUDIENCE = 'https://appleid.apple.com';
+/** iOS bundle id (mobile app.json `ios.bundleIdentifier`). */
+export const DEFAULT_APPLE_SIGNIN_CLIENT_ID = 'com.growthproject.app';
 const REQUEST_TIMEOUT_MS = 8_000;
 
 interface AppleRevocationConfig {
@@ -63,11 +69,7 @@ export class AppleTokenRevocationService {
     const teamId = (env.APPLE_TEAM_ID ?? '').trim();
     const keyId = (env.APPLE_SIGNIN_KEY_ID ?? '').trim();
     const privateKey = (env.APPLE_SIGNIN_PRIVATE_KEY ?? '').replace(/\\n/g, '\n').trim();
-    const clientId = (
-      env.APPLE_SIGNIN_CLIENT_ID ??
-      (env.APPLE_AUDIENCES ?? '').split(',')[0] ??
-      ''
-    ).trim();
+    const clientId = (env.APPLE_SIGNIN_CLIENT_ID ?? '').trim() || DEFAULT_APPLE_SIGNIN_CLIENT_ID;
     if (!teamId || !keyId || !privateKey || !clientId) return null;
     return { teamId, keyId, privateKey, clientId };
   }

@@ -4,6 +4,11 @@ import { Prisma } from '@prisma/client';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MuxService } from '../video/mux.service';
 import { VOICE_DEFAULT_BUCKET } from '../community/voice/voice-upload.provider';
+import {
+  SUPABASE_BACKEND,
+  bloodworkBucket,
+  ownedBloodworkKey,
+} from '../bloodwork/bloodwork-storage-ref';
 
 /**
  * Account-deletion storage cleanup (B-608-3).
@@ -79,7 +84,16 @@ export class AccountDeletionStorageService {
       where: { author_id: userId },
       select: { storage_key: true },
     });
-    for (const v of voiceNotes) push({ kind: 'supabase', bucket: voiceBucket, key: v.storage_key });
+    // Voice keys are written under `${ownerId}/` (VoiceUploadProvider, and
+    // confirm rejects any other key). Keys taken from rows or URLs are only
+    // removed inside that prefix, so a URL pointing at someone else's clip
+    // can never delete it (B-608-8, same rule as bloodwork).
+    const ownVoiceKey = (key: string | null) =>
+      key && key.startsWith(`${userId}/`) && !key.split('/').includes('..') ? key : null;
+    for (const v of voiceNotes) {
+      const key = ownVoiceKey(v.storage_key);
+      if (key) push({ kind: 'supabase', bucket: voiceBucket, key });
+    }
 
     const coachVoice = await tx.coachMessage.findMany({
       where: { sender_id: userId, voice_url: { not: null } },
@@ -90,7 +104,7 @@ export class AccountDeletionStorageService {
       select: { voice_url: true },
     });
     for (const m of [...coachVoice, ...communityVoice]) {
-      const key = objectKeyFromUrl(m.voice_url, voiceBucket);
+      const key = ownVoiceKey(objectKeyFromUrl(m.voice_url, voiceBucket));
       if (key) push({ kind: 'supabase', bucket: voiceBucket, key });
     }
 
@@ -109,18 +123,39 @@ export class AccountDeletionStorageService {
       else push({ kind: 'supabase', bucket: this.mediaBucket(), key: m.storage_key });
     }
 
+    // Classroom media a coach posted (C-608-1). Keys are server-minted
+    // (`community-classroom/<workspace>/<post>/...`) in the media bucket.
+    const classroom = await tx.communityClassroomMediaAsset.findMany({
+      where: { post: { coach_id: userId } },
+      select: { storage_key: true },
+    });
+    for (const c of classroom) {
+      if (c.storage_key.startsWith('community-classroom/')) {
+        push({ kind: 'supabase', bucket: this.mediaBucket(), key: c.storage_key });
+      }
+    }
+
+    // B-608-8: storage_ref is client-supplied. Only keys inside the bloodwork
+    // bucket under this user's own prefix are removed; anything else is
+    // counted and logged (no key in the log), never deleted.
+    const bwBucket = bloodworkBucket();
     const attachments = await tx.bloodworkAttachment.findMany({
       where: { panel: { client_id: userId }, storage_ref: { not: null } },
       select: { storage_ref: true, storage_backend: true },
     });
+    let foreignRefs = 0;
     for (const a of attachments) {
-      const ref = a.storage_ref ?? '';
-      if (a.storage_backend === 'supabase' && ref.includes('/')) {
-        const [bucket, ...rest] = ref.split('/');
-        push({ kind: 'supabase', bucket, key: rest.join('/') });
-      }
+      if (a.storage_backend !== SUPABASE_BACKEND) continue;
+      const key = ownedBloodworkKey(a.storage_ref, userId, bwBucket);
+      if (key) push({ kind: 'supabase', bucket: bwBucket, key });
+      else foreignRefs += 1;
       // Other backends are client-supplied external references; the backend
       // holds no bytes for them, and the row itself is deleted.
+    }
+    if (foreignRefs > 0) {
+      this.logger.warn(
+        `account deletion: skipped ${foreignRefs} bloodwork storage_ref(s) outside ${bwBucket}/<user>/`,
+      );
     }
 
     const exports = await tx.dataExportRequest.findMany({

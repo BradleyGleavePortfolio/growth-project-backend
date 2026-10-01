@@ -229,6 +229,8 @@ describe('finalization', () => {
     expect(ctx.user().email).toBe('private@example.com');
     expect(ctx.deleteUser).not.toHaveBeenCalled();
     expect(ctx.events()).not.toContain('deletion_finalized');
+    expect(ctx.storage.purge).not.toHaveBeenCalled();
+    expect(ctx.billing.cancelAll).not.toHaveBeenCalled();
     expect(ctx.logger.error).toHaveBeenCalledWith(expect.stringContaining('DB scrub failed'));
 
     const second = await ctx.service.runFinalizeCron();
@@ -246,7 +248,86 @@ describe('finalization', () => {
     expect(ctx.user().deleted_at).toBeNull();
   });
 
-  it('B-608-3/B-608-5: storage or billing failure aborts before any row changes', async () => {
+  it('A-608-3: an FK violation in the manifest rolls back before any external side effect', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    const fkError = Object.assign(
+      new Error('Foreign key constraint violated: ExerciseSet_workout_id_fkey'),
+      {
+        code: 'P2003',
+      },
+    );
+    ctx.db.failOn('workoutSession', 'deleteMany', fkError);
+    const first = await ctx.service.runFinalizeCron();
+    expect(first.errors).toBe(1);
+    expect(ctx.storage.purge).not.toHaveBeenCalled();
+    expect(ctx.billing.cancelAll).not.toHaveBeenCalled();
+    expect(ctx.deleteUser).not.toHaveBeenCalled();
+    expect(ctx.user().deleted_at).toBeNull();
+  });
+
+  it('A-608-3: bytes and billing are touched only after every DB statement succeeded', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    const seen: Array<{ tombstoned: boolean; manifestDone: boolean; auditCleared: boolean }> = [];
+    const snapshot = () => {
+      const p = ctx.db.inFlight;
+      seen.push({
+        tombstoned: !!p?.userWrites.some((w) => w.data.deleted_at instanceof Date),
+        manifestDone: !!p?.calls.some(
+          (c) => c.model === 'wearableSample' && c.method === 'deleteMany',
+        ),
+        auditCleared: (p?.auditDeletes.length ?? 0) > 0,
+      });
+    };
+    ctx.storage.purge.mockImplementationOnce(async () => {
+      snapshot();
+      return { removed: 1, byKind: { supabase: 1, mux: 0, local: 0 } };
+    });
+    ctx.billing.cancelAll.mockImplementationOnce(async () => {
+      snapshot();
+      return { canceled: 1, alreadyInactive: 0 };
+    });
+    await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    expect(seen).toEqual([
+      { tombstoned: true, manifestDone: true, auditCleared: true },
+      { tombstoned: true, manifestDone: true, auditCleared: true },
+    ]);
+    // The outcome row is written after the external effects, in the same tx.
+    expect(ctx.events()).toContain('deletion_finalized');
+  });
+
+  it('A-608-3: a retry after an external failure repeats the effects safely and completes', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    ctx.billing.cancelAll.mockRejectedValueOnce(new Error('stripe down'));
+    expect((await ctx.service.runFinalizeCron()).errors).toBe(1);
+    expect(ctx.user().deleted_at).toBeNull();
+    expect((await ctx.service.runFinalizeCron()).finalized).toBe(1);
+    expect(ctx.storage.purge).toHaveBeenCalledTimes(2);
+    expect(ctx.billing.cancelAll).toHaveBeenCalledTimes(2);
+    expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+  });
+
+  it('C-608-5: one failing auth retry does not stop the others that night', async () => {
+    const ctx = build({ confirmedDaysAgo: null });
+    const T1 = '11111111-1111-4111-8111-111111111111';
+    const T2 = '22222222-2222-4222-8222-222222222222';
+    for (const id of [T1, T2]) {
+      ctx.db.addUser({
+        id,
+        email: `deleted-${id}@tombstone.invalid`,
+        supabase_id: `auth-${id}`,
+        deleted_at: new Date(),
+      });
+    }
+    ctx.db.failOn('user', 'update', new Error('db blip'));
+    await ctx.service.runFinalizeCron();
+    expect(ctx.deleteUser).toHaveBeenCalledWith(`auth-${T1}`);
+    expect(ctx.deleteUser).toHaveBeenCalledWith(`auth-${T2}`);
+    expect(ctx.db.users.get(T1)?.supabase_id).toBe(`auth-${T1}`);
+    expect(ctx.db.users.get(T2)?.supabase_id).toBe(`deleted-${T2}`);
+    expect(ctx.logger.error).toHaveBeenCalledWith(expect.stringContaining('db blip'));
+  });
+
+  it('B-608-3/B-608-5: storage or billing failure rolls back every row change', async () => {
     const storageFail = build({ confirmedDaysAgo: GRACE + 1 });
     storageFail.storage.purge.mockRejectedValueOnce(new Error('bucket unavailable'));
     await expect(storageFail.service.finalizeUserDeletion(UID, { mode: 'cron' })).rejects.toThrow(

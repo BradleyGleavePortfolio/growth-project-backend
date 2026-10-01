@@ -693,8 +693,12 @@ from their Apple ID settings. It never claims revocation happened.
 | `APPLE_SIGNIN_KEY_ID` | GitHub Actions secret of the same name (10-character key id from Apple Developer → Keys) |
 | `APPLE_SIGNIN_PRIVATE_KEY` | GitHub Actions secret of the same name: the full `.p8` file contents, pasted as-is (multi-line PEM, `-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) |
 
-`APPLE_TEAM_ID` and `APPLE_SIGNIN_CLIENT_ID` (or the first `APPLE_AUDIENCES`
-entry) must already be set; they are not touched here.
+`APPLE_TEAM_ID` must already be set; it is not touched here.
+`APPLE_SIGNIN_CLIENT_ID` is the client id the device's authorization code was
+issued to, which for the native app is the iOS bundle id. It is optional and
+defaults to `com.growthproject.app` (`DEFAULT_APPLE_SIGNIN_CLIENT_ID`); set it
+only if the bundle id changes. It is no longer derived from `APPLE_AUDIENCES`.
+Without the key id and private key the outcome stays `not_configured`.
 
 The workflow is `workflow_dispatch` only, bound to the `production`
 environment, accepts only `app=backend-spring-lake-3890` and `confirm=SET`,
