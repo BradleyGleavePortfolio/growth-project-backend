@@ -184,9 +184,16 @@ describe('RomanRetentionService — 180-day auto-delete + client delete is real 
           return { count: where.id.in.length };
         }),
       },
+      romanMessage: {
+        deleteMany: jest.fn(async ({ where }: { where: { created_at: { lt: Date } } }) => {
+          const n = messageRows.filter((m) => m.created_at < where.created_at.lt).length;
+          return { count: n };
+        }),
+      },
     };
     return { prisma, deleted };
   }
+  const messageRows: Array<{ created_at: Date }> = [];
 
   it('deletes sessions idle ≥ 180 days and client-deleted sessions; keeps live ones', async () => {
     const rows: Row[] = [
@@ -204,20 +211,75 @@ describe('RomanRetentionService — 180-day auto-delete + client delete is real 
     expect(r).toMatchObject({ expired_sessions_deleted: 1, client_deleted_sessions_purged: 1 });
     // hard delete (messages cascade via FK), never a soft flag
     expect(prisma.romanSession.deleteMany).toHaveBeenCalledTimes(1);
+    // message-level TTL sweep by created_at < cutoff (defence in depth)
+    expect(prisma.romanMessage.deleteMany).toHaveBeenCalledWith({
+      where: { created_at: { lt: days(180) } },
+    });
+  });
+
+  it('sweeps message rows older than 180 days even when their session is live', async () => {
+    messageRows.length = 0;
+    messageRows.push({ created_at: days(200) }, { created_at: days(181) }, { created_at: days(10) });
+    const { prisma } = makeRetentionPrisma([{ id: 'live', last_activity_at: days(1), deleted_at: null }]);
+    const r = await new RomanRetentionService(asPrismaDouble(prisma)).run(NOW);
+    expect(r.expired_messages_deleted).toBe(2);
+    messageRows.length = 0;
   });
 
   it('is a no-op when nothing qualifies', async () => {
     const { prisma } = makeRetentionPrisma([{ id: 'live', last_activity_at: days(1), deleted_at: null }]);
     const r = await new RomanRetentionService(asPrismaDouble(prisma)).run(NOW);
-    expect(r).toMatchObject({ expired_sessions_deleted: 0, client_deleted_sessions_purged: 0 });
+    expect(r).toMatchObject({
+      expired_sessions_deleted: 0,
+      client_deleted_sessions_purged: 0,
+      expired_messages_deleted: 0,
+    });
     expect(prisma.romanSession.deleteMany).not.toHaveBeenCalled();
   });
 
   it('the tick never throws and never logs transcript content', async () => {
-    const prisma = { romanSession: { findMany: jest.fn(async () => { throw new Error('db down'); }) } };
+    const prisma = {
+      romanSession: {
+        findMany: jest.fn(async () => {
+          throw new Error('db down');
+        }),
+      },
+    };
     const svc = new RomanRetentionService(asPrismaDouble(prisma));
     await expect(svc.tick()).resolves.toBeUndefined();
     const src = readFileSync(join(__dirname, '..', '..', 'src', 'roman', 'roman-retention.service.ts'), 'utf8');
     expect(src).not.toMatch(/\.content\b|content:/);
+  });
+});
+
+// ─── store review (2026-09-30): consent guard on the send route; coach notes never in any AI context ──
+
+describe('Store review blockers — Roman send route guard and coach-note exclusion', () => {
+  it('POST /roman/sessions/:id/messages carries AiProcessingConsentGuard at the route level (plus the in-handler assert)', () => {
+    // Lazy requires keep the Nest decorators out of the other describe blocks.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { RomanController } = require('../../src/roman/roman.controller');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { AiProcessingConsentGuard } = require('../../src/roman/consent/ai-processing-consent.guard');
+    const guards: unknown[] =
+      Reflect.getMetadata('__guards__', RomanController.prototype.sendMessage) ?? [];
+    expect(guards).toContain(AiProcessingConsentGuard);
+    const src = readFileSync(join(__dirname, '..', '..', 'src', 'roman', 'roman.controller.ts'), 'utf8');
+    const handler = src.slice(src.indexOf('async sendMessage('), src.indexOf('getOwnedSession(caller, id)'));
+    expect(handler).toMatch(/assertAiConsent\(caller\.id\)/);
+  });
+
+  it('no client-facing or AI context path reads CoachingSession.coach_notes_md', () => {
+    const SRC = join(__dirname, '..', '..', 'src');
+    const readers = walk(join(SRC, 'ai'))
+      .concat(walk(join(SRC, 'roman')))
+      .filter((f) => /coach_notes_md/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1))
+      .filter((rel) => !/^(ai\/client-ai-context\.(service|types)\.ts)$/.test(rel));
+    expect(readers).toEqual([]);
+    // the two allowed mentions are the exclusion comments, never a Prisma select
+    const ctx = readFileSync(join(SRC, 'ai', 'client-ai-context.service.ts'), 'utf8');
+    expect(ctx).not.toMatch(/coach_notes_md: true/);
+    expect(ctx).toMatch(/coach_note: null/);
   });
 });

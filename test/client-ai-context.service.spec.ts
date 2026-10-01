@@ -162,6 +162,26 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(JSON.stringify(ctx)).not.toContain('coach@example.com');
   });
 
+  it('never reads or renders coach private notes (coach_notes_md) — owner ruling 2026-09-30 #6 / store review', async () => {
+    const prisma = makePrisma({});
+    // Even if the DB row carried notes, the select must not ask for them and
+    // the context must not surface them.
+    prisma.coachingSession.findFirst = jest.fn().mockResolvedValue({
+      start_at: new Date('2026-10-02T17:00:00Z'),
+      title: 'Check-in',
+      coach_notes_md: 'COACH-PRIVATE-NOTE-CANARY',
+    });
+    const svc = new ClientAIContextService(prisma);
+    const ctx = await svc.buildFresh('u1');
+    const select = prisma.coachingSession.findFirst.mock.calls[0][0].select;
+    expect(select).toEqual({ start_at: true, title: true });
+    expect(ctx.next_session).toEqual({ date: '2026-10-02T17:00:00.000Z', title: 'Check-in', coach_note: null });
+    const rendered = svc.renderForPrompt(ctx);
+    expect(JSON.stringify(ctx)).not.toContain('COACH-PRIVATE-NOTE-CANARY');
+    expect(rendered).not.toContain('COACH-PRIVATE-NOTE-CANARY');
+    expect(rendered).not.toMatch(/\(note:/);
+  });
+
   it('summarizes recent food entries into per-day adherence', async () => {
     const fi = (cal: number, p: number, c: number, f: number) => ({
       calories: cal,

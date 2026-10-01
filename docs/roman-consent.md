@@ -34,9 +34,12 @@ Env: `ROMAN_CONSENT_CURRENT_VERSION` (default `client-ai-v2`),
 
 ## Enforcement (the data subject's grant, at every client-data boundary)
 
-- `POST /roman/sessions/:id/messages`: `assertAiConsent(req.user.id)` before
-  the session lookup, the user-turn write and any model work → 403
-  `ROMAN_CONSENT_REQUIRED {current_version, reason}`.
+- `POST /roman/sessions/:id/messages` (the only Roman route that sends user
+  data to a model): `AiProcessingConsentGuard` at the route level AND
+  `assertAiConsent(req.user.id)` in the handler before the session lookup, the
+  user-turn write and any model work → 403 `ROMAN_CONSENT_REQUIRED
+  {current_version, reason}`. Fails closed for users with no row (existing
+  users who never consented), revoked rows and stale versions.
 - Coach AI (`/coach/ai/workout-program|meal-plan|client-insight`, the weekly
   insight job): `AnthropicAdapter` consults the `AI_SUBJECT_CONSENT_GATE`
   (bound to `RomanConsentService` in `CoachAIModule`) for `opts.clientId`
@@ -61,8 +64,15 @@ platform metadata only, never the copy text.
   other readers. `test/roman/roman-transcript-privacy.spec.ts` pins this
   (coach / sub-coach / owner callers → 404; static scan: no other reader).
 - Retention: `RomanRetentionService` (daily 04:11 UTC) hard-deletes sessions
-  idle for 180 days and purges sessions the client deleted
-  (`DELETE /roman/sessions/:id`), cascading to messages. Never logs content.
+  idle for 180 days (messages cascade) and additionally deletes any message row
+  older than 180 days by `created_at`; purges the shells of client-deleted
+  sessions. Never logs content.
+- Client delete: `DELETE /roman/sessions/:id` hard-deletes the session's
+  messages immediately (scoped to the caller's session and user_id), sets
+  `message_count = 0` and `deleted_at`; the shell is purged by the job.
+- Coach private notes (`CoachingSession.coach_notes_md`) are never read into
+  any client-facing or AI context (`ClientAIContextService` select excludes
+  them; `next_session.coach_note` is always null).
 - The consent copy (`client-ai-v2`) discloses: stored securely, private from the
   coach, TGP staff access only for support, safety and debugging, 180-day
   auto-delete, delete any time.

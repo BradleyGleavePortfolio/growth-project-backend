@@ -14,9 +14,7 @@ import {
   AppPrescribedTargets,
   TodaySummary,
   FastingSummary,
-  NextSessionSummary,
   CommunityWinSummary,
-  LeaderboardSummary,
 } from './client-ai-context.types';
 
 // Token-budget knobs. Picked so the assembled context stays well under
@@ -226,7 +224,10 @@ export class ClientAIContextService {
         ? this.prisma.coachingSession.findFirst({
             where: { client_id: userId, start_at: { gte: new Date() } },
             orderBy: { start_at: 'asc' },
-            select: { start_at: true, title: true, coach_notes_md: true },
+            // Owner ruling 2026-09-30 #6 / store review: coach private notes
+            // (coach_notes_md) are NEVER read into any client-facing AI
+            // context. Date and title only.
+            select: { start_at: true, title: true },
           })
         : Promise.resolve(null),
       // M1: last 3 community wins in the past 7 days (roster-scoped)
@@ -318,7 +319,8 @@ export class ClientAIContextService {
         ? {
             date: nextSession.start_at.toISOString(),
             title: nextSession.title,
-            coach_note: clampStr(nextSession.coach_notes_md, 200),
+            // Always null: private coach notes never enter a client/AI context.
+            coach_note: null,
           }
         : null,
       recent_wins: (recentWins ?? []).map<CommunityWinSummary>((w) => ({
@@ -457,7 +459,7 @@ export class ClientAIContextService {
     if (ctx.next_session) {
       const ns = ctx.next_session;
       lines.push(
-        `- next_session: ${ns.date} "${sanitizePromptInput(ns.title)}"${ns.coach_note ? ` (note: ${sanitizePromptInput(ns.coach_note)})` : ''}`,
+        `- next_session: ${ns.date} "${sanitizePromptInput(ns.title)}"`,
       );
     }
 
