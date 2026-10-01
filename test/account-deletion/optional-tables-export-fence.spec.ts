@@ -5,8 +5,7 @@
  * B-608-3: a data export still running when the account is finalized can no
  * longer leave an archive behind.
  */
-import { mkdtempSync, existsSync, writeFileSync, utimesSync } from 'fs';
-import { tmpdir } from 'os';
+import { mkdirSync, mkdtempSync, existsSync, rmSync, writeFileSync, utimesSync } from 'fs';
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
@@ -86,12 +85,16 @@ describe('B-608-9 AI consent ledger erasure', () => {
 });
 
 describe('B-608-3 export archive cannot outlive the account', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'tgp-export-fence-'));
+  // A private directory under this test folder (not the shared OS temp dir).
+  const root = join(__dirname, '.tmp');
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const dir = mkdtempSync(join(root, 'export-fence-'));
   const prevDir = process.env.DATA_EXPORT_FS_DIR;
   beforeAll(() => {
     process.env.DATA_EXPORT_FS_DIR = dir;
   });
   afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
     if (prevDir === undefined) delete process.env.DATA_EXPORT_FS_DIR;
     else process.env.DATA_EXPORT_FS_DIR = prevDir;
   });
@@ -163,7 +166,7 @@ describe('B-608-3 export archive cannot outlive the account', () => {
   it('the nightly sweep removes old archives no row points to, and keeps known or fresh ones', async () => {
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
     for (const id of ['orphan-old', 'known-old', 'orphan-fresh']) {
-      writeFileSync(exportArchivePath(id), '{}');
+      writeFileSync(exportArchivePath(id), '{}', { mode: 0o600 });
     }
     utimesSync(exportArchivePath('orphan-old'), old, old);
     utimesSync(exportArchivePath('known-old'), old, old);

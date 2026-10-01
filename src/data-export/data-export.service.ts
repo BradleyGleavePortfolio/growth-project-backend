@@ -644,9 +644,10 @@ export class DataExportService {
    */
   private async _uploadFile(exportId: string, buffer: Buffer): Promise<string> {
     const { mkdir, writeFile } = await import('fs/promises');
-    await mkdir(exportArchiveDir(), { recursive: true });
+    // Owner-only permissions: the archive holds the person's full data.
+    await mkdir(exportArchiveDir(), { recursive: true, mode: 0o700 });
     const filePath = exportArchivePath(exportId);
-    await writeFile(filePath, buffer);
+    await writeFile(filePath, buffer, { mode: 0o600 });
     this.logger.log(
       `Export ${exportId} stored at ${filePath} (${buffer.length} bytes). ` +
         'Configure DATA_EXPORT_BUCKET for S3 storage in production — see src/data-export/README.md.',
