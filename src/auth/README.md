@@ -226,7 +226,8 @@ honoured **only** on the branch that inserts a brand-new `User` row
     `/auth/extension/login`) **as a client with no coach**, but only if it
     carries a **server-minted** register marker
     `user_metadata.tgp_signup_attempt = <nonce>.<HMAC-SHA256(service-role
-    key, nonce, canonical email)>`; `user_metadata` is writable through the
+    key, canonical email)>` (the nonce only makes each request's marker
+    unique); `user_metadata` is writable through the
     anon `signUp`, so an unauthenticated marker would not prove the identity
     came from `/auth/register`. Without the key nothing verifies and
     adoption is off. Google /

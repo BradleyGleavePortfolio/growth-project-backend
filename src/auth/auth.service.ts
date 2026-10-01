@@ -107,7 +107,7 @@ function isSignupIdentityUniqueViolation(err: unknown): boolean {
 // their claimed identity", auth signup.go), so the marker on the returned
 // user names the request that CREATED the identity.
 //
-// Fix round 4: the marker is `<nonce>.<HMAC-SHA256(server key, nonce, email)>`
+// Fix round 4: the marker is `<nonce>.<HMAC-SHA256(server key, canonical email)>`
 // so only THIS server can mint one. `user_metadata` is writable through the
 // public anon `signUp`, so an unauthenticated marker would let anyone label an
 // identity "created by /auth/register"; the MAC makes stranded-identity
@@ -121,23 +121,25 @@ function signupAttemptMarker(user: { user_metadata?: unknown } | null | undefine
   const v = (meta as Record<string, unknown>)[SIGNUP_ATTEMPT_METADATA_KEY];
   return typeof v === 'string' ? v : null;
 }
-function signupAttemptMac(nonce: string, canonicalEmail: string): string | null {
+function signupAttemptMac(canonicalEmail: string): string | null {
+  // MAC over the canonical address only (the caller-typed address, never any
+  // value read back from Supabase); the nonce travels in clear and only makes
+  // each request's marker unique for the creator check in `register`.
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
   if (key.length < 16) return null;
   return crypto
     .createHmac('sha256', key)
-    .update(`tgp-signup-attempt:v1:${nonce}:${canonicalEmail}`)
+    .update(`tgp-signup-attempt:v2:${canonicalEmail}`)
     .digest('base64url');
 }
 export function mintSignupAttemptMarker(canonicalEmail: string): string {
-  const nonce = crypto.randomUUID();
-  return `${nonce}.${signupAttemptMac(nonce, canonicalEmail) ?? 'unsigned'}`;
+  return `${crypto.randomUUID()}.${signupAttemptMac(canonicalEmail) ?? 'unsigned'}`;
 }
 export function isServerMintedSignupMarker(marker: string | null, canonicalEmail: string): boolean {
   if (!marker) return false;
   const dot = marker.indexOf('.');
   if (dot <= 0) return false;
-  const expected = signupAttemptMac(marker.slice(0, dot), canonicalEmail);
+  const expected = signupAttemptMac(canonicalEmail);
   if (!expected) return false;
   const got = Buffer.from(marker.slice(dot + 1));
   const want = Buffer.from(expected);

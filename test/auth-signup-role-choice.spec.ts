@@ -1849,6 +1849,10 @@ describe('A-597-1 — registration retains identities; no destructive compensati
     expect(isServerMintedSignupMarker(m, 'a@example.test')).toBe(true);
     expect(isServerMintedSignupMarker(m, 'b@example.test')).toBe(false);
     expect(isServerMintedSignupMarker(`${m}x`, 'a@example.test')).toBe(false);
+    // Each request's marker is unique (creator check), yet each verifies.
+    const m2 = mintSignupAttemptMarker('a@example.test');
+    expect(m2).not.toBe(m);
+    expect(isServerMintedSignupMarker(m2, 'a@example.test')).toBe(true);
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     try {
