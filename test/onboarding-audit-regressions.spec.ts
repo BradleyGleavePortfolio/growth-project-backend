@@ -56,7 +56,7 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
       cause: 'save',
       created_at: NOW,
       disclaimer_accepted_at: NOW,
-      disclaimer_version: 'consult-consent-v1',
+      disclaimer_version: 'consult-consent-v2',
       screening_any_yes: true,
       answers: { P1: 'yes', P1_note: 'synthetic sensitive note' },
     }));

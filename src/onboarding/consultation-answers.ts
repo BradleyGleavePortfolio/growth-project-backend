@@ -13,10 +13,20 @@ import type { SelectionAnswers } from './program-rules';
 export const CONSULTATION_VERSION = 'consult-v1';
 
 /**
- * P0 consent copy versions the server accepts as "current". The mobile app
- * sends `copy_version: 'consult-consent-v1'`. Override (comma-separated) with
- * CONSULT_CONSENT_COPY_VERSIONS when the approved copy changes.
+ * P0 consent copy versions the server accepts as "current". P0 is box 1 of
+ * the D2 consent screen (operator ruling 2026-10-01): the training waiver
+ * plus collection and use of the client's information by The Growth Project
+ * and their coach for coaching. The mobile app sends
+ * `copy_version: 'consult-consent-v2'` (the D2 two-box copy). Override
+ * (comma-separated) with CONSULT_CONSENT_COPY_VERSIONS when the approved
+ * copy changes.
+ *
+ * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
+ * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
+ * stored on the intake, and is never required by this module.
  */
+export const DEFAULT_CONSULT_CONSENT_COPY_VERSION = 'consult-consent-v2';
+
 export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = env.CONSULT_CONSENT_COPY_VERSIONS;
   const list = raw
@@ -25,7 +35,7 @@ export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): s
         .map((v) => v.trim())
         .filter((v) => v.length > 0)
     : [];
-  return list.length > 0 ? list : ['consult-consent-v1'];
+  return list.length > 0 ? list : [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
 }
 
 export type AnswerValue = string | number | boolean | string[] | Record<string, unknown>;

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
+import { writeProfileWithTargets } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
 import {
@@ -105,31 +106,52 @@ class FencedClaimError extends Error {
   }
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+/**
+ * Thrown inside the completion transaction when the client's attachment (or
+ * the coach) changed after the pre-checks. Rolled back; the completion is
+ * re-run against the current attachment (A607-3).
+ */
+class TenancyChangedError extends Error {
+  constructor() {
+    super('client attachment changed during completion');
+    this.name = 'TenancyChangedError';
+  }
+}
+
+/** Attempts of POST complete when the attachment changes underneath it. */
+export const COMPLETE_TENANCY_ATTEMPTS = 2;
+
+/**
+ * Interactive-transaction timeout for the fenced completion (clone, fan-out,
+ * effects). Well under COMPLETION_CLAIM_TTL_MS so a live claim always
+ * outlasts its own transaction.
+ */
+export const COMPLETION_TX_TIMEOUT_MS = 30_000;
+
+interface LockedUserRow {
+  id: string;
+  coach_id: string | null;
+  role: string;
+  deleted_at: Date | null;
 }
 
 /**
- * Stable fingerprint of everything that shapes the assigned prescription.
- * A different fingerprint means a previously materialised clone is stale and
- * must never be reused (A607-2).
+ * A607-3 tenancy fence: read a User row FOR SHARE inside the caller's
+ * transaction. Conflicts with every UPDATE/DELETE of that row (coach
+ * transfer, detach, deletion, role change) until the transaction ends.
  */
-export function selectionFingerprint(
-  sel: ProgramSelection,
-  masterProgramId: string,
-  startDate: string,
-): string {
-  const canonical = JSON.stringify([
-    sel.program_key,
-    sel.selected_days,
-    sel.equipment_variant,
-    sel.overlay,
-    sel.rule_priority,
-    sel.coach_review_required,
-    masterProgramId,
-    startDate,
-  ]);
-  return createHash('sha256').update(canonical).digest('hex').slice(0, 32);
+export async function lockUserRow(
+  tx: Prisma.TransactionClient,
+  userId: string,
+): Promise<LockedUserRow | null> {
+  const rows = await tx.$queryRaw<LockedUserRow[]>`
+    SELECT "id", "coach_id", "role"::text AS "role", "deleted_at"
+    FROM "User" WHERE "id" = ${userId} FOR SHARE`;
+  return rows[0] ?? null;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 const COACH_FLAG_BODY =
@@ -367,9 +389,10 @@ export class OnboardingService {
     // any answer is stored. Without a current-version consent on file, the
     // only accepted request is the P0 acknowledgement on its own. Checked
     // before any write, so rejected answers are never stored.
-    // Dependency: #601's combined consent table is unmerged; the consent
-    // record verified here is the server-stamped P0 acknowledgement on the
-    // intake (disclaimer_version + disclaimer_accepted_at).
+    // D2 (operator ruling 2026-10-01): P0 is box 1 only (waiver + collection
+    // and use for coaching); its record is the server-stamped
+    // disclaimer_version + disclaimer_accepted_at on the intake. Box 2 (AI
+    // processing) lives in the AI consent ledger and is never read here.
     const accepted = acceptedConsentVersions();
     const patchP0 = patch.P0;
     if (patchP0 === null) {
@@ -466,7 +489,13 @@ export class OnboardingService {
     return { saved_at: now.toISOString(), completed_chapters: chapters, revision };
   }
 
-  /** Map answers onto the profile (never screening) and refresh profile targets. */
+  /**
+   * Map answers onto the profile (never screening) and refresh the profile
+   * targets through the single profile write path (#606 B606-3): row lock,
+   * merge onto the COMMITTED profile, compute from the merged row. The stored
+   * targets therefore always equal the calculator applied to the stored row,
+   * even when a PUT /profile races this save.
+   */
   private async writeProfileFromAnswers(
     tx: Prisma.TransactionClient,
     clientId: string,
@@ -474,22 +503,8 @@ export class OnboardingService {
     now: Date,
   ) {
     const fields = profileFieldsFromAnswers(answers);
-    const resolved = resolveMacroInputs(macroRawFromAnswers(answers), now);
-    if (resolved.ok) {
-      const m = computeMacros(resolved.inputs);
-      Object.assign(fields, {
-        macro_target_calories: m.calories,
-        macro_target_protein_g: m.protein_g,
-        macro_target_carbs_g: m.carbs_g,
-        macro_target_fat_g: m.fat_g,
-      });
-    }
     if (Object.keys(fields).length === 0) return;
-    await tx.userProfile.upsert({
-      where: { user_id: clientId },
-      create: { user_id: clientId, ...fields },
-      update: fields,
-    });
+    await writeProfileWithTargets(tx, clientId, fields, now, 'allow_incomplete');
   }
 
   // ─── GET /me/onboarding ────────────────────────────────────────────────
@@ -515,6 +530,25 @@ export class OnboardingService {
 
   // ─── POST /me/onboarding/complete ──────────────────────────────────────
   async complete(clientId: string, now = new Date()): Promise<CompletionResult> {
+    // A607-3: if the client's coach changes between the pre-checks and the
+    // fenced final transaction, the attempt is rolled back (no write under
+    // the former coach) and re-run once against the CURRENT attachment.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.completeOnce(clientId, now);
+      } catch (err) {
+        if (!(err instanceof TenancyChangedError)) throw err;
+        if (attempt >= COMPLETE_TENANCY_ATTEMPTS) {
+          throw conflict(
+            'completion_in_progress',
+            'Your plan is being prepared. Try again in a moment',
+          );
+        }
+      }
+    }
+  }
+
+  private async completeOnce(clientId: string, now: Date): Promise<CompletionResult> {
     const intake = await this.prisma.clientOnboardingIntake.findUnique({
       where: { client_id: clientId },
     });
@@ -531,9 +565,9 @@ export class OnboardingService {
       throw conflict('not_attached', 'This account is not attached to a coach yet');
     const coach = await this.prisma.user.findUnique({
       where: { id: client.coach_id },
-      select: { id: true, name: true, role: true, coach_id: true },
+      select: { id: true, name: true, role: true, coach_id: true, deleted_at: true },
     });
-    if (!coach || (coach.role !== 'coach' && coach.role !== 'owner')) {
+    if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
       throw conflict('not_attached', 'This account is not attached to a coach yet');
     }
 
@@ -548,6 +582,9 @@ export class OnboardingService {
     const missing = missingRequired(answers);
     if (missing.length > 0)
       throw conflict('consultation_incomplete', 'Some required answers are missing', { missing });
+    // D2 box 1 only: the training waiver plus collection and use for
+    // coaching, recorded on the intake as the server-stamped P0. The
+    // optional AI box (box 2, #601 / R2a ledger) is never consulted here.
     if (
       !intake.disclaimer_accepted_at ||
       !isRecord(answers.P0) ||
@@ -573,22 +610,18 @@ export class OnboardingService {
     }
 
     // A607-2: the selection is ALWAYS recomputed from the answers being
-    // completed. Nothing from an earlier, failed attempt (program key, clone,
-    // days, overlay) is replayed; a stale clone is retired in the fenced
-    // final transaction below.
+    // completed. Nothing from an earlier attempt is replayed.
     const sel: ProgramSelection = selectProgram(selectionAnswersFrom(answers));
     const entry = readProgramEntry(set.programs, sel.program_key);
     if (!entry) throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
     const startDate = String(answers.C1);
-    const fingerprint = selectionFingerprint(sel, entry.program_id, startDate);
     const claimRevision = intake.current_revision;
     const masterIds = PROGRAM_KEYS.map((k) => readProgramEntry(set.programs, k)?.program_id).filter(
       (id): id is string => typeof id === 'string',
     );
 
-    // B607-2: concurrency claim with a fencing token. The claim is bound to
-    // the exact revision being completed; every later write of this attempt
-    // is conditional on still holding (token, revision).
+    // B607-2: concurrency claim with a fencing token, bound to the exact
+    // revision being completed.
     const token = randomUUID();
     const claim = await this.prisma.clientOnboardingIntake.updateMany({
       where: {
@@ -609,185 +642,206 @@ export class OnboardingService {
     });
     if (claim.count === 0) return this.replayOrInProgress(clientId, now);
 
-    let assigned: { program_id: string; name: string; assignment_ids: string[] } | null = null;
     try {
-      // Idempotency is scoped to (revision, selection): a plain retry of the
-      // same answers reuses the clone; any edit yields a fresh one.
-      assigned = await this.workoutBuilder.withIdempotency(
-        coach.id,
-        'onboarding:complete:program',
-        `client:${clientId}:rev:${claimRevision}:sel:${fingerprint}`,
-        () =>
-          this.materialiseAndAssign(
-            coach,
+      const flagCoach =
+        screeningAnyYes(answers) || injuryFlag(answers) || sel.coach_review_required;
+      const cohortIds = [set.all_members_cohort_id, entry.cohort_id];
+
+      // EVERY completion effect, including the program clone, its
+      // assignments and their snapshots, is written in this ONE transaction
+      // (A607-2-R1): a stale or fenced-off attempt rolls back and nothing it
+      // prepared ever becomes visible to the client or the coach. The
+      // assignment push is sent only after the commit.
+      const { out, push } = await this.prisma.$transaction(
+        async (tx) => {
+          // TENANCY FENCE (A607-3), first: lock the coach row, then the
+          // client row, FOR SHARE. Any concurrent change of the attachment
+          // (attach-code transfer, detach, deletion, role change) UPDATEs
+          // one of these rows, so it either committed before this read (and
+          // is seen here) or waits until this transaction ends. The coach
+          // every effect below is written for is the one verified here.
+          const liveCoach = await lockUserRow(tx, coach.id);
+          const liveClient = await lockUserRow(tx, clientId);
+          if (
+            !liveCoach ||
+            liveCoach.deleted_at ||
+            (liveCoach.role !== 'coach' && liveCoach.role !== 'owner') ||
+            !liveClient ||
+            liveClient.deleted_at ||
+            liveClient.role !== 'student' ||
+            liveClient.coach_id !== coach.id
+          ) {
+            throw new TenancyChangedError();
+          }
+
+          // CLAIM FENCE: complete the row only while this worker still holds
+          // (token, revision). Takes the intake row lock; a second worker
+          // (lease expired) or a newer save serialises here and fails.
+          const fenced = await tx.clientOnboardingIntake.updateMany({
+            where: {
+              client_id: clientId,
+              completed_at: null,
+              completion_claim_token: token,
+              current_revision: claimRevision,
+            },
+            data: {
+              completed_at: now,
+              screening_flagged_at: flagCoach ? now : null,
+              completion_claim_token: null,
+              current_revision: claimRevision + 1,
+            },
+          });
+          if (fenced.count !== 1) throw new FencedClaimError();
+
+          const program = await this.materialiseAndAssignInTx(
+            tx,
+            { id: coach.id, coach_id: liveCoach.coach_id },
             clientId,
             entry.program_id,
             sel,
             materialisation,
             startDate,
-          ),
-      );
-      const program = assigned;
+          );
 
-      const flagCoach =
-        screeningAnyYes(answers) || injuryFlag(answers) || sel.coach_review_required;
-      const cohortIds = [set.all_members_cohort_id, entry.cohort_id];
+          // Defence in depth: no other onboarding clone may stay assigned.
+          await this.retireOnboardingClones(
+            tx,
+            coach.id,
+            clientId,
+            masterIds,
+            program.program_id,
+            now,
+          );
 
-      const result = await this.prisma.$transaction(async (tx) => {
-        // FENCE FIRST: completing the row is the first statement and is
-        // conditional on this worker's token and the claimed revision. It
-        // takes the row lock, so a second worker (lease expired) serialises
-        // here and fails the same predicate; on failure the transaction rolls
-        // back and none of the effects below (macro target, spaces, coach
-        // alert, completion hooks) are written.
-        const fenced = await tx.clientOnboardingIntake.updateMany({
-          where: {
-            client_id: clientId,
-            completed_at: null,
-            completion_claim_token: token,
-            current_revision: claimRevision,
-          },
-          data: {
-            completed_at: now,
-            screening_flagged_at: flagCoach ? now : null,
-            completion_claim_token: null,
-            current_revision: claimRevision + 1,
-          },
-        });
-        if (fenced.count !== 1) throw new FencedClaimError();
-
-        // Retire any other onboarding clone assigned to this client (an older
-        // attempt with different answers, or a fenced-off worker's clone).
-        await this.retireOnboardingClones(
-          tx,
-          coach.id,
-          clientId,
-          masterIds,
-          program.program_id,
-          now,
-        );
-
-        await tx.macroTarget.create({
-          data: {
-            coach_id: coach.id,
-            client_id: clientId,
-            calories_kcal: macros.calories,
-            protein_g: macros.protein_g,
-            carbs_g: macros.carbs_g,
-            fats_g: macros.fat_g,
-            notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
-            effective_from: now,
-          },
-        });
-
-        const spaces: Array<{ id: string; name: string }> = [];
-        for (const cohortId of cohortIds) {
-          const cohort = await tx.communityCohort.findFirst({
-            where: {
-              id: cohortId,
-              workspace_id: set.workspace_id,
-              archived_at: null,
-              workspace: { coach_id: coach.id },
-            },
-            select: { id: true, name: true },
-          });
-          if (!cohort)
-            throw conflict(
-              'clinic_not_configured',
-              "Your coach's community spaces are not set up yet",
-            );
-          // joined_at is the member's join date so the coach can divide the
-          // space by signup date; a re-join keeps the original date.
-          await tx.communityMembership.upsert({
-            where: { cohort_id_user_id: { cohort_id: cohortId, user_id: clientId } },
-            create: {
-              workspace_id: set.workspace_id,
-              cohort_id: cohortId,
-              user_id: clientId,
-              role: 'student',
-              status: 'active',
-              joined_at: now,
-            },
-            update: { status: 'active', removed_at: null },
-          });
-          spaces.push(cohort);
-        }
-
-        const out: CompletionResult = {
-          macros: {
-            calories: macros.calories,
-            protein_g: macros.protein_g,
-            carbs_g: macros.carbs_g,
-            fat_g: macros.fat_g,
-            method: macros.method,
-            floor_applied: macros.floor_applied,
-          },
-          program: {
-            id: program.program_id,
-            key: sel.program_key,
-            name: program.name,
-            days_per_week: sel.selected_days,
-            weeks: 4,
-            start_date: startDate,
-            why: whyReasons(sel, materialisation.why_templates),
-          },
-          spaces,
-          coach: { id: coach.id, display_name: coach.name },
-          ...macroDisplayFor(answers, now, now),
-        };
-
-        if (flagCoach) {
-          // In-app coach item. The body carries no screening details; the coach
-          // opens the client's intake for the answers.
-          await tx.notification.create({
+          await tx.macroTarget.create({
             data: {
-              user_id: coach.id,
-              kind: 'coach_alert',
-              channel: 'inapp',
-              body: COACH_FLAG_BODY,
-              payload: { type: 'onboarding_screening_review', client_id: clientId },
+              coach_id: coach.id,
+              client_id: clientId,
+              calories_kcal: macros.calories,
+              protein_g: macros.protein_g,
+              carbs_g: macros.carbs_g,
+              fats_g: macros.fat_g,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
+              effective_from: now,
             },
           });
-        }
 
-        await tx.userProfile.upsert({
-          where: { user_id: clientId },
-          create: { user_id: clientId, onboardingCompleted: true },
-          update: { onboardingCompleted: true },
-        });
-        await tx.clientOnboardingIntake.update({
-          where: { client_id: clientId },
-          data: { completion_result: toJson(out) },
-        });
-        // The submitted form, frozen as its own immutable revision.
-        await tx.clientOnboardingIntakeRevision.create({
-          data: {
-            intake_id: intake.id,
-            client_id: clientId,
-            revision: claimRevision + 1,
-            cause: 'complete',
-            version: intake.version,
-            answers: toJson(answers),
-            completed_chapters: intake.completed_chapters,
-            disclaimer_version: intake.disclaimer_version,
-            disclaimer_accepted_at: intake.disclaimer_accepted_at,
-            screening_any_yes: intake.screening_any_yes,
-          },
-        });
-        // Engagement hooks (welcome message scheduling, reminders) run inside
-        // the same fenced transaction, so they happen exactly once.
-        for (const hook of this.completionHooks) {
-          await hook.onCompleted(tx, {
-            client_id: clientId,
-            coach_id: coach.id,
-            completed_at: now,
-            first_session_date: startDate,
-            preferred_training_time: typeof answers.S2 === 'string' ? answers.S2 : null,
+          const spaces: Array<{ id: string; name: string }> = [];
+          for (const cohortId of cohortIds) {
+            const cohort = await tx.communityCohort.findFirst({
+              where: {
+                id: cohortId,
+                workspace_id: set.workspace_id,
+                archived_at: null,
+                workspace: { coach_id: coach.id },
+              },
+              select: { id: true, name: true },
+            });
+            if (!cohort)
+              throw conflict(
+                'clinic_not_configured',
+                "Your coach's community spaces are not set up yet",
+              );
+            // joined_at is the member's join date so the coach can divide the
+            // space by signup date; a re-join keeps the original date.
+            await tx.communityMembership.upsert({
+              where: { cohort_id_user_id: { cohort_id: cohortId, user_id: clientId } },
+              create: {
+                workspace_id: set.workspace_id,
+                cohort_id: cohortId,
+                user_id: clientId,
+                role: 'student',
+                status: 'active',
+                joined_at: now,
+              },
+              update: { status: 'active', removed_at: null },
+            });
+            spaces.push(cohort);
+          }
+
+          const result: CompletionResult = {
+            macros: {
+              calories: macros.calories,
+              protein_g: macros.protein_g,
+              carbs_g: macros.carbs_g,
+              fat_g: macros.fat_g,
+              method: macros.method,
+              floor_applied: macros.floor_applied,
+            },
+            program: {
+              id: program.program_id,
+              key: sel.program_key,
+              name: program.name,
+              days_per_week: sel.selected_days,
+              weeks: 4,
+              start_date: startDate,
+              why: whyReasons(sel, materialisation.why_templates),
+            },
+            spaces,
+            coach: { id: coach.id, display_name: coach.name },
+            ...macroDisplayFor(answers, now, now),
+          };
+
+          if (flagCoach) {
+            // In-app coach item. The body carries no screening details; the
+            // coach opens the client's intake for the answers.
+            await tx.notification.create({
+              data: {
+                user_id: coach.id,
+                kind: 'coach_alert',
+                channel: 'inapp',
+                body: COACH_FLAG_BODY,
+                payload: { type: 'onboarding_screening_review', client_id: clientId },
+              },
+            });
+          }
+
+          await tx.userProfile.upsert({
+            where: { user_id: clientId },
+            create: { user_id: clientId, onboardingCompleted: true },
+            update: { onboardingCompleted: true },
           });
-        }
-        return out;
-      });
-      return result;
+          await tx.clientOnboardingIntake.update({
+            where: { client_id: clientId },
+            data: { completion_result: toJson(result) },
+          });
+          // The submitted form, frozen as its own immutable revision.
+          await tx.clientOnboardingIntakeRevision.create({
+            data: {
+              intake_id: intake.id,
+              client_id: clientId,
+              revision: claimRevision + 1,
+              cause: 'complete',
+              version: intake.version,
+              answers: toJson(answers),
+              completed_chapters: intake.completed_chapters,
+              disclaimer_version: intake.disclaimer_version,
+              disclaimer_accepted_at: intake.disclaimer_accepted_at,
+              screening_any_yes: intake.screening_any_yes,
+            },
+          });
+          // Engagement hooks (welcome message scheduling, reminders) run
+          // inside the same fenced transaction, under the verified coach, so
+          // they happen exactly once and never for a former coach.
+          for (const hook of this.completionHooks) {
+            await hook.onCompleted(tx, {
+              client_id: clientId,
+              coach_id: coach.id,
+              completed_at: now,
+              first_session_date: startDate,
+              preferred_training_time: typeof answers.S2 === 'string' ? answers.S2 : null,
+            });
+          }
+          return {
+            out: result,
+            push: { assignment_id: program.assignment_ids[0], plan_id: program.first_plan_id },
+          };
+        },
+        { maxWait: 10_000, timeout: COMPLETION_TX_TIMEOUT_MS },
+      );
+      // Only after the commit: one WORKOUT_ASSIGNED push for the program.
+      this.workoutBuilder.notifyProgramAssigned(clientId, push.assignment_id, push.plan_id);
+      return out;
     } catch (err) {
       // Release only OUR claim (never a newer worker's).
       await this.prisma.clientOnboardingIntake
@@ -800,27 +854,9 @@ export class OnboardingService {
             `onboarding claim release failed client=${clientId} (${releaseErr instanceof Error ? releaseErr.name : 'unknown'})`,
           );
         });
-      if (err instanceof FencedClaimError) {
-        // Another worker finalised (or the answers moved on). If someone
-        // completed with a different clone, retire ours so the client keeps
-        // exactly one onboarding program.
-        const done = await this.prisma.clientOnboardingIntake.findUnique({
-          where: { client_id: clientId },
-        });
-        const winner = done?.completed_at ? this.resultProgramId(done.completion_result) : null;
-        if (winner && assigned && winner !== assigned.program_id) {
-          await this.prisma
-            .$transaction((tx) =>
-              this.retireOnboardingClones(tx, coach.id, clientId, masterIds, winner, now),
-            )
-            .catch((retireErr: unknown) => {
-              this.logger.warn(
-                `onboarding stale clone retire failed client=${clientId} (${retireErr instanceof Error ? retireErr.name : 'unknown'})`,
-              );
-            });
-        }
-        return this.replayOrInProgress(clientId, now);
-      }
+      // Fenced off: another worker finalised or the answers moved on. This
+      // attempt wrote nothing; report the winner or "in progress".
+      if (err instanceof FencedClaimError) return this.replayOrInProgress(clientId, now);
       throw err;
     }
   }
@@ -833,11 +869,6 @@ export class OnboardingService {
       return this.replay(again.completion_result, now);
     }
     throw conflict('completion_in_progress', 'Your plan is being prepared. Try again in a moment');
-  }
-
-  private resultProgramId(stored: unknown): string | null {
-    if (!isRecord(stored) || !isRecord(stored.program)) return null;
-    return typeof stored.program.id === 'string' ? stored.program.id : null;
   }
 
   /**
@@ -932,32 +963,32 @@ export class OnboardingService {
 
   /**
    * Build the client clone (owned by the attached coach, under the coach's
-   * tenancy) with frequency/equipment/extra-care applied, then assign it via
-   * the existing assignProgramToClient path. Runs under withIdempotency so a
-   * replay returns the cached clone and never assigns twice.
+   * tenancy) with frequency/equipment/extra-care applied, then fan the
+   * program out to the client, all inside the caller's fenced completion
+   * transaction. Nothing here is visible unless that transaction commits.
    */
-  private async materialiseAndAssign(
+  private async materialiseAndAssignInTx(
+    tx: Prisma.TransactionClient,
     coach: { id: string; coach_id: string | null },
     clientId: string,
     masterId: string,
     sel: ProgramSelection,
     m: Materialisation,
     startDate: string,
-  ): Promise<{ program_id: string; name: string; assignment_ids: string[] }> {
+  ): Promise<{
+    program_id: string;
+    name: string;
+    assignment_ids: string[];
+    first_plan_id: string;
+  }> {
     const tenantId = coach.coach_id ?? coach.id;
-    const master = await this.prisma.workoutProgram.findUnique({ where: { id: masterId } });
-    // Tenancy: the master must be the attached coach's own template.
+    const master = await tx.workoutProgram.findUnique({ where: { id: masterId } });
+    // Tenancy: the master must be the attached coach's own live template.
     if (!master || master.owner_user_id !== coach.id || !master.is_template || master.archived_at) {
       throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
     }
-    const client = await this.prisma.user.findUnique({
-      where: { id: clientId },
-      select: { coach_id: true },
-    });
-    if (client?.coach_id !== coach.id)
-      throw conflict('not_attached', 'This account is not attached to a coach yet');
 
-    const masterPlans = await this.prisma.workoutPlan.findMany({
+    const masterPlans = await tx.workoutPlan.findMany({
       where: { program_id: master.id, archived_at: null },
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
@@ -984,53 +1015,41 @@ export class OnboardingService {
     }));
     const plans = materialiseClientPlans(content, sel.program_key, sel, m);
 
-    const clone = await this.prisma.$transaction((tx) =>
-      writeProgramTree(tx, {
-        tenantCoachId: tenantId,
-        ownerUserId: coach.id,
-        name: master.name,
-        description: master.description,
-        weeks: master.weeks,
-        daysPerWeek: sel.selected_days,
-        goalTag: master.goal_tag,
-        isTemplate: false,
-        clonedFromId: master.id,
-        plans,
-        revisionMeta: {
-          materialised: {
-            program_key: sel.program_key,
-            selected_days: sel.selected_days,
-            equipment_variant: sel.equipment_variant,
-            overlay: sel.overlay,
-            rule_priority: sel.rule_priority,
-            client_id: clientId,
-          },
+    const clone = await writeProgramTree(tx, {
+      tenantCoachId: tenantId,
+      ownerUserId: coach.id,
+      name: master.name,
+      description: master.description,
+      weeks: master.weeks,
+      daysPerWeek: sel.selected_days,
+      goalTag: master.goal_tag,
+      isTemplate: false,
+      clonedFromId: master.id,
+      plans,
+      revisionMeta: {
+        materialised: {
+          program_key: sel.program_key,
+          selected_days: sel.selected_days,
+          equipment_variant: sel.equipment_variant,
+          overlay: sel.overlay,
+          rule_priority: sel.rule_priority,
+          client_id: clientId,
         },
-      }),
-    );
+      },
+    });
 
-    try {
-      const assigned = await this.workoutBuilder.assignProgramToClient(
-        coach.id,
-        clone.id,
-        { client_id: clientId, start_date: startDate },
-        `onboarding:${clientId}`,
-      );
-      return {
-        program_id: clone.id,
-        name: clone.name,
-        assignment_ids: assigned.assignments.map((a) => a.id),
-      };
-    } catch (err) {
-      // Never leave an unassigned orphan clone behind.
-      await this.prisma.workoutProgram
-        .update({ where: { id: clone.id }, data: { archived_at: new Date() } })
-        .catch((archiveErr: unknown) => {
-          this.logger.warn(
-            `orphan clone archive failed program=${clone.id} (${archiveErr instanceof Error ? archiveErr.name : 'unknown'})`,
-          );
-        });
-      throw err;
-    }
+    const assigned = await this.workoutBuilder.writeProgramAssignmentsInTx(
+      tx,
+      coach.id,
+      clone.id,
+      clientId,
+      startDate,
+    );
+    return {
+      program_id: clone.id,
+      name: clone.name,
+      assignment_ids: assigned.assignments.map((a) => a.id),
+      first_plan_id: assigned.first_plan_id,
+    };
   }
 }

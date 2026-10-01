@@ -24,20 +24,31 @@ consent is on file for the user, the only accepted request is P0 on its own:
 ```json
 {
   "version": "consult-v1",
-  "answers": { "P0": { "agreed": true, "copy_version": "consult-consent-v1" } }
+  "answers": { "P0": { "agreed": true, "copy_version": "consult-consent-v2" } }
 }
 ```
 
 Any other request (answers without P0, or answers bundled with the first P0)
 is rejected with `409 { code: "consent_missing" }` before anything is
 written, so those answers are never stored. A P0 with a copy version that is
-not current (`CONSULT_CONSENT_COPY_VERSIONS`, default `consult-consent-v1`)
+not current (`CONSULT_CONSENT_COPY_VERSIONS`, default `consult-consent-v2`)
 is also `409 consent_missing`; `P0: null` (withdrawal) is `400
-invalid_answers`. Dependency: the combined consent record from backend #601
-is not merged yet, so the verified record is the server-stamped P0
-acknowledgement on the intake (`disclaimer_version`,
-`disclaimer_accepted_at`). When #601 lands, the gate should switch to that
-record.
+invalid_answers`.
+
+**D2 consent (operator ruling D2, 2026-10-01).** The
+P0 screen shows two boxes. P0 here is **box 1 only** (required): the training
+waiver plus collection and use of the client's information by The Growth
+Project and their coach for coaching. The server stamps `disclaimer_version`
+(the `copy_version` that was shown, default `consult-consent-v2`) and
+`disclaimer_accepted_at` on the intake; that stamp is the box-1 record and the
+only consent `POST /me/onboarding/complete` requires (`consent_missing` when it
+is absent or not current). **Box 2** (optional: Roman and the coach's AI
+drafts, processed by Anthropic) is recorded by the AI consent ledger
+(`POST /me/ai-consent/roman`, the R2a PR split from #601). It is never part of
+P0 (P0 accepts only `agreed`, `copy_version`/`version`, `agreed_at`,
+`text_sha256`; any other key is `400 invalid_answers`), never stored on the
+intake, and never required by any endpoint in this module. This module has no
+dependency on #601 or R2a.
 
 `answers` is a patch keyed by screen id. The mobile app sends the full answer
 set at every chapter end; `null` clears a key. Answers that no longer apply
@@ -133,11 +144,18 @@ No body. Idempotent: once completed, every call returns the same stored
 payload (with `macro_display_mode` re-evaluated against the current time) and
 assigns nothing new. Concurrent calls are serialised with a claim on the
 intake row that carries a fencing token and the exact revision being
-completed (fix round B607-2): the final transaction FIRST completes the row
-conditionally on (token, revision) and only then writes the effects, so a
-worker whose 120 s lease expired, or whose answers were edited meanwhile,
-rolls back without writing anything. Its clone, if it assigned one after the
-winner finished, is retired.
+completed (fix round B607-2). Every effect, including the program clone, its
+assignments and their snapshots, is written in ONE fenced transaction (fix
+round A607-2-R1) that first locks the coach and client `User` rows `FOR
+SHARE` and re-checks that the client is still attached to that live coach
+(fix round A607-3), then completes the intake row conditionally on (token,
+revision). A worker whose 120 s lease expired, whose answers were edited
+meanwhile, or whose client changed coach rolls back without writing anything
+(no clone, no assignment, no target, no space, no coach alert, no hook); the
+assignment push is sent only after the commit. When the attachment changed,
+the completion is re-run once against the current coach (and then answers
+`not_attached` or `clinic_not_configured` as usual if that coach is not set
+up).
 
 `200`:
 
@@ -186,16 +204,15 @@ Effects, in order:
 2. Program: pure rule table (`program-rules.ts`) picks one of the three
    masters; the master is materialised into a client clone owned by the
    coach (frequency variant plans, home-dumbbell overrides, extra-care
-   overlay) and assigned with the existing
-   `WorkoutBuilderService.assignProgramToClient` under the coach's id. The
-   selection is always recomputed from the answers being completed (fix
-   round A607-2: nothing from an earlier failed attempt is replayed). The
-   clone+assign runs under `withIdempotency` keyed by (revision, selection
-   fingerprint), so a plain retry reuses the clone and any edit produces a
-   fresh one; inside the fenced final transaction every other not-started
-   onboarding clone for the client is unassigned and archived, so a safety
-   answer added after a failed attempt can never complete against an older,
-   higher-intensity program. A failed assignment archives the orphan clone.
+   overlay) and fanned out to the client inside the fenced completion
+   transaction (`WorkoutBuilderService.writeProgramAssignmentsInTx`, the same
+   row and snapshot writer `assignProgramToClient` uses), under the verified
+   coach's id. The selection is always recomputed from the answers being
+   completed (fix round A607-2: nothing from an earlier attempt is replayed).
+   A failed or fenced-off attempt leaves no clone and no assignment, so a
+   safety answer added meanwhile can never complete against an older,
+   higher-intensity program; as defence in depth every other not-started
+   onboarding clone for the client is unassigned and archived.
 3. Spaces: memberships in the coach's clinic-wide cohort and the program's
    cohort, `joined_at` = completion time (kept on re-join) so the coach can
    split members by signup date.
@@ -259,7 +276,7 @@ used by the RLS policies.
     "any_yes": true,
     "items": [{ "key": "P2", "question": "...", "answer": "yes", "note": "..." }]
   },
-  "consent": { "version": "consult-consent-v1", "agreed_at": "ISO" }
+  "consent": { "version": "consult-consent-v2", "agreed_at": "ISO" }
 }
 ```
 

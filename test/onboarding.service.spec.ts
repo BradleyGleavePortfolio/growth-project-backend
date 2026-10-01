@@ -3,7 +3,7 @@
 // concurrency claim, MacroTarget under the coach, clone-before-assign with
 // tenancy checks, space joins with joined_at, coach flag on any screening yes.
 import { redactObject } from '../src/observability/log-redaction';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -149,7 +149,37 @@ function makeWorld() {
       return row[k] === v;
     });
 
+  // Test hook: runs at the start of the next $transaction call, before its
+  // rollback snapshot is taken (one-shot; clear it in the hook). For
+  // POST complete that is the fenced final transaction, i.e. after the
+  // pre-checks and the claim: the point at which another request (a coach
+  // transfer, a save, a second worker) can commit in between.
+  const hooks: { beforeTransaction?: () => Promise<void> | void } = {};
+  const sqlLog: string[] = [];
   const prisma = {
+    // Raw statements used by the services: the A607-3 tenancy fence (User
+    // FOR SHARE) and the B606-3 profile row lock (UserProfile FOR UPDATE).
+    // Locks are serialised for real only in the live Postgres suites; here
+    // the double returns the CURRENT committed row at the moment of the read.
+    $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?').replace(/\s+/g, ' ').trim();
+      sqlLog.push(sql);
+      if (/FROM "User" WHERE "id" = \? FOR SHARE$/.test(sql)) {
+        const u = users.find((x) => x.id === values[0]);
+        return u
+          ? [
+              {
+                id: u.id,
+                coach_id: u.coach_id ?? null,
+                role: u.role,
+                deleted_at: u.deleted_at ?? null,
+              },
+            ]
+          : [];
+      }
+      if (/FROM "UserProfile" WHERE "user_id" = \? FOR UPDATE$/.test(sql)) return [];
+      throw new Error(`unexpected raw SQL in double: ${sql}`);
+    }),
     user: {
       findUnique: jest.fn(
         async ({ where }: { where: Row }) => users.find((u) => u.id === where.id) ?? null,
@@ -249,6 +279,20 @@ function makeWorld() {
       ),
     },
     userProfile: {
+      findUnique: jest.fn(async ({ where }: { where: Row }) => {
+        const p = profiles.find((x) => x.user_id === where.user_id);
+        return p ? { ...p } : null;
+      }),
+      update: jest.fn(async ({ where, data }: { where: Row; data: Row }) =>
+        Object.assign(
+          profiles.find((x) => x.user_id === where.user_id)!,
+          data,
+        ),
+      ),
+      create: jest.fn(async ({ data }: { data: Row }) => {
+        profiles.push({ ...data });
+        return data;
+      }),
       upsert: jest.fn(
         async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
           const ex = profiles.find((p) => p.user_id === where.user_id);
@@ -347,9 +391,11 @@ function makeWorld() {
     workoutAssignments,
     programs,
     subAssignments,
+    createdClones,
   ];
   Object.assign(prisma, {
     $transaction: jest.fn(async (fn: (t: unknown) => Promise<unknown>) => {
+      if (hooks.beforeTransaction) await hooks.beforeTransaction();
       const snap = tables.map((t) => t.map((r) => ({ ...r })));
       try {
         return await fn(prisma);
@@ -363,31 +409,35 @@ function makeWorld() {
     }),
   });
 
-  const cache = new Map<string, unknown>();
   const builder = {
-    withIdempotency: jest.fn(
-      async (u: string, r: string, k: string, op: () => Promise<unknown>) => {
-        const key = `${u}|${r}|${k}`;
-        if (cache.has(key)) return cache.get(key);
-        const v = await op();
-        cache.set(key, v);
-        return v;
-      },
-    ),
-    assignProgramToClient: jest.fn(
-      async (coachId: string, programId: string, dto: { client_id: string }) => {
+    // In-transaction fan-out (A607-2-R1): rows are written through the
+    // caller's transaction, so they roll back with a fenced-off attempt.
+    writeProgramAssignmentsInTx: jest.fn(
+      async (_tx: unknown, coachId: string, programId: string, clientId: string) => {
         const created = [1, 2].map(() => ({
           id: id('asg'),
-          client_id: dto.client_id,
+          client_id: clientId,
           assigned_by_coach_id: coachId,
           program_id: programId,
           started_at: null,
           completed_at: null,
         }));
         workoutAssignments.push(...created);
-        return { assignments: created.map((a) => ({ id: a.id })) };
+        return {
+          assignments: created.map((a) => ({ id: a.id })),
+          first_plan_id: `first-plan-of-${programId}`,
+        };
       },
     ),
+    // Post-commit push.
+    notifyProgramAssigned: jest.fn(),
+    // The legacy out-of-transaction path must never be used by onboarding.
+    assignProgramToClient: jest.fn(async () => {
+      throw new Error('onboarding must not call assignProgramToClient');
+    }),
+    withIdempotency: jest.fn(async () => {
+      throw new Error('onboarding must not call withIdempotency');
+    }),
   };
   // Sub-coach overlay: sub-1 (under coach-1) is assigned client-1;
   // sub-x belongs to another head and has no assignment here. The service no
@@ -437,12 +487,15 @@ function makeWorld() {
     workoutAssignments,
     programs,
     masterIds,
+    hooks,
+    sqlLog,
+    cohorts,
   };
 }
 
 const CONSENT = {
   agreed: true,
-  copy_version: 'consult-consent-v1',
+  copy_version: 'consult-consent-v2',
   agreed_at: '2026-10-01T11:59:00.000Z',
 };
 
@@ -459,7 +512,7 @@ const COMPLETE = {
   S3: 'gym',
   N1: 'none',
   N2: ['nothing'],
-  P0: { agreed: true, copy_version: 'consult-consent-v1', agreed_at: '2026-10-01T11:59:00.000Z' },
+  P0: { agreed: true, copy_version: 'consult-consent-v2', agreed_at: '2026-10-01T11:59:00.000Z' },
   P1: 'no',
   P2: 'no',
   P3: 'no',
@@ -510,7 +563,7 @@ describe('PUT /me/onboarding/consultation', () => {
     );
     expect(out.completed_chapters).toContain('safety');
     const intake = w.intakes[0];
-    expect(intake.disclaimer_version).toBe('consult-consent-v1');
+    expect(intake.disclaimer_version).toBe('consult-consent-v2');
     expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
     expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
@@ -520,7 +573,7 @@ describe('PUT /me/onboarding/consultation', () => {
       'client-1',
       {
         version: 'consult-v1',
-        answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
+        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
       },
       new Date(later.getTime() + 1),
     );
@@ -564,7 +617,7 @@ describe('consent before answers (privacy ruling 2026-09-30 18:24)', () => {
     );
     expect(first.revision).toBe(1);
     expect(w.intakes[0]).toMatchObject({
-      disclaimer_version: 'consult-consent-v1',
+      disclaimer_version: 'consult-consent-v2',
       disclaimer_accepted_at: NOW,
     });
     const { P0: _p0, ...rest } = COMPLETE;
@@ -631,7 +684,7 @@ describe('POST /me/onboarding/complete', () => {
 
   it('consent_missing at complete when the accepted copy version is no longer current', async () => {
     const w = await ready();
-    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v2';
+    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v3';
     try {
       expect(await code(w.svc.complete('client-1', NOW))).toBe('consent_missing');
     } finally {
@@ -674,11 +727,19 @@ describe('POST /me/onboarding/complete', () => {
       owner_user_id: 'coach-1',
       days_per_week: 3,
     });
-    expect(w.builder.assignProgramToClient).toHaveBeenCalledWith(
+    expect(w.builder.writeProgramAssignmentsInTx).toHaveBeenCalledWith(
+      expect.anything(),
       'coach-1',
       w.createdClones[0].id,
-      { client_id: 'client-1', start_date: '2026-10-05' },
-      'onboarding:client-1',
+      'client-1',
+      '2026-10-05',
+    );
+    // One push, after the commit, for the committed assignment.
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledWith(
+      'client-1',
+      w.workoutAssignments[0].id,
+      `first-plan-of-${w.createdClones[0].id}`,
     );
     expect(w.macroTargets).toEqual([
       expect.objectContaining({
@@ -706,7 +767,8 @@ describe('POST /me/onboarding/complete', () => {
     const first = await w.svc.complete('client-1', NOW);
     const second = await w.svc.complete('client-1', new Date(NOW.getTime() + 5000));
     expect(second).toEqual(first);
-    expect(w.builder.assignProgramToClient).toHaveBeenCalledTimes(1);
+    expect(w.builder.writeProgramAssignmentsInTx).toHaveBeenCalledTimes(1);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
     expect(w.createdClones).toHaveLength(1);
     expect(w.macroTargets).toHaveLength(1);
   });
@@ -737,18 +799,24 @@ describe('POST /me/onboarding/complete', () => {
     const set = w.sets[0] as { programs: Record<string, { program_id: string }> };
     set.programs['considered-strength'].program_id = 'not-a-program';
     expect(await code(w.svc.complete('client-1', NOW))).toBe('clinic_not_configured');
-    expect(w.builder.assignProgramToClient).not.toHaveBeenCalled();
+    expect(w.builder.writeProgramAssignmentsInTx).not.toHaveBeenCalled();
+    expect(w.createdClones).toHaveLength(0);
     // The claim is released so a later retry can succeed.
     expect(w.intakes[0].completion_claimed_at).toBeNull();
   });
 
-  it('archives the clone if assignment fails, then a retry succeeds', async () => {
+  it('a failed assignment rolls back the clone with everything else, then a retry succeeds', async () => {
     const w = await ready();
-    w.builder.assignProgramToClient.mockRejectedValueOnce(new Error('boom'));
+    w.builder.writeProgramAssignmentsInTx.mockRejectedValueOnce(new Error('boom'));
     await expect(w.svc.complete('client-1', NOW)).rejects.toThrow('boom');
-    expect(w.createdClones[0].archived_at).toBeInstanceOf(Date);
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.workoutAssignments).toHaveLength(0);
+    expect(w.builder.notifyProgramAssigned).not.toHaveBeenCalled();
+    expect(w.intakes[0].completed_at).toBeNull();
+    expect(w.intakes[0].completion_claim_token).toBeNull();
     const res = await w.svc.complete('client-1', NOW);
-    expect(res.program.id).toBe(w.createdClones[1].id);
+    expect(w.createdClones).toHaveLength(1);
+    expect(res.program.id).toBe(w.createdClones[0].id);
     expect(w.macroTargets).toHaveLength(1);
   });
 });
@@ -855,7 +923,7 @@ describe('GET /coach/clients/:clientId/consultation', () => {
       note: 'On stairs',
     });
     expect(v.screening.items[0].question.length).toBeGreaterThan(20);
-    expect(v.consent).toEqual({ version: 'consult-consent-v1', agreed_at: NOW.toISOString() });
+    expect(v.consent).toEqual({ version: 'consult-consent-v2', agreed_at: NOW.toISOString() });
   });
 
   it('an assigned sub-coach can read; earlier revisions stay readable after edits', async () => {
@@ -987,16 +1055,18 @@ describe('A607-1: consultation read uses CURRENT tenancy only', () => {
 });
 
 describe('A607-2: a safety-screen change after a failed completion re-runs assignment', () => {
-  it('audit reproduction: advanced 4-day clone assigned, finalisation fails, P1=yes, retry -> Foundations 2 days with extra care; old clone retired', async () => {
+  it('audit reproduction: finalisation of the advanced 4-day attempt fails, P1=yes, retry -> Foundations 2 days with extra care; the failed attempt left no clone and no assignment', async () => {
     const w = makeWorld();
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
-    // Finalisation fails after the assignment (community space missing once).
+    // Finalisation fails after the clone and fan-out were written in the
+    // fenced transaction (community space missing once): everything rolls back.
     w.prisma.communityCohort.findFirst.mockResolvedValueOnce(null);
     expect(await code(w.svc.complete('client-1', NOW))).toBe('clinic_not_configured');
-    expect(w.createdClones).toHaveLength(1);
-    const oldClone = w.createdClones[0];
-    expect(w.workoutAssignments.filter((a) => a.program_id === oldClone.id)).toHaveLength(2);
-    expect(w.macroTargets).toHaveLength(0); // rolled back with the fenced transaction
+    expect(w.builder.writeProgramAssignmentsInTx).toHaveBeenCalledTimes(1);
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.workoutAssignments).toHaveLength(0);
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.builder.notifyProgramAssigned).not.toHaveBeenCalled();
 
     const later = new Date(NOW.getTime() + 60_000);
     await w.svc.saveConsultation(
@@ -1007,28 +1077,28 @@ describe('A607-2: a safety-screen change after a failed completion re-runs assig
     const res = await w.svc.complete('client-1', later);
 
     expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
-    expect(res.program.id).not.toBe(oldClone.id);
-    expect(w.createdClones).toHaveLength(2);
-    // The older, higher-intensity prescription is gone: no assignments left,
-    // clone archived. Exactly one onboarding program remains assigned.
-    expect(w.workoutAssignments.filter((a) => a.program_id === oldClone.id)).toHaveLength(0);
-    // (rows are re-read: the fake's rollback restores copies)
-    expect(w.programs.find((p) => p.id === oldClone.id)!.archived_at).toBeInstanceOf(Date);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.createdClones[0]).toMatchObject({
+      cloned_from_id: 'master-steady-foundations',
+      days_per_week: 2,
+    });
     expect(new Set(w.workoutAssignments.map((a) => a.program_id))).toEqual(
       new Set([res.program.id]),
     );
     expect(w.notifications).toHaveLength(1);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
   });
 
-  it('a plain retry with unchanged answers reuses the same clone (no second assignment)', async () => {
+  it('a plain retry after a failed attempt assigns exactly once', async () => {
     const w = makeWorld();
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
     w.prisma.communityCohort.findFirst.mockResolvedValueOnce(null);
     await code(w.svc.complete('client-1', NOW));
     const res = await w.svc.complete('client-1', NOW);
     expect(w.createdClones).toHaveLength(1);
-    expect(w.builder.assignProgramToClient).toHaveBeenCalledTimes(1);
     expect(res.program.id).toBe(w.createdClones[0].id);
+    expect(w.workoutAssignments).toHaveLength(2);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
   });
 
   it('edits are refused with 409 completion_in_progress while a live completion claim is held', async () => {
@@ -1103,23 +1173,18 @@ describe('B607-1: concurrent partial saves never lose answers', () => {
 });
 
 describe('B607-2: completion effects are fenced; lease expiry cannot duplicate them', () => {
-  it('audit reproduction: worker 1 paused after assignment, worker 2 completes at +120001ms, worker 1 resumes -> one MacroTarget, one coach alert', async () => {
+  it('audit reproduction: worker 1 paused before its fenced transaction, worker 2 completes at +120001ms, worker 1 resumes -> one program, one MacroTarget, one coach alert, one push', async () => {
     const w = makeWorld();
     await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, P2: 'yes' } },
       NOW,
     );
-    const real = w.builder.withIdempotency.getMockImplementation()!;
     const pause = deferred();
-    let calls = 0;
-    w.builder.withIdempotency.mockImplementation(
-      async (u: string, r: string, k: string, op: () => Promise<unknown>) => {
-        const v = await real(u, r, k, op);
-        if (++calls === 1) await pause.gate;
-        return v;
-      },
-    );
+    w.hooks.beforeTransaction = async () => {
+      w.hooks.beforeTransaction = undefined;
+      await pause.gate;
+    };
     const worker1 = w.svc.complete('client-1', NOW);
     await new Promise((r) => setImmediate(r));
     const worker2 = await w.svc.complete('client-1', new Date(NOW.getTime() + 120_001));
@@ -1130,21 +1195,51 @@ describe('B607-2: completion effects are fenced; lease expiry cannot duplicate t
     expect(w.macroTargets).toHaveLength(1);
     expect(w.notifications).toHaveLength(1);
     expect(w.revisions.filter((r) => r.cause === 'complete')).toHaveLength(1);
-    expect(w.builder.assignProgramToClient).toHaveBeenCalledTimes(1);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.workoutAssignments).toHaveLength(2);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
   });
 
-  it('a stale worker that assigns AFTER the winner finalised retires its own clone', async () => {
+  it('A607-2-R1 audit reproduction (no winning worker): worker 1 paused, lease expires, client saves P1=yes, worker 1 resumes -> it assigns NOTHING (no clone, no assignment, no push) and answers completion_in_progress', async () => {
     const w = makeWorld();
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
-    const real = w.builder.withIdempotency.getMockImplementation()!;
     const pause = deferred();
-    let calls = 0;
-    w.builder.withIdempotency.mockImplementation(
-      async (u: string, r: string, k: string, op: () => Promise<unknown>) => {
-        if (++calls === 1) await pause.gate; // worker 1 paused BEFORE assigning
-        return real(u, r, k, op);
-      },
+    w.hooks.beforeTransaction = async () => {
+      w.hooks.beforeTransaction = undefined;
+      await pause.gate;
+    };
+    const worker1 = w.svc.complete('client-1', NOW);
+    await new Promise((r) => setImmediate(r));
+    // Lease expires; the client adds a safety answer. Nobody else completes.
+    const t2 = new Date(NOW.getTime() + 120_001);
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P1: 'yes' } }, t2);
+    pause.release();
+    expect(await code(worker1)).toBe('completion_in_progress');
+
+    // The stale four-day Strength & Balance selection never became visible.
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.workoutAssignments).toHaveLength(0);
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.notifications).toHaveLength(0);
+    expect(w.builder.notifyProgramAssigned).not.toHaveBeenCalled();
+    expect(w.intakes[0].completed_at).toBeNull();
+
+    // The next completion uses the new answers.
+    const res = await w.svc.complete('client-1', new Date(t2.getTime() + 1000));
+    expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    expect(new Set(w.workoutAssignments.map((a) => a.program_id))).toEqual(
+      new Set([res.program.id]),
     );
+  });
+
+  it('a stale worker that resumes AFTER the winner finalised writes nothing and replays the winner', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: ADVANCED_GYM_4 }, NOW);
+    const pause = deferred();
+    w.hooks.beforeTransaction = async () => {
+      w.hooks.beforeTransaction = undefined;
+      await pause.gate;
+    };
     const worker1 = w.svc.complete('client-1', NOW);
     await new Promise((r) => setImmediate(r));
     // Lease expires; the client changes a safety answer; worker 2 completes.
@@ -1156,11 +1251,12 @@ describe('B607-2: completion effects are fenced; lease expiry cannot duplicate t
     const r1 = await worker1;
 
     expect(r1.program.id).toBe(won.program.id);
-    expect(w.createdClones).toHaveLength(2);
+    expect(w.createdClones).toHaveLength(1);
     expect(new Set(w.workoutAssignments.map((a) => a.program_id))).toEqual(
       new Set([won.program.id]),
     );
     expect(w.macroTargets).toHaveLength(1);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
   });
 
   it('completion hooks (welcome-message scheduling) run once, inside the fenced transaction', async () => {
@@ -1190,5 +1286,260 @@ describe('B607-2: completion effects are fenced; lease expiry cannot duplicate t
     expect(w.macroTargets).toHaveLength(0);
     expect(w.intakes[0].completed_at).toBeNull();
     expect(w.intakes[0].completion_claim_token).toBeNull();
+  });
+});
+
+/** Give `coachId` its own clinic program set (masters, plans, cohorts). */
+function addClinicFor(w: ReturnType<typeof makeWorld>, coachId: string) {
+  const entries: Record<string, { program_id: string; cohort_id: string; name: string }> = {};
+  for (const [key, masterId] of Object.entries(w.masterIds)) {
+    const master = w.programs.find((p) => p.id === masterId)!;
+    const id = `${coachId}-${masterId}`;
+    w.programs.push({ ...master, id, owner_user_id: coachId });
+    w.plans
+      .filter((p) => p.program_id === masterId)
+      .forEach((p, i) => w.plans.push({ ...p, id: `${id}-plan-${i}`, program_id: id }));
+    entries[key] = {
+      program_id: id,
+      cohort_id: `${coachId}-cohort-${key}`,
+      name: String(master.name),
+    };
+  }
+  const cohorts = w.cohorts;
+  cohorts.push({
+    id: `${coachId}-cohort-all`,
+    name: 'All members',
+    workspace_id: `${coachId}-ws`,
+    archived_at: null,
+    coach: coachId,
+  });
+  for (const [key, e] of Object.entries(entries))
+    cohorts.push({
+      id: e.cohort_id,
+      name: key,
+      workspace_id: `${coachId}-ws`,
+      archived_at: null,
+      coach: coachId,
+    });
+  w.sets.push({
+    ...(w.sets[0] as Row),
+    id: `${coachId}-set`,
+    coach_id: coachId,
+    workspace_id: `${coachId}-ws`,
+    all_members_cohort_id: `${coachId}-cohort-all`,
+    programs: entries,
+  });
+}
+
+describe('A607-3: finalisation never writes for a former coach', () => {
+  const user = (w: ReturnType<typeof makeWorld>, id: string) => w.users.find((u) => u.id === id)!;
+
+  function transferBeforeFence(w: ReturnType<typeof makeWorld>, change: () => void) {
+    // The attach-code transfer (or detach / deletion) commits after the
+    // pre-checks and the claim, before the fenced final transaction.
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      change();
+    };
+  }
+
+  function expectNothingWritten(w: ReturnType<typeof makeWorld>, hook: jest.Mock) {
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.memberships).toHaveLength(0);
+    expect(w.notifications).toHaveLength(0);
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.workoutAssignments).toHaveLength(0);
+    expect(w.builder.notifyProgramAssigned).not.toHaveBeenCalled();
+    expect(hook).not.toHaveBeenCalled();
+    expect(w.intakes[0].completed_at).toBeNull();
+    expect(w.intakes[0].completion_claim_token).toBeNull();
+    expect(w.revisions.filter((r) => r.cause === 'complete')).toHaveLength(0);
+  }
+
+  it('audit reproduction: client moved from head A to head B mid-completion (P1=yes) -> no MacroTarget, space, screening alert, clone, assignment, push or welcome hook for A; re-run against B (not set up -> clinic_not_configured)', async () => {
+    const w = makeWorld();
+    await w.consentThenSave(
+      'client-1',
+      { version: 'consult-v1', answers: { ...COMPLETE, P1: 'yes' } },
+      NOW,
+    );
+    const hook = { onCompleted: jest.fn(async () => undefined) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    transferBeforeFence(w, () => {
+      user(w, 'client-1').coach_id = 'other-coach';
+    });
+    expect(await code(svc.complete('client-1', NOW))).toBe('clinic_not_configured');
+    expectNothingWritten(w, hook.onCompleted);
+  });
+
+  it('client moved to a head B that has a clinic set -> completion runs entirely under B', async () => {
+    const w = makeWorld();
+    addClinicFor(w, 'other-coach');
+    await w.consentThenSave(
+      'client-1',
+      { version: 'consult-v1', answers: { ...COMPLETE, P1: 'yes' } },
+      NOW,
+    );
+    const hook = { onCompleted: jest.fn(async () => undefined) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    transferBeforeFence(w, () => {
+      user(w, 'client-1').coach_id = 'other-coach';
+    });
+    const res = await svc.complete('client-1', NOW);
+    expect(res.coach.id).toBe('other-coach');
+    expect(w.macroTargets.map((m) => m.coach_id)).toEqual(['other-coach']);
+    expect(w.notifications.map((n) => n.user_id)).toEqual(['other-coach']);
+    expect(w.memberships.every((m) => String(m.cohort_id).startsWith('other-coach-'))).toBe(true);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.createdClones[0].owner_user_id).toBe('other-coach');
+    expect(w.workoutAssignments.every((a) => a.assigned_by_coach_id === 'other-coach')).toBe(true);
+    expect(hook.onCompleted).toHaveBeenCalledTimes(1);
+    expect(hook.onCompleted).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ coach_id: 'other-coach' }),
+    );
+    expect(JSON.stringify([w.macroTargets, w.notifications, w.memberships])).not.toContain(
+      'coach-1',
+    );
+  });
+
+  it('client detached mid-completion -> not_attached, nothing written', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const hook = { onCompleted: jest.fn(async () => undefined) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    transferBeforeFence(w, () => {
+      user(w, 'client-1').coach_id = null;
+    });
+    expect(await code(svc.complete('client-1', NOW))).toBe('not_attached');
+    expectNothingWritten(w, hook.onCompleted);
+  });
+
+  it('coach deleted mid-completion -> not_attached, nothing written', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const hook = { onCompleted: jest.fn(async () => undefined) };
+    const svc = new OnboardingService(asPrisma(w.prisma), asBuilder(w.builder), undefined, [hook]);
+    transferBeforeFence(w, () => {
+      user(w, 'coach-1').deleted_at = NOW;
+    });
+    expect(await code(svc.complete('client-1', NOW))).toBe('not_attached');
+    expectNothingWritten(w, hook.onCompleted);
+  });
+
+  it('an attachment that keeps changing gives up with completion_in_progress after bounded attempts', async () => {
+    const w = makeWorld();
+    addClinicFor(w, 'other-coach');
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    let flips = 0;
+    const flip = () => {
+      flips += 1;
+      const c = user(w, 'client-1');
+      c.coach_id = c.coach_id === 'coach-1' ? 'other-coach' : 'coach-1';
+    };
+    w.hooks.beforeTransaction = flip; // never cleared: every attempt sees a change
+    expect(await code(w.svc.complete('client-1', NOW))).toBe('completion_in_progress');
+    expect(flips).toBe(2);
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.workoutAssignments).toHaveLength(0);
+    expect(w.intakes[0].completion_claim_token).toBeNull();
+  });
+
+  it('the fenced transaction locks the coach row, then the client row, FOR SHARE (parameterised)', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    w.sqlLog.length = 0;
+    w.prisma.$queryRaw.mockClear();
+    await w.svc.complete('client-1', NOW);
+    const userLocks = w.prisma.$queryRaw.mock.calls
+      .map((c) => ({ sql: (c[0] as TemplateStringsArray).join('?'), id: c[1] }))
+      .filter((c) => c.sql.includes('FROM "User"'));
+    expect(userLocks.map((c) => c.id)).toEqual(['coach-1', 'client-1']);
+    userLocks.forEach((c) => expect(c.sql.replace(/\s+/g, ' ').trim()).toMatch(/FOR SHARE$/));
+  });
+});
+
+describe('D2 consent: box 1 only gates completion; box 2 is never required (#607 does not depend on #601)', () => {
+  it('the accepted P0 copy version defaults to consult-consent-v2; v1 is no longer current', async () => {
+    const w = makeWorld();
+    expect(
+      await code(
+        w.svc.saveConsultation(
+          'client-1',
+          {
+            version: 'consult-v1',
+            answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
+          },
+          NOW,
+        ),
+      ),
+    ).toBe('consent_missing');
+    await w.svc.saveConsultation(
+      'client-1',
+      {
+        version: 'consult-v1',
+        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
+      },
+      NOW,
+    );
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v2');
+  });
+
+  it('CONSULT_CONSENT_COPY_VERSIONS still overrides the default', async () => {
+    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v1, consult-consent-v2';
+    try {
+      const w = makeWorld();
+      await w.svc.saveConsultation(
+        'client-1',
+        {
+          version: 'consult-v1',
+          answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
+        },
+        NOW,
+      );
+      expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v1');
+    } finally {
+      delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
+    }
+  });
+
+  it('completion with box 1 only (no AI consent anywhere) succeeds', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const res = await w.svc.complete('client-1', NOW);
+    expect(res.program.key).toBe('considered-strength');
+    // The double has no AI-consent model at all: nothing was read from one.
+    expect(Object.keys(w.prisma).some((k) => /ai.?consent|consent.?grant/i.test(k))).toBe(false);
+  });
+
+  it('box 2 (AI) data can never ride inside P0: unknown P0 keys are rejected and nothing is stored', async () => {
+    const w = makeWorld();
+    for (const extra of [
+      { ai_consent: true },
+      { ai_consent_version: 'client-ai-v3' },
+      { box2: true },
+    ]) {
+      await expect(
+        w.svc.saveConsultation(
+          'client-1',
+          {
+            version: 'consult-v1',
+            answers: { P0: { agreed: true, copy_version: 'consult-consent-v2', ...extra } },
+          },
+          NOW,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'invalid_answers' } });
+    }
+    expect(w.intakes).toHaveLength(0);
+  });
+
+  it('the onboarding module never imports the AI consent ledger (#601 / R2a)', () => {
+    const dir = join(__dirname, '..', 'src', 'onboarding');
+    const sources = readdirSync(dir)
+      .filter((f: string) => f.endsWith('.ts'))
+      .map((f: string) => readFileSync(join(dir, f), 'utf8'))
+      .join('\n');
+    expect(sources).not.toMatch(/from '[^']*(ai-consent|consent-ledger|ai\/consent)[^']*'/);
+    expect(sources).not.toMatch(/hasClientAiConsent|client_ai_processing/);
   });
 });

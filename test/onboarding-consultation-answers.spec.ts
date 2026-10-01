@@ -29,7 +29,7 @@ const COMPLETE: Answers = {
   N1: 'none',
   N2: ['nothing'],
   N3: '3',
-  P0: { agreed: true, copy_version: 'consult-consent-v1', agreed_at: '2026-10-01T11:59:00.000Z' },
+  P0: { agreed: true, copy_version: 'consult-consent-v2', agreed_at: '2026-10-01T11:59:00.000Z' },
   P1: 'no',
   P2: 'no',
   P3: 'no',
