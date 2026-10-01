@@ -35,6 +35,28 @@ export const COMMUNITY_REPORT_REASONS = [
 export const DEFAULT_COMMUNITY_SAFETY_EMAIL = 'Bradley@Bradleytgpcoaching.com';
 
 /**
+ * Community guidelines shown in Community > Community safety. Owner-approved
+ * copy (2026-10-01 09:07 PDT, launch copy section 2); change only with a new
+ * owner approval. Pinned by test/community/safety/community-safety-copy.spec.ts.
+ */
+export const COMMUNITY_GUIDELINES: readonly string[] = [
+  'Be respectful. No harassment, bullying, hate speech or threats.',
+  'No sexual or explicit content.',
+  'No spam, advertising or scams.',
+  'Share training experience, not medical advice. This is a personal-training community.',
+  "Keep private things private. Do not share anyone else's personal or health information.",
+  'Report anything that breaks these rules. Reports go to your coach and to the team.',
+  'This space is not for emergencies. If you are in danger, call 911. If you are struggling emotionally, call or text 988.',
+];
+
+/**
+ * Public 24-hour moderation commitment (owner-approved 2026-10-01 09:07 PDT,
+ * launch copy section 4). Pinned by community-safety-copy.spec.ts.
+ */
+export const COMMUNITY_RESPONSE_COMMITMENT =
+  'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you, and they are not told.';
+
+/**
  * Community safety primitives (Apple 1.2): user blocking across every
  * community surface, the pre-publication content filter, and the published
  * contact path.
@@ -214,15 +236,8 @@ export class CommunitySafetyService {
     return {
       contact_email: email,
       report_reasons: COMMUNITY_REPORT_REASONS,
-      guidelines: [
-        'Be respectful. No harassment, bullying, hate speech or threats.',
-        'No sexual or explicit content.',
-        'No spam, advertising or scams.',
-        'Share training experience, not medical advice. This is a personal-training community.',
-        'Report anything that breaks these rules. Reports go to your coach and to the team.',
-      ],
-      response_commitment:
-        'Reports are reviewed by your coach and the team. Content that breaks the rules is removed and repeat offenders lose access.',
+      guidelines: [...COMMUNITY_GUIDELINES],
+      response_commitment: COMMUNITY_RESPONSE_COMMITMENT,
     };
   }
 }

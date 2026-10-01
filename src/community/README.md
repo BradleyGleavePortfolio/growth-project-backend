@@ -80,15 +80,35 @@ notes? }` — any member; reasons are the codes in `COMMUNITY_REPORT_REASONS`
 ### 4. Published contact
 
 - `GET /community/safety` — `contact_email`
-  (`COMMUNITY_SAFETY_CONTACT_EMAIL`, default the public support address),
-  community guidelines, the report reasons and the response commitment. The
-  app's community safety screen renders this.
+  (`COMMUNITY_SAFETY_CONTACT_EMAIL`, default `Bradley@Bradleytgpcoaching.com`),
+  community guidelines (`COMMUNITY_GUIDELINES`), the report reasons and the
+  response commitment (`COMMUNITY_RESPONSE_COMMITMENT`). The app's community
+  safety screen renders this.
+- The guidelines and the commitment are owner-approved copy (2026-10-01 09:07
+  PDT); change them only with a new owner approval. Served text:
+
+  Community guidelines:
+
+  1. Be respectful. No harassment, bullying, hate speech or threats.
+  2. No sexual or explicit content.
+  3. No spam, advertising or scams.
+  4. Share training experience, not medical advice. This is a personal-training community.
+  5. Keep private things private. Do not share anyone else's personal or health information.
+  6. Report anything that breaks these rules. Reports go to your coach and to the team.
+  7. This space is not for emergencies. If you are in danger, call 911. If you are struggling emotionally, call or text 988.
+
+  Response commitment: Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you, and they are not told.
 
 ### Operational requirement (not code)
 
-Reports land in the coach queue and must be actioned promptly (the launch
-target is within 24 hours). A named primary and backup moderator, seven-day
-cover and an escalation path are an operator responsibility; nothing in this
+Reports land in the coach queue and are reviewed within 24 hours, every day
+(the published commitment above). The moderation queue (Coach > Community >
+Reports) is checked at least once every 24 hours, weekends included, from
+clinic go-live; content that breaks the guidelines is removed and repeat
+offenders are removed from the community; a "Self-harm or suicide" report gets
+same-day contact pointing the member to 911 or 988; if the moderator will be
+unreachable for more than 24 hours, new community posts are paused or a backup
+moderator is named first. This is an operator responsibility; nothing in this
 module enforces a timer.
 
 ### Tests
@@ -100,3 +120,6 @@ module enforces a timer.
   hide / warn / ban, coach cannot be banned (and nothing is written), only the
   owning coach can act, block on every read surface and DMs both ways, block
   guard rails, safety info, route metadata + feature-flag guard.
+- `test/community/safety/community-safety-copy.spec.ts` — pins the
+  owner-approved guidelines, the 24-hour commitment, the report reasons and
+  the default safety contact byte for byte.
