@@ -474,6 +474,45 @@ describe('policy copy hygiene', () => {
     expect(prompt).not.toContain('x'.repeat(241));
   });
 
+  // Owner ruling 2026-10-01 16:30: the public website diagnostic quiz
+  // (src/diagnostic, Perplexity "roadmap") belongs to another product and is
+  // being switched off, so no policy may mention it or the data it collected.
+  // "Device, usage and diagnostic data" is the technical-diagnostics category
+  // (crash and performance reports), not the quiz, and is the only allowed use.
+  it('no longer mentions the website diagnostic or its roadmap on any public page', () => {
+    const pages = [
+      ...ALL_TRUST_PAGES.map((p) => visibleText(renderTrustPage(p))),
+      ...(
+        [
+          'index',
+          'setup',
+          'first-client',
+          'tour',
+          'faq',
+          'support',
+          'contact',
+          'delete-account',
+        ] as const
+      ).map((p) => visibleText(renderHelpPage(p))),
+    ];
+    for (const text of pages) {
+      const rest = text.split('Device, usage and diagnostic data').join('');
+      expect(rest).not.toMatch(/diagnostic/i);
+      expect(rest).not.toMatch(/roadmap/i);
+      expect(rest).not.toMatch(/quiz/i);
+      expect(rest).not.toMatch(/on our website/i);
+    }
+    // Perplexity stays only for first-milestone encouragement, which
+    // src/first-win/first-win.service.ts still sends to Perplexity on main
+    // (generateFirstDataPointMessage: only the win type, no client data).
+    const privacy = visibleText(renderTrustPage('privacy'));
+    expect(privacy).toContain(
+      'Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data).',
+    );
+    expect(privacy).toContain('Perplexity — generic milestone messages, if enabled.');
+    expect(visibleText(renderTrustPage('consumer-health'))).not.toMatch(/Perplexity/);
+  });
+
   it('describes box 2 as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
     const privacy = visibleText(renderTrustPage('privacy'));
     expect(privacy).toContain(
