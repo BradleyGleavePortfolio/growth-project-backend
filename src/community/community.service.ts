@@ -8,10 +8,7 @@ import {
   CommunityMeResponseSchema,
   CommunityNotifyLevel,
 } from './dto/community-me.dto';
-import {
-  CommunityTodayResponse,
-  CommunityTodayResponseSchema,
-} from './dto/community-today.dto';
+import { CommunityTodayResponse, CommunityTodayResponseSchema } from './dto/community-today.dto';
 import {
   CommunityWorkspaceResponse,
   CommunityWorkspaceResponseSchema,
@@ -93,9 +90,7 @@ export class CommunityService {
 
   /** Map the free-form notify_level column onto the response enum. */
   normalizeNotifyLevel(value: string | null | undefined): CommunityNotifyLevel {
-    return value === 'live' || value === 'quiet' || value === 'digest'
-      ? value
-      : 'digest';
+    return value === 'live' || value === 'quiet' || value === 'digest' ? value : 'digest';
   }
 
   private flagState(userId: string): 'enabled' | 'disabled' {
@@ -170,8 +165,7 @@ export class CommunityService {
           role,
           notify_level: this.normalizeNotifyLevel(membership.notify_level),
           dm_enabled_effective: this.resolveDmEnabled(membership, workspace),
-          last_read_message_at:
-            membership.last_read_message_at?.toISOString() ?? null,
+          last_read_message_at: membership.last_read_message_at?.toISOString() ?? null,
           joined_at: (membership.joined_at ?? membership.created_at).toISOString(),
         }
       : null;
@@ -245,10 +239,7 @@ export class CommunityService {
       : null;
 
     const anyContent =
-      cohortCard !== null ||
-      event !== null ||
-      pinnedPost !== null ||
-      challenge !== null;
+      cohortCard !== null || event !== null || pinnedPost !== null || challenge !== null;
 
     return CommunityTodayResponseSchema.parse({
       feature_flag_state: 'enabled',
@@ -282,10 +273,7 @@ export class CommunityService {
 
   // ── GET /community/workspaces/:id ─────────────────────────────────────────
 
-  async getWorkspace(
-    user: User,
-    workspaceId: string,
-  ): Promise<CommunityWorkspaceResponse> {
+  async getWorkspace(user: User, workspaceId: string): Promise<CommunityWorkspaceResponse> {
     const role = this.effectiveRole(user);
     const workspace = await this.repo.findWorkspaceById(workspaceId);
     if (!workspace) {
@@ -297,8 +285,7 @@ export class CommunityService {
 
     const isOwner = workspace.coach_id === user.id;
     const isMember =
-      role === 'owner' ||
-      (await this.repo.userHasMembershipInWorkspace(workspaceId, user.id));
+      role === 'owner' || (await this.repo.userHasMembershipInWorkspace(workspaceId, user.id));
 
     if (!isOwner && !isMember) {
       throw new ForbiddenException(FORBIDDEN_WORKSPACE);
@@ -343,10 +330,7 @@ export class CommunityService {
 
   // ── GET /community/cohorts/:id ────────────────────────────────────────────
 
-  async getCohort(
-    user: User,
-    cohortId: string,
-  ): Promise<CommunityCohortResponse> {
+  async getCohort(user: User, cohortId: string): Promise<CommunityCohortResponse> {
     const role = this.effectiveRole(user);
     const cohort = await this.repo.findCohortById(cohortId);
     if (!cohort) {
@@ -359,8 +343,7 @@ export class CommunityService {
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
     const isOwner = workspace?.coach_id === user.id;
     const membership = await this.repo.findMembershipInCohort(cohortId, user.id);
-    const canRead =
-      role === 'owner' || isOwner || (membership?.status === 'active');
+    const canRead = role === 'owner' || isOwner || membership?.status === 'active';
 
     if (!canRead) {
       throw new ForbiddenException(FORBIDDEN_COHORT);
@@ -379,11 +362,8 @@ export class CommunityService {
           ? {
               id: membership.id,
               notify_level: this.normalizeNotifyLevel(membership.notify_level),
-              last_read_message_at:
-                membership.last_read_message_at?.toISOString() ?? null,
-              joined_at: (
-                membership.joined_at ?? membership.created_at
-              ).toISOString(),
+              last_read_message_at: membership.last_read_message_at?.toISOString() ?? null,
+              joined_at: (membership.joined_at ?? membership.created_at).toISOString(),
             }
           : null,
     });
@@ -432,9 +412,7 @@ export class CommunityService {
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
 
     // Pull from roster-scoped wins if coach exists, otherwise return public wins
-    const whereClause = coachId
-      ? { coach_id: coachId }
-      : { visibility: 'public' };
+    const whereClause = coachId ? { coach_id: coachId } : { visibility: 'public' };
 
     const wins = await this.prisma.communityWin.findMany({
       where: whereClause,
@@ -464,7 +442,7 @@ export class CommunityService {
       where: { id: userId },
       select: { coach_id: true, role: true, id: true },
     });
-    const coachId = user?.role === 'coach' ? user.id : user?.coach_id ?? null;
+    const coachId = user?.role === 'coach' ? user.id : (user?.coach_id ?? null);
 
     const win = await this.prisma.communityWin.create({
       data: {

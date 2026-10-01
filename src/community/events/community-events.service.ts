@@ -17,10 +17,7 @@ import { CommunityNotificationsService } from '../notifications/community-notifi
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityEventsRepository } from './community-events.repository';
-import {
-  canTransition,
-  explainTransition,
-} from './community-event-state-machine';
+import { canTransition, explainTransition } from './community-event-state-machine';
 import { validateEventLink } from './community-event-link';
 import {
   CLIENT_RSVP_STATUSES,
@@ -112,10 +109,7 @@ export class CommunityEventsService {
     };
   }
 
-  private async buildView(
-    e: CommunityEvent,
-    userId: string,
-  ): Promise<CommunityEventView> {
+  private async buildView(e: CommunityEvent, userId: string): Promise<CommunityEventView> {
     const [counts, viewer] = await Promise.all([
       this.events.rsvpCounts(e.id),
       this.events.findRsvp(e.id, userId),
@@ -150,10 +144,7 @@ export class CommunityEventsService {
   // ── Authorization helpers ──────────────────────────────────────────────────
 
   /** Owning coach (or platform owner) — the only roles permitted to write. */
-  private async assertCoach(
-    workspaceId: string,
-    user: User,
-  ): Promise<void> {
+  private async assertCoach(workspaceId: string, user: User): Promise<void> {
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
     throw new ForbiddenException({
@@ -167,10 +158,7 @@ export class CommunityEventsService {
    * additionally requires cohort access; a workspace-wide event requires
    * workspace access.
    */
-  private async readableEvent(
-    user: User,
-    eventId: string,
-  ): Promise<CommunityEvent> {
+  private async readableEvent(user: User, eventId: string): Promise<CommunityEvent> {
     const event = await this.events.findById(eventId);
     if (!event) throw new NotFoundException(EVENT_NOT_FOUND);
     const canRead = event.cohort_id
@@ -198,10 +186,7 @@ export class CommunityEventsService {
     },
   ): Promise<CommunityEventResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(EVENT_NOT_FOUND);
     }
     await this.assertCoach(workspaceId, user);
@@ -253,10 +238,7 @@ export class CommunityEventsService {
     query: { state?: string; cohort_id?: string; limit?: string },
   ): Promise<CommunityEventListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(EVENT_NOT_FOUND);
     }
 
@@ -265,13 +247,9 @@ export class CommunityEventsService {
     // to workspace-wide events plus the cohorts they ACTIVELY belong to, so a
     // member of cohort A never sees cohort B's events.
     const isPrivileged =
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id));
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
 
-    let cohortScope:
-      | null
-      | { cohortId: string }
-      | { accessibleCohortIds: string[] };
+    let cohortScope: null | { cohortId: string } | { accessibleCohortIds: string[] };
     if (query.cohort_id) {
       // An explicit cohort filter: the caller must have access to it; a member
       // of another cohort gets an empty list rather than a leak.
@@ -293,10 +271,7 @@ export class CommunityEventsService {
     } else if (isPrivileged) {
       cohortScope = null;
     } else {
-      const accessibleCohortIds = await this.events.activeCohortIds(
-        workspaceId,
-        user.id,
-      );
+      const accessibleCohortIds = await this.events.activeCohortIds(workspaceId, user.id);
       cohortScope = { accessibleCohortIds };
     }
 
@@ -309,13 +284,8 @@ export class CommunityEventsService {
       limit,
     });
 
-    const views = await Promise.all(
-      rows.map((e) => this.buildView(e, user.id)),
-    );
-    const next =
-      rows.length === limit
-        ? rows[rows.length - 1].starts_at.toISOString()
-        : null;
+    const views = await Promise.all(rows.map((e) => this.buildView(e, user.id)));
+    const next = rows.length === limit ? rows[rows.length - 1].starts_at.toISOString() : null;
     return CommunityEventListResponseSchema.parse({
       events: views,
       next_before: next,
@@ -373,8 +343,7 @@ export class CommunityEventsService {
       data.description = input.description.length ? input.description : null;
     }
     if (input.live_url !== undefined) {
-      data.live_url =
-        input.live_url.length === 0 ? null : this.normalizeLink(input.live_url);
+      data.live_url = input.live_url.length === 0 ? null : this.normalizeLink(input.live_url);
     }
 
     let startsAt = event.starts_at;
@@ -399,10 +368,7 @@ export class CommunityEventsService {
       this.assertTransitionAllowed(event, nextState);
       // Moving into `replay` requires a replay artifact to exist or arrive in
       // the same call; the dedicated /replay endpoint is the supported path.
-      if (
-        nextState === CommunityEventState.replay &&
-        !(data.live_url ?? event.live_url)
-      ) {
+      if (nextState === CommunityEventState.replay && !(data.live_url ?? event.live_url)) {
         throw new BadRequestException({
           error: 'bad_request',
           code: 'community.event.replay_requires_link',
@@ -433,10 +399,7 @@ export class CommunityEventsService {
     });
   }
 
-  private assertTransitionAllowed(
-    event: CommunityEvent,
-    to: CommunityEventState,
-  ): void {
+  private assertTransitionAllowed(event: CommunityEvent, to: CommunityEventState): void {
     const rejection = explainTransition(event.state, to);
     if (rejection) {
       throw new BadRequestException({
@@ -486,10 +449,7 @@ export class CommunityEventsService {
   }
 
   /** POST /reflect — mark the event reflected (recap posted). */
-  async reflect(
-    user: User,
-    eventId: string,
-  ): Promise<CommunityEventResponse> {
+  async reflect(user: User, eventId: string): Promise<CommunityEventResponse> {
     const event = await this.readableEvent(user, eventId);
     await this.assertCoach(event.workspace_id, user);
     if (event.canceled_at) {
@@ -511,11 +471,7 @@ export class CommunityEventsService {
 
   // ── RSVP ───────────────────────────────────────────────────────────────────
 
-  async rsvp(
-    user: User,
-    eventId: string,
-    status: string,
-  ): Promise<CommunityRsvpResponse> {
+  async rsvp(user: User, eventId: string, status: string): Promise<CommunityRsvpResponse> {
     const event = await this.readableEvent(user, eventId);
     if (event.canceled_at) {
       throw new BadRequestException({
@@ -578,22 +534,14 @@ export class CommunityEventsService {
    * Cohort-scoped events resolve the cohort membership; workspace-wide events
    * resolve the caller's active workspace membership.
    */
-  private async assertRsvpEligible(
-    event: CommunityEvent,
-    user: User,
-  ): Promise<void> {
+  private async assertRsvpEligible(event: CommunityEvent, user: User): Promise<void> {
     const privilegedRole = user.role === 'owner' || user.role === 'coach';
-    const owningCoach = await this.access.isWorkspaceCoach(
-      event.workspace_id,
-      user.id,
-    );
+    const owningCoach = await this.access.isWorkspaceCoach(event.workspace_id, user.id);
     const membership = event.cohort_id
       ? await this.access.membershipInCohort(event.cohort_id, user.id)
       : await this.access.membershipInWorkspace(event.workspace_id, user.id);
     const activeStudentMember =
-      membership !== null &&
-      membership.status === 'active' &&
-      membership.role === 'student';
+      membership !== null && membership.status === 'active' && membership.role === 'student';
     if (privilegedRole || owningCoach || !activeStudentMember) {
       throw new ForbiddenException({
         error: 'forbidden',
@@ -690,16 +638,9 @@ export class CommunityEventsService {
    * Pure of the cron wiring so it is directly unit-testable. Returns the count
    * promoted.
    */
-  async runTomorrowPromotion(
-    now: Date,
-    windowMs: number,
-    batchSize: number,
-  ): Promise<number> {
+  async runTomorrowPromotion(now: Date, windowMs: number, batchSize: number): Promise<number> {
     const windowEnd = new Date(now.getTime() + windowMs);
-    const candidates = await this.events.findScheduledStartingBefore(
-      windowEnd,
-      batchSize,
-    );
+    const candidates = await this.events.findScheduledStartingBefore(windowEnd, batchSize);
     let promoted = 0;
     for (const event of candidates) {
       // Skip anything already past start (the live sweep owns those) so we
@@ -718,11 +659,7 @@ export class CommunityEventsService {
         ...event,
         state: CommunityEventState.tomorrow,
       };
-      this.broadcastState(
-        promotedEvent,
-        event.state,
-        CommunityEventState.tomorrow,
-      );
+      this.broadcastState(promotedEvent, event.state, CommunityEventState.tomorrow);
       await this.pushStartingSoon(promotedEvent);
       promoted += 1;
     }
@@ -769,10 +706,7 @@ export class CommunityEventsService {
   private async pushStartingSoon(event: CommunityEvent): Promise<void> {
     const claimed = await this.events.claimReminderRecipients({
       eventId: event.id,
-      statuses: [
-        CommunityEventRsvpStatus.going,
-        CommunityEventRsvpStatus.maybe,
-      ],
+      statuses: [CommunityEventRsvpStatus.going, CommunityEventRsvpStatus.maybe],
       at: new Date(),
     });
     if (claimed.length === 0) return;

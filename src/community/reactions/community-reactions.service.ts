@@ -1,9 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  CommunityResponse,
-  CommunityResponseTargetType,
-  User,
-} from '@prisma/client';
+import type { CommunityResponse, CommunityResponseTargetType, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';

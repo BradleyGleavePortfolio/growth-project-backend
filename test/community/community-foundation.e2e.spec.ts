@@ -50,9 +50,7 @@ const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-foundation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-foundation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 // Header used by the JwtAuthGuard stub to identify the caller. Two special
@@ -116,23 +114,19 @@ itLive('community v1-2 foundation (live DB)', () => {
     headers: Record<string, string> = {},
   ): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
-      const req = http.request(
-        `${baseUrl}${path}`,
-        { method, headers },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => (data += c));
-          res.on('end', () => {
-            let body: any = null;
-            try {
-              body = data.length ? JSON.parse(data) : null;
-            } catch {
-              body = data;
-            }
-            resolve({ status: res.statusCode ?? 0, body });
-          });
-        },
-      );
+      const req = http.request(`${baseUrl}${path}`, { method, headers }, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let body: any = null;
+          try {
+            body = data.length ? JSON.parse(data) : null;
+          } catch {
+            body = data;
+          }
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      });
       req.on('error', reject);
       req.end();
     });
@@ -257,9 +251,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.student, ids.noRoleUser].filter(
-      Boolean,
-    );
+    const userIds = [ids.coachA, ids.coachB, ids.student, ids.noRoleUser].filter(Boolean);
     // Workspaces cascade to cohorts + memberships; deleting them clears all
     // community rows this suite created. Users go last.
     await prisma.communityMembership.deleteMany({
@@ -311,11 +303,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   it('3. workspace fetch — member access → 200 access:member', async () => {
     // ensure the student is bootstrapped
     await call('GET', '/api/community/me', asUser(ids.student));
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsA}`,
-      asUser(ids.student),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.student));
     expect(res.status).toBe(200);
     expect(res.body.access).toBe('member');
     expect(res.body.owner_coach_user_id).toBe(ids.coachA);
@@ -323,33 +311,21 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 4 — Workspace fetch, owner access.
   it('4. workspace fetch — owner access → 200 access:owner', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsA}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.coachA));
     expect(res.status).toBe(200);
     expect(res.body.access).toBe('owner');
   });
 
   // 5 — Workspace fetch, foreign workspace → 403 structured.
   it('5. workspace fetch — foreign workspace → 403 structured', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsB}`,
-      asUser(ids.student),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsB}`, asUser(ids.student));
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('community.workspace.no_access');
   });
 
   // 6 — Workspace fetch, nonexistent → 404.
   it('6. workspace fetch — nonexistent → 404', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${randomUUID()}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/workspaces/${randomUUID()}`, asUser(ids.coachA));
     expect(res.status).toBe(404);
   });
 
@@ -374,11 +350,7 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 9 — Cohort detail, foreign cohort denial.
   it('9. cohort detail — foreign cohort → 403', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/cohorts/${ids.cohortB}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/cohorts/${ids.cohortB}`, asUser(ids.coachA));
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('community.cohort.no_access');
   });
@@ -401,11 +373,7 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 11 — Today envelope, no membership case.
   it('11. today — no membership → empty_reason no_membership', async () => {
-    const res = await call(
-      'GET',
-      '/api/community/today',
-      asUser(ids.noRoleUser),
-    );
+    const res = await call('GET', '/api/community/today', asUser(ids.noRoleUser));
     expect(res.status).toBe(200);
     expect(res.body.empty_reason).toBe('no_membership');
     expect(res.body.cohort).toBeNull();
@@ -438,11 +406,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   it('14. flag OFF on /workspaces/:id → 503 typed disabled body', async () => {
     process.env.FEATURE_COMMUNITY_API = 'false';
     try {
-      const res = await call(
-        'GET',
-        `/api/community/workspaces/${ids.wsA}`,
-        asUser(ids.coachA),
-      );
+      const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.coachA));
       expect(res.status).toBe(503);
       expect(res.body.disabled).toBe(true);
       expect(res.body.retry_after).toBeNull();

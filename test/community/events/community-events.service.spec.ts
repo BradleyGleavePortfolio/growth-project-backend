@@ -13,11 +13,7 @@
  */
 
 import 'reflect-metadata';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CommunityEvent, CommunityEventState } from '@prisma/client';
 import { CommunityEventsService } from '../../../src/community/events/community-events.service';
 
@@ -76,21 +72,15 @@ function makeService() {
       u.id === stranger.id ? false : true,
     ),
     canAccessCohort: jest.fn(async () => true),
-    isWorkspaceCoach: jest.fn(
-      async (_id: string, userId: string) => userId === coach.id,
-    ),
+    isWorkspaceCoach: jest.fn(async (_id: string, userId: string) => userId === coach.id),
     // Membership-role resolvers used by RSVP eligibility (F1). By default a
     // non-coach caller resolves to an active STUDENT membership so the happy
     // path RSVPs; tests override these to model an assistant / co_coach row.
     membershipInWorkspace: jest.fn(async (_id: string, userId: string) =>
-      userId === coach.id
-        ? null
-        : { role: 'student', status: 'active', user_id: userId },
+      userId === coach.id ? null : { role: 'student', status: 'active', user_id: userId },
     ),
     membershipInCohort: jest.fn(async (_id: string, userId: string) =>
-      userId === coach.id
-        ? null
-        : { role: 'student', status: 'active', user_id: userId },
+      userId === coach.id ? null : { role: 'student', status: 'active', user_id: userId },
     ),
   };
 
@@ -120,9 +110,7 @@ function makeService() {
     findById: jest.fn(async (id: string) => store[id] ?? null),
     list: jest.fn(async () => [] as CommunityEvent[]),
     update: jest.fn(async (id: string, data: Record<string, unknown>) => {
-      store[id] = { ...store[id], ...data, updated_at: new Date() } as ReturnType<
-        typeof baseEvent
-      >;
+      store[id] = { ...store[id], ...data, updated_at: new Date() } as ReturnType<typeof baseEvent>;
       return store[id];
     }),
     upsertRsvp: jest.fn(async (p: Record<string, unknown>) => ({
@@ -224,16 +212,16 @@ describe('CommunityEventsService (v2-3)', () => {
     it('returns 404 for a stranger reading an event', async () => {
       const { service, access } = makeService();
       access.canAccessWorkspace.mockResolvedValue(false);
-      await expect(
-        service.getOne(stranger as never, EVT),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getOne(stranger as never, EVT)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('returns 404 for a missing event', async () => {
       const { service } = makeService();
-      await expect(
-        service.getOne(coach as never, 'nope'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getOne(coach as never, 'nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -264,9 +252,9 @@ describe('CommunityEventsService (v2-3)', () => {
 
     it('rejects a client transition with 403', async () => {
       const { service } = makeService();
-      await expect(
-        service.update(client as never, EVT, { state: 'live' }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.update(client as never, EVT, { state: 'live' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
   });
 
@@ -274,11 +262,7 @@ describe('CommunityEventsService (v2-3)', () => {
     it('attaches an external replay link and moves to replay', async () => {
       const { service, store } = makeService();
       store[EVT].state = CommunityEventState.live;
-      const res = await service.attachReplay(
-        coach as never,
-        EVT,
-        'https://vimeo.com/12345',
-      );
+      const res = await service.attachReplay(coach as never, EVT, 'https://vimeo.com/12345');
       expect(res.event.state).toBe('replay');
       expect(res.event.external_url).toContain('vimeo.com');
     });
@@ -312,9 +296,9 @@ describe('CommunityEventsService (v2-3)', () => {
     it('rejects reflect from a non-replay state', async () => {
       const { service, store } = makeService();
       store[EVT].state = CommunityEventState.live;
-      await expect(
-        service.reflect(coach as never, EVT),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.reflect(coach as never, EVT)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 
@@ -327,25 +311,25 @@ describe('CommunityEventsService (v2-3)', () => {
 
     it('rejects a client self-asserting attended', async () => {
       const { service } = makeService();
-      await expect(
-        service.rsvp(client as never, EVT, 'attended'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.rsvp(client as never, EVT, 'attended')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('rejects RSVP on a reflected (historical) event', async () => {
       const { service, store } = makeService();
       store[EVT].state = CommunityEventState.reflected;
-      await expect(
-        service.rsvp(client as never, EVT, 'going'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.rsvp(client as never, EVT, 'going')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('hides the event from a stranger RSVP (404)', async () => {
       const { service, access } = makeService();
       access.canAccessWorkspace.mockResolvedValue(false);
-      await expect(
-        service.rsvp(stranger as never, EVT, 'going'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.rsvp(stranger as never, EVT, 'going')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -382,9 +366,7 @@ describe('CommunityEventsService (v2-3)', () => {
     it('a workspace coach sees every cohort (unscoped)', async () => {
       const { service, repo } = makeService();
       await service.list(coach as never, WS, {});
-      expect(repo.list).toHaveBeenCalledWith(
-        expect.objectContaining({ cohortScope: null }),
-      );
+      expect(repo.list).toHaveBeenCalledWith(expect.objectContaining({ cohortScope: null }));
       expect(repo.activeCohortIds).not.toHaveBeenCalled();
     });
   });
@@ -396,9 +378,7 @@ describe('CommunityEventsService (v2-3)', () => {
         title: 'Live Q&A',
         starts_at: '2026-07-05T17:00:00.000Z',
       });
-      const names = realtime.broadcastCommunityEvent.mock.calls.map(
-        (c: unknown[]) => c[1],
-      );
+      const names = realtime.broadcastCommunityEvent.mock.calls.map((c: unknown[]) => c[1]);
       expect(names).toContain('community.event.created');
       expect(names).not.toContain('community.event.state_changed');
     });
@@ -406,9 +386,7 @@ describe('CommunityEventsService (v2-3)', () => {
     it('emits community.event.rsvp_changed on RSVP (not state_changed)', async () => {
       const { service, realtime } = makeService();
       await service.rsvp(client as never, EVT, 'going');
-      const names = realtime.broadcastCommunityEvent.mock.calls.map(
-        (c: unknown[]) => c[1],
-      );
+      const names = realtime.broadcastCommunityEvent.mock.calls.map((c: unknown[]) => c[1]);
       expect(names).toContain('community.event.rsvp_changed');
       expect(names).not.toContain('community.event.state_changed');
     });
@@ -416,9 +394,7 @@ describe('CommunityEventsService (v2-3)', () => {
     it('emits state_changed only on a real transition', async () => {
       const { service, realtime } = makeService();
       await service.update(coach as never, EVT, { state: 'live' });
-      const names = realtime.broadcastCommunityEvent.mock.calls.map(
-        (c: unknown[]) => c[1],
-      );
+      const names = realtime.broadcastCommunityEvent.mock.calls.map((c: unknown[]) => c[1]);
       expect(names).toContain('community.event.state_changed');
     });
   });
@@ -427,25 +403,23 @@ describe('CommunityEventsService (v2-3)', () => {
     it('rejects a coach RSVP with a typed 403', async () => {
       const { service } = makeService();
       // coach is the owning workspace coach → isWorkspaceCoach true.
-      await expect(
-        service.rsvp(coach as never, EVT, 'going'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.rsvp(coach as never, EVT, 'going')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('rejects an owner RSVP with a typed 403', async () => {
       const { service } = makeService();
       const owner = { id: 'owner-1', role: 'owner' };
-      await expect(
-        service.rsvp(owner as never, EVT, 'going'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.rsvp(owner as never, EVT, 'going')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('rejects RSVP after ends_at has passed (rsvp_closed)', async () => {
       const { service, store } = makeService();
       store[EVT].ends_at = new Date('2020-01-01T00:00:00.000Z'); // in the past
-      await expect(
-        service.rsvp(client as never, EVT, 'going'),
-      ).rejects.toMatchObject({
+      await expect(service.rsvp(client as never, EVT, 'going')).rejects.toMatchObject({
         response: { code: 'community.event.rsvp_closed' },
       });
     });
@@ -467,9 +441,7 @@ describe('CommunityEventsService (v2-3)', () => {
         status: 'active',
         user_id: client.id,
       } as never);
-      await expect(
-        service.rsvp(client as never, EVT, 'going'),
-      ).rejects.toMatchObject({
+      await expect(service.rsvp(client as never, EVT, 'going')).rejects.toMatchObject({
         response: { code: 'community.event.rsvp_not_eligible' },
       });
     });
@@ -483,9 +455,7 @@ describe('CommunityEventsService (v2-3)', () => {
         status: 'active',
         user_id: client.id,
       } as never);
-      await expect(
-        service.rsvp(client as never, EVT, 'going'),
-      ).rejects.toMatchObject({
+      await expect(service.rsvp(client as never, EVT, 'going')).rejects.toMatchObject({
         response: { code: 'community.event.rsvp_not_eligible' },
       });
       // Eligibility resolved the COHORT membership, not the workspace one.
@@ -510,15 +480,9 @@ describe('CommunityEventsService (v2-3)', () => {
         starts_at: new Date('2026-07-01T20:00:00.000Z'),
       });
       repo.findScheduledStartingBefore.mockResolvedValue([soon] as never);
-      repo.claimReminderRecipients.mockResolvedValue([
-        { id: 'r1', user_id: client.id },
-      ] as never);
+      repo.claimReminderRecipients.mockResolvedValue([{ id: 'r1', user_id: client.id }] as never);
       const now = new Date('2026-07-01T12:00:00.000Z');
-      const promoted = await service.runTomorrowPromotion(
-        now,
-        24 * 60 * 60 * 1000,
-        100,
-      );
+      const promoted = await service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100);
       expect(promoted).toBe(1);
       expect(repo.casPromoteState).toHaveBeenCalledWith({
         eventId: 'evt-soon',
@@ -539,11 +503,7 @@ describe('CommunityEventsService (v2-3)', () => {
       // Another replica already flipped the row → this worker loses the CAS.
       repo.casPromoteState.mockResolvedValue(0 as never);
       const now = new Date('2026-07-01T12:00:00.000Z');
-      const promoted = await service.runTomorrowPromotion(
-        now,
-        24 * 60 * 60 * 1000,
-        100,
-      );
+      const promoted = await service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100);
       expect(promoted).toBe(0);
       expect(repo.claimReminderRecipients).not.toHaveBeenCalled();
       expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
@@ -559,16 +519,12 @@ describe('CommunityEventsService (v2-3)', () => {
       repo.findScheduledStartingBefore.mockResolvedValue([soon] as never);
       // Exactly ONE of the two concurrent CAS calls flips the row.
       let casCalls = 0;
-      repo.casPromoteState.mockImplementation(
-        async () => (casCalls++ === 0 ? 1 : 0),
-      );
+      repo.casPromoteState.mockImplementation(async () => (casCalls++ === 0 ? 1 : 0));
       // The reminder claim is atomic: only the winning worker's claim returns
       // the recipient; a second claim sees it already stamped → empty.
       let claimCalls = 0;
       repo.claimReminderRecipients.mockImplementation((async () =>
-        claimCalls++ === 0
-          ? [{ id: 'r1', user_id: client.id }]
-          : []) as never);
+        claimCalls++ === 0 ? [{ id: 'r1', user_id: client.id }] : []) as never);
       const now = new Date('2026-07-01T12:00:00.000Z');
       const [a, b] = await Promise.all([
         service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100),
@@ -590,11 +546,7 @@ describe('CommunityEventsService (v2-3)', () => {
       });
       repo.findScheduledStartingBefore.mockResolvedValue([past] as never);
       const now = new Date('2026-07-01T12:00:00.000Z');
-      const promoted = await service.runTomorrowPromotion(
-        now,
-        24 * 60 * 60 * 1000,
-        100,
-      );
+      const promoted = await service.runTomorrowPromotion(now, 24 * 60 * 60 * 1000, 100);
       expect(promoted).toBe(0);
     });
 
