@@ -8,20 +8,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
 import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
 import { GRANT_SOURCE, InviteGrantService } from '../src/invite-grant/invite-grant.service';
-import type { ConsentService } from '../src/consent/consent.service';
-import type { CheckoutContractGate } from '../src/contracts/checkout-contract-gate.service';
-import { ContractRequiredException } from '../src/contracts/contract-required.exception';
-import type { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
+import { ConsentService } from '../src/consent/consent.service';
+import { CheckoutContractGate } from '../src/contracts/checkout-contract-gate.service';
+import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { InviteGrantController } from '../src/invite-grant/invite-grant.controller';
 import { CreatePackageDto, UpdatePackageDto } from '../src/packages/packages.dto';
 import { ValidationPipe } from '@nestjs/common';
-import type { PrismaService } from '../src/prisma.service';
-import type { AuditService } from '../src/audit/audit.service';
-import type { AnalyticsService } from '../src/analytics/analytics.service';
-import type { EmailService } from '../src/email/email.service';
+import { PrismaService } from '../src/prisma.service';
+import { AuditService } from '../src/audit/audit.service';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+import { EmailService } from '../src/email/email.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 
 // Clinic launch C01 — invite-code → package grants, free packages, revoke.
@@ -86,14 +86,14 @@ type PurchaseRow = {
 
 type Where = Record<string, unknown>;
 
-function matches(row: Record<string, unknown>, where: Where): boolean {
+function matches(row: object, where: Where): boolean {
   for (const [k, v] of Object.entries(where)) {
     if (k === 'OR') {
       const alts = v as Where[];
       if (!alts.some((alt) => matches(row, alt))) return false;
       continue;
     }
-    const actual = row[k];
+    const actual: unknown = Reflect.get(row, k);
     if (v && typeof v === 'object' && !(v instanceof Date)) {
       const cond = v as { in?: unknown[]; gt?: Date; lt?: number };
       if (cond.in && !cond.in.includes(actual)) return false;
@@ -111,12 +111,16 @@ function matches(row: Record<string, unknown>, where: Where): boolean {
 }
 
 /** Apply a Prisma-style `data` (plain sets + `{ increment }`) to a row. */
-function applyData(row: Record<string, unknown>, data: Record<string, unknown>): void {
+function applyData(row: object, data: Record<string, unknown>): void {
   for (const [k, v] of Object.entries(data)) {
     if (v && typeof v === 'object' && 'increment' in (v as object)) {
-      row[k] = ((row[k] as number) ?? 0) + (v as { increment: number }).increment;
+      Reflect.set(
+        row,
+        k,
+        ((Reflect.get(row, k) as number) ?? 0) + (v as { increment: number }).increment,
+      );
     } else {
-      row[k] = v;
+      Reflect.set(row, k, v);
     }
   }
 }
@@ -155,11 +159,13 @@ function makePrisma(seed: {
         },
       ),
       // Canonical attach (C03) writes conditionally: student with no coach.
-      updateMany: jest.fn(async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
-        const hits = [...users.values()].filter((u) => matches(u as unknown as Record<string, unknown>, where));
-        for (const u of hits) applyData(u as unknown as Record<string, unknown>, data);
-        return { count: hits.length };
-      }),
+      updateMany: jest.fn(
+        async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
+          const hits = [...users.values()].filter((u) => matches(u, where));
+          for (const u of hits) applyData(u, data);
+          return { count: hits.length };
+        },
+      ),
     },
     coachSubscription: {
       findUnique: jest.fn(
@@ -196,8 +202,8 @@ function makePrisma(seed: {
       ),
       updateMany: jest.fn(
         async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
-          const hits = codes.filter((c) => matches(c as unknown as Record<string, unknown>, where));
-          for (const c of hits) applyData(c as unknown as Record<string, unknown>, data);
+          const hits = codes.filter((c) => matches(c, where));
+          for (const c of hits) applyData(c, data);
           return { count: hits.length };
         },
       ),
@@ -245,11 +251,13 @@ function makePrisma(seed: {
           return row;
         },
       ),
-      updateMany: jest.fn(async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
-        const hits = purchases.filter((p) => matches(p as unknown as Record<string, unknown>, where));
-        for (const p of hits) applyData(p as unknown as Record<string, unknown>, data);
-        return { count: hits.length };
-      }),
+      updateMany: jest.fn(
+        async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
+          const hits = purchases.filter((p) => matches(p, where));
+          for (const p of hits) applyData(p, data);
+          return { count: hits.length };
+        },
+      ),
       update: jest.fn(
         async ({ where, data }: { where: { id: string }; data: Partial<PurchaseRow> }) => {
           const row = purchases.find((p) => p.id === where.id);
@@ -466,7 +474,7 @@ function makeConsent(agreed: boolean): ConsentDouble {
   return c;
 }
 
-function build(
+async function build(
   prisma: PrismaDouble,
   opts: { gate?: CheckoutContractGate; consent?: ReturnType<typeof makeConsent> } = {},
 ) {
@@ -474,20 +482,24 @@ function build(
   const { f: fanoutMock, fanout } = makeFanout();
   // Default: the client ticked the in-app agreement (contracts default ON under NODE_ENV=test).
   const consent = opts.consent ?? makeConsent(true);
-  const grants = new InviteGrantService(
-    asPrisma(prisma),
-    audit,
-    fanout,
-    opts.gate,
-    consent as unknown as ConsentService,
-  );
-  const inviteCodes = new InviteCodesService(
-    asPrisma(prisma),
-    makeAnalytics(),
-    makeEmail(),
-    audit,
-    grants,
-  );
+  // Wired by Nest DI exactly as the app modules wire them; the consent double
+  // is bound to the ConsentService token. The contract gate is @Optional() and
+  // is only provided when a test supplies one.
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      InviteGrantService,
+      InviteCodesService,
+      { provide: PrismaService, useValue: asPrisma(prisma) },
+      { provide: AuditService, useValue: audit },
+      { provide: AnalyticsService, useValue: makeAnalytics() },
+      { provide: EmailService, useValue: makeEmail() },
+      { provide: PurchaseFanoutService, useValue: fanout },
+      { provide: ConsentService, useValue: consent },
+      ...(opts.gate ? [{ provide: CheckoutContractGate, useValue: opts.gate }] : []),
+    ],
+  }).compile();
+  const grants = moduleRef.get(InviteGrantService);
+  const inviteCodes = moduleRef.get(InviteCodesService);
   const guard = new ClientEntitlementGuard(asPrisma(prisma), makeReflector());
   const controller = new InviteGrantController(grants);
   return { grants, inviteCodes, guard, controller, auditMock, fanoutMock };
@@ -506,7 +518,7 @@ const client = (id: string, coach_id: string | null = COACH): UserRow => ({
 describe('C01 — invite code → package binding', () => {
   it('coach binds the PERMANENT coach code to a package as prepaid; join link is /join/<code>', async () => {
     const prisma = fixtures();
-    const { grants } = build(prisma);
+    const { grants } = await build(prisma);
     const b = await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -530,7 +542,7 @@ describe('C01 — invite code → package binding', () => {
 
   it('coach binds a per-row InviteCode as free, then clears it with grant_mode none', async () => {
     const prisma = fixtures();
-    const { grants, auditMock } = build(prisma);
+    const { grants, auditMock } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: 'GP-ROW001',
       package_id: PKG_FREE,
@@ -551,7 +563,7 @@ describe('C01 — invite code → package binding', () => {
 
   it("refuses another coach's code (404, non-leaking) and another coach's package; owner may bind any code", async () => {
     const prisma = fixtures();
-    const { grants } = build(prisma);
+    const { grants } = await build(prisma);
     await expect(
       grants.setBinding(
         { id: OTHER_COACH, role: 'coach' },
@@ -586,7 +598,7 @@ describe('C01 — invite code → package binding', () => {
 describe('C01 — grant on attach via a bound code; paywall honours it without Stripe', () => {
   it('prepaid binding: attach creates a $0 ClientPurchase grant, delivered like a purchase (fan-out + coach alert); guard passes', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, guard, fanoutMock } = build(prisma);
+    const { grants, inviteCodes, guard, fanoutMock } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -643,7 +655,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('free binding on a per-row code: source invite_grant:free; unbound code grants nothing (402 stays)', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, guard } = build(prisma);
+    const { grants, inviteCodes, guard } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: 'GP-ROW001',
       package_id: PKG_FREE,
@@ -666,7 +678,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('re-attach with the same code is idempotent: one row, status already_active', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes } = build(prisma);
+    const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -696,7 +708,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('a binding to an archived/inactive package is skipped safely at attach time (attach still succeeds)', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes } = build(prisma);
+    const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -718,7 +730,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('a grant failure (e.g. fan-out throws) never fails the attach: status failed, audited, attach committed', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, auditMock, fanoutMock } = build(prisma);
+    const { grants, inviteCodes, auditMock, fanoutMock } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -738,7 +750,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('double submit: two concurrent attaches through the bound code converge on ONE grant row', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes } = build(prisma);
+    const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -754,7 +766,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('an EXISTING client of the same coach who scans the QR is granted (idempotent)', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, guard } = build(prisma);
+    const { grants, inviteCodes, guard } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -773,7 +785,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
 
   it('a binding switched free → prepaid does not re-grant a client revoked under the first mode', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes } = build(prisma);
+    const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -805,7 +817,7 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
 
   it('binding a package that requires a coach agreement → 400 PACKAGE_REQUIRES_CONTRACT', async () => {
     const prisma = fixtures();
-    const { grants } = build(prisma);
+    const { grants } = await build(prisma);
     const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_CLINIC } });
     pkg!.requires_contract = true;
     pkg!.contract_template_id = 'tpl-1';
@@ -824,11 +836,17 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
     const prisma = fixtures();
     const { g, gate } = makeGate(blocked); // external e-sign waiver unsigned
     const consent = makeConsent(false);
-    const { grants } = build(prisma, { gate, consent });
+    const { grants } = await build(prisma, { gate, consent });
     const pending = await grants.claimFreePackage(client('client-1'), PKG_FREE);
-    expect(pending).toMatchObject({ status: 'pending_consent', recovery: { consent_scope: 'onboarding.agreement' } });
+    expect(pending).toMatchObject({
+      status: 'pending_consent',
+      recovery: { consent_scope: 'onboarding.agreement' },
+    });
     expect(g.evaluate).not.toHaveBeenCalled();
-    expect(prisma._purchases[0]).toMatchObject({ entitlement_active: false, status: 'pending_consent' });
+    expect(prisma._purchases[0]).toMatchObject({
+      entitlement_active: false,
+      status: 'pending_consent',
+    });
 
     consent.agreed = true;
     const ok = await grants.claimFreePackage(client('client-1'), PKG_FREE);
@@ -842,7 +860,7 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
     const prisma = fixtures();
     const { gate } = makeGate(blocked);
     const consent = makeConsent(false);
-    const { grants, inviteCodes } = build(prisma, { gate, consent });
+    const { grants, inviteCodes } = await build(prisma, { gate, consent });
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -857,14 +875,16 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
       status: 'pending_consent',
     });
     consent.agreed = true;
-    expect((await grants.claimGrantForCode(client('client-1'), CLINIC_CODE)).status).toBe('created');
+    expect((await grants.claimGrantForCode(client('client-1'), CLINIC_CODE)).status).toBe(
+      'created',
+    );
     expect(prisma._purchases).toHaveLength(1);
     expect(prisma._purchases[0]).toMatchObject({ entitlement_active: true });
   });
 
   it('refused re-claim of a revoked grant is a 409 GRANT_REVOKED at the controller, not a 200', async () => {
     const prisma = fixtures();
-    const { grants, controller } = build(prisma);
+    const { grants, controller } = await build(prisma);
     const row = prisma._users.get('client-1');
     if (row) row.coach_id = COACH;
     await grants.claimFreePackage(client('client-1'), PKG_FREE);
@@ -885,7 +905,7 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
 describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
   it('client of the coach claims a $0 package → grant row, guard passes; second claim is already_active', async () => {
     const prisma = fixtures();
-    const { controller, guard } = build(prisma);
+    const { controller, guard } = await build(prisma);
     const req = asAuthed(client('client-1'));
     const res = await controller.claimFree(req, { id: PKG_FREE });
     expect(res).toMatchObject({ active: true, status: 'created' });
@@ -903,7 +923,7 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
 
   it('non-free package → 400 PACKAGE_NOT_FREE (Stripe stays the only path); other coach’s package → 404; coach role → 403', async () => {
     const prisma = fixtures();
-    const { grants } = build(prisma);
+    const { grants } = await build(prisma);
     const c1 = client('client-1');
     const notFree = await grants.claimFreePackage(c1, PKG_PAID).catch((e: unknown) => e);
     expect(notFree).toBeInstanceOf(BadRequestException);
@@ -948,7 +968,7 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
 describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)', () => {
   it('coach revokes for a roster client: row flips inactive, guard returns 402, re-attach does NOT re-grant', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, guard, auditMock } = build(prisma);
+    const { grants, inviteCodes, guard, auditMock } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
@@ -987,7 +1007,7 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
 
   it('coach cannot revoke for another coach’s client (404); owner can; Stripe purchases are untouched', async () => {
     const prisma = fixtures();
-    const { grants } = build(prisma);
+    const { grants } = await build(prisma);
     // A real Stripe purchase for client-other (source null) plus a grant.
     prisma._purchases.push({
       id: 'cp-stripe',

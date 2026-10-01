@@ -12,6 +12,11 @@
 // Real InviteCodesService + InviteGrantService + ConsentService over the
 // stateful DB double.
 import 'reflect-metadata';
+import { Test } from '@nestjs/testing';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+import { AuditService } from '../src/audit/audit.service';
+import { EmailService } from '../src/email/email.service';
+import { PrismaService } from '../src/prisma.service';
 import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
 import {
   GRANT_PENDING_CONSENT_STATUS,
@@ -31,11 +36,12 @@ import {
   outcome,
   user,
 } from './support/attach-fixture';
+import { StatefulPrisma } from './support/stateful-prisma';
 
 const PKG_B = 'pkg-b';
 const PKG_A = 'pkg-a';
 
-function build() {
+async function build() {
   const db = buildAttachDb();
   db.model('coachPackage', [['id']]);
   db.model('clientPurchase', [['id'], ['idempotency_key']]);
@@ -57,25 +63,59 @@ function build() {
   pkg(PKG_A, COACH_A);
   pkg(PKG_B, COACH_B);
   // Coach B's permanent code is bound to PKG_B (free).
-  Object.assign(db.state.coachProfile.find((p) => p.user_id === COACH_B)!, {
-    invite_code_package_id: PKG_B,
-    invite_code_grant_mode: 'free',
-  });
-  Object.assign(db.state.coachProfile.find((p) => p.user_id === COACH_A)!, {
-    invite_code_package_id: PKG_A,
-    invite_code_grant_mode: 'free',
-  });
-  const audit = fakeAudit();
-  const consent = new ConsentService(db as any, audit);
-  const grants = new InviteGrantService(db as any, audit, undefined, undefined, consent);
+  Object.assign(
+    db.state.coachProfile.find((p) => p.user_id === COACH_B)!,
+    {
+      invite_code_package_id: PKG_B,
+      invite_code_grant_mode: 'free',
+    },
+  );
+  Object.assign(
+    db.state.coachProfile.find((p) => p.user_id === COACH_A)!,
+    {
+      invite_code_package_id: PKG_A,
+      invite_code_grant_mode: 'free',
+    },
+  );
+  // Same wiring as the app modules; the purchase fan-out and the checkout
+  // contract gate are @Optional() and deliberately not provided here.
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      ConsentService,
+      InviteGrantService,
+      InviteCodesService,
+      { provide: PrismaService, useValue: db },
+      { provide: AuditService, useValue: fakeAudit() },
+      { provide: AnalyticsService, useValue: fakeAnalytics() },
+      { provide: EmailService, useValue: fakeEmail() },
+    ],
+  }).compile();
+  const consent = moduleRef.get(ConsentService);
+  const grants = moduleRef.get(InviteGrantService);
   grants.onModuleInit();
-  const svc = new InviteCodesService(db as any, fakeAnalytics(), fakeEmail(), audit, grants);
-  const purchases = (client: string) => db.state.clientPurchase.filter((p) => p.client_user_id === client);
+  const svc = moduleRef.get(InviteCodesService);
+  const purchases = (client: string) =>
+    db.state.clientPurchase.filter((p) => p.client_user_id === client);
   return { db, svc, grants, consent, purchases };
 }
 
+/** The persisted user row, narrowed to the claimant shape claimGrantForCode takes. */
+function claimant(
+  db: StatefulPrisma,
+  id: string,
+): Parameters<InviteGrantService['claimGrantForCode']>[0] {
+  const { role, coach_id } = user(db, id);
+  return { id, role, coach_id };
+}
+
 const boundRow = (db: any, c: string, extra: Record<string, any> = {}) =>
-  addRowCode(db, { code: c, coach_id: COACH_B, package_id: PKG_B, grant_mode: 'prepaid', ...extra });
+  addRowCode(db, {
+    code: c,
+    coach_id: COACH_B,
+    package_id: PKG_B,
+    grant_mode: 'prepaid',
+    ...extra,
+  });
 
 describe('C01 — grants only after a legitimate attach', () => {
   const prev = process.env.FEATURE_CONTRACTS_ENABLED;
@@ -88,17 +128,26 @@ describe('C01 — grants only after a legitimate attach', () => {
   });
 
   it('new client via a bound permanent code is attached AND granted immediately (flag off: unchanged)', async () => {
-    const { db, svc, purchases } = build();
+    const { db, svc, purchases } = await build();
     addUser(db, { id: 'stu' });
     const r = await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
-    expect(r).toMatchObject({ coach_id: COACH_B, already_attached: false, grant: { status: 'created', package_id: PKG_B } });
+    expect(r).toMatchObject({
+      coach_id: COACH_B,
+      already_attached: false,
+      grant: { status: 'created', package_id: PKG_B },
+    });
     expect(purchases('stu')).toEqual([
-      expect.objectContaining({ package_id: PKG_B, entitlement_active: true, status: 'active', amount_cents: 0 }),
+      expect.objectContaining({
+        package_id: PKG_B,
+        entitlement_active: true,
+        status: 'active',
+        amount_cents: 0,
+      }),
     ]);
   });
 
   it("Opus C01-B1: coach A's client scanning coach B's bound QR is not moved and gets nothing", async () => {
-    const { db, svc, purchases } = build();
+    const { db, svc, purchases } = await build();
     addUser(db, { id: 'a-client', coach_id: COACH_A });
     expect(await outcome(svc.attachUserToCoachByCode('a-client', 'GP-BBBBBB'))).toMatchObject({
       status: 409,
@@ -109,7 +158,7 @@ describe('C01 — grants only after a legitimate attach', () => {
   });
 
   it('same-coach replay converges on ONE grant row (already_active)', async () => {
-    const { db, svc, purchases } = build();
+    const { db, svc, purchases } = await build();
     addUser(db, { id: 'stu' });
     await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
     const again = await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
@@ -118,7 +167,7 @@ describe('C01 — grants only after a legitimate attach', () => {
   });
 
   it('existing same-coach client using the public bound code is granted (no recipient on a permanent code)', async () => {
-    const { db, svc, purchases } = build();
+    const { db, svc, purchases } = await build();
     addUser(db, { id: 'old', coach_id: COACH_B });
     const r = await svc.attachUserToCoachByCode('old', 'GP-BBBBBB');
     expect(r).toMatchObject({ already_attached: true, grant: { status: 'created' } });
@@ -126,7 +175,7 @@ describe('C01 — grants only after a legitimate attach', () => {
   });
 
   it('a revoked grant is never silently re-granted by a replay', async () => {
-    const { db, svc, grants, purchases } = build();
+    const { db, svc, grants, purchases } = await build();
     addUser(db, { id: 'stu' });
     await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
     await grants.revoke({ id: COACH_B, role: 'coach' }, { client_user_id: 'stu' });
@@ -141,11 +190,11 @@ describe('SOL-C01-A2 — claim-grant is bound to recipient and lifecycle', () =>
     process.env.FEATURE_CONTRACTS_ENABLED = 'false';
   });
 
-  const claim = (grants: InviteGrantService, db: any, id: string, c: string) =>
-    outcome(grants.claimGrantForCode(user(db, id) as any, c));
+  const claim = (grants: InviteGrantService, db: StatefulPrisma, id: string, c: string) =>
+    outcome(grants.claimGrantForCode(claimant(db, id), c));
 
   it('existing client cannot claim through a REVOKED code', async () => {
-    const { db, grants, purchases } = build();
+    const { db, grants, purchases } = await build();
     addUser(db, { id: 'old', coach_id: COACH_B });
     boundRow(db, 'GP-REV111', { revoked: true });
     expect(await claim(grants, db, 'old', 'GP-REV111')).toMatchObject({
@@ -156,15 +205,18 @@ describe('SOL-C01-A2 — claim-grant is bound to recipient and lifecycle', () =>
   });
 
   it('existing client cannot claim through an EXPIRED code', async () => {
-    const { db, grants, purchases } = build();
+    const { db, grants, purchases } = await build();
     addUser(db, { id: 'old', coach_id: COACH_B });
     boundRow(db, 'GP-EXP111', { expires_at: new Date(Date.now() - 60_000) });
-    expect(await claim(grants, db, 'old', 'GP-EXP111')).toMatchObject({ status: 409, body: { reason: 'expired' } });
+    expect(await claim(grants, db, 'old', 'GP-EXP111')).toMatchObject({
+      status: 409,
+      body: { reason: 'expired' },
+    });
     expect(purchases('old')).toHaveLength(0);
   });
 
-  it("existing client cannot claim a single-recipient code meant for someone else", async () => {
-    const { db, grants, purchases } = build();
+  it('existing client cannot claim a single-recipient code meant for someone else', async () => {
+    const { db, grants, purchases } = await build();
     addUser(db, { id: 'old', coach_id: COACH_B, email: 'old@example.test' });
     boundRow(db, 'GP-FOR111', { intended_email: 'someone.else@example.test', max_uses: 1 });
     expect(await claim(grants, db, 'old', 'GP-FOR111')).toMatchObject({
@@ -176,45 +228,60 @@ describe('SOL-C01-A2 — claim-grant is bound to recipient and lifecycle', () =>
   });
 
   it('an EXHAUSTED single-use code cannot mint a grant for a second existing client', async () => {
-    const { db, svc, grants, purchases } = build();
+    const { db, svc, grants, purchases } = await build();
     addUser(db, { id: 'first' });
     addUser(db, { id: 'second', coach_id: COACH_B });
     boundRow(db, 'GP-ONE777', { max_uses: 1 });
-    expect((await svc.attachUserToCoachByCode('first', 'GP-ONE777')).grant).toMatchObject({ status: 'created' });
-    expect(await claim(grants, db, 'second', 'GP-ONE777')).toMatchObject({ status: 409, body: { reason: 'exhausted' } });
+    expect((await svc.attachUserToCoachByCode('first', 'GP-ONE777')).grant).toMatchObject({
+      status: 'created',
+    });
+    expect(await claim(grants, db, 'second', 'GP-ONE777')).toMatchObject({
+      status: 409,
+      body: { reason: 'exhausted' },
+    });
     expect(purchases('second')).toHaveLength(0);
     // ...and the attach-time replay path refuses the same way (no grant, attach state unchanged).
     const viaAttach = await svc.attachUserToCoachByCode('second', 'GP-ONE777');
-    expect(viaAttach).toMatchObject({ already_attached: true, grant: { status: 'code_unavailable', reason: 'exhausted' } });
+    expect(viaAttach).toMatchObject({
+      already_attached: true,
+      grant: { status: 'code_unavailable', reason: 'exhausted' },
+    });
     expect(purchases('second')).toHaveLength(0);
   });
 
   it('a valid multi-use code grants an existing client and consumes exactly one seat', async () => {
-    const { db, grants, purchases } = build();
+    const { db, grants, purchases } = await build();
     addUser(db, { id: 'old', coach_id: COACH_B });
     boundRow(db, 'GP-MUL111', { max_uses: 3 });
-    expect(await claim(grants, db, 'old', 'GP-MUL111')).toMatchObject({ ok: { status: 'created' } });
+    expect(await claim(grants, db, 'old', 'GP-MUL111')).toMatchObject({
+      ok: { status: 'created' },
+    });
     expect(code(db, 'GP-MUL111').used_count).toBe(1);
-    expect(await claim(grants, db, 'old', 'GP-MUL111')).toMatchObject({ ok: { status: 'already_active' } });
+    expect(await claim(grants, db, 'old', 'GP-MUL111')).toMatchObject({
+      ok: { status: 'already_active' },
+    });
     expect(code(db, 'GP-MUL111').used_count).toBe(1);
     expect(purchases('old')).toHaveLength(1);
   });
 
   it("another coach's code is not claimable (404, non-leaking)", async () => {
-    const { db, grants } = build();
+    const { db, grants } = await build();
     addUser(db, { id: 'a-client', coach_id: COACH_A });
     boundRow(db, 'GP-BCODE1');
     expect(await claim(grants, db, 'a-client', 'GP-BCODE1')).toMatchObject({ status: 404 });
   });
 
   it('two concurrent claims for the last seat by different clients: one grant, one refusal', async () => {
-    const { db, grants } = build();
+    const { db, grants } = await build();
     addUser(db, { id: 'c1', coach_id: COACH_B });
     addUser(db, { id: 'c2', coach_id: COACH_B });
     boundRow(db, 'GP-LAST11', { max_uses: 1 });
-    const [a, b] = await Promise.all([claim(grants, db, 'c1', 'GP-LAST11'), claim(grants, db, 'c2', 'GP-LAST11')]);
+    const [a, b] = await Promise.all([
+      claim(grants, db, 'c1', 'GP-LAST11'),
+      claim(grants, db, 'c2', 'GP-LAST11'),
+    ]);
     expect([a, b].filter((r) => 'ok' in r)).toHaveLength(1);
-    expect([a, b].filter((r) => (r as any).status === 409)).toHaveLength(1);
+    expect([a, b].filter((r) => 'status' in r && r.status === 409)).toHaveLength(1);
     expect(code(db, 'GP-LAST11').used_count).toBe(1);
     expect(db.state.clientPurchase).toHaveLength(1);
   });
@@ -231,7 +298,7 @@ describe('SOL-C01-B1 / Opus C01-B2 — contracts flag ON: in-app agreement, neve
   });
 
   it('without the agreement the grant is PENDING with a recovery hint, then auto-activates on consent', async () => {
-    const { db, svc, consent, purchases } = build();
+    const { db, svc, consent, purchases } = await build();
     addUser(db, { id: 'stu' });
     const r = await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
     expect(r).toMatchObject({
@@ -239,10 +306,16 @@ describe('SOL-C01-B1 / Opus C01-B2 — contracts flag ON: in-app agreement, neve
       grant: {
         status: 'pending_consent',
         package_id: PKG_B,
-        recovery: { consent_scope: ConsentScope.ONBOARDING_AGREEMENT, endpoint: 'POST /consent/grant' },
+        recovery: {
+          consent_scope: ConsentScope.ONBOARDING_AGREEMENT,
+          endpoint: 'POST /consent/grant',
+        },
       },
     });
-    expect(purchases('stu')[0]).toMatchObject({ status: GRANT_PENDING_CONSENT_STATUS, entitlement_active: false });
+    expect(purchases('stu')[0]).toMatchObject({
+      status: GRANT_PENDING_CONSENT_STATUS,
+      entitlement_active: false,
+    });
 
     // The one in-app "I agree" box.
     await consent.grant('stu', COACH_B, ConsentScope.ONBOARDING_AGREEMENT);
@@ -252,7 +325,7 @@ describe('SOL-C01-B1 / Opus C01-B2 — contracts flag ON: in-app agreement, neve
   });
 
   it('with the agreement already recorded the grant is active immediately (no external e-sign consulted)', async () => {
-    const { db, svc, consent, purchases } = build();
+    const { db, svc, consent, purchases } = await build();
     addUser(db, { id: 'stu' });
     // The agreement is per (client, coach); record it, then attach.
     db.state.user.find((u) => u.id === 'stu')!.coach_id = null;
@@ -263,35 +336,46 @@ describe('SOL-C01-B1 / Opus C01-B2 — contracts flag ON: in-app agreement, neve
   });
 
   it('claim-grant retry after consent activates the pending row (and is idempotent)', async () => {
-    const { db, svc, grants, purchases } = build();
+    const { db, svc, grants, purchases } = await build();
     addUser(db, { id: 'stu' });
     await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
     // Agreement recorded directly (e.g. listener failure) — explicit retry recovers.
     db.state.clientCoachConsent.push({
-      id: 'cc1', client_id: 'stu', coach_id: COACH_B, scope: ConsentScope.ONBOARDING_AGREEMENT,
-      granted_at: new Date(), revoked_at: null,
+      id: 'cc1',
+      client_id: 'stu',
+      coach_id: COACH_B,
+      scope: ConsentScope.ONBOARDING_AGREEMENT,
+      granted_at: new Date(),
+      revoked_at: null,
     });
-    expect(await outcome(grants.claimGrantForCode(user(db, 'stu') as any, 'GP-BBBBBB'))).toMatchObject({
-      ok: { status: 'created' },
-    });
-    expect(await outcome(grants.claimGrantForCode(user(db, 'stu') as any, 'GP-BBBBBB'))).toMatchObject({
-      ok: { status: 'already_active' },
-    });
+    expect(await outcome(grants.claimGrantForCode(claimant(db, 'stu'), 'GP-BBBBBB'))).toMatchObject(
+      {
+        ok: { status: 'created' },
+      },
+    );
+    expect(await outcome(grants.claimGrantForCode(claimant(db, 'stu'), 'GP-BBBBBB'))).toMatchObject(
+      {
+        ok: { status: 'already_active' },
+      },
+    );
     expect(purchases('stu')).toHaveLength(1);
   });
 
   it('a pending grant whose code the coach REVOKED is not activated by consent', async () => {
-    const { db, svc, consent, purchases } = build();
+    const { db, svc, consent, purchases } = await build();
     addUser(db, { id: 'stu' });
     boundRow(db, 'GP-PEND11', { max_uses: 1 });
     await svc.attachUserToCoachByCode('stu', 'GP-PEND11');
     code(db, 'GP-PEND11').revoked = true;
     await consent.grant('stu', COACH_B, ConsentScope.ONBOARDING_AGREEMENT);
-    expect(purchases('stu')[0]).toMatchObject({ entitlement_active: false, status: GRANT_PENDING_CONSENT_STATUS });
+    expect(purchases('stu')[0]).toMatchObject({
+      entitlement_active: false,
+      status: GRANT_PENDING_CONSENT_STATUS,
+    });
   });
 
   it('consent for a DIFFERENT coach does not activate the grant', async () => {
-    const { db, svc, consent, purchases } = build();
+    const { db, svc, consent, purchases } = await build();
     addUser(db, { id: 'stu' });
     await svc.attachUserToCoachByCode('stu', 'GP-BBBBBB');
     await consent.grant('stu', COACH_A, ConsentScope.ONBOARDING_AGREEMENT);

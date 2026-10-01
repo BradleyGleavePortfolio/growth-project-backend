@@ -100,7 +100,9 @@ export const GRANT_CONSENT_RECOVERY = {
 
 /** Thrown inside a grant transaction when the code cannot authorise a new grant; rolls back any seat bump. */
 class CodeUnavailable extends Error {
-  constructor(readonly reason: 'revoked' | 'expired' | 'exhausted' | 'recipient_mismatch' | 'not_found') {
+  constructor(
+    readonly reason: 'revoked' | 'expired' | 'exhausted' | 'recipient_mismatch' | 'not_found',
+  ) {
     super(`code unavailable: ${reason}`);
   }
 }
@@ -430,7 +432,11 @@ export class InviteGrantService implements OnModuleInit {
       if (row.entitlement_active) return { purchase_id: row.id, status: 'already_active' };
       if (row.status === GRANT_PENDING_CONSENT_STATUS) {
         if (!active) {
-          return { purchase_id: row.id, status: 'pending_consent', recovery: GRANT_CONSENT_RECOVERY };
+          return {
+            purchase_id: row.id,
+            status: 'pending_consent',
+            recovery: GRANT_CONSENT_RECOVERY,
+          };
         }
         return this.activateRow(row, pkg, input, now, db);
       }
@@ -449,7 +455,12 @@ export class InviteGrantService implements OnModuleInit {
         targetUserId: input.clientUserId,
         targetType: 'client_purchase',
         targetId: row.id,
-        metadata: { source: input.source, package_id: pkg.id, reason: 'pending_consent', ...input.metadata },
+        metadata: {
+          source: input.source,
+          package_id: pkg.id,
+          reason: 'pending_consent',
+          ...input.metadata,
+        },
       });
       return { purchase_id: row.id, status: 'pending_consent', recovery: GRANT_CONSENT_RECOVERY };
     }
@@ -462,7 +473,12 @@ export class InviteGrantService implements OnModuleInit {
   private async activateRow(
     row: { id: string; grant_metadata: Prisma.JsonValue | null },
     pkg: CoachPackage,
-    input: { clientUserId: string; coachUserId: string; source: GrantSource; metadata: Record<string, unknown> },
+    input: {
+      clientUserId: string;
+      coachUserId: string;
+      source: GrantSource;
+      metadata: Record<string, unknown>;
+    },
     now: Date,
     db: GrantDb,
   ): Promise<GrantOutcome> {
@@ -485,7 +501,13 @@ export class InviteGrantService implements OnModuleInit {
   /** Fan-out + audit for a grant that just became active. */
   private async deliver(
     purchaseId: string,
-    input: { clientUserId: string; coachUserId: string; source: GrantSource; metadata: Record<string, unknown>; packageId?: string },
+    input: {
+      clientUserId: string;
+      coachUserId: string;
+      source: GrantSource;
+      metadata: Record<string, unknown>;
+      packageId?: string;
+    },
     now: Date,
     db: GrantDb,
   ): Promise<void> {
@@ -497,7 +519,9 @@ export class InviteGrantService implements OnModuleInit {
         { id: purchaseId },
         {
           entrypoint:
-            input.source === GRANT_SOURCE.FREE_PACKAGE_CLAIM ? 'free_package_claim' : 'invite_grant',
+            input.source === GRANT_SOURCE.FREE_PACKAGE_CLAIM
+              ? 'free_package_claim'
+              : 'invite_grant',
           coachId: input.coachUserId,
           clientId: input.clientUserId,
           purchaseTime: now,
@@ -545,10 +569,12 @@ export class InviteGrantService implements OnModuleInit {
     if (!row) throw new CodeUnavailable('not_found');
     if (row.revoked) throw new CodeUnavailable('revoked');
     if (row.accepted_by_user_id && row.accepted_by_user_id === client.id) return;
-    if (row.expires_at && row.expires_at.getTime() <= Date.now()) throw new CodeUnavailable('expired');
+    if (row.expires_at && row.expires_at.getTime() <= Date.now())
+      throw new CodeUnavailable('expired');
     if (row.intended_email) {
       const mine = (client.email ?? '').toLowerCase().trim();
-      if (mine !== row.intended_email.toLowerCase().trim()) throw new CodeUnavailable('recipient_mismatch');
+      if (mine !== row.intended_email.toLowerCase().trim())
+        throw new CodeUnavailable('recipient_mismatch');
     }
     const bumped = await db.inviteCode.updateMany({
       where: {
@@ -622,7 +648,14 @@ export class InviteGrantService implements OnModuleInit {
           }
         }
         return this.grant(
-          { clientUserId: client.id, coachUserId: input.coachUserId, packageId: pkg.id, source, metadata, active },
+          {
+            clientUserId: client.id,
+            coachUserId: input.coachUserId,
+            packageId: pkg.id,
+            source,
+            metadata,
+            active,
+          },
           tx,
         );
       });
@@ -654,7 +687,10 @@ export class InviteGrantService implements OnModuleInit {
     const packageId = binding.package_id;
     const metadata = this.bindingMetadata(binding);
 
-    const skip = (status: 'package_unavailable' | 'contract_required' | 'failed', detail: string) => {
+    const skip = (
+      status: 'package_unavailable' | 'contract_required' | 'failed',
+      detail: string,
+    ) => {
       this.logger.warn(
         `grant skipped (${status}): client=${input.clientUserId} coach=${input.coachUserId} package=${packageId} code=${binding.code} — ${detail}`,
       );
@@ -674,7 +710,10 @@ export class InviteGrantService implements OnModuleInit {
     try {
       const pkg = await this.prisma.coachPackage.findUnique({ where: { id: packageId } });
       if (!pkg || pkg.coach_id !== input.coachUserId || !pkg.is_active || pkg.archived_at) {
-        return skip('package_unavailable', 'bound package is missing, archived, inactive or moved coach');
+        return skip(
+          'package_unavailable',
+          'bound package is missing, archived, inactive or moved coach',
+        );
       }
       const client = await this.prisma.user.findUnique({
         where: { id: input.clientUserId },
@@ -691,12 +730,9 @@ export class InviteGrantService implements OnModuleInit {
         pkg,
         redemption: input.redemption,
       });
-      if (out === 'unavailable' || !('status' in out && 'purchase_id' in out)) {
-        return skip(
-          'contract_required',
-          out === 'unavailable' ? 'contract gate unavailable' : `${(out as any).layer} unsigned`,
-        );
-      }
+      if (out === 'unavailable') return skip('contract_required', 'contract gate unavailable');
+      // A GrantOutcome always carries `purchase_id`; the contract-gate refusal never does.
+      if (!('purchase_id' in out)) return skip('contract_required', `${out.layer} unsigned`);
       return out;
     } catch (err) {
       return skip('failed', err instanceof Error ? err.message : String(err));
@@ -715,14 +751,23 @@ export class InviteGrantService implements OnModuleInit {
     code: string,
   ): Promise<GrantOutcome> {
     if (client.role !== 'student') {
-      throw new ForbiddenException({ error: 'CLIENT_ONLY', message: 'Only clients can claim a grant' });
+      throw new ForbiddenException({
+        error: 'CLIENT_ONLY',
+        message: 'Only clients can claim a grant',
+      });
     }
     const binding = await this.resolveBinding(code.trim());
     if (!binding || !client.coach_id || binding.coach_id !== client.coach_id) {
-      throw new NotFoundException({ error: 'INVITE_CODE_NOT_FOUND', message: 'Invite code not found' });
+      throw new NotFoundException({
+        error: 'INVITE_CODE_NOT_FOUND',
+        message: 'Invite code not found',
+      });
     }
     if (binding.grant_mode === 'none' || !binding.package_id) {
-      throw new BadRequestException({ error: 'CODE_HAS_NO_GRANT', message: 'This code does not carry a package' });
+      throw new BadRequestException({
+        error: 'CODE_HAS_NO_GRANT',
+        message: 'This code does not carry a package',
+      });
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: binding.package_id } });
     if (!pkg || pkg.coach_id !== binding.coach_id || !pkg.is_active || pkg.archived_at) {
@@ -732,7 +777,8 @@ export class InviteGrantService implements OnModuleInit {
       where: { id: client.id },
       select: { id: true, email: true, name: true, role: true, coach_id: true },
     });
-    if (!person) throw new NotFoundException({ error: 'CLIENT_NOT_FOUND', message: 'Client not found' });
+    if (!person)
+      throw new NotFoundException({ error: 'CLIENT_NOT_FOUND', message: 'Client not found' });
     const out = await this.grantForBinding({
       client: person,
       coachUserId: binding.coach_id,
@@ -764,7 +810,10 @@ export class InviteGrantService implements OnModuleInit {
     packageId: string,
   ): Promise<GrantOutcome> {
     if (client.role !== 'student') {
-      throw new ForbiddenException({ error: 'CLIENT_ONLY', message: 'Only clients can claim a package' });
+      throw new ForbiddenException({
+        error: 'CLIENT_ONLY',
+        message: 'Only clients can claim a package',
+      });
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: packageId } });
     // Non-leaking 404 for another coach's package (same rule as checkout).
@@ -788,7 +837,8 @@ export class InviteGrantService implements OnModuleInit {
       where: { id: client.id },
       select: { id: true, email: true, name: true, role: true, coach_id: true },
     });
-    if (!person) throw new NotFoundException({ error: 'CLIENT_NOT_FOUND', message: 'Client not found' });
+    if (!person)
+      throw new NotFoundException({ error: 'CLIENT_NOT_FOUND', message: 'Client not found' });
     const gate = await this.evaluateGrantGate(person, pkg);
     if (gate === 'unavailable') {
       throw new BadRequestException({
