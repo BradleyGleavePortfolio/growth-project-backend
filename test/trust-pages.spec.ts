@@ -20,15 +20,22 @@ const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'se
 // Visible text of a page: tags removed, entities decoded. Lets copy
 // assertions read like the page a person sees.
 function visibleText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ');
+  // Text nodes only: drop <head> (styles), then split on tags. Test helper
+  // for reading trusted, server-rendered copy; not a sanitizer.
+  const bodyStart = html.indexOf('<body>');
+  const body = bodyStart >= 0 ? html.slice(bodyStart) : html;
+  return decodeEntities(body.split(/<[^>]*>/).join(' ')).replace(/\s+/g, ' ');
+}
+
+function decodeEntities(s: string): string {
+  const map: Record<string, string> = {
+    '&quot;': '"',
+    '&#39;': "'",
+    '&lt;': '<',
+    '&gt;': '>',
+    '&amp;': '&',
+  };
+  return s.replace(/&(?:quot|#39|lt|gt|amp);/g, (m) => map[m] ?? m);
 }
 
 function makeRes() {
@@ -372,7 +379,7 @@ describe('HTML escaping and link safety', () => {
     expect(html).not.toMatch(/Trust & Privacy/);
     const body = html.slice(html.indexOf('<body>'));
     // No raw double quotes leak into text nodes (only attributes use them).
-    expect(body.replace(/<[^>]*>/g, '')).not.toContain('"');
+    expect(body.split(/<[^>]*>/).join('')).not.toContain('"');
   });
 
   it('renders no script tags or inline event handlers', () => {
