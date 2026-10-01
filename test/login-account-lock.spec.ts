@@ -366,8 +366,9 @@ describe('A1: every password sign-in path is covered by the per-account lock', (
     @Module({ providers: [{ provide: getStorageToken(), useValue: storage }], exports: [getStorageToken()] })
     class StorageStub {}
     const moduleRef = await Test.createTestingModule({
+      // AuthController is left out: its guarded handlers pull the whole JWT
+      // stack into DI. AuthModule imports the same TgpThrottlerModule.
       imports: [StorageStub, TgpThrottlerModule],
-      controllers: [AuthController],
       providers: [
         AuthService,
         { provide: PrismaService, useValue: prismaDouble() },
@@ -380,16 +381,17 @@ describe('A1: every password sign-in path is covered by the per-account lock', (
     }).compile();
     const service = moduleRef.get(AuthService);
     expect(Reflect.get(service, 'loginThrottle')).toBe(moduleRef.get(LoginThrottleResetService));
-    // End to end through DI: the extension endpoint locks.
-    const controller = moduleRef.get(AuthController);
-    const req = cast<Parameters<AuthController['login']>[1]>({ headers: {}, ip: '198.51.100.9' });
+    // End to end through the DI-built service: extension failures lock both.
     const email = `di-${Date.now()}@example.test`;
     PASSWORDS[email] = 'pw';
     for (let i = 0; i < resolveAccountFailureLimit(); i += 1) {
-      expect(await outcome(() => controller.extensionLogin({ email, password: 'nope' }, req))).toBe('401');
+      expect(await outcome(() => service.extensionLogin(email, 'nope'))).toBe('401');
     }
-    expect(await outcome(() => controller.extensionLogin({ email, password: 'pw' }, req))).toBe('429');
-    expect(await outcome(() => controller.login({ email, password: 'pw' }, req))).toBe('429');
+    expect(await outcome(() => service.extensionLogin(email, 'pw'))).toBe('429');
+    expect(await outcome(() => service.login(email, 'pw'))).toBe('429');
+    // AuthModule really imports the module that exports the provider.
+    const authModuleSrc = src('src/auth/auth.module.ts');
+    expect(authModuleSrc).toMatch(/imports:\s*\[[^\]]*ThrottlerModule/);
     await moduleRef.close();
   });
 });
