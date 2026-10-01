@@ -249,11 +249,12 @@ describe('community UGC safety flow (Apple 1.2)', () => {
 
   // ── block ────────────────────────────────────────────────────────────────
 
-  it("block hides the blocked user's messages and comments for the blocker only", async () => {
+  it("block hides messages and comments both ways (blocker and blocked), bystanders unaffected", async () => {
     const post = await posts.create(coach, wsId, { title: 'Check in', body: 'How was the week' });
     const bobMsg = await messages.send(bob, cohortId, 'Bob in the cohort');
     const aliceMsg = await messages.send(alice, cohortId, 'Alice in the cohort');
     const bobComment = await posts.addComment(bob, post.post.id, 'Bob comment');
+    const aliceComment = await posts.addComment(alice, post.post.id, 'Alice comment');
 
     await safety.block(alice, bob.id);
 
@@ -262,11 +263,14 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     const commentsForAlice = await posts.listComments(alice, post.post.id);
     expect(commentsForAlice.comments.map((c) => c.id)).not.toContain(bobComment.comment.id);
 
-    // the blocked user and everyone else still see everything
+    // "If you block someone, they can no longer see your posts": the blocked
+    // user no longer sees the blocker either.
     const forBob = await messages.list(bob, cohortId, {});
-    expect(forBob.messages.map((x) => x.id)).toEqual(
-      expect.arrayContaining([bobMsg.message.id, aliceMsg.message.id]),
-    );
+    expect(forBob.messages.map((x) => x.id)).toEqual([bobMsg.message.id]);
+    const commentsForBob = await posts.listComments(bob, post.post.id);
+    expect(commentsForBob.comments.map((c) => c.id)).not.toContain(aliceComment.comment.id);
+
+    // everyone else still sees everything
     const forCoach = await messages.list(coach, cohortId, {});
     expect(forCoach.messages).toHaveLength(2);
 
@@ -275,9 +279,10 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     ]);
     await safety.unblock(alice, bob.id);
     expect((await messages.list(alice, cohortId, {})).messages).toHaveLength(2);
+    expect((await messages.list(bob, cohortId, {})).messages).toHaveLength(2);
   });
 
-  it('block closes DMs in both directions and hides the thread from the blocker', async () => {
+  it('block closes DMs in both directions and hides the thread from both sides', async () => {
     await dms.send(bob, wsId, alice.id, 'hello');
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(1);
     await safety.block(alice, bob.id);
@@ -289,6 +294,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     await expect(dms.listThread(alice, wsId, bob.id, {})).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
   });
 
   it('block rejects self, strangers outside the community and the member’s own coach', async () => {

@@ -63,10 +63,14 @@ export const COMMUNITY_RESPONSE_COMMITMENT =
  *
  * Blocks reuse the existing `UserBlock` table (one block list per user, the
  * same list coach-client messaging already honours), so blocking someone in
- * the community also stops them messaging you there. A block hides the
- * blocked user's posts, comments, cohort messages, challenge comments, voice
- * notes and search results from the blocker, and stops DMs in both
- * directions. The blocked user is never told.
+ * the community also stops them messaging you there. A block is TWO-WAY on
+ * every community read surface: the blocker no longer sees the blocked
+ * user's posts, comments, cohort messages, challenge comments, voice notes,
+ * roster/leaderboard rows, wins and search results, AND the blocked user no
+ * longer sees the blocker's. DMs are closed in both directions. Unblocking
+ * restores both directions at once (one row). The blocked user is never told.
+ * This makes the owner-approved copy true: "If you block someone, they can no
+ * longer see your posts or message you, and they are not told."
  */
 @Injectable()
 export class CommunitySafetyService {
@@ -106,19 +110,56 @@ export class CommunitySafetyService {
     return row !== null;
   }
 
-  /** Drop rows authored by users the viewer blocked. */
+  /**
+   * Ids hidden from the viewer in BOTH directions: users the viewer blocked
+   * and users who blocked the viewer. One query over both columns.
+   */
+  async hiddenFromViewer(viewerId: string): Promise<Set<string>> {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
+      select: { blocker_id: true, blocked_id: true },
+    });
+    const hidden = new Set<string>();
+    for (const r of rows) {
+      if (r.blocker_id === viewerId) hidden.add(r.blocked_id);
+      else if (r.blocked_id === viewerId) hidden.add(r.blocker_id);
+    }
+    hidden.delete(viewerId);
+    return hidden;
+  }
+
+  /**
+   * Drop rows authored by anyone in a block relation with the viewer, in
+   * either direction (the viewer blocked them, or they blocked the viewer).
+   */
   async filterBlocked<T>(
     viewerId: string,
     rows: T[],
     authorOf: (row: T) => string | null | undefined,
   ): Promise<T[]> {
     if (rows.length === 0) return rows;
-    const blocked = await this.blockedByViewer(viewerId);
-    if (blocked.size === 0) return rows;
+    const hidden = await this.hiddenFromViewer(viewerId);
+    if (hidden.size === 0) return rows;
     return rows.filter((r) => {
       const author = authorOf(r);
-      return !author || !blocked.has(author);
+      return !author || !hidden.has(author);
     });
+  }
+
+  /**
+   * Single-item reads: 404 (same body as "does not exist") when the viewer
+   * and the author are in a block relation either way, so a direct link or
+   * id cannot be used to read around the list filter.
+   */
+  async assertVisibleTo(
+    viewerId: string,
+    authorId: string | null | undefined,
+    notFoundBody: object,
+  ): Promise<void> {
+    if (!authorId || authorId === viewerId) return;
+    if (await this.isBlockedEitherWay(viewerId, authorId)) {
+      throw new NotFoundException(notFoundBody);
+    }
   }
 
   async assertDmAllowed(senderId: string, recipientId: string): Promise<void> {

@@ -554,9 +554,12 @@ export class CommunityChallengesService {
       limit: query.limit,
       cursor: query.cursor,
     });
+    // Two-way block: drop participants in a block relation with the caller
+    // (cursor stays on the unfiltered page, as on every other list).
+    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.user_id);
     // Every returned row is already opted in, so ranks are simply page-local
     // (1-based within the returned page).
-    const rows: LeaderboardRowView[] = page.items.map((p, i) => ({
+    const rows: LeaderboardRowView[] = visibleItems.map((p, i) => ({
       user_id: p.user_id,
       rank: i + 1,
       progress_value: p.progress_value.toNumber(),

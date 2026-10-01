@@ -106,7 +106,8 @@ export class CommunitySearchService {
     const hasMore = rows.length > pageSize;
     const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
 
-    // Apple 1.2: hide rows authored by users the caller blocked. Filtered
+    // Apple 1.2: hide rows authored by anyone in a block relation with the
+    // caller, either direction (two-way). Filtered
     // after the cursor page is cut (the cursor stays on the unfiltered page).
     const visibleRows = await this.safety.filterBlocked(user.id, pageRows, (r) => r.author_id);
     const results: SearchResultRow[] = visibleRows.map((r) => ({

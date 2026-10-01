@@ -466,6 +466,80 @@ describe('CommunityChallengesService', () => {
     });
   });
 
+  // ── Two-way block (owner-approved copy: "they can no longer see your posts") ──
+
+  describe('two-way block on challenge comments and the leaderboard', () => {
+    const PEER_MSG = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    let blocks: Array<[string, string]>;
+    let blocked: CommunityChallengesService;
+
+    function comment(id: string, senderId: string): CommunityMessage {
+      return {
+        id,
+        plan_context_id: CH_A,
+        sender_id: senderId,
+        body: 'Nice one',
+        created_at: NOW,
+      } as CommunityMessage;
+    }
+
+    beforeEach(() => {
+      blocks = [];
+      blocked = new CommunityChallengesService(
+        access as never,
+        repo as never,
+        moderation as never,
+        realtime as never,
+        push as never,
+        safetyWithBlocks(blocks),
+      );
+      repo.findChallengeById.mockResolvedValue(challenge({ leaderboard_enabled: true }));
+      access.canAccessWorkspace.mockResolvedValue(true);
+      repo.findOptIn.mockResolvedValue(optInRow());
+      repo.listComments.mockResolvedValue({
+        items: [comment(MSG_ID, MEMBER_ID), comment(PEER_MSG, PEER_ID)],
+        nextCursor: null,
+      });
+      repo.listParticipationsByProgress.mockResolvedValue({
+        items: [
+          participation({ user_id: PEER_ID, progress_value: new Prisma.Decimal(90) }),
+          participation({ user_id: MEMBER_ID, progress_value: new Prisma.Decimal(40) }),
+        ],
+        nextCursor: null,
+      });
+    });
+
+    const peer = makeUser({ id: PEER_ID, role: 'student' });
+    const idsOf = (r: { comments: Array<{ id: string }> }) => r.comments.map((c) => c.id);
+
+    it('hides comments both ways when the member blocks the peer, and unblock restores', async () => {
+      blocks.push([MEMBER_ID, PEER_ID]);
+      expect(idsOf(await blocked.listComments(member, CH_A))).toEqual([MSG_ID]);
+      expect(idsOf(await blocked.listComments(peer, CH_A))).toEqual([PEER_MSG]);
+      blocks.length = 0;
+      expect(idsOf(await blocked.listComments(member, CH_A))).toEqual([MSG_ID, PEER_MSG]);
+      expect(idsOf(await blocked.listComments(peer, CH_A))).toEqual([MSG_ID, PEER_MSG]);
+    });
+
+    it('hides comments both ways when the peer blocks the member', async () => {
+      blocks.push([PEER_ID, MEMBER_ID]);
+      expect(idsOf(await blocked.listComments(member, CH_A))).toEqual([MSG_ID]);
+      expect(idsOf(await blocked.listComments(peer, CH_A))).toEqual([PEER_MSG]);
+    });
+
+    it('drops leaderboard rows both ways and re-ranks; unblock restores', async () => {
+      blocks.push([PEER_ID, MEMBER_ID]);
+      const forMember = await blocked.getLeaderboard(member, CH_A);
+      expect(forMember.rows.map((r) => r.user_id)).toEqual([MEMBER_ID]);
+      expect(forMember.rows[0].rank).toBe(1);
+      const forPeer = await blocked.getLeaderboard(peer, CH_A);
+      expect(forPeer.rows.map((r) => r.user_id)).toEqual([PEER_ID]);
+      blocks.length = 0;
+      const restored = await blocked.getLeaderboard(member, CH_A);
+      expect(restored.rows.map((r) => r.user_id)).toEqual([PEER_ID, MEMBER_ID]);
+    });
+  });
+
   // ── Comments + moderation ──────────────────────────────────────────────────────
 
   describe('comments', () => {

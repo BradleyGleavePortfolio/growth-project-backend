@@ -38,6 +38,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { CommunityController } from '../../src/community/community.controller';
 import { CommunityService } from '../../src/community/community.service';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
@@ -162,6 +163,7 @@ itLive('community v1-2 foundation (live DB)', () => {
       providers: [
         CommunityService,
         CommunityRepository,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         ClientEntitlementGuard,
         Reflector,

@@ -241,6 +241,8 @@ export class CommunityMessagesService {
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Two-way block: a direct id read cannot go around the list filter.
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND);
     return CommunityMessageResponseSchema.parse({ message: this.view(m) });
   }
 

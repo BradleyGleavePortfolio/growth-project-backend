@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { CommunityMembership, CommunityWorkspace, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
+import { CommunitySafetyService } from './safety/community-safety.service';
 import { resolveCommunityFlag } from './community-feature-flag.guard';
 import {
   CommunityMeResponse,
@@ -56,6 +57,7 @@ export class CommunityService {
   constructor(
     private prisma: PrismaService,
     private readonly repo: CommunityRepository,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Effective-role + tri-state helpers ────────────────────────────────────
@@ -231,10 +233,15 @@ export class CommunityService {
         ? await this.repo.findCohortById(membership.cohort_id)
         : null;
 
-    const { event, pinnedPost, challenge } = await this.repo.findTodayContent(
+    const { event, pinnedPost: pinnedRow, challenge } = await this.repo.findTodayContent(
       workspace.id,
       new Date(),
     );
+    // Two-way block: a pinned post by someone in a block relation with the
+    // caller is not surfaced on Today (the Hall list hides it too).
+    const [pinnedPost = null] = pinnedRow
+      ? await this.safety.filterBlocked(user.id, [pinnedRow], (p) => p.author_id)
+      : [];
 
     const cohortCard = cohort
       ? {
@@ -414,7 +421,9 @@ export class CommunityService {
     const countByUser = new Map<string, number>();
     for (const g of grouped) countByUser.set(g.user_id, g._count._all);
 
-    const leaderboard = students.map((s) => ({
+    // Two-way block: hide roster rows in a block relation with the caller.
+    const visibleStudents = await this.safety.filterBlocked(userId, students, (s) => s.id);
+    const leaderboard = visibleStudents.map((s) => ({
       user_id: s.id,
       name: s.name,
       workouts_completed: countByUser.get(s.id) ?? 0,
@@ -445,7 +454,9 @@ export class CommunityService {
       },
     });
 
-    return wins.map((w) => ({
+    // Two-way block: hide wins by anyone in a block relation with the caller.
+    const visibleWins = await this.safety.filterBlocked(userId, wins, (w) => w.user_id);
+    return visibleWins.map((w) => ({
       id: w.id,
       displayName: anonymiseName(w.user.name),
       action: w.title, // "title" is the win action text
