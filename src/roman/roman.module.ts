@@ -22,6 +22,7 @@ import { RomanModelHealthService } from './model/roman-model-health.service';
 import { RomanHealthController } from './model/roman-health.controller';
 import { RomanConsentController } from './consent/roman-consent.controller';
 import { RomanConsentService } from './consent/roman-consent.service';
+import { RomanRetentionService } from './roman-retention.service';
 import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { RomanContextController } from './context/roman-context.controller';
@@ -45,6 +46,7 @@ import { RomanContextController } from './context/roman-context.controller';
     RomanConsentService,
     AiProcessingConsentGuard,
     RomanClientContextService,
+    RomanRetentionService,
   ],
   exports: [
     RomanService,

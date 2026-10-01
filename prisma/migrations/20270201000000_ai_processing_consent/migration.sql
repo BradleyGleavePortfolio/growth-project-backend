@@ -4,9 +4,10 @@
 --
 -- "AiProcessingConsent" records that a user allowed their Roman messages and
 -- client data to be sent to a third-party AI processor (processor='anthropic',
--- purpose='roman_chat', consent_version='roman-ai-v1'). The server refuses
--- every Roman turn with 403 ROMAN_CONSENT_REQUIRED until a live row for the
--- current version exists. The effective state is derived exactly like
+-- purpose='client_ai_processing', consent_version='client-ai-v2'). The server
+-- refuses every Roman turn with 403 ROMAN_CONSENT_REQUIRED, and every coach-AI
+-- request about that client with 403 CLIENT_AI_CONSENT_REQUIRED, until a live
+-- row for the current version exists. The effective state is derived exactly like
 -- "ClientCoachConsent": granted_at set AND (revoked_at IS NULL OR
 -- revoked_at < granted_at).
 --
@@ -30,6 +31,11 @@ CREATE TABLE "AiProcessingConsent" (
     "copy_sha256"     TEXT,
     "granted_at"      TIMESTAMP(3),
     "revoked_at"      TIMESTAMP(3),
+    -- Owner ruling 2026-09-30 16:31 #5: the same onboarding "I agree" box
+    -- records the personal-training waiver acceptance. Nullable: a plain
+    -- Roman re-consent leaves them untouched.
+    "waiver_version"     TEXT,
+    "waiver_accepted_at" TIMESTAMP(3),
     "platform"        TEXT,
     "app_version"     TEXT,
     "locale"          TEXT,

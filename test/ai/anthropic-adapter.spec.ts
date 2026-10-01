@@ -31,8 +31,13 @@ function buildAdapter() {
       }),
     },
   } as any;
-  const adapter = new AnthropicAdapter(config, prisma);
-  return { adapter, prisma, aiCalls };
+  // R2 / Sol A2: requests that name a client subject require a consent gate
+  // (fail closed). These tests exercise retry/cost/log behaviour, so they bind
+  // an allow-all gate; the gate's own behaviour is covered in
+  // test/roman/roman-consent.spec.ts.
+  const allowAllGate = { assertAiConsent: jest.fn(async () => undefined) };
+  const adapter = new AnthropicAdapter(config, prisma, undefined, allowAllGate);
+  return { adapter, prisma, aiCalls, allowAllGate };
 }
 
 describe('AnthropicAdapter.complete', () => {
