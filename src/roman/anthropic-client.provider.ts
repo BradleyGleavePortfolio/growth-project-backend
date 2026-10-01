@@ -22,13 +22,9 @@ import Anthropic from '@anthropic-ai/sdk';
 /** DI token for Roman's Anthropic client (brief §4). */
 export const ROMAN_ANTHROPIC_CLIENT = 'ROMAN_ANTHROPIC_CLIENT';
 
-/**
- * Phase 1 model (brief §4): cost-efficient Sonnet default. Phase 1.1 may
- * upgrade to opus for milestone moments — documented in the PR body. R31
- * note: this is the PRODUCT runtime model the deployed Roman calls, chosen by
- * the brief; it is unrelated to the agent runtime that authored this code.
- */
-export const ROMAN_MODEL_PHASE_1 = 'claude-3-7-sonnet-20250219';
+// The model id is NOT a constant here any more. It comes from config
+// (`ROMAN_MODEL_PRIMARY` / `ROMAN_MODEL_FALLBACK`, see ./model/roman-model.config.ts)
+// after Roman shipped pinned to a model Anthropic later retired (plan §1.2).
 
 /**
  * Factory provider. Returns `null` when no API key is configured so the
@@ -40,8 +36,7 @@ export const romanAnthropicClientProvider: Provider = {
   provide: ROMAN_ANTHROPIC_CLIENT,
   inject: [ConfigService],
   useFactory: (config: ConfigService): Anthropic | null => {
-    const apiKey =
-      config.get<string>('ANTHROPIC_API_KEY') ?? process.env.ANTHROPIC_API_KEY;
+    const apiKey = config.get<string>('ANTHROPIC_API_KEY') ?? process.env.ANTHROPIC_API_KEY;
     if (!apiKey || !apiKey.trim()) {
       // No key — service surfaces ROMAN_UNAVAILABLE rather than crashing boot.
       return null;

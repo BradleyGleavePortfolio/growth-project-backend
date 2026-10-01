@@ -18,10 +18,20 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
+import { RomanModelHealthService } from './model/roman-model-health.service';
+import { RomanHealthController } from './model/roman-health.controller';
 
 @Module({
-  controllers: [RomanController],
-  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
-  exports: [RomanService],
+  // RomanHealthController serves GET /health/roman (@Public, no feature gate)
+  // so the operator and the deploy smoke can see model health while the chat
+  // surface itself stays dark behind RomanFeatureGuard.
+  controllers: [RomanController, RomanHealthController],
+  providers: [
+    RomanService,
+    RomanFeatureGuard,
+    romanAnthropicClientProvider,
+    RomanModelHealthService,
+  ],
+  exports: [RomanService, RomanModelHealthService],
 })
 export class RomanModule {}

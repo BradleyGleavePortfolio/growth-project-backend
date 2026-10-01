@@ -90,9 +90,7 @@ function makePrisma(sessionOwner = 'user-A') {
       return row;
     }),
     findMany: jest.fn(async () =>
-      [...messages].sort(
-        (a, b) => b.created_at.getTime() - a.created_at.getTime(),
-      ),
+      [...messages].sort((a, b) => b.created_at.getTime() - a.created_at.getTime()),
     ),
     count: jest.fn(async () => 0),
     findFirst: jest.fn(async () => null),
@@ -144,9 +142,7 @@ function makeAnthropic(deltas: string[], gap: () => Promise<void> = async () => 
   };
   return {
     messages: {
-      stream: jest.fn(
-        (_body: unknown, _options?: { signal?: AbortSignal }) => stream,
-      ),
+      stream: jest.fn((_body: unknown, _options?: { signal?: AbortSignal }) => stream),
     },
   };
 }
@@ -218,9 +214,9 @@ describe('Roman SSE streaming — happy path', () => {
     );
     expect(deltas.map((d) => d.text)).toEqual(['Push ', 'harder', '.']);
 
-    const done = (frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>).find(
-      (f) => f.type === 'done',
-    );
+    const done = (
+      frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>
+    ).find((f) => f.type === 'done');
     expect(done).toBeDefined();
     expect(done?.interrupted).toBe(false);
     expect(done?.messageId).toBeTruthy();
@@ -232,7 +228,7 @@ describe('Roman SSE streaming — happy path', () => {
     expect(assistant?.interrupted).toBe(false);
     expect(assistant?.prompt_tokens).toBe(42);
     expect(assistant?.completion_tokens).toBe(7);
-    expect(assistant?.model_id).toBe('claude-3-7-sonnet-20250219');
+    expect(assistant?.model_id).toBe('claude-sonnet-5-5');
   });
 
   it('writes correctly-framed SSE through the controller (data: …\\n\\n + done)', async () => {
@@ -331,8 +327,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     // the upstream provider request can be cancelled (brief §7).
     expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
     const options = anthropic.messages.stream.mock.calls[0][1] as
-      | { signal?: AbortSignal }
-      | undefined;
+      { signal?: AbortSignal } | undefined;
     expect(options?.signal).toBeInstanceOf(AbortSignal);
     // After the client disconnected, that upstream signal must be aborted so
     // Anthropic stops generating — no orphaned stream.
@@ -350,8 +345,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     }
 
     const options = anthropic.messages.stream.mock.calls[0][1] as
-      | { signal?: AbortSignal }
-      | undefined;
+      { signal?: AbortSignal } | undefined;
     expect(options?.signal).toBeInstanceOf(AbortSignal);
     expect(options?.signal?.aborted).toBe(true);
   });
