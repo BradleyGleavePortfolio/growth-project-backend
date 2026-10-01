@@ -260,4 +260,42 @@ describe('SlotComputerService', () => {
       ]);
     });
   });
+
+  describe('computeOpenSlots — DST transitions keep the coach wall clock (S-SCHED)', () => {
+    const win = [{ day_of_week: 1, start_minute: 9 * 60, end_minute: 10 * 60 }];
+    it('spring forward: Mon 09:00 LA is 17:00Z before and 16:00Z after 2027-03-14', () => {
+      const before = computeOpenSlots({
+        from: new Date('2027-03-08T00:00:00Z'),
+        to: new Date('2027-03-09T00:00:00Z'),
+        durationMinutes: 60,
+        coachTimezone: 'America/Los_Angeles',
+        windows: win,
+        overrides: [],
+        bookings: [],
+      });
+      const after = computeOpenSlots({
+        from: new Date('2027-03-15T00:00:00Z'),
+        to: new Date('2027-03-16T00:00:00Z'),
+        durationMinutes: 60,
+        coachTimezone: 'America/Los_Angeles',
+        windows: win,
+        overrides: [],
+        bookings: [],
+      });
+      expect(before.map((s) => s.start_at)).toEqual(['2027-03-08T17:00:00.000Z']);
+      expect(after.map((s) => s.start_at)).toEqual(['2027-03-15T16:00:00.000Z']);
+    });
+    it('fall back: Mon 09:00 LA is 17:00Z on 2026-11-02', () => {
+      const r = computeOpenSlots({
+        from: new Date('2026-11-02T00:00:00Z'),
+        to: new Date('2026-11-03T00:00:00Z'),
+        durationMinutes: 60,
+        coachTimezone: 'America/Los_Angeles',
+        windows: win,
+        overrides: [],
+        bookings: [],
+      });
+      expect(r.map((s) => s.start_at)).toEqual(['2026-11-02T17:00:00.000Z']);
+    });
+  });
 });

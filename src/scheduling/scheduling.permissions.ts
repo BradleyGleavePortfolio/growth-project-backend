@@ -121,3 +121,20 @@ export function assertCanManageAvailability(
   if (user.role === 'coach' && user.id === coachId) return;
   throw new ForbiddenException('Only the coach can manage their availability');
 }
+
+// S-SCHED: who may browse a coach's bookable surface (appointment types,
+// recurring availability, open slots). The coach themselves, an owner, or a
+// client whose User.coach_id is this coach. A client of another coach, an
+// unattached client, or a different coach gets 403. Kept identical to the
+// assertCanRequestSession attachment rule so "can see" == "can book".
+export function assertCanBrowseCoachBooking(
+  user: { id: string; role: Role; coach_id: string | null },
+  coachId: string,
+): void {
+  if (user.role === 'owner') return;
+  if (user.role === 'coach' && user.id === coachId) return;
+  if (user.role === 'student' && user.coach_id === coachId) return;
+  throw new ForbiddenException(
+    'You can only view booking options for your assigned coach',
+  );
+}

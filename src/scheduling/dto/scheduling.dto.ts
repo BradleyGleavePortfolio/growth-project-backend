@@ -12,12 +12,25 @@ import {
   MaxLength,
   Min,
   MinLength,
+  Matches,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export const VIDEO_PROVIDERS = ['stub', 'google_meet', 'zoom', 'manual'] as const;
 export type VideoProviderDtoValue = (typeof VIDEO_PROVIDERS)[number];
+
+// S-SCHED: a coach's own meeting room link (Zoom/Meet/Whereby personal
+// room pasted by the coach). https only, bounded; mirrors the DB check
+// SessionType_default_meeting_url_https.
+export const HTTPS_URL_PATTERN = /^https:\/\/[^\s]{3,490}$/;
+
+// S-SCHED: IANA zone names are letters, digits, '/', '_', '+', '-'.
+// The value is informational (the server always resolves slots in the
+// coach's CoachProfile.timezone); it is accepted so the mobile contract
+// that always sends it is not rejected by forbidNonWhitelisted.
+export const IANA_TZ_PATTERN = /^[A-Za-z0-9_+\-/]{1,64}$/;
 
 export class CreateSessionTypeDto {
   @IsString()
@@ -42,6 +55,16 @@ export class CreateSessionTypeDto {
   @IsOptional()
   @IsIn(VIDEO_PROVIDERS as readonly string[])
   default_video_provider?: VideoProviderDtoValue;
+
+  @IsOptional()
+  @IsBoolean()
+  is_welcome?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Matches(HTTPS_URL_PATTERN, { message: 'default_meeting_url must be an https link' })
+  default_meeting_url?: string;
 }
 
 export class UpdateSessionTypeDto {
@@ -73,6 +96,17 @@ export class UpdateSessionTypeDto {
   @IsOptional()
   @IsBoolean()
   archived?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  is_welcome?: boolean;
+
+  // null clears the link; a string must be https.
+  @ValidateIf((_o, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(500)
+  @Matches(HTTPS_URL_PATTERN, { message: 'default_meeting_url must be an https link' })
+  default_meeting_url?: string | null;
 }
 
 export class AvailabilityWindowDto {
@@ -125,6 +159,21 @@ export class RequestSessionDto {
 
   @IsISO8601()
   end_at!: string;
+
+  // S-SCHED: optional note the client wants the coach to read. Delivered
+  // in the coach's booking-request notification payload only (no column).
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  // S-SCHED: the mobile client always sends its IANA zone (schedulingApi
+  // force-resolves it). Before this field existed every mobile booking was
+  // rejected with 400 by forbidNonWhitelisted.
+  @IsOptional()
+  @IsString()
+  @Matches(IANA_TZ_PATTERN)
+  client_timezone?: string;
 }
 
 export class RescheduleSessionDto {
@@ -138,6 +187,12 @@ export class RescheduleSessionDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  // S-SCHED: see RequestSessionDto.client_timezone.
+  @IsOptional()
+  @IsString()
+  @Matches(IANA_TZ_PATTERN)
+  client_timezone?: string;
 }
 
 export class CancelSessionDto {

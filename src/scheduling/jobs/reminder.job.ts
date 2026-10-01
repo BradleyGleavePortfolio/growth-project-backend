@@ -69,6 +69,7 @@ export class SessionReminderJob {
       emit: (recipient, otherName, session) =>
         this.bookingEmitter.emitReminder1h({
           recipientUserId: recipient,
+          recipientRole: recipient === session.coach_id ? 'coach' : 'client',
           otherPartyDisplayName: otherName,
           sessionId: session.id,
           scheduledAt: session.start_at,
@@ -95,6 +96,7 @@ export class SessionReminderJob {
       emit: (recipient, otherName, session) =>
         this.bookingEmitter.emitReminder24h({
           recipientUserId: recipient,
+          recipientRole: recipient === session.coach_id ? 'coach' : 'client',
           otherPartyDisplayName: otherName,
           sessionId: session.id,
           scheduledAt: session.start_at,

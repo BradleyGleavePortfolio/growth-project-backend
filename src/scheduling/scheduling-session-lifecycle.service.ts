@@ -4,10 +4,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   CalendarProvider as CalendarProviderEnum,
   CoachingSession,
+  Prisma,
   SessionStatus,
   SessionType,
   VideoProvider as VideoProviderEnum,
@@ -25,6 +27,11 @@ import type {
 } from './dto/scheduling.dto';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import {
+  MIN_BOOKING_LEAD_MINUTES,
+  OCCUPYING_SESSION_STATUSES,
+  SchedulingOpenSlotsService,
+} from './scheduling-open-slots.service';
+import {
   assertCanApproveOrDecline,
   assertCanCancel,
   assertCanCompleteOrNoShow,
@@ -36,6 +43,19 @@ import type { ActorContext } from './scheduling.types';
 // State-machine: which `SessionStatus` transitions the service will
 // accept. Anything outside this map throws a 400 — keeps the audit log
 // honest (no "completed -> requested" loops).
+// S-SCHED: every write that can claim coach time takes this per-coach
+// transaction-scoped advisory lock first, so two bookings (or a booking and
+// a reschedule) for the same coach are strictly serialised: the second one
+// runs its overlap check only after the first committed and therefore sees
+// it. READ COMMITTED gives that second statement a fresh snapshot. The old
+// Serializable-only guard is kept as a P2034 -> 409 mapping for safety.
+async function lockCoachCalendar(
+  tx: { $executeRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<unknown> },
+  coachId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`tgp.coaching_session.coach:${coachId}`}))`;
+}
+
 const ALLOWED_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   requested: ['scheduled', 'declined', 'canceled', 'pending_provider'],
   pending_provider: ['scheduled', 'canceled'],
@@ -60,7 +80,17 @@ export class SchedulingSessionLifecycleService {
     private readonly audit: AuditService,
     private readonly providers: SchedulingProviderRegistry,
     private readonly bookingEmitter: BookingEmitter,
-  ) {}
+    @Optional() openSlots?: SchedulingOpenSlotsService,
+  ) {
+    this.openSlots = openSlots ?? new SchedulingOpenSlotsService(prisma);
+  }
+
+  private readonly openSlots: SchedulingOpenSlotsService;
+
+  /** Exposed so the facade can invalidate the open-slots cache it shares. */
+  get openSlotsService(): SchedulingOpenSlotsService {
+    return this.openSlots;
+  }
 
   async requestSession(actor: ActorContext, dto: RequestSessionDto) {
     assertCanRequestSession(
@@ -76,7 +106,7 @@ export class SchedulingSessionLifecycleService {
       throw new BadRequestException('end_at must be after start_at');
     }
     const now = new Date();
-    const minimumLeadMinutes = 5;
+    const minimumLeadMinutes = MIN_BOOKING_LEAD_MINUTES;
     if (start.getTime() < now.getTime() + minimumLeadMinutes * 60 * 1000) {
       throw new BadRequestException({
         error: 'SESSION_IN_PAST',
@@ -85,11 +115,32 @@ export class SchedulingSessionLifecycleService {
     }
     let sessionType: SessionType | null = null;
     if (dto.session_type_id) {
-      sessionType = await this.prisma.sessionType.findUnique({
-        where: { id: dto.session_type_id },
+      // S-SCHED: same coach AND not archived (an archived type is no longer
+      // an approved appointment type).
+      sessionType = await this.openSlots.resolveBookableType(
+        dto.coach_id,
+        dto.session_type_id,
+      );
+    }
+    if (actor.role === 'student') {
+      // S-SCHED: a client books only from the coach's approved appointment
+      // types, for exactly that type's length, inside the coach's open time.
+      if (!sessionType) {
+        throw new BadRequestException({
+          error: 'SESSION_TYPE_REQUIRED',
+          message: 'Pick one of your coach\'s appointment types.',
+        });
+      }
+      this.assertTypeDuration(sessionType, start, end);
+      const open = await this.openSlots.isIntervalOpen(dto.coach_id, start, end, {
+        sessionTypeId: sessionType.id,
+        excludeSessionId: null,
       });
-      if (!sessionType || sessionType.coach_id !== dto.coach_id) {
-        throw new BadRequestException('Unknown session_type_id');
+      if (!open) {
+        throw new ConflictException({
+          error: 'SLOT_UNAVAILABLE',
+          message: 'That time is no longer open. Please pick another.',
+        });
       }
     }
 
@@ -108,10 +159,11 @@ export class SchedulingSessionLifecycleService {
     const session = await this.prisma
       .$transaction(
         async (tx) => {
+          await lockCoachCalendar(tx, dto.coach_id);
           const overlap = await tx.coachingSession.findFirst({
             where: {
               coach_id: dto.coach_id,
-              status: { in: ['requested', 'scheduled'] },
+              status: { in: [...OCCUPYING_SESSION_STATUSES] },
               start_at: { lt: end },
               end_at: { gt: start },
             },
@@ -138,7 +190,7 @@ export class SchedulingSessionLifecycleService {
             },
           });
         },
-        { isolationLevel: 'Serializable' },
+        { isolationLevel: 'ReadCommitted' },
       )
       .catch((err) => {
         // Prisma surfaces a Postgres serialization failure (40001) as
@@ -186,10 +238,9 @@ export class SchedulingSessionLifecycleService {
         clientDisplayName: clientName,
         sessionId: session.id,
         requestedAt: session.created_at,
-        // RequestSessionDto does not expose a notes field yet; the
-        // payload column is provisioned so a follow-up PR can pass
-        // through `dto.notes` without changing the emitter shape.
-        notes: null,
+        // S-SCHED: the client's optional note (bounded by the DTO) rides in
+        // the coach's notification payload; it is not stored on the row.
+        notes: dto.notes?.trim() ? dto.notes.trim() : null,
       });
     } else {
       const coachName = await this.resolveDisplayName(dto.coach_id);
@@ -214,8 +265,7 @@ export class SchedulingSessionLifecycleService {
     const existing = await this.loadSessionOrThrow(sessionId);
     assertCanApproveOrDecline(actor, existing);
     this.assertTransition(existing.status, 'scheduled');
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    const updated = await this.applyTransition(sessionId, existing.status, {
       data: { status: 'scheduled', approved_at: new Date() },
     });
     await this.audit.write({
@@ -251,8 +301,7 @@ export class SchedulingSessionLifecycleService {
     const existing = await this.loadSessionOrThrow(sessionId);
     assertCanApproveOrDecline(actor, existing);
     this.assertTransition(existing.status, 'declined');
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    const updated = await this.applyTransition(sessionId, existing.status, {
       data: {
         status: 'declined',
         ended_at: new Date(),
@@ -308,14 +357,52 @@ export class SchedulingSessionLifecycleService {
     if (end.getTime() <= start.getTime()) {
       throw new BadRequestException('end_at must be after start_at');
     }
+    if (start.getTime() < Date.now() + MIN_BOOKING_LEAD_MINUTES * 60 * 1000) {
+      throw new BadRequestException({
+        error: 'SESSION_IN_PAST',
+        message: 'Session start time must be at least 5 minutes in the future.',
+      });
+    }
+    if (actor.role === 'student') {
+      // S-SCHED: a client may only move a session into the coach's open
+      // time, keeping the appointment type's length.
+      if (existing.session_type_id) {
+        const type = await this.prisma.sessionType.findUnique({
+          where: { id: existing.session_type_id },
+        });
+        if (type) this.assertTypeDuration(type, start, end);
+      }
+      const open = await this.openSlots.isIntervalOpen(existing.coach_id, start, end, {
+        sessionTypeId: existing.session_type_id,
+        excludeSessionId: sessionId,
+      });
+      if (!open) {
+        throw new ConflictException({
+          error: 'SLOT_UNAVAILABLE',
+          message: 'That time is no longer open. Please pick another.',
+        });
+      }
+    }
     const updated = await this.prisma
       .$transaction(
         async (tx) => {
+          await lockCoachCalendar(tx, existing.coach_id);
+          // Re-read under the lock: a concurrent cancel/decline must win.
+          const current = await tx.coachingSession.findUnique({
+            where: { id: sessionId },
+            select: { status: true },
+          });
+          if (!current || (current.status !== 'requested' && current.status !== 'scheduled')) {
+            throw new ConflictException({
+              error: 'SESSION_STATE_CHANGED',
+              message: 'This session changed. Please refresh.',
+            });
+          }
           const overlap = await tx.coachingSession.findFirst({
             where: {
               id: { not: sessionId },
               coach_id: existing.coach_id,
-              status: { in: ['requested', 'scheduled'] },
+              status: { in: [...OCCUPYING_SESSION_STATUSES] },
               start_at: { lt: end },
               end_at: { gt: start },
             },
@@ -332,7 +419,7 @@ export class SchedulingSessionLifecycleService {
             data: { start_at: start, end_at: end },
           });
         },
-        { isolationLevel: 'Serializable' },
+        { isolationLevel: 'ReadCommitted' },
       )
       .catch((err) => {
         if (
@@ -372,6 +459,7 @@ export class SchedulingSessionLifecycleService {
       const reschedulerName = await this.resolveDisplayName(actor.id);
       await this.bookingEmitter.emitRescheduled({
         recipientUserId: recipientId,
+        recipientRole: recipientId === existing.coach_id ? 'coach' : 'client',
         reschedulerDisplayName: reschedulerName,
         sessionId: sessionId,
         oldScheduledAt: existing.start_at,
@@ -392,8 +480,7 @@ export class SchedulingSessionLifecycleService {
       existing,
     );
     this.assertTransition(existing.status, 'canceled');
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    const updated = await this.applyTransition(sessionId, existing.status, {
       data: {
         status: 'canceled',
         ended_at: new Date(),
@@ -419,6 +506,7 @@ export class SchedulingSessionLifecycleService {
       const cancellerName = await this.resolveDisplayName(actor.id);
       await this.bookingEmitter.emitCancelled({
         recipientUserId: recipientId,
+        recipientRole: recipientId === existing.coach_id ? 'coach' : 'client',
         cancellingPartyDisplayName: cancellerName,
         sessionId: sessionId,
         scheduledAt: existing.start_at,
@@ -439,8 +527,7 @@ export class SchedulingSessionLifecycleService {
     const existing = await this.loadSessionOrThrow(sessionId);
     assertCanCompleteOrNoShow(actor, existing);
     this.assertTransition(existing.status, 'completed');
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    const updated = await this.applyTransition(sessionId, existing.status, {
       data: {
         status: 'completed',
         ended_at: new Date(),
@@ -467,8 +554,7 @@ export class SchedulingSessionLifecycleService {
     const existing = await this.loadSessionOrThrow(sessionId);
     assertCanCompleteOrNoShow(actor, existing);
     this.assertTransition(existing.status, 'no_show');
-    const updated = await this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    const updated = await this.applyTransition(sessionId, existing.status, {
       data: {
         status: 'no_show',
         ended_at: new Date(),
@@ -560,6 +646,38 @@ export class SchedulingSessionLifecycleService {
     return session;
   }
 
+  // S-SCHED: compare-and-set state transition. The UPDATE only applies if
+  // the row is still in the status we validated against, so a concurrent
+  // approve/cancel/decline cannot both "win" (e.g. a cancel landing between
+  // a coach's read and write can no longer be overwritten to scheduled).
+  private async applyTransition(
+    sessionId: string,
+    fromStatus: SessionStatus,
+    args: { data: Prisma.CoachingSessionUpdateManyMutationInput },
+  ): Promise<CoachingSession> {
+    const res = await this.prisma.coachingSession.updateMany({
+      where: { id: sessionId, status: fromStatus },
+      data: args.data,
+    });
+    if (res.count !== 1) {
+      throw new ConflictException({
+        error: 'SESSION_STATE_CHANGED',
+        message: 'This session changed. Please refresh.',
+      });
+    }
+    return this.loadSessionOrThrow(sessionId);
+  }
+
+  private assertTypeDuration(type: SessionType, start: Date, end: Date): void {
+    const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
+    if (minutes !== type.duration_minutes) {
+      throw new BadRequestException({
+        error: 'DURATION_MISMATCH',
+        message: `This appointment type is ${type.duration_minutes} minutes long.`,
+      });
+    }
+  }
+
   private assertTransition(from: SessionStatus, to: SessionStatus): void {
     const allowed = ALLOWED_TRANSITIONS[from] ?? [];
     if (!allowed.includes(to)) {
@@ -644,6 +762,35 @@ export class SchedulingSessionLifecycleService {
           idempotency_key: idempotencyKey,
         },
       });
+    }
+
+    // S-SCHED: no provider link (stub video) -> fall back to the coach's
+    // default meeting link for this appointment type, attached as a manual
+    // link. Never overwrites a link that already exists.
+    if (!videoUrl && session.session_type_id) {
+      const type = await this.prisma.sessionType.findUnique({
+        where: { id: session.session_type_id },
+        select: { default_meeting_url: true },
+      });
+      const fallback = type?.default_meeting_url ?? null;
+      if (fallback && /^https:\/\//i.test(fallback)) {
+        videoUrl = fallback;
+        videoMeetingId = null;
+        resolvedVideoProvider = 'manual';
+        await this.audit.write({
+          action: AuditAction.SESSION_VIDEO_LINK_ATTACHED,
+          actorId: actor.id,
+          actorRole: actor.role,
+          actorEmail: actor.email,
+          tenantCoachId: session.coach_id,
+          targetUserId: session.client_id ?? null,
+          targetType: 'coaching_session',
+          targetId: session.id,
+          ip: actor.ip,
+          userAgent: actor.userAgent,
+          metadata: { provider: 'manual', source: 'session_type_default' },
+        });
+      }
     }
 
     return this.prisma.coachingSession.update({

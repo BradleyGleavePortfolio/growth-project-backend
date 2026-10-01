@@ -32,8 +32,13 @@ export interface BookingDeclinedPayload {
   declineReason: string | null;
 }
 
+// S-SCHED: which side of the session the recipient is on. Decides the push
+// tap destination (client Calendar session vs coach booking inbox).
+export type BookingRecipientRole = 'client' | 'coach';
+
 export interface BookingCancelledPayload {
   recipientUserId: string;
+  recipientRole?: BookingRecipientRole;
   cancellingPartyDisplayName: string;
   sessionId: string;
   scheduledAt: Date;
@@ -42,6 +47,7 @@ export interface BookingCancelledPayload {
 
 export interface BookingRescheduledPayload {
   recipientUserId: string;
+  recipientRole?: BookingRecipientRole;
   reschedulerDisplayName: string;
   sessionId: string;
   oldScheduledAt: Date;
@@ -50,6 +56,7 @@ export interface BookingRescheduledPayload {
 
 export interface BookingReminderPayload {
   recipientUserId: string;
+  recipientRole?: BookingRecipientRole;
   otherPartyDisplayName: string;
   sessionId: string;
   scheduledAt: Date;
@@ -67,6 +74,8 @@ export class BookingEmitter {
       `${payload.clientDisplayName} requested a session.`.slice(0, 160);
     await this.writeBoth({
       userId: payload.coachUserId,
+      recipientRole: 'coach',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_REQUESTED,
       body,
       deepLink: `tgp://coach/sessions/${payload.sessionId}`,
@@ -81,13 +90,16 @@ export class BookingEmitter {
 
   // (b) booking_confirmed → to CLIENT when coach approves.
   async emitConfirmed(payload: BookingConfirmedPayload): Promise<void> {
+    const when = await this.whenFor(payload.clientUserId, payload.scheduledAt);
     const body =
-      `${payload.coachDisplayName} confirmed your session on ${formatWhen(payload.scheduledAt)}.`.slice(
+      `${payload.coachDisplayName} confirmed your session on ${when}.`.slice(
         0,
         160,
       );
     await this.writeBoth({
       userId: payload.clientUserId,
+      recipientRole: 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_CONFIRMED,
       body,
       deepLink: `tgp://client/sessions/${payload.sessionId}`,
@@ -108,6 +120,8 @@ export class BookingEmitter {
       );
     await this.writeBoth({
       userId: payload.clientUserId,
+      recipientRole: 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_DECLINED,
       body,
       deepLink: `tgp://client/sessions/${payload.sessionId}`,
@@ -122,13 +136,16 @@ export class BookingEmitter {
 
   // (d) booking_cancelled → to the OTHER PARTY when one side cancels.
   async emitCancelled(payload: BookingCancelledPayload): Promise<void> {
+    const when = await this.whenFor(payload.recipientUserId, payload.scheduledAt);
     const body =
-      `${payload.cancellingPartyDisplayName} cancelled the session on ${formatWhen(payload.scheduledAt)}.`.slice(
+      `${payload.cancellingPartyDisplayName} cancelled the session on ${when}.`.slice(
         0,
         160,
       );
     await this.writeBoth({
       userId: payload.recipientUserId,
+      recipientRole: payload.recipientRole ?? 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_CANCELLED,
       body,
       deepLink: `tgp://sessions/${payload.sessionId}`,
@@ -143,13 +160,16 @@ export class BookingEmitter {
 
   // (e) booking_rescheduled → to the OTHER PARTY when one side reschedules.
   async emitRescheduled(payload: BookingRescheduledPayload): Promise<void> {
+    const when = await this.whenFor(payload.recipientUserId, payload.newScheduledAt);
     const body =
-      `${payload.reschedulerDisplayName} moved the session to ${formatWhen(payload.newScheduledAt)}.`.slice(
+      `${payload.reschedulerDisplayName} moved the session to ${when}.`.slice(
         0,
         160,
       );
     await this.writeBoth({
       userId: payload.recipientUserId,
+      recipientRole: payload.recipientRole ?? 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_RESCHEDULED,
       body,
       deepLink: `tgp://sessions/${payload.sessionId}`,
@@ -164,13 +184,16 @@ export class BookingEmitter {
 
   // (f) booking_reminder_24h → to a single participant, 24h before start.
   async emitReminder24h(payload: BookingReminderPayload): Promise<void> {
+    const at = await this.timeFor(payload.recipientUserId, payload.scheduledAt);
     const body =
-      `Reminder: session with ${payload.otherPartyDisplayName} tomorrow at ${formatTime(payload.scheduledAt)}.`.slice(
+      `Reminder: session with ${payload.otherPartyDisplayName} tomorrow at ${at}.`.slice(
         0,
         160,
       );
     await this.writeBoth({
       userId: payload.recipientUserId,
+      recipientRole: payload.recipientRole ?? 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_REMINDER_24H,
       body,
       deepLink: `tgp://sessions/${payload.sessionId}`,
@@ -184,13 +207,16 @@ export class BookingEmitter {
 
   // (g) booking_reminder_1h → to a single participant, 1h before start.
   async emitReminder1h(payload: BookingReminderPayload): Promise<void> {
+    const at = await this.timeFor(payload.recipientUserId, payload.scheduledAt);
     const body =
-      `Starting soon: session with ${payload.otherPartyDisplayName} at ${formatTime(payload.scheduledAt)}.`.slice(
+      `Starting soon: session with ${payload.otherPartyDisplayName} at ${at}.`.slice(
         0,
         160,
       );
     await this.writeBoth({
       userId: payload.recipientUserId,
+      recipientRole: payload.recipientRole ?? 'client',
+      sessionId: payload.sessionId,
       kind: NotificationKind.BOOKING_REMINDER_1H,
       body,
       deepLink: `tgp://sessions/${payload.sessionId}`,
@@ -206,6 +232,8 @@ export class BookingEmitter {
 
   private async writeBoth(args: {
     userId: string;
+    recipientRole: BookingRecipientRole;
+    sessionId: string;
     kind: (typeof NotificationKind)[keyof typeof NotificationKind];
     body: string;
     deepLink: string;
@@ -220,7 +248,9 @@ export class BookingEmitter {
         deep_link: args.deepLink,
         channel: 'inapp',
       });
-      await this.notifications.createNotification({
+      // The push-channel row is the preference + rate-limit gate: null means
+      // the recipient turned booking push off, muted, or was rate-limited.
+      const pushRow = await this.notifications.createNotification({
         user_id: args.userId,
         kind: args.kind,
         body: args.body,
@@ -228,6 +258,18 @@ export class BookingEmitter {
         deep_link: args.deepLink,
         channel: 'push',
       });
+      // S-SCHED: before this, the push row was written but nothing was ever
+      // sent to the device. Deliver it through the shared Expo sender with a
+      // tap target the mobile push router allow-lists.
+      if (pushRow) {
+        const actionScreen =
+          args.recipientRole === 'coach' ? 'CoachBookingInbox' : 'CalendarSession';
+        await this.notifications.pushToUser(args.userId, PUSH_TITLE[args.kind] ?? 'Session', args.body, {
+          kind: args.kind,
+          actionScreen,
+          actionParams: { sessionId: args.sessionId },
+        });
+      }
     } catch (err) {
       // Emitters never propagate errors — booking lifecycle must not
       // fail because the notification path hiccupped.
@@ -236,17 +278,69 @@ export class BookingEmitter {
       );
     }
   }
+
+  // Recipient-local wording. NotificationPreferences.timezone (default
+  // America/Los_Angeles) is the per-user zone; the zone abbreviation is
+  // always printed so the time is unambiguous on a lock screen.
+  private async zoneFor(userId: string): Promise<string> {
+    try {
+      const prefs = await this.notifications.getPreferences(userId);
+      const tz = (prefs as { timezone?: unknown } | null)?.timezone;
+      if (typeof tz === 'string' && isValidZone(tz)) return tz;
+    } catch {
+      // fall through
+    }
+    return 'America/Los_Angeles';
+  }
+
+  private async whenFor(userId: string, d: Date): Promise<string> {
+    return formatWhen(d, await this.zoneFor(userId));
+  }
+
+  private async timeFor(userId: string, d: Date): Promise<string> {
+    return formatTime(d, await this.zoneFor(userId));
+  }
 }
 
-// Locale-neutral, no Intl deps in the hot path. The mobile renders the
-// payload's ISO timestamp in the user's tz; the body string is a coarse
-// fallback for push lock-screens.
-function formatWhen(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+const PUSH_TITLE: Record<string, string> = {
+  [NotificationKind.BOOKING_REQUESTED]: 'New session request',
+  [NotificationKind.BOOKING_CONFIRMED]: 'Session confirmed',
+  [NotificationKind.BOOKING_DECLINED]: 'Session request declined',
+  [NotificationKind.BOOKING_CANCELLED]: 'Session cancelled',
+  [NotificationKind.BOOKING_RESCHEDULED]: 'Session moved',
+  [NotificationKind.BOOKING_REMINDER_24H]: 'Session tomorrow',
+  [NotificationKind.BOOKING_REMINDER_1H]: 'Session starting soon',
+};
+
+function isValidZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function formatTime(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+// e.g. "Mon, Oct 5, 9:00 AM PDT". The mobile renders the payload's ISO
+// timestamp in the device zone; this body is the lock-screen wording.
+export function formatWhen(d: Date, tz = 'America/Los_Angeles'): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(d);
+}
+
+// e.g. "9:00 AM PDT".
+export function formatTime(d: Date, tz = 'America/Los_Angeles'): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(d);
 }

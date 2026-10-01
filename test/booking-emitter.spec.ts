@@ -13,8 +13,13 @@ import type { CreateNotificationInput } from '../src/notifications/notifications
 
 const createNotificationMock = jest.fn().mockResolvedValue({ id: 'notif-1' });
 
+const pushToUserMock = jest.fn().mockResolvedValue({ delivered: true });
+const getPreferencesMock = jest.fn().mockResolvedValue({ timezone: 'America/New_York' });
+
 const mockNotificationsService = {
   createNotification: createNotificationMock,
+  pushToUser: pushToUserMock,
+  getPreferences: getPreferencesMock,
 } as never;
 
 function calls(): CreateNotificationInput[] {
@@ -25,6 +30,10 @@ function calls(): CreateNotificationInput[] {
 
 beforeEach(() => {
   createNotificationMock.mockClear();
+  createNotificationMock.mockResolvedValue({ id: 'notif-1' });
+  pushToUserMock.mockClear();
+  getPreferencesMock.mockClear();
+  getPreferencesMock.mockResolvedValue({ timezone: 'America/New_York' });
 });
 
 const FIXED_REQUESTED_AT = new Date('2026-06-01T12:00:00Z');
@@ -174,5 +183,87 @@ describe('BookingEmitter', () => {
     expect(inapp.body).not.toMatch(/!/);
     // eslint-disable-next-line no-control-regex
     expect(inapp.body).not.toMatch(/[\u{1F300}-\u{1FFFF}]/u);
+  });
+});
+
+describe('BookingEmitter push delivery (S-SCHED)', () => {
+  const emitter = new BookingEmitter(mockNotificationsService);
+
+  it('sends a real push to the client with the Calendar session tap target', async () => {
+    await emitter.emitConfirmed({
+      clientUserId: 'client-1',
+      coachDisplayName: 'Coach K',
+      sessionId: 'sess-2',
+      scheduledAt: FIXED_SCHEDULED_AT,
+    });
+    expect(pushToUserMock).toHaveBeenCalledTimes(1);
+    const [userId, title, body, data] = pushToUserMock.mock.calls[0];
+    expect(userId).toBe('client-1');
+    expect(title).toBe('Session confirmed');
+    expect(body).toContain('Coach K');
+    expect(data).toEqual({
+      kind: NotificationKind.BOOKING_CONFIRMED,
+      actionScreen: 'CalendarSession',
+      actionParams: { sessionId: 'sess-2' },
+    });
+  });
+
+  it('routes coach recipients to the booking inbox', async () => {
+    await emitter.emitRequested({
+      coachUserId: 'coach-1',
+      clientDisplayName: 'Jamie',
+      sessionId: 'sess-1',
+      requestedAt: FIXED_REQUESTED_AT,
+      notes: null,
+    });
+    expect(pushToUserMock.mock.calls[0][3]).toMatchObject({ actionScreen: 'CoachBookingInbox' });
+    await emitter.emitCancelled({
+      recipientUserId: 'coach-1',
+      recipientRole: 'coach',
+      cancellingPartyDisplayName: 'Jamie',
+      sessionId: 'sess-1',
+      scheduledAt: FIXED_SCHEDULED_AT,
+      cancelReason: null,
+    });
+    expect(pushToUserMock.mock.calls[1][3]).toMatchObject({ actionScreen: 'CoachBookingInbox' });
+  });
+
+  it('does not push when the push row was suppressed by preferences', async () => {
+    createNotificationMock.mockResolvedValueOnce({ id: 'inapp' }).mockResolvedValueOnce(null);
+    await emitter.emitReminder1h({
+      recipientUserId: 'client-1',
+      recipientRole: 'client',
+      otherPartyDisplayName: 'Coach K',
+      sessionId: 'sess-6',
+      scheduledAt: FIXED_SCHEDULED_AT,
+    });
+    expect(pushToUserMock).not.toHaveBeenCalled();
+  });
+
+  it('writes times in the recipient zone with its abbreviation, not UTC', async () => {
+    await emitter.emitReminder24h({
+      recipientUserId: 'client-1',
+      recipientRole: 'client',
+      otherPartyDisplayName: 'Coach K',
+      sessionId: 'sess-6',
+      scheduledAt: FIXED_SCHEDULED_AT, // 15:30Z = 11:30 AM EDT
+    });
+    const body = calls()[0].body;
+    expect(body).toMatch(/11:30\s?AM EDT/);
+    expect(body).not.toContain('UTC');
+    expect(body).not.toMatch(/!/);
+  });
+
+  it('a push failure never throws into the booking lifecycle', async () => {
+    pushToUserMock.mockRejectedValueOnce(new Error('expo down'));
+    await expect(
+      emitter.emitDeclined({
+        clientUserId: 'client-1',
+        coachDisplayName: 'Coach K',
+        sessionId: 'sess-3',
+        requestedAt: FIXED_REQUESTED_AT,
+        declineReason: null,
+      }),
+    ).resolves.toBeUndefined();
   });
 });

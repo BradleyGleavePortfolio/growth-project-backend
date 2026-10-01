@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -41,7 +42,8 @@ import { SchedulingService } from './scheduling.service';
 //   PATCH  /scheduling/session-types/:id               (coach)
 //   GET    /scheduling/coaches/:coachId/availability
 //   PUT    /scheduling/coaches/:coachId/availability   (coach)
-//   GET    /scheduling/sessions                        (upcoming for me)
+//   GET    /scheduling/sessions?scope=upcoming|past     (mine)
+//   GET    /scheduling/coaches/:coachId/open-slots      (?session_type_id)
 //   GET    /scheduling/sessions/:id
 //   POST   /scheduling/sessions                        (request)
 //   POST   /scheduling/sessions/:id/approve            (coach)
@@ -58,6 +60,8 @@ import { SchedulingService } from './scheduling.service';
 // Students hit 402 on any scheduling endpoint unless they have an active
 // ClientPurchase — including booking, reschedule, and cancel (the core
 // paid surface the audit flagged at P0).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @ApiTags('scheduling')
 @Controller('scheduling')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
@@ -86,11 +90,24 @@ export class SchedulingController {
 
   // ---------------- Session types ----------------
 
+  @ApiOperation({ summary: 'List the coaches the caller can book with' })
+  @ApiResponse({ status: 200, description: 'Bookable coaches (client: the assigned coach).' })
+  @Get('my-coaches')
+  async listMyCoaches(@Request() req: AuthedRequest) {
+    return this.scheduling.listMyCoaches(toActor(req));
+  }
+
   @ApiOperation({ summary: "List a coach's session types" })
   @ApiResponse({ status: 200, description: 'Session types listed.' })
   @Get('coaches/:coachId/session-types')
-  async listSessionTypes(@Param('coachId') coachId: string) {
-    return this.scheduling.listSessionTypes(coachId);
+  async listSessionTypes(
+    @Request() req: AuthedRequest,
+    @Param('coachId') coachId: string,
+    @Query('include_archived') includeArchived?: string,
+  ) {
+    return this.scheduling.listSessionTypes(toActor(req), coachId, {
+      includeArchived: includeArchived === 'true',
+    });
   }
 
   @ApiOperation({ summary: 'Create a session type for the calling coach' })
@@ -119,8 +136,11 @@ export class SchedulingController {
   @ApiOperation({ summary: "Read a coach's recurring availability" })
   @ApiResponse({ status: 200, description: 'Availability windows.' })
   @Get('coaches/:coachId/availability')
-  async getAvailability(@Param('coachId') coachId: string) {
-    return this.scheduling.getAvailability(coachId);
+  async getAvailability(
+    @Request() req: AuthedRequest,
+    @Param('coachId') coachId: string,
+  ) {
+    return this.scheduling.getAvailability(toActor(req), coachId);
   }
 
   @ApiOperation({
@@ -151,9 +171,14 @@ export class SchedulingController {
   async listUpcoming(
     @Request() req: AuthedRequest,
     @Query('limit') limit?: string,
+    @Query('scope') scope?: string,
   ) {
     const cap = limit ? parseInt(limit, 10) : 25;
-    return this.scheduling.listUpcomingForActor(toActor(req), cap);
+    return this.scheduling.listUpcomingForActor(
+      toActor(req),
+      cap,
+      scope === 'past' ? 'past' : 'upcoming',
+    );
   }
 
   @ApiOperation({ summary: 'Get a single session by id' })
@@ -272,13 +297,18 @@ export class SchedulingController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('duration_minutes') durationMinutes?: string,
+    @Query('session_type_id') sessionTypeId?: string,
   ) {
     const parsed =
       durationMinutes !== undefined ? Number(durationMinutes) : null;
+    if (sessionTypeId !== undefined && !UUID_RE.test(sessionTypeId)) {
+      throw new BadRequestException('session_type_id must be a UUID');
+    }
     return this.scheduling.getOpenSlots(toActor(req), coachId, {
       from,
       to,
       duration_minutes: parsed,
+      session_type_id: sessionTypeId ?? null,
     });
   }
 

@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import {
+  CoachingSession,
   Prisma,
   SessionType,
   VideoProvider as VideoProviderEnum,
@@ -29,7 +30,11 @@ import { SchedulingProviderRegistry } from './providers/scheduling-provider.regi
 import { SchedulingAvailabilityService } from './scheduling-availability.service';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import { SchedulingSessionLifecycleService } from './scheduling-session-lifecycle.service';
-import { assertCanManageAvailability, assertCanViewSession } from './scheduling.permissions';
+import {
+  assertCanBrowseCoachBooking,
+  assertCanManageAvailability,
+  assertCanViewSession,
+} from './scheduling.permissions';
 import type { ActorContext, OpenSlotsPayload } from './scheduling.types';
 
 // Re-export the OpenSlotsPayload shape from the types module so callers
@@ -70,6 +75,7 @@ export class SchedulingService {
     @Optional() openSlots?: SchedulingOpenSlotsService,
     @Optional() availability?: SchedulingAvailabilityService,
   ) {
+    this.openSlots = openSlots ?? new SchedulingOpenSlotsService(prisma);
     this.lifecycle =
       lifecycle ??
       new SchedulingSessionLifecycleService(
@@ -77,8 +83,8 @@ export class SchedulingService {
         audit,
         providers as SchedulingProviderRegistry,
         bookingEmitter as BookingEmitter,
+        this.openSlots,
       );
-    this.openSlots = openSlots ?? new SchedulingOpenSlotsService(prisma);
     this.availability =
       availability ?? new SchedulingAvailabilityService(prisma);
   }
@@ -87,10 +93,73 @@ export class SchedulingService {
   // SessionType CRUD
   // ---------------------------------------------------------------
 
-  async listSessionTypes(coachId: string) {
-    return this.prisma.sessionType.findMany({
-      where: { coach_id: coachId, archived_at: null },
+  // S-SCHED: actor-gated (was readable by any authenticated user). Clients
+  // see only their assigned coach's active types; the coach (or owner) may
+  // ask for archived ones too, for the appointment-types manager.
+  /**
+   * S-SCHED: the coaches this actor can book with. Today that is exactly the
+   * client's assigned coach (User.coach_id), which is the same rule
+   * assertCanBrowseCoachBooking enforces; team sub-coach booking is a
+   * separate product decision. Coaches and owners get an empty list (they
+   * manage their own calendar, they do not book one).
+   */
+  async listMyCoaches(
+    actor: ActorContext,
+  ): Promise<Array<{ coach_id: string; name: string; timezone: string | null }>> {
+    if (actor.role !== 'student' || !actor.coach_id) return [];
+    const coach = await this.prisma.user.findUnique({
+      where: { id: actor.coach_id },
+      select: { id: true, name: true, role: true },
+    });
+    if (!coach || coach.role !== 'coach') return [];
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { user_id: coach.id },
+      select: { timezone: true },
+    });
+    return [{ coach_id: coach.id, name: coach.name, timezone: profile?.timezone ?? null }];
+  }
+
+  async listSessionTypes(
+    actor: ActorContext,
+    coachId: string,
+    opts: { includeArchived?: boolean } = {},
+  ) {
+    assertCanBrowseCoachBooking(
+      { id: actor.id, role: actor.role, coach_id: actor.coach_id },
+      coachId,
+    );
+    const canSeeArchived =
+      actor.role === 'owner' || (actor.role === 'coach' && actor.id === coachId);
+    const includeArchived = Boolean(opts.includeArchived) && canSeeArchived;
+    const rows = await this.prisma.sessionType.findMany({
+      where: includeArchived
+        ? { coach_id: coachId }
+        : { coach_id: coachId, archived_at: null },
       orderBy: { created_at: 'asc' },
+    });
+    // The coach's private meeting room link is attached to confirmed
+    // sessions only; it is not advertised to clients on the type list.
+    if (actor.role === 'student') {
+      return rows.map((r) => ({ ...r, default_meeting_url: null }));
+    }
+    return rows;
+  }
+
+  // At most one active welcome type per coach (also a partial unique index).
+  // Marking a type as the welcome type clears the flag on the others in the
+  // same transaction, so the switch is atomic.
+  private async clearOtherWelcomeTypes(
+    tx: Prisma.TransactionClient,
+    coachId: string,
+    keepId: string | null,
+  ): Promise<void> {
+    await tx.sessionType.updateMany({
+      where: {
+        coach_id: coachId,
+        is_welcome: true,
+        ...(keepId ? { id: { not: keepId } } : {}),
+      },
+      data: { is_welcome: false },
     });
   }
 
@@ -114,16 +183,21 @@ export class SchedulingService {
       );
     }
     const coachId = actor.id;
-    const row = await this.prisma.sessionType.create({
-      data: {
-        coach_id: coachId,
-        name: dto.name,
-        description: dto.description ?? null,
-        duration_minutes: dto.duration_minutes,
-        auto_approve: dto.auto_approve ?? false,
-        default_video_provider:
-          (dto.default_video_provider as VideoProviderEnum) ?? 'stub',
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (dto.is_welcome) await this.clearOtherWelcomeTypes(tx, coachId, null);
+      return tx.sessionType.create({
+        data: {
+          coach_id: coachId,
+          name: dto.name,
+          description: dto.description ?? null,
+          duration_minutes: dto.duration_minutes,
+          auto_approve: dto.auto_approve ?? false,
+          default_video_provider:
+            (dto.default_video_provider as VideoProviderEnum) ?? 'stub',
+          is_welcome: dto.is_welcome ?? false,
+          default_meeting_url: dto.default_meeting_url ?? null,
+        },
+      });
     });
     await this.audit.write({
       action: AuditAction.SESSION_TYPE_CREATED,
@@ -139,6 +213,8 @@ export class SchedulingService {
         name: row.name,
         duration_minutes: row.duration_minutes,
         auto_approve: row.auto_approve,
+        is_welcome: row.is_welcome,
+        has_default_meeting_url: row.default_meeting_url !== null,
       },
     });
     return row;
@@ -179,9 +255,23 @@ export class SchedulingService {
     if (dto.archived !== undefined) {
       data.archived_at = dto.archived ? new Date() : null;
     }
-    const updated = await this.prisma.sessionType.update({
-      where: { id: sessionTypeId },
-      data,
+    if (dto.is_welcome !== undefined) data.is_welcome = dto.is_welcome;
+    if (dto.default_meeting_url !== undefined) {
+      data.default_meeting_url = dto.default_meeting_url;
+    }
+    // Un-archiving a welcome type, or marking one, must not leave two
+    // active welcome types for the coach.
+    const willBeWelcome = dto.is_welcome ?? existing.is_welcome;
+    const willBeActive =
+      dto.archived !== undefined ? !dto.archived : existing.archived_at === null;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (willBeWelcome && willBeActive) {
+        await this.clearOtherWelcomeTypes(tx, existing.coach_id, sessionTypeId);
+      }
+      return tx.sessionType.update({
+        where: { id: sessionTypeId },
+        data,
+      });
     });
     await this.audit.write({
       action: AuditAction.SESSION_TYPE_UPDATED,
@@ -202,7 +292,17 @@ export class SchedulingService {
   // CoachAvailability (recurring windows)
   // ---------------------------------------------------------------
 
-  async getAvailability(coachId: string) {
+  // S-SCHED: actor-gated like the session-type list (was readable by any
+  // authenticated user).
+  async getAvailability(actor: ActorContext, coachId: string) {
+    assertCanBrowseCoachBooking(
+      { id: actor.id, role: actor.role, coach_id: actor.coach_id },
+      coachId,
+    );
+    return this.readAvailability(coachId);
+  }
+
+  private async readAvailability(coachId: string) {
     return this.prisma.coachAvailability.findMany({
       where: { coach_id: coachId },
       orderBy: [{ day_of_week: 'asc' }, { start_minute: 'asc' }],
@@ -248,7 +348,8 @@ export class SchedulingService {
       userAgent: actor.userAgent,
       metadata: { window_count: windows.length },
     });
-    return this.getAvailability(coachId);
+    this.openSlots.invalidateCoach(coachId);
+    return this.readAvailability(coachId);
   }
 
   // ---------------------------------------------------------------
@@ -256,11 +357,15 @@ export class SchedulingService {
   // ---------------------------------------------------------------
 
   async requestSession(actor: ActorContext, dto: RequestSessionDto) {
-    return this.lifecycle.requestSession(actor, dto);
+    try {
+      return toSessionView(actor, await this.lifecycle.requestSession(actor, dto));
+    } finally {
+      this.openSlots.invalidateCoach(dto.coach_id);
+    }
   }
 
   async approveSession(actor: ActorContext, sessionId: string) {
-    return this.lifecycle.approveSession(actor, sessionId);
+    return this.afterWrite(actor, await this.lifecycle.approveSession(actor, sessionId));
   }
 
   async declineSession(
@@ -268,7 +373,10 @@ export class SchedulingService {
     sessionId: string,
     reason?: string,
   ) {
-    return this.lifecycle.declineSession(actor, sessionId, reason);
+    return this.afterWrite(
+      actor,
+      await this.lifecycle.declineSession(actor, sessionId, reason),
+    );
   }
 
   async rescheduleSession(
@@ -276,7 +384,10 @@ export class SchedulingService {
     sessionId: string,
     dto: RescheduleSessionDto,
   ) {
-    return this.lifecycle.rescheduleSession(actor, sessionId, dto);
+    return this.afterWrite(
+      actor,
+      await this.lifecycle.rescheduleSession(actor, sessionId, dto),
+    );
   }
 
   async cancelSession(
@@ -284,7 +395,10 @@ export class SchedulingService {
     sessionId: string,
     dto: CancelSessionDto,
   ) {
-    return this.lifecycle.cancelSession(actor, sessionId, dto);
+    return this.afterWrite(
+      actor,
+      await this.lifecycle.cancelSession(actor, sessionId, dto),
+    );
   }
 
   async completeSession(
@@ -292,11 +406,17 @@ export class SchedulingService {
     sessionId: string,
     dto: CompleteSessionDto,
   ) {
-    return this.lifecycle.completeSession(actor, sessionId, dto);
+    return this.afterWrite(
+      actor,
+      await this.lifecycle.completeSession(actor, sessionId, dto),
+    );
   }
 
   async markNoShow(actor: ActorContext, sessionId: string, reason?: string) {
-    return this.lifecycle.markNoShow(actor, sessionId, reason);
+    return this.afterWrite(
+      actor,
+      await this.lifecycle.markNoShow(actor, sessionId, reason),
+    );
   }
 
   async attachManualVideoLink(
@@ -304,35 +424,50 @@ export class SchedulingService {
     sessionId: string,
     dto: AttachManualVideoLinkDto,
   ) {
-    return this.lifecycle.attachManualVideoLink(actor, sessionId, dto);
+    return toSessionView(
+      actor,
+      await this.lifecycle.attachManualVideoLink(actor, sessionId, dto),
+    );
+  }
+
+  private afterWrite(actor: ActorContext, row: CoachingSession) {
+    this.openSlots.invalidateCoach(row.coach_id);
+    return toSessionView(actor, row);
   }
 
   // ---------------------------------------------------------------
   // Reads
   // ---------------------------------------------------------------
 
-  async listUpcomingForActor(actor: ActorContext, limit = 25) {
-    const cap = Math.min(Math.max(limit, 1), 100);
+  // S-SCHED: `upcoming` keeps a session until it ENDS (so an in-progress
+  // session still shows its Join link); `past` is everything that ended,
+  // newest first. Clients receive the client view (no coach-internal notes
+  // or provider bookkeeping).
+  async listUpcomingForActor(
+    actor: ActorContext,
+    limit = 25,
+    scope: 'upcoming' | 'past' = 'upcoming',
+  ) {
+    const cap = Math.min(Math.max(Number.isFinite(limit) ? limit : 25, 1), 100);
     const now = new Date();
-    if (actor.role === 'owner') {
-      return this.prisma.coachingSession.findMany({
-        where: { start_at: { gte: now } },
-        orderBy: { start_at: 'asc' },
-        take: cap,
-      });
-    }
-    if (actor.role === 'coach') {
-      return this.prisma.coachingSession.findMany({
-        where: { coach_id: actor.id, start_at: { gte: now } },
-        orderBy: { start_at: 'asc' },
-        take: cap,
-      });
-    }
-    return this.prisma.coachingSession.findMany({
-      where: { client_id: actor.id, start_at: { gte: now } },
-      orderBy: { start_at: 'asc' },
+    const timeFilter =
+      scope === 'past' ? { end_at: { lt: now } } : { end_at: { gte: now } };
+    const orderBy =
+      scope === 'past'
+        ? ({ start_at: 'desc' } as const)
+        : ({ start_at: 'asc' } as const);
+    const owner =
+      actor.role === 'owner'
+        ? {}
+        : actor.role === 'coach'
+          ? { coach_id: actor.id }
+          : { client_id: actor.id };
+    const rows = await this.prisma.coachingSession.findMany({
+      where: { ...owner, ...timeFilter },
+      orderBy,
       take: cap,
     });
+    return rows.map((r) => toSessionView(actor, r));
   }
 
   async getSession(actor: ActorContext, sessionId: string) {
@@ -341,7 +476,7 @@ export class SchedulingService {
       { id: actor.id, role: actor.role, coach_id: actor.coach_id },
       session,
     );
-    return session;
+    return toSessionView(actor, session);
   }
 
   // ---------------------------------------------------------------
@@ -351,7 +486,12 @@ export class SchedulingService {
   async getOpenSlots(
     actor: ActorContext,
     coachId: string,
-    args: { from: string; to: string; duration_minutes?: number | null },
+    args: {
+      from: string;
+      to: string;
+      duration_minutes?: number | null;
+      session_type_id?: string | null;
+    },
   ): Promise<OpenSlotsPayload> {
     return this.openSlots.getOpenSlots(actor, coachId, args);
   }
@@ -372,7 +512,10 @@ export class SchedulingService {
     actor: ActorContext,
     dto: CreateAvailabilityOverrideDto,
   ) {
-    return this.availability.createAvailabilityOverride(actor, dto);
+    const row = await this.availability.createAvailabilityOverride(actor, dto);
+    // S-SCHED: time off must hide slots at once, not after the 60s cache.
+    this.openSlots.invalidateCoach(actor.id);
+    return row;
   }
 
   async updateAvailabilityOverride(
@@ -380,10 +523,38 @@ export class SchedulingService {
     id: string,
     dto: UpdateAvailabilityOverrideDto,
   ) {
-    return this.availability.updateAvailabilityOverride(actor, id, dto);
+    const row = await this.availability.updateAvailabilityOverride(actor, id, dto);
+    this.openSlots.invalidateCoach(actor.id);
+    return row;
   }
 
   async deleteAvailabilityOverride(actor: ActorContext, id: string) {
-    return this.availability.deleteAvailabilityOverride(actor, id);
+    const out = await this.availability.deleteAvailabilityOverride(actor, id);
+    this.openSlots.invalidateCoach(actor.id);
+    return out;
   }
+}
+
+// S-SCHED: what a client may see of a session row. `coach_notes_md` is the
+// coach's internal note (schema comment: "Internal coach-only notes");
+// provider ids / idempotency keys are server bookkeeping. Coaches and
+// owners keep the full row. `client_recap_md` is the client-visible recap.
+export type ClientSessionView = Omit<
+  CoachingSession,
+  'coach_notes_md' | 'provider_idempotency_key' | 'calendar_event_id' | 'video_meeting_id'
+>;
+
+export function toSessionView(
+  actor: { role: ActorContext['role'] },
+  row: CoachingSession,
+): CoachingSession | ClientSessionView {
+  if (actor.role !== 'student') return row;
+  const {
+    coach_notes_md: _notes,
+    provider_idempotency_key: _key,
+    calendar_event_id: _cal,
+    video_meeting_id: _vid,
+    ...rest
+  } = row;
+  return rest;
 }

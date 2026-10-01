@@ -2999,6 +2999,18 @@ model SessionType {
   default_video_provider VideoProvider @default(stub)
   // Soft-disable so historic sessions still link back to their type.
   archived_at            DateTime?
+  // S-SCHED: marks the coach's welcome / onboarding appointment type (the
+  // one Roman's tutorial offers at the end). At most one active
+  // (archived_at IS NULL) welcome type per coach, enforced by the partial
+  // unique index SessionType_one_active_welcome_per_coach in migration
+  // 20270201000000_session_type_welcome_meeting_link. Never inferred from
+  // the name.
+  is_welcome             Boolean       @default(false)
+  // S-SCHED: optional https meeting link (the coach's own personal room)
+  // auto-attached as a manual video link when a session of this type is
+  // confirmed and has no link yet. The coach can still override per
+  // session with POST /scheduling/sessions/:id/manual-video-link.
+  default_meeting_url    String?
   created_at             DateTime      @default(now())
   updated_at             DateTime      @default(now()) @updatedAt
 

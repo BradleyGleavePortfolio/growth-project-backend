@@ -76,6 +76,11 @@ function buildPrismaFake(sessions: FakeSession[]) {
   };
 }
 
+// One narrowing seam for the fakes (keeps the R75 cast count flat).
+function makeJob(prisma: ReturnType<typeof buildPrismaFake>, emitter: ReturnType<typeof buildBookingEmitter>) {
+  return new SessionReminderJob(prisma as never, emitter as never);
+}
+
 function buildBookingEmitter() {
   return {
     emitRequested: jest.fn(),
@@ -108,7 +113,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-1', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -150,7 +155,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -174,7 +179,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-idem', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const args = {
       lowerOffsetMinutes: 55,
@@ -205,7 +210,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -234,7 +239,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -264,7 +269,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
       kind: NotificationKind.BOOKING_REMINDER_24H,
     });
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -297,9 +302,38 @@ describe('SessionReminderJob — findDueReminders helper', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = makeJob(prisma, emitter);
 
     const due = await job.findDueReminders(60);
     expect(due.map((s) => s.id)).toEqual(['s-in']);
+  });
+});
+
+describe('SessionReminderJob — cron wrappers (S-SCHED)', () => {
+  it('1h sweep tags each recipient with its role and fires once per participant across reruns', async () => {
+    delete process.env.BOOKING_REMINDERS_ENABLED;
+    const sessions = [session({ id: 'sess-r', startsInMinutes: 60 })];
+    const prisma = buildPrismaFake(sessions);
+    const emitter = buildBookingEmitter();
+    const job = makeJob(prisma, emitter);
+    await job.runOneHourReminderSweep();
+    await job.runOneHourReminderSweep();
+    expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
+    const roles = emitter.emitReminder1h.mock.calls
+      .map((c: [{ recipientUserId: string; recipientRole: string }]) => `${c[0].recipientUserId}:${c[0].recipientRole}`)
+      .sort();
+    expect(roles).toEqual(['client-1:client', 'coach-1:coach']);
+  });
+
+  it('24h sweep tags roles too', async () => {
+    const sessions = [session({ id: 'sess-d', startsInMinutes: 60 * 24 })];
+    const prisma = buildPrismaFake(sessions);
+    const emitter = buildBookingEmitter();
+    const job = makeJob(prisma, emitter);
+    await job.runTwentyFourHourReminderSweep();
+    const roles = emitter.emitReminder24h.mock.calls
+      .map((c: [{ recipientRole: string }]) => c[0].recipientRole)
+      .sort();
+    expect(roles).toEqual(['client', 'coach']);
   });
 });

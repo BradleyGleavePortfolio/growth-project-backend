@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { AuditService } from '../src/audit/audit.service';
 import { GoogleCalendarAdapter } from '../src/scheduling/providers/google-calendar.adapter';
 import { GoogleMeetAdapter } from '../src/scheduling/providers/google-meet.adapter';
 import { SchedulingProviderRegistry } from '../src/scheduling/providers/scheduling-provider.registry';
@@ -7,6 +6,7 @@ import { StubCalendarAdapter } from '../src/scheduling/providers/stub-calendar.a
 import { StubVideoAdapter } from '../src/scheduling/providers/stub-video.adapter';
 import { ZoomVideoAdapter } from '../src/scheduling/providers/zoom-video.adapter';
 import { SchedulingService } from '../src/scheduling/scheduling.service';
+import { auditDouble, bookingEmitterDouble } from './utils/scheduling-test-doubles';
 
 // Lightweight in-memory fakes — we test state-machine + audit + permission
 // behaviour without booting Nest or Prisma. The schema-level guarantees
@@ -19,6 +19,19 @@ function buildPrismaFake() {
   const availability: any[] = [];
   return {
     _state: { sessions, sessionTypes, availability },
+    // S-SCHED: open-slot validation on the client booking path reads the
+    // coach (timezone) and overrides; reschedule re-reads under the lock.
+    user: {
+      findUnique: jest.fn(async ({ where: { id } }: any) =>
+        id.startsWith('coach-')
+          ? { id, role: 'coach', coach_profile: { timezone: 'UTC' } }
+          : null,
+      ),
+    },
+    coachAvailabilityOverride: {
+      findMany: jest.fn(async () => []),
+    },
+    $executeRaw: jest.fn(async () => 1),
     sessionType: {
       findUnique: jest.fn(async ({ where: { id } }: any) =>
         sessionTypes.find((s) => s.id === id) ?? null,
@@ -46,6 +59,7 @@ function buildPrismaFake() {
         sessionTypes[i] = { ...sessionTypes[i], ...data };
         return sessionTypes[i];
       }),
+      updateMany: jest.fn(async () => ({ count: 0 })),
     },
     coachAvailability: {
       findMany: jest.fn(async ({ where }: any) =>
@@ -72,8 +86,14 @@ function buildPrismaFake() {
         return sessions.filter((s) => {
           if (where.coach_id && s.coach_id !== where.coach_id) return false;
           if (where.client_id && s.client_id !== where.client_id) return false;
-          if (where.status && s.status !== where.status) return false;
+          if (typeof where.status === 'string' && s.status !== where.status) return false;
+          if (where.status?.in && !where.status.in.includes(s.status)) return false;
+          if (where.id?.not && s.id === where.id.not) return false;
           if (where.start_at?.gte && s.start_at < where.start_at.gte) return false;
+          if (where.start_at?.lt && !(s.start_at < where.start_at.lt)) return false;
+          if (where.end_at?.gt && !(s.end_at > where.end_at.gt)) return false;
+          if (where.end_at?.gte && s.end_at < where.end_at.gte) return false;
+          if (where.end_at?.lt && !(s.end_at < where.end_at.lt)) return false;
           return true;
         });
       }),
@@ -82,6 +102,7 @@ function buildPrismaFake() {
         return (
           sessions.find((s) => {
             if (where.coach_id && s.coach_id !== where.coach_id) return false;
+            if (where.id?.not && s.id === where.id.not) return false;
             if (where.status?.in && !where.status.in.includes(s.status)) {
               return false;
             }
@@ -120,6 +141,15 @@ function buildPrismaFake() {
         sessions[i] = { ...sessions[i], ...data, updated_at: new Date() };
         return sessions[i];
       }),
+      // S-SCHED: compare-and-set transitions.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const i = sessions.findIndex(
+          (s) => s.id === where.id && (where.status === undefined || s.status === where.status),
+        );
+        if (i < 0) return { count: 0 };
+        sessions[i] = { ...sessions[i], ...data, updated_at: new Date() };
+        return { count: 1 };
+      }),
     },
     $transaction: jest.fn(),
   } as any;
@@ -134,11 +164,11 @@ function bindTransaction(prisma: any) {
 
 function buildAudit() {
   const writes: any[] = [];
-  const audit = {
+  const audit = auditDouble({
     write: jest.fn(async (input: any) => {
       writes.push(input);
     }),
-  } as unknown as AuditService;
+  });
   return { audit, writes };
 }
 
@@ -201,12 +231,36 @@ describe('SchedulingService — request + state machine + audit', () => {
     delete process.env.ZOOM_ENABLED;
     prisma = buildPrismaFake();
     bindTransaction(prisma);
+    // S-SCHED: clients book from an appointment type inside open time.
+    // Fixture: one 30-minute type and all-day availability every day.
+    prisma._state.sessionTypes.push({
+      id: 'st-30',
+      coach_id: 'coach-1',
+      name: '30-min check-in',
+      description: null,
+      duration_minutes: 30,
+      auto_approve: false,
+      default_video_provider: 'stub',
+      is_welcome: false,
+      default_meeting_url: null,
+      archived_at: null,
+    });
+    for (let d = 0; d < 7; d++) {
+      prisma._state.availability.push({
+        id: `av-all-${d}`,
+        coach_id: 'coach-1',
+        day_of_week: d,
+        start_minute: 0,
+        end_minute: 1440,
+        session_type_id: null,
+      });
+    }
     auditCtx = buildAudit();
     // BookingEmitter is a thin pass-through to NotificationsService; for
     // the existing scheduling.service.spec the emit calls are a no-op
     // stub. Booking-notification coverage lives in
     // src/notifications/__tests__/booking.emitter.spec.ts.
-    const stubEmitter = {
+    const stubEmitter = bookingEmitterDouble({
       emitRequested: async () => undefined,
       emitConfirmed: async () => undefined,
       emitDeclined: async () => undefined,
@@ -214,13 +268,14 @@ describe('SchedulingService — request + state machine + audit', () => {
       emitRescheduled: async () => undefined,
       emitReminder24h: async () => undefined,
       emitReminder1h: async () => undefined,
-    } as unknown as ConstructorParameters<typeof SchedulingService>[3];
+    });
     svc = new SchedulingService(prisma, auditCtx.audit, buildRegistry(), stubEmitter);
   });
 
   it('client requests a session — written as `requested`, audit recorded', async () => {
     const session = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: '30-min check-in',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -250,6 +305,7 @@ describe('SchedulingService — request + state machine + audit', () => {
     await expect(
       svc.requestSession(CLIENT_ACTOR, {
         coach_id: 'coach-1',
+        session_type_id: 'st-30',
         title: 'x',
         start_at: '2026-06-01T15:00:00Z',
         end_at: '2026-06-01T15:00:00Z',
@@ -260,19 +316,22 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('coach approves -> state becomes `scheduled`, stub provider mints ids, audits cover both sides', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: '30-min check-in',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
     });
     const approved = await svc.approveSession(COACH_ACTOR, requested.id);
     expect(approved.status).toBe('scheduled');
-    expect(approved.calendar_event_id).toMatch(/^stub-cal-sess-sess-1-/);
+    // Coach actor: the full row (clients get ClientSessionView without these).
+    const full = 'calendar_event_id' in approved ? approved : null;
+    expect(full?.calendar_event_id).toMatch(/^stub-cal-sess-sess-1-/);
     // StubVideoAdapter intentionally returns joinUrl: null to prevent
     // fake tgp-stub:// URLs from leaking into production rows.
     expect(approved.video_url).toBeNull();
     // Idempotency key is set once and reused — second provisioning
     // call would not pick a different key.
-    expect(approved.provider_idempotency_key).toMatch(/^sess-sess-1-/);
+    expect(full?.provider_idempotency_key).toMatch(/^sess-sess-1-/);
 
     const actions = auditCtx.writes.map((w) => w.action);
     expect(actions).toEqual(
@@ -288,6 +347,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('client cannot approve a session', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -300,6 +360,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('cannot transition from completed back to scheduled', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -314,6 +375,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('cannot cancel a completed session', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -328,6 +390,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('reschedule is allowed in requested or scheduled, captures previous + new times', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -349,6 +412,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('attaching a manual video link sets provider=manual and audits', async () => {
     const requested = await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2026-06-01T15:00:00Z',
       end_at: '2026-06-01T15:30:00Z',
@@ -367,6 +431,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   it('listUpcomingForActor scopes results by role', async () => {
     await svc.requestSession(CLIENT_ACTOR, {
       coach_id: 'coach-1',
+      session_type_id: 'st-30',
       title: 'x',
       start_at: '2999-06-01T15:00:00Z',
       end_at: '2999-06-01T15:30:00Z',
