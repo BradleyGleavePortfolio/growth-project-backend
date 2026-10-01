@@ -59,6 +59,8 @@ export class AuthController {
     summary: 'Register a new user with email + password',
     description:
       'Creates a Supabase user and the corresponding application User row. ' +
+      'Optional intended_role (client | coach, default client) fixes the role at creation; ' +
+      'coach provisions a free/active CoachSubscription. ' +
       'Rate-limited to 5/hour/IP to blunt enumeration and spam signup loops.',
   })
   @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
@@ -67,8 +69,8 @@ export class AuthController {
   @Public()
   @Post('register')
   @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
-  async register(@Body() body: RegisterDto) {
-    return this.authService.register(body);
+  async register(@Body() body: RegisterDto, @Request() req: AuditableRequest) {
+    return this.authService.register(body, auditContext(req));
   }
 
   @ApiOperation({
@@ -171,9 +173,22 @@ export class AuthController {
     [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: { ttl: 3_600_000, limit: 30 },
   })
   @HttpCode(HttpStatus.OK)
-  async googleAuth(@Body() body: GoogleAuthDto, @Request() req: Record<string, any>) {
-    const result = await this.authService.googleAuth(body.token, body.invite_code);
-    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+  async googleAuth(@Body() body: GoogleAuthDto, @Request() req: AuditableRequest) {
+    const result = await this.authService.googleAuth(
+      body.token,
+      body.invite_code,
+      body.intended_role,
+      // Fix round (Opus C5 / Grok B1): the signup-time role audit row needs
+      // the request IP / user-agent on the Google path too. throttleIp (Opus
+      // C13-C1): the coach-signup ceiling keys on the trusted Fly-Client-IP.
+      { ...auditContext(req), throttleIp: extractIp(req) },
+    );
+    // Grok B5: only a RETURNING user's success clears the login windows. A
+    // brand-new account is not a retried login, and resetting on it made
+    // account minting unbounded per IP.
+    if (!result.is_new_user) {
+      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    }
     return result;
   }
 
@@ -202,10 +217,13 @@ export class AuthController {
       resolveAppleIdentityToken(body),
       body.full_name,
       body.invite_code,
-      auditContext(req),
+      { ...auditContext(req), throttleIp: extractIp(req) },
       body.raw_nonce,
+      body.intended_role,
     );
-    await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    if (!result.is_new_user) {
+      await this.loginThrottleReset.resetLoginCounters(extractIp(req));
+    }
     return result;
   }
 

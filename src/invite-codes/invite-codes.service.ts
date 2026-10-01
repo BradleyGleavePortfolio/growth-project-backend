@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -8,7 +9,7 @@ import {
   // Phase 1C imports retained when previewCode/attachUserToCoachByCode are
   // exercised below.
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -27,8 +28,8 @@ type ValidationFailure = { valid: false; reason: string };
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 // Unambiguous alphabet — no 0/O, 1/I/L — so codes read unambiguously over the
-// phone or in handwriting. 32 chars × 6 = 2^30 combinations, plenty for the
-// foreseeable code volume.
+// phone or in handwriting. 31 chars × 6 positions = 31^6 ≈ 8.9×10^8
+// combinations, plenty for the foreseeable code volume.
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
 const CODE_PREFIX = 'GP-';
@@ -44,6 +45,46 @@ export const INVITE_CODE_MAX_LENGTH = 32;
 // Whitespace-trimmed, case-insensitive shape check. Letters, digits, and
 // dashes only. Mobile mirrors this to gate input before POST.
 export const INVITE_CODE_PATTERN = /^[A-Za-z0-9-]+$/;
+
+// Stateless `GP-XXXXXX` candidate generator shared with AuthService (C13
+// signup-time coach provisioning mints the CoachProfile.invite_code inside
+// the signup transaction, where the retry-on-P2002 loop below cannot run).
+// Same alphabet/length as the private `generateCode` so codes are
+// indistinguishable from lazily-created ones. `crypto.randomInt` is uniform
+// over the alphabet (the previous `byte % 31` was slightly biased —
+// CodeQL js/biased-cryptographic-random).
+export function generateInviteCodeCandidate(): string {
+  let out = CODE_PREFIX;
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  }
+  return out;
+}
+
+// Clinic C13 fix round — shared with AuthService.selectRole and the C03 attach
+// error table (#599 folds this into INVITE_ATTACH_ERROR on rebase; keep the
+// string identical in both PRs). Returned as `{ code, message }` (ErrorEnvelope
+// shape) so mobile can branch without parsing prose.
+export const INVITE_ATTACH_COACH_CANNOT_REDEEM = 'coach_cannot_redeem' as const;
+
+/** Roles that own a tenant (or a seat in one) and must never be re-parented
+ *  or demoted by a client invite code / storefront purchase. */
+export const COACH_LIKE_ROLES: ReadonlySet<string> = new Set(['coach', 'sub_coach', 'owner']);
+
+export function isCoachLikeRole(role: string | null | undefined): boolean {
+  return !!role && COACH_LIKE_ROLES.has(role);
+}
+
+export function coachCannotRedeemBody(): { code: typeof INVITE_ATTACH_COACH_CANNOT_REDEEM; message: string } {
+  return {
+    code: INVITE_ATTACH_COACH_CANNOT_REDEEM,
+    message:
+      'Coach accounts cannot redeem a client invite code. Your role was fixed when the account was created; ask the platform owner if it needs to change.',
+  };
+}
+
+/** Rolls back a seat bump when a sibling request attached the same user to the same coach first. */
+class SameCoachAttachRace extends Error {}
 
 @Injectable()
 export class InviteCodesService {
@@ -79,12 +120,7 @@ export class InviteCodesService {
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
   private generateCode(): string {
-    const bytes = randomBytes(CODE_LENGTH);
-    let out = CODE_PREFIX;
-    for (let i = 0; i < CODE_LENGTH; i++) {
-      out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
-    }
-    return out;
+    return generateInviteCodeCandidate();
   }
 
   async createForCoach(
@@ -535,7 +571,18 @@ export class InviteCodesService {
   // initial OAuth roundtrip) and then enters the coach's invite code
   // from the post-OAuth screen. Atomic + idempotent — also used by the
   // `signup-with-code` flow once the user record exists.
-  async attachUserToCoachByCode(userId: string, code: string) {
+  //
+  // Clinic C13 fix round (audits: Opus B1 / Grok A2): a coach-like account
+  // (coach, sub_coach, owner) is REFUSED with a structured code instead of
+  // being silently rewritten to `role:'student'`. Redeeming a code used to
+  // demote a head coach, orphan their roster (User.coach_id of every client
+  // still pointed at them) and leave their CoachSubscription + invite code
+  // live. The role is fixed at account creation (R-ROLE-CHOICE-1); a change
+  // is an OWNER action, never a side effect of typing a code.
+  async attachUserToCoachByCode(
+    userId: string,
+    code: string,
+  ): Promise<{ role: string; coach_id: string | null; already_attached: boolean }> {
     // Resolve to a coach_id, regardless of whether the code is a
     // CoachProfile default code or a legacy InviteCode row.
     const profile = await this.prisma.coachProfile.findUnique({
@@ -565,6 +612,26 @@ export class InviteCodesService {
     if (!me) throw new NotFoundException('User not found');
     if (me.role === 'owner') {
       throw new ForbiddenException('Owners cannot redeem a coach invite');
+    }
+    if (isCoachLikeRole(me.role)) {
+      this.logger.warn(
+        `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (coach_cannot_redeem)`,
+      );
+      throw new ForbiddenException(coachCannotRedeemBody());
+    }
+
+    // Sol SOL-C13-A1 — tenancy: an existing client is never re-parented by
+    // typing a code. Same coach → idempotent no-op (no seat consumed, role
+    // untouched); different coach → 409. The C03 slice (#599) builds the full
+    // canonical attach contract on top of this guard.
+    if (me.coach_id && resolvedCoachId) {
+      if (me.coach_id === resolvedCoachId) {
+        return { role: me.role, coach_id: me.coach_id, already_attached: true };
+      }
+      throw new ConflictException({
+        code: 'already_attached_to_different_coach',
+        message: 'You are already attached to a different coach',
+      });
     }
 
     // Atomic linkage + (if applicable) used_count bump.
@@ -603,16 +670,36 @@ export class InviteCodesService {
         }
       }
 
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: { role: 'student', coach_id: resolvedCoachId },
+      // Conditional write: only a student with NO coach is attached, and only
+      // coach_id changes. A concurrent attach to another coach or a concurrent
+      // promotion makes count 0 and rolls the seat bump back.
+      const updated = await tx.user.updateMany({
+        where: { id: userId, role: 'student', coach_id: null },
+        data: { coach_id: resolvedCoachId },
       });
+      if (updated.count !== 1) {
+        const now = await tx.user.findUnique({ where: { id: userId } });
+        if (now && now.role === 'student' && now.coach_id === resolvedCoachId) {
+          // Lost a race to a sibling attach to the SAME coach. Throw to roll
+          // back this request's seat bump; converted to a no-op below.
+          throw new SameCoachAttachRace();
+        }
+        throw new ConflictException({
+          code: 'already_attached_to_different_coach',
+          message: 'You are already attached to a different coach',
+        });
+      }
       this.analytics.capture(userId, Events.INVITE_REDEEMED, {
         via: 'attach_code',
         coach_id: resolvedCoachId,
         legacy_invite_row: !!inviteCodeRowId,
       });
-      return { role: updated.role, coach_id: updated.coach_id };
+      return { role: 'student', coach_id: resolvedCoachId, already_attached: false };
+    }).catch((err: unknown) => {
+      if (err instanceof SameCoachAttachRace) {
+        return { role: 'student', coach_id: resolvedCoachId, already_attached: true };
+      }
+      throw err;
     });
   }
 

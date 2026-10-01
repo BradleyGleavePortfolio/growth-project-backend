@@ -9,6 +9,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Live Redis for the throttler-storage proofs (test/support/live-redis.ts):
+    # the production limiter is the @nest-lab Redis adapter's Lua script behind
+    # withFailOpenStorage, which a mock cannot reproduce. Only the suites that
+    # read THROTTLER_LIVE_REDIS_URL connect to it; REDIS_URL stays unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
 
@@ -75,6 +89,7 @@ jobs:
         run: npm test --if-present
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
 
       # Confirm the env-validation rules accept a fully-populated prod env.
       # Catches accidental rule additions that would brick the next deploy

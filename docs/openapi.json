@@ -3930,6 +3930,15 @@
           "phone": {
             "type": "string",
             "example": "+15555550100"
+          },
+          "intended_role": {
+            "type": "string",
+            "enum": [
+              "client",
+              "coach"
+            ],
+            "default": "client",
+            "description": "Role chosen at account creation. 'coach' provisions a coach account with a free/active CoachSubscription. Only applies when this call creates a new account; ignored for existing users."
           }
         },
         "required": [
@@ -3969,6 +3978,15 @@
             "description": "Optional coach invite code attached on the same call.",
             "example": "GP-A1B2C3",
             "maxLength": 32
+          },
+          "intended_role": {
+            "type": "string",
+            "enum": [
+              "client",
+              "coach"
+            ],
+            "default": "client",
+            "description": "Role chosen at account creation. 'coach' provisions a coach account with a free/active CoachSubscription. Only applies when this call creates a new account; ignored for existing users."
           }
         },
         "required": [
@@ -4081,6 +4099,15 @@
             "description": "Required when COACH_CODE_GATE_ENABLED=true; otherwise optional.",
             "example": "GP-A1B2C3",
             "maxLength": 32
+          },
+          "intended_role": {
+            "type": "string",
+            "enum": [
+              "client",
+              "coach"
+            ],
+            "default": "client",
+            "description": "Only 'client' is accepted here — an invite-code signup always creates a client. 'coach' is refused with 400 intended_role_not_allowed_with_invite_code."
           }
         },
         "required": [
