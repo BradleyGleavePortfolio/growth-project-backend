@@ -24,6 +24,9 @@ import {
   generateInviteCodeCandidate,
   coachCannotRedeemBody,
   isCoachLikeRole,
+  inviteAttachErrorCode,
+  INVITE_ATTACH_ERROR,
+  type InviteAttachErrorCode,
 } from '../invite-codes/invite-codes.service';
 import type { IntendedRole } from './auth.dto';
 import { normalizeEmail } from './email-normalize';
@@ -219,6 +222,28 @@ export class AuthService {
         },
       );
     });
+  }
+
+  // Clinic launch C03 — one attach path for signup-with-code / Google / Apple.
+  // The auth call itself never fails because of the attach (the user IS
+  // signed in and can retry via /auth/attach-invite-code), but the outcome is
+  // no longer swallowed: callers get `invite_attached` plus a safe reason
+  // code in `invite_attach_error` and mobile can show the right screen.
+  private async tryAttachInviteCode(
+    flow: 'signupWithCode' | 'googleAuth' | 'appleAuth',
+    userId: string,
+    inviteCode: string,
+  ): Promise<{ invite_attached: boolean; invite_attach_error?: InviteAttachErrorCode }> {
+    try {
+      await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
+      return { invite_attached: true };
+    } catch (err) {
+      const code = inviteAttachErrorCode(err);
+      this.logger.warn(
+        `${flow} invite_code attach failed for user=${userId} code=${code}: ${(err as Error).message}`,
+      );
+      return { invite_attached: false, invite_attach_error: code };
+    }
   }
 
   // ---- C13: signup-time role choice --------------------------------------
@@ -1029,8 +1054,12 @@ export class AuthService {
 
     // If mobile passed an invite_code on the Google exchange, attach the
     // user to the coach in the same call. Failures are non-fatal — we still
-    // log the user in so they can retry via /auth/attach-invite-code.
+    // log the user in so they can retry via /auth/attach-invite-code — but
+    // the outcome is reported (C03). Same-coach re-attach is idempotent and a
+    // different-coach code is refused inside attachUserToCoachByCode, so the
+    // call is safe for returning users too.
     let invite_attached = false;
+    let invite_attach_error: InviteAttachErrorCode | undefined;
     if (inviteCode && isCoachLikeRole(user.role)) {
       // Fix round (Opus B1 / Grok A2): a coach/owner signing in with a stale
       // QR / deep-link code is never demoted to a client. The service-level
@@ -1039,16 +1068,14 @@ export class AuthService {
       this.logger.warn(
         `googleAuth: ignoring invite_code for user=${user.id} role=${user.role} (coach_cannot_redeem)`,
       );
-    } else if (inviteCode && !user.coach_id) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+      invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
+    } else if (inviteCode) {
+      const attach = await this.tryAttachInviteCode('googleAuth', user.id, inviteCode);
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
+      if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({ where: { id: user.id } });
         if (refreshed) user = refreshed;
-        invite_attached = true;
-      } catch (err) {
-        this.logger.warn(
-          `googleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
-        );
       }
     }
 
@@ -1056,6 +1083,7 @@ export class AuthService {
       access_token: token,
       is_new_user: isNewUser,
       invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -1238,25 +1266,25 @@ export class AuthService {
 
     // If mobile passed an invite_code on the Apple exchange, attach the
     // user to the coach in the same call. Failures are non-fatal — we still
-    // log the user in so they can retry via /auth/attach-invite-code.
+    // log the user in so they can retry via /auth/attach-invite-code — but
+    // the outcome is reported (C03); see googleAuth for the same contract.
     let invite_attached = false;
+    let invite_attach_error: InviteAttachErrorCode | undefined;
     if (inviteCode && isCoachLikeRole(user.role)) {
       // Fix round (Opus B1 / Grok A2) — see googleAuth.
       this.logger.warn(
         `appleAuth: ignoring invite_code for user=${user.id} role=${user.role} (coach_cannot_redeem)`,
       );
-    } else if (inviteCode && !user.coach_id) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+      invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
+    } else if (inviteCode) {
+      const attach = await this.tryAttachInviteCode('appleAuth', user.id, inviteCode);
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
+      if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({
           where: { id: user.id },
         });
         if (refreshed) user = refreshed;
-        invite_attached = true;
-      } catch (err) {
-        this.logger.warn(
-          `appleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
-        );
       }
     }
 
@@ -1271,7 +1299,7 @@ export class AuthService {
       targetId: user.id,
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
-      metadata: { is_new_user: isNewUser, invite_attached },
+      metadata: { is_new_user: isNewUser, invite_attached, invite_attach_error: invite_attach_error ?? null },
     });
 
     return {
@@ -1279,6 +1307,7 @@ export class AuthService {
       refresh_token: signInData.session.refresh_token,
       is_new_user: isNewUser,
       invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -1469,22 +1498,33 @@ export class AuthService {
       // intended_role deliberately NOT forwarded: always a client here.
     });
 
+    // C03: the code was previewed as valid above, but the attach can still
+    // fail (seat race, coach paused between preview and attach, DB error).
+    // The account exists either way; report the outcome instead of hiding it.
+    let invite_attached = false;
+    let invite_attach_error: InviteAttachErrorCode | undefined;
     if (data.invite_code) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(registered.user_id, data.invite_code);
-      } catch (err) {
-        this.logger.warn(
-          `signupWithCode attach failed for user=${registered.user_id}: ${(err as Error).message}`,
-        );
-      }
+      const attach = await this.tryAttachInviteCode(
+        'signupWithCode',
+        registered.user_id,
+        data.invite_code,
+      );
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
     }
 
     this.analytics.capture(registered.user_id, Events.USER_SIGNUP_WITH_CODE, {
       had_invite_code: !!data.invite_code,
       gate_enabled: gateEnabled,
+      invite_attached,
+      invite_attach_error: invite_attach_error ?? null,
     });
 
-    return registered;
+    return {
+      ...registered,
+      invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
+    };
   }
 
   async becomeCoach(
