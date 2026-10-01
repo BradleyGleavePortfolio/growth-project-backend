@@ -250,9 +250,14 @@ BEGIN
 END
 $rls$;
 
--- Post-condition: every object this file is responsible for has exactly the
--- declared shape. Guards above skip objects that already exist, so this is what
--- stops a pre-existing, differently-shaped object from being recorded as fixed.
+-- Post-condition: every object this file is responsible for exists with the
+-- declared column type/typmod, nullability and default presence, FK target table
+-- and ON DELETE/ON UPDATE actions, index uniqueness, RLS flags, policies and
+-- per-role grants. It does NOT compare default expressions, PK/FK column lists or
+-- index key columns/predicates. That is sufficient for this inventory: every
+-- object was absent in production (read-only catalog check, 2026-10-01) and is
+-- created above by Prisma's own DDL. A pre-existing object with the right name but
+-- a different default expression or key column list would not be caught here.
 DO $verify$
 DECLARE
   r record;

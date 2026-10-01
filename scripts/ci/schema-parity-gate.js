@@ -17,7 +17,14 @@
 //      (prisma/schema-parity-baseline.sql), i.e. a change introduced new drift;
 //   3. the baseline lists an item that is no longer drift. The baseline only ever
 //      shrinks: fixing drift requires deleting its line in the same change;
-//   4. the input is missing, empty or unreadable.
+//   4. the candidate baseline lists an item the APPROVED baseline (the file at the
+//      base commit, passed with --approved-baseline) does not. Without this rule a
+//      change could accept its own new drift by adding the matching baseline line
+//      (Sol B-625-1). The only exception is --bootstrap-baseline, which the workflow
+//      passes only when the base commit has no baseline file at all, i.e. the one
+//      change that creates it;
+//   5. the input is missing, empty or unreadable, or neither --approved-baseline
+//      nor --bootstrap-baseline is given (there is no default that skips rule 4).
 //
 // The baseline holds the pre-existing drift that predates this gate (tracked as
 // BL-MIGRATION-REBASELINE). Reaching zero means deleting every baseline line.
@@ -104,11 +111,14 @@ function missingObjectKind(item) {
   return rule ? rule.what : null;
 }
 
-function evaluate(driftText, baselineText) {
+// approvedText: the baseline at the base commit, or null only in bootstrap mode.
+function evaluate(driftText, baselineText, approvedText = null) {
   const current = parseItems(driftText);
   const baseline = parseItems(baselineText);
   const currentSet = new Set(current);
   const baselineSet = new Set(baseline);
+  const approvedSet = approvedText === null ? null : new Set(parseItems(approvedText));
+  const grown = approvedSet === null ? [] : baseline.filter((item) => !approvedSet.has(item));
   const missingObjects = current
     .map((item) => ({ item, kind: missingObjectKind(item) }))
     .filter((x) => x.kind !== null);
@@ -119,8 +129,9 @@ function evaluate(driftText, baselineText) {
     missingObjects.length === 0 &&
     baselinedMissingObjects.length === 0 &&
     newDrift.length === 0 &&
-    resolved.length === 0;
-  return { ok, current, baseline, missingObjects, baselinedMissingObjects, newDrift, resolved };
+    resolved.length === 0 &&
+    grown.length === 0;
+  return { ok, current, baseline, missingObjects, baselinedMissingObjects, newDrift, resolved, grown };
 }
 
 const BASELINE_HEADER = [
@@ -149,16 +160,28 @@ function readInput(path, label) {
 }
 
 function parseArgs(argv) {
-  const args = { drift: null, baseline: null, printBaseline: false };
+  const args = { drift: null, baseline: null, approved: null, bootstrap: false, printBaseline: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--drift') args.drift = argv[++i];
     else if (a === '--baseline') args.baseline = argv[++i];
+    else if (a === '--approved-baseline') args.approved = argv[++i];
+    else if (a === '--bootstrap-baseline') args.bootstrap = true;
     else if (a === '--print-baseline') args.printBaseline = true;
     else throw new Error(`unknown argument ${a}`);
   }
   if (!args.drift) throw new Error('--drift <file> is required');
   if (!args.printBaseline && !args.baseline) throw new Error('--baseline <file> is required');
+  if (!args.printBaseline) {
+    if (args.approved && args.bootstrap) {
+      throw new Error('--approved-baseline and --bootstrap-baseline are mutually exclusive');
+    }
+    if (!args.approved && !args.bootstrap) {
+      throw new Error(
+        '--approved-baseline <file> (the baseline at the base commit) is required; --bootstrap-baseline only when the base commit has no baseline file',
+      );
+    }
+  }
   return args;
 }
 
@@ -166,10 +189,12 @@ function main(argv, out = process.stdout, err = process.stderr) {
   let args;
   let driftText;
   let baselineText = '';
+  let approvedText = null;
   try {
     args = parseArgs(argv);
     driftText = readInput(args.drift, 'drift script');
     if (!args.printBaseline) baselineText = readInput(args.baseline, 'baseline');
+    if (!args.printBaseline && args.approved) approvedText = readInput(args.approved, 'approved baseline');
   } catch (e) {
     err.write(`::error::schema-parity: ${e.message}\n`);
     return 2;
@@ -180,10 +205,20 @@ function main(argv, out = process.stdout, err = process.stderr) {
     return 0;
   }
 
-  const r = evaluate(driftText, baselineText);
+  const r = evaluate(driftText, baselineText, approvedText);
   out.write(
     `schema-parity: ${r.current.length} drift item(s) at this head; baseline lists ${r.baseline.length}.\n`,
   );
+  if (args.bootstrap) {
+    out.write(
+      'schema-parity: bootstrap mode. The base commit has no baseline file, so this change creates it; every later change is compared with the approved baseline and may only shrink it.\n',
+    );
+  }
+  for (const item of r.grown) {
+    err.write(
+      `::error::schema-parity: the baseline gained a line that the approved baseline (base commit) does not list. The baseline may only shrink; fix the drift with a migration or schema change instead of listing it. Item: ${item}\n`,
+    );
+  }
   for (const { item, kind } of r.missingObjects) {
     err.write(
       `::error::schema-parity: schema.prisma declares a ${kind} that no migration creates. Add a migration. Item: ${item}\n`,

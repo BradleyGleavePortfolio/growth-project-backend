@@ -147,6 +147,35 @@ describe('evaluate', () => {
     expect(r.ok).toBe(false);
     expect(r.resolved).toEqual(['ALTER TABLE "CoachBrief" ALTER COLUMN "updated_at" DROP DEFAULT']);
   });
+
+  // Sol B-625-1: new non-missing drift plus a matching new baseline line must fail
+  // when compared with the approved (base commit) baseline.
+  it('fails when the candidate baseline grows to accept new drift (approved baseline comparison)', () => {
+    const added = 'ALTER TABLE "UserProfile" ALTER COLUMN "weight_unit" SET DEFAULT \'kgs\';';
+    const drift = `${PRE_EXISTING}\n${added}\n`;
+    const approved = gate.formatBaseline(gate.parseItems(PRE_EXISTING));
+    const grownCandidate = gate.formatBaseline(gate.parseItems(drift));
+    const r = gate.evaluate(drift, grownCandidate, approved);
+    expect(r.ok).toBe(false);
+    expect(r.newDrift).toEqual([]);
+    expect(r.resolved).toEqual([]);
+    expect(r.grown).toEqual(['ALTER TABLE "UserProfile" ALTER COLUMN "weight_unit" SET DEFAULT \'kgs\'']);
+    // Without the approved baseline (the pre-fix behaviour) the same input passed.
+    expect(gate.evaluate(drift, grownCandidate).ok).toBe(true);
+  });
+
+  it('passes when the candidate baseline equals or shrinks the approved baseline', () => {
+    const approved = gate.formatBaseline(gate.parseItems(PRE_EXISTING));
+    expect(gate.evaluate(PRE_EXISTING, approved, approved).ok).toBe(true);
+    const fixedOne = PRE_EXISTING.replace(
+      'ALTER TABLE "CoachBrief" ALTER COLUMN "updated_at" DROP DEFAULT;',
+      '',
+    );
+    const shrunk = gate.formatBaseline(gate.parseItems(fixedOne));
+    const r = gate.evaluate(fixedOne, shrunk, approved);
+    expect(r.ok).toBe(true);
+    expect(r.grown).toEqual([]);
+  });
 });
 
 describe('CLI', () => {
@@ -160,8 +189,8 @@ describe('CLI', () => {
 
   it('exits 0 at parity, 1 on drift, and prints errors as GitHub annotations', () => {
     const baseline = file('baseline.sql', gate.formatBaseline([]));
-    expect(run('--drift', file('empty.sql', EMPTY), '--baseline', baseline).status).toBe(0);
-    const bad = run('--drift', file('p0.sql', P0_DRIFT), '--baseline', baseline);
+    expect(run('--drift', file('empty.sql', EMPTY), '--baseline', baseline, '--approved-baseline', baseline).status).toBe(0);
+    const bad = run('--drift', file('p0.sql', P0_DRIFT), '--baseline', baseline, '--approved-baseline', baseline);
     expect(bad.status).toBe(1);
     expect(bad.stderr).toContain('::error::schema-parity: schema.prisma declares a column that no migration creates');
     expect(bad.stderr).toContain('"archived_at"');
@@ -169,11 +198,17 @@ describe('CLI', () => {
 
   it('fails closed (exit 2) on a missing or empty input and on unknown arguments', () => {
     const baseline = file('baseline2.sql', gate.formatBaseline([]));
-    expect(run('--drift', join(dir, 'nope.sql'), '--baseline', baseline).status).toBe(2);
-    expect(run('--drift', file('blank.sql', '  \n'), '--baseline', baseline).status).toBe(2);
-    expect(run('--drift', file('e2.sql', EMPTY), '--baseline', join(dir, 'nope.sql')).status).toBe(2);
+    expect(run('--drift', join(dir, 'nope.sql'), '--baseline', baseline, '--bootstrap-baseline').status).toBe(2);
+    expect(run('--drift', file('blank.sql', '  \n'), '--baseline', baseline, '--bootstrap-baseline').status).toBe(2);
+    expect(run('--drift', file('e2.sql', EMPTY), '--baseline', join(dir, 'nope.sql'), '--bootstrap-baseline').status).toBe(2);
     expect(run('--drift', file('e3.sql', EMPTY)).status).toBe(2);
-    expect(run('--drift', file('e4.sql', EMPTY), '--baseline', baseline, '--force').status).toBe(2);
+    expect(run('--drift', file('e4.sql', EMPTY), '--baseline', baseline, '--bootstrap-baseline', '--force').status).toBe(2);
+    // No silent default that skips the approved-baseline comparison.
+    expect(run('--drift', file('e5.sql', EMPTY), '--baseline', baseline).status).toBe(2);
+    expect(
+      run('--drift', file('e6.sql', EMPTY), '--baseline', baseline, '--approved-baseline', baseline, '--bootstrap-baseline').status,
+    ).toBe(2);
+    expect(run('--drift', file('e7.sql', EMPTY), '--baseline', baseline, '--approved-baseline', join(dir, 'nope.sql')).status).toBe(2);
   });
 
   it('--print-baseline output round-trips to a passing gate for non-missing drift', () => {
@@ -181,7 +216,23 @@ describe('CLI', () => {
     const printed = run('--drift', drift, '--print-baseline');
     expect(printed.status).toBe(0);
     const baseline = file('printed.sql', printed.stdout);
-    expect(run('--drift', drift, '--baseline', baseline).status).toBe(0);
+    expect(run('--drift', drift, '--baseline', baseline, '--bootstrap-baseline').status).toBe(0);
+  });
+
+  it('exits 1 with an annotation when the baseline grows beyond the approved baseline (Sol B-625-1)', () => {
+    const added = 'ALTER TABLE "UserProfile" ALTER COLUMN "weight_unit" SET DEFAULT \'kgs\';';
+    const driftText = `${PRE_EXISTING}\n${added}\n`;
+    const drift = file('grown-drift.sql', driftText);
+    const approved = file('approved.sql', gate.formatBaseline(gate.parseItems(PRE_EXISTING)));
+    const candidate = file('grown-candidate.sql', gate.formatBaseline(gate.parseItems(driftText)));
+    const r = run('--drift', drift, '--baseline', candidate, '--approved-baseline', approved);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('::error::schema-parity: the baseline gained a line that the approved baseline (base commit) does not list');
+    expect(r.stderr).toContain('"weight_unit" SET DEFAULT');
+    // Bootstrap mode is the only route that accepts a new baseline as-is.
+    const boot = run('--drift', drift, '--baseline', candidate, '--bootstrap-baseline');
+    expect(boot.status).toBe(0);
+    expect(boot.stdout).toContain('schema-parity: bootstrap mode.');
   });
 });
 
@@ -207,8 +258,27 @@ describe('committed baseline and workflow wiring', () => {
     expect(wf).toContain('npx prisma migrate deploy');
     expect(wf).toContain('--to-schema-datamodel prisma/schema.prisma');
     expect(wf).toContain(
-      'node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql',
+      'node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql $PARITY_APPROVED_ARGS',
     );
+  });
+
+  it('schema-parity.yml compares the baseline with the base commit and bootstraps only when the base has none', () => {
+    const wf = readFileSync(join(ROOT, '.github', 'workflows', 'schema-parity.yml'), 'utf8');
+    expect(wf).toMatch(/fetch-depth: 0/);
+    expect(wf).toContain('PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}');
+    expect(wf).toContain('PUSH_BEFORE_SHA: ${{ github.event.before }}');
+    expect(wf).toContain('git show "${BASE_SHA}:prisma/schema-parity-baseline.sql" > approved_baseline.sql');
+    expect(wf).toContain('PARITY_APPROVED_ARGS=--approved-baseline approved_baseline.sql');
+    // Bootstrap is reachable only from the branch where the base commit lacks the file.
+    const bootIdx = wf.indexOf('PARITY_APPROVED_ARGS=--bootstrap-baseline');
+    const elseIdx = wf.lastIndexOf('else', bootIdx);
+    const ifIdx = wf.lastIndexOf('if git cat-file -e "${BASE_SHA}:prisma/schema-parity-baseline.sql"', bootIdx);
+    expect(bootIdx).toBeGreaterThan(-1);
+    expect(ifIdx).toBeGreaterThan(-1);
+    expect(elseIdx).toBeGreaterThan(ifIdx);
+    // Untrusted event fields reach the shell only through env, never inline.
+    const resolveStep = wf.slice(wf.indexOf('Resolve the approved baseline'), wf.indexOf('Gate on drift'));
+    expect(resolveStep.split('run: |')[1]).not.toContain('${{');
   });
 
   it('the old informational parity job is gone from migration-dry-run.yml', () => {
