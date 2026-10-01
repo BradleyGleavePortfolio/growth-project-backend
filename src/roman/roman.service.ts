@@ -231,9 +231,17 @@ export class RomanService {
   /** Soft-delete a session the caller owns (sets deleted_at). Idempotent. */
   async softDeleteSession(caller: RomanCaller, sessionId: string): Promise<void> {
     const session = await this.getOwnedSession(caller, sessionId);
+    // Owner ruling 2026-09-30 17:42 / store review: "delete" removes the
+    // content. The transcript rows are hard-deleted NOW (scoped to the
+    // caller's own session AND user_id); the session shell keeps deleted_at
+    // so the day-key resume logic hides it, and RomanRetentionService purges
+    // the shell on its next run.
+    await this.prisma.romanMessage.deleteMany({
+      where: { session_id: session.id, user_id: caller.id },
+    });
     await this.prisma.romanSession.update({
       where: { id: session.id },
-      data: { deleted_at: new Date() },
+      data: { deleted_at: new Date(), message_count: 0 },
     });
   }
 

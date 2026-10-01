@@ -1,12 +1,12 @@
 /**
- * AiProcessingConsentGuard — route-level enforcement of the AI processing
- * consent for endpoints OUTSIDE the Roman controller that still send client
- * data to a third-party model. Today that is `POST /ai/chat` (AI Guide),
- * which keeps running until R7 retires it (plan §6.2 "the same guard on
- * /ai/chat while it lives").
+ * AiProcessingConsentGuard — route-level enforcement of the client's AI
+ * processing consent (the combined onboarding grant, current version only).
+ * Mounted on `POST /roman/sessions/:id/messages`, the only route that sends
+ * user data to a model, in addition to the in-handler assert. `/ai/chat` is
+ * retired (410) and no longer needs it.
  *
- * Throws the same structured 403 ROMAN_CONSENT_REQUIRED as the Roman send
- * path so the mobile app has exactly one code to react to.
+ * Throws the structured 403 ROMAN_CONSENT_REQUIRED the mobile app keys on.
+ * Fails closed: no user, no row, revoked, or stale version → 403.
  */
 
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
