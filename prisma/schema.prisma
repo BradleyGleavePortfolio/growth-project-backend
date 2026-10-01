@@ -1418,9 +1418,15 @@ model UserPreferences {
 // WAVE 3 MODELS
 // ============================================================
 
-// F12 — Recipes: coach-created recipe library with save/bookmark support.
-// ingredients and instructions stored as String[] (mapped to jsonb in Postgres).
+// F12 — Recipes: personal and coach-curated recipes with save/bookmark support.
+// ingredients and instructions stored as String[] (text[] in Postgres).
 // tags drive filter chips in the mobile UI.
+//
+// Visibility (src/recipes/recipe-access.ts, B-RECIPES): private to the creator
+// by default. `is_public = true` means "shared with the creator coach's own
+// clients" and only has that effect when the creator is a coach or the owner
+// account; there is no platform-wide recipe feed. `image_url` is never served
+// (no recipe-photo storage exists; the API refuses links on create).
 model Recipe {
   id            String        @id @default(uuid())
   title         String
@@ -1436,7 +1442,7 @@ model Recipe {
   ingredients   String[]
   instructions  String[]
   tags          String[]
-  is_public     Boolean       @default(true)
+  is_public     Boolean       @default(false)
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
   saved_by      SavedRecipe[]
