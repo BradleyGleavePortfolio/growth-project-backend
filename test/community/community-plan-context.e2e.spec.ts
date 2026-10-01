@@ -52,6 +52,7 @@ import { AnalyticsService } from '../../src/analytics/analytics.service';
 import type { CommunityMessageResponse } from '../../src/community/dto/community-message.dto';
 import type { ResolvePlanContextResponse } from '../../src/community/plan-context/plan-context.dto';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -68,9 +69,7 @@ type PlanContextResponseBody = CommunityMessageResponse &
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-plan-context] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-plan-context] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -128,27 +127,23 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
         h['content-type'] = 'application/json';
         h['content-length'] = Buffer.byteLength(payload).toString();
       }
-      const req = http.request(
-        `${baseUrl}${path}`,
-        { method, headers: h },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => (data += c));
-          res.on('end', () => {
-            // JSON.parse hands back an untyped value, which assigns cleanly to
-            // the composite PlanContextResponseBody envelope (no cast). Every
-            // cohort endpoint under test answers with a JSON body, so an empty
-            // or non-JSON payload falls back to an empty envelope.
-            let parsed: PlanContextResponseBody = JSON.parse('{}');
-            try {
-              if (data.length) parsed = JSON.parse(data);
-            } catch {
-              parsed = JSON.parse('{}');
-            }
-            resolve({ status: res.statusCode ?? 0, body: parsed });
-          });
-        },
-      );
+      const req = http.request(`${baseUrl}${path}`, { method, headers: h }, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          // JSON.parse hands back an untyped value, which assigns cleanly to
+          // the composite PlanContextResponseBody envelope (no cast). Every
+          // cohort endpoint under test answers with a JSON body, so an empty
+          // or non-JSON payload falls back to an empty envelope.
+          let parsed: PlanContextResponseBody = JSON.parse('{}');
+          try {
+            if (data.length) parsed = JSON.parse(data);
+          } catch {
+            parsed = JSON.parse('{}');
+          }
+          resolve({ status: res.statusCode ?? 0, body: parsed });
+        });
+      });
       req.on('error', reject);
       if (payload !== undefined) req.write(payload);
       req.end();
@@ -176,6 +171,7 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
         PlanContextService,
         PlanContextRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
         CommunityRealtimeService,

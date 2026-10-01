@@ -15,15 +15,12 @@
  *   - Realtime: the post-insert ping is best-effort — a publish throw never
  *     fails create(), and a publish_failed telemetry event is captured.
  */
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
 import { CommunityVoiceService } from '../community-voice.service';
 import type { IssueVoiceUploadDto } from '../community-voice.dto';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../../../../test/community/safety/safety-test-helpers';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -105,9 +102,7 @@ describe('CommunityVoiceService', () => {
     delete process.env.FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT;
     access = {
       findWorkspace: jest.fn().mockResolvedValue({ id: WS_A }),
-      findCohort: jest
-        .fn()
-        .mockResolvedValue({ id: COHORT_A, workspace_id: WS_A }),
+      findCohort: jest.fn().mockResolvedValue({ id: COHORT_A, workspace_id: WS_A }),
       isWorkspaceCoach: jest.fn().mockResolvedValue(false),
       canAccessWorkspace: jest.fn().mockResolvedValue(true),
       canAccessCohort: jest.fn().mockResolvedValue(true),
@@ -126,9 +121,7 @@ describe('CommunityVoiceService', () => {
         public_url: `https://x/object/public/voice-notes/${MEMBER_ID}/1700000000-abc.m4a`,
         expires_at: '2026-03-01T00:10:00.000Z',
       }),
-      createSignedDownload: jest
-        .fn()
-        .mockResolvedValue('https://signed.download/get'),
+      createSignedDownload: jest.fn().mockResolvedValue('https://signed.download/get'),
       bucket: jest.fn().mockReturnValue('voice-notes'),
       ttlSeconds: jest.fn().mockReturnValue(600),
     };
@@ -140,8 +133,9 @@ describe('CommunityVoiceService', () => {
     analytics = { capture: jest.fn() };
     // Structural mocks stub only the methods the service calls; the partials are
     // intentional (R0 permits @ts-expect-error with a one-line justification).
+    // prettier-ignore
     // @ts-expect-error mocks are partial implementations of the injected deps
-    service = new CommunityVoiceService(access, repo, upload, realtime, analytics);
+    service = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks());
   });
 
   // ── issueUploadUrl: validate-before-mint, no speculative row ─────────────────
@@ -183,7 +177,10 @@ describe('CommunityVoiceService', () => {
         mime_type: 'audio/mpeg',
       };
       await expect(
-        service.issueUploadUrl(member, WS_A, { ...spoof, mime_type: spoof.mime_type as IssueVoiceUploadDto['mime_type'] }),
+        service.issueUploadUrl(member, WS_A, {
+          ...spoof,
+          mime_type: spoof.mime_type as IssueVoiceUploadDto['mime_type'],
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(upload.createSignedUpload).not.toHaveBeenCalled();
     });
@@ -230,9 +227,7 @@ describe('CommunityVoiceService', () => {
     });
 
     it('does not broadcast on a community channel for a DM note', async () => {
-      repo.createVoiceNote.mockResolvedValue(
-        note({ cohort_id: null, conversation_id: CONV_A }),
-      );
+      repo.createVoiceNote.mockResolvedValue(note({ cohort_id: null, conversation_id: CONV_A }));
       await service.create(member, WS_A, {
         ...VALID_CREATE,
         cohort_id: undefined,
@@ -253,25 +248,19 @@ describe('CommunityVoiceService', () => {
 
     it('404s a cohort note to a non-member (existence never leaks)', async () => {
       access.canAccessCohort.mockResolvedValue(false);
-      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('404s a DM note to anyone but its author', async () => {
       repo.findById.mockResolvedValue(
         note({ cohort_id: null, conversation_id: CONV_A, author_id: MEMBER_ID }),
       );
-      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('404s a soft-deleted note', async () => {
       repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date() }));
-      await expect(service.getOne(member, NOTE_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -291,9 +280,7 @@ describe('CommunityVoiceService', () => {
     });
 
     it('403s a stranger trying to delete', async () => {
-      await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(ForbiddenException);
       expect(repo.softDelete).not.toHaveBeenCalled();
     });
   });
@@ -307,10 +294,9 @@ describe('CommunityVoiceService', () => {
       // dynamically (a forward-compat entitlement signal). Attach it with a
       // plain object spread so the test exercises the free-tier branch without
       // a forbidden type assertion.
-      const freeMember: User = Object.assign(
-        makeUser({ id: MEMBER_ID, role: 'student' }),
-        { plan_tier: 'free' },
-      );
+      const freeMember: User = Object.assign(makeUser({ id: MEMBER_ID, role: 'student' }), {
+        plan_tier: 'free',
+      });
       await expect(
         service.issueUploadUrl(freeMember, WS_A, {
           duration_ms: 5000,

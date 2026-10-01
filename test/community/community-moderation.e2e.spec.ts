@@ -49,14 +49,13 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-moderation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-moderation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -141,10 +140,7 @@ itLive('community v1-3 moderation (live DB)', () => {
     await prismaForStub.$connect();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [
-        CommunityModerationController,
-        CommunityMessagesController,
-      ],
+      controllers: [CommunityModerationController, CommunityMessagesController],
       providers: [
         CommunityModerationService,
         CommunityModerationRepository,
@@ -152,6 +148,7 @@ itLive('community v1-3 moderation (live DB)', () => {
         CommunityMessagesRepository,
         CommunityPostsRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
         CommunityRealtimeService,
@@ -268,16 +265,11 @@ itLive('community v1-3 moderation (live DB)', () => {
     let itemId = '';
 
     it('1. member files a report → 201 with item id', async () => {
-      const res = await call(
-        'POST',
-        `/api/community/moderation/reports`,
-        asUser(ids.studentA),
-        {
-          target_type: 'message',
-          target_id: ids.messageId,
-          reason: 'spam',
-        },
-      );
+      const res = await call('POST', `/api/community/moderation/reports`, asUser(ids.studentA), {
+        target_type: 'message',
+        target_id: ids.messageId,
+        reason: 'spam',
+      });
       expect(res.status).toBe(201);
       expect(res.body.item.id).toBeTruthy();
       expect(res.body.item.target_id).toBe(ids.messageId);
@@ -315,11 +307,7 @@ itLive('community v1-3 moderation (live DB)', () => {
       expect(act.status).toBe(200);
       expect(act.body.item.status).toBe('actioned');
 
-      const get = await call(
-        'GET',
-        `/api/community/messages/${ids.messageId}`,
-        asUser(ids.coachA),
-      );
+      const get = await call('GET', `/api/community/messages/${ids.messageId}`, asUser(ids.coachA));
       // Soft-hidden content: body is nulled (deleted) and still reachable, OR
       // the row is filtered — either way it is no longer live content.
       if (get.status === 200) {

@@ -18,10 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { CommunityModerationService } from './community-moderation.service';
-import {
-  ActOnItemDto,
-  CreateReportDto,
-} from '../dto/community-moderation.dto';
+import { ActOnItemDto, CreateReportDto } from '../dto/community-moderation.dto';
 
 /**
  * Report → review → action moderation.
@@ -45,10 +42,7 @@ export class CommunityModerationController {
   @Throttle({
     default: { ttl: 300_000, limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_REPORTS_PER_5MIN },
   })
-  async report(
-    @Request() req: AuthedRequest,
-    @Body() body: CreateReportDto,
-  ) {
+  async report(@Request() req: AuthedRequest, @Body() body: CreateReportDto) {
     return this.moderation.report(
       req.user,
       body.target_type,
@@ -68,6 +62,18 @@ export class CommunityModerationController {
     @Query('limit') limit?: string,
   ) {
     return this.moderation.listQueue(req.user, workspaceId, { status, limit });
+  }
+
+  /**
+   * GET /community/moderation/flagged — open reports across the coach's
+   * workspaces, enriched for the mobile review queue. Coach/owner only (the
+   * service rejects students with 403 not_moderator).
+   */
+  @Get('moderation/flagged')
+  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  @Roles('coach', 'owner')
+  async flagged(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
+    return this.moderation.listFlagged(req.user, { limit });
   }
 
   @Patch('moderation/items/:itemId')

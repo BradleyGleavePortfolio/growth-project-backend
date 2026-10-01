@@ -45,14 +45,13 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-posts] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-posts] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -145,6 +144,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
         CommunityPostsRepository,
         CommunityMessagesRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityPostsEnabledGuard,
         CommunityMessagesEnabledGuard,
@@ -233,9 +233,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(
-      Boolean,
-    );
+    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(Boolean);
     await prisma.communityMessage.deleteMany({
       where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
     });
@@ -299,11 +297,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
 
   it('4. cross-tenant: foreign student cannot read post → 404', async () => {
     const postId = await createPostAsCoach();
-    const res = await call(
-      'GET',
-      `/api/community/posts/${postId}`,
-      asUser(ids.studentB),
-    );
+    const res = await call('GET', `/api/community/posts/${postId}`, asUser(ids.studentB));
     expect(res.status).toBe(404);
   });
 

@@ -41,6 +41,7 @@ import {
   ParticipationResponseSchema,
   ParticipationView,
 } from './community-challenges.dto';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -87,6 +88,7 @@ export class CommunityChallengesService {
     private readonly moderation: CommunityModerationService,
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Views ───────────────────────────────────────────────────────────────────
@@ -124,8 +126,7 @@ export class CommunityChallengesService {
     const progress = p.progress_value.toNumber();
     // Fraction is capped at 1 — overshooting the goal stays a positive 100%
     // (closure), never an "over budget" framing.
-    const fraction =
-      target === null || target <= 0 ? null : Math.min(progress / target, 1);
+    const fraction = target === null || target <= 0 ? null : Math.min(progress / target, 1);
     return {
       challenge_id: p.challenge_id,
       user_id: p.user_id,
@@ -152,10 +153,7 @@ export class CommunityChallengesService {
   // ── Authorization helpers ─────────────────────────────────────────────────
 
   /** Coach (workspace owner) or platform owner. */
-  private async assertCoach(
-    workspaceId: string,
-    user: User,
-  ): Promise<void> {
+  private async assertCoach(workspaceId: string, user: User): Promise<void> {
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
     throw new ForbiddenException({
@@ -170,10 +168,7 @@ export class CommunityChallengesService {
    * a workspace-wide challenge by any workspace member. Cross-tenant access
    * resolves to 404 so challenge existence never leaks.
    */
-  private async readableChallenge(
-    user: User,
-    challengeId: string,
-  ): Promise<CommunityChallenge> {
+  private async readableChallenge(user: User, challengeId: string): Promise<CommunityChallenge> {
     const challenge = await this.repo.findChallengeById(challengeId);
     if (!challenge || challenge.archived_at) {
       throw new NotFoundException(NOT_FOUND);
@@ -271,13 +266,8 @@ export class CommunityChallengesService {
     await this.assertCoach(challenge.workspace_id, user);
 
     const startsAt =
-      input.starts_at !== undefined
-        ? this.parseDate(input.starts_at)
-        : challenge.starts_at;
-    const endsAt =
-      input.ends_at !== undefined
-        ? this.parseDate(input.ends_at)
-        : challenge.ends_at;
+      input.starts_at !== undefined ? this.parseDate(input.starts_at) : challenge.starts_at;
+    const endsAt = input.ends_at !== undefined ? this.parseDate(input.ends_at) : challenge.ends_at;
     if (startsAt && endsAt && endsAt.getTime() <= startsAt.getTime()) {
       throw new BadRequestException({
         error: 'bad_request',
@@ -287,9 +277,7 @@ export class CommunityChallengesService {
 
     const data: Prisma.CommunityChallengeUpdateInput = {
       ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.description !== undefined
-        ? { description: input.description }
-        : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.starts_at !== undefined ? { starts_at: startsAt } : {}),
       ...(input.ends_at !== undefined ? { ends_at: endsAt } : {}),
       ...(input.metric_key !== undefined ? { metric_key: input.metric_key } : {}),
@@ -332,8 +320,7 @@ export class CommunityChallengesService {
       throw new NotFoundException(NOT_FOUND);
     }
     const isCoach =
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id));
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
 
     // A member sees workspace-wide challenges plus those of cohorts they are an
     // active member of; a coach/owner sees the whole workspace. We resolve the
@@ -379,23 +366,15 @@ export class CommunityChallengesService {
 
   async getOne(user: User, challengeId: string): Promise<ChallengeResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
-    const participation = await this.repo.findParticipation(
-      challengeId,
-      user.id,
-    );
+    const participation = await this.repo.findParticipation(challengeId, user.id);
     const optedIn =
-      participation !== null &&
-      (await this.repo.findOptIn(challengeId, user.id)) !== null;
+      participation !== null && (await this.repo.findOptIn(challengeId, user.id)) !== null;
     return ChallengeResponseSchema.parse({
       challenge: this.challengeView(challenge),
       participation:
         participation === null
           ? null
-          : this.participationView(
-              participation,
-              this.toNumber(challenge.target_value),
-              optedIn,
-            ),
+          : this.participationView(participation, this.toNumber(challenge.target_value), optedIn),
     });
   }
 
@@ -454,8 +433,7 @@ export class CommunityChallengesService {
 
     const target = this.toNumber(challenge.target_value);
     const next = updated.progress_value.toNumber();
-    const percent =
-      target !== null && target > 0 ? Math.min(next / target, 1) : 0;
+    const percent = target !== null && target > 0 ? Math.min(next / target, 1) : 0;
 
     // Best-effort realtime ping (IDs + percent only, no PII). The progress
     // channel is per-challenge; clients refetch their own row via REST.
@@ -550,8 +528,7 @@ export class CommunityChallengesService {
     query: { limit?: number; cursor?: string } = {},
   ): Promise<LeaderboardResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
-    const selfOptedIn =
-      (await this.repo.findOptIn(challengeId, user.id)) !== null;
+    const selfOptedIn = (await this.repo.findOptIn(challengeId, user.id)) !== null;
 
     if (!challenge.leaderboard_enabled || !selfOptedIn) {
       return LeaderboardResponseSchema.parse({
@@ -601,6 +578,7 @@ export class CommunityChallengesService {
     body: string,
   ): Promise<ChallengeCommentResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
+    this.safety.assertAllowed(body);
     const created = await this.repo.createComment({
       workspaceId: challenge.workspace_id,
       cohortId: challenge.cohort_id,
@@ -624,8 +602,9 @@ export class CommunityChallengesService {
       limit: query.limit,
       cursor: query.cursor,
     });
+    const visible = await this.safety.filterBlocked(user.id, page.items, (m) => m.sender_id);
     return ChallengeCommentListResponseSchema.parse({
-      comments: page.items.map((m) => this.commentView(m)),
+      comments: visible.map((m) => this.commentView(m)),
       next_cursor: page.nextCursor,
     });
   }
@@ -673,9 +652,7 @@ export class CommunityChallengesService {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  private parseStatus(
-    value: string | undefined,
-  ): CommunityChallengeStatus | null {
+  private parseStatus(value: string | undefined): CommunityChallengeStatus | null {
     if (!value) return null;
     return VALID_STATUSES.includes(value as CommunityChallengeStatus)
       ? (value as CommunityChallengeStatus)

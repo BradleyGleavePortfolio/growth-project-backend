@@ -30,14 +30,10 @@ import {
   type VoiceUploadTarget,
   VoiceUploadTargetSchema,
 } from './community-voice.dto';
-import {
-  CommunityVoiceRepository,
-  type VoiceNoteSeed,
-} from './community-voice.repository';
-import {
-  resolveVoiceEntitlementRequired,
-} from './community-voice-flag.guard';
+import { CommunityVoiceRepository, type VoiceNoteSeed } from './community-voice.repository';
+import { resolveVoiceEntitlementRequired } from './community-voice-flag.guard';
 import { VoiceUploadProvider } from './voice-upload.provider';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -81,6 +77,7 @@ export class CommunityVoiceService {
     private readonly upload: VoiceUploadProvider,
     private readonly realtime: CommunityRealtimeService,
     private readonly analytics: AnalyticsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Config ─────────────────────────────────────────────────────────────────
@@ -99,11 +96,7 @@ export class CommunityVoiceService {
     return process.env.FEATURE_COMMUNITY_TELEMETRY === 'true';
   }
 
-  private track(
-    distinctId: string,
-    event: string,
-    props: Record<string, unknown>,
-  ): void {
+  private track(distinctId: string, event: string, props: Record<string, unknown>): void {
     if (!this.telemetryEnabled()) return;
     this.analytics.capture(distinctId, event, props);
   }
@@ -122,11 +115,7 @@ export class CommunityVoiceService {
     bytes: number;
     mime_type: string;
   }): void {
-    if (
-      !(VOICE_NOTE_MIME_ALLOWLIST as readonly string[]).includes(
-        input.mime_type,
-      )
-    ) {
+    if (!(VOICE_NOTE_MIME_ALLOWLIST as readonly string[]).includes(input.mime_type)) {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.mime_rejected',
@@ -153,8 +142,7 @@ export class CommunityVoiceService {
     // duration for a huge upload (or vice-versa). Enforce a coarse time-based
     // size budget — at most ~512 KB per second of audio, which comfortably
     // covers high-bitrate AAC/Opus while rejecting obviously-mismatched pairs.
-    const maxBytesForDuration =
-      Math.ceil(input.duration_ms / 1000) * 512 * 1024 + 256 * 1024;
+    const maxBytesForDuration = Math.ceil(input.duration_ms / 1000) * 512 * 1024 + 256 * 1024;
     if (input.bytes > maxBytesForDuration) {
       throw new BadRequestException({
         error: 'bad_request',
@@ -173,10 +161,7 @@ export class CommunityVoiceService {
    * check reads only the already-loaded User + a single workspace-coach lookup,
    * so it adds no dependency on the checkout module (R77 scope).
    */
-  private async assertEntitled(
-    workspaceId: string,
-    user: User,
-  ): Promise<void> {
+  private async assertEntitled(workspaceId: string, user: User): Promise<void> {
     if (!resolveVoiceEntitlementRequired()) return;
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
@@ -184,10 +169,7 @@ export class CommunityVoiceService {
     // that workspace's members. Resolve the owning coach's tier.
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(NOT_FOUND);
-    const entitled = await this.access.membershipInWorkspace(
-      workspaceId,
-      user.id,
-    );
+    const entitled = await this.access.membershipInWorkspace(workspaceId, user.id);
     if (!entitled) throw new NotFoundException(NOT_FOUND);
     // Default-deny: require an explicit paid entitlement signal on the member.
     const tier = (user as { plan_tier?: string }).plan_tier ?? 'flat_300';
@@ -203,10 +185,7 @@ export class CommunityVoiceService {
   // ── Authorization ────────────────────────────────────────────────────────────
 
   private async isCoach(workspaceId: string, user: User): Promise<boolean> {
-    return (
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id))
-    );
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
   /**
@@ -286,10 +265,7 @@ export class CommunityVoiceService {
     dto: IssueVoiceUploadDto,
   ): Promise<VoiceUploadTarget> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
     await this.assertEntitled(workspaceId, user);
@@ -350,10 +326,7 @@ export class CommunityVoiceService {
     dto: CreateVoiceNoteDto,
   ): Promise<VoiceNoteResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
     await this.assertEntitled(workspaceId, user);
@@ -454,10 +427,7 @@ export class CommunityVoiceService {
    * cohort/workspace they belong to, or a DM note they authored. Anything else
    * is an identical 404 so existence never leaks.
    */
-  private async readableNote(
-    user: User,
-    voiceNoteId: string,
-  ): Promise<CommunityVoiceNote> {
+  private async readableNote(user: User, voiceNoteId: string): Promise<CommunityVoiceNote> {
     const row = await this.repo.findById(voiceNoteId);
     if (!row || row.soft_deleted_at !== null) {
       throw new NotFoundException(NOT_FOUND);
@@ -488,10 +458,7 @@ export class CommunityVoiceService {
     query: ListVoiceNotesQueryDto,
   ): Promise<VoiceNoteFeedResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
 
@@ -522,9 +489,12 @@ export class CommunityVoiceService {
       cursor: query.cursor,
     });
 
-    const voiceNotes = await Promise.all(
-      page.items.map((row) => this.noteView(row)),
+    const visibleRows = await this.safety.filterBlocked(
+      user.id,
+      page.items,
+      (row) => row.author_id,
     );
+    const voiceNotes = await Promise.all(visibleRows.map((row) => this.noteView(row)));
     return VoiceNoteFeedResponseSchema.parse({
       voice_notes: voiceNotes,
       next_cursor: page.nextCursor,
@@ -537,10 +507,7 @@ export class CommunityVoiceService {
       throw new NotFoundException(NOT_FOUND);
     }
     // Author or workspace coach/owner may soft-delete.
-    if (
-      row.author_id !== user.id &&
-      !(await this.isCoach(row.workspace_id, user))
-    ) {
+    if (row.author_id !== user.id && !(await this.isCoach(row.workspace_id, user))) {
       throw new ForbiddenException({
         error: 'forbidden',
         code: 'community.voice.not_author',

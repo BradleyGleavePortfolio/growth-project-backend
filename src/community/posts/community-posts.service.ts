@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
@@ -23,6 +19,7 @@ import {
   CommunityPostResponseSchema,
   CommunityPostView,
 } from '../dto/community-post.dto';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
@@ -57,6 +54,7 @@ export class CommunityPostsService {
     private readonly messages: CommunityMessagesRepository,
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   private postView(p: CommunityPost): CommunityPostView {
@@ -100,10 +98,7 @@ export class CommunityPostsService {
   }
 
   /** Coach (or owner) may author posts; clients may not (clientPostsEnabled). */
-  private async canCreatePost(
-    workspaceId: string,
-    user: User,
-  ): Promise<boolean> {
+  private async canCreatePost(workspaceId: string, user: User): Promise<boolean> {
     if (user.role === 'owner') return true;
     return this.access.isWorkspaceCoach(workspaceId, user.id);
   }
@@ -125,6 +120,8 @@ export class CommunityPostsService {
         code: 'community.post.client_posts_disabled',
       });
     }
+    // Apple 1.2: objectionable-content filter before publication.
+    this.safety.assertAllowed(input.title, input.body);
     const created = await this.posts.create({
       workspaceId,
       authorId: user.id,
@@ -161,19 +158,17 @@ export class CommunityPostsService {
       before: this.parseBefore(query.before),
       limit,
     });
-    const next =
-      rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
+    const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
+    // Block filter after the cursor is taken from the unfiltered page.
+    const visible = await this.safety.filterBlocked(user.id, rows, (p) => p.author_id);
     return CommunityPostListResponseSchema.parse({
-      posts: rows.map((p) => this.postView(p)),
+      posts: visible.map((p) => this.postView(p)),
       next_before: next,
     });
   }
 
   /** Resolve a readable post for the caller, or throw 404. */
-  private async readablePost(
-    user: User,
-    postId: string,
-  ): Promise<CommunityPost> {
+  private async readablePost(user: User, postId: string): Promise<CommunityPost> {
     const post = await this.posts.findById(postId);
     if (!post || post.deleted_at) throw new NotFoundException(POST_NOT_FOUND);
     if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
@@ -199,6 +194,7 @@ export class CommunityPostsService {
         code: 'community.post.not_author',
       });
     }
+    this.safety.assertAllowed(input.title, input.body);
     const updated = await this.posts.update(postId, {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.body !== undefined ? { body: input.body } : {}),
@@ -220,8 +216,7 @@ export class CommunityPostsService {
     const post = await this.readablePost(user, postId);
     const isAuthor = post.author_id === user.id;
     const isModerator =
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(post.workspace_id, user.id));
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(post.workspace_id, user.id));
     if (!isAuthor && !isModerator) {
       throw new ForbiddenException({
         error: 'forbidden',
@@ -234,13 +229,10 @@ export class CommunityPostsService {
 
   // ── Comments ───────────────────────────────────────────────────────────────
 
-  async addComment(
-    user: User,
-    postId: string,
-    body: string,
-  ): Promise<CommunityCommentResponse> {
+  async addComment(user: User, postId: string, body: string): Promise<CommunityCommentResponse> {
     const post = await this.readablePost(user, postId);
     // Any active workspace member (client or coach) may comment.
+    this.safety.assertAllowed(body);
     const created = await this.messages.createComment({
       workspaceId: post.workspace_id,
       cohortId: post.cohort_id,
@@ -277,14 +269,12 @@ export class CommunityPostsService {
     });
   }
 
-  async listComments(
-    user: User,
-    postId: string,
-  ): Promise<CommunityCommentListResponse> {
+  async listComments(user: User, postId: string): Promise<CommunityCommentListResponse> {
     const post = await this.readablePost(user, postId);
     const rows = await this.messages.listComments(post.id);
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
     return CommunityCommentListResponseSchema.parse({
-      comments: rows.map((m) => this.commentView(m)),
+      comments: visible.map((m) => this.commentView(m)),
     });
   }
 }

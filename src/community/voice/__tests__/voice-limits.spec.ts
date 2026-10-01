@@ -12,11 +12,9 @@
  */
 import { BadRequestException } from '@nestjs/common';
 import { CommunityVoiceService } from '../community-voice.service';
-import {
-  MAX_VOICE_BYTES,
-  MAX_VOICE_DURATION_MS,
-} from '../community-voice.dto';
+import { MAX_VOICE_BYTES, MAX_VOICE_DURATION_MS } from '../community-voice.dto';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../../../../test/community/safety/safety-test-helpers';
 
 const WS_A = '11111111-1111-1111-1111-111111111111';
 const MEMBER_ID = '66666666-6666-6666-6666-666666666666';
@@ -45,8 +43,9 @@ function buildService(): {
   const repo = { createVoiceNote: jest.fn() };
   const realtime = {};
   const analytics = { capture: jest.fn() };
+  // prettier-ignore
   // @ts-expect-error partial structural mocks of the injected deps
-  const service = new CommunityVoiceService(access, repo, upload, realtime, analytics);
+  const service = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks());
   return { service, createSignedUpload };
 }
 
@@ -77,9 +76,7 @@ describe('CommunityVoiceService — limits', () => {
 
   it('rejects zero duration', async () => {
     const { service, createSignedUpload } = buildService();
-    await expect(issue(service, { duration_ms: 0 })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(issue(service, { duration_ms: 0 })).rejects.toBeInstanceOf(BadRequestException);
     expect(createSignedUpload).not.toHaveBeenCalled();
   });
 
@@ -92,9 +89,7 @@ describe('CommunityVoiceService — limits', () => {
 
   it('rejects zero bytes', async () => {
     const { service } = buildService();
-    await expect(issue(service, { bytes: 0 })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(issue(service, { bytes: 0 })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects over-cap bytes', async () => {
@@ -110,9 +105,9 @@ describe('CommunityVoiceService — limits', () => {
   it('rejects a duration/size mismatch (tiny duration, huge payload)', async () => {
     const { service, createSignedUpload } = buildService();
     // 1s of audio claiming ~10MB — far past the ~512KB/s + 256KB budget.
-    await expect(
-      issue(service, { duration_ms: 1000, bytes: 10_000_000 }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(issue(service, { duration_ms: 1000, bytes: 10_000_000 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(createSignedUpload).not.toHaveBeenCalled();
   });
 });

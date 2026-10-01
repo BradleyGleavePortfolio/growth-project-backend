@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CommunityMembership,
   CommunityMessage,
@@ -26,6 +22,7 @@ import {
   CommunityDmThreadResponse,
   CommunityDmThreadResponseSchema,
 } from '../dto/community-dm.dto';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
@@ -71,6 +68,7 @@ export class CommunityDmsService {
     private readonly dms: CommunityDmsRepository,
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   private resolveDmEnabled(
@@ -139,14 +137,8 @@ export class CommunityDmsService {
     if (!workspace) throw new NotFoundException(DM_NOT_FOUND);
     if (sender.id === recipientId) throw new NotFoundException(DM_NOT_FOUND);
 
-    const senderMembership = await this.access.membershipInWorkspace(
-      workspaceId,
-      sender.id,
-    );
-    const recipientMembership = await this.access.membershipInWorkspace(
-      workspaceId,
-      recipientId,
-    );
+    const senderMembership = await this.access.membershipInWorkspace(workspaceId, sender.id);
+    const recipientMembership = await this.access.membershipInWorkspace(workspaceId, recipientId);
     // Owner/coach may not bypass membership for DMs: a DM is between two
     // workspace participants. Both must hold an active membership row.
     if (!senderMembership || !recipientMembership) {
@@ -155,6 +147,8 @@ export class CommunityDmsService {
 
     this.gateDmRead(senderMembership, workspace);
     this.gateDmRead(recipientMembership, workspace);
+    // Apple 1.2: a block in either direction closes the DM (open, read, send).
+    await this.safety.assertDmAllowed(sender.id, recipientId);
 
     return CommunityDmsRepository.dmKey(workspaceId, sender.id, recipientId);
   }
@@ -183,6 +177,7 @@ export class CommunityDmsService {
     body: string,
   ): Promise<CommunityDmMessageResponse> {
     const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
+    this.safety.assertAllowed(body);
     const created = await this.dms.createDm({
       workspaceId,
       dmKey,
@@ -244,10 +239,7 @@ export class CommunityDmsService {
     query: { limit?: string },
   ): Promise<CommunityDmThreadListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    const membership = await this.access.membershipInWorkspace(
-      workspaceId,
-      user.id,
-    );
+    const membership = await this.access.membershipInWorkspace(workspaceId, user.id);
     if (!workspace || !membership) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
@@ -259,12 +251,14 @@ export class CommunityDmsService {
       userId: user.id,
       limit: this.parsePage(query.limit),
     });
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) =>
+      m.sender_id === user.id ? m.recipient_user_id : m.sender_id,
+    );
     return CommunityDmThreadListResponseSchema.parse({
-      threads: rows.map((m) => ({
+      threads: visible.map((m) => ({
         thread_id: m.dm_key ?? '',
         workspace_id: m.workspace_id,
-        other_user_id:
-          m.sender_id === user.id ? m.recipient_user_id ?? '' : m.sender_id,
+        other_user_id: m.sender_id === user.id ? (m.recipient_user_id ?? '') : m.sender_id,
         created_at: null,
         last_message_at: m.created_at.toISOString(),
       })),

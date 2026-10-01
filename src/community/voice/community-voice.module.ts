@@ -7,6 +7,7 @@ import { CommunityVoiceController } from './community-voice.controller';
 import { CommunityVoiceEnabledGuard } from './community-voice-flag.guard';
 import { CommunityVoiceRepository } from './community-voice.repository';
 import { CommunityVoiceService } from './community-voice.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from './voice-upload.provider';
 
 /**
@@ -45,6 +46,7 @@ import { VoiceUploadProvider } from './voice-upload.provider';
   controllers: [CommunityVoiceController],
   providers: [
     CommunityVoiceService,
+    CommunitySafetyService,
     CommunityVoiceRepository,
     CommunityVoiceEnabledGuard,
     CommunityAccessService,
