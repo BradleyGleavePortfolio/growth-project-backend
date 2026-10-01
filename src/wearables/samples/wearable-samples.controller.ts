@@ -7,7 +7,6 @@ import {
   Post,
   Query,
   Request,
-  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -29,9 +28,11 @@ import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { WearableSamplesService } from './wearable-samples.service';
 import { GetSamplesQuerySchema } from './dto/get-samples.query';
 import {
+  INGEST_USER_ID_FORBIDDEN_CODE,
   IngestSamplesBodySchema,
   type IngestSamplesBody,
 } from './dto/ingest-samples.dto';
+import { assertOnDeviceIngestEnabled } from '../on-device-ingest.feature';
 import { IngestionService } from '../ingestion/ingestion.service';
 import {
   SamplesResponse,
@@ -65,23 +66,13 @@ export class WearableSamplesController {
   ) {}
 
   /**
-   * Feature-flag gate for the on-device ingest route.
-   *
-   * `FEATURE_WEARABLES_INGEST_POST` defaults to OFF in production until the
-   * mobile smoke test passes (planner rollout note). When the flag is not the
-   * literal string 'true', the route is a kill switch: it returns a TYPED 503
-   * disabled error (a real, documented degradation contract) rather than a
-   * 404, a spinner state, or an uncaught throw. The client reads
-   * `code === 'wearables_ingest_disabled'` and shows a real "not available
-   * yet" surface (non-spinner empty state, mobile audit requirement).
+   * Feature-flag gate for the on-device ingest route. Delegates to the shared
+   * lane switch (see ../on-device-ingest.feature.ts): `FEATURE_WEARABLES_INGEST_POST`
+   * must be the literal 'true', otherwise a TYPED 503
+   * (`code === 'wearables_ingest_disabled'`) is returned.
    */
   private assertIngestEnabled(): void {
-    if (process.env.FEATURE_WEARABLES_INGEST_POST?.toLowerCase() !== 'true') {
-      throw new ServiceUnavailableException({
-        code: 'wearables_ingest_disabled',
-        message: 'On-device sample ingest is currently disabled.',
-      });
-    }
+    assertOnDeviceIngestEnabled();
   }
 
   @Roles('student', 'coach', 'owner')
@@ -188,14 +179,24 @@ export class WearableSamplesController {
    * write IDOR (#5) at the controller seam — a coach cannot post for a foreign
    * client through this route.
    *
-   * Throttle: 20 requests / 60s per user (on-device batches are infrequent).
+   * Body userId: a sample that carries a `userId` key is rejected with a
+   * TYPED 400 (`WEARABLES_INGEST_USER_ID_FORBIDDEN`) before the strict parse,
+   * so an outdated client sees a precise code. The subject is never read from
+   * the body.
+   *
+   * Throttle: 60 requests / 60s per user. The mobile client splits a history
+   * import into sequential batches that each fit the default 100 KB JSON body
+   * limit (about 250 samples), so a 30-day import of a watch wearer can need
+   * several dozen requests; 60/min lets it finish in about a minute while still
+   * bounding abuse (per-request size is capped by the body limit and the
+   * 2000-sample schema cap).
    *
    * Kill switch: gated by FEATURE_WEARABLES_INGEST_POST. When off, returns a
    * typed 503 (`wearables_ingest_disabled`), not a 404 or a silent stub.
    */
   @Roles('student')
   @UseGuards(JwtAuthGuard)
-  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 } })
+  @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 60 } })
   @Post('ingest')
   @ApiOperation({ summary: 'Ingest normalized on-device wearable samples' })
   @ApiResponse({ status: 201, description: 'Accepted normalized sample batch.' })
@@ -203,7 +204,9 @@ export class WearableSamplesController {
     status: 400,
     description:
       'WEARABLE_SAMPLES_QUERY_INVALID — malformed batch (empty, over the 2000 ' +
-      'cap, bad enum, bad date order, or unknown field).',
+      'cap, bad enum, bad date order, bucket not matching metric, or unknown ' +
+      'field). WEARABLES_INGEST_USER_ID_FORBIDDEN — a sample carried a userId ' +
+      '(the subject is always the authenticated user).',
   })
   @ApiResponse({
     status: 503,
@@ -216,6 +219,7 @@ export class WearableSamplesController {
     @Body() rawBody: unknown,
   ): Promise<{ inserted: number; skipped: number }> {
     this.assertIngestEnabled();
+    rejectBodyUserId(rawBody);
     const parsed = parseOrThrow(IngestSamplesBodySchema, rawBody);
 
     // CONNECTION OWNERSHIP / PROVIDER GATE (request-specific authz).
@@ -290,11 +294,36 @@ export class WearableSamplesController {
  * to one of these (see prisma/schema.prisma WearableConnection.status). A
  * sample arriving for a disconnected link is rejected at the controller seam.
  */
-const DISCONNECTED_CONNECTION_STATUSES = new Set<string>([
-  'disconnected',
-  'expired',
-  'error',
-]);
+const DISCONNECTED_CONNECTION_STATUSES = new Set<string>(['disconnected', 'expired', 'error']);
+
+/**
+ * S14 — reject any sample that names a subject user. The server derives the
+ * subject from the JWT only; a body `userId` (even one equal to the caller's
+ * own id) is a contract violation from an outdated client and gets a precise,
+ * typed 400 rather than the generic unknown-key error the strict schema would
+ * produce. Never echoes the submitted value.
+ */
+function rejectBodyUserId(raw: unknown): void {
+  if (!Array.isArray(raw)) return;
+  const index = raw.findIndex(
+    (item) =>
+      item !== null &&
+      typeof item === 'object' &&
+      Object.prototype.hasOwnProperty.call(item, 'userId'),
+  );
+  if (index >= 0) {
+    // `code` survives the global HttpExceptionFilter (which keeps
+    // statusCode/code/message/error); `issues` is for direct callers/tests.
+    throw new BadRequestException({
+      error: INGEST_USER_ID_FORBIDDEN_CODE,
+      code: INGEST_USER_ID_FORBIDDEN_CODE,
+      message: 'Samples must not include userId; the subject is the signed-in user.',
+      issues: [
+        { path: `${index}.userId`, message: 'userId is not accepted', code: 'unrecognized_keys' },
+      ],
+    });
+  }
+}
 
 /**
  * Zod-parse a query object, converting a ZodError into a 400 with the

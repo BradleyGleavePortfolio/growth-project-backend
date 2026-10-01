@@ -553,7 +553,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "S14 on-device wearables lane (Apple Health, Health Connect). 'true' enables POST /v1/wearables/connections/on-device and POST /v1/wearables/samples/ingest; anything else returns a typed 503 wearables_ingest_disabled. Owner flips it after the backend deploy."
   - name: FINANCE_API_BASE_URL
     tier: optional
     prod_default: STUB_ALLOWED

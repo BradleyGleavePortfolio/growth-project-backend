@@ -22,6 +22,8 @@ import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
+import { RegisterOnDeviceDto } from './dto/register-on-device.dto';
+import { assertOnDeviceIngestEnabled } from '../on-device-ingest.feature';
 import {
   DisconnectResult,
   OauthCallbackResult,
@@ -40,10 +42,12 @@ import {
  * `:provider` path param is validated against the `WearableProvider` enum by
  * `ParseEnumPipe`. No token material is ever returned or logged (#12).
  *
- * On-device providers (HealthKit / Health Connect / Samsung Health) are NOT
- * served here — they have no server OAuth flow; their samples arrive via
- * `POST /v1/wearables/ingest` (PR-HK-2.a). The service rejects connect/callback
- * for on-device providers with a 400.
+ * On-device providers (Apple Health / Health Connect) have no server OAuth
+ * flow. After the user grants access on the device, the app registers the
+ * source with `POST /v1/wearables/connections/on-device` (S14) and then posts
+ * samples to `POST /v1/wearables/samples/ingest` with the returned connection
+ * id. The service rejects OAuth connect/callback for on-device providers with
+ * a 400.
  */
 @ApiTags('wearables-connections')
 @Controller('v1/wearables/connections')
@@ -87,6 +91,25 @@ export class ConnectionsController {
       code: query.code,
       state: query.state,
     });
+  }
+
+  /**
+   * S14 — register the caller's Apple Health or Health Connect source after the
+   * device permission grant. Idempotent upsert; returns the token-free
+   * connection (its `id` is the `connectionId` for sample ingest). Gated by the
+   * same kill switch as ingest (`FEATURE_WEARABLES_INGEST_POST`): when off it
+   * returns the typed 503 `wearables_ingest_disabled`, before any DB access.
+   */
+  @Post('on-device')
+  @Roles('student')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  async registerOnDevice(
+    @Request() req: AuthedRequest,
+    @Body() body: RegisterOnDeviceDto,
+  ): Promise<SafeWearableConnection> {
+    assertOnDeviceIngestEnabled();
+    return this.connections.registerOnDevice(req.user.id, body.provider);
   }
 
   /**
