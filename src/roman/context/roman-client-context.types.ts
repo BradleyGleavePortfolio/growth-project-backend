@@ -9,7 +9,7 @@
  * they authored. Strictly scoped to that ONE client.
  *
  * Still NEVER in this shape: any other user's data, coach-private notes
- * (`CoachingSession.coach_notes_md`), bloodwork, payments, email, phone, last
+ * (`coach_notes_md` on CoachingSession), bloodwork, payments, email, phone, last
  * name, raw user id, exact DOB, addresses, wearable tokens/credentials. The
  * exclusion test in test/roman/roman-client-context.spec.ts asserts each.
  *
