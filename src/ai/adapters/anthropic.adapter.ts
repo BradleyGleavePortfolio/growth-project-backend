@@ -1,12 +1,11 @@
-import { ForbiddenException, Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
 import {
-  AI_ERROR_CLIENT_CONSENT_REQUIRED,
-  AI_ERROR_CONSENT_GATE_UNAVAILABLE,
   AI_SUBJECT_CONSENT_GATE,
   AiSubjectConsentGate,
+  assertSubjectAiConsent,
 } from './ai-subject-consent.gate';
 import {
   COACH_AI_MODEL,
@@ -87,27 +86,7 @@ export class AnthropicAdapter {
   private async assertSubjectConsent(opts: AnthropicCompleteOptions): Promise<void> {
     const subject = opts.clientId?.trim();
     if (!subject) return;
-    if (!this.consentGate) {
-      this.logger.error(
-        `[anthropic] refusing client-subject request: no ${AI_SUBJECT_CONSENT_GATE} bound (capability=${String(opts.capability ?? 'unknown')})`,
-      );
-      throw new ForbiddenException({
-        code: AI_ERROR_CONSENT_GATE_UNAVAILABLE,
-        message: 'AI processing of client data is unavailable: the consent check is not configured.',
-      });
-    }
-    try {
-      await this.consentGate.assertAiConsent(subject);
-    } catch (err) {
-      if (err instanceof ForbiddenException) {
-        throw new ForbiddenException({
-          code: AI_ERROR_CLIENT_CONSENT_REQUIRED,
-          message:
-            'This client has not agreed to AI processing of their data (or their agreement is out of date). They can accept it in the app.',
-        });
-      }
-      throw err;
-    }
+    await assertSubjectAiConsent(this.consentGate, subject, String(opts.capability ?? 'unknown'));
   }
 
   // Lazy client construction. Throws if no key is configured — callers

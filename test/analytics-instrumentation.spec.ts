@@ -5,6 +5,7 @@
  * name + the right (non-PII) properties. If somebody renames an event or
  * silently drops a capture call this test catches it.
  */
+import { ALLOW_ALL_CONSENT_GATE } from './helpers/ai-consent-gate.double';
 import { Events } from '../src/analytics/events';
 import { BillingService } from '../src/billing/billing.service';
 import { MessagingService } from '../src/messaging/messaging.service';
@@ -289,6 +290,9 @@ describe('analytics instrumentation — AI chat', () => {
       ctxSvc as ClientAIContextService,
       new AIGuardrailsService(),
       analytics as any,
+      undefined,
+      undefined,
+      ALLOW_ALL_CONSENT_GATE,
     );
     await svc.chat('user-1', 'how am I doing today', []);
     process.env.PERPLEXITY_API_KEY = prevKey;

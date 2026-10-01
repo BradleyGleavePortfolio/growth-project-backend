@@ -21,6 +21,10 @@ export interface AiProviderRequest {
   // Stable id for idempotency / dedupe at the provider edge. Generated
   // by the gateway, not by the caller.
   requestId: string;
+  // The DATA SUBJECT whose personal data is in the prompt (null when the
+  // prompt names no client). Real adapters forward it to the upstream
+  // consent check (AnthropicAdapter opts.clientId); never sent upstream.
+  subjectUserId?: string | null;
 }
 
 export interface AiProviderResponse {

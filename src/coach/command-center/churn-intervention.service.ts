@@ -40,6 +40,14 @@ import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
+import {
+  AI_SUBJECT_CONSENT_GATE,
+  AiSubjectConsentGate,
+  assertSubjectAiConsent,
+} from '../../ai/adapters/ai-subject-consent.gate';
+
+/** Capability label for the data-subject consent check and logs. */
+export const CHURN_DRAFT_CAPABILITY = 'coach.churn_intervention_draft';
 
 // DI token so tests can inject a fake Anthropic client without reaching
 // out to the public API. Production boot leaves it unset and the service
@@ -149,6 +157,11 @@ export class ChurnInterventionService {
     @Optional()
     @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: Anthropic,
+    // The CLIENT's AI-processing consent gate (RomanConsentService via the
+    // @Global CoachAIModule). Absent = fail closed (403, no Anthropic call).
+    @Optional()
+    @Inject(AI_SUBJECT_CONSENT_GATE)
+    private readonly consentGate?: AiSubjectConsentGate,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -309,6 +322,14 @@ export class ChurnInterventionService {
       select: { id: true, name: true },
     });
     if (!client) throw new NotFoundException('Client not found');
+
+    // Data-subject consent (R2 / owner ruling #5): the draft prompt carries
+    // this client's name, churn factors and latest check-in (mood, energy,
+    // notes). It is only generated when the CLIENT holds a live current-
+    // version AI-processing grant. Checked before the idempotency claim so a
+    // refusal leaves no draft row and makes no Anthropic call. 403
+    // CLIENT_AI_CONSENT_REQUIRED tells the coach why without revealing more.
+    await assertSubjectAiConsent(this.consentGate, clientId, CHURN_DRAFT_CAPABILITY);
 
     // Pull PTM context (used both for the prompt and as the row's
     // top_factor / risk_score_at_draft snapshot).

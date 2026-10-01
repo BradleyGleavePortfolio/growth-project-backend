@@ -5,10 +5,25 @@
 // traffic occurs.
 
 import {
-  ChurnInterventionService,
+  ChurnInterventionService as RealChurnInterventionService,
   bucketDateLocal,
 } from '../src/coach/command-center/churn-intervention.service';
 import { Prisma } from '@prisma/client';
+import { ALLOW_ALL_CONSENT_GATE } from './helpers/ai-consent-gate.double';
+
+// R2: every case in this file models a client who HOLDS a live, current-
+// version AI-processing grant, so the service is built with an allow-all
+// data-subject gate unless a 6th argument is given. Consent refusal (no
+// grant, stale version, no gate bound) is covered in
+// test/ai/ai-consent-boundaries.spec.ts.
+class ChurnInterventionService extends RealChurnInterventionService {
+  constructor(
+    ...args: ConstructorParameters<typeof RealChurnInterventionService>
+  ) {
+    const [prisma, ptm, config, notifications, client, gate] = args;
+    super(prisma, ptm, config, notifications, client, gate ?? ALLOW_ALL_CONSENT_GATE);
+  }
+}
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
   constructor(target: string) {

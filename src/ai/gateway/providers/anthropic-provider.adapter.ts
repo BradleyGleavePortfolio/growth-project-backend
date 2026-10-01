@@ -48,6 +48,9 @@ export class AnthropicProviderAdapter implements AiProviderAdapter {
         maxTokens: req.maxTokens,
         temperature: req.temperature,
         capability: req.capability || 'gateway',
+        // Data-subject consent: the AnthropicAdapter re-checks this client's
+        // current-version AI grant before every upstream attempt.
+        clientId: req.subjectUserId ?? null,
       },
     );
     return {

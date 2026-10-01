@@ -130,6 +130,28 @@ export class RomanConsentService implements AiSubjectConsentGate {
     return isConsentLive(row) && row!.consent_version === this.currentVersion();
   }
 
+  /**
+   * AiSubjectConsentGate batch form: the subset of `userIds` holding a live
+   * grant for the CURRENT version. One query; absence = not consented.
+   */
+  async consentedSubjects(userIds: readonly string[]): Promise<Set<string>> {
+    const unique = [...new Set(userIds)];
+    if (unique.length === 0) return new Set();
+    const rows = await this.prisma.aiProcessingConsent.findMany({
+      where: {
+        user_id: { in: unique },
+        processor: ROMAN_CONSENT_PROCESSOR,
+        purpose: ROMAN_CONSENT_PURPOSE,
+      },
+    });
+    const current = this.currentVersion();
+    const out = new Set<string>();
+    for (const row of rows) {
+      if (isConsentLive(row) && row.consent_version === current) out.add(row.user_id);
+    }
+    return out;
+  }
+
   async getStatus(userId: string): Promise<RomanConsentStatus> {
     const row = await this.findRow(userId);
     const current_version = this.currentVersion();
