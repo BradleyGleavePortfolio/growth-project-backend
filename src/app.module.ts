@@ -59,6 +59,7 @@ import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
 import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard';
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
+import { AiConsentModule } from './ai-consent/ai-consent.module';
 import { PtmModule } from './ptm/ptm.module';
 import { DiagnosticModule } from './diagnostic/diagnostic.module';
 import { BuildWeekModule } from './build-week/build-week.module';
@@ -288,6 +289,10 @@ import { WearablesModule } from './wearables/wearables.module';
     // DunningV2Module / PayoutsV2Module mount-then-self-gate posture. Phase 2
     // (mobile UI) and Phase 3 (push/email) follow. See src/roman/.
     RomanModule,
+    // R2a — AI processing consent ledger (box 2 of the D2 consent screen).
+    // Mounted always; /me/ai-consent returns 503 AI_CONSENT_UNAVAILABLE while
+    // FEATURE_AI_CONSENT_LEDGER_ENABLED is OFF (default). See src/ai-consent/.
+    AiConsentModule,
     // V1 Backend-For-Frontend for tgp-coach-console.
     V1Module,
     // Public invite landing — server-rendered HTML at /join/:code and
