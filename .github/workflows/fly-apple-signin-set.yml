@@ -1,0 +1,132 @@
+name: Fly Apple Sign-In Secrets Set (operator)
+
+# Production-mutating operator workflow: pushes APPLE_SIGNIN_KEY_ID and
+# APPLE_SIGNIN_PRIVATE_KEY (the Sign in with Apple .p8 key, multi-line PEM)
+# from GitHub Actions secrets to the Fly app. With both set (plus the already
+# configured APPLE_TEAM_ID and APPLE_SIGNIN_CLIENT_ID / APPLE_AUDIENCES) the
+# account-deletion flow revokes Sign in with Apple tokens (backend #608).
+#
+# Input handling (S2-R2-A-01): dispatch inputs are DATA, never shell source.
+# Every `inputs.*` value enters a step only through `env:` and is used as a
+# quoted `${VAR}`; `run:` blocks contain no `${{ inputs.* }}` interpolation.
+# The app target is validated against the explicit allowlist below before any
+# flyctl call. The PEM is passed to `flyctl secrets import` on stdin (never on
+# the command line, never echoed), so it does not appear in the process list
+# or the log.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name (production)
+        required: true
+        default: backend-spring-lake-3890
+      confirm:
+        description: Type SET to confirm you intend to change production secrets
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  set-secrets:
+    name: Push Apple sign-in secrets to Fly
+    runs-on: ubuntu-latest
+    # Production-mutating: bound to the same `production` environment as Fly Deploy
+    # so required reviewers (once configured) gate this too, not only image deploys.
+    environment: production
+    concurrency: fly-secrets-${{ inputs.app }}
+    steps:
+      - name: Confirm operator intent
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "${CONFIRM}" != "SET" ]; then
+            echo "::error::confirm input must be the literal string 'SET'. Aborting."
+            exit 1
+          fi
+          echo "Operator confirmed."
+
+      - name: Validate Fly app target
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          set -euo pipefail
+          case "${APP}" in
+            backend-spring-lake-3890) ;;
+            *)
+              echo "::error::app input is not an allowed Fly app target. Aborting."
+              exit 1
+              ;;
+          esac
+          echo "App target allowed."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::FLY_API_TOKEN secret is not set — cannot manage secrets."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20 (pinned)
+
+      - name: Set Apple sign-in secrets on Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+          APPLE_SIGNIN_KEY_ID: ${{ secrets.APPLE_SIGNIN_KEY_ID }}
+          APPLE_SIGNIN_PRIVATE_KEY: ${{ secrets.APPLE_SIGNIN_PRIVATE_KEY }}
+        run: |
+          # Disable command tracing so secret values cannot leak via `set -x`.
+          set +x
+          set -euo pipefail
+          if [ -z "${APPLE_SIGNIN_KEY_ID}" ] || [ -z "${APPLE_SIGNIN_PRIVATE_KEY}" ]; then
+            echo "::error::Repo secrets APPLE_SIGNIN_KEY_ID / APPLE_SIGNIN_PRIVATE_KEY not configured."
+            exit 1
+          fi
+          case "${APPLE_SIGNIN_PRIVATE_KEY}" in
+            *"-----BEGIN PRIVATE KEY-----"*"-----END PRIVATE KEY-----"*) ;;
+            *)
+              echo "::error::APPLE_SIGNIN_PRIVATE_KEY is not a PEM private key (.p8 contents). Aborting."
+              exit 1
+              ;;
+          esac
+          case "${APPLE_SIGNIN_PRIVATE_KEY}" in
+            *'"""'*)
+              echo "::error::APPLE_SIGNIN_PRIVATE_KEY contains a triple quote. Aborting."
+              exit 1
+              ;;
+          esac
+          # One `secrets import` call sets both names in a single release.
+          # The multi-line PEM is wrapped in triple quotes, which is the
+          # flyctl import syntax for multi-line values; it travels on stdin.
+          {
+            printf 'APPLE_SIGNIN_KEY_ID=%s\n' "${APPLE_SIGNIN_KEY_ID}"
+            printf 'APPLE_SIGNIN_PRIVATE_KEY="""%s"""\n' "${APPLE_SIGNIN_PRIVATE_KEY}"
+          } | flyctl secrets import --app "${APP}"
+
+      - name: Validate secret names exist on Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+        run: |
+          # `fly secrets list` prints NAME, DIGEST, CREATED AT — never values.
+          set +x
+          listing=$(flyctl secrets list --app "${APP}")
+          echo "${listing}"
+          names=$(echo "${listing}" | awk '{print $1}')
+          missing=""
+          for name in APPLE_SIGNIN_KEY_ID APPLE_SIGNIN_PRIVATE_KEY; do
+            if ! echo "${names}" | grep -qx "${name}"; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::Secrets did not appear on Fly after set:${missing}"
+            exit 1
+          fi
+          echo "Both Apple sign-in secret names are present on Fly."

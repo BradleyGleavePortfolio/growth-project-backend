@@ -88,7 +88,7 @@ export class AccountDeletionController {
         state: 'confirmed',
         already_scheduled: false,
         message:
-          'Your account and its data will be permanently deleted on January 15, 2026. You can cancel before then from Settings.',
+          'Your account and its data will be permanently deleted after January 15, 2026. You can cancel before then from Settings.',
         requested_at: '2026-01-01T03:00:00.000Z',
         confirmed_at: '2026-01-01T03:00:00.000Z',
         grace_days: 14,
@@ -105,8 +105,10 @@ export class AccountDeletionController {
   // RecentAuthGuard: the fresh, single-use re-auth token is the confirmation
   // factor for this destructive step (Apple 5.1.1(v): deletion must complete
   // in the app, so there is no email round-trip).
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard, RecentAuthGuard)
+  // B-608-7: no @Roles. Every authenticated account (student, coach,
+  // sub_coach, owner) may delete itself; JwtAuthGuard authenticates and the
+  // service scopes by req.user.id.
+  @UseGuards(RecentAuthGuard)
   @Post('me/delete-account')
   @HttpCode(200)
   requestDeletion(
@@ -155,8 +157,7 @@ export class AccountDeletionController {
   // architecturally hostile to the email-flow UX. Top-tier IAM designs
   // (Google account-deletion, AWS root credential flows) require one
   // strong OOB factor, not both. This decision is intentional.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Get('me/delete-account/confirm')
   @AllowDeletionScheduled()
   confirmDeletion(@Query('token') token: string) {
@@ -172,8 +173,7 @@ export class AccountDeletionController {
   @ApiResponse({ status: 400, description: 'No pending deletion or grace period expired.' })
   // C5 PR-A audit: reversal of a pending deletion. Scoped by req.user.id —
   // a user can only cancel their own pending deletion. Any logged-in role.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Post('me/delete-account/cancel')
   @HttpCode(200)
   @AllowDeletionScheduled()
@@ -199,8 +199,7 @@ export class AccountDeletionController {
   })
   // C5 PR-A audit: read-only status of the caller's own deletion lifecycle.
   // Scoped by req.user.id. Any logged-in role.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Get('me/delete-account/status')
   @AllowDeletionScheduled()
   getStatus(@Request() req: AuthedRequest) {

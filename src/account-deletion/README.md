@@ -1,235 +1,179 @@
-# account-deletion — GDPR right to erasure
+# account-deletion — in-app account deletion and erasure
 
-## In-app deletion (2026-10, Apple 5.1.1(v))
+Apple App Store guideline 5.1.1(v) requires that an account can be deleted
+from inside the app, and that the deletion actually completes. This module
+owns the whole lifecycle: request (with a fresh re-auth), a cancellable grace
+period, and a nightly finalization that erases the person's data.
 
-Deletion is initiated **and completed in the app**; there is no email step.
+## Operator policy (defaults set 2026-10-01)
 
-1. The app re-authenticates the user: `POST /auth/recent-auth-token` with the
-   current password, or a fresh Sign in with Apple / Google identity token
-   (`provider_token` + `provider`). The returned token is single-use, 5 minutes.
-2. `POST /me/delete-account` with `X-Recent-Auth-Token` (RecentAuthGuard) and an
-   optional body `{ apple_authorization_code }`. The deletion is **scheduled
-   immediately**: `deletion_requested_at` and `deletion_confirmed_at` are set in
-   one write, the grace window (`DELETION_GRACE_DAYS`, default 14) starts now,
-   and the response carries `state: 'confirmed'`, `purge_after`, `grace_days`,
-   `cancellable`, `already_scheduled` and `apple_revocation`. Calling again
-   returns the existing schedule.
-3. `GET /me/delete-account/status` and `POST /me/delete-account/cancel` stay
-   reachable during the grace window. The account remains usable until the
-   nightly finalizer runs after `purge_after`.
-4. Sign in with Apple: when `apple_authorization_code` is sent and
-   `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY` (and
-   optionally `APPLE_SIGNIN_CLIENT_ID`, default first `APPLE_AUDIENCES` entry)
-   are configured, `AppleTokenRevocationService` exchanges the code at
-   `appleid.apple.com/auth/token` and revokes the token at `/auth/revoke`. The
-   backend stores no Apple refresh tokens, so this is the only revocation path.
-   Best effort: the outcome is recorded in `deletion_audit`/`AuditLog`
-   metadata and never blocks the request.
-
-The legacy `GET /me/delete-account/confirm?token=` link is still honoured for
-requests created before this change. The previous confirmation email was a
-logging stub and has been removed.
-
-### Finalizer fan-out (`account-deletion.fanout.ts`)
-
-The User row is tombstoned, not deleted, so `onDelete: Cascade` never fires.
-Inside the finalizer transaction, before the tombstone, the fan-out removes:
-wearable samples, connections, insight caches, metric preferences and the
-coach-facing wearable prompts derived from them; holistic insight cache;
-bloodwork panels; macro targets; Roman sessions and messages; AI quota;
-notifications; community voice notes, reactions, RSVPs, challenge entries,
-memberships and search-index rows; message reports filed and block-list rows
-in either direction; and, when the tables exist (open PRs), the consultation
-intake, its revisions and the AI-processing consent. Community posts and
-messages/comments the user authored keep only their row id (so other members'
-threads stay valid): every content column is set to NULL and the row is marked
-`removed` and soft-deleted. Community moderation reports they filed keep the
-audit row with `reported_by_id = NULL`. Lead-diagnostic submissions lose email,
-name, age, IP, user agent and verbatim answers.
-
-Not covered here (operational): object-storage files behind voice notes and
-media, third-party wearable OAuth de-authorization at the provider, backups.
-
-## What this module does
-
-This module implements the GDPR right-to-erasure (right to be forgotten) flow for The Growth Project backend. It lets users request permanent deletion of their account through a two-phase email-confirmation process, gives them a 14-day grace period to change their mind, and — when the deadline arrives — scrubs all personal data according to the per-model cascade strategy documented below. Admins with the `owner` role can bypass the grace period and force-delete a user immediately. Every significant lifecycle event is written to two audit trails: the module-specific `deletion_audit` table (for GDPR auditors) and the global `AuditLog` table (for the security console).
-
----
+1. **Retention.** When deletion finalizes, all personal data is deleted or
+   irreversibly scrubbed: profile, consultation intake, logs, wearables
+   samples, Roman transcripts, messages, community posts/DMs/voice notes,
+   storage objects, push tokens and the analytics identifiers we control.
+   Only what the law requires is retained: payment and tax records held by
+   Stripe (our local mirrors keep amounts, dates and Stripe ids only, attached
+   to the tombstone id), and one non-identifying deletion audit row (random
+   id, timestamp, outcome).
+2. **Coach handoff.** When a coach deletes, their clients are detached
+   (`User.coach_id = null`), not deleted. Clients keep their own data and the
+   plans they were assigned (frozen, owned by the tombstone id), and the app
+   shows a neutral "your coach is no longer available" state. A sub-coach may
+   delete their own account.
+3. **Billing.** Finalization cancels every live Stripe subscription the
+   person pays or is paid for (coach subscription, client purchases on either
+   side, guest checkouts), cancels pending drip drops, and the drip
+   dispatcher refuses drops whose client or coach is deleted. Push tokens are
+   cleared and notification rows deleted, so nothing further is sent.
+4. **Apple.** If `APPLE_SIGNIN_KEY_ID` / `APPLE_SIGNIN_PRIVATE_KEY` are
+   missing (true in production until the owner creates the key), deletion
+   still completes; the outcome `not_configured` is logged, written to
+   `deletion_audit` and returned as `apple_revocation`. The app only says
+   Apple access was revoked when the server reports `revoked`; otherwise it
+   tells the person they can also remove the app from their Apple ID
+   settings. Set the key with the operator workflow
+   `.github/workflows/fly-apple-signin-set.yml` (docs/deploy-runbook.md §7b.1).
+5. **Google re-auth** works for Google accounts even though Google sign-in is
+   off for new signups: `POST /auth/recent-auth-token` accepts
+   `provider: 'google_session'` with the access token of a Supabase session
+   created by a Google OAuth sign-in moments ago (see "Re-auth" below).
 
 ## Endpoints
 
-| Method | Path                         | Auth               | Request body   | Response                   |
-| ------ | ---------------------------- | ------------------ | -------------- | -------------------------- |
-| `POST` | `/me/delete-account`         | Bearer (any role)  | —              | `{ message, expires_at }`  |
-| `GET`  | `/me/delete-account/confirm` | Bearer (any role)  | `?token=<hex>` | `{ message, purge_after }` |
-| `POST` | `/me/delete-account/cancel`  | Bearer (any role)  | —              | `{ message }`              |
-| `GET`  | `/me/delete-account/status`  | Bearer (any role)  | —              | `DeletionStatus`           |
-| `POST` | `/admin/users/:id/delete`    | Bearer, OWNER role | `{ reason? }`  | `{ message }`              |
+| Method | Path                         | Auth                                      | Response                            |
+| ------ | ---------------------------- | ----------------------------------------- | ----------------------------------- |
+| `POST` | `/me/delete-account`         | Bearer (any role) + `X-Recent-Auth-Token` | `DeletionScheduledResponse`         |
+| `GET`  | `/me/delete-account/confirm` | Bearer (any role), legacy email link      | `{ message, purge_after }`          |
+| `POST` | `/me/delete-account/cancel`  | Bearer (any role)                         | `{ message }`; 409 while finalizing |
+| `GET`  | `/me/delete-account/status`  | Bearer (any role)                         | `DeletionStatus`                    |
+| `POST` | `/admin/users/:id/delete`    | Bearer, `owner` role                      | `{ message }`                       |
 
-`DeletionStatus` shape:
+"Any role" means no `@Roles` decorator: `JwtAuthGuard` authenticates and the
+service scopes every call by `req.user.id` (B-608-7, sub-coaches included).
 
-```typescript
-{
-  state: 'none' | 'requested' | 'confirmed' | 'deleted';
-  requested_at?: string;       // ISO-8601 (REQUESTED state)
-  confirmed_at?: string;       // ISO-8601 (CONFIRMED state)
-  grace_days?: number;         // 14 (CONFIRMED state)
-  purge_after?: string;        // ISO-8601 (CONFIRMED state)
-  deleted_at?: string;         // ISO-8601 (DELETED state)
-}
+`DeletionStatus`: `state` (`none` | `requested` | `confirmed` | `deleted`),
+`requested_at`, `confirmed_at`, `grace_days`, `purge_after`, `completes_by`
+(purge_after + 1 day: the nightly job runs once a day), `deleted_at`,
+`cancellable`. `DeletionScheduledResponse` adds `already_scheduled`,
+`message` and `apple_revocation` (`revoked` | `not_configured` |
+`not_requested` | `exchange_failed` | `revoke_failed`).
+
+After finalization the API answers 403 `{ code: 'ACCOUNT_DELETED' }` while
+the old access token is still valid; the app treats that as completion and
+signs out.
+
+## State machine and concurrency
+
+```
+NONE ──POST /me/delete-account (fresh re-auth)──► CONFIRMED ──cron, now >= purge_after──► DELETED
+  ▲                                                  │
+  └──────────── POST cancel (now < purge_after) ─────┘
+REQUESTED (legacy email flow only) ──POST /me/delete-account──► CONFIRMED (requested_at kept)
+Admin: any state ──POST /admin/users/:id/delete──► DELETED
 ```
 
----
+- Every transition locks the `User` row (`SELECT … FOR UPDATE`). Requests wait
+  for the lock, so concurrent requests serialize and only the winner calls
+  Apple. Cancel and finalization use `SKIP LOCKED`: a cancel that meets a
+  running finalization gets 409; a second cron worker skips the row.
+- `deletion_confirmed_at` is the schedule version. The cron passes the value
+  it saw; if a cancel or re-request changed it, finalization skips
+  (`rescheduled`). Due means `now >= purge_after`; cancellable means
+  `now < purge_after`, so the two never overlap.
+- Lifecycle audit rows are written in the same transaction as the transition
+  they describe; a failed audit write rolls the transition back.
 
-## State machine
+## Finalization (one transaction, 120 s timeout)
 
-```
-NONE
- │
- │  POST /me/delete-account
- │  (token emailed, 24 h TTL)
- ▼
-REQUESTED ──────────────────────────────────────┐
- │                                              │
- │  GET /me/delete-account/confirm?token=...    │  POST /me/delete-account/cancel
- │  (token consumed — single use)               │  (resets to NONE)
- ▼                                              │
-CONFIRMED ◄─────────────────────────────────────┘
- │
- │  POST /me/delete-account/cancel      (within grace window)
- │  (resets to NONE)
- │
- │  Nightly cron AFTER grace period expires
- │  (PII scrubbed, user.deleted_at = now)
- ▼
-DELETED
+1. Collect storage objects (voice notes and voice-message files, the
+   `${userId}/` voice prefix, coach media on Supabase and Mux, Supabase
+   bloodwork attachments, local data-export archives) and live Stripe
+   subscription ids.
+2. Remove the objects and cancel the subscriptions. Any failure throws, the
+   transaction rolls back and tomorrow's run retries (object removal and
+   Stripe cancellation are idempotent).
+3. Tombstone the `User` row: email `deleted-<id>@tombstone.invalid`, name
+   "Deleted user", phone, coach link, push token, leaderboard name, signup
+   ref and payout method cleared, `deleted_at` set.
+4. Run the erasure manifest (`account-deletion.manifest.ts`).
+5. Delete the person's `deletion_audit` rows and insert one outcome row with a
+   random subject id (no email, IP or user agent).
+6. After commit, remove the Supabase auth identity. A returned or thrown
+   error is logged, recorded as `auth_identity_cleanup_failed`, and retried
+   by every nightly run until it succeeds (`supabase_id` becomes
+   `deleted-<id>` once removed). "Not found" counts as removed.
 
-Admin shortcut:
-  ANY STATE → DELETED  via  POST /admin/users/:id/delete  (OWNER only, immediate)
-```
+## Erasure manifest
 
----
+The `User` row is tombstoned, never deleted, so no `onDelete: Cascade` fires.
+`ERASURE_MANIFEST` lists an explicit decision (delete, update/scrub, or
+retain with a reason) for every column in `prisma/schema.prisma` that can
+hold a user id or a copy of the person's email.
+`test/account-deletion/erasure-manifest-coverage.spec.ts` parses the schema
+and fails if a User relation, user-id-like column or email column has no
+entry, if an entry names a missing model/field, or if executing the manifest
+against a seeded store leaves the person's id behind (outside documented
+retention) or changes anyone else's rows. Adding a table that stores user data
+therefore requires adding a manifest entry in the same PR.
 
-## Prisma models added / touched
+Retained rows (all keyed only by the tombstone id): finance mirrors (Invoice,
+ConnectAccount, ClientPurchase deactivated, SplitLedgerEntry, ConnectTransfer,
+PartialRefundDecision, CoachCreditPackPurchase, CoachAIBudget,
+MarketplaceConnectEvent), coach content a surviving client was assigned
+(WorkoutPlan, WorkoutProgram and revisions, DailyMealPlan, MealTemplate,
+coach MacroTarget, saved Recipes, completed Lessons, contract envelopes and
+templates on the coach side, deactivated CoachPackage), and the Scout
+insert-only import ledgers (digests only; a DB trigger refuses DELETE).
 
-### New columns on `User`
+## Re-auth (`POST /auth/recent-auth-token`)
 
-| Column                      | Type        | Purpose                                                                      |
-| --------------------------- | ----------- | ---------------------------------------------------------------------------- |
-| `deletion_requested_at`     | `DateTime?` | Timestamp when user first requested deletion.                                |
-| `deletion_confirmed_at`     | `DateTime?` | Timestamp when user clicked the confirmation link. Grace period starts here. |
-| `deletion_token_hash`       | `String?`   | SHA-256 hash of the one-time email token. Raw token is NEVER stored.         |
-| `deletion_token_expires_at` | `DateTime?` | Token TTL (default 24 h). Expired tokens are rejected even if hash matches.  |
-
-### New table: `deletion_audit`
-
-Append-only audit trail for the GDPR deletion lifecycle. Separate from `AuditLog` so GDPR auditors get a focused, low-noise report.
-
-| Column       | Type          | Purpose                                                       |
-| ------------ | ------------- | ------------------------------------------------------------- |
-| `id`         | `text (uuid)` | Primary key.                                                  |
-| `user_id`    | `text`        | The user being acted on.                                      |
-| `event`      | `text`        | One of the `DeletionAuditEvent` values (see below).           |
-| `actor_id`   | `text?`       | The user/admin who triggered the event. Null for system/cron. |
-| `actor_role` | `text?`       | Role at time of action.                                       |
-| `metadata`   | `jsonb?`      | Email snapshot, reason, IP, etc.                              |
-| `created_at` | `timestamp`   | Event timestamp.                                              |
-
-Events: `deletion_requested`, `deletion_confirmed`, `deletion_cancelled`, `deletion_finalized`, `admin_force_delete`.
-
----
-
-## Per-model cascade table
-
-| Model                                            | Strategy                                                                             | Rationale                                                                                                                                                                                                                              |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `User` (row itself)                              | Tombstone — PII zeroed, `deleted_at` set                                             | Hard-deleting the row would break FK references from coach-side tables (CoachMessage, Invoice, AuditLog). Tombstone keeps FK integrity while removing all PII. Email becomes `deleted-{id}@tombstone.invalid` (RFC 2606 reserved TLD). |
-| `UserProfile`                                    | Hard delete                                                                          | Pure biometric/personal data. No value to any other party once the user is gone.                                                                                                                                                       |
-| `NotificationPreferences`                        | Hard delete                                                                          | No cross-user dependency.                                                                                                                                                                                                              |
-| `UserPreferences`                                | Hard delete                                                                          | Local personalization only.                                                                                                                                                                                                            |
-| `LoggedFoodEntry`                                | Hard delete                                                                          | Client-owned calorie data.                                                                                                                                                                                                             |
-| `WorkoutSession` + `ExerciseSet`                 | Hard delete (cascade)                                                                | Client training records.                                                                                                                                                                                                               |
-| `FastingWindow`                                  | Hard delete                                                                          | Client health log.                                                                                                                                                                                                                     |
-| `WeightLog`                                      | Hard delete                                                                          | Biometric PII.                                                                                                                                                                                                                         |
-| `WaterLog`                                       | Hard delete                                                                          | Client health log.                                                                                                                                                                                                                     |
-| `CheckIn`                                        | Hard delete                                                                          | Daily diary — personal.                                                                                                                                                                                                                |
-| `Habit` + `HabitLog`                             | Hard delete (cascade)                                                                | Client habit tracking.                                                                                                                                                                                                                 |
-| `LessonCompletion`                               | Hard delete                                                                          | Client progress.                                                                                                                                                                                                                       |
-| `CommunityWin`                                   | Hard delete                                                                          | The user's own posts.                                                                                                                                                                                                                  |
-| `SavedRecipe`                                    | Hard delete                                                                          | Client bookmark.                                                                                                                                                                                                                       |
-| `ListItem`                                       | Hard delete                                                                          | Client grocery/prep list.                                                                                                                                                                                                              |
-| `ClientSignal`                                   | Hard delete                                                                          | PTM raw signals. Aggregates already captured in `PtmPrediction`.                                                                                                                                                                       |
-| `ClientOutcome`                                  | Hard delete                                                                          | PTM teaching label. `labelled_by_id` set to NULL via schema `SetNull`.                                                                                                                                                                 |
-| `PtmPrediction`                                  | Hard delete                                                                          | Contains `user_id` and risk scores.                                                                                                                                                                                                    |
-| `CoachEffectivenessScore`                        | Hard delete (if user is coach)                                                       | Coach-owned metric.                                                                                                                                                                                                                    |
-| `CoachAlert`                                     | Hard delete (both parties)                                                           | Contains the client's ID as the subject.                                                                                                                                                                                               |
-| `CoachOnboardingProgress`                        | Hard delete (if user is coach)                                                       | Coach setup state.                                                                                                                                                                                                                     |
-| `CoachProfile`                                   | Hard delete (if user is coach)                                                       | Coach business metadata including Stripe IDs.                                                                                                                                                                                          |
-| `CoachSubscription`                              | Hard delete (if user is coach)                                                       | Subscription mirror.                                                                                                                                                                                                                   |
-| `Invoice`                                        | Nullify `coach_id` (keep row)                                                        | **UK / EU financial records retention: 6 years (Companies Act)**. Row is de-linked rather than deleted.                                                                                                                                |
-| `PaymentFailure`                                 | Hard delete                                                                          | Diagnostic log, no retention obligation.                                                                                                                                                                                               |
-| `InviteCode`                                     | Hard delete (if user is coach)                                                       | Coach-issued codes.                                                                                                                                                                                                                    |
-| `BuildWeekEnrollment` + `BuildWeekDayCompletion` | Hard delete (cascade)                                                                | Client program progress.                                                                                                                                                                                                               |
-| `DataExportRequest`                              | Hard delete                                                                          | Export payloads contain user's own data.                                                                                                                                                                                               |
-| `ClientCoachConsent`                             | Hard delete                                                                          | Consent to use data. No data = consent moot.                                                                                                                                                                                           |
-| `ActivityEvent`                                  | Hard delete (all parties)                                                            | Operational events tied to user.                                                                                                                                                                                                       |
-| `MessageDraft`                                   | Hard delete                                                                          | Coach-authored draft linked to client.                                                                                                                                                                                                 |
-| `CoachMessage`                                   | Anonymize — sender_id / client_id references replaced; body cleared on sent messages | The OTHER party (coach) still owns their side of the thread. Deleting the row would break the coach's inbox. Body text is cleared so the deleted user's words are removed.                                                             |
-| `AuditLog`                                       | Anonymize — `actor_id` set to null; `target_user_id` stays (set null by schema)      | Compliance record must survive. Actor attribution removed. Event integrity kept.                                                                                                                                                       |
-| `MealPlan`                                       | Nullify `client_id` or `coach_id` as appropriate                                     | Meal plan content was authored by the coach; the plan stays for the coach.                                                                                                                                                             |
-| `CoachGuideline`                                 | Delete if user is CLIENT; nullify `coach_id` if user is COACH                        | Guidelines authored by the coach stay attached to the coach record.                                                                                                                                                                    |
-| `CoachNudge`                                     | Clear body text; nullify affected party IDs                                          | Nudge content may contain user-addressing language.                                                                                                                                                                                    |
-| `DiagnosticSubmission`                           | Nullify `user_id` (keep row)                                                         | Lead funnel analytics. Per schema comment: no FK cascade by design.                                                                                                                                                                    |
-| `Recipe`                                         | Nullify `creator_id`                                                                 | Recipes are shared platform content.                                                                                                                                                                                                   |
-| `Lesson`                                         | Nullify `coach_id`                                                                   | Lessons are shared content.                                                                                                                                                                                                            |
-| `WorkoutRoutine`                                 | Nullify `creator_id`                                                                 | Coach-authored routines are shared content.                                                                                                                                                                                            |
-
----
+- Email accounts: `password`.
+- Apple: a fresh Apple identity token (`provider: 'apple'`); the app also
+  sends the authorization code to `/me/delete-account` for revocation.
+- Google: `provider: 'google_session'`. The mobile app has no Google client id
+  (sign-in is Supabase-brokered), so it runs the Supabase Google OAuth browser
+  flow again and sends the new session's access token without storing that
+  session. The server requires Supabase to accept the token (`getUser`), the
+  token `sub` to equal the caller's `supabase_id`, a google provider on the
+  identity, and an `amr` entry `{ method: 'oauth' }` newer than
+  `RECENT_AUTH_TTL_MS`. The app's existing session keeps its original amr
+  timestamp, so replaying it is refused.
+- `provider: 'google'` (a Google-issued ID token) remains for clients that
+  have a Google client id.
 
 ## Env vars
 
-| Var                        | Default                           | Purpose                                                                                                                                                                          |
-| -------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DELETION_GRACE_DAYS`      | `14`                              | Calendar days between `deletion_confirmed_at` and PII scrub. GDPR requires "without undue delay" — 14 days gives users a genuine cancel window while satisfying that obligation. |
-| `DELETION_FINALIZE_CRON`   | `0 3 * * *`                       | Cron expression for the nightly finalize job (3:00 AM UTC by default).                                                                                                           |
-| `DELETION_TOKEN_TTL_HOURS` | `24`                              | How long the email confirmation link is valid. Expired links are rejected — the user must re-request.                                                                            |
-| `APP_BASE_URL`             | `https://app.thegrowthproject.io` | Base URL for the confirmation link in the email.                                                                                                                                 |
-
----
-
-## Cron job
-
-`AccountDeletionService.runFinalizeCron()` is decorated with `@Cron(process.env.DELETION_FINALIZE_CRON ?? '0 3 * * *')`. It:
-
-1. Queries `User` where `deletion_confirmed_at <= NOW() - DELETION_GRACE_DAYS` AND `deleted_at IS NULL`.
-2. Processes each candidate through `finalizeUserDeletion()` (the PII scrub transaction).
-3. Writes a `deletion_audit` row + `AuditLog` row per finalized user.
-4. **Idempotent:** the `deleted_at IS NULL` predicate means re-running on an already-finalized user is a safe no-op.
-5. Processes at most 500 users per run (safety cap).
-
----
+| Var                                                                                                                       | Default                      | Purpose                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `DELETION_GRACE_DAYS`                                                                                                     | `14`                         | Days between scheduling and finalization.                                                                                  |
+| `DELETION_FINALIZE_CRON`                                                                                                  | `0 3 * * *`                  | Nightly finalize job (03:00 UTC slot).                                                                                     |
+| `APPLE_TEAM_ID`, `APPLE_SIGNIN_CLIENT_ID` (or first `APPLE_AUDIENCES`), `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY` | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
+| `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`                                                                          | `voice-notes`, `coach-media` | Buckets purged at finalization.                                                                                            |
+| `STRIPE_SECRET_KEY`, Mux credentials                                                                                      | —                            | Needed only if the person has live subscriptions or Mux assets; without them finalization fails closed, logs, and retries. |
 
 ## Tests
 
-| File                               | What it tests                                                                                                                                                                                                                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `account-deletion.service.spec.ts` | Full lifecycle (request → confirm → cancel), 14-day finalize, admin force-delete is audited, token hashing is one-way (SHA-256), expired tokens are rejected, deletion is idempotent (already-deleted user = no-op), cron does nothing when no candidates, cron finalizes past-grace users |
+| File                                                      | Covers                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test/account-deletion/lifecycle-races.spec.ts`           | Request/cancel/finalize state machine on an in-memory DB with row locks and rollback; Sol's six probes inverted (scrub failure rollback, Supabase returned error, fan-out failure, cancel after snapshot, re-request after snapshot, concurrent requests), cancel vs finalize 409, two cron workers, cutoff boundaries, non-identifying audit, admin delete, legacy link. |
+| `test/account-deletion/erasure-manifest-coverage.spec.ts` | Schema coverage, entry validity, seeded execution (A erased, B byte-identical).                                                                                                                                                                                                                                                                                           |
+| `test/account-deletion/storage-billing.spec.ts`           | Storage collection/purge and Stripe cancellation, fail-closed paths.                                                                                                                                                                                                                                                                                                      |
+| `test/account-deletion/controller-roles.spec.ts`          | No role restriction on self endpoints (sub-coach), owner-only admin.                                                                                                                                                                                                                                                                                                      |
+| `test/account-deletion/drip-fence.spec.ts`                | Drip dispatcher never selects drops for deleted accounts.                                                                                                                                                                                                                                                                                                                 |
+| `test/auth-recent-auth-google-session.spec.ts`            | Google re-auth via a fresh Supabase OAuth session; replay refused.                                                                                                                                                                                                                                                                                                        |
+| `test/account-deletion/apple-token-revocation.spec.ts`    | Apple revocation outcomes, including `not_configured`.                                                                                                                                                                                                                                                                                                                    |
 
----
+## Residual risks
 
-## Security notes
-
-- Confirmation tokens are generated with `crypto.randomBytes(32)` (256 bits of entropy).
-- Only the SHA-256 hash of the token is stored (`deletion_token_hash`). The raw token is never persisted.
-- Tokens are single-use: the hash is cleared when the user confirms.
-- The confirm endpoint returns `401 Unauthorized` for any token mismatch (valid-looking but wrong, or expired) so callers cannot distinguish "never existed" from "expired" — both are indistinguishable oracle-wise.
-- The admin force-delete endpoint is gated by `@Roles('owner')` + `RolesGuard` — only `role=owner` users can call it.
-
----
-
-## Future work / dependencies
-
-- **Data export MUST ship before this module is enabled in production.** GDPR Article 20 (right to data portability) requires that users can download their data before it is deleted. The data-export track (Phase 10, Wave C) must be merged and verified first. See `src/users/account.service.ts` for the existing export stub.
-- **Email delivery:** `sendConfirmationEmail()` currently logs the confirmation URL. Wire it to the Phase 9 digest mail infra (or your transactional mailer) before going live.
-- **Supabase Auth cleanup:** After `finalizeUserDeletion`, the corresponding Supabase Auth user should be deleted out-of-band so the email address is truly freed. Add a call to `SupabaseAdminService.deleteUser(supabase_id)` once that service is wired.
-- **Invoice retention:** Invoice rows are nullified rather than deleted because UK Companies Act requires financial records for 6 years. Consider archiving them to cold storage after the retention window.
+- Rows inserted by an unrelated in-flight request at the instant the
+  finalization commits (for example a coach message to the deleted client)
+  can survive until noticed; the tombstone blocks the account from any new
+  activity.
+- Coaches' free-text notes (for example `CoachDailyLog`) can mention a client
+  by name; they belong to the coach and are not parsed.
+- Bloodwork attachments on non-Supabase backends are client-supplied external
+  links; the backend holds no bytes for them (the rows are deleted).
+- Google re-auth depends on Supabase's `amr` timestamp semantics and on the
+  Supabase Google provider staying enabled for existing users.
+- The older `src/users/account.service.ts` deletion path
+  (`deletion_scheduled_at`) is separate and unchanged.

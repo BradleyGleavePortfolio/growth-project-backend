@@ -118,7 +118,13 @@ export class JwtAuthGuard implements CanActivate {
     // logged-in client can still cancel the schedule but cannot keep
     // mutating data during the grace window.
     if (user.deleted_at) {
-      throw new ForbiddenException('Account has been deleted');
+      // `code` is the terminal signal the mobile app keys on to finish its
+      // deletion flow and sign out (mobile #313 B-313-5).
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'ACCOUNT_DELETED',
+        message: 'Account has been deleted',
+      });
     }
     if (user.deletion_scheduled_at) {
       const allowDuringDeletion = this.reflector.getAllAndOverride<boolean>(
