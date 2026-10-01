@@ -152,6 +152,8 @@ describe('ProfileService.updateProfile + computeAndSaveMacros', () => {
       userProfile: Record<string, jest.Mock>;
     } = {
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+      // B606-3 row lock (SELECT ... FOR UPDATE); no contention in this suite.
+      $queryRaw: jest.fn(async () => []),
       userProfile: {
         findUnique: jest.fn(async () => row),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {

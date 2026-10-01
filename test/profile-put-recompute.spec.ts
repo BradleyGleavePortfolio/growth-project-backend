@@ -54,6 +54,9 @@ function harness(initial: Record<string, unknown> | null) {
     clientOnboardingIntake: { findUnique: jest.fn(async () => null) },
   };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  // B606-3 row lock (SELECT ... FOR UPDATE); concurrency is covered in
+  // test/profile-put-concurrency.spec.ts.
+  prisma.$queryRaw = jest.fn(async () => []);
   const svc = new ProfileService(asPrisma(prisma));
   const macros = new MacrosService(asPrisma(prisma));
   return {
