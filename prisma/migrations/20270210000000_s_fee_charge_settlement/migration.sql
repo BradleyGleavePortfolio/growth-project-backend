@@ -1,7 +1,7 @@
 -- S-FEE — per-charge settlement ledger for coach-package payments.
 --
 -- Additive except for one index swap on SplitLedgerEntry:
---   * new tables ChargeSettlement, PayeeRecovery (RLS enabled + forced);
+--   * new tables ChargeSettlement, PayeeRecovery, CronLease (RLS enabled + forced);
 --   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents
 --     (defaults keep every existing row valid: kind='head_coach_split');
 --   * SplitLedgerEntry's (purchase_id, kind, payee_user_id) unique is replaced
@@ -110,7 +110,25 @@ CREATE INDEX "ConnectTransfer_settlement_id_idx" ON "ConnectTransfer"("settlemen
 ALTER TABLE "ConnectTransfer" ADD CONSTRAINT "ConnectTransfer_settlement_id_fkey"
   FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- CronLease: single-runner lease for the scheduled settlement sweep.
+CREATE TABLE "CronLease" (
+    "name" TEXT NOT NULL,
+    "holder" TEXT NOT NULL,
+    "lease_until" TIMESTAMP(3) NOT NULL,
+    "acquired_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "CronLease_pkey" PRIMARY KEY ("name")
+);
+
 -- RLS.
+ALTER TABLE "CronLease" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "CronLease" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cron_lease_service_role_all" ON "CronLease";
+CREATE POLICY "cron_lease_service_role_all" ON "CronLease"
+  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "cron_lease_owner_all" ON "CronLease";
+CREATE POLICY "cron_lease_owner_all" ON "CronLease"
+  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
 ALTER TABLE "ChargeSettlement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ChargeSettlement" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "PayeeRecovery" ENABLE ROW LEVEL SECURITY;

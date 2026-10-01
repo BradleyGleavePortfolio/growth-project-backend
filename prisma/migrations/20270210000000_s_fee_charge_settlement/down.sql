@@ -1,4 +1,4 @@
--- Reverse of 20270126000000_s_fee_charge_settlement.
+-- Reverse of 20270210000000_s_fee_charge_settlement.
 -- Disposable/pre-use only: refuses once any ChargeSettlement or PayeeRecovery
 -- row exists (those rows are money records; repair is forward-only). Never
 -- claims to restore data.
@@ -22,6 +22,7 @@ END $$;
 
 ALTER TABLE "ConnectTransfer" DROP CONSTRAINT IF EXISTS "ConnectTransfer_settlement_id_fkey";
 DROP INDEX IF EXISTS "ConnectTransfer_settlement_id_idx";
+DROP TABLE IF EXISTS "CronLease";
 DROP TABLE "PayeeRecovery";
 DROP TABLE "ChargeSettlement";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "netted_recovery_cents";

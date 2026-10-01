@@ -1028,6 +1028,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: observability
     description: "Phase 10 — fraction of transactions sampled for Sentry Performance (0.0–1.0). Defaults to 0.1 (10%). Errors are always captured at 1.0 regar"
+  - name: SFEE_SETTLEMENT_SWEEP_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Kill switch — when 'false', the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on. Leave unset in prod."
   - name: STOREFRONT_BASE_URL
     tier: feature
     prod_default: ON

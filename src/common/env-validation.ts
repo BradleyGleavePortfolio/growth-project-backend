@@ -411,6 +411,11 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
   },
   {
+    name: 'SFEE_SETTLEMENT_SWEEP_ENABLED',
+    tier: 'optional',
+    reason: 'Kill switch — when "false", the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on.',
+  },
+  {
     name: 'PTM_SCORING_CRON',
     tier: 'optional',
     reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',

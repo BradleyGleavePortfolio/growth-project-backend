@@ -212,22 +212,46 @@ export class PurchaseSplitHandlerService {
   // Run all due-but-pending transfers (sweeper entry point). S-FEE: first
   // retry settlements waiting on Stripe's fee and settle any recent paid
   // purchase no webhook settled, then post due transfers.
-  async runTransferSweeper(now: Date = new Date()): Promise<{
+  //
+  // Bounded: at most `batch` transfers per run (settlements use their own
+  // limit), and it stops starting new work once `deadlineAt` passes so a run
+  // always ends inside its single-runner lease. Whatever is left is due on
+  // the next run. Each transfer row is retried with its own backoff
+  // (TransferOrchestratorService.BACKOFF_MINUTES) under its Stripe
+  // idempotency key, so a repeated or overlapping run cannot pay twice.
+  async runTransferSweeper(
+    now: Date = new Date(),
+    opts: { batch?: number; deadlineAt?: number } = {},
+  ): Promise<{
     attempted: number;
     succeeded: number;
     failed: number;
+    deadline_reached?: boolean;
     settlements?: { retried: number; backfilled: number; settled: number };
   }> {
-    const settlements = await this.settlements.runSettlementSweep(now);
-    const due = await this.transfers.findDueTransfers(now);
+    const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
+    const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);
+    let attempted = 0;
     let succeeded = 0;
     let failed = 0;
+    let deadlineReached = false;
     for (const row of due) {
+      if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
+        deadlineReached = true;
+        break;
+      }
+      attempted += 1;
       const updated = await this.transfers.attempt(row.id);
       if (updated.status === 'succeeded') succeeded += 1;
       else if (updated.status === 'failed') failed += 1;
     }
-    return { attempted: due.length, succeeded, failed, settlements };
+    return {
+      attempted,
+      succeeded,
+      failed,
+      ...(deadlineReached ? { deadline_reached: true } : {}),
+      settlements,
+    };
   }
 
   // S-FEE — settle a guest-storefront purchase after its conversion commits

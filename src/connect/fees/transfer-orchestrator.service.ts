@@ -38,6 +38,44 @@ import { SplitLedgerService } from './split-ledger.service';
 // up due rows and re-tries via the same Stripe-Idempotency-Key so
 // double-pays are impossible.
 
+// S-FEE — log / alert codes for a failed transfer attempt.
+export const TRANSFER_FAILURE_CODES = {
+  // Platform balance cannot cover a transfer that has no source charge
+  // (dispute reinstatements) or Stripe reports the balance as insufficient.
+  platformBalance: 'SFEE_TRANSFER_PLATFORM_BALANCE_INSUFFICIENT',
+  // The coach's connected account cannot receive transfers (restricted,
+  // missing the transfers capability, closed or invalid).
+  accountRestricted: 'SFEE_TRANSFER_ACCOUNT_RESTRICTED',
+  // Anything else (network, Stripe 5xx, rate limit, validation).
+  failed: 'SFEE_TRANSFER_FAILED',
+} as const;
+
+const ACCOUNT_RESTRICTED_STRIPE_CODES = new Set([
+  'account_invalid',
+  'account_closed',
+  'insufficient_capabilities_for_transfer',
+  'transfers_not_allowed',
+  'account_country_invalid_address',
+]);
+
+export function transferFailureCode(err: unknown): string {
+  const stripeCode = err instanceof StripeConnectApiError ? err.stripeCode : null;
+  const message = (err as Error)?.message ?? '';
+  if (stripeCode === 'balance_insufficient' || stripeCode === 'insufficient_funds') {
+    return TRANSFER_FAILURE_CODES.platformBalance;
+  }
+  if (/insufficient (available )?funds|balance.*insufficient/i.test(message)) {
+    return TRANSFER_FAILURE_CODES.platformBalance;
+  }
+  if (stripeCode && ACCOUNT_RESTRICTED_STRIPE_CODES.has(stripeCode)) {
+    return TRANSFER_FAILURE_CODES.accountRestricted;
+  }
+  if (/capabilit|restricted|transfers? (are )?(not allowed|disabled)/i.test(message)) {
+    return TRANSFER_FAILURE_CODES.accountRestricted;
+  }
+  return TRANSFER_FAILURE_CODES.failed;
+}
+
 // S-FEE — transfer kinds written by ChargeSettlementService.
 //   coach_net / head_coach_split : the payee's share of one settled charge,
 //                                  drawn from that charge (source_transaction)
@@ -237,18 +275,26 @@ export class TransferOrchestratorService {
       const isStripe = err instanceof StripeConnectApiError;
       const message =
         (err as Error)?.message ?? 'unknown transfer error';
-      this.logger.warn(
-        `transfer attempt failed purchase=${row.purchase_id} attempt=${attemptCount}: ${message}`,
-      );
+      const code = transferFailureCode(err);
       const finalFailure = attemptCount >= row.max_attempts;
       const final =
         finalFailure ||
         (isStripe &&
           (err as StripeConnectApiError).httpStatus === 400 &&
           /no such/i.test(message));
+      // S-FEE — every failure is logged with a specific code. Codes that need
+      // a person (platform balance, restricted account) and final failures
+      // are logged at error level with alert=true for the log-based alerts.
+      const needsPerson = final || code !== TRANSFER_FAILURE_CODES.failed;
+      const line =
+        `${code}${final ? '_FINAL' : ''} transfer=${row.id} kind=${row.kind} ` +
+        `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
+        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
+      if (needsPerson) this.logger.error(line);
+      else this.logger.warn(line);
       return this.markFailed(
         { ...row, attempts: attemptCount },
-        message,
+        `${code}: ${message}`,
         final,
       );
     }

@@ -18,6 +18,8 @@ import {
   CoachPaymentOpsController,
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { CronLeaseService } from './cron-lease.service';
+import { SettlementSweepCron } from './settlement-sweep.cron';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
 
@@ -83,6 +85,9 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     DunningService,
     RefundDisputeHandlerService,
     AdminAnalyticsService,
+    // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
+    CronLeaseService,
+    SettlementSweepCron,
   ],
   exports: [
     CheckoutService,

@@ -541,7 +541,9 @@ export class ChargeSettlementService {
         if (chargeId) outcomes.push(await this.settleCharge({ purchase, charge_id: chargeId }));
       }
     } catch (err) {
-      this.logger.warn(`settlePurchase failed purchase=${purchase.id}: ${(err as Error).message}`);
+      this.logger.warn(
+        `SFEE_SETTLEMENT_FAILED purchase=${purchase.id}: ${(err as Error).message}`,
+      );
     }
     return outcomes;
   }
@@ -554,7 +556,9 @@ export class ChargeSettlementService {
   async runSettlementSweep(
     now: Date = new Date(),
     limit = 25,
+    deadlineAt?: number,
   ): Promise<{ retried: number; backfilled: number; settled: number }> {
+    const pastDeadline = () => deadlineAt !== undefined && Date.now() >= deadlineAt;
     let settled = 0;
     const waiting = await this.prisma.chargeSettlement.findMany({
       where: { status: 'awaiting_fee', updated_at: { lte: new Date(now.getTime() - 60_000) } },
@@ -562,6 +566,7 @@ export class ChargeSettlementService {
       take: limit,
     });
     for (const s of waiting) {
+      if (pastDeadline()) break;
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: s.purchase_id },
       });
@@ -575,7 +580,7 @@ export class ChargeSettlementService {
         if (o.status === 'settled') settled += 1;
       } catch (err) {
         this.logger.warn(
-          `settlement sweep retry failed charge=${s.stripe_charge_id}: ${(err as Error).message}`,
+          `SFEE_SETTLEMENT_RETRY_FAILED charge=${s.stripe_charge_id} purchase=${s.purchase_id}: ${(err as Error).message}`,
         );
       }
     }
@@ -605,6 +610,7 @@ export class ChargeSettlementService {
       take: limit,
     });
     for (const p of orphans) {
+      if (pastDeadline()) break;
       const results = await this.settlePurchase(p);
       settled += results.filter((r) => r.status === 'settled').length;
     }

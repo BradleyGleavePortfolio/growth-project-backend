@@ -3808,6 +3808,17 @@ model ConnectTransfer {
 //   legacy_destination : a pre-S-FEE destination charge (Stripe already moved
 //                        the funds via transfer_data); recorded, never transferred
 //   skipped_free       : $0 charge or grant; nothing to settle
+// S-FEE — single-runner lease for scheduled jobs (one row per job). A
+// machine runs the job only while it holds an unexpired lease; see
+// src/checkout/cron-lease.service.ts.
+model CronLease {
+  name        String   @id
+  holder      String
+  lease_until DateTime
+  acquired_at DateTime
+  updated_at  DateTime @updatedAt
+}
+
 model ChargeSettlement {
   id                            String         @id @default(uuid())
   purchase_id                   String
