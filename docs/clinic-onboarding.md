@@ -17,6 +17,25 @@ Request:
 { "version": "consult-v1", "answers": { "<screen key>": "<value>", "...": "..." } }
 ```
 
+**Consent first (privacy ruling 2026-09-30).** The consent box (P0) is the
+first question, right after the welcome screen. Until a current-version
+consent is on file for the user, the only accepted request is P0 on its own:
+
+```json
+{ "version": "consult-v1", "answers": { "P0": { "agreed": true, "copy_version": "consult-consent-v1" } } }
+```
+
+Any other request (answers without P0, or answers bundled with the first P0)
+is rejected with `409 { code: "consent_missing" }` before anything is
+written, so those answers are never stored. A P0 with a copy version that is
+not current (`CONSULT_CONSENT_COPY_VERSIONS`, default `consult-consent-v1`)
+is also `409 consent_missing`; `P0: null` (withdrawal) is `400
+invalid_answers`. Dependency: the combined consent record from backend #601
+is not merged yet, so the verified record is the server-stamped P0
+acknowledgement on the intake (`disclaimer_version`,
+`disclaimer_accepted_at`). When #601 lands, the gate should switch to that
+record.
+
 `answers` is a patch keyed by screen id. The mobile app sends the full answer
 set at every chapter end; `null` clears a key. Answers that no longer apply
 are dropped server-side (`T3_areas`/`T3_note` when `T3` is not yes, `S3b`
@@ -60,7 +79,14 @@ Response `200`:
 { "saved_at": "ISO", "completed_chapters": ["goals", "body", "..."], "revision": 3 }
 ```
 
-Errors: `400 { code: "unsupported_version" }`, `400 { code: "invalid_answers", errors: [{ key, message }] }`.
+Errors: `400 { code: "unsupported_version" }`, `400 { code: "invalid_answers", errors: [{ key, message }] }` (messages never echo values), `409 { code: "consent_missing" }`.
+
+**No answers in logs or analytics.** The onboarding module logs only ids and
+error class names, sends no analytics events, and `answers`,
+`consultation_answers`, `completion_result` and `screening` are in the
+structured-log redaction list (`src/observability/log-redaction.ts`).
+Unknown keys (including `__proto__`/`constructor`) are rejected and never
+written.
 
 Every save appends an immutable `ClientOnboardingIntakeRevision`
 (`cause: "save"`); completion appends one more (`cause: "complete"`). Nothing
@@ -112,7 +138,7 @@ intake row.
 |---|---|
 | `not_attached` | the client has no coach (or the coach account is not a coach) |
 | `consultation_incomplete` | required answers missing; `missing: string[]` lists keys (also used when macro inputs are implausible) |
-| `consent_missing` | no P0 acknowledgement |
+| `consent_missing` | no current-version P0 acknowledgement |
 | `clinic_not_configured` | the coach has no seeded program set, or its master/space rows are missing or not the coach's own |
 | `completion_in_progress` | another completion for this client is running (retry shortly) |
 

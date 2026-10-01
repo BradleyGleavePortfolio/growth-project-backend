@@ -2,6 +2,7 @@
 // Covers: 409 machine codes, idempotent completion (replay never re-assigns),
 // concurrency claim, MacroTarget under the coach, clone-before-assign with
 // tenancy checks, space joins with joined_at, coach flag on any screening yes.
+import { redactObject } from '../src/observability/log-redaction';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
@@ -299,8 +300,27 @@ function makeWorld() {
     ),
   };
   const svc = new OnboardingService(asPrisma(prisma), asBuilder(builder), asScope(subCoachScope));
+  // The real consent gate: P0 alone first, then answers.
+  const consentThenSave = async (
+    clientId: string,
+    body: { version: string; answers: Record<string, unknown> },
+    now: Date,
+  ) => {
+    const on = intakes.find((i) => i.client_id === clientId && i.disclaimer_accepted_at);
+    if (!on) {
+      await svc.saveConsultation(
+        clientId,
+        { version: 'consult-v1', answers: { P0: CONSENT } },
+        now,
+      );
+    }
+    const { P0: p0, ...rest } = body.answers;
+    const answers = p0 === undefined ? rest : body.answers;
+    return svc.saveConsultation(clientId, { ...body, answers }, now);
+  };
   return {
     svc,
+    consentThenSave,
     prisma,
     builder,
     revisions,
@@ -314,6 +334,12 @@ function makeWorld() {
     plans,
   };
 }
+
+const CONSENT = {
+  agreed: true,
+  copy_version: 'consult-consent-v1',
+  agreed_at: '2026-10-01T11:59:00.000Z',
+};
 
 const COMPLETE = {
   G1: 'fat_loss',
@@ -366,13 +392,13 @@ describe('PUT /me/onboarding/consultation', () => {
 
   it('merges partial saves, stamps P0 server-side, maps the profile and never maps screening', async () => {
     const w = makeWorld();
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { G1: 'fat_loss', B1: 'female' } },
       NOW,
     );
     const later = new Date(NOW.getTime() + 60_000);
-    const out = await w.svc.saveConsultation(
+    const out = await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, P3: 'yes' } },
       later,
@@ -380,7 +406,7 @@ describe('PUT /me/onboarding/consultation', () => {
     expect(out.completed_chapters).toContain('safety');
     const intake = w.intakes[0];
     expect(intake.disclaimer_version).toBe('consult-consent-v1');
-    expect(intake.disclaimer_accepted_at).toEqual(later);
+    expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
     expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
     expect(JSON.stringify(w.profiles)).not.toMatch(/P3/);
@@ -393,31 +419,99 @@ describe('PUT /me/onboarding/consultation', () => {
       },
       new Date(later.getTime() + 1),
     );
-    expect(w.intakes[0].disclaimer_accepted_at).toEqual(later);
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
     // Every save is an immutable revision; nothing is overwritten.
-    expect(w.revisions.map((r) => r.revision)).toEqual([1, 2, 3]);
-    expect(w.revisions[0].answers).toEqual({ G1: 'fat_loss', B1: 'female' });
+    expect(w.revisions.map((r) => r.revision)).toEqual([1, 2, 3, 4]);
+    expect(w.revisions[0].answers).toEqual({ P0: CONSENT });
+    expect(w.revisions[1].answers).toEqual({ P0: CONSENT, G1: 'fat_loss', B1: 'female' });
     expect(w.intakes[0].first_session_date).toEqual(new Date('2026-10-05T00:00:00.000Z'));
+  });
+});
+
+describe('consent before answers (privacy ruling 2026-09-30 18:24)', () => {
+  it('answers sent before consent are rejected with 409 consent_missing and not stored', async () => {
+    const w = makeWorld();
+    const { P0: _p0, ...noConsent } = COMPLETE;
+    expect(
+      await code(
+        w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: noConsent }, NOW),
+      ),
+    ).toBe('consent_missing');
+    // Bundling answers with the first consent is also refused: consent must be on file first.
+    expect(
+      await code(
+        w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW),
+      ),
+    ).toBe('consent_missing');
+    expect(w.intakes).toHaveLength(0);
+    expect(w.revisions).toHaveLength(0);
+    expect(w.profiles).toHaveLength(0);
+    expect(w.prisma.clientOnboardingIntake.upsert).not.toHaveBeenCalled();
+    expect(w.prisma.userProfile.upsert).not.toHaveBeenCalled();
+  });
+
+  it('records consent alone first, then accepts answers', async () => {
+    const w = makeWorld();
+    const first = await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect(first.revision).toBe(1);
+    expect(w.intakes[0]).toMatchObject({
+      disclaimer_version: 'consult-consent-v1',
+      disclaimer_accepted_at: NOW,
+    });
+    const { P0: _p0, ...rest } = COMPLETE;
+    await expect(
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: rest }, NOW),
+    ).resolves.toMatchObject({
+      revision: 2,
+    });
+  });
+
+  it('rejects an outdated consent copy version and consent withdrawal through PUT', async () => {
+    const w = makeWorld();
+    expect(
+      await code(
+        w.svc.saveConsultation(
+          'client-1',
+          { version: 'consult-v1', answers: { P0: { agreed: true, copy_version: 'old-v0' } } },
+          NOW,
+        ),
+      ),
+    ).toBe('consent_missing');
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    await expect(
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: null } }, NOW),
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_answers' },
+    });
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
   });
 });
 
 describe('POST /me/onboarding/complete', () => {
   async function ready(answers: Record<string, unknown> = COMPLETE) {
     const w = makeWorld();
-    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers }, NOW);
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
     return w;
   }
 
   it('not_attached when the client has no coach', async () => {
     const w = makeWorld();
-    await w.svc.saveConsultation('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
     expect(await code(w.svc.complete('loner', NOW))).toBe('not_attached');
   });
 
   it('consultation_incomplete lists the missing keys', async () => {
     const w = makeWorld();
     expect(await code(w.svc.complete('client-1', NOW))).toBe('consultation_incomplete');
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { G1: 'fat_loss' } },
       NOW,
@@ -430,10 +524,14 @@ describe('POST /me/onboarding/complete', () => {
     });
   });
 
-  it('consent_missing without the P0 acknowledgement', async () => {
-    const { P0: _p0, ...rest } = COMPLETE;
-    const w = await ready(rest);
-    expect(await code(w.svc.complete('client-1', NOW))).toBe('consent_missing');
+  it('consent_missing at complete when the accepted copy version is no longer current', async () => {
+    const w = await ready();
+    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v2';
+    try {
+      expect(await code(w.svc.complete('client-1', NOW))).toBe('consent_missing');
+    } finally {
+      delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
+    }
   });
 
   it('clinic_not_configured when the coach has no program set', async () => {
@@ -553,7 +651,7 @@ describe('POST /me/onboarding/complete', () => {
 describe('macro display mode (C05 item 8)', () => {
   it('never-trackers get simple display for 7 days in the complete payload, full otherwise', async () => {
     const w = makeWorld();
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, N4: 'never' } },
       NOW,
@@ -567,7 +665,7 @@ describe('macro display mode (C05 item 8)', () => {
     expect(later.simple_until).toBe(res.simple_until);
 
     const w2 = makeWorld();
-    await w2.svc.saveConsultation(
+    await w2.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, N4: 'some' } },
       NOW,
@@ -580,7 +678,7 @@ describe('macro display mode (C05 item 8)', () => {
 
   it('exposes engagement inputs after completion only', async () => {
     const w = makeWorld();
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, S2: 'evening' } },
       NOW,
@@ -600,7 +698,7 @@ describe('macro display mode (C05 item 8)', () => {
 describe('GET /coach/clients/:clientId/consultation', () => {
   async function saved() {
     const w = makeWorld();
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       {
         version: 'consult-v1',
@@ -625,7 +723,7 @@ describe('GET /coach/clients/:clientId/consultation', () => {
     const w = await saved();
     const v = await w.svc.getCoachConsultation('coach-1', 'client-1', undefined, NOW);
     expect(v.version).toBe('consult-v1');
-    expect(v.revision).toBe(1);
+    expect(v.revision).toBe(2); // 1 = consent alone, 2 = answers
     expect(v.chapters.map((c) => c.key)).toEqual([
       'goals',
       'body',
@@ -657,30 +755,30 @@ describe('GET /coach/clients/:clientId/consultation', () => {
 
   it('an assigned sub-coach can read; earlier revisions stay readable after edits', async () => {
     const w = await saved();
-    await w.svc.saveConsultation(
+    await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { G1: 'muscle_gain' } },
       NOW,
     );
     expect((await w.svc.getCoachConsultation('sub-1', 'client-1', undefined, NOW)).revision).toBe(
-      2,
+      3,
     );
-    const first = await w.svc.getCoachConsultation('coach-1', 'client-1', 1, NOW);
-    expect(first.chapters[0].answers[0].answer_label).not.toBe(
-      (await w.svc.getCoachConsultation('coach-1', 'client-1', 2, NOW)).chapters[0].answers[0]
+    const before = await w.svc.getCoachConsultation('coach-1', 'client-1', 2, NOW);
+    expect(before.chapters[0].answers[0].answer_label).not.toBe(
+      (await w.svc.getCoachConsultation('coach-1', 'client-1', 3, NOW)).chapters[0].answers[0]
         .answer_label,
     );
     expect(
       (await w.svc.listCoachConsultationRevisions('coach-1', 'client-1')).map((r) => r.revision),
-    ).toEqual([2, 1]);
+    ).toEqual([3, 2, 1]);
   });
 
   it("the head coach of the client's coach can read", async () => {
     const w = makeWorld();
-    await w.svc.saveConsultation('client-2', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    await w.consentThenSave('client-2', { version: 'consult-v1', answers: COMPLETE }, NOW);
     await expect(
       w.svc.getCoachConsultation('coach-1', 'client-2', undefined, NOW),
-    ).resolves.toMatchObject({ revision: 1 });
+    ).resolves.toMatchObject({ revision: 2 });
   });
 
   it('404 for a foreign coach, a sub-coach of another head, and the client themselves', async () => {
@@ -690,5 +788,17 @@ describe('GET /coach/clients/:clientId/consultation', () => {
     await notFound(w.svc.getCoachConsultation('client-1', 'client-1', undefined, NOW));
     await notFound(w.svc.listCoachConsultationRevisions('other-coach', 'client-1'));
     await notFound(w.svc.getCoachConsultation('coach-1', 'client-1', 99, NOW));
+  });
+});
+
+describe('consultation answers never reach logs', () => {
+  it('the log redactor masks answers, completion results and screening at any depth', () => {
+    const out = redactObject({
+      msg: 'onboarding',
+      answers: { P1: 'yes', T3_note: 'knee' },
+      nested: { completion_result: { macros: {} }, screening: { any_yes: true } },
+    }) as Record<string, unknown>;
+    expect(out.answers).toBe('[REDACTED]');
+    expect(out.nested).toEqual({ completion_result: '[REDACTED]', screening: '[REDACTED]' });
   });
 });

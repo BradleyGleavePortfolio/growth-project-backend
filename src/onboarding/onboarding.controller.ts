@@ -47,13 +47,16 @@ export class OnboardingController {
 }
 
 /**
- * Coach read of a client's consultation. No @Roles: the tenancy check in
- * OnboardingService.canCoachRead decides, and every refusal (foreign coach,
- * sub-coach of another head, the client themselves) is a 404.
+ * Coach read of a client's consultation. @Roles admits every signed-in role
+ * on purpose (students included) so the route never answers 403: the
+ * tenancy check in OnboardingService.canCoachRead decides, and every refusal
+ * (foreign coach, sub-coach of another head, the client themselves, other
+ * clients) is the same 404, which does not reveal whether a client exists.
  */
 @ApiTags('onboarding')
 @Controller('coach/clients')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('coach', 'student')
 export class CoachConsultationController {
   constructor(private readonly onboarding: OnboardingService) {}
 

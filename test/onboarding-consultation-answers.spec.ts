@@ -209,3 +209,20 @@ describe('screening and mapping', () => {
       });
   });
 });
+
+describe('prototype keys', () => {
+  it('rejects and never writes __proto__ / constructor keys', () => {
+    const patch = JSON.parse(
+      '{"__proto__": {"polluted": true}, "constructor": "x", "G1": "fat_loss"}',
+    );
+    expect(
+      validateAnswerPatch(patch, new Date('2026-10-01T12:00:00Z'))
+        .map((e) => e.key)
+        .sort(),
+    ).toEqual(['__proto__', 'constructor']);
+    const merged = mergeAnswers({}, patch);
+    expect(Object.keys(merged)).toEqual(['G1']);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+  });
+});

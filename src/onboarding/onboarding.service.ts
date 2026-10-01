@@ -14,6 +14,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
 import {
   CONSULTATION_VERSION,
+  acceptedConsentVersions,
   consentCopyVersion,
   macroDisplayFor,
   selectionAnswersFrom,
@@ -233,6 +234,38 @@ export class OnboardingService {
     const existing = await this.prisma.clientOnboardingIntake.findUnique({
       where: { client_id: clientId },
     });
+
+    // Privacy (operator ruling 2026-09-30 18:24): consent is recorded BEFORE
+    // any answer is stored. Without a current-version consent on file, the
+    // only accepted request is the P0 acknowledgement on its own. Checked
+    // before any write, so rejected answers are never stored.
+    // Dependency: #601's combined consent table is unmerged; the consent
+    // record verified here is the server-stamped P0 acknowledgement on the
+    // intake (disclaimer_version + disclaimer_accepted_at).
+    const accepted = acceptedConsentVersions();
+    const patchP0 = body.answers.P0;
+    if (patchP0 === null) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'invalid_answers',
+        message: 'Consent cannot be withdrawn through this endpoint',
+        errors: [{ key: 'P0', message: 'consent cannot be cleared here' }],
+      });
+    }
+    if (isRecord(patchP0) && !accepted.includes(consentCopyVersion(patchP0) ?? '')) {
+      throw conflict('consent_missing', 'Please accept the current version of the agreement');
+    }
+    const consentOnFile = Boolean(
+      existing?.disclaimer_accepted_at &&
+      existing.disclaimer_version &&
+      accepted.includes(existing.disclaimer_version),
+    );
+    if (!consentOnFile) {
+      const otherKeys = Object.keys(body.answers).filter((k) => k !== 'P0');
+      if (!isRecord(patchP0) || otherKeys.length > 0) {
+        throw conflict('consent_missing', 'Please accept the agreement before answering');
+      }
+    }
     const stored: Answers = isRecord(existing?.answers)
       ? (JSON.parse(JSON.stringify(existing?.answers)) as Answers)
       : {};
@@ -366,7 +399,11 @@ export class OnboardingService {
     const missing = missingRequired(answers);
     if (missing.length > 0)
       throw conflict('consultation_incomplete', 'Some required answers are missing', { missing });
-    if (!intake.disclaimer_accepted_at || !isRecord(answers.P0)) {
+    if (
+      !intake.disclaimer_accepted_at ||
+      !isRecord(answers.P0) ||
+      !acceptedConsentVersions().includes(intake.disclaimer_version ?? '')
+    ) {
       throw conflict('consent_missing', 'The training agreement has not been accepted');
     }
     const resolved = resolveMacroInputs(macroRawFromAnswers(answers), now);
@@ -569,7 +606,7 @@ export class OnboardingService {
         })
         .catch((releaseErr: unknown) => {
           this.logger.warn(
-            `onboarding claim release failed client=${clientId}: ${String(releaseErr)}`,
+            `onboarding claim release failed client=${clientId} (${releaseErr instanceof Error ? releaseErr.name : 'unknown'})`,
           );
         });
       throw err;
@@ -714,7 +751,7 @@ export class OnboardingService {
         .update({ where: { id: clone.id }, data: { archived_at: new Date() } })
         .catch((archiveErr: unknown) => {
           this.logger.warn(
-            `orphan clone archive failed program=${clone.id}: ${String(archiveErr)}`,
+            `orphan clone archive failed program=${clone.id} (${archiveErr instanceof Error ? archiveErr.name : 'unknown'})`,
           );
         });
       throw err;

@@ -12,6 +12,22 @@ import type { SelectionAnswers } from './program-rules';
 
 export const CONSULTATION_VERSION = 'consult-v1';
 
+/**
+ * P0 consent copy versions the server accepts as "current". The mobile app
+ * sends `copy_version: 'consult-consent-v1'`. Override (comma-separated) with
+ * CONSULT_CONSENT_COPY_VERSIONS when the approved copy changes.
+ */
+export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.CONSULT_CONSENT_COPY_VERSIONS;
+  const list = raw
+    ? raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0)
+    : [];
+  return list.length > 0 ? list : ['consult-consent-v1'];
+}
+
 export type AnswerValue = string | number | boolean | string[] | Record<string, unknown>;
 export type Answers = Record<string, AnswerValue>;
 
@@ -218,6 +234,11 @@ export const VALIDATORS: Readonly<Record<string, Validator>> = {
   },
 };
 
+/** True only for answer ids this version defines (own keys, never prototype keys). */
+export function isAnswerKey(key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(VALIDATORS, key);
+}
+
 export interface AnswerError {
   key: string;
   message: string;
@@ -227,7 +248,7 @@ export interface AnswerError {
 export function validateAnswerPatch(patch: Record<string, unknown>, now: Date): AnswerError[] {
   const errors: AnswerError[] = [];
   for (const [key, value] of Object.entries(patch)) {
-    const validator = VALIDATORS[key];
+    const validator = isAnswerKey(key) ? VALIDATORS[key] : undefined;
     if (!validator) {
       errors.push({ key, message: 'unknown answer key' });
       continue;
@@ -241,11 +262,16 @@ export function validateAnswerPatch(patch: Record<string, unknown>, now: Date): 
 
 /** Merge a validated patch onto stored answers; null clears a key. */
 export function mergeAnswers(stored: Answers, patch: Record<string, unknown>): Answers {
-  const out: Answers = { ...stored };
+  // Built through a Map keyed only by known answer ids, so a client-chosen
+  // key (e.g. "__proto__") can never become a property write.
+  const merged = new Map<string, AnswerValue>();
+  for (const [k, v] of Object.entries(stored)) if (isAnswerKey(k)) merged.set(k, v);
   for (const [k, v] of Object.entries(patch)) {
-    if (v === null) delete out[k];
-    else out[k] = v as AnswerValue;
+    if (!isAnswerKey(k)) continue;
+    if (v === null) merged.delete(k);
+    else merged.set(k, v as AnswerValue);
   }
+  const out: Answers = Object.fromEntries(merged);
   // Dependent answers that no longer apply are dropped so they cannot
   // influence selection or the coach flag.
   if (out.T3 !== 'yes') {
