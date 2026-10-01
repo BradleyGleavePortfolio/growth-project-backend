@@ -179,8 +179,9 @@ export class AuthController {
       body.invite_code,
       body.intended_role,
       // Fix round (Opus C5 / Grok B1): the signup-time role audit row needs
-      // the request IP / user-agent on the Google path too.
-      auditContext(req),
+      // the request IP / user-agent on the Google path too. throttleIp (Opus
+      // C13-C1): the coach-signup ceiling keys on the trusted Fly-Client-IP.
+      { ...auditContext(req), throttleIp: extractIp(req) },
     );
     // Grok B5: only a RETURNING user's success clears the login windows. A
     // brand-new account is not a retried login, and resetting on it made
@@ -216,7 +217,7 @@ export class AuthController {
       resolveAppleIdentityToken(body),
       body.full_name,
       body.invite_code,
-      auditContext(req),
+      { ...auditContext(req), throttleIp: extractIp(req) },
       body.raw_nonce,
       body.intended_role,
     );

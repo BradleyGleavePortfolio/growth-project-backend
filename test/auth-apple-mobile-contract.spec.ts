@@ -205,7 +205,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       IDENTITY_TOKEN,
       'Jane Clinic',
       'GP-CLINIC',
-      { ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' },
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       undefined,
       undefined,
     );
@@ -219,7 +219,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       IDENTITY_TOKEN,
       undefined,
       undefined,
-      { ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' },
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       undefined,
       'coach',
     );
@@ -237,7 +237,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       IDENTITY_TOKEN,
       'Jane Clinic',
       undefined,
-      { ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' },
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       'raw-nonce-0123456789abcdef',
       undefined,
     );

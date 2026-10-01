@@ -1,182 +1,19 @@
-import { ThrottlerException } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import { AuthController } from '../src/auth/auth.controller';
 import { AdminService } from '../src/admin/admin.service';
-import {
-  COACH_AI_MAX_ACTUAL_CENTS_DEFAULT,
-  FREE_COACH_AI_MONTHLY_CAP_USD_DEFAULT,
-  resolveFreeTierMaxActualCents,
-} from '../src/ai-credits/ai-credits.constants';
-import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
 import { PackagesService } from '../src/packages/packages.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import {
   AUTH_OAUTH_COACH_SIGNUP_PER_HOUR_DEFAULT,
-  LoginThrottleResetService,
   resolveOAuthCoachSignupPerHour,
 } from '../src/throttler/login-throttle-reset.service';
 
 // Clinic C13 fix round — cross-module regressions requested by the two
 // independent audits (Opus + Grok) of PR #597. The auth-service paths live in
 // test/auth-signup-role-choice.spec.ts; this file covers the surrounding
-// modules: the free-tier AI cap, the OAuth coach-signup throttle, the
+// modules: the OAuth coach-signup throttle, the
 // controller wiring, the admin invite-code sampler and the phantom sub-coach
 // promotion through PackagesService.
-
-describe('free-tier coach AI cap (Opus B2 / Grok B5)', () => {
-  const ORIG_FREE = process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-  const ORIG_MAX = process.env.COACH_AI_MAX_ACTUAL_CENTS;
-  afterEach(() => {
-    if (ORIG_FREE === undefined) delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    else process.env.FREE_COACH_AI_MONTHLY_CAP_USD = ORIG_FREE;
-    if (ORIG_MAX === undefined) delete process.env.COACH_AI_MAX_ACTUAL_CENTS;
-    else process.env.COACH_AI_MAX_ACTUAL_CENTS = ORIG_MAX;
-  });
-
-  it('defaults to $5 (500 cents) and never exceeds the global ceiling', () => {
-    delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    delete process.env.COACH_AI_MAX_ACTUAL_CENTS;
-    expect(FREE_COACH_AI_MONTHLY_CAP_USD_DEFAULT).toBe(5);
-    expect(resolveFreeTierMaxActualCents()).toBe(500);
-    expect(resolveFreeTierMaxActualCents()).toBeLessThan(COACH_AI_MAX_ACTUAL_CENTS_DEFAULT);
-
-    process.env.FREE_COACH_AI_MONTHLY_CAP_USD = '12.5';
-    expect(resolveFreeTierMaxActualCents()).toBe(1250);
-
-    // Raising it above the global cap is clamped: this knob only reduces spend.
-    process.env.FREE_COACH_AI_MONTHLY_CAP_USD = '999';
-    expect(resolveFreeTierMaxActualCents()).toBe(COACH_AI_MAX_ACTUAL_CENTS_DEFAULT);
-
-    // Garbage / negative -> default.
-    process.env.FREE_COACH_AI_MONTHLY_CAP_USD = 'lots';
-    expect(resolveFreeTierMaxActualCents()).toBe(500);
-    process.env.FREE_COACH_AI_MONTHLY_CAP_USD = '-3';
-    expect(resolveFreeTierMaxActualCents()).toBe(500);
-    // Zero is a legal "no free AI" setting.
-    process.env.FREE_COACH_AI_MONTHLY_CAP_USD = '0';
-    expect(resolveFreeTierMaxActualCents()).toBe(0);
-  });
-
-  function buildBudgetPrisma(opts: { tier: 'free' | 'pro' | null; existingRow?: any }) {
-    const rows: any[] = opts.existingRow ? [{ ...opts.existingRow }] : [];
-    const prisma: any = {
-      coachSubscription: {
-        findUnique: jest.fn(async () => (opts.tier ? { tier: opts.tier } : null)),
-      },
-      teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
-      coachAIBudget: {
-        findUnique: jest.fn(
-          async ({ where }: any) =>
-            rows.find((r) => r.coach_user_id === where.coach_user_id) ?? null,
-        ),
-        upsert: jest.fn(async ({ create }: any) => {
-          const row = {
-            id: 'b-1',
-            pack_paid_cents: 0,
-            pack_displayed_cents: 0,
-            actual_used_cents: 0,
-            total_pack_actual_cents: 0,
-            ...create,
-          };
-          rows.push(row);
-          return row;
-        }),
-        findMany: jest.fn(async () =>
-          rows.map((r) => ({ id: r.id, coach_user_id: r.coach_user_id })),
-        ),
-        updateMany: jest.fn(async ({ data }: any) => {
-          Object.assign(rows[0], data);
-          return { count: 1 };
-        }),
-      },
-    };
-    return { prisma, rows };
-  }
-
-  it("a NEW free-tier coach's first budget row is created with the $5 base, not $40", async () => {
-    delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    const { prisma, rows } = buildBudgetPrisma({ tier: 'free' });
-    const svc = new CoachAIBudgetService(prisma);
-    const snap = await svc.getOrCreateCurrentPeriod('free-coach');
-    expect(rows[0].base_actual_cents).toBe(500);
-    expect(snap.base_actual_cents).toBe(500);
-    expect(snap.total_actual_available_cents).toBe(500);
-    // canCharge refuses the 501st cent.
-    prisma.coachSubscription.findUnique.mockResolvedValue({ tier: 'free' });
-    expect((await svc.canCharge('free-coach', 500)).allowed).toBe(true);
-    expect((await svc.canCharge('free-coach', 501)).allowed).toBe(false);
-  });
-
-  it('a pro coach and a legacy coach without a subscription row keep the global $40 base', async () => {
-    delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    for (const tier of ['pro', null] as const) {
-      const { prisma, rows } = buildBudgetPrisma({ tier });
-      const svc = new CoachAIBudgetService(prisma);
-      const snap = await svc.getOrCreateCurrentPeriod('coach');
-      expect(rows[0].base_actual_cents).toBe(COACH_AI_MAX_ACTUAL_CENTS_DEFAULT);
-      expect(snap.total_actual_available_cents).toBe(COACH_AI_MAX_ACTUAL_CENTS_DEFAULT);
-    }
-  });
-
-  it('an EXISTING free coach provisioned with the $40 row is capped immediately in the snapshot (packs untouched)', async () => {
-    delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    const { prisma } = buildBudgetPrisma({
-      tier: 'free',
-      existingRow: {
-        id: 'b-old',
-        coach_user_id: 'free-coach',
-        period_start: new Date('2026-09-01T00:00:00Z'),
-        period_end: new Date('2026-10-01T00:00:00Z'),
-        base_actual_cents: 4000,
-        value_multiplier: new Prisma.Decimal(3.125),
-        base_displayed_cents: 12500,
-        pack_paid_cents: 1000,
-        pack_displayed_cents: 3125,
-        actual_used_cents: 450,
-        total_pack_actual_cents: 1000,
-      },
-    });
-    const svc = new CoachAIBudgetService(prisma);
-    const snap = await svc.getOrCreateCurrentPeriod('free-coach');
-    expect(snap.base_actual_cents).toBe(500);
-    expect(snap.base_displayed_cents).toBe(Math.round(500 * 3.125));
-    expect(snap.total_pack_actual_cents).toBe(1000); // paid credit survives
-    expect(snap.total_actual_available_cents).toBe(1500);
-    // 450 used + 1051 would exceed 1500; 1050 fits exactly.
-    expect((await svc.canCharge('free-coach', 1050)).allowed).toBe(true);
-    expect((await svc.canCharge('free-coach', 1051)).allowed).toBe(false);
-  });
-
-  it('rollover re-bases a free coach at the free cap and a pro coach at the global cap', async () => {
-    delete process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-    for (const [tier, expected] of [
-      ['free', 500],
-      ['pro', COACH_AI_MAX_ACTUAL_CENTS_DEFAULT],
-    ] as const) {
-      const { prisma, rows } = buildBudgetPrisma({
-        tier,
-        existingRow: {
-          id: 'b-roll',
-          coach_user_id: 'c',
-          period_start: new Date('2026-08-01T00:00:00Z'),
-          period_end: new Date('2026-09-01T00:00:00Z'),
-          base_actual_cents: 4000,
-          value_multiplier: new Prisma.Decimal(3.125),
-          base_displayed_cents: 12500,
-          pack_paid_cents: 0,
-          pack_displayed_cents: 0,
-          actual_used_cents: 3999,
-          total_pack_actual_cents: 0,
-        },
-      });
-      const svc = new CoachAIBudgetService(prisma);
-      const res = await svc.rolloverDueBudgets(new Date('2026-09-30T12:00:00Z'));
-      expect(res.rolled).toBe(1);
-      expect(rows[0].base_actual_cents).toBe(expected);
-      expect(rows[0].actual_used_cents).toBe(0);
-    }
-  });
-});
 
 describe('OAuth coach-signup throttle (Grok B5)', () => {
   const ORIG = process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR;
@@ -197,47 +34,10 @@ describe('OAuth coach-signup throttle (Grok B5)', () => {
     expect(resolveOAuthCoachSignupPerHour()).toBe(5);
   });
 
-  function buildStorage() {
-    const hits = new Map<string, number>();
-    const storage: any = {
-      increment: jest.fn(async (key: string) => {
-        const n = (hits.get(key) ?? 0) + 1;
-        hits.set(key, n);
-        return { totalHits: n, timeToExpire: 3600, isBlocked: false, timeToBlockExpire: 0 };
-      }),
-    };
-    return { hits, storage };
-  }
-
-  it('allows `limit` coach creates per IP per hour and refuses the next one with a ThrottlerException', async () => {
-    delete process.env.AUTH_OAUTH_COACH_SIGNUP_PER_HOUR;
-    const { storage, hits } = buildStorage();
-    const svc = new LoginThrottleResetService(storage);
-    for (let i = 0; i < 5; i++) {
-      await expect(svc.consumeOAuthCoachSignupSlot('10.0.0.1')).resolves.toBeUndefined();
-    }
-    await expect(svc.consumeOAuthCoachSignupSlot('10.0.0.1')).rejects.toBeInstanceOf(
-      ThrottlerException,
-    );
-    // Keyed per IP: a different IP is unaffected.
-    await expect(svc.consumeOAuthCoachSignupSlot('10.0.0.2')).resolves.toBeUndefined();
-    expect([...hits.keys()]).toEqual([
-      'oauth-coach-signup:ip:10.0.0.1',
-      'oauth-coach-signup:ip:10.0.0.2',
-    ]);
-  });
-
-  it('is a no-op without storage or without an IP, and fails open on a storage error', async () => {
-    await expect(
-      new LoginThrottleResetService(undefined).consumeOAuthCoachSignupSlot('1.1.1.1'),
-    ).resolves.toBeUndefined();
-    const { storage } = buildStorage();
-    const svc = new LoginThrottleResetService(storage);
-    await expect(svc.consumeOAuthCoachSignupSlot(null)).resolves.toBeUndefined();
-    expect(storage.increment).not.toHaveBeenCalled();
-    storage.increment.mockRejectedValueOnce(new Error('redis down'));
-    await expect(svc.consumeOAuthCoachSignupSlot('1.1.1.1')).resolves.toBeUndefined();
-  });
+  // The storage behaviour (block, per-IP key, fail-closed) is proven against
+  // the REAL @nestjs/throttler / Redis adapters in
+  // test/oauth-coach-signup-ceiling.spec.ts (Sol SOL-C13-A2) — the incrementing
+  // mock that used to live here hid the zero-block-duration reset.
 });
 
 describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {

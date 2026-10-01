@@ -72,10 +72,18 @@ function fakeClientAttach() {
     $transaction: jest.fn(async (fn: any) => fn({
       inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
       user: {
+        findUnique: jest.fn(async ({ where }: any) => users[where.id] ?? null),
         update: jest.fn(async ({ where, data }: any) => {
           const row = users[where.id];
           Object.assign(row, data);
           return row;
+        }),
+        // Canonical attach writes conditionally (student, coach_id IS NULL).
+        updateMany: jest.fn(async ({ where, data }: any) => {
+          const row = users[where.id];
+          if (!row || row.role !== where.role || (row.coach_id ?? null) !== where.coach_id) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
         }),
       },
     })),

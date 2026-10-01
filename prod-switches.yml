@@ -1413,9 +1413,3 @@ switches:
     auto_flip_on_in_prod: false
     owner: auth
     description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."
-  - name: FREE_COACH_AI_MONTHLY_CAP_USD
-    tier: optional
-    prod_default: STUB_ALLOWED
-    auto_flip_on_in_prod: false
-    owner: ai
-    description: "Clinic C13 — monthly ACTUAL AI spend ceiling (USD) for coaches on CoachSubscription.tier='free' (self-serve signups). Default 5. Can only lower the envelope relative to COACH_AI_MAX_ACTUAL_CENTS, never raise it; pro/enterprise and legacy coaches without a subscription row keep the global ceiling. Applied to new budget rows, monthly rollover, and the live ceiling of existing rows."

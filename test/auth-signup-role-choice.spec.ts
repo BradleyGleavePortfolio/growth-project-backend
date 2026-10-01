@@ -1251,6 +1251,7 @@ describe('C13 — coach_cannot_redeem (Opus B1 / Grok A2)', () => {
       user: {
         findUnique: jest.fn(async ({ where }: any) => users.find((u) => u.id === where.id) ?? null),
         update: jest.fn(),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
@@ -1286,13 +1287,14 @@ describe('C13 — coach_cannot_redeem (Opus B1 / Grok A2)', () => {
     const { svc, prisma } = buildInviteCodes([
       { id: 'stu', role: 'student', coach_id: null, email: 's@x.test' },
     ]);
-    prisma.user.update.mockResolvedValue({ role: 'student', coach_id: 'coach-x' });
     const res = await svc.attachUserToCoachByCode('stu', 'GP-COACHX');
-    expect(res).toEqual({ role: 'student', coach_id: 'coach-x' });
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'stu' },
-      data: { role: 'student', coach_id: 'coach-x' },
+    expect(res).toEqual({ role: 'student', coach_id: 'coach-x', already_attached: false });
+    // Conditional write (Sol SOL-C13-A1): only an unattached student, only coach_id.
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'stu', role: 'student', coach_id: null },
+      data: { coach_id: 'coach-x' },
     });
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
   it('POST /auth/select-role refuses to demote a coach to student (with or without a code) using the same code', async () => {

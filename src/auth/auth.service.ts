@@ -9,6 +9,7 @@ import {
   ConflictException,
   ForbiddenException,
   ServiceUnavailableException,
+  NotFoundException,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 // Named import (not `import ws from 'ws'`) — see supabase.service.ts for why.
@@ -97,7 +98,11 @@ function isInviteCodeUniqueViolation(err: unknown): boolean {
 }
 
 type SignupProvider = 'email' | 'google' | 'apple';
-type AuditCtx = { ip?: string | null; userAgent?: string | null };
+// `throttleIp` (Opus C13-C1) is the TRUSTED client IP the rate limiter uses
+// (Fly-Client-IP first, same resolution as UserThrottlerGuard). `ip` stays the
+// audit-row IP. The OAuth coach-signup ceiling must never key on the
+// client-controlled first X-Forwarded-For hop.
+type AuditCtx = { ip?: string | null; userAgent?: string | null; throttleIp?: string | null };
 
 @Injectable()
 export class AuthService {
@@ -819,7 +824,7 @@ export class AuthService {
         // Grok B5: a new COACH consumes a per-IP slot that login success
         // never resets (client creates are not counted — clinic QR intake).
         if (intendedRole === 'coach') {
-          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.ip);
+          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.throttleIp ?? ctx.ip);
         }
         user = await this.createSignupUser(
           {
@@ -888,7 +893,7 @@ export class AuthService {
     token: string,
     fullName?: string,
     inviteCode?: string,
-    ctx: { ip?: string | null; userAgent?: string | null } = {},
+    ctx: AuditCtx = {},
     raw_nonce?: string,
     intendedRole?: IntendedRole,
   ) {
@@ -1022,7 +1027,7 @@ export class AuthService {
         // C13: brand-new row — the only branch where intended_role applies.
         // Grok B5: per-IP ceiling on OAuth-minted coaches (see googleAuth).
         if (intendedRole === 'coach') {
-          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.ip);
+          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.throttleIp ?? ctx.ip);
         }
         user = await this.createSignupUser(
           {
@@ -1128,77 +1133,37 @@ export class AuthService {
       throw new ForbiddenException(coachCannotRedeemBody());
     }
 
-    // No invite code — preserve the pre-invite-code behavior exactly: student
-    // role, no coach linkage. Existing clients that never sent a code keep
-    // working unchanged.
+    if (!me) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Sol SOL-C13-A1 — /auth/select-role is NOT a second invite writer.
+    // Role is fixed at account creation (R-ROLE-CHOICE-1): every non-owner,
+    // non-coach-like account is already `student`, so the codeless path is a
+    // read-only acknowledgement and never rewrites `role`. With a code, the
+    // request is delegated to the ONE canonical attach operation
+    // (InviteCodesService.attachUserToCoachByCode), which refuses to
+    // re-parent a client already attached to a different coach, checks the
+    // intended recipient, the coach's subscription and seat capacity, and
+    // writes coach_id only through a conditional (student, coach_id IS NULL)
+    // update inside its transaction.
     if (!inviteCode) {
-      const user = await this.prisma.user.update({
-        where: { id: userId },
-        data: { role },
-      });
-      return { role: user.role };
+      if (me.role !== 'student') {
+        // Defensive: unreachable for the roles that exist today (owner and
+        // coach-like are refused above), but never silently rewrite a role.
+        throw new ForbiddenException(coachCannotRedeemBody());
+      }
+      return { role: me.role };
     }
 
-    // Invite-code path: validate, then atomically link the student to the
-    // coach and bump used_count. Run both writes in an interactive transaction
-    // and re-check the guard (revoked, expires_at, max_uses) inside so two
-    // concurrent redemptions can't slip through on the last seat.
-    const validation = await this.inviteCodes.validate(inviteCode);
-    if (!validation.valid) {
-      throw new BadRequestException('Invalid or expired invite code');
-    }
-
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        // updateMany is the guarded increment. `max_uses: null` means unlimited;
-        // otherwise we bump only if the row's used_count is still below its
-        // own max_uses. Prisma doesn't support column-to-column comparison in
-        // updateMany, so we fetch the current row first and include its
-        // used_count as a lower bound — effectively optimistic concurrency.
-        const current = await tx.inviteCode.findUnique({
-          where: { id: validation.invite_code_id },
-        });
-        if (!current || current.revoked) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.max_uses !== null && current.used_count >= current.max_uses) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-
-        const updated = await tx.inviteCode.updateMany({
-          where: {
-            id: validation.invite_code_id,
-            revoked: false,
-            used_count: current.used_count,
-          },
-          data: { used_count: { increment: 1 } },
-        });
-        if (updated.count !== 1) {
-          // Lost the race to another concurrent redemption — fail closed.
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-
-        const user = await tx.user.update({
-          where: { id: userId },
-          data: { role, coach_id: validation.coach_id },
-        });
-        return user;
-      });
+    const attached = await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
+    if (!attached.already_attached) {
       this.analytics.capture(userId, Events.INVITE_REDEEMED, {
         via: 'select_role',
-        coach_id: validation.coach_id,
+        coach_id: attached.coach_id,
       });
-      return { role: result.role, coach_id: result.coach_id };
-    } catch (err) {
-      if (err instanceof BadRequestException) throw err;
-      this.logger.warn(
-        `invite code redemption failed for ${inviteCode}: ${(err as Error).message}`,
-      );
-      throw new BadRequestException('Invalid or expired invite code');
     }
+    return { role: attached.role, coach_id: attached.coach_id };
   }
 
   async getMe(userId: string) {

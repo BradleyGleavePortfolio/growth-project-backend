@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -81,6 +82,9 @@ export function coachCannotRedeemBody(): { code: typeof INVITE_ATTACH_COACH_CANN
       'Coach accounts cannot redeem a client invite code. Your role was fixed when the account was created; ask the platform owner if it needs to change.',
   };
 }
+
+/** Rolls back a seat bump when a sibling request attached the same user to the same coach first. */
+class SameCoachAttachRace extends Error {}
 
 @Injectable()
 export class InviteCodesService {
@@ -575,7 +579,10 @@ export class InviteCodesService {
   // still pointed at them) and leave their CoachSubscription + invite code
   // live. The role is fixed at account creation (R-ROLE-CHOICE-1); a change
   // is an OWNER action, never a side effect of typing a code.
-  async attachUserToCoachByCode(userId: string, code: string) {
+  async attachUserToCoachByCode(
+    userId: string,
+    code: string,
+  ): Promise<{ role: string; coach_id: string | null; already_attached: boolean }> {
     // Resolve to a coach_id, regardless of whether the code is a
     // CoachProfile default code or a legacy InviteCode row.
     const profile = await this.prisma.coachProfile.findUnique({
@@ -611,6 +618,20 @@ export class InviteCodesService {
         `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (coach_cannot_redeem)`,
       );
       throw new ForbiddenException(coachCannotRedeemBody());
+    }
+
+    // Sol SOL-C13-A1 — tenancy: an existing client is never re-parented by
+    // typing a code. Same coach → idempotent no-op (no seat consumed, role
+    // untouched); different coach → 409. The C03 slice (#599) builds the full
+    // canonical attach contract on top of this guard.
+    if (me.coach_id && resolvedCoachId) {
+      if (me.coach_id === resolvedCoachId) {
+        return { role: me.role, coach_id: me.coach_id, already_attached: true };
+      }
+      throw new ConflictException({
+        code: 'already_attached_to_different_coach',
+        message: 'You are already attached to a different coach',
+      });
     }
 
     // Atomic linkage + (if applicable) used_count bump.
@@ -649,16 +670,36 @@ export class InviteCodesService {
         }
       }
 
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: { role: 'student', coach_id: resolvedCoachId },
+      // Conditional write: only a student with NO coach is attached, and only
+      // coach_id changes. A concurrent attach to another coach or a concurrent
+      // promotion makes count 0 and rolls the seat bump back.
+      const updated = await tx.user.updateMany({
+        where: { id: userId, role: 'student', coach_id: null },
+        data: { coach_id: resolvedCoachId },
       });
+      if (updated.count !== 1) {
+        const now = await tx.user.findUnique({ where: { id: userId } });
+        if (now && now.role === 'student' && now.coach_id === resolvedCoachId) {
+          // Lost a race to a sibling attach to the SAME coach. Throw to roll
+          // back this request's seat bump; converted to a no-op below.
+          throw new SameCoachAttachRace();
+        }
+        throw new ConflictException({
+          code: 'already_attached_to_different_coach',
+          message: 'You are already attached to a different coach',
+        });
+      }
       this.analytics.capture(userId, Events.INVITE_REDEEMED, {
         via: 'attach_code',
         coach_id: resolvedCoachId,
         legacy_invite_row: !!inviteCodeRowId,
       });
-      return { role: updated.role, coach_id: updated.coach_id };
+      return { role: 'student', coach_id: resolvedCoachId, already_attached: false };
+    }).catch((err: unknown) => {
+      if (err instanceof SameCoachAttachRace) {
+        return { role: 'student', coach_id: resolvedCoachId, already_attached: true };
+      }
+      throw err;
     });
   }
 

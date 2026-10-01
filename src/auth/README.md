@@ -48,7 +48,13 @@ hierarchy. Every authenticated request in the API passes through this module.
    atomically link the user to the coach via `InviteCodesService`.
 5. `/auth/select-role` is the post-signup role picker. Self-service is
    restricted to `student` — coach elevation is operator-only (see
-   `auth.service.ts` `selectRole` for the audit trail).
+   `auth.service.ts` `selectRole` for the audit trail). It is **not** an
+   invite writer: without a code it is a read-only acknowledgement (role is
+   fixed at signup); with a code it delegates to the one canonical attach
+   operation, `InviteCodesService.attachUserToCoachByCode`, so it can never
+   re-parent a client attached to another coach (409
+   `already_attached_to_different_coach`), never demote a coach/sub-coach/
+   owner, and applies the same recipient / subscription / seat checks.
 6. `/auth/become-coach` is **hard-gated off by default** on every
    deployment. It returns a structured `403 self_service_promotion_disabled`
    pointing the caller at the canonical owner-only path
@@ -202,7 +208,14 @@ honoured **only** on the branch that inserts a brand-new `User` row
 - Each OAuth-minted **coach** consumes a per-IP slot
   (`AUTH_OAUTH_COACH_SIGNUP_PER_HOUR`, default 5/h, key
   `oauth-coach-signup:ip:<ip>`, 429 on overflow); client intake through QR
-  codes is not counted. A successful OAuth call that **created** an
+  codes is not counted. The IP is the trusted `Fly-Client-IP` (same as the
+  guard), never the client-controlled first `X-Forwarded-For` hop. Over the
+  limit the key stays **blocked for the full hour** (positive block
+  duration; a zero block let the real adapters reset the count), and the
+  ceiling **fails closed**: a throttler-storage error returns 503
+  `coach_signup_temporarily_unavailable` instead of minting a coach
+  (`withFailOpenStorage(...).incrementStrict`). Proven against the real
+  in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. A successful OAuth call that **created** an
   account no longer resets the login-throttle counters — only a
   returning user's success does.
 - A coach can never be demoted or re-parented by a client invite code.
@@ -227,11 +240,6 @@ honoured **only** on the branch that inserts a brand-new `User` row
   currently **no** verified-email check in front of coach-only money /
   payout actions (Stripe Connect onboarding, storefront publishing) — that
   is a documented follow-up, not part of this change.
-- Free-tier coaches (any account whose `CoachSubscription.tier` is `free`)
-  get `FREE_COACH_AI_MONTHLY_CAP_USD` (default **$5**) of actual AI spend
-  per month instead of the global `COACH_AI_MAX_ACTUAL_CENTS` ($40); the
-  setting is clamped to the global cap and can only reduce spend. See
-  `src/ai-credits/`.
 
 `JWT_SECRET` is reserved and currently unused — verification is JWKS-based.
 

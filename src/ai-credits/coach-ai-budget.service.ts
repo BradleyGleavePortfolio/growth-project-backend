@@ -2,9 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
-  resolveFreeTierMaxActualCents,
   resolveMaxActualCents,
   resolveValueMultiplier,
+  resolveBaseDisplayedCents,
 } from './ai-credits.constants';
 import { bankersRoundPaidToActual } from './bankers-round.util';
 
@@ -141,17 +141,10 @@ export class CoachAIBudgetService {
     tx: DbClient,
     coachId: string,
   ): Promise<BudgetSnapshot> {
-    // Clinic C13 fix round: the base envelope is tier-aware. Free-tier
-    // coaches get FREE_COACH_AI_MONTHLY_CAP_USD (default $5) instead of the
-    // global $40; the clamp is applied to the SNAPSHOT as well as the stored
-    // row so already-provisioned free coaches are capped immediately, not
-    // only after the next rollover. Packs the coach paid for are untouched.
-    const tierBase = await this.resolveTierBaseActualCents(tx, coachId);
-
     const existing = await tx.coachAIBudget.findUnique({
       where: { coach_user_id: coachId },
     });
-    if (existing) return this.toSnapshot(existing, tierBase);
+    if (existing) return this.toSnapshot(existing);
 
     const now = new Date();
     const periodStart = startOfCurrentMonth(now);
@@ -167,29 +160,13 @@ export class CoachAIBudgetService {
         coach_user_id: coachId,
         period_start: periodStart,
         period_end: periodEnd,
-        base_actual_cents: tierBase,
+        base_actual_cents: resolveMaxActualCents(),
         value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
-        base_displayed_cents: Math.round(tierBase * resolveValueMultiplier()),
+        base_displayed_cents: resolveBaseDisplayedCents(),
       },
       update: {},
     });
-    return this.toSnapshot(row, tierBase);
-  }
-
-  /**
-   * Base actual-cents envelope for this coach's tier. `tier='free'` ->
-   * resolveFreeTierMaxActualCents(); anything else, or no CoachSubscription
-   * row (legacy coaches provisioned before billing existed), -> the global
-   * ceiling. Never higher than the global ceiling.
-   */
-  private async resolveTierBaseActualCents(tx: DbClient, coachId: string): Promise<number> {
-    const globalMax = resolveMaxActualCents();
-    const sub = await tx.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { tier: true },
-    });
-    if (sub?.tier === 'free') return Math.min(globalMax, resolveFreeTierMaxActualCents());
-    return globalMax;
+    return this.toSnapshot(row);
   }
 
   /**
@@ -519,14 +496,13 @@ export class CoachAIBudgetService {
   async rolloverDueBudgets(now: Date = new Date()): Promise<{ rolled: number }> {
     const due = await this.prisma.coachAIBudget.findMany({
       where: { period_end: { lte: now } },
-      select: { id: true, coach_user_id: true },
+      select: { id: true },
     });
     if (due.length === 0) return { rolled: 0 };
     const periodStart = startOfCurrentMonth(now);
     const periodEnd = startOfNextMonth(periodStart);
     let rolled = 0;
     for (const row of due) {
-      const tierBase = await this.resolveTierBaseActualCents(this.prisma, row.coach_user_id);
       const result = await this.prisma.coachAIBudget.updateMany({
         where: { id: row.id, period_end: { lte: now } },
         data: {
@@ -534,9 +510,9 @@ export class CoachAIBudgetService {
           period_end: periodEnd,
           actual_used_cents: 0,
           last_rollover_at: now,
-          base_actual_cents: tierBase,
+          base_actual_cents: resolveMaxActualCents(),
           value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
-          base_displayed_cents: Math.round(tierBase * resolveValueMultiplier()),
+          base_displayed_cents: resolveBaseDisplayedCents(),
           // pack_paid_cents / pack_displayed_cents / total_pack_actual_cents
           // intentionally left alone — paid credit carries over.
         },
@@ -551,44 +527,34 @@ export class CoachAIBudgetService {
    * stored total_pack_actual_cents column instead of round-the-sum so
    * the ceiling matches the per-pack receipts exactly.
    */
-  private toSnapshot(
-    row: {
-      id: string;
-      coach_user_id: string;
-      period_start: Date;
-      period_end: Date;
-      base_actual_cents: number;
-      value_multiplier: Prisma.Decimal;
-      base_displayed_cents: number;
-      pack_paid_cents: number;
-      pack_displayed_cents: number;
-      actual_used_cents: number;
-      total_pack_actual_cents: number;
-    },
-    // Tier ceiling on the base envelope (clinic C13 fix round). The stored
-    // row may still carry the global base from before the cap existed or
-    // from before a tier downgrade; the effective base is the smaller one.
-    tierBaseCap: number = Number.POSITIVE_INFINITY,
-  ): BudgetSnapshot {
+  private toSnapshot(row: {
+    id: string;
+    coach_user_id: string;
+    period_start: Date;
+    period_end: Date;
+    base_actual_cents: number;
+    value_multiplier: Prisma.Decimal;
+    base_displayed_cents: number;
+    pack_paid_cents: number;
+    pack_displayed_cents: number;
+    actual_used_cents: number;
+    total_pack_actual_cents: number;
+  }): BudgetSnapshot {
     const multiplier = Number(row.value_multiplier);
-    const baseActual = Math.min(row.base_actual_cents, tierBaseCap);
-    const baseDisplayed =
-      baseActual === row.base_actual_cents
-        ? row.base_displayed_cents
-        : Math.round(baseActual * multiplier);
     return {
       id: row.id,
       coach_user_id: row.coach_user_id,
       period_start: row.period_start,
       period_end: row.period_end,
-      base_actual_cents: baseActual,
+      base_actual_cents: row.base_actual_cents,
       value_multiplier: multiplier,
-      base_displayed_cents: baseDisplayed,
+      base_displayed_cents: row.base_displayed_cents,
       pack_paid_cents: row.pack_paid_cents,
       pack_displayed_cents: row.pack_displayed_cents,
       actual_used_cents: row.actual_used_cents,
       total_pack_actual_cents: row.total_pack_actual_cents,
-      total_actual_available_cents: baseActual + row.total_pack_actual_cents,
+      total_actual_available_cents:
+        row.base_actual_cents + row.total_pack_actual_cents,
     };
   }
 }

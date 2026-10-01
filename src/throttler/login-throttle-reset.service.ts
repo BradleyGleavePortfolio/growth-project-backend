@@ -1,7 +1,7 @@
-import { Injectable, Optional, Logger } from '@nestjs/common';
+import { Injectable, Optional, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { InjectThrottlerStorage, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
-import { THROTTLER_NAMES } from './throttler.config';
+import { THROTTLER_NAMES, strictIncrementFor } from './throttler.config';
 
 // Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
 // minted through /auth/google and /auth/apple. Those routes carry login
@@ -18,6 +18,27 @@ export function resolveOAuthCoachSignupPerHour(): number {
   return Math.min(n, 500);
 }
 const OAUTH_COACH_SIGNUP_TTL_MS = 3_600_000;
+/**
+ * Sol SOL-C13-A2 — the ceiling must BLOCK, not reset. @nestjs/throttler's
+ * adapters only hold a key over its limit for `blockDuration`; with 0 the
+ * in-memory adapter resets the counter on the overflowing call (hits ran
+ * 1..5,1..5,…) and the Redis adapter runs `SET … PX 0`, which errors. A
+ * full-window block keeps every over-limit attempt rejected until the hour
+ * elapses. Exported for the real-storage tests.
+ */
+export const OAUTH_COACH_SIGNUP_BLOCK_MS = OAUTH_COACH_SIGNUP_TTL_MS;
+/**
+ * Dedicated storage namespace. Not a guard-registered throttler on purpose:
+ * the in-memory adapter keeps expiry timers per throttler NAME, and its
+ * block-expiry path clears every timer for that name, so sharing
+ * `auth-signup` would disturb the guard's /auth/register counters.
+ */
+export const OAUTH_COACH_SIGNUP_THROTTLER = 'oauth-coach-signup';
+export function oauthCoachSignupKey(ip: string | null | undefined): string {
+  const trimmed = (ip ?? '').trim();
+  return `oauth-coach-signup:ip:${trimmed.length > 0 ? trimmed : 'unknown'}`;
+}
+
 
 /**
  * LoginThrottleResetService — clears the per-IP auth-login rate-limit
@@ -56,35 +77,42 @@ export class LoginThrottleResetService {
 
   /**
    * Consume one per-IP slot for an OAuth-minted coach account. Throws the
-   * throttler's own 429 when the hourly ceiling is exceeded. Never reset by
-   * a successful login (unlike the login windows above). No storage (unit
-   * tests / throttling disabled) means no limit, same as the guard itself.
+   * throttler's own 429 when the hourly ceiling is exceeded, and keeps
+   * rejecting for the rest of the window (positive block duration). Never
+   * reset by a successful login. FAILS CLOSED: a storage error (Redis down,
+   * adapter error) refuses the coach creation with 503 instead of minting an
+   * account — the production fail-open wrapper is bypassed via
+   * `incrementStrict`. A missing IP shares one `unknown` bucket rather than
+   * skipping the ceiling. No storage at all (throttler module absent in a
+   * unit harness) means no limit, same as the guard itself.
    */
   async consumeOAuthCoachSignupSlot(ip: string | null | undefined): Promise<void> {
-    if (!this.storage || !ip) return;
+    if (!this.storage) return;
     const limit = resolveOAuthCoachSignupPerHour();
-    let totalHits = 0;
+    const key = oauthCoachSignupKey(ip);
+    let rec: { totalHits: number; isBlocked: boolean };
     try {
-      const rec = await this.storage.increment(
-        `oauth-coach-signup:ip:${ip}`,
+      rec = await strictIncrementFor(this.storage)(
+        key,
         OAUTH_COACH_SIGNUP_TTL_MS,
         limit,
-        0,
-        THROTTLER_NAMES.AUTH_SIGNUP,
+        OAUTH_COACH_SIGNUP_BLOCK_MS,
+        OAUTH_COACH_SIGNUP_THROTTLER,
       );
-      totalHits = rec.totalHits;
     } catch (err) {
-      // Storage outage: fail open (the login throttles still apply) but say so.
       this.logger.warn(
-        `Could not count oauth coach signup for ip:${ip}: ${
+        `oauth coach signup ceiling unavailable for ${key} (fail closed): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      return;
+      throw new ServiceUnavailableException({
+        code: 'coach_signup_temporarily_unavailable',
+        message: 'Coach sign-up is temporarily unavailable. Please try again shortly.',
+      });
     }
-    if (totalHits > limit) {
+    if (rec.isBlocked || rec.totalHits > limit) {
       this.logger.warn(
-        `oauth coach signup ceiling hit for ip:${ip} (${totalHits}/${limit} per hour)`,
+        `oauth coach signup ceiling hit for ${key} (${rec.totalHits}/${limit} per hour)`,
       );
       throw new ThrottlerException();
     }

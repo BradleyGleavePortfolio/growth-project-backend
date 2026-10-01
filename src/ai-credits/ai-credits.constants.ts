@@ -72,29 +72,6 @@ export function resolveMaxActualCents(): number {
   return n;
 }
 
-/**
- * Clinic C13 fix round (Opus B2 / Grok B5) — free-tier monthly cap on ACTUAL
- * provider spend. Since C13 anyone can self-serve a `tier='free'` coach
- * account, so the $40 default envelope became a free faucet. Read from
- * FREE_COACH_AI_MONTHLY_CAP_USD (whole or fractional dollars), default $5.
- * Clamped to [0, resolveMaxActualCents()] — this setting can only REDUCE a
- * free coach's ceiling relative to the global cap, never raise it. Applies to
- * coaches whose CoachSubscription.tier is 'free'; pro/enterprise (and legacy
- * coaches with no subscription row) keep the global ceiling.
- */
-export const FREE_COACH_AI_MONTHLY_CAP_USD_DEFAULT = 5;
-
-export function resolveFreeTierMaxActualCents(): number {
-  const globalMax = resolveMaxActualCents();
-  const raw = process.env.FREE_COACH_AI_MONTHLY_CAP_USD;
-  let usd = FREE_COACH_AI_MONTHLY_CAP_USD_DEFAULT;
-  if (raw !== undefined && raw !== '') {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0) usd = n;
-  }
-  return Math.min(globalMax, Math.round(usd * 100));
-}
-
 /** Resolve the multiplier at call time (Decimal precision lives in the schema). */
 export function resolveValueMultiplier(): number {
   const raw = process.env.COACH_AI_VALUE_MULTIPLIER;

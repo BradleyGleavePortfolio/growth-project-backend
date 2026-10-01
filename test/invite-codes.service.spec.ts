@@ -413,17 +413,15 @@ describe('InviteCodesService', () => {
         id: 'student-1',
         role: 'student',
       });
-      prismaMock.user.update.mockResolvedValue({
-        id: 'student-1',
-        role: 'student',
-        coach_id: 'coach-1',
-      });
+      prismaMock.user.updateMany = jest.fn().mockResolvedValue({ count: 1 });
       const r = await service.attachUserToCoachByCode('student-1', 'GP-OK1234');
-      expect(r).toEqual({ role: 'student', coach_id: 'coach-1' });
-      expect(prismaMock.user.update).toHaveBeenCalledWith({
-        where: { id: 'student-1' },
-        data: { role: 'student', coach_id: 'coach-1' },
+      expect(r).toMatchObject({ role: 'student', coach_id: 'coach-1', already_attached: false });
+      // Conditional attach; role is never rewritten (Sol SOL-C13-A1).
+      expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'student-1', role: 'student', coach_id: null },
+        data: { coach_id: 'coach-1' },
       });
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
   });
 });
