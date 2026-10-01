@@ -271,13 +271,14 @@ describe('Store review blockers — Roman send route guard and coach-note exclus
 
   it('no client-facing or AI context path reads CoachingSession.coach_notes_md', () => {
     const SRC = join(__dirname, '..', '..', 'src');
+    // A Prisma select (`coach_notes_md: true`) or a field read
+    // (`.coach_notes_md`) anywhere under src/ai or src/roman is a leak; prose
+    // mentions in exclusion comments are allowed.
     const readers = walk(join(SRC, 'ai'))
       .concat(walk(join(SRC, 'roman')))
-      .filter((f) => /coach_notes_md/.test(readFileSync(f, 'utf8')))
-      .map((f) => f.slice(SRC.length + 1))
-      .filter((rel) => !/^(ai\/client-ai-context\.(service|types)\.ts)$/.test(rel));
+      .filter((f) => /coach_notes_md\s*:\s*true|\.coach_notes_md\b/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(SRC.length + 1));
     expect(readers).toEqual([]);
-    // the two allowed mentions are the exclusion comments, never a Prisma select
     const ctx = readFileSync(join(SRC, 'ai', 'client-ai-context.service.ts'), 'utf8');
     expect(ctx).not.toMatch(/coach_notes_md: true/);
     expect(ctx).toMatch(/coach_note: null/);
