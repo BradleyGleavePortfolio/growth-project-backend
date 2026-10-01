@@ -35,7 +35,10 @@ function buildAdapter() {
   // (fail closed). These tests exercise retry/cost/log behaviour, so they bind
   // an allow-all gate; the gate's own behaviour is covered in
   // test/roman/roman-consent.spec.ts.
-  const allowAllGate = { assertAiConsent: jest.fn(async () => undefined) };
+  const allowAllGate = {
+    assertAiConsent: jest.fn(async () => undefined),
+    consentedSubjects: jest.fn(async (ids: readonly string[]) => new Set(ids)),
+  };
   const adapter = new AnthropicAdapter(config, prisma, undefined, allowAllGate);
   return { adapter, prisma, aiCalls, allowAllGate };
 }

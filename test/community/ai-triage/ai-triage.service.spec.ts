@@ -1,3 +1,5 @@
+import { ALLOW_ALL_CONSENT_GATE } from '../../helpers/ai-consent-gate.double';
+import type { AiSubjectConsentGate } from '../../../src/ai/adapters/ai-subject-consent.gate';
 import { ForbiddenException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import {
@@ -76,12 +78,19 @@ function makeMocks(): Mocks {
   };
 }
 
-function build(mocks: Mocks, cache = new TriageCacheService()): AiTriageService {
+// R2: by default every author holds a live AI-processing grant; the consent
+// filter itself is covered in test/ai/ai-consent-boundaries.spec.ts.
+function build(
+  mocks: Mocks,
+  cache = new TriageCacheService(),
+  gate: AiSubjectConsentGate = ALLOW_ALL_CONSENT_GATE,
+): AiTriageService {
   return new AiTriageService(
     mocks.gateway as unknown as AiGatewayService,
     mocks.repo as unknown as CommunityCoachInboxRepository,
     mocks.access as unknown as CommunityAccessService,
     cache,
+    gate,
   );
 }
 

@@ -43,6 +43,15 @@ import { AI_SUBJECT_CONSENT_GATE } from '../adapters/ai-subject-consent.gate';
     CoachAIService,
     WeeklyInsightCron,
   ],
-  exports: [AnthropicAdapter, ClientContextService, CoachAIStateService, CoachAIService],
+  // AI_SUBJECT_CONSENT_GATE is exported (this module is @Global) so every AI
+  // provider boundary outside the adapter (AiGatewayService, churn drafts,
+  // community triage, AiService.chat) can inject the same data-subject gate.
+  exports: [
+    AnthropicAdapter,
+    ClientContextService,
+    CoachAIStateService,
+    CoachAIService,
+    AI_SUBJECT_CONSENT_GATE,
+  ],
 })
 export class CoachAIModule {}
