@@ -1717,18 +1717,21 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'FEATURE_DUNNING_V2',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true")',
     reason: 'Dunning v2 flag.',
   },
   {
     name: 'FEATURE_COMMUNITY_SCHEMA',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → on (only "false" disables)',
     reason: 'Community schema presence flag; downstream community mounts back off when "false".',
   },
   {
     name: 'FEATURE_COMMUNITY_API',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true"; FEATURE_COMMUNITY_API_ALLOWLIST can open it per user)',
     reason: 'Community API master flag. Set at the Wave-1 launch deploy.',
   },
@@ -1742,12 +1745,14 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'FEATURE_COMMUNITY_MESSAGES',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true")',
     reason: 'Community message writes. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_POSTS',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true")',
     reason: 'Community post writes. Set at the Wave-1 launch deploy.',
   },
@@ -1760,12 +1765,14 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'FEATURE_COMMUNITY_PUSH',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true")',
     reason: 'Community push notifications. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_REALTIME',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only "true")',
     reason: 'Community realtime. Set at the Wave-1 launch deploy.',
   },
@@ -1844,18 +1851,21 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'FEATURE_MWB_AUTOSAVE_UNDO',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder autosave + undo (needs MWB_AUTOSAVE_LOCK_TOKEN_SECRET when on).',
   },
   {
     name: 'FEATURE_MWB_TEMPLATES',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder templates.',
   },
   {
     name: 'FEATURE_NAMED_REGIMES',
     tier: 'optional',
+    launch: 'switch',
     default: 'unset → off (only explicit true)',
     reason: 'Named regimes.',
   },

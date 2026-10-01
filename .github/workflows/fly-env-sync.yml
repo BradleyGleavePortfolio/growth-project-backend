@@ -1,7 +1,12 @@
 name: Fly Env Sync (operator)
 
-# S-ENVTRUTH. Operator workflow that copies an explicit allowlist of GitHub
-# Actions secrets to the production Fly app with `fly secrets set --stage`.
+# S-ENVTRUTH. Operator workflow that stages the desired state in
+# .github/fly-env-desired-state.json on the production Fly app with
+# `fly secrets set --stage`:
+#   - `secrets`: an explicit allowlist of GitHub Actions secrets (copied by name)
+#   - `flags`:   literal launch-flag values ("true" / "false") from the manifest
+#   - `pending_flags` is documentation only and is NEVER applied. A flag flip is
+#     one audited PR that moves an entry from pending_flags to flags.
 #
 # Why --stage: staged secrets do NOT restart machines. They are applied at the
 # next `fly deploy` (or an explicit `fly secrets deploy`), so this workflow can
@@ -10,10 +15,14 @@ name: Fly Env Sync (operator)
 # What it does:
 #   1. Guards: app allowlist, confirm=SET, `production` environment (same
 #      pattern as fly-secrets-set.yml), FLY_API_TOKEN present.
-#   2. For every allowlisted name, reads the GitHub secret of the SAME name.
+#   2. Validates the manifest (every name registered, flag values exactly
+#      "true"/"false", no name in two blocks). For every `secrets` name, reads
+#      the GitHub secret of the SAME name.
 #      Unset or empty secrets are SKIPPED (never pushed as empty, never fail
 #      the run) so the operator can fill the list in over time.
-#   3. Stages the non-empty ones in one `fly secrets set --stage` call.
+#   3. Stages the non-empty secrets plus the `flags` entries in one
+#      `fly secrets set --stage` call. Flag values are printed (they are
+#      booleans from a reviewed file); secret values never are.
 #   4. Confirms the staged names appear in `fly secrets list` and prints
 #      NAMES ONLY (no digests, no values).
 #
@@ -29,7 +38,8 @@ name: Fly Env Sync (operator)
 #   - It does not push the Apple sign-in keys; the account-deletion lane's own
 #     workflow owns those.
 #
-# Every allowlisted name must be registered in src/common/env-validation.ts;
+# Every manifest name must be registered in src/common/env-validation.ts, and
+# the env block below must list exactly the manifest's `secrets`;
 # test/ci/fly-env-workflows.spec.ts enforces that plus the guards above.
 #
 # How to run (operator):
@@ -98,13 +108,25 @@ jobs:
           fi
           echo "FLY_API_TOKEN is configured."
 
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Validate desired-state manifest
+        run: |
+          set -euo pipefail
+          node scripts/env-truth/fly-env-desired-state.js validate .github/fly-env-desired-state.json src/common/env-validation.ts
+
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
 
-      - name: Stage allowlisted secrets (names only in output)
+      - name: Stage allowlisted secrets and manifest flags (secret names only in output)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
-          # BEGIN ALLOWLIST (each maps to the GitHub secret of the same name)
+          # BEGIN ALLOWLIST (each maps to the GitHub secret of the same name;
+          # must equal `secrets` in .github/fly-env-desired-state.json)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
@@ -135,34 +157,10 @@ jobs:
         run: |
           set +x
           set -euo pipefail
-          allowlist=(
-            GOOGLE_CLIENT_IDS
-            GOOGLE_OAUTH_CLIENT_ID
-            GOOGLE_OAUTH_CLIENT_SECRET
-            GOOGLE_OAUTH_REDIRECT_URI
-            METRICS_AUTH_TOKEN
-            DATA_EXPORT_DOWNLOAD_SECRET
-            CONTRACT_PDF_URL_SECRET
-            SCHEDULING_WEBHOOK_SECRET
-            GARMIN_WEBHOOK_SALT
-            WHOOP_WEBHOOK_SALT
-            FITBIT_CLIENT_ID
-            FITBIT_CLIENT_SECRET
-            GARMIN_CLIENT_ID
-            GARMIN_CLIENT_SECRET
-            OURA_CLIENT_ID
-            OURA_CLIENT_SECRET
-            POLAR_CLIENT_ID
-            POLAR_CLIENT_SECRET
-            STRAVA_CLIENT_ID
-            STRAVA_CLIENT_SECRET
-            WAHOO_CLIENT_ID
-            WAHOO_CLIENT_SECRET
-            WHOOP_CLIENT_ID
-            WHOOP_CLIENT_SECRET
-            WITHINGS_CLIENT_ID
-            WITHINGS_CLIENT_SECRET
-          )
+          manifest=.github/fly-env-desired-state.json
+          registry=src/common/env-validation.ts
+          mapfile -t allowlist < <(node scripts/env-truth/fly-env-desired-state.js secrets "${manifest}" "${registry}")
+          mapfile -t flag_args < <(node scripts/env-truth/fly-env-desired-state.js flags "${manifest}" "${registry}")
           args=()
           staged=()
           skipped=()
@@ -176,6 +174,13 @@ jobs:
             fi
           done
           printf 'skipped (unset or empty in GitHub secrets): %s\n' "${skipped[*]:-none}"
+          # Manifest flags: literal "true"/"false" values, validated above.
+          # pending_flags are never read here.
+          for assignment in "${flag_args[@]}"; do
+            args+=("${assignment}")
+            staged+=("${assignment%%=*}")
+            printf 'flag: %s\n' "${assignment}"
+          done
           if [ "${#staged[@]}" -eq 0 ]; then
             echo "Nothing to stage."
             exit 0
@@ -185,7 +190,7 @@ jobs:
           flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null
           unset args
           printf '%s\n' "${staged[@]}" > staged-names.txt
-          echo "Staged ${#staged[@]} secret(s). They apply at the next deploy."
+          echo "Staged ${#staged[@]} name(s). They apply at the next deploy."
 
       - name: Confirm staged names are listed on Fly (names only)
         env:

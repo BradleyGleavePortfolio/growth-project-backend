@@ -111,7 +111,7 @@ How to read it: `Registered but missing` is your fill-in list (check each name's
 
 Requirement: `FLY_API_TOKEN` must be allowed to open an ssh session on the app (an org or app deploy token is enough; a read-only token is not).
 
-### 2. Fly Env Sync: push allowlisted GitHub secrets to Fly
+### 2. Fly Env Sync: push allowlisted GitHub secrets and manifest flags to Fly
 
 `.github/workflows/fly-env-sync.yml`. Use it after you have added the values as GitHub Actions secrets with the same names.
 
@@ -123,7 +123,22 @@ What it does: for each name on its allowlist (Google sign-in and calendar OAuth,
 
 `GOOGLE_CLIENT_IDS` is marked required for launch (`launch: 'required'` in `ENV_RULES`). The Google Calendar names (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_CALENDAR_WEBHOOK_TOKEN` and the calendar flags) are an optional integration, not a launch dependency: leave them unset or false. They stay on the allowlist only so a real value can be pushed later; when their GitHub secrets are unset the sync skips them.
 
-To add a name to the allowlist, add it to both the `env:` block and the `allowlist=( ... )` array of the staging step, and register it in `ENV_RULES`. `test/ci/fly-env-workflows.spec.ts` fails if the two lists disagree, if a name is not registered, if `--stage` or a guard is removed, or if any step echoes a value.
+#### The desired-state manifest: secrets and launch flags
+
+The sync reads `.github/fly-env-desired-state.json`, which has four blocks:
+
+| Block | What the workflow does with it |
+|---|---|
+| `secrets` | Names only. Each is copied from the GitHub secret of the same name; unset or empty ones are skipped. |
+| `flags` | Literal launch-flag values (`"true"` or `"false"`). Staged on Fly with the secrets, in the same `--stage` call. Flag values are printed in the log; secret values never are. |
+| `pending_flags` | Not applied. The workflow never reads this block. It holds the Wave A day-1 flags with the value they should get, what needs them, and their gate. |
+| `excluded` | Names deliberately left out, with the reason (for example `FEATURE_MWB_AI_LIVE_CREATE`, which needs AI consent enforcement first). |
+
+To flip a flag, open one PR that moves the entry from `pending_flags` to `flags` (keep only the value, for example `"FEATURE_COMMUNITY_API": "true"`), get it reviewed and merged, then dispatch the sync and deploy. That PR is the audit record. The workflow validates the manifest first and stops if a name is not registered, a flag value is not exactly `"true"` or `"false"`, or a name appears in two blocks.
+
+Wave A pending flags today: `FEATURE_COMMUNITY_SCHEMA`, `FEATURE_COMMUNITY_API`, `FEATURE_COMMUNITY_POSTS`, `FEATURE_COMMUNITY_MESSAGES`, `FEATURE_COMMUNITY_PUSH`, `FEATURE_COMMUNITY_REALTIME` (the community tab, Hall and Cohorts), `BOOKING_REMINDERS_ENABLED`, `FEATURE_MWB_TEMPLATES`, `FEATURE_MWB_AUTOSAVE_UNDO`, `FEATURE_NAMED_REGIMES` and `FEATURE_DUNNING_V2`. Each has `prod_default: ON` in `prod-switches.yml`, so until they are set the strict deploy board shows them as WARN.
+
+To add a secret, add it to `secrets` in the manifest and to the `env:` block of the staging step, and register it in `ENV_RULES`. `test/ci/fly-env-workflows.spec.ts` fails if the two lists disagree, if a name is not registered, if `pending_flags` is read by the workflow, if `--stage` or a guard is removed, or if any step echoes a secret value.
 
 After a sync, deploy as usual, then run Fly Env Truth again to confirm.
 

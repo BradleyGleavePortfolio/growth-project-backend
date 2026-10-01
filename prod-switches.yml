@@ -162,10 +162,10 @@ switches:
     description: "Phase 10 — per-user bloodwork POST writes per minute (POST /bloodwork/*). Defaults to 30; clamped to [1, 1000]. Applied when the bloodwork m"
   - name: BOOKING_REMINDERS_ENABLED
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: ON
     auto_flip_on_in_prod: false
     owner: scheduling
-    description: "Launch switch (operator 2026-10-01): booking reminder crons. Code default is on (only \"off\" disables); must stay unset or on for launch."
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). session reminder crons for the Calendar section (code default on; only 'off' disables); made explicit. Gate: Wave A: enable after this PR merges."
   - name: BOOKING_REMINDER_1H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
@@ -466,10 +466,10 @@ switches:
     description: "Phase 11 — RapidAPI key for the ExerciseDB catalog used by the workout builder. When unset, ExerciseLibraryService falls back to the bundled"
   - name: FEATURE_COMMUNITY_API
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: ON
     auto_flip_on_in_prod: false
     owner: community
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). Community tab, Hall, Cohorts: master switch read by CommunityFeatureFlagGuard on every community controller (feed, /me, /today, workspaces, cohorts, cohort members, posts and messages reads, reactions, moderation report/block, coach inbox); off = 503 on gated routes. Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
   - name: FEATURE_COMMUNITY_API_ALLOWLIST
     tier: optional
     prod_default: STUB_ALLOWED
@@ -502,16 +502,16 @@ switches:
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_COMMUNITY_PUSH
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: ON
     auto_flip_on_in_prod: false
     owner: community
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). community push notifications for new posts/messages/moderation (service-level, no route guard); off = no push, routes still work. Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
   - name: FEATURE_COMMUNITY_REALTIME
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: ON
     auto_flip_on_in_prod: false
     owner: community
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). live fan-out of new messages to open Hall/Cohort screens (service-level); off = clients refresh on poll/pull. Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
   - name: FEATURE_COMMUNITY_SEARCH
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1328,7 +1328,7 @@ switches:
     # "true" in prod; the var is read as ON unless explicitly "false".
     auto_flip_on_in_prod: true
     owner: community
-    description: "Community schema-readiness master switch (v1-1). Read via process.env[FEATURE_COMMUNITY_SCHEMA_ENV]; ON unless explicitly 'false'."
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). every community surface (schema-readiness signal; code default already on, made explicit). Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
   - name: FEATURE_COMMUNITY_VOICE_NOTES
     tier: feature
     prod_default: OFF
@@ -1401,3 +1401,39 @@ switches:
     auto_flip_on_in_prod: false
     owner: importer
     description: "S12-B1 pilot-coach allowlist (IMPORTER). Comma-separated User.id UUIDs admitted to the flag-gated importer surface; unset/empty/malformed = nobody (fail closed). Value is a list, not a boolean, so STUB_ALLOWED rather than OFF; never auto-flipped."
+  - name: FEATURE_COMMUNITY_POSTS
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). Hall and Cohorts: post create/edit/delete (CommunityPostsEnabledGuard); reads only need FEATURE_COMMUNITY_API. Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+  - name: FEATURE_COMMUNITY_MESSAGES
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). Cohorts chat: cohort message send/edit/delete, and post comments (CommunityMessagesEnabledGuard). Gate: Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+  - name: FEATURE_MWB_TEMPLATES
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: workout-builder
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). master workout builder templates (MwbTemplatesFeatureGuard; off = 404). Gate: Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+  - name: FEATURE_MWB_AUTOSAVE_UNDO
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: workout-builder
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). master workout builder autosave/undo (MwbAutosaveUndoFeatureGuard; off = 404); mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE flips with it. Gate: Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+  - name: FEATURE_NAMED_REGIMES
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: workout-builder
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). named regimes (NamedRegimesFeatureGuard; off = 404). Gate: Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+  - name: FEATURE_DUNNING_V2
+    tier: optional
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Day-1 launch flag, prod ON (Wave A, .github/fly-env-desired-state.json pending_flags). dunning v2 emails + Day-10 lockout. Gate: Owner day-1 ON (2026-10-01 11:32). Ledger gate: live check that dunning emails link to a working Stripe customer portal (owner enables the portal in live mode) and the Day-10 lockout is scoped to /roman/*."

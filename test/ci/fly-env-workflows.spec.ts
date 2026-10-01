@@ -10,6 +10,10 @@ import { load as parseYaml } from 'js-yaml';
 import { join } from 'path';
 
 import { ENV_RULES } from '../../src/common/env-validation';
+import {
+  flagAssignments,
+  validateDesiredState,
+} from '../../scripts/env-truth/fly-env-desired-state';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -50,6 +54,15 @@ const EXPECTED_ALLOWLIST = [
   ...PROVIDERS.flatMap((p) => [`${p}_CLIENT_ID`, `${p}_CLIENT_SECRET`]),
 ];
 const REGISTERED = new Set(ENV_RULES.map((r) => r.name));
+
+interface DesiredState {
+  secrets: string[];
+  flags: Record<string, string>;
+  pending_flags: Record<string, { value: string; wave: string; needed_by: string; gate: string }>;
+  excluded: Record<string, string>;
+}
+const DESIRED_FILE = join(ROOT, '.github/fly-env-desired-state.json');
+const DESIRED = JSON.parse(readFileSync(DESIRED_FILE, 'utf8')) as DesiredState;
 
 function loadWorkflow(file: string): { wf: Workflow; text: string; job: Job } {
   const text = read(file);
@@ -119,16 +132,24 @@ describe('fly-env-sync.yml', () => {
       expect(env[n]).toBe(`\${{ secrets.${n} }}`);
       expect(REGISTERED.has(n)).toBe(true);
     }
-    // The bash allowlist array matches the env block exactly.
-    const arr = /allowlist=\(\n([\s\S]*?)\n\s*\)/.exec(pushStep.run ?? '');
-    expect(arr).not.toBeNull();
-    expect(
-      arr![1]
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .sort(),
-    ).toEqual(allow.sort());
+    // The bash allowlist comes from the manifest's `secrets`, which must equal
+    // the env block exactly (a name missing from the env block would always be
+    // skipped; one missing from the manifest would never be pushed).
+    expect(pushStep.run).toMatch(
+      /mapfile -t allowlist < <\(node scripts\/env-truth\/fly-env-desired-state\.js secrets /,
+    );
+    expect([...DESIRED.secrets].sort()).toEqual(allow.sort());
+  });
+
+  it('stages manifest `flags` only; `pending_flags` is never read by the workflow', () => {
+    expect(pushStep.run).toMatch(
+      /mapfile -t flag_args < <\(node scripts\/env-truth\/fly-env-desired-state\.js flags /,
+    );
+    expect(text).not.toMatch(/node [^\n]*pending/);
+    expect(allRuns(job).replace(/#.*$/gm, '')).not.toMatch(/pending/);
+    const validate = job.steps.find((s) => s.name === 'Validate desired-state manifest');
+    expect(job.steps.indexOf(validate!)).toBeLessThan(job.steps.indexOf(pushStep));
+    expect(validate?.run).toMatch(/fly-env-desired-state\.js validate /);
   });
 
   it('does not push the Apple sign-in keys (owned by the account-deletion lane workflow)', () => {
@@ -205,5 +226,92 @@ describe('fly-env-truth.yml (read-only)', () => {
 
   it('pins every third-party action to a full commit sha', () => {
     for (const s of job.steps.filter((x) => x.uses)) expect(s.uses).toMatch(/@[0-9a-f]{40}$/);
+  });
+});
+
+describe('.github/fly-env-desired-state.json', () => {
+  const WAVE_A = [
+    'FEATURE_COMMUNITY_SCHEMA',
+    'FEATURE_COMMUNITY_API',
+    'FEATURE_COMMUNITY_POSTS',
+    'FEATURE_COMMUNITY_MESSAGES',
+    'FEATURE_COMMUNITY_PUSH',
+    'FEATURE_COMMUNITY_REALTIME',
+    'BOOKING_REMINDERS_ENABLED',
+    'FEATURE_MWB_TEMPLATES',
+    'FEATURE_MWB_AUTOSAVE_UNDO',
+    'FEATURE_NAMED_REGIMES',
+    'FEATURE_DUNNING_V2',
+  ];
+
+  it('validates against the registry', () => {
+    expect(validateDesiredState(DESIRED, [...REGISTERED])).toEqual([]);
+  });
+
+  it('Wave A day-1 flags are pending (value "true", gate documented) and NOT applied until the operator moves them', () => {
+    expect(Object.keys(DESIRED.pending_flags).sort()).toEqual([...WAVE_A].sort());
+    for (const n of WAVE_A) {
+      expect([n, DESIRED.pending_flags[n].value, DESIRED.pending_flags[n].wave]).toEqual([
+        n,
+        'true',
+        'A',
+      ]);
+    }
+    expect(DESIRED.flags).toEqual({});
+    expect(flagAssignments(DESIRED)).toEqual([]);
+  });
+
+  it('keeps FEATURE_MWB_AI_LIVE_CREATE and the stay-off community flags out', () => {
+    const live = new Set([...Object.keys(DESIRED.flags), ...Object.keys(DESIRED.pending_flags)]);
+    for (const n of [
+      'FEATURE_MWB_AI_LIVE_CREATE',
+      'FEATURE_COMMUNITY_AI_TRIAGE',
+      'FEATURE_COMMUNITY_VOICE_NOTES',
+      'FEATURE_COMMUNITY_CHALLENGES',
+      'FEATURE_COMMUNITY_EVENTS',
+      'FEATURE_COMMUNITY_CLASSROOM_POSTS',
+      'FEATURE_COMMUNITY_DM',
+    ]) {
+      expect([n, live.has(n)]).toEqual([n, false]);
+      expect(DESIRED.excluded[n]).toBeTruthy();
+    }
+  });
+
+  it('prod-switches.yml marks every Wave A flag prod_default ON with the gate in the description', () => {
+    const reg = parseYaml(readFileSync(join(ROOT, 'prod-switches.yml'), 'utf8')) as {
+      switches: { name: string; prod_default: string; description: string }[];
+    };
+    for (const n of WAVE_A) {
+      const row = reg.switches.find((r) => r.name === n);
+      expect([n, row?.prod_default]).toEqual([n, 'ON']);
+      expect(row?.description).toContain('Gate:');
+    }
+  });
+
+  it('rejects bad manifests: unregistered name, non-boolean flag, duplicate block, missing gate', () => {
+    const base = { secrets: ['GOOGLE_CLIENT_IDS'], flags: {}, pending_flags: {}, excluded: {} };
+    const names = ['GOOGLE_CLIENT_IDS', 'FEATURE_COMMUNITY_API'];
+    expect(validateDesiredState(base, names)).toEqual([]);
+    expect(validateDesiredState({ ...base, secrets: ['NOT_REGISTERED_X'] }, names)).toEqual([
+      'secrets: NOT_REGISTERED_X is not registered in env-validation.ts',
+    ]);
+    expect(
+      validateDesiredState({ ...base, flags: { FEATURE_COMMUNITY_API: 'yes' } }, names),
+    ).toEqual(['flags.FEATURE_COMMUNITY_API: value must be the string "true" or "false"']);
+    expect(validateDesiredState({ ...base, flags: { GOOGLE_CLIENT_IDS: 'true' } }, names)).toEqual([
+      'GOOGLE_CLIENT_IDS appears in both secrets and flags',
+    ]);
+    expect(
+      validateDesiredState(
+        {
+          ...base,
+          pending_flags: { FEATURE_COMMUNITY_API: { value: 'true', wave: 'A', needed_by: 'x' } },
+        },
+        names,
+      ),
+    ).toEqual(['pending_flags.FEATURE_COMMUNITY_API: gate is required']);
+    expect(flagAssignments({ flags: { FEATURE_COMMUNITY_API: 'true' } })).toEqual([
+      'FEATURE_COMMUNITY_API=true',
+    ]);
   });
 });

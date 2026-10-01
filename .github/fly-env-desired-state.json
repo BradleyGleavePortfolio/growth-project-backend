@@ -1,0 +1,121 @@
+{
+  "$comment": [
+    "Desired-state manifest for .github/workflows/fly-env-sync.yml (S-ENVTRUTH). One audited PR per change.",
+    "secrets: names only. Each is copied from the GitHub Actions secret of the same name (the workflow env block must list exactly these); unset/empty secrets are skipped.",
+    "flags: literal launch-flag values the workflow STAGES on Fly (values must be the strings \"true\" or \"false\"). Empty until the operator enables entries.",
+    "pending_flags: NOT APPLIED. The workflow never reads this block. To enable an entry, the operator moves it from pending_flags to flags (value only) in a PR, then dispatches the workflow.",
+    "Every name must be registered in src/common/env-validation.ts and prod-switches.yml; test/ci/fly-env-workflows.spec.ts enforces this."
+  ],
+  "app": "backend-spring-lake-3890",
+  "secrets": [
+    "GOOGLE_CLIENT_IDS",
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    "METRICS_AUTH_TOKEN",
+    "DATA_EXPORT_DOWNLOAD_SECRET",
+    "CONTRACT_PDF_URL_SECRET",
+    "SCHEDULING_WEBHOOK_SECRET",
+    "GARMIN_WEBHOOK_SALT",
+    "WHOOP_WEBHOOK_SALT",
+    "FITBIT_CLIENT_ID",
+    "FITBIT_CLIENT_SECRET",
+    "GARMIN_CLIENT_ID",
+    "GARMIN_CLIENT_SECRET",
+    "OURA_CLIENT_ID",
+    "OURA_CLIENT_SECRET",
+    "POLAR_CLIENT_ID",
+    "POLAR_CLIENT_SECRET",
+    "STRAVA_CLIENT_ID",
+    "STRAVA_CLIENT_SECRET",
+    "WAHOO_CLIENT_ID",
+    "WAHOO_CLIENT_SECRET",
+    "WHOOP_CLIENT_ID",
+    "WHOOP_CLIENT_SECRET",
+    "WITHINGS_CLIENT_ID",
+    "WITHINGS_CLIENT_SECRET"
+  ],
+  "flags": {},
+  "pending_flags": {
+    "FEATURE_COMMUNITY_SCHEMA": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "every community surface (schema-readiness signal; code default already on, made explicit)",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "FEATURE_COMMUNITY_API": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "Community tab, Hall, Cohorts: master switch read by CommunityFeatureFlagGuard on every community controller (feed, /me, /today, workspaces, cohorts, cohort members, posts and messages reads, reactions, moderation report/block, coach inbox); off = 503 on gated routes",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "FEATURE_COMMUNITY_POSTS": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "Hall and Cohorts: post create/edit/delete (CommunityPostsEnabledGuard); reads only need FEATURE_COMMUNITY_API",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "FEATURE_COMMUNITY_MESSAGES": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "Cohorts chat: cohort message send/edit/delete, and post comments (CommunityMessagesEnabledGuard)",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "FEATURE_COMMUNITY_PUSH": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "community push notifications for new posts/messages/moderation (service-level, no route guard); off = no push, routes still work",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "FEATURE_COMMUNITY_REALTIME": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "live fan-out of new messages to open Hall/Cohort screens (service-level); off = clients refresh on poll/pull",
+      "gate": "Wave A (ledger FLAGS_LAUNCH_LEDGER.md): enable after this PR merges; community report/block (#610) must be deployed before App Review uses community."
+    },
+    "BOOKING_REMINDERS_ENABLED": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "session reminder crons for the Calendar section (code default on; only 'off' disables); made explicit",
+      "gate": "Wave A: enable after this PR merges."
+    },
+    "FEATURE_MWB_TEMPLATES": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "master workout builder templates (MwbTemplatesFeatureGuard; off = 404)",
+      "gate": "Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+    },
+    "FEATURE_MWB_AUTOSAVE_UNDO": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "master workout builder autosave/undo (MwbAutosaveUndoFeatureGuard; off = 404); mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE flips with it",
+      "gate": "Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+    },
+    "FEATURE_NAMED_REGIMES": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "named regimes (NamedRegimesFeatureGuard; off = 404)",
+      "gate": "Owner day-1 ON (2026-10-01 11:32). Ledger gate: S-MWB coach Programs library UI lands in the binary or via OTA."
+    },
+    "FEATURE_DUNNING_V2": {
+      "value": "true",
+      "wave": "A",
+      "needed_by": "dunning v2 emails + Day-10 lockout",
+      "gate": "Owner day-1 ON (2026-10-01 11:32). Ledger gate: live check that dunning emails link to a working Stripe customer portal (owner enables the portal in live mode) and the Day-10 lockout is scoped to /roman/*."
+    }
+  },
+  "excluded": {
+    "FEATURE_MWB_AI_LIVE_CREATE": "needs R2b AI consent enforcement first (operator 2026-10-01)",
+    "FEATURE_COMMUNITY_DM": "direct messages: not in the clinic mobile profile (EXPO_PUBLIC_FF_COMMUNITY_DM off); operator decision",
+    "FEATURE_COMMUNITY_ACKS": "coach ack signals in the coach inbox: not in the ledger core set; operator decision",
+    "FEATURE_COMMUNITY_PLAN_TAGS": "plan-tag context on messages: not in the ledger core set; operator decision",
+    "FEATURE_COMMUNITY_SEARCH": "community search: not in the ledger core set; operator decision",
+    "FEATURE_COMMUNITY_TELEMETRY": "community telemetry events: not in the ledger core set; operator decision",
+    "FEATURE_COMMUNITY_WEARABLE_PROMPTS": "wearable prompts: wearables lane decision",
+    "FEATURE_COMMUNITY_AI_TRIAGE": "ledger: stay off (not in clinic scope)",
+    "FEATURE_COMMUNITY_VOICE_NOTES": "ledger: stay off (not in clinic scope)",
+    "FEATURE_COMMUNITY_CHALLENGES": "ledger: stay off (not in clinic scope)",
+    "FEATURE_COMMUNITY_EVENTS": "ledger: stay off (not in clinic scope)",
+    "FEATURE_COMMUNITY_CLASSROOM_POSTS": "ledger: stay off (not in clinic scope)"
+  }
+}
