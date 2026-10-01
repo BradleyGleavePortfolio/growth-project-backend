@@ -6351,6 +6351,9 @@ model AiProcessingConsent {
   copy_sha256     String?
   granted_at      DateTime?
   revoked_at      DateTime?
+  /** Personal-training waiver version accepted with the same onboarding box (ruling #5). */
+  waiver_version     String?
+  waiver_accepted_at DateTime?
   platform        String?
   app_version     String?
   locale          String?

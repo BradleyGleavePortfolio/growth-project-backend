@@ -20,6 +20,7 @@ import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanConsentController } from './consent/roman-consent.controller';
 import { RomanConsentService } from './consent/roman-consent.service';
+import { RomanRetentionService } from './roman-retention.service';
 import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard';
 
 @Module({
@@ -34,6 +35,7 @@ import { AiProcessingConsentGuard } from './consent/ai-processing-consent.guard'
     romanAnthropicClientProvider,
     RomanConsentService,
     AiProcessingConsentGuard,
+    RomanRetentionService,
   ],
   exports: [RomanService, RomanConsentService, AiProcessingConsentGuard],
 })

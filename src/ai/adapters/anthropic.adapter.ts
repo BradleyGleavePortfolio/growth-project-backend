@@ -1,7 +1,13 @@
-import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+import {
+  AI_ERROR_CLIENT_CONSENT_REQUIRED,
+  AI_ERROR_CONSENT_GATE_UNAVAILABLE,
+  AI_SUBJECT_CONSENT_GATE,
+  AiSubjectConsentGate,
+} from './ai-subject-consent.gate';
 import {
   COACH_AI_MODEL,
   INPUT_USD_PER_MTOK,
@@ -26,6 +32,9 @@ export interface AnthropicCompleteOptions {
   // request body to Anthropic.
   capability?: CoachAICapability | string;
   coachId?: string | null;
+  // The DATA SUBJECT whose data is in the prompt. When set, the adapter
+  // checks that client's AI processing consent before EVERY upstream request
+  // (first attempt, each retry, the structured repair pass) — R2 / Sol A2.
   clientId?: string | null;
 }
 
@@ -62,8 +71,43 @@ export class AnthropicAdapter {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) injectedClient?: Anthropic,
+    @Optional()
+    @Inject(AI_SUBJECT_CONSENT_GATE)
+    private readonly consentGate: AiSubjectConsentGate | null = null,
   ) {
     if (injectedClient) this.client = injectedClient;
+  }
+
+  /**
+   * The data subject's consent check (Sol A2). Runs before every upstream
+   * request that carries `opts.clientId`. Fails closed when no gate is
+   * bound. Surfaces a coach-readable 403 so the console can explain why the
+   * generation did not run, without revealing anything else about the client.
+   */
+  private async assertSubjectConsent(opts: AnthropicCompleteOptions): Promise<void> {
+    const subject = opts.clientId?.trim();
+    if (!subject) return;
+    if (!this.consentGate) {
+      this.logger.error(
+        `[anthropic] refusing client-subject request: no ${AI_SUBJECT_CONSENT_GATE} bound (capability=${String(opts.capability ?? 'unknown')})`,
+      );
+      throw new ForbiddenException({
+        code: AI_ERROR_CONSENT_GATE_UNAVAILABLE,
+        message: 'AI processing of client data is unavailable: the consent check is not configured.',
+      });
+    }
+    try {
+      await this.consentGate.assertAiConsent(subject);
+    } catch (err) {
+      if (err instanceof ForbiddenException) {
+        throw new ForbiddenException({
+          code: AI_ERROR_CLIENT_CONSENT_REQUIRED,
+          message:
+            'This client has not agreed to AI processing of their data (or their agreement is out of date). They can accept it in the app.',
+        });
+      }
+      throw err;
+    }
   }
 
   // Lazy client construction. Throws if no key is configured — callers
@@ -92,6 +136,10 @@ export class AnthropicAdapter {
 
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
+      // Consent is re-checked on EVERY attempt (not hoisted above the loop) so
+      // a withdrawal between retries stops the next request (Sol A2). A 403
+      // from the gate is never retried and never logged as an upstream call.
+      await this.assertSubjectConsent(opts);
       try {
         const client = this.getClient();
         const resp = await client.messages.create({

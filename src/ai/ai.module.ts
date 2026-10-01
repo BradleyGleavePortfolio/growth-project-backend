@@ -7,7 +7,9 @@ import { AuthModule } from '../auth/auth.module';
 import { RomanModule } from '../roman/roman.module';
 
 // PrismaService comes from the global PrismaModule — do not re-declare it here.
-// RomanModule provides AiProcessingConsentGuard for POST /ai/chat (R2).
+// R2: POST /ai/chat is retired (410) — no provider path remains on this
+// module's routes, so no consent guard is needed here. RomanModule stays
+// imported so the module graph is unchanged for the consent guard export.
 @Module({
   imports: [AuthModule, RomanModule],
   controllers: [AiController],
