@@ -26,6 +26,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
+import type { GoldenPersona } from '../test/roman/eval/golden-set';
 
 // ── jest shim for the persona fixture (which uses jest.fn for call recording) ──
 type AnyFn = (...args: never[]) => unknown;
@@ -44,7 +45,7 @@ const jestShim = {
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { GOLDEN_SET, SAFETY_ITEMS, GROUNDING_ITEMS, checkGoldenReply } =
   require('../test/roman/eval/golden-set') as typeof import('../test/roman/eval/golden-set');
-const { makePersonaDb, FakeSafetyIntakeSource, P1, P2, P3, NOW, LOCAL_TODAY_PT } =
+const { makePersonaDb, FakeSafetyIntakeSource, P1, P2, P3, P4, NOW, LOCAL_TODAY_PT } =
   require('../test/roman/fixtures/roman-personas') as typeof import('../test/roman/fixtures/roman-personas');
 const { RomanService } =
   require('../src/roman/roman.service') as typeof import('../src/roman/roman.service');
@@ -89,7 +90,8 @@ async function main(): Promise<void> {
     return realStream(...args);
   }) as typeof anthropic.messages.stream;
 
-  const personaId: Record<'P1' | 'P2' | 'P3', string> = { P1, P2, P3 };
+  // Every golden persona (P4 = the same-coach tenancy mirror added in G37).
+  const personaId: Record<GoldenPersona, string> = { P1, P2, P3, P4 };
   const session = (user_id: string) => ({
     id: `live_${user_id}`,
     user_id,
