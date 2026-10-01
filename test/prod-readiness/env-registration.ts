@@ -99,9 +99,18 @@ export interface EnvReadScan {
   dynamic: DynamicEnvSite[];
 }
 
-interface HelperSig {
+/** An env-reading helper: calling it with a name in `paramIndex` reads that env var. */
+export interface HelperSig {
+  /**
+   * Name the helper is called by. For a helper seen from another file this is
+   * the exported name (`envOn`), or `default` plus `module` for a default
+   * export; scanEnvReadsInSource rebinds it to the importing file's local name
+   * (`import { envOn as readFlag }` -> `readFlag`, `import * as h` -> `h.envOn`).
+   */
   name: string;
   paramIndex: number;
+  /** src-relative file of a default-exported helper (name === 'default'). */
+  module?: string;
 }
 
 function unwrap(node: ts.Expression): ts.Expression {
@@ -336,6 +345,9 @@ function isConfigGet(call: ts.CallExpression, sf: ts.SourceFile): boolean {
  * imported from other files.
  */
 export function findEnvHelpers(sf: ts.SourceFile, known: readonly HelperSig[] = []): HelperSig[] {
+  // A parameter used as a key of a ProcessEnv alias (`env[k]`) makes a helper
+  // exactly like `process.env[k]` does (B-624-2).
+  const aliases = processEnvAliases(sf);
   const helpers = new Map<string, Set<number>>();
   for (const h of known) {
     const s = helpers.get(h.name) ?? new Set<number>();
@@ -368,13 +380,12 @@ export function findEnvHelpers(sf: ts.SourceFile, known: readonly HelperSig[] = 
         }
       };
       const scan = (n: ts.Node): void => {
-        if (ts.isElementAccessExpression(n) && isProcessEnvExpr(n.expression)) {
+        if (ts.isElementAccessExpression(n) && isEnvReceiver(n.expression, aliases)) {
           markIdent(n.argumentExpression);
         }
         if (ts.isCallExpression(n)) {
           if (isConfigGet(n, sf)) markIdent(n.arguments[0]);
-          const cn = calleeName(n);
-          const idxs = cn ? (helpers.get(cn) ?? out.get(cn)) : undefined;
+          const idxs = lookupCallee(n, helpers, out);
           if (idxs) for (const i of idxs) markIdent(n.arguments[i]);
         }
         ts.forEachChild(n, scan);
@@ -395,16 +406,77 @@ export function findEnvHelpers(sf: ts.SourceFile, known: readonly HelperSig[] = 
   return result;
 }
 
-function importedNames(sf: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
+/** How one file binds the names it imports. */
+interface ImportBindings {
+  /** local name -> exported name (`import { envOn as readFlag }` -> readFlag => envOn). */
+  named: Map<string, string>;
+  /** `import * as ns from '…'` local namespace names. */
+  namespaces: Set<string>;
+  /** default imports (`import readFlag from './h'`, `import { default as readFlag }`). */
+  defaults: Array<{ local: string; specifier: string }>;
+}
+
+function importBindings(sf: ts.SourceFile): ImportBindings {
+  const out: ImportBindings = { named: new Map(), namespaces: new Set(), defaults: [] };
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !st.importClause) continue;
+    const specifier = ts.isStringLiteral(st.moduleSpecifier) ? st.moduleSpecifier.text : '';
+    if (st.importClause.name) {
+      out.defaults.push({ local: st.importClause.name.text, specifier });
+    }
     const nb = st.importClause.namedBindings;
     if (nb && ts.isNamedImports(nb)) {
-      for (const el of nb.elements) names.add((el.propertyName ?? el.name).text);
+      for (const el of nb.elements) {
+        const exported = (el.propertyName ?? el.name).text;
+        if (exported === 'default') out.defaults.push({ local: el.name.text, specifier });
+        else out.named.set(el.name.text, exported);
+      }
+    }
+    if (nb && ts.isNamespaceImport(nb)) out.namespaces.add(nb.name.text);
+  }
+  return out;
+}
+
+/** src-relative candidates a relative module specifier can resolve to. */
+function moduleCandidates(fromRel: string, specifier: string): string[] {
+  if (!specifier.startsWith('.')) return [];
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), specifier));
+  return [base, `${base}.ts`, `${base}/index.ts`];
+}
+
+/**
+ * Rebind helpers exported by other files to the names this file calls them by:
+ * named imports (renamed or not), `import * as ns` (called as `ns.helper`), and
+ * default imports of a file whose default export is a helper.
+ */
+function bindImportedHelpers(
+  sf: ts.SourceFile,
+  relPath: string,
+  globalHelpers: readonly HelperSig[],
+): HelperSig[] {
+  const b = importBindings(sf);
+  const out: HelperSig[] = [];
+  for (const [local, exported] of b.named) {
+    for (const h of globalHelpers) {
+      if (h.module === undefined && h.name === exported) {
+        out.push({ name: local, paramIndex: h.paramIndex });
+      }
     }
   }
-  return names;
+  for (const ns of b.namespaces) {
+    for (const h of globalHelpers) {
+      if (h.module === undefined) out.push({ name: `${ns}.${h.name}`, paramIndex: h.paramIndex });
+    }
+  }
+  for (const d of b.defaults) {
+    const candidates = moduleCandidates(relPath, d.specifier);
+    for (const h of globalHelpers) {
+      if (h.module !== undefined && candidates.includes(h.module)) {
+        out.push({ name: d.local, paramIndex: h.paramIndex });
+      }
+    }
+  }
+  return out;
 }
 
 function calleeName(call: ts.CallExpression): string | undefined {
@@ -414,36 +486,94 @@ function calleeName(call: ts.CallExpression): string | undefined {
   return undefined;
 }
 
-/** Parameters / variables that alias process.env inside this file. */
+/** `ns.helper` for a call on a plain identifier receiver (namespace-import calls). */
+function qualifiedCalleeName(call: ts.CallExpression): string | undefined {
+  const c = unwrap(call.expression);
+  if (ts.isPropertyAccessExpression(c)) {
+    const recv = unwrap(c.expression);
+    if (ts.isIdentifier(recv)) return `${recv.text}.${c.name.text}`;
+  }
+  return undefined;
+}
+
+/** Helper parameter indexes for a call, by bare callee name or `ns.helper`. */
+function lookupCallee<T>(
+  call: ts.CallExpression,
+  ...maps: ReadonlyArray<ReadonlyMap<string, T>>
+): T | undefined {
+  const keys = [calleeName(call), qualifiedCalleeName(call)].filter(
+    (k): k is string => k !== undefined,
+  );
+  for (const k of keys) {
+    for (const m of maps) {
+      const v = m.get(k);
+      if (v !== undefined) return v;
+    }
+  }
+  return undefined;
+}
+
+/** `process.env`, `process['env']`, or an identifier that aliases it in this file. */
+function isEnvReceiver(raw: ts.Expression, aliases: ReadonlySet<string>): boolean {
+  if (isProcessEnvExpr(raw)) return true;
+  const e = unwrap(raw);
+  return ts.isIdentifier(e) && aliases.has(e.text);
+}
+
+/** `{ ...process.env }` / `{ ...alias, X: 'y' }`: a copy that still carries every env name. */
+function isEnvCopy(raw: ts.Expression, aliases: ReadonlySet<string>): boolean {
+  const e = unwrap(raw);
+  return (
+    ts.isObjectLiteralExpression(e) &&
+    e.properties.some((p) => ts.isSpreadAssignment(p) && isEnvReceiver(p.expression, aliases))
+  );
+}
+
+/**
+ * Parameters / variables that alias process.env inside this file, including
+ * aliases of aliases (`const a = process.env; const b = a;`) and spread copies
+ * (`const env = { ...process.env }`), to a fixed point.
+ */
 function processEnvAliases(sf: ts.SourceFile): Set<string> {
   const aliases = new Set<string>();
+  let changed = true;
   const visit = (node: ts.Node): void => {
+    let name: string | undefined;
     if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
       const typeText = node.type ? node.type.getText(sf) : '';
       if (
         /ProcessEnv/.test(typeText) ||
-        (node.initializer !== undefined && isProcessEnvExpr(node.initializer))
+        (node.initializer !== undefined &&
+          (isEnvReceiver(node.initializer, aliases) || isEnvCopy(node.initializer, aliases)))
       ) {
-        aliases.add(node.name.text);
+        name = node.name.text;
       }
     }
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.initializer &&
-      isProcessEnvExpr(node.initializer)
+      (isEnvReceiver(node.initializer, aliases) || isEnvCopy(node.initializer, aliases))
     ) {
-      aliases.add(node.name.text);
+      name = node.name.text;
+    }
+    if (name !== undefined && !aliases.has(name)) {
+      aliases.add(name);
+      changed = true;
     }
     ts.forEachChild(node, visit);
   };
-  visit(sf);
+  while (changed) {
+    changed = false;
+    visit(sf);
+  }
   return aliases;
 }
 
 /**
  * Scan one source file. `globalHelpers` are exported helpers found in other
- * files; they apply only when this file imports the helper by name.
+ * files; they apply only when this file imports the helper (by name, renamed,
+ * through a namespace import, or as the default export of a relative module).
  */
 export function scanEnvReadsInSource(
   content: string,
@@ -461,16 +591,16 @@ export function scanEnvReadsInSource(
     const r = resolve(expr);
     if (r.kind === 'names') r.names.forEach(add);
     else {
-      const line = sf.getLineAndCharacterOfPosition(expr.getStart(sf)).line + 1;
-      dynamic.push({ file: relPath, line, expr: unwrap(expr).getText(sf) });
+      const e = unwrap(expr);
+      const line = sf.getLineAndCharacterOfPosition(e.getStart(sf)).line + 1;
+      dynamic.push({ file: relPath, line, expr: e.getText(sf) });
     }
   };
 
   // 1) Direct process.env access (shared with env-discovery).
   for (const n of extractEnvVarRefs(content, relPath)) add(n);
 
-  const imported = importedNames(sf);
-  const importedHelpers = globalHelpers.filter((h) => imported.has(h.name));
+  const importedHelpers = bindImportedHelpers(sf, relPath, globalHelpers);
   const localHelpers = findEnvHelpers(sf, importedHelpers);
   const helpers = new Map<string, number[]>();
   for (const h of [...localHelpers, ...importedHelpers]) {
@@ -495,30 +625,58 @@ export function scanEnvReadsInSource(
   };
   collectHelperParams(sf);
 
+  const pushDynamic = (at: ts.Node, expr: string): void => {
+    const line = sf.getLineAndCharacterOfPosition(at.getStart(sf)).line + 1;
+    dynamic.push({ file: relPath, line, expr });
+  };
+  // `const { A, B: b, [K]: c, ...rest } = process.env | alias` (also as a
+  // parameter pattern). Literal keys are names, computed keys go through the
+  // resolver, and a rest element copies every name, so it is a dynamic site.
+  const addBindingPattern = (pattern: ts.ObjectBindingPattern): void => {
+    for (const el of pattern.elements) {
+      if (el.dotDotDotToken) {
+        pushDynamic(el, `...${el.name.getText(sf)}`);
+        continue;
+      }
+      const key = el.propertyName;
+      if (key && ts.isComputedPropertyName(key)) addResolved(key.expression);
+      else if (key && (ts.isIdentifier(key) || ts.isStringLiteralLike(key))) add(key.text);
+      else if (!key && ts.isIdentifier(el.name)) add(el.name.text);
+      else pushDynamic(el, el.getText(sf));
+    }
+  };
+
   const visit = (node: ts.Node): void => {
-    // Dynamic process.env[expr] that is not a helper parameter / resolvable key.
-    if (ts.isElementAccessExpression(node) && isProcessEnvExpr(node.expression)) {
+    // Element access on process.env or on a ProcessEnv alias: a literal /
+    // resolvable key is a name, a helper's own parameter is resolved at the
+    // helper's call sites, anything else is a dynamic site (fail closed, the
+    // same path for both receivers; B-624-2).
+    if (ts.isElementAccessExpression(node) && isEnvReceiver(node.expression, aliases)) {
       const arg = unwrap(node.argumentExpression);
       const isHelperParam = ts.isIdentifier(arg) && helperParamNames.has(arg.text);
-      if (!isHelperParam) {
-        const r = resolve(arg);
-        if (r.kind === 'names') r.names.forEach(add);
-        else {
-          const line = sf.getLineAndCharacterOfPosition(arg.getStart(sf)).line + 1;
-          dynamic.push({ file: relPath, line, expr: arg.getText(sf) });
-        }
-      }
+      if (!isHelperParam) addResolved(node.argumentExpression);
     }
-    // ProcessEnv alias access: env.X / env['X'].
+    // ProcessEnv alias property access: env.X.
     if (ts.isPropertyAccessExpression(node)) {
       const recv = unwrap(node.expression);
       if (ts.isIdentifier(recv) && aliases.has(recv.text)) add(node.name.text);
     }
-    if (ts.isElementAccessExpression(node)) {
-      const recv = unwrap(node.expression);
-      if (ts.isIdentifier(recv) && aliases.has(recv.text)) {
-        const r = resolve(node.argumentExpression);
-        if (r.kind === 'names') r.names.forEach(add);
+    // Destructuring from process.env or an alias.
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      isEnvReceiver(node.initializer, aliases)
+    ) {
+      addBindingPattern(node.name);
+    }
+    if (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) {
+      const typeText = node.type ? node.type.getText(sf) : '';
+      if (
+        /ProcessEnv/.test(typeText) ||
+        (node.initializer !== undefined && isEnvReceiver(node.initializer, aliases))
+      ) {
+        addBindingPattern(node.name);
       }
     }
     if (ts.isCallExpression(node)) {
@@ -528,9 +686,8 @@ export function scanEnvReadsInSource(
         const a = unwrap(node.arguments[0]);
         if (!(ts.isIdentifier(a) && helperParamNames.has(a.text))) addResolved(node.arguments[0]);
       }
-      // Env-reading helpers.
-      const cn = calleeName(node);
-      const idxs = cn ? helpers.get(cn) : undefined;
+      // Env-reading helpers, by local name, renamed import or `ns.helper`.
+      const idxs = lookupCallee(node, helpers);
       if (idxs) {
         for (const idx of idxs) {
           const arg = node.arguments[idx];
@@ -579,24 +736,86 @@ export function scanEnvReads(repoRoot: string): EnvReadScan {
   const contents = new Map<string, string>();
   for (const r of rels) contents.set(r, fs.readFileSync(path.join(repoRoot, r), 'utf8'));
 
-  // Pass 1: exported helpers usable from other files.
+  // Pass 1: exported helpers usable from other files, to a fixed point so a
+  // helper that wraps an imported helper is itself exported as one. Named
+  // exports keep their exported name (`export function f`, `export const f`,
+  // `export { f as g }`, `export { f as g } from './x'`); a default export is
+  // keyed by its file so default imports can bind it (B-624-2).
   const globalHelpers: HelperSig[] = [];
+  const seen = new Set<string>();
+  const addGlobal = (h: HelperSig): boolean => {
+    const k = `${h.module ?? ''}::${h.name}::${h.paramIndex}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    globalHelpers.push(h);
+    return true;
+  };
+  const exporting = new Map<string, ts.SourceFile>();
   for (const [rel, content] of contents) {
-    if (!/\bexport\b/.test(content)) continue;
-    const sf = ts.createSourceFile(rel, content, ts.ScriptTarget.Latest, true);
-    const exported = new Set<string>();
-    for (const st of sf.statements) {
-      const mods = ts.canHaveModifiers(st) ? ts.getModifiers(st) : undefined;
-      const isExported = mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
-      if (!isExported) continue;
-      if (ts.isFunctionDeclaration(st) && st.name) exported.add(st.name.text);
-      if (ts.isVariableStatement(st)) {
-        for (const d of st.declarationList.declarations) {
-          if (ts.isIdentifier(d.name)) exported.add(d.name.text);
+    if (/\bexport\b/.test(content)) {
+      exporting.set(rel, ts.createSourceFile(rel, content, ts.ScriptTarget.Latest, true));
+    }
+  }
+  let grew = true;
+  while (grew) {
+    grew = false;
+    const renames: Array<{ local: string; exported: string }> = [];
+    for (const [rel, sf] of exporting) {
+      const fileHelpers = findEnvHelpers(sf, bindImportedHelpers(sf, rel, globalHelpers));
+      const exported = new Set<string>();
+      let defaultName: string | undefined;
+      for (const st of sf.statements) {
+        const mods = ts.canHaveModifiers(st) ? ts.getModifiers(st) : undefined;
+        const isExported = mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+        const isDefault = mods?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+        if (isExported && ts.isFunctionDeclaration(st) && st.name) {
+          exported.add(st.name.text);
+          if (isDefault) defaultName = st.name.text;
+        }
+        if (isExported && ts.isVariableStatement(st)) {
+          for (const d of st.declarationList.declarations) {
+            if (ts.isIdentifier(d.name)) exported.add(d.name.text);
+          }
+        }
+        // `export default readFlag;`
+        if (ts.isExportAssignment(st) && !st.isExportEquals && ts.isIdentifier(st.expression)) {
+          defaultName = st.expression.text;
+        }
+        // `export { a, b as c }` / `export { a as c } from './x'`.
+        if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) {
+          for (const el of st.exportClause.elements) {
+            const local = (el.propertyName ?? el.name).text;
+            const out = el.name.text;
+            if (out === 'default' && !st.moduleSpecifier) defaultName = local;
+            else if (local !== out) renames.push({ local, exported: out });
+            if (!st.moduleSpecifier) exported.add(local);
+          }
+        }
+      }
+      for (const h of fileHelpers) {
+        if (exported.has(h.name) && addGlobal({ name: h.name, paramIndex: h.paramIndex })) {
+          grew = true;
+        }
+        if (
+          defaultName === h.name &&
+          addGlobal({ name: 'default', paramIndex: h.paramIndex, module: rel })
+        ) {
+          grew = true;
         }
       }
     }
-    for (const h of findEnvHelpers(sf)) if (exported.has(h.name)) globalHelpers.push(h);
+    // Renamed exports / re-exports of any known helper.
+    for (const r of renames) {
+      for (const h of [...globalHelpers]) {
+        if (
+          h.module === undefined &&
+          h.name === r.local &&
+          addGlobal({ name: r.exported, paramIndex: h.paramIndex })
+        ) {
+          grew = true;
+        }
+      }
+    }
   }
 
   const reads = new Map<string, string[]>();

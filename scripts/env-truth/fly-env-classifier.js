@@ -33,6 +33,8 @@ const crypto = require('crypto');
 
 const ENV_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const REPORT_MARKER = 'ENV_TRUTH_REPORT_JSON:';
+/** Opaque id prefix for present names that fail ENV_NAME_RE (never printed raw). */
+const MALFORMED_PREFIX = 'MALFORMED_';
 
 /**
  * Placeholder patterns, checked in order. Each entry is [id, predicate]. The
@@ -199,12 +201,24 @@ function classifyEnv(env, registered, opts) {
   const presentNames = Object.keys(env).filter((k) => typeof env[k] === 'string');
   const all = [...new Set([...reg, ...presentNames])].sort();
   const dup = duplicateGroups(env, all, options.salt);
-  const rows = all.map((name) => {
+  // A present, unregistered name that is not a well-formed env name is often a
+  // fragment of a value (an unquoted `fly secrets set A=x y=z` creates `y`).
+  // It may carry secret material, so it never leaves the machine: the report
+  // shows an opaque id (MALFORMED_1, ...) plus the name's length bucket, and
+  // those rows go last so their sort position reveals nothing (Opus B-624-1).
+  const malformed = new Map();
+  for (const name of all) {
+    if (!reg.has(name) && !ENV_NAME_RE.test(name)) {
+      malformed.set(name, `${MALFORMED_PREFIX}${malformed.size + 1}`);
+    }
+  }
+  const ordered = [...all.filter((n) => !malformed.has(n)), ...all.filter((n) => malformed.has(n))];
+  const rows = ordered.map((name) => {
     const raw = env[name];
     const present = typeof raw === 'string';
     const value = present ? raw : '';
-    return {
-      name,
+    const row = {
+      name: malformed.get(name) || name,
       registered: reg.has(name),
       present,
       empty: present && value.trim().length === 0,
@@ -213,7 +227,13 @@ function classifyEnv(env, registered, opts) {
       lengthBucket: lengthBucket(value.length),
       suspiciousName: suspiciousName(name),
     };
+    if (malformed.has(name)) {
+      row.nameRedacted = true;
+      row.nameLengthBucket = lengthBucket(name.length);
+    }
+    return row;
   });
+  malformed.clear();
   const count = (f) => rows.filter(f).length;
   const groupIds = new Set(rows.map((r) => r.duplicateGroup).filter(Boolean));
   const shapes = shapeChecks(env);
@@ -230,6 +250,7 @@ function classifyEnv(env, registered, opts) {
       duplicateKeys: count((r) => r.duplicateGroup !== null),
       unregisteredPresent: count((r) => r.present && !r.registered),
       suspiciousNames: count((r) => r.present && r.suspiciousName),
+      malformedNamesRedacted: count((r) => r.nameRedacted === true),
       shapeChecksFailing: shapes.filter((c) => c.result !== 'pass').length,
     },
     shapeChecks: shapes,
@@ -244,9 +265,17 @@ function classifyEnv(env, registered, opts) {
  */
 function extractRegisteredNames(source) {
   const start = source.indexOf('export const ENV_RULES');
-  if (start < 0) throw new Error('ENV_RULES not found');
+  if (start < 0) {
+    throw new Error(
+      'ENV_RULES not found in the env-validation.ts source: the runner-side extractor looks for "export const ENV_RULES". Fix: keep that declaration name in src/common/env-validation.ts, or update extractRegisteredNames in scripts/env-truth/fly-env-classifier.js and its spec.',
+    );
+  }
   const end = source.indexOf('\n];', start);
-  if (end < 0) throw new Error('ENV_RULES array end not found');
+  if (end < 0) {
+    throw new Error(
+      'ENV_RULES array end not found: the runner-side extractor expects the array to close with a line that is exactly "];". Fix: restore that closing line in src/common/env-validation.ts, or update extractRegisteredNames and its spec.',
+    );
+  }
   const body = source.slice(start, end);
   const names = new Set();
   const re = /^\s{4}name:\s*'([A-Z][A-Z0-9_]*)',\s*$/gm;
@@ -279,6 +308,7 @@ function renderMarkdown(report, app) {
   out.push(`| Duplicate groups (keys) | ${s.duplicateGroups} (${s.duplicateKeys}) |`);
   out.push(`| Present but unregistered | ${s.unregisteredPresent} |`);
   out.push(`| Suspicious names | ${s.suspiciousNames} |`);
+  out.push(`| Malformed names (redacted) | ${s.malformedNamesRedacted || 0} |`);
   out.push(`| Value-shape checks not passing | ${s.shapeChecksFailing} |`);
   out.push('');
   out.push('## Value-shape checks');
@@ -317,6 +347,19 @@ function renderMarkdown(report, app) {
   const unreg = report.rows.filter((r) => r.present && !r.registered).map((r) => r.name);
   out.push(unreg.length ? unreg.map((n) => `\`${mdEscape(n)}\``).join(', ') : 'None.');
   out.push('');
+  const redacted = report.rows.filter((r) => r.nameRedacted === true);
+  if (redacted.length > 0) {
+    out.push('## Malformed names (redacted)');
+    out.push('');
+    out.push(
+      `${redacted.length} present env name(s) are not valid env var names, so they are shown as ${MALFORMED_PREFIX}n with the length bucket of the name: they are often a fragment of a secret value from an unquoted \`fly secrets set\` and are never printed. Fix: run \`fly secrets list -a ${mdEscape(app || '<app>')}\` on your own machine to see them, remove each with \`fly secrets unset -a ${mdEscape(app || '<app>')} <name>\`, then rotate the secret whose value was split.`,
+    );
+    out.push('');
+    out.push('| Id | Name length |');
+    out.push('|---|---|');
+    for (const r of redacted) out.push(`| ${mdEscape(r.name)} | ${r.nameLengthBucket} |`);
+    out.push('');
+  }
   return out.join('\n');
 }
 
@@ -342,14 +385,18 @@ function encodeNames(names) {
 function namesFromEnv(env) {
   const raw = env[NAMES_ENV];
   if (typeof raw !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(raw)) {
-    throw new Error(`${NAMES_ENV} missing or not base64`);
+    throw new Error(
+      `${NAMES_ENV} is missing or not base64 inside the machine, so the classifier cannot tell registered names apart. Fix: re-run the Fly Env Truth workflow unchanged; remote-cmd.txt must come from 'fly-env-classifier.js command', never be edited by hand.`,
+    );
   }
   const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
   if (
     !Array.isArray(parsed) ||
     !parsed.every((n) => typeof n === 'string' && ENV_NAME_RE.test(n))
   ) {
-    throw new Error(`${NAMES_ENV} is not a list of env names`);
+    throw new Error(
+      `${NAMES_ENV} is not a list of env names (it must decode to a JSON array of ENV_NAME strings). Fix: re-run the Fly Env Truth workflow unchanged; if it repeats, check extractRegisteredNames against src/common/env-validation.ts.`,
+    );
   }
   return parsed;
 }
@@ -363,7 +410,9 @@ function buildRemoteCommand(moduleSource, names) {
   const prog = Buffer.from(buildRemoteProgram(moduleSource), 'utf8').toString('base64');
   const namesB64 = encodeNames(names);
   if (!/^[A-Za-z0-9+/=]+$/.test(prog) || !/^[A-Za-z0-9+/=]+$/.test(namesB64)) {
-    throw new Error('payload is not base64');
+    throw new Error(
+      'The inline classifier payload is not base64, so it is not safe to pass to flyctl ssh console -C. Fix: this is a bug in buildRemoteCommand; run the fly-env-classifier spec and fix the encoder before dispatching.',
+    );
   }
   return `env ${NAMES_ENV}=${namesB64} node -e "eval(Buffer.from('${prog}','base64').toString('utf8'))"`;
 }
@@ -381,15 +430,24 @@ function parseRemoteOutput(text) {
   const line = String(text)
     .split(/\r?\n/)
     .find((l) => l.startsWith(REPORT_MARKER));
-  if (!line) throw new Error('env-truth report marker not found in remote output');
+  if (!line) {
+    throw new Error(
+      `env-truth report marker not found in the ssh output (no line starts with ${REPORT_MARKER}), so the in-machine classifier did not finish. Fix: read the ssh stderr in the previous step; if node is missing from the image, check with 'fly ssh console -a <app> -C "node --version"', then re-run.`,
+    );
+  }
   const report = JSON.parse(line.slice(REPORT_MARKER.length));
-  if (report.schema !== 'env-truth/v1') throw new Error('unexpected env-truth report schema');
+  if (report.schema !== 'env-truth/v1') {
+    throw new Error(
+      'The env-truth report schema is not env-truth/v1, so the runner cannot render it. Fix: the runner and the machine ran different classifier versions; re-run the workflow from a single commit.',
+    );
+  }
   return report;
 }
 
 module.exports = {
   ENV_NAME_RE,
   REPORT_MARKER,
+  MALFORMED_PREFIX,
   PLACEHOLDER_PATTERNS,
   IOS_BUNDLE_ID,
   SHAPE_CHECKS,
@@ -420,6 +478,12 @@ module.exports = {
 if (typeof require !== 'undefined' && require.main === module && process.argv.length > 2) {
   const fs = require('fs');
   const [cmd, a, b] = process.argv.slice(2);
+  process.on('uncaughtException', (err) => {
+    process.stderr.write(
+      `::error::fly-env-classifier ${cmd}: ${err && err.message ? err.message : err}\n`,
+    );
+    process.exit(1);
+  });
   if (cmd === 'names') {
     process.stdout.write(`${JSON.stringify(extractRegisteredNames(fs.readFileSync(a, 'utf8')))}\n`);
   } else if (cmd === 'command') {
@@ -432,7 +496,9 @@ if (typeof require !== 'undefined' && require.main === module && process.argv.le
     const report = JSON.parse(fs.readFileSync(a, 'utf8'));
     process.stdout.write(renderMarkdown(report, b));
   } else {
-    process.stderr.write(`unknown command: ${cmd}\n`);
+    process.stderr.write(
+      `::error::fly-env-classifier: unknown command. Fix: use one of names <env-validation.ts>, command <env-validation.ts>, parse <ssh-output.txt> <out.json>, render <report.json> <app>.\n`,
+    );
     process.exit(2);
   }
 }

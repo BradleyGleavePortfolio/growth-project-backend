@@ -14,8 +14,9 @@ name: Fly Env Sync (operator)
 #      Unset or empty secrets are SKIPPED (never pushed as empty, never fail
 #      the run) so the operator can fill the list in over time.
 #   3. Stages the non-empty ones in one `fly secrets set --stage` call.
-#   4. Confirms the staged names appear in `fly secrets list` and prints
-#      NAMES ONLY (no digests, no values).
+#   4. Confirms the staged names appear in `fly secrets list --json` (the
+#      structured listing; jq projects name + status only) and prints
+#      NAMES + STATUS ONLY (no digests, no values).
 #
 # Optional apply (deploy_staged=true): after staging, runs `fly secrets deploy`
 # so the staged values take effect immediately (rolling machine restart).
@@ -72,7 +73,7 @@ jobs:
           case "${APP}" in
             backend-spring-lake-3890) ;;
             *)
-              echo "::error::app input is not an allowed Fly app target. Aborting."
+              echo "::error::The app input is not an allowed Fly app target, so nothing was staged. This workflow only manages backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
               exit 1
               ;;
           esac
@@ -83,7 +84,7 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
         run: |
           if [ "${CONFIRM}" != "SET" ]; then
-            echo "::error::confirm input must be the literal string 'SET' — got something else. Aborting."
+            echo "::error::The confirm input is not the literal string SET, so nothing was staged. Fix: re-run with -f confirm=SET once you intend to stage production secrets."
             exit 1
           fi
           echo "Operator confirmed."
@@ -93,7 +94,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::error::FLY_API_TOKEN secret is not set — cannot manage secrets."
+            echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot manage secrets and nothing was staged. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production environment, then re-run."
             exit 1
           fi
           echo "FLY_API_TOKEN is configured."
@@ -181,13 +182,25 @@ jobs:
             exit 0
           fi
           printf 'staging: %s\n' "${staged[*]}"
-          # --stage: no machine restart; applied at the next deploy.
-          flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null
+          # --stage: no machine restart; applied at the next deploy. stdout is
+          # discarded; stderr is kept only to surface flyctl's own error line.
+          set +e
+          flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null 2> fly-set-stderr.txt
+          rc=$?
+          set -e
           unset args
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::flyctl secrets set --stage failed (exit ${rc}) for: ${staged[*]}. Nothing was applied to running machines. Fix: check that FLY_API_TOKEN is a valid token for ${APP} ('fly tokens create deploy -a ${APP}') and that the Fly API is reachable, then re-run; staging the same values again is safe."
+            # flyctl's error lines only, with anything after '=' redacted.
+            grep -E '^(Error|error)' fly-set-stderr.txt | sed -E 's/=[^[:space:]]*/=<redacted>/g' | head -n 5 || true
+            rm -f fly-set-stderr.txt
+            exit 1
+          fi
+          rm -f fly-set-stderr.txt
           printf '%s\n' "${staged[@]}" > staged-names.txt
-          echo "Staged ${#staged[@]} secret(s). They apply at the next deploy."
+          echo "Staged ${#staged[@]} secret(s). They apply at the next deploy, or now when deploy_staged=true."
 
-      - name: Confirm staged names are listed on Fly (names only)
+      - name: Confirm staged names are listed on Fly (names and status only)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
@@ -198,20 +211,49 @@ jobs:
             echo "No staged names to confirm."
             exit 0
           fi
-          # Keep only the NAME column; never print digests or values.
-          names=$(flyctl secrets list -a "${APP}" | awk -F'│' '{gsub(/^[[:space:]!]+|[[:space:]]+$/, "", $1); print $1}')
+          if ! command -v jq > /dev/null 2>&1; then
+            echo "::error::jq is not installed on this runner, so the staged names cannot be confirmed (the stage step already succeeded). Fix: run on ubuntu-latest, which ships jq, or add a jq install step, then re-run; staging the same values again is safe."
+            exit 1
+          fi
+          # Structured listing (B-624-1): `--json` gives each secret's bare name
+          # (the table prefixes staged names with "* " and partial ones with
+          # "! "). jq projects name + status word only, so digests never reach
+          # a variable, the log or a file. Error codes are fixed strings.
+          filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
+          listed=$(
+            set +e
+            flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" 2> jq-stderr.txt
+            echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+          )
+          read -r fly_rc jq_rc < list-status.txt
+          if [ "${fly_rc}" -ne 0 ]; then
+            echo "::error::flyctl secrets list --json failed (exit ${fly_rc}) for ${APP}, so the staged names could not be confirmed. The stage step already succeeded and nothing was applied to running machines. Fix: check that FLY_API_TOKEN is a valid token for ${APP} and that the Fly API is reachable, then re-run; staging the same values again is safe. flyctl said:"
+            grep -E '^(Error|error)' fly-list-stderr.txt | head -n 5 || true
+            exit 1
+          fi
+          if [ "${jq_rc}" -ne 0 ]; then
+            code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
+            echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so the staged names could not be confirmed. The stage step already succeeded. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in this step, then re-run."
+            exit 1
+          fi
+          rm -f fly-list-stderr.txt jq-stderr.txt list-status.txt
           missing=()
+          report=()
           while IFS= read -r name; do
-            if ! printf '%s\n' "${names}" | grep -qx "${name}"; then
+            [ -n "${name}" ] || continue
+            status=$(printf '%s\n' "${listed}" | awk -F'\t' -v n="${name}" '$1 == n { print $2; exit }')
+            if [ -z "${status}" ]; then
               missing+=("${name}")
+            else
+              report+=("${name}: ${status}")
             fi
           done < staged-names.txt
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Staged names not listed on Fly: ${missing[*]}"
+            echo "::error::These names were staged but are not listed on Fly: ${missing[*]}. Fix: re-run this workflow (staging the same values again is safe); if they are still missing, run 'fly secrets list -a ${APP}' and look for a flyctl error in the stage step above."
             exit 1
           fi
-          echo "All staged names are listed on Fly:"
-          cat staged-names.txt
+          echo "All staged names are listed on Fly (Staged = applies at the next deploy or with deploy_staged=true; Partial = a rolling deploy is in progress; Deployed = already live):"
+          printf '%s\n' "${report[@]}"
 
       - name: Apply staged secrets now (only when deploy_staged=true)
         if: ${{ inputs.deploy_staged }}
@@ -227,5 +269,12 @@ jobs:
           fi
           # Rolling restart that applies the staged secrets. Output is names /
           # machine ids only; flyctl never prints secret values.
+          set +e
           flyctl secrets deploy -a "${APP}"
+          rc=$?
+          set -e
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::flyctl secrets deploy failed (exit ${rc}) for ${APP}. The secrets stay staged and the next fly deploy applies them. Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', then re-run this workflow with deploy_staged=true (staging the same values again is safe) or let the next normal deploy apply them."
+            exit 1
+          fi
           echo "Staged secrets applied."

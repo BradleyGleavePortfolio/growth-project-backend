@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as ts from 'typescript';
 
@@ -15,8 +16,10 @@ import {
   checkRegistration,
   checkRepoRegistration,
   registrationRedCount,
+  scanEnvReads,
   scanEnvReadsInSource,
   type EnvReadScan,
+  type HelperSig,
 } from './env-registration';
 import { extractEnvRuleNames } from './env-discovery';
 import { extractRegisteredNames } from '../../scripts/env-truth/fly-env-classifier';
@@ -135,6 +138,195 @@ describe('env-registration scanner — read shapes', () => {
   });
 });
 
+/**
+ * B-624-2 (Sol, fix round): supported indirect reads that the gate used to drop
+ * silently. Each fixture is checked end to end against an EMPTY registry, so a
+ * scanner that loses the read yields zero red lines and the test fails.
+ */
+describe('B-624-2: ProcessEnv alias keys and renamed helper bindings fail closed', () => {
+  const redLinesFor = (scan: EnvReadScan): number =>
+    registrationRedCount(checkRegistration(scan, [], {}));
+  const fileScan = (src: string, rel: string, helpers: HelperSig[] = []): EnvReadScan => {
+    const r = scanEnvReadsInSource(src, rel, helpers);
+    return { reads: new Map([...r.names].map((n) => [n, [rel]])), dynamic: r.dynamic };
+  };
+
+  it('an unresolvable key on a ProcessEnv alias is a dynamic site, exactly like process.env[expr]', () => {
+    const direct = fileScan(
+      'function read(k: string) { return process.env[k + "_X"]; }',
+      'src/direct.ts',
+    );
+    const alias = fileScan(
+      'const env = process.env; function read(k: string) { return env[k + "_X"]; }',
+      'src/alias.ts',
+    );
+    expect(direct.dynamic).toEqual([{ file: 'src/direct.ts', line: 1, expr: 'k + "_X"' }]);
+    expect(alias.dynamic).toEqual([{ file: 'src/alias.ts', line: 1, expr: 'k + "_X"' }]);
+    expect(redLinesFor(alias)).toBe(1);
+  });
+
+  it('typed-parameter, default-parameter, optional-chain, chained and spread-copy aliases all fail closed', () => {
+    const r = scanEnvReadsInSource(
+      `
+        export function a(env: NodeJS.ProcessEnv, o: { k: string }) { return env[o.k]; }
+        export function b(e = process.env, o = { k: 'x' }) { return e?.[o.k]; }
+        const base = process.env;
+        const again = base;
+        const copy = { ...again, EXTRA: '1' };
+        export const c = (o: { k: string }) => copy[o.k];
+      `,
+      'src/aliases.ts',
+    );
+    expect(r.dynamic.map((d) => d.expr)).toEqual(['o.k', 'o.k', 'o.k']);
+  });
+
+  it('a helper keyed through a ProcessEnv alias resolves at its call sites (numEnv(env, NAME, d))', () => {
+    const r = scanEnvReadsInSource(
+      `
+        export function resolveConfig(env?: NodeJS.ProcessEnv) {
+          return { a: numEnv(env, 'ALIAS_HELPER_A', 1), b: numEnv(env, 'ALIAS_HELPER_B', 2) };
+        }
+        function numEnv(env: NodeJS.ProcessEnv | undefined, k: string, d: number): number {
+          const v = env?.[k];
+          return v ? Number(v) : d;
+        }
+      `,
+      'src/num-env.ts',
+    );
+    expect([...r.names].sort()).toEqual(['ALIAS_HELPER_A', 'ALIAS_HELPER_B']);
+    // The helper's own parameter is not a second, unrecorded dynamic site.
+    expect(r.dynamic).toEqual([]);
+  });
+
+  it('literal, const and computed keys on an alias and alias destructuring are names; a rest copy is dynamic', () => {
+    const r = scanEnvReadsInSource(
+      `
+        const K = 'ALIAS_CONST';
+        const env = process.env;
+        const a = env['ALIAS_LITERAL'];
+        const b = env[K];
+        const { ALIAS_DESTRUCT, ALIAS_RENAMED: renamed, [K]: viaConst } = env;
+        const { ...everything } = env;
+        export function f({ ALIAS_PARAM_PATTERN }: NodeJS.ProcessEnv = process.env) { return ALIAS_PARAM_PATTERN; }
+      `,
+      'src/destructure.ts',
+    );
+    expect([...r.names].sort()).toEqual([
+      'ALIAS_CONST',
+      'ALIAS_DESTRUCT',
+      'ALIAS_LITERAL',
+      'ALIAS_PARAM_PATTERN',
+      'ALIAS_RENAMED',
+    ]);
+    expect(r.dynamic.map((d) => d.expr)).toEqual(['...everything']);
+  });
+
+  it('a helper imported under a local alias still resolves (import { envOn as readFlag })', () => {
+    const helper = { name: 'envOn', paramIndex: 0 };
+    const renamed = fileScan(
+      'import { envOn as readFlag } from "./h"; readFlag("AUDIT_UNREGISTERED");',
+      'src/renamed.ts',
+      [helper],
+    );
+    expect([...renamed.reads.keys()]).toEqual(['AUDIT_UNREGISTERED']);
+    expect(redLinesFor(renamed)).toBe(1);
+    const renamedDynamic = fileScan(
+      'import { envOn as readFlag } from "./h"; export const f = (o: { k: string }) => readFlag(o.k + "_X");',
+      'src/renamed-dyn.ts',
+      [helper],
+    );
+    expect(renamedDynamic.dynamic.map((d) => d.expr)).toEqual(['o.k + "_X"']);
+    // The exported name is no longer callable once renamed, and a local alias
+    // of an unrelated import is not a helper.
+    expect([
+      ...scanEnvReadsInSource(
+        'import { envOn as readFlag } from "./h"; import { other as envOn2 } from "./o"; envOn2("NOT_A_READ");',
+        'src/unrelated.ts',
+        [helper],
+      ).names,
+    ]).toEqual([]);
+  });
+
+  it('a namespace import (h.envOn) and a default import of a helper module resolve', () => {
+    const ns = scanEnvReadsInSource('import * as h from "./h"; h.envOn("NS_READ");', 'src/ns.ts', [
+      { name: 'envOn', paramIndex: 0 },
+    ]);
+    expect([...ns.names]).toEqual(['NS_READ']);
+    const def = scanEnvReadsInSource(
+      'import readFlag from "../common/flags"; readFlag("DEFAULT_READ");',
+      'src/billing/x.ts',
+      [{ name: 'default', paramIndex: 0, module: 'src/common/flags.ts' }],
+    );
+    expect([...def.names]).toEqual(['DEFAULT_READ']);
+    // A default import of a different module is not that helper.
+    const other = scanEnvReadsInSource(
+      'import readFlag from "./elsewhere"; readFlag("NOT_A_READ");',
+      'src/billing/y.ts',
+      [{ name: 'default', paramIndex: 0, module: 'src/common/flags.ts' }],
+    );
+    expect([...other.names]).toEqual([]);
+  });
+
+  describe('repository scan (multi-file): export renames, re-exports, wrappers and default exports', () => {
+    let root: string;
+    beforeAll(() => {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), 'env-registration-'));
+      const write = (rel: string, body: string): void => {
+        fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+        fs.writeFileSync(path.join(root, rel), body);
+      };
+      write(
+        'src/env/h.ts',
+        'export function envOn(k: string) { return process.env[k] === "on"; }\n',
+      );
+      write(
+        'src/env/flags.ts',
+        'function readRaw(k: string) { return process.env[k]; }\nexport { readRaw as readSetting };\nexport default readRaw;\n',
+      );
+      write('src/env/index.ts', 'export { envOn as isOn } from "./h";\n');
+      write(
+        'src/env/wrap.ts',
+        'import { envOn } from "./h";\nexport function featureOn(name: string) { return envOn(name); }\n',
+      );
+      write(
+        'src/app/use.ts',
+        [
+          'import { envOn as readFlag } from "../env/h";',
+          'import { isOn } from "../env";',
+          'import { readSetting } from "../env/flags";',
+          'import readDefault from "../env/flags";',
+          'import { featureOn } from "../env/wrap";',
+          'import * as h from "../env/h";',
+          'readFlag("MULTI_RENAMED_IMPORT");',
+          'isOn("MULTI_REEXPORT_RENAME");',
+          'readSetting("MULTI_EXPORT_LIST_RENAME");',
+          'readDefault("MULTI_DEFAULT_EXPORT");',
+          'featureOn("MULTI_CROSS_FILE_WRAPPER");',
+          'h.envOn("MULTI_NAMESPACE");',
+          'export const dyn = (o: { k: string }) => readFlag(o.k);',
+          '',
+        ].join('\n'),
+      );
+    });
+    afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    it('finds every read and blocks against an empty registry', () => {
+      const scan = scanEnvReads(root);
+      expect([...scan.reads.keys()].sort()).toEqual([
+        'MULTI_CROSS_FILE_WRAPPER',
+        'MULTI_DEFAULT_EXPORT',
+        'MULTI_EXPORT_LIST_RENAME',
+        'MULTI_NAMESPACE',
+        'MULTI_REEXPORT_RENAME',
+        'MULTI_RENAMED_IMPORT',
+      ]);
+      expect(scan.dynamic).toEqual([{ file: 'src/app/use.ts', line: 13, expr: 'o.k' }]);
+      const report = checkRegistration(scan, [], {});
+      expect(registrationRedCount(report)).toBe(7);
+    });
+  });
+});
+
 describe('checkRegistration (pure)', () => {
   const scan: EnvReadScan = {
     reads: new Map([
@@ -169,7 +361,13 @@ describe('repository invariant: every env name src/ reads is registered in ENV_R
   });
 
   it('has zero unrecorded dynamic env reads (list them in DYNAMIC_ENV_SITES)', () => {
-    expect(report.unknownDynamic).toEqual([]);
+    expect(
+      report.unknownDynamic.map(
+        (d) =>
+          `${d.file}:${d.line} env read keyed by \`${d.expr}\` -> use a literal name or add ` +
+          `'${d.file}::${d.expr}': [<names it can read>] to DYNAMIC_ENV_SITES`,
+      ),
+    ).toEqual([]);
     expect(report.staleDynamicSites).toEqual([]);
     expect(report.unregisteredDynamicNames).toEqual([]);
   });
@@ -184,6 +382,23 @@ describe('repository invariant: every env name src/ reads is registered in ENV_R
     ]) {
       expect(report.registered.has(n)).toBe(true);
     }
+  });
+
+  it('follows the alias-keyed numEnv(env, NAME, d) reads in dunning.service.ts (dropped before B-624-2)', () => {
+    // Checked on the file itself: env-validation.ts's own env[rule.name] loop
+    // makes every ENV_RULES name look "read", so the repo report cannot prove this.
+    const rel = 'src/checkout/dunning.service.ts';
+    const got = scanEnvReadsInSource(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'), rel);
+    for (const n of [
+      'DUNNING_CADENCE_DAYS',
+      'DUNNING_GRACE_DAYS',
+      'DUNNING_MAX_FAILURES',
+      'DUNNING_MAX_SEND_RETRIES',
+      'DUNNING_RETRY_BACKOFF_MS',
+    ]) {
+      expect([n, got.names.has(n)]).toEqual([n, true]);
+    }
+    expect(got.dynamic).toEqual([]);
   });
 
   it('the pilot-coach dynamic site lists exactly the FEATURE_GATED_ROUTES flags', () => {

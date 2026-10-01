@@ -153,9 +153,15 @@ describe('fly-env-sync.yml', () => {
     expect(pushStep.run).toMatch(/set \+x/);
   });
 
-  it('post-check prints names only (never digests)', () => {
+  it('post-check uses the structured --json listing and projects names + status only (never digests)', () => {
+    // Behaviour (staged / partial / deployed fixtures, apply reachability) is
+    // proven in fly-env-sync-behavior.spec.ts; this pins the shape.
     const check = job.steps.find((s) => /flyctl secrets list/.test(s.run ?? ''))!;
-    expect(check.run).toMatch(/awk -F'│' '\{gsub\(/);
+    expect(check.run).toMatch(
+      /flyctl secrets list -a "\$\{APP\}" --json [^\n]*\| jq -r "\$\{filter\}"/,
+    );
+    expect(check.run).not.toMatch(/awk -F'│'/);
+    expect(check.run).not.toMatch(/\.digest|\.Digest/);
     expect(check.run).not.toMatch(/echo "\$\{listing\}"/);
   });
 });

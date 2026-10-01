@@ -58,12 +58,12 @@ jobs:
           case "${APP}" in
             backend-spring-lake-3890) ;;
             *)
-              echo "::error::app input is not an allowed Fly app target. Aborting."
+              echo "::error::The app input is not an allowed Fly app target, so no ssh session was opened. This workflow only reads backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
               exit 1
               ;;
           esac
           if [ -n "${MACHINE}" ] && ! printf '%s' "${MACHINE}" | grep -Eq '^[a-z0-9]{8,32}$'; then
-            echo "::error::machine input must be a Fly machine id. Aborting."
+            echo "::error::The machine input is not a Fly machine id (8-32 lowercase letters and digits), so no ssh session was opened. Fix: copy an id from 'fly machine list -a backend-spring-lake-3890' or leave machine empty to use any started machine, then re-run."
             exit 1
           fi
           echo "App target allowed."
@@ -73,7 +73,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::error::FLY_API_TOKEN secret is not set — cannot open an ssh session."
+            echo "::error::The FLY_API_TOKEN secret is empty or not set, so no ssh session can be opened. Fix: save a Fly token that can ssh into backend-spring-lake-3890 as the FLY_API_TOKEN secret available to the production environment, then re-run."
             exit 1
           fi
           echo "FLY_API_TOKEN is configured."
@@ -106,7 +106,9 @@ jobs:
           if [ -n "${MACHINE}" ]; then machine_args=(--machine "${MACHINE}"); fi
           # stdout carries only the value-free report line; it is parsed, not printed.
           flyctl ssh console -a "${APP}" "${machine_args[@]}" -C "$(cat remote-cmd.txt)" > ssh-output.txt 2> ssh-stderr.txt || {
-            echo "::error::flyctl ssh console failed (exit $?). stderr follows:"
+            rc=$?
+            rm -f ssh-output.txt
+            echo "::error::flyctl ssh console failed (exit ${rc}), so no env-truth report was produced. Fix: check that a machine is started ('fly status -a ${APP}'), that FLY_API_TOKEN may open ssh sessions on ${APP}, and that the machine input (if set) is a current machine id, then re-run. flyctl stderr follows:"
             cat ssh-stderr.txt
             exit 1
           }

@@ -639,15 +639,27 @@ export function runEnvRegistrationSection(report: RegistrationReport): SectionRe
     `env names read by src/: ${report.readCount}   registered in ENV_RULES: ${report.registered.size}   unregistered: ${report.unregistered.length}`,
   );
   for (const u of report.unregistered) {
-    lines.push(`[UNREGISTERED] ${u.name}  <- ${u.files.join(', ')}`);
+    lines.push(
+      `[UNREGISTERED] ${u.name}  <- ${u.files.join(', ')}  ` +
+        `(fix: add an ENV_RULES entry for ${u.name} in src/common/env-validation.ts with tier, default and reason)`,
+    );
   }
   for (const d of report.unknownDynamic) {
     lines.push(
-      `[DYNAMIC] ${d.file}:${d.line}  process.env[${d.expr}] (record it in DYNAMIC_ENV_SITES)`,
+      `[DYNAMIC] ${d.file}:${d.line}  env read keyed by \`${d.expr}\` cannot be resolved statically  ` +
+        `(fix: use a literal name, or add '${d.file}::${d.expr}': [<every name it can read>] to DYNAMIC_ENV_SITES in test/prod-readiness/env-registration.ts)`,
     );
   }
-  for (const k of report.staleDynamicSites) lines.push(`[STALE DYNAMIC SITE] ${k}`);
-  for (const n of report.unregisteredDynamicNames) lines.push(`[UNREGISTERED DYNAMIC NAME] ${n}`);
+  for (const k of report.staleDynamicSites) {
+    lines.push(
+      `[STALE DYNAMIC SITE] ${k}  (fix: no read in src/ matches this DYNAMIC_ENV_SITES key any more; delete it or update its file::expression)`,
+    );
+  }
+  for (const n of report.unregisteredDynamicNames) {
+    lines.push(
+      `[UNREGISTERED DYNAMIC NAME] ${n}  (fix: DYNAMIC_ENV_SITES lists ${n} but ENV_RULES does not; add an ENV_RULES entry for it in src/common/env-validation.ts)`,
+    );
+  }
   lines.push(`registered but not read by src/ (informational): ${report.registeredUnread.length}`);
   if (red === 0) lines.push('all env reads registered');
   return { section: reg.section, label: reg.label, red, gating: reg.mode === 'GATING', lines };
@@ -1075,6 +1087,10 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(r.gating).toBe(true);
       expect(r.red).toBe(1);
       expect(r.lines.join('\n')).toContain('[UNREGISTERED] NEW_UNREGISTERED_FLAG  <- src/x.ts');
+      // Owner rule: every red line says what is wrong and how to fix it.
+      expect(r.lines.join('\n')).toContain(
+        'fix: add an ENV_RULES entry for NEW_UNREGISTERED_FLAG in src/common/env-validation.ts',
+      );
       expect(ENV_DEPENDENT_SECTIONS.has('ENV_REGISTRATION')).toBe(false);
       const counts: ExitCounts = {
         stub: 0,

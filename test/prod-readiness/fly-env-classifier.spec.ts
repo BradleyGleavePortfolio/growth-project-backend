@@ -322,3 +322,102 @@ describe('inline remote program (what fly-env-truth.yml ships over ssh)', () => 
     expect(() => parseRemoteOutput('Error: ssh: handshake failed')).toThrow(/marker not found/);
   });
 });
+
+/**
+ * Opus B-624-1 (fix round): a present, unregistered name that is not a valid
+ * env var name can be a fragment of a secret value (an unquoted
+ * `fly secrets set A=part1 part2=part3`). It must never reach the JSON report,
+ * the job summary or the artifact; it is replaced by an opaque MALFORMED_<n> id.
+ */
+describe('malformed present names are redacted (Opus B-624-1)', () => {
+  const MALFORMED = ['q9Zr+/kL2pX', 'leakcanary_lower_fragment', 'Zk 9/abc.def'];
+  const env: Record<string, string> = {
+    APP_URL: 'https://app.invalid',
+    E: 'leakcanary-short-name-value',
+    [MALFORMED[0]]: 'tail',
+    [MALFORMED[1]]: 'leakcanary-fragment-value',
+    [MALFORMED[2]]: 'x',
+  };
+  const expectNoMalformed = (text: string): void => {
+    for (const n of MALFORMED) expect(text).not.toContain(n);
+    // No piece of the probe name either (the alnum run after the first char).
+    expect(text).not.toContain('Zr+/kL2pX');
+    expect(text).not.toContain('kL2pX');
+  };
+
+  it('neither JSON.stringify(report) nor renderMarkdown(report) contains a malformed name', () => {
+    const report = classifyEnv(env, ['APP_URL']);
+    expectNoMalformed(JSON.stringify(report));
+    const md = renderMarkdown(report, 'backend-spring-lake-3890');
+    expectNoMalformed(md);
+    // Well-formed names (registered or not, suspicious or not) stay visible.
+    expect(report.rows.map((r) => r.name)).toEqual(
+      expect.arrayContaining(['APP_URL', 'E', 'MALFORMED_1', 'MALFORMED_2', 'MALFORMED_3']),
+    );
+    expect(md).toContain('`E`');
+  });
+
+  it('redacted rows carry an opaque id and the name length bucket, sorted last', () => {
+    const report = classifyEnv(env, ['APP_URL']);
+    const tail = report.rows.slice(-3);
+    expect(tail.map((r) => r.name)).toEqual(['MALFORMED_1', 'MALFORMED_2', 'MALFORMED_3']);
+    for (const r of tail) {
+      expect(r).toMatchObject({ registered: false, present: true, nameRedacted: true });
+      expect(r.nameLengthBucket).toMatch(/^(1-7|8-15|16-31|32-63|64-127|128\+)$/);
+    }
+    expect(report.rows.filter((r) => r.nameRedacted).length).toBe(3);
+    expect(report.summary.malformedNamesRedacted).toBe(3);
+    // A registered name is never redacted (registry names are validated well-formed).
+    expect(report.rows.find((r) => r.name === 'APP_URL')?.nameRedacted).toBeUndefined();
+  });
+
+  it('the job summary says how to find and remove the redacted names', () => {
+    const md = renderMarkdown(classifyEnv(env, ['APP_URL']), 'backend-spring-lake-3890');
+    expect(md).toContain('| Malformed names (redacted) | 3 |');
+    expect(md).toContain('## Malformed names (redacted)');
+    expect(md).toContain('fly secrets list -a backend-spring-lake-3890');
+    expect(md).toContain('fly secrets unset -a backend-spring-lake-3890 <name>');
+    expect(md).toContain('| MALFORMED_1 |');
+  });
+
+  it('the exact inline program redacts them inside the machine (end to end through parse + render)', () => {
+    const source = fs.readFileSync(CLASSIFIER, 'utf8');
+    const r = spawnSync(process.execPath, ['-e', buildRemoteProgram(source)], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', ...env, [NAMES_ENV]: encodeNames(['APP_URL']) },
+    });
+    expect(r.status).toBe(0);
+    expectNoMalformed(r.stdout + r.stderr);
+    const report = parseRemoteOutput(r.stdout);
+    expect(report.summary.malformedNamesRedacted).toBe(3);
+    expectNoMalformed(renderMarkdown(report, 'backend-spring-lake-3890'));
+  });
+});
+
+describe('CLI failure messages say what is wrong and how to fix it', () => {
+  it('unknown command lists the valid commands', () => {
+    const r = spawnSync(process.execPath, [CLASSIFIER, 'bogus'], { encoding: 'utf8' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/unknown command\. Fix: use one of names .*command .*parse .*render/);
+  });
+
+  it('a missing report marker fails with the fix, not a bare stack', () => {
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'envtruth-cli-'));
+    const out = path.join(tmp, 'ssh.txt');
+    fs.writeFileSync(out, 'Error: ssh: handshake failed\n');
+    const r = spawnSync(process.execPath, [CLASSIFIER, 'parse', out, path.join(tmp, 'r.json')], {
+      encoding: 'utf8',
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(
+      /^::error::fly-env-classifier parse: env-truth report marker not found/,
+    );
+    expect(r.stderr).toContain('Fix:');
+  });
+
+  it('extractRegisteredNames explains a renamed ENV_RULES declaration', () => {
+    expect(() => extractRegisteredNames('export const RULES = [];')).toThrow(
+      /ENV_RULES not found .*Fix:/,
+    );
+  });
+});

@@ -1198,6 +1198,33 @@ export const ENV_RULES: EnvRule[] = [
     default: 'DEFAULT_DUNNING_CADENCE (dunning.service.ts); malformed lists fall back',
     reason: 'Comma-separated dunning step offsets in days.',
   },
+  // The four dunning tunables below are read through numEnv(env, 'NAME', d) on
+  // a ProcessEnv alias (dunning.service.ts resolveDunningConfig); the scanner
+  // only saw them once alias-keyed helper reads were followed (B-624-2).
+  {
+    name: 'DUNNING_GRACE_DAYS',
+    tier: 'optional',
+    default: '7 (non-positive / unparseable fall back)',
+    reason: 'Dunning grace period in days (resolveDunningConfig graceDays).',
+  },
+  {
+    name: 'DUNNING_MAX_FAILURES',
+    tier: 'optional',
+    default: '4 (non-positive / unparseable fall back)',
+    reason: 'Dunning failed-payment ceiling (resolveDunningConfig maxFailures).',
+  },
+  {
+    name: 'DUNNING_MAX_SEND_RETRIES',
+    tier: 'optional',
+    default: '3 (non-positive / unparseable fall back)',
+    reason: 'Email-send retries per dunning attempt before it is marked failed_permanent.',
+  },
+  {
+    name: 'DUNNING_RETRY_BACKOFF_MS',
+    tier: 'optional',
+    default: '3600000 = 1 h (non-positive / unparseable fall back)',
+    reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
+  },
   {
     name: 'MEDIA_SIGNED_URL_TTL_SEC',
     tier: 'optional',

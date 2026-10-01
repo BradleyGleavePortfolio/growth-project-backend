@@ -11,6 +11,10 @@ export interface EnvTruthRow {
   duplicateGroup: string | null;
   lengthBucket: string;
   suspiciousName: boolean;
+  /** Set when a present, unregistered name failed ENV_NAME_RE: `name` is then MALFORMED_<n>. */
+  nameRedacted?: true;
+  /** Length bucket of the redacted name (only with nameRedacted). */
+  nameLengthBucket?: string;
 }
 
 export interface EnvTruthSummary {
@@ -23,6 +27,7 @@ export interface EnvTruthSummary {
   duplicateKeys: number;
   unregisteredPresent: number;
   suspiciousNames: number;
+  malformedNamesRedacted: number;
   shapeChecksFailing: number;
 }
 
@@ -48,6 +53,7 @@ export interface ClassifyOptions {
 
 export const ENV_NAME_RE: RegExp;
 export const REPORT_MARKER: string;
+export const MALFORMED_PREFIX: string;
 export const PLACEHOLDER_PATTERNS: ReadonlyArray<[string, (value: string) => boolean]>;
 export const IOS_BUNDLE_ID: string;
 export const SHAPE_CHECKS: ReadonlyArray<{
