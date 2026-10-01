@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
+import { ChargeSettlementService } from '../connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
@@ -20,6 +21,12 @@ import { PrismaService } from '../prisma.service';
 //
 // The handler is idempotent — every step uses composite-unique upserts
 // or stable Stripe idempotency keys.
+//
+// S-FEE: every successful coach-package charge is handed to
+// ChargeSettlementService, which pays the coach price - actual Stripe fee -
+// TGP 2% (- head-coach split) by Transfer. Only a legacy destination charge
+// (minted before S-FEE, Stripe already moved the coach's share) still runs
+// the original head-coach-only flow below (legacyOnChargeSucceeded).
 
 @Injectable()
 export class PurchaseSplitHandlerService {
@@ -31,6 +38,7 @@ export class PurchaseSplitHandlerService {
     private feePolicy: FeePolicyService,
     private ledger: SplitLedgerService,
     private transfers: TransferOrchestratorService,
+    private settlements: ChargeSettlementService,
   ) {}
 
   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
@@ -57,13 +65,51 @@ export class PurchaseSplitHandlerService {
     }
   }
 
-  // Called from the webhook handler after a successful payment. Builds
-  // the ledger and queues the head-coach transfer (if applicable).
-  // Returns the resolved Stripe charge id for telemetry.
+  // Called from the webhook handler after a successful payment. Settles the
+  // charge (S-FEE) or, for a legacy destination charge, builds the legacy
+  // ledger and queues the head-coach transfer. Returns the resolved Stripe
+  // charge id for telemetry.
   async onChargeSucceeded(args: {
     purchase: ClientPurchase;
     invoice_amount_cents?: number; // for recurring renewals, may differ from snapshot
     invoice_charge_id?: string | null; // for recurring renewals, when known
+  }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
+    const purchase = args.purchase;
+    // Free packages and $0 grants never settle, transfer or post revenue.
+    if (!(purchase.amount_cents > 0) || args.invoice_amount_cents === 0) {
+      return { charge_id: null, ledger_entries: 0, transfer_enqueued: false };
+    }
+    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+    if (!chargeId) {
+      // Subscription-mode Checkout completion carries no PaymentIntent: settle
+      // every paid invoice of the subscription instead (idempotent per charge).
+      const outcomes = await this.settlements.settlePurchase(purchase);
+      return {
+        charge_id: outcomes.find((o) => o.charge_id)?.charge_id ?? null,
+        ledger_entries: outcomes.reduce((n, o) => n + o.ledger_entries, 0),
+        transfer_enqueued: outcomes.some((o) => o.transfers_enqueued > 0),
+      };
+    }
+    const outcome = await this.settlements.settleCharge({
+      purchase,
+      charge_id: chargeId,
+    });
+    if (outcome.status !== 'legacy_destination') {
+      return {
+        charge_id: chargeId,
+        ledger_entries: outcome.ledger_entries,
+        transfer_enqueued: outcome.transfers_enqueued > 0,
+      };
+    }
+    return this.legacyOnChargeSucceeded({ ...args, invoice_charge_id: chargeId });
+  }
+
+  // Pre-S-FEE flow, unchanged, for destination charges minted before S-FEE
+  // (Stripe already routed `amount - application_fee` to the seller).
+  private async legacyOnChargeSucceeded(args: {
+    purchase: ClientPurchase;
+    invoice_amount_cents?: number;
+    invoice_charge_id?: string | null;
   }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
     const purchase = args.purchase;
     const seller = await this.prisma.connectAccount.findUnique({
@@ -163,12 +209,16 @@ export class PurchaseSplitHandlerService {
     };
   }
 
-  // Run all due-but-pending transfers (sweeper entry point).
+  // Run all due-but-pending transfers (sweeper entry point). S-FEE: first
+  // retry settlements waiting on Stripe's fee and settle any recent paid
+  // purchase no webhook settled, then post due transfers.
   async runTransferSweeper(now: Date = new Date()): Promise<{
     attempted: number;
     succeeded: number;
     failed: number;
+    settlements?: { retried: number; backfilled: number; settled: number };
   }> {
+    const settlements = await this.settlements.runSettlementSweep(now);
     const due = await this.transfers.findDueTransfers(now);
     let succeeded = 0;
     let failed = 0;
@@ -177,6 +227,21 @@ export class PurchaseSplitHandlerService {
       if (updated.status === 'succeeded') succeeded += 1;
       else if (updated.status === 'failed') failed += 1;
     }
-    return { attempted: due.length, succeeded, failed };
+    return { attempted: due.length, succeeded, failed, settlements };
+  }
+
+  // S-FEE — settle a guest-storefront purchase after its conversion commits
+  // (the guest PaymentIntent / first invoice has no checkout-session hook).
+  // Never throws; the settlement sweeper is the backstop.
+  async settleGuestPurchaseByPaymentIntent(paymentIntentId: string): Promise<void> {
+    try {
+      const purchase = await this.prisma.clientPurchase.findFirst({
+        where: { stripe_payment_intent_id: paymentIntentId },
+      });
+      if (!purchase || !(purchase.amount_cents > 0)) return;
+      await this.settlements.settlePurchase(purchase);
+    } catch (err) {
+      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${(err as Error).message}`);
+    }
   }
 }

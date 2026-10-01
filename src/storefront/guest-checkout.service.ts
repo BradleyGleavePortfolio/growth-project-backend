@@ -37,25 +37,13 @@ import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 
-// Platform cut on every guest checkout. Stripe's minimum application_fee
-// is 50 cents — packages priced low enough that 2% falls below the floor
-// get bumped up so Stripe accepts the charge.
-//
-// Audit #3 P2-5 — application_fee is also clamped to the charge amount
-// so a sub-floor price can never produce a fee greater than the charge.
-//
-// Audit #4 P1-4 — the application_fee_amount we set on Stripe is what
-// stays on the platform AFTER Stripe deducts its processing fee from
-// the gross. To keep a true 2% margin we add a pass-through estimate
-// of Stripe's own fee (2.9% + 30¢ for US card, the same numbers Stripe
-// publishes in https://stripe.com/pricing) on top of the 2% slice.
-// The destination connected account therefore receives:
-//   gross  - (platform 2% + Stripe 2.9% + 30¢)
-// which matches what the coach's UI quotes.
-const PLATFORM_FEE_PERCENT = 0.02;
-const PLATFORM_FEE_MIN_CENTS = 50;
-const STRIPE_PASS_THROUGH_PERCENT = 0.029;
-const STRIPE_PASS_THROUGH_FIXED_CENTS = 30;
+// S-FEE — guest storefront charges are separate charges and transfers, like
+// every other checkout path. The PaymentIntent / Subscription carries NO
+// application fee or transfer_data; ChargeSettlementService pays the coach
+//   price - actual Stripe fee - TGP 2% (- head-coach split)
+// after the charge succeeds, from the charge's balance_transaction.fee. The
+// former estimate (2% with a 50c floor + 2.9% + 30c pass-through) is gone:
+// the coach is charged Stripe's real fee, not an estimate.
 
 // Audit #4 P1-5 — Stripe rejects PaymentIntent.amount < 50 cents in USD
 // before we ever set foot in the API. Validate up front for a clean 400.
@@ -454,29 +442,6 @@ export class GuestCheckoutService {
         });
     }
 
-    // Audit #4 P1-4 — application_fee_amount = our 2% slice + a
-    // pass-through estimate of Stripe's own processing fee (2.9% + 30¢
-    // for US cards). The pass-through is an estimate because Stripe's
-    // actual fee depends on the card brand and may differ slightly for
-    // international cards, AmEx, etc.; reconciliation against
-    // BalanceTransaction.fee in the connect-webhook handler is where
-    // the books are finally squared. Math.floor on the slice avoids a
-    // fractional cent that could push application_fee_amount above the
-    // gross. The full sum is clamped at the gross so a degenerate price
-    // (e.g. $0.50, where 30¢ + 2.9% + 2% > 50¢) still satisfies
-    // Stripe's invariant application_fee_amount <= amount.
-    const platformSliceCents = Math.max(
-      Math.floor(pkg.amount_cents * PLATFORM_FEE_PERCENT),
-      PLATFORM_FEE_MIN_CENTS,
-    );
-    const stripePassThroughCents =
-      Math.floor(pkg.amount_cents * STRIPE_PASS_THROUGH_PERCENT) +
-      STRIPE_PASS_THROUGH_FIXED_CENTS;
-    const platformFeeCents = Math.min(
-      pkg.amount_cents,
-      platformSliceCents + stripePassThroughCents,
-    );
-
     // Create the GuestCheckout sentinel row FIRST so we own the
     // idempotency key. If two concurrent callers hit this branch with
     // the same key, the second loses on the @unique constraint and
@@ -582,10 +547,8 @@ export class GuestCheckoutService {
           currency: pkg.currency,
           // Guest checkout never reuses cards — omit `customer` entirely
           // rather than passing an empty string (P2-3).
-          applicationFeeAmount: platformFeeCents,
-          transferDestination: connectAccount.stripe_account_id,
-          // Audit #3 P1-10 — connected coach is the merchant of record
-          // for the destination charge.
+          // Audit #3 P1-10 — connected coach is the settlement merchant.
+          // S-FEE: no application fee / transfer_data (see header).
           onBehalfOf: connectAccount.stripe_account_id,
           // Audit #3 P2-4 — only non-PII correlation identifiers go in
           // Stripe metadata. guest_email / guest_name used to be sent
@@ -748,77 +711,10 @@ export class GuestCheckoutService {
       ? await this.checkout.ensurePriceForPackage(pkg)
       : undefined;
 
-    // 4. Compute the platform fee percent. The percent is what Stripe
-    //    applies to the WHOLE invoice — for combo first invoices that's
-    //    `amount_cents + recurring_amount_cents`, not just the recurring
-    //    half. PR-14 R2 P1-1 fix: size the percent against the first-
-    //    invoice total so the platform/head-coach collect their
-    //    contracted slice and the selling coach receives what they were
-    //    quoted. Renewals are recurring-only invoices and use the same
-    //    percent applied to the recurring-only basis — that math
-    //    naturally collapses back to the per-leg contract because we
-    //    derive the fee CENTS from a per-leg plan sum and re-express
-    //    them as a percent of the *first-invoice* total.
-    //
-    //    Concretely:
-    //      contractedFeeCents (first invoice) = plan(amount_cents).fee
-    //                                         + plan(recurring_amount_cents).fee
-    //      firstInvoiceCents               = amount_cents + recurring_amount_cents
-    //      percent = ceil(contractedFeeCents / firstInvoiceCents)  (2dp)
-    //
-    //    On renewals Stripe applies that percent to the recurring-only
-    //    invoice (recurring_amount_cents) — which over-collects by the
-    //    one-time half's proportional contribution. To avoid that, when
-    //    in combo we set the percent to the WEIGHTED basis but ALSO size
-    //    the per-renewal expected fee against the recurring leg only.
-    //    Solving for a single percent that satisfies both invoices is
-    //    impossible (Stripe accepts only ONE application_fee_percent per
-    //    subscription), so we accept the renewal under-/over-collection
-    //    inside the contracted rate's tolerance — the platform recon
-    //    sweeper squares the books per renewal via the SplitLedgerEntry
-    //    + Transfer reconciliation that already runs in PR-2/PR-9.
-    //
-    //    Net behaviour: first-invoice fee is correct to the contracted
-    //    rate (no shortfall to the selling coach); renewals are sized at
-    //    the same percent and reconciled per-leg downstream — exactly
-    //    the existing in-app behaviour for subscription packages.
-    const recurringAmountCents = pkg.recurring_amount_cents ?? 0;
-    const oneTimeAmountCents = isCombo ? pkg.amount_cents : 0;
-    const firstInvoiceCents = isCombo
-      ? oneTimeAmountCents + recurringAmountCents
-      : pkg.amount_cents;
-
-    // Per-leg fee plan sum. In one_time-only or recurring-only flows we
-    // call planFor once on the relevant leg. In combo we call planFor
-    // twice and sum the cents so the FeePolicy's bps math is applied to
-    // each leg's amount independently (matches §4 FeePolicy contract).
-    let combinedApplicationFeeCents: number;
-    if (isCombo) {
-      const recurringPlan = await this.feePolicy.planFor(
-        pkg.coach_id,
-        recurringAmountCents,
-      );
-      const oneTimePlan = await this.feePolicy.planFor(
-        pkg.coach_id,
-        oneTimeAmountCents,
-      );
-      combinedApplicationFeeCents =
-        recurringPlan.application_fee_cents +
-        recurringPlan.head_coach_split_cents +
-        oneTimePlan.application_fee_cents +
-        oneTimePlan.head_coach_split_cents;
-    } else {
-      const plan = await this.feePolicy.planFor(pkg.coach_id, pkg.amount_cents);
-      combinedApplicationFeeCents =
-        plan.application_fee_cents + plan.head_coach_split_cents;
-    }
-    const applicationFeePercent =
-      combinedApplicationFeeCents > 0 && firstInvoiceCents > 0
-        ? CheckoutService.toStripeApplicationFeePercent(
-            combinedApplicationFeeCents,
-            firstInvoiceCents,
-          )
-        : undefined;
+    // 4. S-FEE: no application_fee_percent. Each paid invoice (first and
+    //    every renewal, combo or not) is settled per charge from Stripe's
+    //    actual fee by ChargeSettlementService off invoice.paid, so a combo
+    //    first invoice and a recurring-only renewal are both split exactly.
 
     // 5. Mint subscription. payment_behavior=default_incomplete returns
     //    a latest_invoice.payment_intent with a client_secret the guest
@@ -829,9 +725,7 @@ export class GuestCheckoutService {
       customer: customer.id,
       recurringPriceId,
       oneTimePriceId,
-      transferDestination: connectAccount.stripe_account_id,
       onBehalfOf: connectAccount.stripe_account_id,
-      applicationFeePercent,
       metadata: {
         [GUEST_CHECKOUT_METADATA_KEY]: idempotencyKey,
         tgp_package_id: pkg.id,

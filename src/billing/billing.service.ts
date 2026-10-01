@@ -243,6 +243,10 @@ export class BillingService {
     const guestSubFallbackRef: { value: { guest_checkout_id: string; payment_intent_id: string } | null } = {
       value: null,
     };
+    // S-FEE — guest PaymentIntent whose conversion this delivery drove. The
+    // coach payout for it is settled post-commit (Stripe HTTP never runs
+    // inside the tx); the settlement sweeper is the backstop.
+    const guestSettlementPiRef: { value: string | null } = { value: null };
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -425,10 +429,12 @@ export class BillingService {
                 chargeId = chargeId ?? preResolved.chargeId;
                 preResolveAttempted = true;
               }
-              await this.guestCheckout.handlePaymentSucceeded(
-                pi.id,
-                { chargeId, receiptUrl, preResolveAttempted },
-              );
+              await this.guestCheckout.handlePaymentSucceeded(pi.id, {
+                chargeId,
+                receiptUrl,
+                preResolveAttempted,
+              });
+              guestSettlementPiRef.value = pi.id;
             }
             break;
           }
@@ -666,12 +672,23 @@ export class BillingService {
       if (piId) {
         try {
           await this.guestCheckout.handlePaymentSucceeded(piId);
+          guestSettlementPiRef.value = guestSettlementPiRef.value ?? piId;
         } catch (err) {
           this.logger.warn(
             `guest subscription fallback handlePaymentSucceeded failed pi=${piId}: ${(err as Error).message}`,
           );
         }
       }
+    }
+
+    // S-FEE — settle the guest purchase's charge(s) now that the conversion
+    // committed. Failure-isolated (never throws); the sweeper retries.
+    if (
+      guestSettlementPiRef.value &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.settleGuestPurchase === 'function'
+    ) {
+      await this.checkoutWebhooks.settleGuestPurchase(guestSettlementPiRef.value);
     }
     return { processed: true };
   }

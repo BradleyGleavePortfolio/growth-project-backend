@@ -21,6 +21,7 @@ import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { ReconciliationService } from '../connect/fees/reconciliation.service';
@@ -828,17 +829,39 @@ export class CoachPaymentOpsController {
   //   posted   = sum(amount) - sum(reversed)  on posted rows
   //   pending  = sum(amount)                  on pending rows
   //   reversed = sum(amount)                  on reversed rows
+  //
+  // S-FEE: `recoveries_cents` is what this payee owes back on refunded /
+  // disputed charges beyond what a transfer reversal recovered, and
+  // `net_cents` is the shared coach-net definition (coachNetCents), the same
+  // figure /coach/connect/metrics reports.
   private async computeEarningsSummary(payeeUserId: string): Promise<{
     posted_cents: number;
     pending_cents: number;
     reversed_cents: number;
+    recoveries_cents: number;
+    net_cents: number;
   }> {
-    const grouped = await this.prisma.splitLedgerEntry.groupBy({
-      by: ['status'],
-      where: { payee_user_id: payeeUserId },
-      _sum: { amount_cents: true, reversed_cents: true },
-    });
-    const summary = { posted_cents: 0, pending_cents: 0, reversed_cents: 0 };
+    const [grouped, recoveries] = await Promise.all([
+      this.prisma.splitLedgerEntry.groupBy({
+        by: ['status'],
+        where: { payee_user_id: payeeUserId },
+        _sum: { amount_cents: true, reversed_cents: true },
+      }),
+      this.prisma.payeeRecovery.aggregate({
+        where: {
+          payee_user_id: payeeUserId,
+          status: { in: [...COUNTED_RECOVERY_STATUSES] },
+        },
+        _sum: { amount_cents: true },
+      }),
+    ]);
+    const summary = {
+      posted_cents: 0,
+      pending_cents: 0,
+      reversed_cents: 0,
+      recoveries_cents: recoveries._sum.amount_cents ?? 0,
+      net_cents: 0,
+    };
     for (const g of grouped) {
       const amount = g._sum.amount_cents ?? 0;
       const reversed = g._sum.reversed_cents ?? 0;
@@ -846,6 +869,7 @@ export class CoachPaymentOpsController {
       else if (g.status === 'pending') summary.pending_cents += amount;
       else if (g.status === 'reversed') summary.reversed_cents += amount;
     }
+    summary.net_cents = coachNetCents(summary.posted_cents, summary.recoveries_cents);
     return summary;
   }
 

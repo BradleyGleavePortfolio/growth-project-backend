@@ -117,6 +117,39 @@ export interface StripeSubscriptionObject {
   [k: string]: unknown;
 }
 
+// Stripe BalanceTransaction (subset). `amount` / `fee` / `net` are in the
+// settlement `currency`; `fee` is Stripe's ACTUAL processing fee for the charge.
+export interface StripeBalanceTransactionObject {
+  id: string;
+  amount: number;
+  fee: number;
+  net: number;
+  currency: string;
+  type?: string;
+  [k: string]: unknown;
+}
+
+export interface StripeChargeObject {
+  id: string;
+  amount: number;
+  currency?: string;
+  amount_refunded?: number;
+  refunded?: boolean;
+  paid?: boolean;
+  status?: string;
+  // Destination-charge artefacts. Present only on pre-S-FEE charges.
+  transfer?: string | null;
+  transfer_data?: { destination?: string | null } | null;
+  application_fee?: string | null;
+  application_fee_amount?: number | null;
+  payment_intent?: string | null;
+  invoice?: string | null;
+  // String id unless retrieved with expand[]=balance_transaction.
+  balance_transaction?: string | StripeBalanceTransactionObject | null;
+  payment_method_details?: { type?: string | null } | null;
+  [k: string]: unknown;
+}
+
 @Injectable()
 export class StripeConnectApiService {
   private readonly logger = new Logger(StripeConnectApiService.name);
@@ -379,10 +412,14 @@ export class StripeConnectApiService {
   // single PaymentIntent. Skipping `add_invoice_items` (pure recurring)
   // produces a regular first-period charge.
   //
-  // Connect destination charges: `transfer_data[destination]` routes
-  // every invoice (initial + renewals) to the coach's connected account.
-  // `application_fee_percent` is the platform's slice (decimal %,
-  // 2dp ceiling per CheckoutService.toStripeApplicationFeePercent).
+  // S-FEE — separate charges and transfers. The subscription lives on the
+  // platform with `on_behalf_of` = the coach's connected account (the coach is
+  // the settlement merchant) and NO transfer_data / application fee. Each paid
+  // invoice is settled by ChargeSettlementService off `invoice.paid`: it reads
+  // the charge's actual Stripe fee and transfers the coach net with
+  // source_transaction = that charge (docs.stripe.com/connect/subscriptions:
+  // "create the subscription on the platform with on_behalf_of ... Create
+  // transfers separately to send funds to the connected account").
   //
   // Idempotency-key is REQUIRED — Stripe collapses retries on the same
   // idempotency_key to the same Subscription, so a network-dropped retry
@@ -393,9 +430,7 @@ export class StripeConnectApiService {
     // One-time-price added to the first invoice (combo packages). Omit
     // for pure-recurring.
     oneTimePriceId?: string;
-    transferDestination: string;
     onBehalfOf: string;
-    applicationFeePercent?: number;
     metadata?: Record<string, string>;
     idempotencyKey: string;
   }): Promise<StripeSubscriptionObject & {
@@ -412,7 +447,6 @@ export class StripeConnectApiService {
       customer: args.customer,
       'items[0][price]': args.recurringPriceId,
       payment_behavior: 'default_incomplete',
-      'transfer_data[destination]': args.transferDestination,
       on_behalf_of: args.onBehalfOf,
       // Expand the first invoice + its PaymentIntent so the caller can
       // pull the client_secret without a follow-up Stripe round trip.
@@ -423,9 +457,6 @@ export class StripeConnectApiService {
     };
     if (args.oneTimePriceId) {
       form['add_invoice_items[0][price]'] = args.oneTimePriceId;
-    }
-    if (typeof args.applicationFeePercent === 'number' && args.applicationFeePercent > 0) {
-      form.application_fee_percent = String(args.applicationFeePercent);
     }
     if (args.metadata) {
       for (const [k, v] of Object.entries(args.metadata)) {
@@ -438,11 +469,11 @@ export class StripeConnectApiService {
   // Checkout Session — the hosted page the client opens to pay. Two
   // payment shapes (mode=payment | subscription) selected by the package.
   //
-  // For Connect destination charges we attach `transfer_data[destination]`
-  // (one_time) or `subscription_data[transfer_data][destination]` (recurring)
-  // pointing at the coach's connected account. Optional
-  // application_fee_amount / application_fee_percent is the platform cut;
-  // omitted in Phase 2-3 (platform fee config is a Phase 4 concern).
+  // S-FEE — separate charges and transfers. The session charges on the
+  // platform with `on_behalf_of` = the coach's connected account (payment
+  // and subscription modes alike) and NO transfer_data / application fee.
+  // The coach is paid by ChargeSettlementService after the charge settles,
+  // from the charge's actual balance_transaction.fee.
   async createCheckoutSession(args: {
     mode: 'payment' | 'subscription';
     customer: string;
@@ -450,14 +481,11 @@ export class StripeConnectApiService {
     quantity?: number;
     successUrl: string;
     cancelUrl: string;
-    destinationAccount: string;
-    // Phase 4: application fee (TGP/platform cut). For one_time we pass
-    // it as an absolute cents amount on payment_intent_data; for
-    // subscription we pass it as a percent on subscription_data
-    // (Stripe restricts subscription application fees to percent on
-    // Checkout). Both are mutually exclusive with the OTHER mode.
-    applicationFeeAmount?: number; // cents — one_time only
-    applicationFeePercent?: number; // percent — subscription only
+    // Coach's connected account: the settlement merchant (on_behalf_of).
+    onBehalfOf: string;
+    // Groups the charge with the transfers that settle it (one_time only;
+    // Stripe defaults to group_<payment_intent> when omitted).
+    transferGroup?: string;
     clientReferenceId?: string;
     metadata?: Record<string, string>;
     subscriptionMetadata?: Record<string, string>;
@@ -476,15 +504,9 @@ export class StripeConnectApiService {
       form.client_reference_id = args.clientReferenceId;
     }
     if (args.mode === 'payment') {
-      form['payment_intent_data[transfer_data][destination]'] =
-        args.destinationAccount;
-      if (
-        typeof args.applicationFeeAmount === 'number' &&
-        args.applicationFeeAmount > 0
-      ) {
-        form['payment_intent_data[application_fee_amount]'] = String(
-          args.applicationFeeAmount,
-        );
+      form['payment_intent_data[on_behalf_of]'] = args.onBehalfOf;
+      if (args.transferGroup) {
+        form['payment_intent_data[transfer_group]'] = args.transferGroup;
       }
       if (args.paymentIntentMetadata) {
         for (const [k, v] of Object.entries(args.paymentIntentMetadata)) {
@@ -492,16 +514,7 @@ export class StripeConnectApiService {
         }
       }
     } else {
-      form['subscription_data[transfer_data][destination]'] =
-        args.destinationAccount;
-      if (
-        typeof args.applicationFeePercent === 'number' &&
-        args.applicationFeePercent > 0
-      ) {
-        form['subscription_data[application_fee_percent]'] = String(
-          args.applicationFeePercent,
-        );
-      }
+      form['subscription_data[on_behalf_of]'] = args.onBehalfOf;
       if (args.subscriptionMetadata) {
         for (const [k, v] of Object.entries(args.subscriptionMetadata)) {
           form[`subscription_data[metadata][${k}]`] = v;
@@ -545,21 +558,19 @@ export class StripeConnectApiService {
     // Guest checkout has no Customer yet; sending `customer=""` is not the
     // same as omitting the field and can be rejected by Stripe.
     customer?: string;
-    applicationFeeAmount: number;
-    transferDestination: string;
     // Audit #3 P1-10 — connected-account id Stripe should treat as the
-    // merchant of record. Required for destination charges; defaults to
-    // transferDestination on the caller side so guest-checkout and the
-    // in-app Payment Sheet are forced to provide it explicitly.
+    // settlement merchant. S-FEE: the PaymentIntent carries NO
+    // transfer_data / application fee (separate charges and transfers); the
+    // coach net is transferred after the charge settles.
     onBehalfOf: string;
+    // Optional transfer_group tying the charge to its settlement transfers.
+    transferGroup?: string;
     metadata: Record<string, string>;
     idempotencyKey: string;
   }): Promise<StripePaymentIntentObject> {
     const form: Record<string, string> = {
       amount: String(params.amount),
       currency: params.currency,
-      application_fee_amount: String(params.applicationFeeAmount),
-      'transfer_data[destination]': params.transferDestination,
       on_behalf_of: params.onBehalfOf,
       // r48 #1 — 3DS challenge handling.  automatic_payment_methods lets
       // Stripe pick the right method + handle 3DS via the client-side
@@ -573,6 +584,7 @@ export class StripeConnectApiService {
     if (typeof params.customer === 'string' && params.customer.length > 0) {
       form.customer = params.customer;
     }
+    if (params.transferGroup) form.transfer_group = params.transferGroup;
     for (const [k, v] of Object.entries(params.metadata)) {
       form[`metadata[${k}]`] = v;
     }
@@ -635,18 +647,12 @@ export class StripeConnectApiService {
     return this.get(`/payment_intents/${encodeURIComponent(piId)}`);
   }
 
-  async retrieveCharge(chargeId: string): Promise<{
-    id: string;
-    amount: number;
-    amount_refunded?: number;
-    refunded?: boolean;
-    transfer?: string | null;
-    application_fee?: string | null;
-    application_fee_amount?: number | null;
-    payment_intent?: string | null;
-    [k: string]: unknown;
-  }> {
-    return this.get(`/charges/${encodeURIComponent(chargeId)}`);
+  async retrieveCharge(
+    chargeId: string,
+    opts: { expandBalanceTransaction?: boolean } = {},
+  ): Promise<StripeChargeObject> {
+    const query = opts.expandBalanceTransaction ? '?expand[]=balance_transaction' : '';
+    return this.get(`/charges/${encodeURIComponent(chargeId)}${query}`);
   }
 
   // Phase 4: create a follow-on Transfer from the platform balance to a
@@ -656,6 +662,30 @@ export class StripeConnectApiService {
   //
   // Idempotency-key is REQUIRED — Stripe will collapse retries to the
   // same Transfer object even on a flaky network.
+  // S-FEE — paid invoices of a platform subscription, newest first. Used by
+  // the settlement backstop to find every charge of a recurring purchase
+  // (first invoice + renewals). `charge` is the invoice's charge id on API
+  // version 2024-09-30.acacia.
+  async listInvoices(args: {
+    subscription: string;
+    status?: 'paid' | 'open' | 'void' | 'uncollectible' | 'draft';
+    limit?: number;
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount_paid?: number;
+      charge?: string | { id?: string } | null;
+      status?: string;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams({ subscription: args.subscription });
+    if (args.status) params.set('status', args.status);
+    params.set('limit', String(Math.min(Math.max(args.limit ?? 12, 1), 100)));
+    return this.get(`/invoices?${params.toString()}`);
+  }
+
   async createTransfer(args: {
     amount: number; // cents
     currency: string;
@@ -846,11 +876,14 @@ export class StripeConnectApiService {
     return this.get(`/refunds/${encodeURIComponent(refundId)}`);
   }
 
-  // Create a refund on the platform charge. We always pass
-  // `reverse_transfer=true` so Stripe debits the destination account
-  // proportionally; otherwise the seller would keep funds we've refunded
-  // to the buyer. `refund_application_fee=true` returns our 2% cut so the
-  // platform isn't keeping fees on a refunded charge.
+  // Create a refund on the platform charge.
+  //
+  // S-FEE: `reverse_transfer` / `refund_application_fee` only apply to
+  // destination charges (transfer_data + application fee). They default to
+  // OFF; callers pass them only for a legacy destination charge. For
+  // separate-charge-and-transfer charges the coach's share is recovered by
+  // ChargeSettlementService (transfer reversal, then netting) when the
+  // charge.refunded webhook lands.
   //
   // Idempotency-key is REQUIRED — collapses retries to the same Refund.
   async createRefund(args: {
@@ -872,8 +905,8 @@ export class StripeConnectApiService {
     const form: Record<string, string> = { charge: args.charge_id };
     if (typeof args.amount === 'number') form.amount = String(args.amount);
     if (args.reason) form.reason = args.reason;
-    if (args.reverse_transfer ?? true) form.reverse_transfer = 'true';
-    if (args.refund_application_fee ?? true) form.refund_application_fee = 'true';
+    if (args.reverse_transfer === true) form.reverse_transfer = 'true';
+    if (args.refund_application_fee === true) form.refund_application_fee = 'true';
     if (args.metadata) {
       for (const [k, v] of Object.entries(args.metadata)) {
         form[`metadata[${k}]`] = v;
@@ -890,7 +923,13 @@ export class StripeConnectApiService {
     status: string;
     reason?: string | null;
     evidence_details?: { due_by?: number; submission_count?: number; has_evidence?: boolean };
-    balance_transactions?: Array<{ id: string; amount: number; type: string }>;
+    balance_transactions?: Array<{
+      id: string;
+      amount: number;
+      fee?: number;
+      net?: number;
+      type?: string;
+    }>;
     [k: string]: unknown;
   }> {
     return this.get(`/disputes/${encodeURIComponent(disputeId)}`);

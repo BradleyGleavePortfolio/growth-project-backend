@@ -95,6 +95,10 @@ function makePrismaStub() {
         }));
       }),
     },
+    // S-FEE: recoveries owed back (none in these fixtures).
+    payeeRecovery: {
+      aggregate: jest.fn(async () => ({ _sum: { amount_cents: null } })),
+    },
     connectTransfer: {
       findMany: jest.fn(async ({ where = {} }: any) =>
         transfers.filter((t) =>
@@ -532,6 +536,9 @@ describe('CoachPaymentOpsController', () => {
     expect(out.summary.posted_cents).toBe(9_800);
     expect(out.summary.pending_cents).toBe(9_300);
     expect(out.summary.reversed_cents).toBe(500);
+    // S-FEE: shared coach-net definition (posted - recoveries owed).
+    expect(out.summary.recoveries_cents).toBe(0);
+    expect(out.summary.net_cents).toBe(9_800);
     expect(out.entries).toHaveLength(3);
     expect(out.next_cursor).toBeNull();
   });

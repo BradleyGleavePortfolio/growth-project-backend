@@ -39,6 +39,13 @@ function makePrismaStub() {
         accounts.filter((a) => matchWhere(a, where)),
       ),
     },
+    // S-FEE: recoveries owed back on refunded / disputed charges.
+    payeeRecovery: {
+      findMany: jest.fn(async () => []),
+    },
+    chargeSettlement: {
+      findMany: jest.fn(async () => []),
+    },
     payoutSnapshot: {
       findMany: jest.fn(async ({ where = {} }: any) =>
         snapshots.filter((s) => matchWhere(s, where)),

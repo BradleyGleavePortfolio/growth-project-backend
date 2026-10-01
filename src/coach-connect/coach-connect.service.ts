@@ -343,7 +343,10 @@ export class CoachConnectService {
 
     return {
       revenue_30d: earnings.as_seller.posted_cents / 100,
-      net_30d: (earnings.as_seller.posted_cents - earnings.as_seller.refunds_cents) / 100,
+      // S-FEE: the shared coach-net figure (posted net of reversals minus
+      // recoveries), identical to the earnings summary. Subtracting refunds
+      // again double-counted what reversals already removed.
+      net_30d: earnings.as_seller.net_cents / 100,
       currency: 'usd',
       active_clients: activeClients,
       clients_added_30d: clientsAdded30d,

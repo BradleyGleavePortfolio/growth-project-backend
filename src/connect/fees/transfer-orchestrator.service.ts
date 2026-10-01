@@ -7,11 +7,17 @@ import {
 } from '../stripe-connect-api.service';
 import { SplitLedgerService } from './split-ledger.service';
 
-// TransferOrchestratorService — mints the head-coach 5%-style follow-on
-// Stripe Transfer from the platform balance, and records the result
-// against both ConnectTransfer (operational receipt) and SplitLedgerEntry
-// (immutable audit ledger).
+// TransferOrchestratorService — mints Stripe Transfers from the platform
+// balance and records the result against both ConnectTransfer (operational
+// receipt) and SplitLedgerEntry (immutable audit ledger).
 //
+// S-FEE: coach-package charges are now separate charges and transfers. The
+// coach net and the head-coach split of every charge are transfers minted
+// here by ChargeSettlementService (enqueueSettlementTransfer), drawn from the
+// charge via source_transaction. The legacy head-coach-only flow below
+// (enqueueHeadCoachTransfer) remains for pre-S-FEE destination charges only.
+//
+// Legacy description (pre-S-FEE destination charges):
 // Why a follow-on Transfer instead of a second Checkout Session split:
 // Stripe Checkout supports exactly ONE destination per session via
 // transfer_data. The 2% application fee handles "platform takes a cut";
@@ -31,6 +37,47 @@ import { SplitLedgerService } from './split-ledger.service';
 // next_attempt_at = now + exponential backoff. A scheduled sweeper picks
 // up due rows and re-tries via the same Stripe-Idempotency-Key so
 // double-pays are impossible.
+
+// S-FEE — transfer kinds written by ChargeSettlementService.
+//   coach_net / head_coach_split : the payee's share of one settled charge,
+//                                  drawn from that charge (source_transaction)
+//   *_reinstate                  : funds returned to a payee after a won
+//                                  dispute (no source_transaction: the charge's
+//                                  funds were already transferred once)
+export type SettlementTransferKind =
+  'coach_net' | 'head_coach_split' | 'coach_reinstate' | 'head_coach_reinstate';
+
+export interface SettlementTransferInput {
+  settlement_id: string;
+  purchase_id: string;
+  kind: SettlementTransferKind;
+  ledger_entry_id: string | null;
+  destination_stripe_account_id: string;
+  destination_user_id: string;
+  amount_cents: number;
+  netted_recovery_cents: number;
+  currency: string;
+  source_stripe_charge_id: string | null;
+  idempotency_key: string;
+}
+
+function isReinstateKind(kind: string): boolean {
+  return kind === 'coach_reinstate' || kind === 'head_coach_reinstate';
+}
+
+function describeTransfer(row: ConnectTransfer): string {
+  const charge = row.source_stripe_charge_id ?? 'n/a';
+  switch (row.kind) {
+    case 'coach_net':
+      return `TGP coach payout for charge ${charge}`;
+    case 'coach_reinstate':
+      return `TGP coach payout reinstated after dispute (purchase ${row.purchase_id})`;
+    case 'head_coach_reinstate':
+      return `TGP head-coach split reinstated after dispute (purchase ${row.purchase_id})`;
+    default:
+      return `TGP head-coach split for purchase ${row.purchase_id}`;
+  }
+}
 
 export interface PlanTransferInput {
   purchase_id: string;
@@ -88,6 +135,41 @@ export class TransferOrchestratorService {
     });
   }
 
+  // S-FEE — create (or return) the transfer row for one settlement leg. The
+  // idempotency key is per CHARGE and leg, so every renewal gets its own
+  // transfer (the legacy per-purchase key collapsed renewals onto one row).
+  // Must run inside the settlement transaction (`db`) so the ledger rows,
+  // recovery netting and transfer rows commit together.
+  async enqueueSettlementTransfer(
+    input: SettlementTransferInput,
+    db: Pick<PrismaService, 'connectTransfer'> = this.prisma,
+  ): Promise<ConnectTransfer> {
+    const existing = await db.connectTransfer.findUnique({
+      where: { idempotency_key: input.idempotency_key },
+    });
+    if (existing) return existing;
+    const nettedOnly = input.amount_cents === 0;
+    return db.connectTransfer.create({
+      data: {
+        purchase_id: input.purchase_id,
+        settlement_id: input.settlement_id,
+        kind: input.kind,
+        ledger_entry_id: input.ledger_entry_id,
+        destination_stripe_account_id: input.destination_stripe_account_id,
+        destination_user_id: input.destination_user_id,
+        amount_cents: input.amount_cents,
+        netted_recovery_cents: input.netted_recovery_cents,
+        currency: input.currency,
+        source_stripe_charge_id: input.source_stripe_charge_id,
+        idempotency_key: input.idempotency_key,
+        // A leg fully covered by netting moves no money at Stripe.
+        status: nettedOnly ? 'netted' : 'pending',
+        next_attempt_at: nettedOnly ? null : new Date(),
+        posted_at: nettedOnly ? new Date() : null,
+      },
+    });
+  }
+
   // Try to post a pending transfer to Stripe. Updates the
   // ConnectTransfer row + corresponding ledger entry on success or
   // failure. Returns the updated transfer row.
@@ -97,7 +179,9 @@ export class TransferOrchestratorService {
     });
     if (row.status === 'succeeded') return row;
     if (row.status === 'reversed') return row;
-    if (!row.source_stripe_charge_id) {
+    if (row.status === 'netted') return row;
+    if (row.amount_cents <= 0) return row;
+    if (!row.source_stripe_charge_id && !isReinstateKind(row.kind)) {
       // Can't transfer until the parent charge id is known. The webhook
       // pipeline will re-enqueue once it has it.
       return row;
@@ -116,17 +200,20 @@ export class TransferOrchestratorService {
     });
 
     try {
+      const metadata: Record<string, string> = {
+        tgp_purchase_id: row.purchase_id,
+        tgp_kind: row.kind,
+      };
+      if (row.settlement_id) metadata.tgp_settlement_id = row.settlement_id;
       const transfer = await this.stripe.createTransfer({
         amount: row.amount_cents,
         currency: row.currency,
         destination: row.destination_stripe_account_id,
-        source_transaction: row.source_stripe_charge_id,
+        // Reinstatements have no source charge (its funds already moved once).
+        source_transaction: row.source_stripe_charge_id ?? undefined,
         transfer_group: `purchase_${row.purchase_id}`,
-        description: `TGP head-coach split for purchase ${row.purchase_id}`,
-        metadata: {
-          tgp_purchase_id: row.purchase_id,
-          tgp_kind: 'head_coach_split',
-        },
+        description: describeTransfer(row),
+        metadata,
         idempotencyKey: row.idempotency_key,
       });
       const posted = await this.prisma.connectTransfer.update({
@@ -142,7 +229,7 @@ export class TransferOrchestratorService {
         await this.ledger.markPosted({
           entry_id: row.ledger_entry_id,
           stripe_transfer_id: transfer.id,
-          stripe_charge_id: row.source_stripe_charge_id,
+          stripe_charge_id: row.source_stripe_charge_id ?? undefined,
         });
       }
       return posted;
@@ -173,11 +260,17 @@ export class TransferOrchestratorService {
     return this.prisma.connectTransfer.findMany({
       where: {
         status: 'pending',
-        OR: [
-          { next_attempt_at: null },
-          { next_attempt_at: { lte: now } },
+        AND: [
+          {
+            OR: [{ next_attempt_at: null }, { next_attempt_at: { lte: now } }],
+          },
+          {
+            OR: [
+              { source_stripe_charge_id: { not: null } },
+              { kind: { in: ['coach_reinstate', 'head_coach_reinstate'] } },
+            ],
+          },
         ],
-        source_stripe_charge_id: { not: null },
       },
       orderBy: { next_attempt_at: 'asc' },
       take: limit,
@@ -202,7 +295,7 @@ export class TransferOrchestratorService {
     await this.stripe.reverseTransfer({
       transfer_id: row.stripe_transfer_id,
       amount,
-      metadata: { tgp_purchase_id: row.purchase_id },
+      metadata: { tgp_purchase_id: row.purchase_id, tgp_kind: row.kind },
       idempotencyKey,
     });
     const newReversed = row.reversed_amount_cents + amount;

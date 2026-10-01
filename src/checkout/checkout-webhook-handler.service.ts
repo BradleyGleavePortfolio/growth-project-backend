@@ -686,9 +686,16 @@ export class CheckoutWebhookHandlerService {
     }
   }
 
-  private async applyCheckoutExpired(
-    event: StripeEvent,
-  ): Promise<CheckoutWebhookResult> {
+  /**
+   * S-FEE — settle a guest-storefront purchase after BillingService committed
+   * its conversion. Never throws; the settlement sweeper is the backstop.
+   */
+  async settleGuestPurchase(paymentIntentId: string): Promise<void> {
+    if (!this.splits) return;
+    await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
+  }
+
+  private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {
     const session = event.data.object as { id?: string };
     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
     const purchase = await this.prisma.clientPurchase.findUnique({

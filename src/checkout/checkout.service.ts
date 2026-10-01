@@ -256,25 +256,14 @@ export class CheckoutService {
     const mode: 'payment' | 'subscription' =
       pkg.billing_type === 'recurring' ? 'subscription' : 'payment';
 
-    // Phase 4: resolve the fee split BEFORE minting the checkout session
-    // so the platform application fee can be attached to the Stripe call.
-    //
-    // For mode=payment (one_time), Stripe accepts an absolute
-    // application_fee_amount in cents — we pass the platform's slice
-    // directly. The optional head-coach 5% slice is NOT attached here;
-    // it's minted as a follow-on Transfer after the charge succeeds
-    // (Stripe only supports one application fee + one destination per
-    // session). We add the head-coach amount on top of the platform fee
-    // and KEEP that delta on the platform balance until the follow-on
-    // Transfer drains it to the head coach.
-    //
-    // For mode=subscription, Stripe accepts only application_fee_percent
-    // (not amount). We compute the effective percent from the combined
-    // platform + head-coach bps, then mint the head-coach follow-on
-    // transfer per renewal off the invoice.paid webhook.
+    // S-FEE: separate charges and transfers. The session charges on the
+    // platform with on_behalf_of = the coach's connected account and carries
+    // NO transfer_data / application fee. When the charge succeeds,
+    // ChargeSettlementService reads Stripe's actual fee from the charge's
+    // balance transaction and transfers the coach
+    //   price - actual Stripe fee - TGP 2% (- head-coach split).
+    // The plan is a pre-charge preview (metadata + policy validation only).
     const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
-    const applicationFeeForStripe =
-      plan.application_fee_cents + plan.head_coach_split_cents;
 
     let session;
     try {
@@ -285,36 +274,7 @@ export class CheckoutService {
         quantity: 1,
         successUrl,
         cancelUrl,
-        destinationAccount: connectAccount.stripe_account_id,
-        // One-time: pass an absolute cents amount.
-        applicationFeeAmount:
-          mode === 'payment' && applicationFeeForStripe > 0
-            ? applicationFeeForStripe
-            : undefined,
-        // Subscription: pass a percent. Stripe only accepts up to 2
-        // decimal places of precision on application_fee_percent. The
-        // bps math from FeePolicyService gives us a target *cents*
-        // figure (applicationFeeForStripe); the percent we send must
-        // collect AT LEAST that many cents per renewal.
-        //
-        // Rounding doctrine (P0 fix): `.toFixed(2)` is banker's-rounding
-        // through Number's IEEE-754 path and was demonstrably under-
-        // collecting by 1¢ on amounts like $9.99 + 2% (≈19.98¢ →
-        // floor=19, naive .toFixed(2)=19.98 which Stripe rounds back
-        // to 19¢ on a one-time but DRIFTS on recurring renewals over
-        // many months). We now ceiling-round the percent to 2 dp so
-        // the platform never under-collects across renewals. The
-        // worst-case over-collection is < 1¢ on the first renewal and
-        // self-corrects within a year via the reconciliation worker.
-        //
-        // See test: test/checkout-subscription-fee-rounding.spec.ts
-        applicationFeePercent:
-          mode === 'subscription' && applicationFeeForStripe > 0
-            ? this.toStripeApplicationFeePercent(
-                applicationFeeForStripe,
-                pkg.amount_cents,
-              )
-            : undefined,
+        onBehalfOf: connectAccount.stripe_account_id,
         clientReferenceId: client.id,
         metadata: {
           tgp_client_user_id: client.id,
@@ -323,12 +283,14 @@ export class CheckoutService {
           tgp_platform_fee_cents: String(plan.application_fee_cents),
           tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
           tgp_head_coach_user_id: plan.head_coach_id ?? '',
+          tgp_fee_mechanism: 'separate_charge_transfer',
         },
         subscriptionMetadata: {
           tgp_client_user_id: client.id,
           tgp_coach_user_id: coach.id,
           tgp_package_id: pkg.id,
           tgp_head_coach_user_id: plan.head_coach_id ?? '',
+          tgp_fee_mechanism: 'separate_charge_transfer',
         },
         paymentIntentMetadata: {
           tgp_client_user_id: client.id,
@@ -337,6 +299,7 @@ export class CheckoutService {
           tgp_platform_fee_cents: String(plan.application_fee_cents),
           tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
           tgp_head_coach_user_id: plan.head_coach_id ?? '',
+          tgp_fee_mechanism: 'separate_charge_transfer',
         },
         idempotencyKey,
       });
@@ -616,9 +579,10 @@ export class CheckoutService {
     try {
       const customer = await this.ensureCustomer(client.id, client.email, client.name);
 
+      // S-FEE: preview only (metadata + policy validation). No application
+      // fee / transfer_data on the PaymentIntent; the coach is paid by
+      // ChargeSettlementService from the charge's actual Stripe fee.
       const plan = await this.feePolicy.planFor(coach.id, pkg.amount_cents);
-      const applicationFeeForStripe =
-        plan.application_fee_cents + plan.head_coach_split_cents;
 
       // Stripe idempotency key derived from the client-supplied UUID. Same
       // client + same key → Stripe collapses to the same PaymentIntent.
@@ -629,11 +593,10 @@ export class CheckoutService {
           amount: pkg.amount_cents,
           currency: pkg.currency,
           customer: customer.stripe_customer_id,
-          applicationFeeAmount: applicationFeeForStripe,
-          transferDestination: connectAccount.stripe_account_id,
-          // Audit #3 P1-10 — connected coach is the merchant of record
+          // Audit #3 P1-10 — connected coach is the settlement merchant
           // for risk and statement-descriptor purposes.
           onBehalfOf: connectAccount.stripe_account_id,
+          transferGroup: `purchase_${reservation.id}`,
           metadata: {
             tgp_client_user_id: client.id,
             tgp_coach_user_id: coach.id,
@@ -641,6 +604,7 @@ export class CheckoutService {
             tgp_platform_fee_cents: String(plan.application_fee_cents),
             tgp_head_coach_split_cents: String(plan.head_coach_split_cents),
             tgp_head_coach_user_id: plan.head_coach_id ?? '',
+            tgp_fee_mechanism: 'separate_charge_transfer',
           },
           idempotencyKey: stripeIdempotencyKey,
         }),
@@ -1169,56 +1133,6 @@ export class CheckoutService {
       error: 'PACKAGE_INTERVAL_INVALID',
       message: `Package ${packageId} has an invalid recurring interval (${interval ?? 'null'}); expected one of week|month|year`,
     });
-  }
-
-  /**
-   * Convert a target application-fee-cents figure into the Stripe
-   * `application_fee_percent` value with the smallest representable
-   * over-collection. Stripe restricts percent precision to 2 decimal
-   * places, so we ceiling-round at hundredths to guarantee
-   *   round( percent/100 * amount_cents ) >= target_cents
-   * across the full range of plausible subscription amounts.
-   *
-   * Exported via `static` so the unit test can pin the rounding without
-   * needing a full service instance.
-   */
-  static toStripeApplicationFeePercent(
-    targetFeeCents: number,
-    amountCents: number,
-  ): number {
-    if (amountCents <= 0 || targetFeeCents <= 0) return 0;
-    // Solve for the smallest 2-dp `percent` such that
-    //   Math.round(percent / 100 * amountCents) >= targetFeeCents
-    // i.e. Stripe's rounding (half-up to whole cents) never under-
-    // collects vs the bps target.
-    //
-    // Using integer math at hundredths-of-a-percent (== basis points)
-    // avoids IEEE-754 drift that the previous .toFixed(2) had on
-    // amounts whose exact ratio fell on a *.5 boundary
-    // (e.g. (15/999)*100 = 1.5015015..., (0.015).toFixed(2) drifts
-    // between engines under banker's rounding).
-    //
-    //   percentHundredths = ceil( targetFeeCents * 10_000 / amountCents )
-    //   percent           = percentHundredths / 100
-    //
-    // Over-collection upper bound per renewal: less than amountCents /
-    // 10_000 cents (sub-cent for sub-$100 subscriptions). The
-    // reconciliation job folds any pennies of drift into the monthly
-    // platform statement.
-    const percentHundredths = Math.ceil(
-      (targetFeeCents * 10_000) / amountCents,
-    );
-    return percentHundredths / 100;
-  }
-
-  private toStripeApplicationFeePercent(
-    targetFeeCents: number,
-    amountCents: number,
-  ): number {
-    return CheckoutService.toStripeApplicationFeePercent(
-      targetFeeCents,
-      amountCents,
-    );
   }
 
   private assertReady() {
