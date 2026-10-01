@@ -22,7 +22,7 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare paths
 // under the public hostname.
 
-import { SUPPORT_EMAIL } from './trust-pages.html';
+import { SUPPORT_EMAIL, policyFooterLinks } from './trust-pages.html';
 
 // Re-export for tests and any future caller that expects to find the
 // support address on the help module.
@@ -40,14 +40,7 @@ const COACH_CONSOLE_URL = 'https://console.thegrowthproject.app';
 const INVITE_BASE_URL = 'https://app.trygrowthproject.com/join';
 const STATUS_URL = 'https://app.trygrowthproject.com/status';
 
-export type HelpPage =
-  | 'index'
-  | 'setup'
-  | 'first-client'
-  | 'tour'
-  | 'faq'
-  | 'support'
-  | 'contact';
+export type HelpPage = 'index' | 'setup' | 'first-client' | 'tour' | 'faq' | 'support' | 'contact';
 
 interface RenderedSection {
   heading: string;
@@ -153,9 +146,7 @@ function setupContent(): HelpPageContent {
       },
       {
         heading: '2. Complete your coach profile',
-        paragraphs: [
-          'In the console, open Settings → Profile and fill in:',
-        ],
+        paragraphs: ['In the console, open Settings → Profile and fill in:'],
         bullets: [
           'Display name (this is what clients see).',
           'A one-paragraph bio (two to four sentences is enough).',
@@ -337,8 +328,7 @@ function faqContent(): HelpPageContent {
               'Promotion to coach is manual at sign-up. Reply to your welcome email and we will promote it within one business day.',
           },
           {
-            question:
-              'I signed in with the wrong provider — can I switch from Google to Apple?',
+            question: 'I signed in with the wrong provider — can I switch from Google to Apple?',
             answer:
               'The provider is part of your identity in our system, so the two sign-ins map to two separate accounts. If you signed up with the wrong one, write in via the Contact page and we will merge the accounts.',
           },
@@ -383,8 +373,7 @@ function faqContent(): HelpPageContent {
           },
           {
             question: 'Can I schedule a message to send later?',
-            answer:
-              'Not yet. You can save a draft and send it manually when ready.',
+            answer: 'Not yet. You can save a draft and send it manually when ready.',
           },
           {
             question: 'Are messages encrypted?',
@@ -540,8 +529,7 @@ function contactContent(): HelpPageContent {
           name: 'category',
           type: 'enum',
           required: 'yes',
-          notes:
-            'One of: outage, billing, client_signup, data, security, account_merge, other.',
+          notes: 'One of: outage, billing, client_signup, data, security, account_merge, other.',
         },
         {
           name: 'subject',
@@ -565,8 +553,7 @@ function contactContent(): HelpPageContent {
           name: 'attachments',
           type: 'file[]',
           required: 'no',
-          notes:
-            'Up to 5 files, 10 MB each. Images, PDFs, plain text only.',
+          notes: 'Up to 5 files, 10 MB each. Images, PDFs, plain text only.',
         },
         {
           name: 'console_url',
@@ -578,8 +565,7 @@ function contactContent(): HelpPageContent {
           name: 'user_agent',
           type: 'string',
           required: 'no',
-          notes:
-            'Auto-filled by the form, useful for browser-specific issues.',
+          notes: 'Auto-filled by the form, useful for browser-specific issues.',
         },
         {
           name: 'ts_iso',
@@ -641,9 +627,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   const qaSections = (c.qaSections ?? []).map(renderQASection).join('\n');
   const checklist = c.checklist ? renderChecklist(c.checklist) : '';
   const intakeTable = c.intakeTable ? renderIntakeTable(c.intakeTable) : '';
-  const footnote = c.footnote
-    ? `\n  <p class="footnote">${escapeHtml(c.footnote)}</p>`
-    : '';
+  const footnote = c.footnote ? `\n  <p class="footnote">${escapeHtml(c.footnote)}</p>` : '';
 
   const nav = NAV_ENTRIES.map((entry) => {
     const cls = entry.slug === active ? 'nav-link active' : 'nav-link';
@@ -701,6 +685,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
 ${body}${footnote}
   <footer class="brand-footer">
     <span>The Growth Project</span>
+    <span>${policyFooterLinks()}</span>
     <span><a href="${supportEmailHref}">${supportEmail}</a></span>
   </footer>
 </main>
@@ -710,9 +695,7 @@ ${body}${footnote}
 
 function renderSection(s: RenderedSection): string {
   const heading = escapeHtml(s.heading);
-  const paragraphs = s.paragraphs
-    .map((p) => `    <p>${escapeHtml(p)}</p>`)
-    .join('\n');
+  const paragraphs = s.paragraphs.map((p) => `    <p>${escapeHtml(p)}</p>`).join('\n');
   const bullets =
     s.bullets && s.bullets.length > 0
       ? '\n    <ul>\n' +
@@ -728,10 +711,7 @@ ${paragraphs}${bullets}
 function renderQASection(s: RenderedQASection): string {
   const heading = escapeHtml(s.heading);
   const items = s.items
-    .map(
-      (qa) =>
-        `    <h3>${escapeHtml(qa.question)}</h3>\n    <p>${escapeHtml(qa.answer)}</p>`,
-    )
+    .map((qa) => `    <h3>${escapeHtml(qa.question)}</h3>\n    <p>${escapeHtml(qa.answer)}</p>`)
     .join('\n');
   return `  <section>
     <h2>${heading}</h2>
@@ -741,9 +721,7 @@ ${items}
 
 function renderChecklist(c: { heading: string; bullets: string[] }): string {
   const heading = escapeHtml(c.heading);
-  const bullets = c.bullets
-    .map((b) => `      <li>${escapeHtml(b)}</li>`)
-    .join('\n');
+  const bullets = c.bullets.map((b) => `      <li>${escapeHtml(b)}</li>`).join('\n');
   return `  <section>
     <h2>${heading}</h2>
     <ul>
@@ -752,11 +730,7 @@ ${bullets}
   </section>`;
 }
 
-function renderIntakeTable(t: {
-  heading: string;
-  intro: string;
-  fields: ContactField[];
-}): string {
+function renderIntakeTable(t: { heading: string; intro: string; fields: ContactField[] }): string {
   const heading = escapeHtml(t.heading);
   const intro = escapeHtml(t.intro);
   const rows = t.fields

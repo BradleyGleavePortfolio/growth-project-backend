@@ -158,11 +158,13 @@ async function bootstrap() {
       // domain (not under /api). See WellKnownController.
       '.well-known/apple-app-site-association',
       '.well-known/assetlinks.json',
-      // Public trust surface (privacy, terms, security, status). Mounted
+      // Public trust surface (privacy, consumer health privacy, terms,
+      // security, status). Mounted
       // outside /api so they resolve as bare paths under
       // app.trygrowthproject.com — that is the URL shape app store
       // reviewers and early customers expect.
       'privacy',
+      'consumer-health-privacy',
       'terms',
       'security',
       'status',

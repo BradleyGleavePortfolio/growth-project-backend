@@ -7,6 +7,7 @@ a single operator can stand up staging from this document without
 reading the codebase.
 
 > Companion docs:
+>
 > - `docs/stripe-setup.md` — Stripe dashboard configuration.
 > - `docs/coach-console-integration.md` — coach console BFF contracts.
 > - `docs/invite-landing.md` — public invite landing layout.
@@ -93,27 +94,27 @@ required at boot. The boot fails loudly when hard or prod-tier vars are
 missing. The summary below restates the rules so you can prepare
 `fly secrets set` ahead of time.
 
-| Variable | Tier | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | hard | Postgres connection string from Supabase → Settings → Database. Use the **session pooler** for runtime queries. |
-| `SUPABASE_URL` | hard | `https://<project-ref>.supabase.co`. Used for JWKS and admin API. |
-| `SUPABASE_SERVICE_ROLE_KEY` | hard | Service-role key. Treat as a secret. |
-| `PUBLIC_INVITE_BASE_URL` | prod | `https://app.trygrowthproject.com/join`. Drives invite-code URLs. |
-| `PUBLIC_WEB_SIGNUP_URL` | prod | Landing page used when no app is installed. Until a marketing signup page exists, point this at the durable backend route `https://app.trygrowthproject.com/signup`. |
-| `APP_STORE_URL` | prod | Final iOS App Store URL. **Do not invent a placeholder Apple ID** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/ios`. Flip to the real URL when the App Store listing is approved. |
-| `PLAY_STORE_URL` | prod | Final Google Play URL. **Do not invent a placeholder package id** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/android`. Flip to the real URL when the Play listing is approved. |
-| `CORS_ORIGINS` | prod | Comma-separated list of allowed origins for the coach console. **Wildcard is rejected at boot.** |
-| `STRIPE_SECRET_KEY` | prod | `sk_test_…` for staging, `sk_live_…` for production. |
-| `STRIPE_WEBHOOK_SECRET` | prod | `whsec_…` from Stripe → Developers → Webhooks. |
-| `STRIPE_PRICE_ID_FITNESS` | prod | `price_…` of the flat coach plan. |
-| `SENTRY_DSN` | prod | Server-side DSN. Without this, prod errors are invisible. |
-| `REDIS_URL` | prod (feature-tier; warn-only) | `redis://` or `rediss://` URL backing the rate-limit storage. Required once the app runs on >1 Fly machine — without it, throttler counters are per-machine and an attacker can multiplex across replicas. Boot logs the chosen backend at LOG level under `ThrottlerConfig`. Use the Fly-managed Upstash add-on (`fly redis create`) or a managed instance. |
-| `POSTHOG_KEY` | optional | Product analytics. AnalyticsModule no-ops when unset. |
-| `PERPLEXITY_API_KEY` | optional | AI chat falls back to a deterministic responder when unset. |
-| `USDA_API_KEY` | optional | Food search returns errors at call time when unset. |
-| `COACH_CODE_GATE_ENABLED` | optional | Feature flag — `true` to require an invite code on signup. |
-| `BILLING_ENFORCEMENT` | optional | `enforce` to block writes for past_due/canceled coaches. Default = observe-only. |
-| `STRIPE_PRICE_ID_FINANCE` | optional | Reserved for a future finance-vertical price. |
+| Variable                    | Tier                           | Notes                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`              | hard                           | Postgres connection string from Supabase → Settings → Database. Use the **session pooler** for runtime queries.                                                                                                                                                                                                                                              |
+| `SUPABASE_URL`              | hard                           | `https://<project-ref>.supabase.co`. Used for JWKS and admin API.                                                                                                                                                                                                                                                                                            |
+| `SUPABASE_SERVICE_ROLE_KEY` | hard                           | Service-role key. Treat as a secret.                                                                                                                                                                                                                                                                                                                         |
+| `PUBLIC_INVITE_BASE_URL`    | prod                           | `https://app.trygrowthproject.com/join`. Drives invite-code URLs.                                                                                                                                                                                                                                                                                            |
+| `PUBLIC_WEB_SIGNUP_URL`     | prod                           | Landing page used when no app is installed. Until a marketing signup page exists, point this at the durable backend route `https://app.trygrowthproject.com/signup`.                                                                                                                                                                                         |
+| `APP_STORE_URL`             | prod                           | Final iOS App Store URL. **Do not invent a placeholder Apple ID** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/ios`. Flip to the real URL when the App Store listing is approved.                                                                                                         |
+| `PLAY_STORE_URL`            | prod                           | Final Google Play URL. **Do not invent a placeholder package id** — until the listing is live, point this at the durable backend route `https://app.trygrowthproject.com/download/android`. Flip to the real URL when the Play listing is approved.                                                                                                          |
+| `CORS_ORIGINS`              | prod                           | Comma-separated list of allowed origins for the coach console. **Wildcard is rejected at boot.**                                                                                                                                                                                                                                                             |
+| `STRIPE_SECRET_KEY`         | prod                           | `sk_test_…` for staging, `sk_live_…` for production.                                                                                                                                                                                                                                                                                                         |
+| `STRIPE_WEBHOOK_SECRET`     | prod                           | `whsec_…` from Stripe → Developers → Webhooks.                                                                                                                                                                                                                                                                                                               |
+| `STRIPE_PRICE_ID_FITNESS`   | prod                           | `price_…` of the flat coach plan.                                                                                                                                                                                                                                                                                                                            |
+| `SENTRY_DSN`                | prod                           | Server-side DSN. Without this, prod errors are invisible.                                                                                                                                                                                                                                                                                                    |
+| `REDIS_URL`                 | prod (feature-tier; warn-only) | `redis://` or `rediss://` URL backing the rate-limit storage. Required once the app runs on >1 Fly machine — without it, throttler counters are per-machine and an attacker can multiplex across replicas. Boot logs the chosen backend at LOG level under `ThrottlerConfig`. Use the Fly-managed Upstash add-on (`fly redis create`) or a managed instance. |
+| `POSTHOG_KEY`               | optional                       | Product analytics. AnalyticsModule no-ops when unset.                                                                                                                                                                                                                                                                                                        |
+| `PERPLEXITY_API_KEY`        | optional                       | AI chat falls back to a deterministic responder when unset.                                                                                                                                                                                                                                                                                                  |
+| `USDA_API_KEY`              | optional                       | Food search returns errors at call time when unset.                                                                                                                                                                                                                                                                                                          |
+| `COACH_CODE_GATE_ENABLED`   | optional                       | Feature flag — `true` to require an invite code on signup.                                                                                                                                                                                                                                                                                                   |
+| `BILLING_ENFORCEMENT`       | optional                       | `enforce` to block writes for past_due/canceled coaches. Default = observe-only.                                                                                                                                                                                                                                                                             |
+| `STRIPE_PRICE_ID_FINANCE`   | optional                       | Reserved for a future finance-vertical price.                                                                                                                                                                                                                                                                                                                |
 
 To preflight a `.env` file locally before pushing it as Fly secrets:
 
@@ -193,7 +194,7 @@ even if the dashboard shows the new one.
 
    Store the dump somewhere durable (1Password vault attachment, S3
    bucket, etc.) — never commit it. Do **not** add `--no-owner --no-acl`:
-   the S1 privilege/RLS migration's state *is* owners, grants and
+   the S1 privilege/RLS migration's state _is_ owners, grants and
    policies, and a dump that excludes them cannot reproduce it. Even a
    full dump is a reference copy for diagnosis and comparison; **this
    repository contains no demonstrated restore procedure for a live
@@ -234,7 +235,7 @@ even if the dashboard shows the new one.
 ### 2.1 Production needs a Prisma migration baseline before the first deploy
 
 `prisma migrate deploy` requires the target database to either be
-empty *or* to already have a populated `_prisma_migrations` table that
+empty _or_ to already have a populated `_prisma_migrations` table that
 matches the repository's migration history. A production database that
 was created out-of-band (Supabase SQL editor, restored snapshot,
 sandbox copy, etc.) has neither, and `release.sh` will then refuse to
@@ -245,7 +246,7 @@ This is a one-time setup — once baselined, every subsequent deploy
 just runs `prisma migrate deploy` cleanly. The baseline contract:
 
 1. **Empty DB** (greenfield staging): no action needed. `prisma migrate
-   deploy` creates the schema and seeds `_prisma_migrations` itself.
+deploy` creates the schema and seeds `_prisma_migrations` itself.
 2. **Populated DB that was built by a prior `prisma migrate deploy`**:
    `_prisma_migrations` already exists. No action needed.
 3. **Populated DB that was NOT built by Prisma** (manual schema, raw
@@ -258,10 +259,10 @@ just runs `prisma migrate deploy` cleanly. The baseline contract:
    received. The established route is:
 
    1. prove equivalence first — `prisma migrate diff --from-url
-      "$DIRECT_URL" --to-migrations prisma/migrations --shadow-database-url
-      <disposable DB>` must report no difference (or every difference must
+"$DIRECT_URL" --to-migrations prisma/migrations --shadow-database-url
+<disposable DB>` must report no difference (or every difference must
       be understood and closed by a forward migration);
-   2. only then mark the *proven-present* migrations applied, one by one,
+   2. only then mark the _proven-present_ migrations applied, one by one,
       from a trusted shell against `DIRECT_URL`, under separate production
       authorization, recording the diff output alongside;
    3. re-dispatch `Fly Deploy`; step 1 must now show no P3005 and step 4's
@@ -284,13 +285,13 @@ For every migration:
 2. **Run the migration via the release command** (Fly auto-runs it; do
    not invoke `prisma migrate deploy` from your laptop against the
    prod DB).
-3. **If the deploy aborts**, first *observe* what is running — do not
+3. **If the deploy aborts**, first _observe_ what is running — do not
    presume it. A `release_command` failure means Fly did not roll out the
    new image, but confirm with `fly machines list -a <app>` (or the
    `machines-before.json` manifest) that the previous image is still
-   serving; `verify-fly-release.sh`/`/readyz` can also fail *after* the
+   serving; `verify-fly-release.sh`/`/readyz` can also fail _after_ the
    rollout, in which case the new image is serving (stage C in
-   `docs/delivery-controls.md` §7). Then *where* it aborted decides
+   `docs/delivery-controls.md` §7). Then _where_ it aborted decides
    whether the database changed:
    - **`release.sh` step 0 or 1** (verifier contract preflight, status
      check), the evidence gate, or the image build: nothing was applied.
@@ -301,7 +302,7 @@ For every migration:
      ahead of the running code. Follow §11.4 before re-dispatching. Never
      "undo" this by deleting the migration directory (see step 4).
 4. **If the deploy succeeded but the new code is broken**, the gated
-   path is **forward-only**: revert the offending *code* on `main` through
+   path is **forward-only**: revert the offending _code_ on `main` through
    a reviewed PR, let CI / CodeQL / SBOM run on the new head, then dispatch
    `Fly Deploy` with that head as `release_sha` (see
    `docs/delivery-controls.md` §7). The gate accepts only the current
@@ -311,7 +312,7 @@ For every migration:
 
    A revert commit must **never delete or edit an applied migration
    directory**: `prisma migrate deploy` would then find a history mismatch
-   and refuse — that fails the *next* release closed, it does not roll the
+   and refuse — that fails the _next_ release closed, it does not roll the
    schema back. Revert application code only; if schema must move, ship a
    new forward migration (S1-owned content).
 
@@ -356,7 +357,7 @@ For every migration:
    will say "up to date" after an out-of-band `down.sql`. Truth is
    `prisma/migrations/<m>/verify.sql` (run automatically by
    `scripts/release.sh` step 4 on the next release). Do **not** run
-   `prisma migrate resolve --rolled-back` for a migration that *succeeded*
+   `prisma migrate resolve --rolled-back` for a migration that _succeeded_
    and was reversed by hand: it refuses (P3012) or no-ops if an older failed
    row exists. Re-apply forward transactionally instead
    (`psql "$DIRECT_URL" --single-transaction -v ON_ERROR_STOP=1 -f migration.sql`),
@@ -530,7 +531,7 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 
 - **Staging = test mode.** Use `sk_test_…`, a separate Stripe account,
   `whsec_…` from the test-mode webhook endpoint. `bin/stripe listen
-  --forward-to <staging>/api/v1/webhooks/stripe` is fine for spot-checks.
+--forward-to <staging>/api/v1/webhooks/stripe` is fine for spot-checks.
 - **Production = live mode.** A separate Stripe account, `sk_live_…`,
   separate webhook endpoint. Never reuse a staging signing secret in
   production.
@@ -551,18 +552,18 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
 
 ## 7. Rollback playbook
 
-| Symptom | Action |
-| --- | --- |
-| Deploy aborted on `release_command` at step 0/1 (`FAIL at line` inside the preflight/status block; log shows no `step 2:`). | Nothing applied — Fly keeps the previous machines and the schema is unchanged. Fix forward (missing/invalid required-verifier contract, P3005 baseline, connectivity), re-dispatch. |
-| Deploy aborted on `release_command` at step 2 or later (log shows `step 2: applying pending migrations` before the failure). | Fly keeps the previous machines **but applied migrations stay applied**. Do not delete the migration directory. Follow §11.4: read `_prisma_migrations`, decide fix-forward vs. transactional manual reverse (S1 content, separate authorization), then re-dispatch. |
-| `release_command` refused at step 4 `catalog verifier FAILED`. | Schema drift or incomplete migration detected in `pg_catalog` after `migrate deploy`. The migration rows say applied; the catalog disagrees. Investigate the named `verify.sql`; §11.4 step 6. |
+| Symptom                                                                                                                        | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deploy aborted on `release_command` at step 0/1 (`FAIL at line` inside the preflight/status block; log shows no `step 2:`).    | Nothing applied — Fly keeps the previous machines and the schema is unchanged. Fix forward (missing/invalid required-verifier contract, P3005 baseline, connectivity), re-dispatch.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Deploy aborted on `release_command` at step 2 or later (log shows `step 2: applying pending migrations` before the failure).   | Fly keeps the previous machines **but applied migrations stay applied**. Do not delete the migration directory. Follow §11.4: read `_prisma_migrations`, decide fix-forward vs. transactional manual reverse (S1 content, separate authorization), then re-dispatch.                                                                                                                                                                                                                                                                                                                                        |
+| `release_command` refused at step 4 `catalog verifier FAILED`.                                                                 | Schema drift or incomplete migration detected in `pg_catalog` after `migrate deploy`. The migration rows say applied; the catalog disagrees. Investigate the named `verify.sql`; §11.4 step 6.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `release_command` failed with `./scripts/release.sh: 25: set: Illegal option -` (or any `set: Illegal option -<single-char>`). | CRLF in a shell script. `dash` (Debian's `/bin/sh`) rejects `set -e\r` because it treats the `\r` as a flag character. Fix: ensure `scripts/*.sh` are committed with LF endings (enforced by `.gitattributes`), and that `fly.toml`'s `release_command` invokes the script via `bash ./scripts/release.sh` rather than `sh ./scripts/release.sh`. To audit locally: `git ls-files -z 'scripts/*.sh' \| xargs -0 file \| grep CRLF` should return nothing. To repair an in-tree CRLF script: `dos2unix scripts/release.sh && git add scripts/release.sh && git commit -m 'fix: normalize release.sh to LF'`. |
-| App boots but env-validation throws. | Add the missing secret, redeploy. Boot logs identify the missing var. |
-| Health endpoint stays red after deploy. | `Fly Logs (operator)` workflow (read-only, `fly-logs.yml`) or `fly logs -a <app>` for the stack trace. If unrelated to schema, roll back the *code* via a revert PR through the gated path; the ungated image route in §3 is emergency-only and its target tag comes from `machines-before.json`. |
-| Stripe webhooks 400-ing in production. | Verify `STRIPE_WEBHOOK_SECRET` matches the live endpoint. Check Sentry for the rejection reason. |
-| Coach console hits CORS error. | Check `CORS_ORIGINS` for the exact origin (scheme + host + port). Wildcard is rejected. |
-| Invite landing page empty. | Verify `PUBLIC_INVITE_BASE_URL`, `APP_STORE_URL`, `PLAY_STORE_URL`, `PUBLIC_WEB_SIGNUP_URL`. Empty values fall through to placeholder defaults baked into `invite-landing.controller.ts`. |
-| Need to fully roll back a destructive or privilege/RLS migration. | No demonstrated restore route exists (§3 step 4). Ship a reviewed forward reverse migration (S1-owned) and, if the previous image must serve meanwhile, prove caller/schema compatibility explicitly first. |
+| App boots but env-validation throws.                                                                                           | Add the missing secret, redeploy. Boot logs identify the missing var.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Health endpoint stays red after deploy.                                                                                        | `Fly Logs (operator)` workflow (read-only, `fly-logs.yml`) or `fly logs -a <app>` for the stack trace. If unrelated to schema, roll back the _code_ via a revert PR through the gated path; the ungated image route in §3 is emergency-only and its target tag comes from `machines-before.json`.                                                                                                                                                                                                                                                                                                           |
+| Stripe webhooks 400-ing in production.                                                                                         | Verify `STRIPE_WEBHOOK_SECRET` matches the live endpoint. Check Sentry for the rejection reason.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Coach console hits CORS error.                                                                                                 | Check `CORS_ORIGINS` for the exact origin (scheme + host + port). Wildcard is rejected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Invite landing page empty.                                                                                                     | Verify `PUBLIC_INVITE_BASE_URL`, `APP_STORE_URL`, `PLAY_STORE_URL`, `PUBLIC_WEB_SIGNUP_URL`. Empty values fall through to placeholder defaults baked into `invite-landing.controller.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Need to fully roll back a destructive or privilege/RLS migration.                                                              | No demonstrated restore route exists (§3 step 4). Ship a reviewed forward reverse migration (S1-owned) and, if the previous image must serve meanwhile, prove caller/schema compatibility explicitly first.                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### 7.1 Shell script line-ending hazard (release_command)
 
@@ -609,17 +610,17 @@ Workflow name: **Fly Secrets Set (operator)**
 
 What it sets:
 
-| Variable | Source |
-| --- | --- |
-| `PUBLIC_INVITE_BASE_URL` | hardcoded — `https://app.trygrowthproject.com/join` |
-| `PUBLIC_WEB_SIGNUP_URL` | hardcoded — `https://app.trygrowthproject.com/signup` |
-| `APP_STORE_URL` | hardcoded — `https://app.trygrowthproject.com/download/ios` |
-| `PLAY_STORE_URL` | hardcoded — `https://app.trygrowthproject.com/download/android` |
-| `CORS_ORIGINS` | hardcoded — `https://console.trygrowthproject.com` |
-| `STRIPE_PRICE_ID_FITNESS` | hardcoded — `price_1TQij2DUoC5CCVhSDxe9Bin1` |
-| `STRIPE_SECRET_KEY` | GitHub Actions secret of the same name |
-| `STRIPE_WEBHOOK_SECRET` | GitHub Actions secret of the same name |
-| `SENTRY_DSN` | GitHub Actions secret of the same name |
+| Variable                  | Source                                                          |
+| ------------------------- | --------------------------------------------------------------- |
+| `PUBLIC_INVITE_BASE_URL`  | hardcoded — `https://app.trygrowthproject.com/join`             |
+| `PUBLIC_WEB_SIGNUP_URL`   | hardcoded — `https://app.trygrowthproject.com/signup`           |
+| `APP_STORE_URL`           | hardcoded — `https://app.trygrowthproject.com/download/ios`     |
+| `PLAY_STORE_URL`          | hardcoded — `https://app.trygrowthproject.com/download/android` |
+| `CORS_ORIGINS`            | hardcoded — `https://console.trygrowthproject.com`              |
+| `STRIPE_PRICE_ID_FITNESS` | hardcoded — `price_1TQij2DUoC5CCVhSDxe9Bin1`                    |
+| `STRIPE_SECRET_KEY`       | GitHub Actions secret of the same name                          |
+| `STRIPE_WEBHOOK_SECRET`   | GitHub Actions secret of the same name                          |
+| `SENTRY_DSN`              | GitHub Actions secret of the same name                          |
 
 What it does NOT set: `DATABASE_URL`, `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `USDA_API_KEY`, `PERPLEXITY_API_KEY`,
@@ -639,8 +640,8 @@ Prerequisites:
    - `STRIPE_WEBHOOK_SECRET` — `whsec_…` from the live webhook
      endpoint in Stripe → Developers → Webhooks.
    - `SENTRY_DSN` — server DSN from the production Sentry project.
-   The workflow fails with a list of missing names if any of these
-   are absent.
+     The workflow fails with a list of missing names if any of these
+     are absent.
 
 To run:
 
@@ -800,7 +801,7 @@ store and in `fly tokens`.
    environment reviewer must approve before anything reaches Fly.
 
 4. **Watch the run go green.** The `Verify FLY_API_TOKEN is configured`
-   step prints the token *length* (not the value) and the deploy
+   step prints the token _length_ (not the value) and the deploy
    proceeds. If the run still fails red, check the step log for one of:
 
    - `FLY_API_TOKEN GitHub Actions secret is not set` — the secret was
@@ -841,12 +842,13 @@ We satisfy that requirement by serving durable, server-rendered
 "trust" pages from this backend at the same `app.trygrowthproject.com`
 host the invite-landing and download status pages already use.
 
-| Page | URL | Purpose |
-| --- | --- | --- |
-| Privacy | `https://app.trygrowthproject.com/privacy` | Plain-language privacy policy. App Store / Play Store privacy URL. |
-| Terms | `https://app.trygrowthproject.com/terms` | Terms of service. Required by Stripe Customer Portal business info and by app review. |
-| Security | `https://app.trygrowthproject.com/security` | Practical security posture and incident-reporting channel. |
-| Status | `https://app.trygrowthproject.com/status` | Honest description of public surface today; replace with a live status feed when monitoring is wired in. |
+| Page                    | URL                                                        | Purpose                                                                                                                                                 |
+| ----------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Privacy                 | `https://app.trygrowthproject.com/privacy`                 | Plain-language privacy policy. App Store / Play Store privacy URL.                                                                                      |
+| Consumer Health Privacy | `https://app.trygrowthproject.com/consumer-health-privacy` | Consumer Health Data Privacy Policy (Washington My Health My Data Act, RCW 19.373). Must be linked from the App Store / Play Store listing and the app. |
+| Terms                   | `https://app.trygrowthproject.com/terms`                   | Terms of service. Required by Stripe Customer Portal business info and by app review.                                                                   |
+| Security                | `https://app.trygrowthproject.com/security`                | Practical security posture and incident-reporting channel.                                                                                              |
+| Status                  | `https://app.trygrowthproject.com/status`                  | Honest description of public surface today; replace with a live status feed when monitoring is wired in.                                                |
 
 These pages live in `src/public-pages/` next to the existing
 `/download/*` and `/signup` status pages, and they are excluded from
@@ -859,6 +861,9 @@ listing:
 1. **Privacy URL** — paste `https://app.trygrowthproject.com/privacy`
    into App Store Connect → App Privacy and into Play Console →
    Policy → App content → Privacy policy.
+   Also link `https://app.trygrowthproject.com/consumer-health-privacy`
+   from the listing description (RCW 19.373.020 treats the store
+   download page as part of the app's homepage).
 2. **Terms / EULA URL** — paste
    `https://app.trygrowthproject.com/terms`. App Store Connect uses
    the standard Apple EULA by default; if you want to override it,
@@ -971,12 +976,12 @@ in May 2026 — production drifted ~25 migrations behind without any
 deploy turning red. The shell flags now in place make that mode of
 silent failure structurally impossible.
 
-| Flag | What it catches |
-|------|-----------------|
-| `-E` | ERR trap inherited by functions / subshells / `$(...)` |
-| `-e` | Exit on any unhandled non-zero exit code |
-| `-u` | Unset variable = error (catches typos in env var names) |
-| `-o pipefail` | Pipeline exit = first non-zero, not last command |
+| Flag          | What it catches                                         |
+| ------------- | ------------------------------------------------------- |
+| `-E`          | ERR trap inherited by functions / subshells / `$(...)`  |
+| `-e`          | Exit on any unhandled non-zero exit code                |
+| `-u`          | Unset variable = error (catches typos in env var names) |
+| `-o pipefail` | Pipeline exit = first non-zero, not last command        |
 
 If you ever need to "tolerate" a failure (e.g. `migrate status` returning 1
 when migrations are pending), guard the specific call with `|| true` and
@@ -1055,9 +1060,9 @@ case Fly's release status is the only signal.
    Ship a fix-forward migration, or — if the applied change must be
    reversed — a transactional manual reverse under separate production
    authorization (`psql "$DIRECT_URL" --single-transaction -v
-   ON_ERROR_STOP=1 -f <reverse.sql>`), then re-dispatch the current `main`.
+ON_ERROR_STOP=1 -f <reverse.sql>`), then re-dispatch the current `main`.
    Migration/verifier content is S1-owned.
-5. If `_prisma_migrations` holds a *failed* row (`finished_at IS NULL`,
+5. If `_prisma_migrations` holds a _failed_ row (`finished_at IS NULL`,
    `rolled_back_at IS NULL`) for the S1 migration — its DDL ran in one
    transaction and was rolled back — the operator runs
    `prisma migrate resolve --rolled-back <name>` against `DIRECT_URL` and
@@ -1066,7 +1071,7 @@ case Fly's release status is the only signal.
    failed row unless the catalog has been verified to contain the DDL — it
    would only fabricate history. This is a deliberate manual step — CI never
    resolves migrations.
-5b. After `resolve --rolled-back`, `prisma migrate status` reports
+   5b. After `resolve --rolled-back`, `prisma migrate status` reports
    "Database schema is up to date" although the migration is not applied
    (S1S2-B-07). Never read that as done: always re-run the release and let
    step 4's catalog verifier decide.

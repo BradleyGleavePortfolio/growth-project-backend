@@ -99,6 +99,16 @@ export class PublicPagesController {
     return this.sendTrust(res, renderTrustPage('privacy'));
   }
 
+  // Consumer Health Data Privacy Policy (Washington My Health My Data Act,
+  // RCW 19.373.020). Linked from every trust, help, signup and download page
+  // and from the mobile Trust Center.
+  @Public()
+  @Get('consumer-health-privacy')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  consumerHealthPrivacy(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('consumer-health'));
+  }
+
   @Public()
   @Get('terms')
   @Throttle({ default: { ttl: 60000, limit: 60 } })

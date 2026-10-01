@@ -1,9 +1,35 @@
 import { PublicPagesController } from '../src/public-pages/public-pages.controller';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { PATH_METADATA } from '@nestjs/common/constants';
 import {
   renderTrustPage,
+  safeHref,
+  policyFooterLinks,
   SUPPORT_EMAIL,
   POLICY_LAST_REVIEWED,
+  PRIVACY_POLICY_PATH,
+  CONSUMER_HEALTH_POLICY_PATH,
+  type TrustPage,
 } from '../src/public-pages/trust-pages.html';
+import { renderHelpPage } from '../src/public-pages/help-pages.html';
+import { renderDownloadPage, renderSignupPage } from '../src/public-pages/public-pages.html';
+
+const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
+
+// Visible text of a page: tags removed, entities decoded. Lets copy
+// assertions read like the page a person sees.
+function visibleText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
+}
 
 function makeRes() {
   const headers: Record<string, string> = {};
@@ -80,19 +106,21 @@ describe('PublicPagesController trust pages', () => {
     expect(res.body).toContain('Status');
     // The endpoints section should enumerate the real surface area.
     expect(res.body).toContain('https://app.trygrowthproject.com/signup');
-    expect(res.body).toContain(
-      'https://app.trygrowthproject.com/download/ios',
-    );
-    expect(res.body).toContain(
-      'https://app.trygrowthproject.com/download/android',
-    );
+    expect(res.body).toContain('https://app.trygrowthproject.com/download/ios');
+    expect(res.body).toContain('https://app.trygrowthproject.com/download/android');
     expect(res.body).toContain('https://app.trygrowthproject.com/health');
     // Explicit reporting channel.
     expect(res.body).toContain(SUPPORT_EMAIL);
   });
 
   it('sets a sensible Cache-Control on every trust page', () => {
-    for (const route of ['privacy', 'terms', 'security', 'status'] as const) {
+    for (const route of [
+      'privacy',
+      'consumerHealthPrivacy',
+      'terms',
+      'security',
+      'status',
+    ] as const) {
       const res = makeRes();
       (controller as any)[route](res);
       expect(res.headers['Cache-Control']).toBe('public, max-age=300');
@@ -119,10 +147,11 @@ describe('PublicPagesController trust pages', () => {
     }
   });
 
-  it('includes a navigation header linking the four trust pages from each page', () => {
-    for (const slug of ['privacy', 'terms', 'security', 'status'] as const) {
+  it('includes a navigation header linking every trust page from each page', () => {
+    for (const slug of ALL_TRUST_PAGES) {
       const html = renderTrustPage(slug);
       expect(html).toContain('href="/privacy"');
+      expect(html).toContain('href="/consumer-health-privacy"');
       expect(html).toContain('href="/terms"');
       expect(html).toContain('href="/security"');
       expect(html).toContain('href="/status"');
@@ -141,5 +170,260 @@ describe('PublicPagesController trust pages', () => {
 
   it('emits a last-reviewed date in ISO-8601 (YYYY-MM-DD) form', () => {
     expect(POLICY_LAST_REVIEWED).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('marks the consumer health page active in the nav on that page only', () => {
+    expect(renderTrustPage('consumer-health')).toContain(
+      '<a class="nav-link active" href="/consumer-health-privacy">',
+    );
+    expect(renderTrustPage('privacy')).toContain(
+      '<a class="nav-link" href="/consumer-health-privacy">',
+    );
+  });
+});
+
+describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () => {
+  const controller = new PublicPagesController();
+
+  it('is served as a 200 HTML page on the bare consumer-health-privacy path', () => {
+    const res = makeRes();
+    controller.consumerHealthPrivacy(res);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toMatch(/text\/html/);
+    expect(res.body).toContain('Consumer Health Data Privacy Policy');
+    expect(res.body).toContain(POLICY_LAST_REVIEWED);
+    expect(
+      Reflect.getMetadata(PATH_METADATA, PublicPagesController.prototype.consumerHealthPrivacy),
+    ).toBe('consumer-health-privacy');
+    expect(CONSUMER_HEALTH_POLICY_PATH).toBe('/consumer-health-privacy');
+    expect(PRIVACY_POLICY_PATH).toBe('/privacy');
+  });
+
+  it('is excluded from the /api global prefix in main.ts', () => {
+    const main = readFileSync(join(__dirname, '..', 'src', 'main.ts'), 'utf8');
+    expect(main).toContain("'consumer-health-privacy',");
+  });
+
+  it('covers every RCW 19.373.020 disclosure', () => {
+    const text = visibleText(renderTrustPage('consumer-health'));
+    for (const heading of [
+      'Categories we collect and why',
+      'Where it comes from',
+      'Categories we share',
+      'Who we do not share with',
+      'Your rights',
+      'How to make a request',
+    ]) {
+      expect(text).toContain(heading);
+    }
+    expect(text).toContain('RCW 19.373');
+    // Named recipients, including the AI provider.
+    for (const vendor of [
+      'Supabase',
+      'Fly.io',
+      'Anthropic',
+      'Sentry',
+      'PostHog',
+      'Crisp',
+      'Resend',
+      'Expo',
+    ]) {
+      expect(text).toContain(vendor);
+    }
+    expect(text).toMatch(/No affiliates/);
+  });
+
+  it('states the RCW 19.373.040 rights, timelines and appeal path', () => {
+    const text = visibleText(renderTrustPage('consumer-health'));
+    expect(text).toMatch(/Confirm and access/);
+    expect(text).toMatch(/Recipient list .*email address or online contact/);
+    expect(text).toMatch(/Withdraw consent/);
+    expect(text).toMatch(/Delete — have your consumer health data deleted/);
+    expect(text).toMatch(/within 45 days of receiving your request/);
+    expect(text).toMatch(/extend that once by up to 45 more days/);
+    expect(text).toMatch(/free up to twice a year/);
+    expect(text).toMatch(/never need to create a new account/);
+    expect(text).toMatch(/never more than six months after we verify your request/);
+    expect(text).toMatch(/tell every service provider we shared it with/);
+    expect(text).toMatch(/Appeals/);
+    expect(text).toMatch(/in writing .* within 45 days of receiving your appeal/);
+    expect(text).toContain('https://www.atg.wa.gov/file-complaint');
+    expect(text).toContain(SUPPORT_EMAIL);
+  });
+
+  it('states no sale, no advertising use and no clinic-partner exchange', () => {
+    const text = visibleText(renderTrustPage('consumer-health'));
+    expect(text).toMatch(/do not sell consumer health data/);
+    expect(text).toMatch(/do not use it for advertising or marketing/);
+    expect(text).toMatch(/No clinic partner/);
+    expect(text).toMatch(/Roman conversations are never shared with your coach/);
+  });
+
+  it('links back to the Privacy Policy and keeps the counsel-review notice', () => {
+    const html = renderTrustPage('consumer-health');
+    expect(html).toContain('<a href="/privacy">Read the full Privacy Policy</a>');
+    expect(html).toMatch(/counsel review is recommended/);
+  });
+});
+
+describe('Privacy Policy accuracy (/privacy)', () => {
+  const html = renderTrustPage('privacy');
+  const text = visibleText(html);
+
+  it('links prominently to the consumer health policy', () => {
+    expect(html).toContain(
+      '<a href="/consumer-health-privacy">Read the Consumer Health Data Privacy Policy</a>',
+    );
+  });
+
+  it('names every service provider the code calls', () => {
+    for (const vendor of [
+      'Supabase',
+      'Fly.io',
+      'Stripe',
+      'Anthropic',
+      'Perplexity',
+      'PostHog',
+      'Sentry',
+      'Crisp',
+      'Resend',
+      'Expo',
+      'Sign in with Apple',
+      'Google sign-in',
+      'Apple Health',
+      'Health Connect',
+      'USDA FoodData Central',
+      'Open Food Facts',
+    ]) {
+      expect(text).toContain(vendor);
+    }
+  });
+
+  it('describes Roman: Anthropic, private from the coach, 180 days, client delete, staff access', () => {
+    expect(text).toMatch(/Roman is an AI assistant powered by Anthropic/);
+    expect(text).toMatch(/Roman conversations are not visible to your coach/);
+    expect(text).toMatch(/deleted automatically 180 days after each message is sent/);
+    expect(text).toMatch(/delete a conversation at any time/);
+    expect(text).toMatch(/only for support, safety and debugging/);
+    expect(text).toMatch(/single “I agree” box/);
+    expect(text).toMatch(/never your coach’s private notes/);
+  });
+
+  it('covers retention, deletion, rights, no sale and children 16+', () => {
+    expect(text).toMatch(/How long we keep it/);
+    expect(text).toMatch(/Settings, then Delete account/);
+    expect(text).toMatch(/14-day grace period/);
+    expect(text).toMatch(/We do not sell personal data/);
+    expect(text).toMatch(/do not use health data for advertising or marketing/);
+    expect(text).toMatch(/You must be 16 or older/);
+    expect(text).toMatch(
+      /No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner/,
+    );
+  });
+
+  it('no longer makes the old inaccurate claims', () => {
+    expect(text).not.toMatch(/store only the subscription identifiers/);
+    expect(text).not.toMatch(/Your coaching data is visible to your coach \(that is the point/);
+    expect(text).not.toMatch(/minimum context required/);
+  });
+
+  it('keeps the company-drafted, counsel-review notice', () => {
+    expect(text).toMatch(/company-drafted statement of practice/);
+    expect(text).toMatch(/counsel review is recommended/);
+  });
+});
+
+describe('Terms of Service eligibility', () => {
+  it('requires 16+ and links both privacy documents', () => {
+    const html = renderTrustPage('terms');
+    expect(visibleText(html)).toMatch(/You must be 16 or older to use the service/);
+    expect(html).toContain('<a href="/privacy">Privacy Policy</a>');
+    expect(html).toContain(
+      '<a href="/consumer-health-privacy">Consumer Health Data Privacy Policy</a>',
+    );
+    expect(visibleText(html)).toMatch(/company-drafted statement of terms/);
+  });
+});
+
+describe('policy copy hygiene', () => {
+  it('mentions a clinic only as “clinic partner” (never by name)', () => {
+    for (const slug of ALL_TRUST_PAGES) {
+      const text = visibleText(renderTrustPage(slug));
+      const mentions = text.match(/clinic\s*\w*/gi) ?? [];
+      for (const m of mentions) expect(m.toLowerCase()).toMatch(/^clinic partners?$/);
+    }
+  });
+
+  it('uses no exclamation marks in policy copy', () => {
+    for (const slug of ['privacy', 'consumer-health', 'terms'] as const) {
+      expect(visibleText(renderTrustPage(slug))).not.toContain('!');
+    }
+  });
+
+  it('bumped the last-reviewed date for this rewrite', () => {
+    expect(POLICY_LAST_REVIEWED >= '2026-09-30').toBe(true);
+  });
+});
+
+describe('HTML escaping and link safety', () => {
+  it('escapes ampersands and quotes in policy copy', () => {
+    const html = renderTrustPage('privacy');
+    expect(html).toContain('Trust &amp; Privacy');
+    expect(html).not.toMatch(/Trust & Privacy/);
+    const body = html.slice(html.indexOf('<body>'));
+    // No raw double quotes leak into text nodes (only attributes use them).
+    expect(body.replace(/<[^>]*>/g, '')).not.toContain('"');
+  });
+
+  it('renders no script tags or inline event handlers', () => {
+    for (const slug of ALL_TRUST_PAGES) {
+      const html = renderTrustPage(slug);
+      expect(html).not.toMatch(/<script/i);
+      expect(html).not.toMatch(/\son[a-z]+=/i);
+      expect(html).not.toMatch(/javascript:/i);
+    }
+  });
+
+  it('safeHref only allows site-relative, mailto and https links', () => {
+    expect(safeHref('/consumer-health-privacy')).toBe('/consumer-health-privacy');
+    expect(safeHref('mailto:a@b.co')).toBe('mailto:a@b.co');
+    expect(safeHref('https://www.atg.wa.gov/file-complaint')).toBe(
+      'https://www.atg.wa.gov/file-complaint',
+    );
+    expect(safeHref('javascript:alert(1)')).toBe('#');
+    expect(safeHref('//evil.example')).toBe('#');
+    expect(safeHref('data:text/html,x')).toBe('#');
+    expect(safeHref('http://plain.example')).toBe('#');
+    expect(safeHref('/x" onmouseover="y')).toBe('#');
+    expect(safeHref('https://a.example/"><script>')).toBe('#');
+  });
+});
+
+describe('consumer health policy link on other public pages', () => {
+  it('appears in the footer of every trust page', () => {
+    for (const slug of ALL_TRUST_PAGES) {
+      expect(renderTrustPage(slug)).toContain(policyFooterLinks());
+    }
+  });
+
+  it('appears in the footer of every help page', () => {
+    for (const page of [
+      'index',
+      'setup',
+      'first-client',
+      'tour',
+      'faq',
+      'support',
+      'contact',
+    ] as const) {
+      expect(renderHelpPage(page)).toContain('href="/consumer-health-privacy"');
+    }
+  });
+
+  it('appears on the signup and download pages', () => {
+    expect(renderSignupPage(null)).toContain('href="/consumer-health-privacy"');
+    expect(renderSignupPage('GP-TEST1')).toContain('href="/consumer-health-privacy"');
+    expect(renderDownloadPage('ios')).toContain('href="/consumer-health-privacy"');
+    expect(renderDownloadPage('android')).toContain('href="/consumer-health-privacy"');
   });
 });

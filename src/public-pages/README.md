@@ -8,7 +8,8 @@ public host `app.trygrowthproject.com`. Two clusters live here:
   vars `APP_STORE_URL`, `PLAY_STORE_URL`, and
   `PUBLIC_WEB_SIGNUP_URL` until the real App Store / Play Store
   listings and the marketing signup page exist.
-- **Trust pages** — `/privacy`, `/terms`, `/security`, `/status`.
+- **Trust pages** — `/privacy`, `/consumer-health-privacy`, `/terms`,
+  `/security`, `/status`.
   Real public pages used as the privacy policy, terms of service,
   security posture, and operational status URLs filed with the App
   Store / Play Store, the Stripe Customer Portal, and shared with
@@ -29,12 +30,12 @@ public host `app.trygrowthproject.com`. Two clusters live here:
 
 ## Key files
 
-| File | What it owns |
-|---|---|
-| `public-pages.controller.ts` | `GET /download/ios`, `GET /download/android`, `GET /signup`, `GET /signup/:code`, `GET /privacy`, `GET /terms`, `GET /security`, `GET /status` |
-| `public-pages.html.ts` | Status-page templates (download / signup), invite-code sanitizer |
-| `trust-pages.html.ts` | Trust-page templates (privacy / terms / security / status), support email constant |
-| `public-pages.module.ts` | Wires the controller (no service needed) |
+| File                         | What it owns                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `public-pages.controller.ts` | `GET /download/ios`, `GET /download/android`, `GET /signup`, `GET /signup/:code`, `GET /privacy`, `GET /consumer-health-privacy`, `GET /terms`, `GET /security`, `GET /status` |
+| `public-pages.html.ts`       | Status-page templates (download / signup), invite-code sanitizer                                                                                                               |
+| `trust-pages.html.ts`        | Trust-page templates (privacy / consumer health / terms / security / status), support email, policy paths, shared footer links, `safeHref`                                     |
+| `public-pages.module.ts`     | Wires the controller (no service needed)                                                                                                                                       |
 
 ## Routing
 
@@ -48,6 +49,7 @@ app, the URLs resolve as bare paths under the public hostname:
 - `https://app.trygrowthproject.com/signup?code=GP-A1B2C3`
 - `https://app.trygrowthproject.com/signup/GP-A1B2C3`
 - `https://app.trygrowthproject.com/privacy`
+- `https://app.trygrowthproject.com/consumer-health-privacy`
 - `https://app.trygrowthproject.com/terms`
 - `https://app.trygrowthproject.com/security`
 - `https://app.trygrowthproject.com/status`
@@ -69,10 +71,10 @@ page or a `mailto:` subject.
 ## Caching
 
 - `/signup/:code` and `/signup?code=…` send `Cache-Control: no-store,
-  max-age=0`. The personalized variant must not land in a shared
+max-age=0`. The personalized variant must not land in a shared
   cache.
 - Bare `/signup`, `/download/ios`, `/download/android`: `public,
-  max-age=300`. Five minutes is short enough that operator-driven
+max-age=300`. Five minutes is short enough that operator-driven
   copy changes propagate quickly and long enough to absorb a viral
   invite link.
 
@@ -110,10 +112,39 @@ swap over without a code change.
 
 ## Trust pages
 
-`/privacy`, `/terms`, `/security`, `/status` are real public pages
-used as the privacy policy, terms of service, security posture, and
+`/privacy`, `/consumer-health-privacy`, `/terms`, `/security`,
+`/status` are real public pages used as the privacy policy, consumer
+health data privacy policy, terms of service, security posture, and
 operational status URLs filed with the App Store, the Play Store, and
 the Stripe Customer Portal. They live in `trust-pages.html.ts`.
+
+### Policy accuracy rules (2026-09-30 rewrite)
+
+- `/privacy` and `/consumer-health-privacy` describe only behaviour the
+  app and backend ship. Features behind a default-off flag are written
+  as "if enabled". Every vendor named is one the code calls (Supabase,
+  Fly.io, Stripe, Anthropic, Perplexity, PostHog, Sentry, Crisp, Resend,
+  Expo push, Apple / Google sign-in, Apple Health / Health Connect,
+  USDA FoodData Central, Open Food Facts). Adding a vendor that receives
+  personal data means updating both pages.
+- `/consumer-health-privacy` follows RCW 19.373.020 (categories,
+  purposes, sources, shared categories, recipients, affiliates, how to
+  exercise rights) and RCW 19.373.040 (confirm/access, recipient list,
+  withdraw consent, delete incl. processors and backups within six
+  months, 45-day response with one 45-day extension, free twice a year,
+  appeal within 45 days, Attorney General complaint link).
+- The consumer health policy must stay one click from every public
+  page: it is in the trust-page header nav, and `policyFooterLinks()`
+  puts it in the footer of every trust, help, signup and download page.
+  The mobile Trust Center links to the same path.
+- Roman copy must match the owner rulings and the server consent copy
+  (`src/roman/consent/roman-consent.constants.ts`, `client-ai-v2`):
+  Anthropic, single "I agree" box, private from coaches, staff access
+  only for support / safety / debugging, 180-day retention, client
+  delete.
+- The clinic partner is never named. Copy says "clinic partner".
+- Section links go through `safeHref()`: site-relative paths, `mailto:`
+  and `https:` only; anything else renders as `#`.
 
 Editorial guard rails (see `test/trust-pages.spec.ts`):
 
@@ -140,10 +171,10 @@ public launch outside an invite-only beta.
 
 ## Tests
 
-| File | Covers |
-|---|---|
-| `test/public-pages.spec.ts` | Render shape, code sanitizer, cache headers, route mounting under bare paths |
-| `test/trust-pages.spec.ts` | Privacy / terms / security / status render shape, key copy, no fake certifications, no AI fingerprints |
+| File                        | Covers                                                                                                                                                                                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test/public-pages.spec.ts` | Render shape, code sanitizer, cache headers, route mounting under bare paths                                                                                                                                                                                               |
+| `test/trust-pages.spec.ts`  | Privacy / consumer health / terms / security / status render shape, key copy, RCW 19.373 disclosures and rights, vendor list, Roman disclosures, 16+, footer links on help/signup/download pages, HTML escaping and `safeHref`, no fake certifications, no AI fingerprints |
 
 ## Operational notes
 
