@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { SupabaseService } from '../supabase/supabase.service';
+import { exportArchivePath } from '../data-export/data-export.paths';
 import { MuxService } from '../video/mux.service';
 import { VOICE_DEFAULT_BUCKET } from '../community/voice/voice-upload.provider';
 import {
@@ -158,14 +159,24 @@ export class AccountDeletionStorageService {
       );
     }
 
+    // Every export of the user, not only finished ones (B-608-3): an export
+    // still building writes `<DATA_EXPORT_FS_DIR>/<id>.json`, so that path is
+    // removed too. An archive written after this transaction commits is
+    // removed by the export worker itself (its READY update finds no row) or
+    // by the nightly orphan sweep in DataExportService.expireOldExports.
     const exports = await tx.dataExportRequest.findMany({
-      where: { user_id: userId, file_url: { not: null } },
-      select: { file_url: true },
+      where: { user_id: userId },
+      select: { id: true, file_url: true },
     });
     for (const e of exports) {
       const url = e.file_url ?? '';
-      if (url.startsWith('local://')) push({ kind: 'local', path: url.slice('local://'.length) });
-      else throw new Error('account deletion: data export archive has an unsupported storage URL');
+      if (url) {
+        if (url.startsWith('local://')) push({ kind: 'local', path: url.slice('local://'.length) });
+        else
+          throw new Error('account deletion: data export archive has an unsupported storage URL');
+      }
+      const planned = exportArchivePath(e.id);
+      if (planned !== url.slice('local://'.length)) push({ kind: 'local', path: planned });
     }
     return out;
   }

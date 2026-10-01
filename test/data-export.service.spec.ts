@@ -58,6 +58,8 @@ function buildPrismaMock() {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       update: jest.fn().mockResolvedValue({}),
+      // _runExport records READY/FAILED with updateMany (B-608-3).
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: {
       findUnique: jest

@@ -6,6 +6,7 @@ import {
   GoneException,
   Logger,
 } from '@nestjs/common';
+import { exportArchiveDir, exportArchivePath, EXPORT_ARCHIVE_NAME } from './data-export.paths';
 import { PrismaService } from '../prisma.service';
 import { DataExportStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -29,7 +30,6 @@ const EXPIRY_DAYS = Number(process.env.DATA_EXPORT_EXPIRY_DAYS ?? '7');
 const RATE_LIMIT_HRS = Number(process.env.DATA_EXPORT_RATE_LIMIT_HRS ?? '24');
 const TOKEN_SECRET_STR =
   process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
-const FS_DIR = process.env.DATA_EXPORT_FS_DIR ?? '/tmp/exports';
 
 // jose requires a KeyLike or Uint8Array — derive a symmetric key from the secret string.
 function getTokenKey(): Uint8Array {
@@ -38,8 +38,8 @@ function getTokenKey(): Uint8Array {
 
 // Download token additional claims
 interface DownloadTokenClaims extends JWTPayload {
-  eid: string;        // export request id
-  type: string;       // 'data_export_download'
+  eid: string; // export request id
+  type: string; // 'data_export_download'
 }
 
 @Injectable()
@@ -102,9 +102,7 @@ export class DataExportService {
       DataExportStatus.RUNNING,
       DataExportStatus.READY,
     ] as const;
-    const windowStart = new Date(
-      Date.now() - RATE_LIMIT_HRS * 60 * 60 * 1000,
-    );
+    const windowStart = new Date(Date.now() - RATE_LIMIT_HRS * 60 * 60 * 1000);
     const existing = await this.prisma.dataExportRequest.findFirst({
       where: {
         user_id: userId,
@@ -137,10 +135,7 @@ export class DataExportService {
         },
       });
     } catch (e: unknown) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({
           error: 'EXPORT_ALREADY_IN_PROGRESS',
           message: 'An export request is already in progress.',
@@ -151,10 +146,7 @@ export class DataExportService {
 
     // Fire-and-forget — do not await so the HTTP response returns immediately.
     this._runExport(record.id, userId).catch((err: Error) => {
-      this.logger.error(
-        `Export ${record.id} for user ${userId} failed: ${err.message}`,
-        err.stack,
-      );
+      this.logger.error(`Export ${record.id} for user ${userId} failed: ${err.message}`, err.stack);
     });
 
     // Audit: wrap in try/catch so a missing audit module never breaks the export.
@@ -268,6 +260,7 @@ export class DataExportService {
    * from storage, and mark the row EXPIRED.
    */
   async expireOldExports(): Promise<void> {
+    await this.sweepOrphanArchives();
     const expired = await this.prisma.dataExportRequest.findMany({
       where: {
         status: DataExportStatus.READY,
@@ -284,15 +277,53 @@ export class DataExportService {
           where: { id: record.id },
           data: { status: DataExportStatus.EXPIRED },
         });
-        this.logger.log(
-          `Expired export ${record.id} for user ${record.user_id}`,
-        );
+        this.logger.log(`Expired export ${record.id} for user ${record.user_id}`);
       } catch (err) {
-        this.logger.error(
-          `Failed to expire export ${record.id}: ${(err as Error).message}`,
-        );
+        this.logger.error(`Failed to expire export ${record.id}: ${(err as Error).message}`);
       }
     }
+  }
+
+  /**
+   * Remove archive files that no request row points to (B-608-3): an export
+   * that finished after its account was deleted, or a worker that stopped
+   * between writing the file and recording it. Files younger than an hour
+   * are left alone so an export in progress is never touched.
+   */
+  async sweepOrphanArchives(now: Date = new Date()): Promise<number> {
+    const { readdir, stat, unlink } = await import('fs/promises');
+    let names: string[];
+    try {
+      names = await readdir(exportArchiveDir());
+    } catch {
+      return 0;
+    }
+    const ids = names
+      .map((n) => EXPORT_ARCHIVE_NAME.exec(n)?.[1])
+      .filter((id): id is string => typeof id === 'string');
+    if (ids.length === 0) return 0;
+    const known = await this.prisma.dataExportRequest.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+    const keep = new Set(known.map((k) => k.id));
+    let removed = 0;
+    for (const id of ids) {
+      if (keep.has(id)) continue;
+      const path = exportArchivePath(id);
+      try {
+        const info = await stat(path);
+        if (now.getTime() - info.mtimeMs < 60 * 60 * 1000) continue;
+        await unlink(path);
+        removed += 1;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          this.logger.error(`Orphan export sweep failed for ${id}: ${(err as Error).message}`);
+        }
+      }
+    }
+    if (removed > 0) this.logger.log(`Removed ${removed} orphan export archive(s)`);
+    return removed;
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
@@ -310,16 +341,18 @@ export class DataExportService {
       data: { status: DataExportStatus.RUNNING },
     });
 
+    let fileUrl: string | null = null;
     try {
       const { buffer, sha256 } = await this._buildArchive(userId, exportId);
 
-      const expiresAt = new Date(
-        Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-      );
-      const fileUrl = await this._uploadFile(exportId, buffer);
+      const expiresAt = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      fileUrl = await this._uploadFile(exportId, buffer);
 
-      await this.prisma.dataExportRequest.update({
-        where: { id: exportId },
+      // B-608-3: the account may have been deleted while the archive was
+      // built. The request row goes in the same erasure transaction, so a
+      // READY update that matches nothing means the bytes must not stay.
+      const done = await this.prisma.dataExportRequest.updateMany({
+        where: { id: exportId, status: DataExportStatus.RUNNING },
         data: {
           status: DataExportStatus.READY,
           file_url: fileUrl,
@@ -329,6 +362,16 @@ export class DataExportService {
           sha256,
         },
       });
+      if (done.count === 0) {
+        await this._deleteStoredFile(fileUrl);
+        fileUrl = null;
+        this.logger.warn(
+          `Export ${exportId} finished after its request was removed; archive deleted`,
+        );
+        return;
+      }
+      // Recorded: from here the row owns the archive (download, expiry, erasure).
+      fileUrl = null;
 
       this._tryAudit(userId, userId, 'data_export_completed', {
         export_id: exportId,
@@ -344,7 +387,9 @@ export class DataExportService {
         `Export ${exportId} failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
-      await this.prisma.dataExportRequest.update({
+      // Never leave an archive behind on a failed run (B-608-3).
+      if (fileUrl) await this._deleteStoredFile(fileUrl);
+      await this.prisma.dataExportRequest.updateMany({
         where: { id: exportId },
         data: { status: DataExportStatus.FAILED },
       });
@@ -501,10 +546,7 @@ export class DataExportService {
   /**
    * Generic helper: page through a model's rows 500 at a time.
    */
-  private async _streamAll(
-    model: string,
-    where: Record<string, unknown>,
-  ): Promise<unknown[]> {
+  private async _streamAll(model: string, where: Record<string, unknown>): Promise<unknown[]> {
     const PAGE = 500;
     const results: unknown[] = [];
     let skip = 0;
@@ -544,11 +586,7 @@ export class DataExportService {
     while (true) {
       const page = await this.prisma.coachMessage.findMany({
         where: {
-          OR: [
-            { sender_id: userId },
-            { coach_id: userId },
-            { client_id: userId },
-          ],
+          OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
         },
         skip,
         take: PAGE,
@@ -604,15 +642,10 @@ export class DataExportService {
    * NEVER serves files through the API process — always returns a URL the
    * client is redirected to.
    */
-  private async _uploadFile(
-    exportId: string,
-    buffer: Buffer,
-  ): Promise<string> {
-    const filename = `${exportId}.json`;
+  private async _uploadFile(exportId: string, buffer: Buffer): Promise<string> {
     const { mkdir, writeFile } = await import('fs/promises');
-    const { join } = await import('path');
-    await mkdir(FS_DIR, { recursive: true });
-    const filePath = join(FS_DIR, filename);
+    await mkdir(exportArchiveDir(), { recursive: true });
+    const filePath = exportArchivePath(exportId);
     await writeFile(filePath, buffer);
     this.logger.log(
       `Export ${exportId} stored at ${filePath} (${buffer.length} bytes). ` +
@@ -644,10 +677,7 @@ export class DataExportService {
    * Expires in EXPIRY_DAYS days so it stays valid for the full lifetime of
    * the export file.
    */
-  private async _mintDownloadToken(
-    userId: string,
-    exportId: string,
-  ): Promise<string> {
+  private async _mintDownloadToken(userId: string, exportId: string): Promise<string> {
     return new SignJWT({
       eid: exportId,
       type: 'data_export_download',

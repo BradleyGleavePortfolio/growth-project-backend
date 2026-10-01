@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { AccountDeletionController } from './account-deletion.controller';
+import { DeletionReceiptController } from './deletion-receipt.controller';
 import { AccountDeletionService } from './account-deletion.service';
 import { AppleTokenRevocationService } from './apple-token-revocation.service';
 import { AccountDeletionStorageService } from './account-deletion.storage';
@@ -16,7 +17,7 @@ import { StripeApiService } from '../billing/stripe-api.service';
 
 @Module({
   imports: [ConfigModule, AuthModule],
-  controllers: [AccountDeletionController],
+  controllers: [AccountDeletionController, DeletionReceiptController],
   providers: [
     AccountDeletionService,
     AppleTokenRevocationService,

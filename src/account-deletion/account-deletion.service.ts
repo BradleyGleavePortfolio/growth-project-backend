@@ -18,6 +18,12 @@ import {
   AppleTokenRevocationService,
 } from './apple-token-revocation.service';
 import { executeErasureManifest } from './account-deletion.manifest';
+import {
+  TOMBSTONE_AUTH_PREFIX,
+  RECEIPT_KEY_PREFIX,
+  deletionReceiptKey,
+  receiptCutoff,
+} from './deletion-receipt';
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
 
@@ -79,7 +85,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The finalize cron runs once a day, so completion can lag eligibility by up to a day. */
 const FINALIZE_WINDOW_MS = DAY_MS;
 const FINALIZE_TX_TIMEOUT_MS = 120_000;
-export const TOMBSTONE_AUTH_PREFIX = 'deleted-';
+// Re-exported for existing importers; defined with the completion receipt.
+export { TOMBSTONE_AUTH_PREFIX };
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -639,8 +646,22 @@ export class AccountDeletionService {
       }
     }
 
+    // Completion receipts are kept for DELETION_RECEIPT_DAYS only (B-608-10).
+    let receiptsDropped = 0;
+    try {
+      receiptsDropped = await this.prisma.$executeRaw`
+        UPDATE "User" SET "supabase_id" = ${TOMBSTONE_AUTH_PREFIX} || "id"
+         WHERE "supabase_id" LIKE ${`${RECEIPT_KEY_PREFIX}%`}
+           AND "deleted_at" < ${receiptCutoff()}
+      `;
+    } catch (err) {
+      this.logger.error(
+        `AccountDeletion receipt expiry failed, will retry next run: ${(err as Error).message}`,
+      );
+    }
+
     this.logger.log(
-      `AccountDeletion finalize cron: finalized=${finalized} skipped=${skipped} errors=${errors} auth_retries=${pendingAuth.length}`,
+      `AccountDeletion finalize cron: finalized=${finalized} skipped=${skipped} errors=${errors} auth_retries=${pendingAuth.length} receipts_dropped=${receiptsDropped}`,
     );
     return { finalized, skipped, errors };
   }
@@ -797,9 +818,13 @@ export class AccountDeletionService {
       return 'pending';
     }
 
+    // B-608-10: keep a hashed completion receipt instead of forgetting the
+    // auth id at once, so the person's own token gets 403 ACCOUNT_DELETED
+    // (and the receipt endpoint answers) rather than a bare 401. The nightly
+    // cron drops the receipt after DELETION_RECEIPT_DAYS.
     await this.prisma.user.update({
       where: { id: userId },
-      data: { supabase_id: `${TOMBSTONE_AUTH_PREFIX}${userId}` },
+      data: { supabase_id: deletionReceiptKey(supabaseId) },
     });
     await this.insertDeletionAudit(this.prisma, {
       subjectId: crypto.randomUUID(),

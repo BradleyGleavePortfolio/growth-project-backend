@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createRemoteJWKSet, jwtVerify, JWTPayload, errors as joseErrors } from 'jose';
+import { DELETION_RECEIPT_DAYS } from '../account-deletion/deletion-receipt';
 
 /**
  * JWKS-backed Supabase ES256 token verifier.
@@ -70,6 +71,23 @@ export class JwksVerifierService implements OnModuleInit {
    * throws on any failure (signature, expiry, issuer mismatch, JWKS outage).
    * Callers (the JwtAuthGuard) convert thrown errors into a 401.
    */
+  /**
+   * Verify a Supabase access token for the deletion completion receipt only
+   * (B-608-10). Same issuer, audience, algorithm and signature checks as
+   * verify(), but a token that expired up to DELETION_RECEIPT_DAYS ago is
+   * accepted, because after an account is deleted the app can no longer
+   * refresh its session. Never use this for ordinary authentication.
+   */
+  async verifyForDeletionReceipt(token: string): Promise<JWTPayload> {
+    const { payload } = await jwtVerify(token, this.jwks, {
+      issuer: this.issuer,
+      audience: 'authenticated',
+      algorithms: ['ES256'],
+      clockTolerance: DELETION_RECEIPT_DAYS * 24 * 60 * 60,
+    });
+    return payload;
+  }
+
   async verify(token: string): Promise<JWTPayload> {
     try {
       const { payload } = await jwtVerify(token, this.jwks, {

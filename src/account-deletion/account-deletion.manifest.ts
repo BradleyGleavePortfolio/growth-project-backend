@@ -638,15 +638,47 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
 ];
 
 /**
- * Tables added by open PRs (consultation intake #607, AI consent #601). They
- * are not in this branch's Prisma schema, so they are purged with raw SQL
- * only when the table exists. Identifiers are fixed constants (never input).
+ * Tables added by open PRs (consultation intake #607, AI consent ledger #622).
+ * They are not in this branch's Prisma schema, so they are purged with raw
+ * SQL only when the table exists. Identifiers are fixed constants (never
+ * input).
+ *
+ * `AiProcessingConsentEvent` is the #622 ledger
+ * (prisma/migrations/20270203000000_ai_processing_consent_ledger). It is
+ * append-only for UPDATE (trigger) and its service_role policy allows the
+ * erasure DELETE, so only DELETE is issued; no policy or trigger is touched
+ * (B-608-9). `AiProcessingConsent` is the earlier #601 name, kept so a
+ * database that still has it is also purged.
  */
 export const OPTIONAL_USER_TABLES: ReadonlyArray<{ table: string; column: string }> = [
   { table: 'ClientOnboardingIntakeRevision', column: 'client_id' },
   { table: 'ClientOnboardingIntake', column: 'client_id' },
+  { table: 'AiProcessingConsentEvent', column: 'user_id' },
   { table: 'AiProcessingConsent', column: 'user_id' },
 ];
+
+/**
+ * Delete the user's rows from each OPTIONAL_USER_TABLES table that exists,
+ * inside the caller's erasure transaction.
+ */
+export async function purgeOptionalUserTables(
+  tx: Prisma.TransactionClient,
+  userId: string,
+): Promise<ErasureStepResult[]> {
+  const results: ErasureStepResult[] = [];
+  for (const { table, column } of OPTIONAL_USER_TABLES) {
+    const present = await tx.$queryRaw<Array<{ present: boolean }>>`
+      SELECT to_regclass(${`public."${table}"`}) IS NOT NULL AS present
+    `;
+    if (present[0]?.present) {
+      const count = await tx.$executeRaw`
+        DELETE FROM ${Prisma.raw(`"${table}"`)} WHERE ${Prisma.raw(`"${column}"`)} = ${userId}
+      `;
+      results.push({ model: table, field: column, op: 'delete', count });
+    }
+  }
+  return results;
+}
 
 /**
  * RESTRICT children that are not Prisma relations, so the manifest cannot
@@ -803,16 +835,6 @@ export async function executeErasureManifest(
   `;
   results.push({ model: 'CoachBrief', field: 'brief_context', op: 'update', count: briefs });
 
-  for (const { table, column } of OPTIONAL_USER_TABLES) {
-    const present = await tx.$queryRaw<Array<{ present: boolean }>>`
-      SELECT to_regclass(${`public."${table}"`}) IS NOT NULL AS present
-    `;
-    if (present[0]?.present) {
-      const count = await tx.$executeRaw`
-        DELETE FROM ${Prisma.raw(`"${table}"`)} WHERE ${Prisma.raw(`"${column}"`)} = ${ctx.userId}
-      `;
-      results.push({ model: table, field: column, op: 'delete', count });
-    }
-  }
+  results.push(...(await purgeOptionalUserTables(tx, ctx.userId)));
   return results;
 }

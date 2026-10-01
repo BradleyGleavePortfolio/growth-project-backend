@@ -3,6 +3,7 @@
  * deletion: both fail closed so finalization rolls back and retries.
  */
 import { ConfigService } from '@nestjs/config';
+import { exportArchivePath } from '../../src/data-export/data-export.paths';
 import type { Prisma } from '@prisma/client';
 import {
   AccountDeletionStorageService,
@@ -69,7 +70,11 @@ describe('AccountDeletionStorageService', () => {
           { storage_ref: `bloodwork/${UID}/panel.pdf`, storage_backend: 'supabase' },
           { storage_ref: 'https://lab.example.com/r.pdf', storage_backend: 'external' },
         ],
-        dataExportRequest: [{ file_url: 'local:///tmp/export-1.zip' }],
+        dataExportRequest: [
+          { id: 'export-1', file_url: 'local:///tmp/export-1.zip' },
+          // B-608-3: still building, no file_url yet; its planned path is removed too.
+          { id: 'export-2', file_url: null },
+        ],
       }),
       UID,
     );
@@ -82,9 +87,11 @@ describe('AccountDeletionStorageService', () => {
         { kind: 'mux', assetId: 'mux-asset-1' },
         { kind: 'supabase', bucket: 'bloodwork', key: `${UID}/panel.pdf` },
         { kind: 'local', path: '/tmp/export-1.zip' },
+        { kind: 'local', path: exportArchivePath('export-1') },
+        { kind: 'local', path: exportArchivePath('export-2') },
       ]),
     );
-    expect(objects).toHaveLength(7);
+    expect(objects).toHaveLength(9);
     expect(h.list).toHaveBeenCalledWith(UID, expect.objectContaining({ offset: 0 }));
   });
 

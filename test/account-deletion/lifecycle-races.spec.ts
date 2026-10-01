@@ -9,6 +9,8 @@
 import {
   BadRequestException,
   ConflictException,
+  ExecutionContext,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -22,6 +24,16 @@ import type { AppleTokenRevocationService } from '../../src/account-deletion/app
 import type { AccountDeletionStorageService } from '../../src/account-deletion/account-deletion.storage';
 import type { AccountDeletionBillingService } from '../../src/account-deletion/account-deletion.billing';
 import { FakeDeletionDb } from './fake-deletion-db';
+import { JwtAuthGuard } from '../../src/auth/auth.guard';
+import type { JwksVerifierService } from '../../src/auth/jwks.service';
+import type { PtmService } from '../../src/ptm/ptm.service';
+import { Reflector } from '@nestjs/core';
+import { DeletionReceiptController } from '../../src/account-deletion/deletion-receipt.controller';
+import {
+  DELETION_RECEIPT_DAYS,
+  RECEIPT_KEY_PREFIX,
+  deletionReceiptKey,
+} from '../../src/account-deletion/deletion-receipt';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -208,7 +220,7 @@ describe('finalization', () => {
     expect(u.name).toBe('Deleted user');
     expect(u.expo_push_token).toBeNull();
     expect(u.leaderboard_display_name).toBeNull();
-    expect(u.supabase_id).toBe(`deleted-${UID}`);
+    expect(u.supabase_id).toBe(deletionReceiptKey('auth-original'));
     // B-608-4: no deletion_audit row keeps the user id; the outcome row is random-id.
     expect(ctx.db.audit.some((a) => a.subjectId === UID)).toBe(false);
     const outcome = ctx.db.audit.find((a) => a.event === 'deletion_finalized');
@@ -323,7 +335,7 @@ describe('finalization', () => {
     expect(ctx.deleteUser).toHaveBeenCalledWith(`auth-${T1}`);
     expect(ctx.deleteUser).toHaveBeenCalledWith(`auth-${T2}`);
     expect(ctx.db.users.get(T1)?.supabase_id).toBe(`auth-${T1}`);
-    expect(ctx.db.users.get(T2)?.supabase_id).toBe(`deleted-${T2}`);
+    expect(ctx.db.users.get(T2)?.supabase_id).toBe(deletionReceiptKey(`auth-${T2}`));
     expect(ctx.logger.error).toHaveBeenCalledWith(expect.stringContaining('db blip'));
   });
 
@@ -360,7 +372,7 @@ describe('finalization', () => {
 
     await ctx.service.runFinalizeCron();
     expect(ctx.deleteUser).toHaveBeenLastCalledWith('auth-original');
-    expect(ctx.user().supabase_id).toBe(`deleted-${UID}`);
+    expect(ctx.user().supabase_id).toBe(deletionReceiptKey('auth-original'));
     expect(ctx.events()).toContain('auth_identity_removed');
   });
 
@@ -451,7 +463,7 @@ describe('finalization', () => {
     expect(ctx.deleteUser).toHaveBeenCalled();
     for (const call of ctx.deleteUser.mock.calls) expect(call).toEqual(['auth-original']);
     expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
-    expect(ctx.user().supabase_id).toBe(`deleted-${UID}`);
+    expect(ctx.user().supabase_id).toBe(deletionReceiptKey('auth-original'));
   });
 
   it('a cancelled schedule is skipped with an explicit reason', async () => {
@@ -546,5 +558,113 @@ describe('legacy email-link confirmation', () => {
     expect(ctx.user().deletion_token_hash).toBeNull();
     expect(ctx.user().deletion_confirmed_at).toBeInstanceOf(Date);
     await expect(ctx.service.confirmDeletion(token)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+/**
+ * B-608-10 / mobile B-313-5: the real finalizer and removeAuthIdentity, then
+ * the real JwtAuthGuard and receipt endpoint over the same rows. Before the
+ * fix the guard answered 401 "User not found" for the person's own token.
+ */
+describe('B-608-10 completion receipt after identity removal', () => {
+  function lookup(db: FakeDeletionDb) {
+    return {
+      user: {
+        findUnique: async (args: { where: { supabase_id: string } }) => {
+          for (const u of db.users.values()) {
+            if (u.supabase_id === args.where.supabase_id) return { ...u };
+          }
+          return null;
+        },
+      },
+    };
+  }
+  function guardFor(db: FakeDeletionDb, sub: string) {
+    const jwks = stub<JwksVerifierService>({ verify: jest.fn(async () => ({ sub })) });
+    const reflector = new Reflector();
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+    const guard = new JwtAuthGuard(
+      stub<PrismaService>(lookup(db)),
+      jwks,
+      reflector,
+      stub<PtmService>({ emit: jest.fn() }),
+    );
+    const ctx = stub<ExecutionContext>({
+      switchToHttp: () => ({ getRequest: () => ({ headers: { authorization: 'Bearer t' } }) }),
+      getHandler: () => () => undefined,
+      getClass: () => class {},
+    });
+    return () => guard.canActivate(ctx);
+  }
+  function receiptFor(db: FakeDeletionDb, sub: string | null) {
+    const jwks = stub<JwksVerifierService>({
+      verifyForDeletionReceipt: jest.fn(async () => {
+        if (sub === null) throw new Error('bad signature');
+        return { sub };
+      }),
+    });
+    const controller = new DeletionReceiptController(stub<PrismaService>(lookup(db)), jwks);
+    return () => controller.receipt('Bearer expired-token');
+  }
+
+  it('the account holder token gets 403 ACCOUNT_DELETED and the receipt says deleted; the raw auth id is gone', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    const res = await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    expect(res).toEqual({ outcome: 'finalized', authIdentity: 'removed' });
+    expect(ctx.user().supabase_id.startsWith(RECEIPT_KEY_PREFIX)).toBe(true);
+    expect(ctx.user().supabase_id).not.toContain('auth-original');
+
+    const err = await guardFor(ctx.db, 'auth-original')().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect((err as ForbiddenException).getResponse()).toEqual(
+      expect.objectContaining({ statusCode: 403, code: 'ACCOUNT_DELETED' }),
+    );
+    await expect(receiptFor(ctx.db, 'auth-original')()).resolves.toEqual({ state: 'deleted' });
+  });
+
+  it('before identity removal (Supabase delete failed) the token also gets 403 and the receipt says deleted', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    ctx.deleteUser.mockResolvedValue({ data: null, error: { status: 500, message: 'auth down' } });
+    const res = await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    expect(res).toEqual({ outcome: 'finalized', authIdentity: 'pending' });
+    await expect(guardFor(ctx.db, 'auth-original')()).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(receiptFor(ctx.db, 'auth-original')()).resolves.toEqual({ state: 'deleted' });
+  });
+
+  it('never turns an unknown, active or unverifiable token into "deleted"', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    const unknown = await guardFor(ctx.db, 'auth-stranger')().catch((e: unknown) => e);
+    expect(unknown).toBeInstanceOf(UnauthorizedException);
+    expect((unknown as UnauthorizedException).getResponse()).toEqual(
+      expect.objectContaining({ code: 'USER_NOT_FOUND' }),
+    );
+    const active = await receiptFor(ctx.db, 'auth-other')().catch((e: unknown) => e);
+    expect(active).toBeInstanceOf(NotFoundException);
+    expect((active as NotFoundException).getResponse()).toEqual(
+      expect.objectContaining({ code: 'NO_DELETION_RECEIPT' }),
+    );
+    const forged = await receiptFor(ctx.db, null)().catch((e: unknown) => e);
+    expect(forged).toBeInstanceOf(UnauthorizedException);
+    expect((forged as UnauthorizedException).getResponse()).toEqual(
+      expect.objectContaining({ code: 'RECEIPT_TOKEN_INVALID' }),
+    );
+  });
+
+  it('the receipt is honoured for DELETION_RECEIPT_DAYS only, and the cron drops old receipts', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    ctx.user().deleted_at = new Date(Date.now() - (DELETION_RECEIPT_DAYS + 1) * DAY);
+    await expect(guardFor(ctx.db, 'auth-original')()).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(receiptFor(ctx.db, 'auth-original')()).rejects.toBeInstanceOf(NotFoundException);
+
+    await ctx.service.runFinalizeCron();
+    const drop = ctx.db.committedCalls.find(
+      (c) =>
+        c.model === '$executeRaw' &&
+        c.method === 'UPDATE' &&
+        JSON.stringify(c.args).includes(RECEIPT_KEY_PREFIX),
+    );
+    expect(drop).toBeDefined();
   });
 });

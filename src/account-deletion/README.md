@@ -47,6 +47,7 @@ period, and a nightly finalization that erases the person's data.
 | `POST` | `/me/delete-account/cancel`  | Bearer (any role)                         | `{ message }`; 409 while finalizing |
 | `GET`  | `/me/delete-account/status`  | Bearer (any role)                         | `DeletionStatus`                    |
 | `POST` | `/admin/users/:id/delete`    | Bearer, `owner` role                      | `{ message }`                       |
+| `POST` | `/account-deletion/receipt`  | Public; Bearer may be expired (30 days)   | `{ state: 'deleted' }`; 404 `NO_DELETION_RECEIPT`; 401 `RECEIPT_TOKEN_MISSING` / `RECEIPT_TOKEN_INVALID` |
 
 "Any role" means no `@Roles` decorator: `JwtAuthGuard` authenticates and the
 service scopes every call by `req.user.id` (B-608-7, sub-coaches included).
@@ -61,6 +62,24 @@ service scopes every call by `req.user.id` (B-608-7, sub-coaches included).
 After finalization the API answers 403 `{ code: 'ACCOUNT_DELETED' }` while
 the old access token is still valid; the app treats that as completion and
 signs out.
+
+### Completion receipt (B-608-10)
+
+Removing the Supabase identity used to set `supabase_id` to `deleted-<id>`,
+so the person's own token got 401 "User not found" before the 403 above.
+Now the tombstone keeps `deleted-r1:<sha256("tgp-deletion-receipt:v1:" +
+auth id)>` for `DELETION_RECEIPT_DAYS` (30) after `deleted_at`:
+
+- `JwtAuthGuard`: an unknown `sub` whose receipt key matches a live receipt
+  gets 403 `ACCOUNT_DELETED`. Any other unknown subject stays 401
+  `{ code: 'USER_NOT_FOUND' }`.
+- `POST /account-deletion/receipt` (public, 10 a minute): the app sends the
+  access token it last held. The signature, issuer and audience are checked
+  as usual, but a token that expired up to 30 days ago is accepted
+  (`JwksVerifierService.verifyForDeletionReceipt`). The only answer is
+  `deleted` or 404. An active account looks the same as an unknown one.
+- The nightly cron replaces receipts older than 30 days with `deleted-<id>`.
+  The raw auth id is never stored after removal.
 
 ## State machine and concurrency
 
@@ -109,8 +128,14 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
    user agent).
 6. After commit, remove the Supabase auth identity. A returned or thrown
    error is logged, recorded as `auth_identity_cleanup_failed`, and retried
-   by every nightly run until it succeeds (`supabase_id` becomes
-   `deleted-<id>` once removed). "Not found" counts as removed.
+   by every nightly run until it succeeds (`supabase_id` becomes the
+   completion receipt key once removed, then `deleted-<id>` after 30 days).
+   "Not found" counts as removed.
+   Data exports: every export of the user (finished or still building) has
+   its archive path removed with the other stored objects. An export that
+   finishes after finalization finds no request row and deletes its own
+   archive. The nightly export expiry also removes archives older than an
+   hour that no row points to (B-608-3).
 
 ## Erasure manifest
 
@@ -135,6 +160,13 @@ through that relation (`ExerciseSet` via `workout.user_id` before
 `WorkoutSession`, `HabitLog` via `habit.user_id` before `Habit`); children
 that are not (wearable prompt sources -> `WearableSample`) are deleted by
 `RESTRICT_CHILD_PRE_STEPS` before the manifest runs.
+
+Tables from open PRs that are not in this schema (`OPTIONAL_USER_TABLES`:
+consultation intake #607, the #622 AI consent ledger `AiProcessingConsentEvent`
+and its earlier name `AiProcessingConsent`) are purged with a raw `DELETE`
+when the table exists. The ledger rejects UPDATE (append-only trigger) and
+its service_role policy allows DELETE, so erasure needs no policy change
+(B-608-9).
 
 Retained rows (all keyed only by the tombstone id): finance mirrors (Invoice,
 ConnectAccount, ClientPurchase deactivated, SplitLedgerEntry, ConnectTransfer,
