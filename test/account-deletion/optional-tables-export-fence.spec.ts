@@ -9,7 +9,9 @@ import { mkdirSync, mkdtempSync, existsSync, rmSync, writeFileSync, utimesSync }
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
+  ERASURE_MANIFEST,
   OPTIONAL_USER_TABLES,
+  executeErasureManifest,
   purgeOptionalUserTables,
 } from '../../src/account-deletion/account-deletion.manifest';
 import { DataExportService } from '../../src/data-export/data-export.service';
@@ -23,10 +25,10 @@ function stub<T>(value: unknown): T {
 const A = '3f0c7a52-6a51-4c55-9a0e-0c9d6f1b2a10';
 const B = '9b1e2d3c-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
 
-/** A tiny ledger: the #622 table with rows for A and B, append-only for UPDATE. */
+/** A tiny optional table (the older AI consent name) with rows for A and B, append-only for UPDATE. */
 function ledgerTx(present: ReadonlySet<string>) {
   const tables: Record<string, Array<{ user_id: string; seq: number }>> = {
-    AiProcessingConsentEvent: [
+    AiProcessingConsent: [
       { user_id: A, seq: 1 },
       { user_id: A, seq: 2 },
       { user_id: B, seq: 1 },
@@ -42,8 +44,8 @@ function ledgerTx(present: ReadonlySet<string>) {
     $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const q = Prisma.sql(strings, ...values);
       statements.push(q.sql.trim().replace(/\s+/g, ' '));
-      if (/^\s*UPDATE "AiProcessingConsentEvent"/.test(q.sql)) {
-        throw new Error('AiProcessingConsentEvent is append-only');
+      if (/^\s*UPDATE "AiProcessingConsent"/.test(q.sql)) {
+        throw new Error('AiProcessingConsent is append-only');
       }
       const m = /DELETE FROM "(\w+)" WHERE "(\w+)" = \?/.exec(q.sql.replace(/\s+/g, ' '));
       if (!m) throw new Error(`unexpected SQL: ${q.sql}`);
@@ -57,30 +59,94 @@ function ledgerTx(present: ReadonlySet<string>) {
 }
 
 describe('B-608-9 AI consent ledger erasure', () => {
-  it('lists the #622 ledger table and keeps the older table name', () => {
-    expect(OPTIONAL_USER_TABLES).toEqual(
-      expect.arrayContaining([
-        { table: 'AiProcessingConsentEvent', column: 'user_id' },
-        { table: 'AiProcessingConsent', column: 'user_id' },
-      ]),
+  it('the #622 ledger (now in the schema) is a manifest delete; the older table name stays optional', () => {
+    expect(ERASURE_MANIFEST).toContainEqual(
+      expect.objectContaining({
+        model: 'AiProcessingConsentEvent',
+        field: 'user_id',
+        action: { op: 'delete' },
+      }),
+    );
+    expect(OPTIONAL_USER_TABLES).toContainEqual({
+      table: 'AiProcessingConsent',
+      column: 'user_id',
+    });
+    expect(OPTIONAL_USER_TABLES).not.toContainEqual(
+      expect.objectContaining({ table: 'AiProcessingConsentEvent' }),
     );
   });
 
-  it('deletes only the deleted user ledger rows, with DELETE only, when #622 is present', async () => {
-    const h = ledgerTx(new Set(['AiProcessingConsentEvent']));
+  it('the manifest step deletes only the deleted user ledger rows and never updates them', async () => {
+    const rows = [
+      { user_id: A, seq: 1 },
+      { user_id: A, seq: 2 },
+      { user_id: B, seq: 1 },
+    ];
+    let table = [...rows];
+    const ops: string[] = [];
+    const ledger = {
+      deleteMany: async (args: { where: { user_id: string } }) => {
+        ops.push('deleteMany');
+        const before = table.length;
+        table = table.filter((r) => r.user_id !== args.where.user_id);
+        return { count: before - table.length };
+      },
+      updateMany: async () => {
+        ops.push('updateMany');
+        throw new Error('AiProcessingConsentEvent is append-only');
+      },
+    };
+    const entries = ERASURE_MANIFEST.filter((e) => e.model === 'AiProcessingConsentEvent');
+    const tx = stub<Prisma.TransactionClient>(
+      new Proxy(
+        {
+          aiProcessingConsentEvent: ledger,
+          $executeRaw: async () => 0,
+          $queryRaw: async () => [{ present: false }],
+        },
+        {
+          get: (t, prop: string) =>
+            prop in t
+              ? Reflect.get(t, prop)
+              : prop === 'then'
+                ? undefined
+                : {
+                    deleteMany: async () => ({ count: 0 }),
+                    updateMany: async () => ({ count: 0 }),
+                    findMany: async () => [],
+                  },
+        },
+      ),
+    );
+    await executeErasureManifest(
+      tx,
+      {
+        userId: A,
+        email: 'a@example.com',
+        tombstoneEmail: `deleted-${A}@tombstone.invalid`,
+        now: new Date(),
+      },
+      entries,
+    );
+    expect(table).toEqual([{ user_id: B, seq: 1 }]);
+    expect(ops).toEqual(['deleteMany']);
+  });
+
+  it('raw optional purge: DELETE only, only the deleted user rows, when the table exists', async () => {
+    const h = ledgerTx(new Set(['AiProcessingConsent']));
     const results = await purgeOptionalUserTables(h.tx, A);
-    expect(h.tables.AiProcessingConsentEvent).toEqual([{ user_id: B, seq: 1 }]);
+    expect(h.tables.AiProcessingConsent).toEqual([{ user_id: B, seq: 1 }]);
     expect(results).toEqual([
-      { model: 'AiProcessingConsentEvent', field: 'user_id', op: 'delete', count: 2 },
+      { model: 'AiProcessingConsent', field: 'user_id', op: 'delete', count: 2 },
     ]);
-    expect(h.statements).toEqual(['DELETE FROM "AiProcessingConsentEvent" WHERE "user_id" = ?']);
+    expect(h.statements).toEqual(['DELETE FROM "AiProcessingConsent" WHERE "user_id" = ?']);
   });
 
   it('is a no-op when the ledger table is not deployed yet', async () => {
     const h = ledgerTx(new Set());
     await expect(purgeOptionalUserTables(h.tx, A)).resolves.toEqual([]);
     expect(h.statements).toEqual([]);
-    expect(h.tables.AiProcessingConsentEvent).toHaveLength(3);
+    expect(h.tables.AiProcessingConsent).toHaveLength(3);
   });
 });
 

@@ -161,12 +161,12 @@ through that relation (`ExerciseSet` via `workout.user_id` before
 that are not (wearable prompt sources -> `WearableSample`) are deleted by
 `RESTRICT_CHILD_PRE_STEPS` before the manifest runs.
 
-Tables from open PRs that are not in this schema (`OPTIONAL_USER_TABLES`:
-consultation intake #607, the #622 AI consent ledger `AiProcessingConsentEvent`
-and its earlier name `AiProcessingConsent`) are purged with a raw `DELETE`
-when the table exists. The ledger rejects UPDATE (append-only trigger) and
+The #622 AI consent ledger `AiProcessingConsentEvent` (now in the schema)
+is deleted by a manifest entry. It rejects UPDATE (append-only trigger) and
 its service_role policy allows DELETE, so erasure needs no policy change
-(B-608-9).
+(B-608-9). Tables that are not in this schema (`OPTIONAL_USER_TABLES`:
+consultation intake #607 and the older name `AiProcessingConsent`) are purged
+with a raw `DELETE` when the table exists.
 
 Retained rows (all keyed only by the tombstone id): finance mirrors (Invoice,
 ConnectAccount, ClientPurchase deactivated, SplitLedgerEntry, ConnectTransfer,

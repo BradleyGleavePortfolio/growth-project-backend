@@ -85,6 +85,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     },
   },
   { model: 'CoachMessage', field: 'client_id', action: del },
+  // #622 AI consent ledger (B-608-9). Append-only for UPDATE (trigger); the
+  // service_role policy allows this DELETE. No policy or trigger is changed.
+  { model: 'AiProcessingConsentEvent', field: 'user_id', action: del },
   { model: 'CoachMessage', field: 'coach_id', action: detach('coach_id') },
   { model: 'Message', field: 'sender_id', action: del },
   { model: 'Message', field: 'recipient_id', action: del },
@@ -638,22 +641,16 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
 ];
 
 /**
- * Tables added by open PRs (consultation intake #607, AI consent ledger #622).
- * They are not in this branch's Prisma schema, so they are purged with raw
- * SQL only when the table exists. Identifiers are fixed constants (never
- * input).
- *
- * `AiProcessingConsentEvent` is the #622 ledger
- * (prisma/migrations/20270203000000_ai_processing_consent_ledger). It is
- * append-only for UPDATE (trigger) and its service_role policy allows the
- * erasure DELETE, so only DELETE is issued; no policy or trigger is touched
- * (B-608-9). `AiProcessingConsent` is the earlier #601 name, kept so a
- * database that still has it is also purged.
+ * Tables added by open PRs (consultation intake #607) or by earlier names
+ * (`AiProcessingConsent`, the #601 name of the AI consent table). They are
+ * not in the Prisma schema, so they are purged with raw SQL only when the
+ * table exists. Identifiers are fixed constants (never input). The #622
+ * ledger `AiProcessingConsentEvent` is now in the schema and is deleted by
+ * ERASURE_MANIFEST (B-608-9).
  */
 export const OPTIONAL_USER_TABLES: ReadonlyArray<{ table: string; column: string }> = [
   { table: 'ClientOnboardingIntakeRevision', column: 'client_id' },
   { table: 'ClientOnboardingIntake', column: 'client_id' },
-  { table: 'AiProcessingConsentEvent', column: 'user_id' },
   { table: 'AiProcessingConsent', column: 'user_id' },
 ];
 
