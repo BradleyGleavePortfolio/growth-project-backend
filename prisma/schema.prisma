@@ -6342,6 +6342,14 @@ model RomanMessage {
   // never sets it but the column ships now so branching is additive later.
   parent_message_id String?
 
+  // R3 — provenance of the client-data block Roman saw when it produced this
+  // turn: sha256 of the rendered <client_data> block and when it was built.
+  // The block itself is never stored here (no stale numbers in transcripts);
+  // a disputed answer is traced by rebuilding the block and comparing hashes.
+  // Nullable: user turns, coach-surface turns and pre-R3 rows have neither.
+  context_hash         String?
+  context_generated_at DateTime?
+
   created_at DateTime @default(now())
 
   session RomanSession   @relation(fields: [session_id], references: [id], onDelete: Cascade)

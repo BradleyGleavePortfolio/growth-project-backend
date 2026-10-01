@@ -18,10 +18,19 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
+import { RomanClientContextService } from './context/roman-client-context.service';
+import { RomanContextController } from './context/roman-context.controller';
 
 @Module({
-  controllers: [RomanController],
-  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
-  exports: [RomanService],
+  // R3: RomanClientContextService grounds every client-surface turn and
+  // serves GET /roman/context/me (RomanContextController).
+  controllers: [RomanController, RomanContextController],
+  providers: [
+    RomanService,
+    RomanFeatureGuard,
+    romanAnthropicClientProvider,
+    RomanClientContextService,
+  ],
+  exports: [RomanService, RomanClientContextService],
 })
 export class RomanModule {}

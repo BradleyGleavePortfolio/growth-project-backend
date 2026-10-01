@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { romanContextInvalidate } from '../roman/context/roman-context-invalidation';
 import { CreateMacroTargetDto } from './macros.dto';
 
 // Activity multipliers for resting energy expenditure. Used by the
@@ -73,6 +74,8 @@ export class MacrosService {
     this.logger.log(
       `MacroTarget created coach=${coachId} client=${clientId} kcal=${dto.calories_kcal}`,
     );
+    // R3 — Roman's grounding memo must see the new targets on the next turn.
+    romanContextInvalidate(clientId);
     return target;
   }
 
@@ -114,11 +117,17 @@ export class MacrosService {
   }
 
   async archiveByCoach(coachId: string, targetId: string) {
+    const archived = await this.prisma.macroTarget.findFirst({
+      where: { id: targetId, coach_id: coachId, archived_at: null },
+      select: { client_id: true },
+    });
     const result = await this.prisma.macroTarget.updateMany({
       where: { id: targetId, coach_id: coachId, archived_at: null },
       data: { archived_at: new Date() },
     });
     if (result.count === 0) throw new NotFoundException('Macro target not found');
+    // R3 — bust Roman's grounding memo for the affected client.
+    if (archived) romanContextInvalidate(archived.client_id);
     return { archived: result.count };
   }
 

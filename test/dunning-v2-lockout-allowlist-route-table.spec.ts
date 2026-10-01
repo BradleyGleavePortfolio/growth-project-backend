@@ -167,6 +167,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'health/deep',
   'healthz',
   'readyz',
+  'roman/context/me', // R3 — own-data disclosure (RomanContextController)
   'roman/sessions',
   'roman/sessions/:id',
   'roman/sessions/:id/messages',
