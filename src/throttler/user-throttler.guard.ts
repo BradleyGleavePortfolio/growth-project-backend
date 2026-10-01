@@ -33,15 +33,14 @@ const HEALTH_PATHS = new Set(['/health', '/healthz', '/readyz']);
  * reserve IP-keyed limits for pre-auth surfaces (login, signup, forgot-
  * password) where there is no user identity yet.
  *
- * Security model for bucket-key selection:
- *   - Public endpoints that lack a Bearer token use IP-based limits (correct).
- *   - Authenticated endpoints bucket by decoded Supabase subject (consistent
- *     per-user bucketing; full JWT verification is JwtAuthGuard's job).
- *   - The attack surface for sub-forgery is low because forge-sub just yields
- *     a new per-sub bucket that is still limit-enforced. Sensitive public
- *     routes (register, login, forgot-password) use explicit @Throttle
- *     decorators with low caps, so the per-IP fallback on those routes is
- *     the more important control anyway.
+ * Security model for bucket-key selection (C14 fix round, Sol SOL-C14-A1):
+ *   - Only a VERIFIED subject selects a user bucket: `req.user.id`, set by
+ *     JwtAuthGuard (registered as APP_GUARD before this guard). The
+ *     Authorization header is never decoded here, so a forged Bearer `sub`
+ *     cannot pick or rotate a bucket.
+ *   - Everything else (public routes, missing or invalid tokens) uses the
+ *     trusted client IP. Sensitive public routes (register, login,
+ *     forgot-password) use explicit @Throttle decorators with low caps.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {

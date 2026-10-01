@@ -27,7 +27,7 @@ baseline). `UserThrottlerGuard.handleRequest` therefore applies a named
 throttler **only to routes that declare it** via `@Throttle({ [name]: … })` on
 the handler or controller; `default` still applies everywhere. Public reads
 the app hits on launch / from a `/join` link use the dedicated `public-reads`
-bucket (`PUBLIC_READS_PER_MIN`, 120/min/IP). Named rows that no route declares
+bucket (`PUBLIC_READS_PER_MIN`, 240/min/IP). Named rows that no route declares
 (e.g. the community-* and bloodwork-write rows, whose routes use `default`
 with route limits) are inert until a route opts in.
 
@@ -42,7 +42,9 @@ silent no-op that *added* hits). Instead:
   counts failures under `auth-login-account:<sha256(email)>`
   (`AUTH_LOGIN_ACCOUNT_FAILURES`, default 10 / 15 min → 15-min lock, any IP),
   checks the lock before the password, and on that account's own success
-  clears **only that key**.
+  clears **only that key**. One code path for every password endpoint:
+  `AuthService._passwordLogin` → `guardPasswordLogin`, so `/auth/login` and
+  `/auth/extension/login` share the lock and the counter.
 - `/auth/google` and `/auth/apple` have their own per-IP buckets
   (`auth-oauth-per-min` 60, `auth-oauth-per-hour` 400): 40 people signing up
   with Apple on one Wi-Fi all get through, no reset needed.
@@ -54,6 +56,15 @@ silent no-op that *added* hits). Instead:
   backends and storage errors throw, and the lock fails closed (503).
 - The tracker never decodes an unverified Bearer token: only `req.user`
   (set by `JwtAuthGuard` after verification) selects a user bucket.
+- **Redis outage behaviour.** The per-IP guard limits fail **open**
+  (`withFailOpenStorage`, unchanged since R2 P1), so during an outage
+  forgot-password, register and signup-with-code are bounded only by
+  application checks. The per-account password lock and the OAuth coach
+  ceiling fail **closed** (503), so password sign-in is unavailable rather
+  than unthrottled until Redis is back.
+- **Known tradeoff.** Anyone can lock an account's password sign-in for
+  15 minutes with 10 wrong passwords (the usual lockout tradeoff). Google and
+  Apple sign-in are not affected by the lock.
 
 Tests: `test/login-account-lock.spec.ts` (real memory adapter, the
 production wrapper, a Redis-layout regression of the audit probe, and live
@@ -68,6 +79,9 @@ Redis in CI), `test/throttler-isolation.spec.ts` (40-person room).
 | `POST /auth/login`                        | POST   | `auth-login-per-min`    | 20    | 1 min  | IP (never reset)       |
 | `POST /auth/login`                        | POST   | `auth-login-per-hour`   | 200   | 1 hr   | IP (never reset)       |
 | `POST /auth/login` (failures)             | POST   | `auth-login-account:*`  | 10    | 15 min | account (sha256 email) |
+| `POST /auth/extension/login`              | POST   | `auth-login-per-min`    | 5     | 1 min  | IP (never reset)       |
+| `POST /auth/extension/login`              | POST   | `auth-login-per-hour`   | 200   | 1 hr   | IP (never reset)       |
+| `POST /auth/extension/login` (failures)   | POST   | `auth-login-account:*`  | 10 (shared with `/auth/login`) | 15 min | account (sha256 email) |
 | `POST /auth/apple`                        | POST   | `auth-oauth-per-min`    | 60    | 1 min  | IP (never reset)       |
 | `POST /auth/apple`                        | POST   | `auth-oauth-per-hour`   | 400   | 1 hr   | IP (never reset)       |
 | `POST /auth/google`                       | POST   | `auth-oauth-per-min`    | 60    | 1 min  | IP (never reset)       |
@@ -124,7 +138,7 @@ restart. Every var has a safe default that is production-appropriate.
 | `RATELIMIT_ENABLED`           | `on`    | —   | —      | Set to `off` to disable all throttling (load-test use only).|
 | `RATELIMIT_AUTHED_PER_MIN`    | `300`   | 1   | 10 000 | Default limit for authenticated requests per user per minute. |
 | `RATELIMIT_ANON_PER_MIN`      | `100`   | 1   | 10 000 | Default limit for unauthenticated requests per IP per minute. |
-| `PUBLIC_READS_PER_MIN`        | `120`   | 10  | 5 000  | Per-IP limit on public reads (`GET /auth/signup-policy`, `GET /invite/:code/preview`) via `public-reads`. |
+| `PUBLIC_READS_PER_MIN`        | `240`   | 10  | 5 000  | Per-IP limit on public reads (`GET /auth/signup-policy`, `GET /invite/:code/preview`) via `public-reads`. |
 | `AUTH_LOGIN_PER_MIN`          | `5`     | 1   | 1 000  | Per-IP login attempts per minute (all login endpoints share this). |
 | `AUTH_LOGIN_PER_HOUR`         | `30`    | 1   | 5 000  | Per-IP login attempts per hour (sustained-attack brake). |
 | `AUTH_PWD_RESET_PER_HOUR`     | `3`     | 1   | 1 000  | Per-IP password-reset emails per hour.                      |

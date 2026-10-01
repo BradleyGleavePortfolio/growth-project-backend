@@ -1,4 +1,10 @@
-import { Injectable, Optional, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Optional,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectThrottlerStorage, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'crypto';
@@ -169,6 +175,29 @@ export class LoginThrottleResetService {
     } catch (err) {
       throw this.unavailable('failure record', err);
     }
+  }
+
+  /**
+   * THE password sign-in lock flow (C14 #604 Opus A1). Every email+password
+   * sign-in endpoint runs through this one method, via
+   * `AuthService._passwordLogin` (`/auth/login` and `/auth/extension/login`
+   * today), so a new password endpoint cannot ship without the lock:
+   *   1. refuse a locked account BEFORE the password is checked (429);
+   *   2. a 401 from the attempt counts one failure for this account;
+   *   3. a success clears this account's own counter, nothing else.
+   * Storage errors on 1 and 2 fail closed (503); see the methods below.
+   */
+  async guardPasswordLogin<T>(email: string, attempt: () => Promise<T>): Promise<T> {
+    await this.assertAccountNotLocked(email);
+    let result: T;
+    try {
+      result = await attempt();
+    } catch (err) {
+      if (err instanceof UnauthorizedException) await this.recordAccountFailure(email);
+      throw err;
+    }
+    await this.clearAccountFailures(email);
+    return result;
   }
 
   /**

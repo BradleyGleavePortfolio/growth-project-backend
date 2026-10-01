@@ -573,7 +573,7 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'PUBLIC_READS_PER_MIN',
     tier: 'optional',
-    reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 120; clamped to [10, 5000].',
+    reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000].',
   },
   {
     name: 'RATELIMIT_ANON_PER_MIN',

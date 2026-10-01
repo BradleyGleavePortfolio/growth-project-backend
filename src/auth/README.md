@@ -266,7 +266,12 @@ honoured **only** on the branch that inserts a brand-new `User` row
   failed passwords for one email within 15 min lock that email for 15 min
   from any IP — the lock is checked *before* the password, so even the right
   password is refused while locked. Only that account's own success clears
-  its counter. `/auth/google` and `/auth/apple` use their own per-IP buckets
+  its counter. The lock covers **every** password sign-in endpoint
+  (`/auth/login` and `/auth/extension/login` share one counter per account):
+  it runs in `AuthService._passwordLogin` through
+  `LoginThrottleResetService.guardPasswordLogin`, not in the controller.
+  `/auth/extension/login` also declares the hourly per-IP brake
+  (`auth-login-per-hour`) next to its 5/min. `/auth/google` and `/auth/apple` use their own per-IP buckets
   (`AUTH_OAUTH_PER_MIN` 60, `AUTH_OAUTH_PER_HOUR` 400) sized for a 40-person
   room on one Wi-Fi. Lock check / failure record fail closed (503
   `login_temporarily_unavailable`) on a storage error. Tests:

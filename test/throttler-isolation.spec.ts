@@ -392,10 +392,10 @@ describe('C14 — route → throttler declarations', () => {
 // ---- 4. config + env registry ------------------------------------------------
 
 describe('C14 — public-reads throttler config and env registration', () => {
-  it('public-reads row: 60s window, PUBLIC_READS_PER_MIN limit (default 120)', () => {
+  it('public-reads row: 60s window, PUBLIC_READS_PER_MIN limit (default 240)', () => {
     const row = THROTTLER_LIMITS.find((t) => t.name === THROTTLER_NAMES.PUBLIC_READS);
     expect(row).toMatchObject({ ttl: 60_000, limit: PUBLIC_READS });
-    expect(PUBLIC_READS).toBe(120);
+    expect(PUBLIC_READS).toBe(240);
   });
 
   it('PUBLIC_READS_PER_MIN is registered in ENV_RULES, prod-switches.yml and .env.example', () => {
@@ -405,7 +405,7 @@ describe('C14 — public-reads throttler config and env registration', () => {
       'name: PUBLIC_READS_PER_MIN',
     );
     expect(fs.readFileSync(path.join(root, '.env.example'), 'utf8')).toContain(
-      'PUBLIC_READS_PER_MIN=120',
+      'PUBLIC_READS_PER_MIN=240',
     );
   });
 });

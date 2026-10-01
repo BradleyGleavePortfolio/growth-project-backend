@@ -154,9 +154,13 @@ function readIntEnv(name: string, defaultVal: number, min: number, max: number):
 // Global defaults
 const RATELIMIT_AUTHED_PER_MIN  = readIntEnv('RATELIMIT_AUTHED_PER_MIN', 300, 1, 10_000);
 const RATELIMIT_ANON_PER_MIN    = readIntEnv('RATELIMIT_ANON_PER_MIN',   100, 1, 10_000);
-// C14 — public read endpoints (signup-policy, invite preview): 120/min/IP by
-// default (a clinic room behind one NAT), clamped to [10, 5000].
-const PUBLIC_READS_PER_MIN      = readIntEnv('PUBLIC_READS_PER_MIN',     120, 10, 5_000);
+// C14 — public read endpoints (signup-policy, invite preview): 240/min/IP by
+// default, clamped to [10, 5000]. Sized for a 40-person clinic room behind
+// one NAT launching the app at once (signup-policy + invite preview per
+// launch, plus retries); 120 was too close (#604 Opus C3). The `default`
+// throttler (300/min per route per IP) still sits above it.
+export const PUBLIC_READS_PER_MIN_DEFAULT = 240;
+const PUBLIC_READS_PER_MIN      = readIntEnv('PUBLIC_READS_PER_MIN', PUBLIC_READS_PER_MIN_DEFAULT, 10, 5_000);
 
 // Auth route overrides
 // C14 fix round: per-IP password-login ceilings are never reset, so they are
@@ -378,7 +382,7 @@ export const THROTTLER_LIMITS = [
   // surfaces.
   { name: THROTTLER_NAMES.DEFAULT,             ttl: 60_000,       limit: Math.max(RATELIMIT_AUTHED_PER_MIN, RATELIMIT_ANON_PER_MIN) },
   // C14 — public reads: GET /auth/signup-policy, GET /invite/:code/preview.
-  // 120/min/IP; only applies to routes that declare it (isolation rule).
+  // 240/min/IP; only applies to routes that declare it (isolation rule).
   { name: THROTTLER_NAMES.PUBLIC_READS,        ttl: 60_000,       limit: PUBLIC_READS_PER_MIN },
 ] as const;
 

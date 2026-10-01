@@ -1,5 +1,4 @@
 import {
-  UnauthorizedException,
   BadRequestException,
   Body,
   Controller,
@@ -57,6 +56,11 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private inviteCodes: InviteCodesService,
+    // Not called from the handlers any more (the password lock moved into
+    // AuthService._passwordLogin, C14 #604 Opus A1). Kept as a REQUIRED
+    // dependency on purpose: AuthModule fails to boot if ThrottlerModule
+    // stops exporting it, so AuthService's @Optional() copy is never
+    // silently undefined in production.
     private loginThrottleReset: LoginThrottleResetService,
   ) {}
 
@@ -81,8 +85,9 @@ export class AuthController {
   @ApiOperation({
     summary: 'Email + password login',
     description:
-      'Returns Supabase access/refresh tokens. Rate-limited to 5/min and ' +
-      '30/hr per IP. A successful login resets both counters.',
+      'Returns Supabase access/refresh tokens. Rate-limited per IP ' +
+      '(AUTH_LOGIN_PER_MIN, AUTH_LOGIN_PER_HOUR; never reset) and by a ' +
+      'per-account failure lock shared with /auth/extension/login.',
   })
   @ApiResponse({ status: 200, description: 'Authenticated session.' })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
@@ -99,19 +104,9 @@ export class AuthController {
   })
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: LoginDto, @Request() req: AuditableRequest) {
-    await this.loginThrottleReset.assertAccountNotLocked(body.email);
-    let result: Awaited<ReturnType<AuthService['login']>>;
-    try {
-      result = await this.authService.login(body.email, body.password, auditContext(req));
-    } catch (err) {
-      if (err instanceof UnauthorizedException) {
-        await this.loginThrottleReset.recordAccountFailure(body.email);
-      }
-      throw err;
-    }
-    // Only THIS account's own failure counter is cleared.
-    await this.loginThrottleReset.clearAccountFailures(body.email);
-    return result;
+    // The per-account failure lock (check, count, own-account clear) runs
+    // inside AuthService._passwordLogin, shared with /auth/extension/login.
+    return this.authService.login(body.email, body.password, auditContext(req));
   }
 
   @ApiOperation({
@@ -119,16 +114,24 @@ export class AuthController {
     description:
       'Same as /auth/login (proxies Supabase signInWithPassword, returns ' +
       'Supabase access/refresh tokens verbatim) but tagged source=extension ' +
-      'in the audit log. Rate-limited 5/min per IP. Unlike /auth/login it does ' +
-      'NOT reset the IP login throttle on success — extensions fan out across ' +
-      'many IPs, so a per-IP reset is neither useful nor safe.',
+      'in the audit log. Rate-limited 5/min and AUTH_LOGIN_PER_HOUR per IP, ' +
+      'and shares /auth/login\'s per-account failure lock (429 while locked).',
   })
   @ApiResponse({ status: 200, description: 'Authenticated session.' })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('extension/login')
-  @Throttle({ [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 } })
+  // C14 #604 Opus A1: named throttlers only apply where declared, so the
+  // hourly per-IP brake must be declared here too (not inherited). The
+  // per-account lock is enforced in AuthService._passwordLogin.
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]: { ttl: 60_000, limit: 5 },
+    [THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]: {
+      ttl: 3_600_000,
+      limit: THROTTLER_ROUTE_LIMITS.AUTH_LOGIN_PER_HOUR,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   async extensionLogin(@Body() body: LoginDto, @Request() req: AuditableRequest) {
     return this.authService.extensionLogin(body.email, body.password, auditContext(req));
