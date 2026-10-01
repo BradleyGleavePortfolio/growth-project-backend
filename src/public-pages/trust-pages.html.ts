@@ -37,6 +37,15 @@ export const POLICY_LAST_REVIEWED = '2026-10-01';
 export const PRIVACY_POLICY_PATH = '/privacy';
 export const CONSUMER_HEALTH_POLICY_PATH = '/consumer-health-privacy';
 
+// Public account-deletion page (Google Play: a web URL where anyone can ask
+// for account and data deletion without installing the app). Linked from the
+// Privacy Policy, the /help nav and the shared policy footer.
+export const DELETE_ACCOUNT_HELP_PATH = '/help/delete-account';
+
+// Mailbox for deletion requests from people who cannot use the app, as set
+// by the operator for the Google Play deletion page (2026-10-01 15:30 PT).
+export const ACCOUNT_DELETION_EMAIL = 'Bradleyapple1031@gmail.com';
+
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
 
 // Order and labels of the header nav. Every trust page links to every other
@@ -238,6 +247,12 @@ function privacyContent(): TrustPageContent {
         paragraphs: [
           'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only the payment records the law requires.',
           `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too.`,
+        ],
+        links: [
+          {
+            label: 'How to delete your account, with or without the app',
+            href: DELETE_ACCOUNT_HELP_PATH,
+          },
         ],
       },
       {
@@ -722,7 +737,9 @@ export function policyFooterLinks(): string {
   return (
     `<a href="${escapeAttr(PRIVACY_POLICY_PATH)}">Privacy Policy</a>` +
     ' · ' +
-    `<a href="${escapeAttr(CONSUMER_HEALTH_POLICY_PATH)}">Consumer Health Data Privacy Policy</a>`
+    `<a href="${escapeAttr(CONSUMER_HEALTH_POLICY_PATH)}">Consumer Health Data Privacy Policy</a>` +
+    ' · ' +
+    `<a href="${escapeAttr(DELETE_ACCOUNT_HELP_PATH)}">Delete your account</a>`
   );
 }
 

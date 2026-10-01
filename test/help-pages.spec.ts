@@ -42,6 +42,7 @@ const ALL_PAGES: ReadonlyArray<HelpPage> = [
   'faq',
   'support',
   'contact',
+  'delete-account',
 ];
 
 const ROUTE_HANDLERS: ReadonlyArray<{

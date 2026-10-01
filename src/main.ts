@@ -179,6 +179,7 @@ async function bootstrap() {
       'help/faq',
       'help/support',
       'help/contact',
+      'help/delete-account',
       // R46 — Public coach landing pages (canonical `/p/...` slug routes) AND
       // B3 (PR-18) — verified custom-domain apex routes (`GET /`,
       // `GET /checkout`, `POST /leads`, `POST /view`). Both shapes are pinned

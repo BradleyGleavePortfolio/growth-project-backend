@@ -184,6 +184,15 @@ export class PublicPagesController {
     return this.sendHelp(res, 'contact');
   }
 
+  // Google Play account-deletion page: public, no login, so a person can ask
+  // for deletion without installing the app.
+  @Public()
+  @Get('help/delete-account')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpDeleteAccount(@Res() res: Response) {
+    return this.sendHelp(res, 'delete-account');
+  }
+
   private send(res: Response, html: string) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
