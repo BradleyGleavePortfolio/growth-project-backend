@@ -137,11 +137,16 @@ the Stripe Customer Portal. They live in `trust-pages.html.ts`.
   page: it is in the trust-page header nav, and `policyFooterLinks()`
   puts it in the footer of every trust, help, signup and download page.
   The mobile Trust Center links to the same path.
-- Roman copy must match the owner rulings and the server consent copy
-  (`src/roman/consent/roman-consent.constants.ts`, `client-ai-v2`):
-  Anthropic, single "I agree" box, private from coaches, staff access
-  only for support / safety / debugging, 180-day retention, client
-  delete.
+- Roman copy must match the owner rulings and the D2 two-box consent
+  (owner-approved 2026-10-01 09:07 PDT): box 1 (required) is the
+  personal-training waiver plus collection and use for coaching
+  (`consult-consent-v2`); box 2 (optional, unticked) is Roman and coach
+  AI drafts processed by Anthropic (AI consent ledger, `client-ai-v3`),
+  withdrawn in Settings > Privacy > Roman and AI; stopping all
+  collection is Settings > Account > Delete account. Also: private from
+  coaches, staff access only for support / safety / debugging, 180-day
+  retention, client delete. The consumer health "Consent" section is
+  the approved text byte for byte (pinned in `test/trust-pages.spec.ts`).
 - The clinic partner is never named. Copy says "clinic partner".
 - Section links go through `safeHref()`: site-relative paths, `mailto:`
   and `https:` only; anything else renders as `#`.

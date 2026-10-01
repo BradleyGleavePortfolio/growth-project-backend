@@ -30,7 +30,7 @@ export const SUPPORT_EMAIL = 'Bradley@Bradleytgpcoaching.com';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-09-30';
+export const POLICY_LAST_REVIEWED = '2026-10-01';
 
 // Public paths of the two privacy documents. The mobile app links to the
 // same paths (growth-project-mobile src/config/env.ts), so keep them stable.
@@ -187,9 +187,9 @@ function privacyContent(): TrustPageContent {
       {
         heading: 'Roman and AI',
         paragraphs: [
-          'Roman is an AI assistant powered by Anthropic. At the start of the consultation you are asked to tick a single “I agree” box. It covers the personal-training waiver and lets Roman and your coach’s AI tools use your in-app data; it names Anthropic and the data involved. Nothing is sent to Anthropic about you until you agree.',
+          'Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
           'When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you.',
-          'Roman conversations are deleted automatically 180 days after each message is sent. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can withdraw your agreement at any time; Roman and AI drafts about you then stop until you agree again.',
+          'Roman conversations are deleted automatically 180 days after each message is sent. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again.',
           'If enabled for a community, Anthropic is also used to help review community content that may break the rules. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data) and to write the roadmap for the public website diagnostic.',
           'Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988.',
         ],
@@ -364,8 +364,10 @@ function consumerHealthContent(): TrustPageContent {
       {
         heading: 'Consent',
         paragraphs: [
-          'Most of this data is needed to provide the personal training you ask for. Before we collect your consultation answers, the app asks you to tick a single “I agree” box. It covers the personal-training waiver and lets TGP, your coach and Roman see your in-app data, and it names Anthropic as Roman’s AI provider and lists the data it receives. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.',
-          'You can withdraw your agreement at any time. When you do, Roman and AI drafts about you stop. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
+          // D2 two-box consent (owner-approved 2026-10-01 09:07 PDT). Byte-exact
+          // approved copy; pinned by test/trust-pages.spec.ts.
+          "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+          'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
         ],
       },
       {
@@ -443,7 +445,7 @@ function termsContent(): TrustPageContent {
         heading: 'Personal training, not medical care',
         paragraphs: [
           'TGP is a personal-training service, not a medical or licensed health-care service. It does not diagnose or treat any condition. Information provided by the app, by Roman or other AI features, or by your coach within the app is general fitness and nutrition guidance and is not a substitute for professional medical, mental-health, legal or financial advice. Speak to a qualified professional before making decisions that affect your health. In an emergency call 911; in a mental-health crisis call or text 988.',
-          'Before your consultation you are asked to accept the personal-training waiver and the AI agreement with a single “I agree” box. Roman is an AI assistant powered by Anthropic; its replies can be wrong, so use your judgement and check with your coach.',
+          'Before your consultation you are asked to accept the personal-training waiver, which you need to do to continue. A separate, optional box lets Roman and your coach’s AI drafts use your information, processed by Anthropic. Roman is an AI assistant powered by Anthropic; its replies can be wrong, so use your judgement and check with your coach.',
         ],
       },
       {

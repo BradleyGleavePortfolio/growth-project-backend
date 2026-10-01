@@ -266,6 +266,23 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
     expect(text).toMatch(/Roman conversations are never shared with your coach/);
   });
 
+  it('states the owner-approved D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT)', () => {
+    const text = visibleText(renderTrustPage('consumer-health'));
+    const approved = [
+      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+      'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
+    ];
+    for (const paragraph of approved) expect(text).toContain(paragraph);
+    // Box 2 withdrawal and the delete-account path for stopping all collection.
+    expect(text).toContain('in Settings > Privacy; Roman and AI drafts about you then stop.');
+    expect(text).toContain('To stop all collection, delete your account in Settings > Account.');
+    // Rendered escaped, as plain paragraphs inside the Consent section.
+    const html = renderTrustPage('consumer-health');
+    const consent = html.slice(html.indexOf('>Consent<'), html.indexOf('>Your rights<'));
+    expect(consent).toContain('Settings &gt; Privacy;');
+    expect(consent).toContain('your coach&#39;s AI drafts');
+  });
+
   it('links back to the Privacy Policy and keeps the counsel-review notice', () => {
     const html = renderTrustPage('consumer-health');
     expect(html).toContain('<a href="/privacy">Read the full Privacy Policy</a>');
@@ -312,7 +329,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).toMatch(/deleted automatically 180 days after each message is sent/);
     expect(text).toMatch(/delete a conversation at any time/);
     expect(text).toMatch(/only for support, safety and debugging/);
-    expect(text).toMatch(/single “I agree” box/);
+    expect(text).toMatch(/two separate boxes on one screen/);
     expect(text).toMatch(/never your coach’s private notes/);
   });
 
@@ -367,8 +384,31 @@ describe('policy copy hygiene', () => {
     }
   });
 
-  it('bumped the last-reviewed date for this rewrite', () => {
-    expect(POLICY_LAST_REVIEWED >= '2026-09-30').toBe(true);
+  it('bumped the last-reviewed date for the D2 consent rewrite', () => {
+    expect(POLICY_LAST_REVIEWED >= '2026-10-01').toBe(true);
+  });
+
+  it('no page still describes the old single-box agreement (D2: two boxes)', () => {
+    for (const slug of ['privacy', 'consumer-health', 'terms'] as const) {
+      const text = visibleText(renderTrustPage(slug));
+      expect(text).not.toMatch(/single “I agree” box/);
+      expect(text).not.toMatch(/single "I agree" box/);
+    }
+  });
+
+  it('describes box 2 as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
+    const privacy = visibleText(renderTrustPage('privacy'));
+    expect(privacy).toContain(
+      'The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives.',
+    );
+    expect(privacy).toContain(
+      'You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI',
+    );
+    expect(privacy).toContain('Settings, then Delete account');
+    const terms = visibleText(renderTrustPage('terms'));
+    expect(terms).toContain(
+      'A separate, optional box lets Roman and your coach’s AI drafts use your information, processed by Anthropic.',
+    );
   });
 });
 
