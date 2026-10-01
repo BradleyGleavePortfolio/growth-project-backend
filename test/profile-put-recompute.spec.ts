@@ -50,6 +50,8 @@ function harness(initial: Record<string, unknown> | null) {
   const prisma: Record<string, unknown> = {
     userProfile,
     macroTarget: { findFirst: jest.fn(async () => null) },
+    // Read by the stacked onboarding display-mode lookup (#607); no intake here.
+    clientOnboardingIntake: { findUnique: jest.fn(async () => null) },
   };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   const svc = new ProfileService(asPrisma(prisma));
