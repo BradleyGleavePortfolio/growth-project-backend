@@ -16,6 +16,7 @@
  */
 
 import type { SafetyClass } from './safety-router';
+import { ROMAN_PHYSICIAN_LINE_INJURY, ROMAN_PHYSICIAN_LINE_MEDICAL } from './safety-router';
 
 /**
  * The slice of the R3 PostCheckContext the post-check reads. Declared
@@ -176,13 +177,17 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
   return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets; if you would like them reviewed, message ${coach}.`;
 }
 
+/**
+ * Rewrite templates (owner ruling 2026-09-30 16:38: warm, useful, a safe next
+ * step inside the plan, offer to message the coach, then the physician line).
+ */
 export const ROMAN_POST_CHECK_TEMPLATES = {
   medical: (ctx: PostCheckContext | null) =>
-    `I cannot tell you what is causing that, and I should not guess. Please stop any movement that hurts and message ${coachName(ctx)}. If it persists or is severe, please see a physician.`,
+    `I should not name what might be causing that, and I will not guess. What I can offer: stop any movement that hurts today, keep the rest of your session pain-free or at a lighter intensity, and rest the area. Message ${coachName(ctx)} so the plan can be adjusted around it, and I can help you word that. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
   banned: (ctx: PostCheckContext | null) =>
-    `I cannot help with that. It is outside what is safe for me to advise. ${coachName(ctx) === 'your coach' ? 'Your coach' : coachName(ctx)} can talk through options that fit your plan, and a physician is the right person for anything medical.`,
-  referral_medical: 'For that, please check with your physician.',
-  referral_injury: 'If it persists or is severe, please see a physician.',
+    `I cannot help with that. It is outside what is safe for me to advise. What I can do is help you stay on your plan: hold your current targets, keep logging, and train the sessions as written. ${coachName(ctx) === 'your coach' ? 'Your coach' : coachName(ctx)} can talk through options that fit your plan, and a physician is the right person for anything medical.`,
+  referral_medical: ROMAN_PHYSICIAN_LINE_MEDICAL,
+  referral_injury: ROMAN_PHYSICIAN_LINE_INJURY,
 };
 
 export function postCheckRomanReply(reply: string, input: PostCheckInput): PostCheckResult {

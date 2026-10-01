@@ -22,6 +22,8 @@ import {
   classifySafety,
   routerHintFor,
   ROMAN_ROUTER_HINTS,
+  ROMAN_PHYSICIAN_LINE_INJURY,
+  ROMAN_PHYSICIAN_LINE_MEDICAL,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
   type SafetyClass,
@@ -260,6 +262,113 @@ describe('R4 SafetyRouter', () => {
     // No exclamation marks or emoji in the fixed copy (doctrine R107 / voice contract).
     for (const t of Object.values(ROMAN_SAFETY_TEMPLATES))
       expect(t).not.toMatch(/!|[\u{1F300}-\u{1FAFF}]/u);
+  });
+});
+
+// ─── owner ruling 2026-09-30 16:38: butlered, useful safety copy ─────────────
+
+describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then physician)', () => {
+  const CONTRACTIONS = /\b(I'm|I'll|you're|don't|can't|won't|it's|that's|isn't|aren't|didn't)\b/i;
+  const HYPE = /\b(amazing|incredible|awesome|epic|insane|crushing it|beast mode)\b/i;
+
+  it('911 and 988 routing is unchanged and the templates stay deterministic text', () => {
+    expect(ROMAN_SAFETY_TEMPLATES.emergency).toContain('call 911 now');
+    expect(ROMAN_SAFETY_TEMPLATES.self_harm).toContain('call or text 988');
+    expect(ROMAN_SAFETY_TEMPLATES.self_harm).toContain('call 911');
+    for (const t of Object.values(ROMAN_SAFETY_TEMPLATES)) {
+      expect(typeof t).toBe('string');
+      expect(t).not.toMatch(/!|[\u{1F300}-\u{1FAFF}]/u);
+      expect(t).not.toMatch(CONTRACTIONS);
+      expect(t).not.toMatch(HYPE);
+      // No promise of an action Roman does not perform.
+      expect(t).not.toMatch(/I (have|will) (told|tell|notify|notified|alert|alerted|contact|contacted)/i);
+    }
+  });
+
+  it('the emergency template gives a concrete safe step beyond the number', () => {
+    const t = ROMAN_SAFETY_TEMPLATES.emergency;
+    expect(t).toMatch(/stay where you are/i);
+    expect(t).toMatch(/phone within reach/i);
+    expect(t).toMatch(/coach/i);
+  });
+
+  it('the self-harm template is warm, names a person who will answer, and a next step', () => {
+    const t = ROMAN_SAFETY_TEMPLATES.self_harm;
+    expect(t).toMatch(/I am sorry you are carrying this/);
+    expect(t).toMatch(/trained person will answer/i);
+    expect(t).toMatch(/someone you trust/i);
+    expect(t).toMatch(/You matter/);
+  });
+
+  it('medical_scope hint: general non-diagnostic guidance, a step inside the plan, coach offer, then the exact physician line', () => {
+    const h = ROMAN_ROUTER_HINTS.medical_scope;
+    expect(h).toMatch(/general, non-diagnostic principle/i);
+    expect(h).toMatch(/build intensity gradually/i);
+    expect(h).toMatch(/safe next step inside their current plan/i);
+    expect(h).toMatch(/lower intensity/i);
+    expect(h).toMatch(/offer to help them message their coach/i);
+    expect(h).toContain(ROMAN_PHYSICIAN_LINE_MEDICAL);
+    expect(h).toMatch(/do not interpret, diagnose or advise/i);
+    expect(h).toMatch(/do not change or time any medication/i);
+    // Order: guidance (1) before plan step (2) before coach (3) before physician (4).
+    expect(h.indexOf('(1)')).toBeLessThan(h.indexOf('(2)'));
+    expect(h.indexOf('(2)')).toBeLessThan(h.indexOf('(3)'));
+    expect(h.indexOf('(3)')).toBeLessThan(h.indexOf(ROMAN_PHYSICIAN_LINE_MEDICAL));
+  });
+
+  it('injury_pain hint: stop the movement, pain-free alternative or lower intensity, coach offer, then the exact physician line', () => {
+    const h = ROMAN_ROUTER_HINTS.injury_pain;
+    expect(h).toMatch(/stop the movement that hurts/i);
+    expect(h).toMatch(/pain is not effort/i);
+    expect(h).toMatch(/pain-free alternative/i);
+    expect(h).toMatch(/lower-intensity version/i);
+    expect(h).toMatch(/mild soreness .* is normal/i);
+    expect(h).toMatch(/offer to help them message their coach/i);
+    expect(h).toContain(ROMAN_PHYSICIAN_LINE_INJURY);
+    expect(h).toMatch(/do not diagnose, name a condition or prescribe rehab/i);
+    expect(h.indexOf('(1)')).toBeLessThan(h.indexOf('(5)'));
+    expect(h.indexOf('(4)')).toBeLessThan(h.indexOf(ROMAN_PHYSICIAN_LINE_INJURY));
+  });
+
+  it('post-check templates carry the same physician lines and a useful step, with no diagnosis', () => {
+    expect(ROMAN_POST_CHECK_TEMPLATES.referral_medical).toBe(ROMAN_PHYSICIAN_LINE_MEDICAL);
+    expect(ROMAN_POST_CHECK_TEMPLATES.referral_injury).toBe(ROMAN_PHYSICIAN_LINE_INJURY);
+    const med = ROMAN_POST_CHECK_TEMPLATES.medical(null);
+    expect(med).toMatch(/stop any movement that hurts today/i);
+    expect(med).toMatch(/pain-free or at a lighter intensity/i);
+    expect(med).toMatch(/Message your coach/);
+    expect(med.endsWith(ROMAN_PHYSICIAN_LINE_INJURY)).toBe(true);
+    expect(med).not.toMatch(/\b(diagnos|tendinitis|strain|tear|fracture)/i);
+    const banned = ROMAN_POST_CHECK_TEMPLATES.banned(null);
+    expect(banned).toMatch(/stay on your plan/i);
+    expect(banned).toMatch(/physician/);
+    for (const t of [med, banned, ROMAN_PHYSICIAN_LINE_MEDICAL, ROMAN_PHYSICIAN_LINE_INJURY]) {
+      expect(t).not.toMatch(/!|[\u{1F300}-\u{1FAFF}]/u);
+      expect(t).not.toMatch(CONTRACTIONS);
+    }
+  });
+
+  it('the physician lines still satisfy the post-check referral regex and are added when missing', () => {
+    for (const line of [ROMAN_PHYSICIAN_LINE_MEDICAL, ROMAN_PHYSICIAN_LINE_INJURY]) {
+      expect(line).toMatch(/\b(physician|doctor)\b/i);
+    }
+    const r = postCheckRomanReply('Please stop that movement for today and try the machine version instead.', {
+      context: null,
+      routerClass: 'injury_pain',
+      exclamationAllowed: false,
+    });
+    expect(r.guardrails_applied).toContain('referral_added');
+    expect(r.text.endsWith(ROMAN_PHYSICIAN_LINE_INJURY)).toBe(true);
+  });
+
+  it('the contract tells Roman to be useful, not merely deflect, and is versioned v2', () => {
+    expect(PROMPT_VERSION).toBe('roman-client-v2');
+    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/do not simply deflect/);
+    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/pain-free alternative or a lower-intensity version/);
+    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/Warm as well as composed/);
+    // Ruling #6: Roman may refer to safety-screen answers when present; never guess when absent.
+    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/safety-screen answers are present in client_data/);
+    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/do not guess why the check was recommended/);
   });
 });
 
