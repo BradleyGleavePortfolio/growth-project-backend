@@ -12,7 +12,7 @@
 
 import type { PrismaService } from '../../../src/prisma.service';
 import type {
-  RomanCtxSafetyIntake,
+  RomanConsultationSummary,
   RomanSafetyIntakeSource,
 } from '../../../src/roman/context/roman-client-context.types';
 
@@ -295,18 +295,21 @@ const food = (
   fat_g: number,
   loggedAt: string,
   q = 1,
+  name = 'Food item',
+  meal_type = 'LUNCH',
 ) => ({
   user_id,
   date: D(date),
   logged_at: new Date(loggedAt),
   quantity_multiplier: q,
-  food_item: { calories, protein_g, carbs_g, fat_g, name: 'RAW-FOOD-ITEM-NAME' },
+  meal_type,
+  food_item: { calories, protein_g, carbs_g, fat_g, name },
 });
 
 const loggedFood = [
   // P1 today (PT 2026-09-30): 780 kcal / 62 g protein
-  food(P1, '2026-09-30', 320, 30, 20, 12, '2026-09-30T15:10:00Z'),
-  food(P1, '2026-09-30', 460, 32, 50, 14, '2026-09-30T20:45:00Z'),
+  food(P1, '2026-09-30', 320, 30, 20, 12, '2026-09-30T15:10:00Z', 1, 'Greek yogurt bowl', 'BREAKFAST'),
+  food(P1, '2026-09-30', 460, 32, 50, 14, '2026-09-30T20:45:00Z', 1, 'Chicken rice bowl', 'LUNCH'),
   // P1 yesterday and earlier
   food(P1, '2026-09-29', 1500, 110, 150, 45, '2026-09-29T23:00:00Z'),
   food(P1, '2026-09-28', 1420, 118, 140, 44, '2026-09-28T23:00:00Z'),
@@ -314,7 +317,7 @@ const loggedFood = [
   // P1 8 days ago — outside the window
   food(P1, '2026-09-22', 999, 99, 99, 99, '2026-09-22T23:00:00Z'),
   // P4 canary — same day, must not leak into P1
-  food(P4, '2026-09-30', 2777, 200, 300, 80, '2026-09-30T15:00:00Z'),
+  food(P4, '2026-09-30', 2777, 200, 300, 80, '2026-09-30T15:00:00Z', 1, 'ZELDA-CANARY food'),
 ];
 
 const catalog = [
@@ -530,13 +533,21 @@ const coachMessages = [
     body: 'Great week Maya - protein looked solid.',
     created_at: new Date('2026-09-29T18:00:00Z'),
   },
-  // client → coach: excluded (sender is the client)
+  // client → coach: INCLUDED since ctx-v2 (ruling #6: both directions)
   {
     coach_id: COACH_A.id,
     client_id: P1,
     sender_id: P1,
-    body: 'CLIENT-SENT-MESSAGE-CANARY',
+    body: 'Thanks Alex, knee felt fine on the squats.',
     created_at: new Date('2026-09-29T19:00:00Z'),
+  },
+  // old-coach thread: excluded (not the current coach)
+  {
+    coach_id: COACH_B.id,
+    client_id: P1,
+    sender_id: P1,
+    body: 'OLD-COACH-CANARY thread message',
+    created_at: new Date('2026-09-29T19:30:00Z'),
   },
   {
     coach_id: COACH_A.id,
@@ -584,6 +595,81 @@ export const coachingSessions = [
   { coach_id: COACH_A.id, client_id: P1, coach_notes_md: 'COACH-PRIVATE-CANARY about Maya' },
 ];
 export const communityWins = [{ user_id: P4, title: 'ZELDA-CANARY' }];
+
+const communityPosts = [
+  {
+    author_id: P1,
+    scope: 'cohort',
+    title: 'Week 3 done',
+    body: 'Hit every session this week, first time ever.',
+    visibility: 'active',
+    deleted_at: null,
+    created_at: new Date('2026-09-28T16:00:00Z'),
+  },
+  // P1's deleted post: excluded
+  {
+    author_id: P1,
+    scope: 'cohort',
+    title: 'DELETED-POST-CANARY',
+    body: null,
+    visibility: 'active',
+    deleted_at: new Date('2026-09-29T00:00:00Z'),
+    created_at: new Date('2026-09-27T16:00:00Z'),
+  },
+  // P1's hidden (moderated) post: excluded
+  {
+    author_id: P1,
+    scope: 'cohort',
+    title: 'HIDDEN-POST-CANARY',
+    body: null,
+    visibility: 'hidden',
+    deleted_at: null,
+    created_at: new Date('2026-09-27T17:00:00Z'),
+  },
+  // another member in the same cohort: never
+  {
+    author_id: P4,
+    scope: 'cohort',
+    title: 'ZELDA-CANARY post',
+    body: 'Zelda wrote this',
+    visibility: 'active',
+    deleted_at: null,
+    created_at: new Date('2026-09-29T16:00:00Z'),
+  },
+];
+
+const wearableConnections = [
+  { user_id: P1, provider: 'OURA', status: 'connected', last_synced_at: new Date('2026-09-30T14:00:00Z'), disconnected_at: null, encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
+  { user_id: P1, provider: 'WHOOP', status: 'revoked', last_synced_at: null, disconnected_at: new Date('2026-09-01T00:00:00Z'), encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
+  { user_id: P4, provider: 'OURA', status: 'connected', last_synced_at: new Date('2026-09-30T14:00:00Z'), disconnected_at: null, encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
+];
+
+const sample = (user_id: string, metric: string, value: number, start: string, end = start) => ({
+  user_id,
+  metric,
+  value,
+  start_at: new Date(start),
+  end_at: new Date(end),
+  source_tz: 'America/Los_Angeles',
+});
+
+const wearableSamples = [
+  // P1 — 2026-09-29 and 2026-09-30 (UTC day keys)
+  sample(P1, 'STEPS', 4000, '2026-09-29T08:00:00Z'),
+  sample(P1, 'STEPS', 4200, '2026-09-29T18:00:00Z'),
+  sample(P1, 'RESTING_HEART_RATE_BPM', 58, '2026-09-29T06:00:00Z'),
+  sample(P1, 'HRV_MS', 44, '2026-09-29T06:00:00Z'),
+  sample(P1, 'SLEEP_TOTAL_MIN', 402, '2026-09-28T22:30:00Z', '2026-09-29T06:00:00Z'),
+  sample(P1, 'RECOVERY_SCORE', 71, '2026-09-29T06:00:00Z'),
+  sample(P1, 'STEPS', 6100, '2026-09-30T18:00:00Z'),
+  sample(P1, 'RESTING_HEART_RATE_BPM', 60, '2026-09-30T06:00:00Z'),
+  sample(P1, 'SLEEP_TOTAL_MIN', 378, '2026-09-29T23:00:00Z', '2026-09-30T06:00:00Z'),
+  sample(P1, 'SLEEP_EFFICIENCY_PCT', 88, '2026-09-29T23:00:00Z', '2026-09-30T06:00:00Z'),
+  // P1 — outside the 7-day window
+  sample(P1, 'STEPS', 99999, '2026-09-20T18:00:00Z'),
+  // P4 canary
+  sample(P4, 'STEPS', 31111, '2026-09-30T18:00:00Z'),
+];
 
 // ─── tiny where-matcher ──────────────────────────────────────────────────────
 
@@ -664,6 +750,9 @@ export interface PersonaDb {
     mealAssignments: Row[];
     catalog: Row[];
     romanMessages: Row[];
+    communityPosts: Row[];
+    wearableConnections: Row[];
+    wearableSamples: Row[];
   };
   /** Count of every delegate call, in order. */
   calls: string[];
@@ -687,6 +776,9 @@ export function makePersonaDb(): PersonaDb {
     mealAssignments: structuredClone(mealAssignments) as Row[],
     catalog: structuredClone(catalog) as Row[],
     romanMessages: [] as Row[],
+    communityPosts: structuredClone(communityPosts) as Row[],
+    wearableConnections: structuredClone(wearableConnections) as Row[],
+    wearableSamples: structuredClone(wearableSamples) as Row[],
   };
   const calls: string[] = [];
   const wheres: Array<{ table: string; where: Where | undefined }> = [];
@@ -757,6 +849,10 @@ export function makePersonaDb(): PersonaDb {
     dailyMealPlanAssignment: {
       findFirst: first('dailyMealPlanAssignment', () => raw.mealAssignments),
     },
+    // ctx-v2 (ruling #6): own community posts + wearables
+    communityPost: { findMany: many('communityPost', () => raw.communityPosts) },
+    wearableConnection: { findMany: many('wearableConnection', () => raw.wearableConnections) },
+    wearableSample: { findMany: many('wearableSample', () => raw.wearableSamples) },
     // Roman transcript tables (used by RomanService in the wiring tests)
     romanMessage: {
       create: jest.fn(async ({ data }: { data: Row }) => {
@@ -794,35 +890,65 @@ export function makePersonaDb(): PersonaDb {
 }
 
 /**
- * A fake C05 source that INTERNALLY knows the categories and answers (so the
- * test can prove they never reach the prompt) but only exposes the two
- * booleans through the interface.
+ * A fake C05 source. Per ruling #6 it exposes the client's OWN safety-screen
+ * answers and consultation Q/A; its internal bookkeeping fields
+ * (`any_yes`, `flag_categories`) are NOT part of the interface and must not
+ * reach the prompt. Rows for other users must never be returned.
  */
 export class FakeSafetyIntakeSource implements RomanSafetyIntakeSource {
   readonly internal: Record<
     string,
-    { any_yes: boolean; flag_categories: string[]; answers: Record<string, string> }
+    {
+      any_yes: boolean;
+      flag_categories: string[];
+      screen: Array<{ question: string; answer: string; flagged?: boolean }>;
+      consult: Array<{ question: string; answer: string }>;
+    }
   > = {
     [P2]: {
       any_yes: true,
       flag_categories: ['joint_or_bone', 'bp_or_heart_medication'],
-      answers: { q3: 'INTAKE-ANSWER-CANARY yes, lisinopril', q5: 'left knee replacement 2019' },
+      screen: [
+        { question: 'Bone or joint problem?', answer: 'Yes, left knee replacement 2019', flagged: true },
+        { question: 'Blood pressure or heart medication?', answer: 'Yes, lisinopril', flagged: true },
+        { question: 'Chest pain with activity?', answer: 'No' },
+      ],
+      consult: [
+        { question: 'Main goal', answer: 'Keep up with the grandkids, lose 20 lb' },
+        { question: 'Training history', answer: 'Walking only for 10 years' },
+      ],
     },
-    [P1]: { any_yes: false, flag_categories: [], answers: { q1: 'no' } },
+    [P1]: {
+      any_yes: false,
+      flag_categories: [],
+      screen: [{ question: 'Chest pain with activity?', answer: 'No' }],
+      consult: [{ question: 'Main goal', answer: 'Get strong, CONSULT-ANSWER-MAYA' }],
+    },
+    [P4]: {
+      any_yes: false,
+      flag_categories: [],
+      screen: [{ question: 'Chest pain with activity?', answer: 'ZELDA-CANARY screen answer' }],
+      consult: [{ question: 'Main goal', answer: 'ZELDA-CANARY goal' }],
+    },
   };
-  async summarize(userId: string): Promise<RomanCtxSafetyIntake> {
+  async summarize(userId: string): Promise<RomanConsultationSummary> {
     const row = this.internal[userId];
-    if (!row) return { completed: false, clearance_recommended: false };
-    return { completed: true, clearance_recommended: row.any_yes };
+    if (!row) {
+      return {
+        safety_intake: { completed: false, clearance_recommended: false, screen_answers: [] },
+        consultation: { completed: false, completed_at: null, answers: [] },
+      };
+    }
+    return {
+      safety_intake: {
+        completed: true,
+        clearance_recommended: row.any_yes,
+        screen_answers: row.screen,
+      },
+      consultation: { completed: true, completed_at: '2026-09-01', answers: row.consult },
+    };
   }
 }
 
-export const INTAKE_CANARIES = [
-  'joint_or_bone',
-  'bp_or_heart_medication',
-  'INTAKE-ANSWER-CANARY',
-  'lisinopril',
-  'knee replacement',
-  'flag_categories',
-  'any_yes',
-];
+/** Internal field names of the source that must never reach the prompt. */
+export const INTAKE_CANARIES = ['flag_categories', 'any_yes', 'joint_or_bone', 'bp_or_heart_medication'];

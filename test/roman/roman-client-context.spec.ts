@@ -12,6 +12,7 @@ import {
   localClock,
   ageYears,
   addDays,
+  ROMAN_CONTEXT_MAX_QUERIES,
 } from '../../src/roman/context/roman-client-context.service';
 import {
   renderClientContext,
@@ -192,9 +193,38 @@ describe('R3 builder — P1 Maya golden facts', () => {
       coach_first_name: 'Alex',
       guidelines: 'Keep dairy out. Protein at every meal. Walk on rest days.',
     });
+    // ctx-v2: both directions, oldest first, current coach's thread only
     expect(ctx.coach.recent_messages).toEqual([
-      { date: '2026-09-29', excerpt: 'Great week Maya - protein looked solid.' },
+      { date: '2026-09-29', from: 'coach', excerpt: 'Great week Maya - protein looked solid.' },
+      { date: '2026-09-29', from: 'client', excerpt: 'Thanks Alex, knee felt fine on the squats.' },
     ]);
+    // ctx-v2: today's food entries by name, oldest first
+    expect(ctx.today.entries).toEqual([
+      { meal: 'breakfast', name: 'Greek yogurt bowl', kcal: 320, protein_g: 30, logged_at: '2026-09-30T15:10:00.000Z' },
+      { meal: 'lunch', name: 'Chicken rice bowl', kcal: 460, protein_g: 32, logged_at: '2026-09-30T20:45:00.000Z' },
+    ]);
+    // ctx-v2: own community posts only (deleted and hidden excluded)
+    expect(ctx.community_posts).toEqual([
+      { date: '2026-09-28', scope: 'cohort', title: 'Week 3 done', excerpt: 'Hit every session this week, first time ever.' },
+    ]);
+    // ctx-v2: wearables as daily aggregates (sleep keyed to the morning it ends)
+    expect(ctx.wearables).toMatchObject({
+      connected: true,
+      providers: ['oura'],
+      last_synced_at: '2026-09-30T14:00:00.000Z',
+      last_night_sleep_hours: 6.3,
+    });
+    expect(ctx.wearables.days).toEqual([
+      { date: '2026-09-29', steps: 8200, active_kcal: null, resting_hr_bpm: 58, hrv_ms: 44, sleep_hours: 6.7, sleep_efficiency_pct: null, recovery_score: 71, readiness_score: null },
+      { date: '2026-09-30', steps: 6100, active_kcal: null, resting_hr_bpm: 60, hrv_ms: null, sleep_hours: 6.3, sleep_efficiency_pct: 88, recovery_score: null, readiness_score: null },
+    ]);
+    expect(ctx.wearables.avg_7d).toMatchObject({ steps: 7150, resting_hr_bpm: 59, sleep_hours: 6.5 });
+    // ctx-v2: consultation + safety-screen answers are the client's own
+    expect(ctx.consultation).toEqual({
+      completed: true,
+      completed_at: '2026-09-01',
+      answers: [{ question: 'Main goal', answer: 'Get strong, CONSULT-ANSWER-MAYA' }],
+    });
     expect(ctx.meal_plan).toEqual({
       title: 'Dairy-free 1450',
       items: [
@@ -212,11 +242,15 @@ describe('R3 builder — P1 Maya golden facts', () => {
         exercise_count: 2,
       },
     ]);
-    expect(ctx.safety_intake).toEqual({ completed: true, clearance_recommended: false });
+    expect(ctx.safety_intake).toEqual({
+      completed: true,
+      clearance_recommended: false,
+      screen_answers: [{ question: 'Chest pain with activity?', answer: 'No' }],
+    });
     expect(ctx.macro_method).toMatchObject({ floor_kcal: 1200, floor_applied: false });
     expect(ctx.data_quality.missing).toEqual([]);
 
-    expect(query_count).toBeLessThanOrEqual(12);
+    expect(query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
     expect(db.forbiddenTouched).toEqual([]);
   });
 
@@ -224,10 +258,20 @@ describe('R3 builder — P1 Maya golden facts', () => {
     const { svc, db } = setup();
     await svc.build(student(P1), NOW);
     const byTable = (t: string) => db.wheres.filter((w) => w.table === t).map((w) => w.where ?? {});
-    for (const t of ['loggedFoodEntry', 'weightLog', 'checkIn', 'workoutSession']) {
+    for (const t of [
+      'loggedFoodEntry',
+      'weightLog',
+      'checkIn',
+      'workoutSession',
+      'wearableConnection',
+      'wearableSample',
+    ]) {
       expect(byTable(t).length).toBeGreaterThan(0);
       for (const w of byTable(t)) expect(w.user_id).toBe(P1);
     }
+    for (const w of byTable('communityPost'))
+      expect(w).toMatchObject({ author_id: P1, deleted_at: null, visibility: 'active' });
+    expect(byTable('communityPost').length).toBeGreaterThan(0);
     for (const w of byTable('macroTarget'))
       expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A', archived_at: null });
     for (const w of byTable('clientWorkoutAssignment'))
@@ -235,7 +279,11 @@ describe('R3 builder — P1 Maya golden facts', () => {
     for (const w of byTable('coachGuideline'))
       expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A' });
     for (const w of byTable('coachMessage'))
-      expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A', sender_id: 'coach-A' });
+      expect(w).toMatchObject({
+        client_id: P1,
+        coach_id: 'coach-A',
+        sender_id: { in: ['coach-A', P1] },
+      });
     for (const w of byTable('dailyMealPlanAssignment'))
       expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: 'coach-A' });
     for (const t of [
@@ -255,18 +303,42 @@ describe('R3 builder — P1 Maya golden facts', () => {
 // ─── canaries / exclusions ───────────────────────────────────────────────────
 
 describe('R3 builder — canary absence and exclusion list', () => {
-  it("P1's rendered block contains none of P4/P5's data, the old coach's rows, coach-private notes, PII or raw food items", async () => {
+  it("P1's rendered block contains none of P4/P5's data, the old coach's rows, coach-private notes, PII, wearable tokens or deleted/hidden posts", async () => {
     const { svc } = setup();
     const bundle = await svc.buildFresh(student(P1), NOW);
     for (const c of CANARIES) expect(bundle.rendered).not.toContain(c);
-    expect(bundle.rendered).not.toContain('CLIENT-SENT-MESSAGE-CANARY');
-    expect(bundle.rendered).not.toContain('RAW-FOOD-ITEM-NAME');
+    for (const c of [
+      'WEARABLE-TOKEN-CANARY',
+      'DELETED-POST-CANARY',
+      'HIDDEN-POST-CANARY',
+      '99999',
+      '31111',
+      'whoop',
+      'WHOOP',
+    ])
+      expect(bundle.rendered).not.toContain(c);
+    for (const c of INTAKE_CANARIES) expect(bundle.rendered).not.toContain(c);
     expect(bundle.rendered).not.toMatch(
-      /"email"|"phone"|"user_id"|"date_of_birth"|"coach_notes_md"|"id":/,
+      /"email"|"phone"|"user_id"|"date_of_birth"|"coach_notes_md"|"id":|access_token|refresh_token/,
     );
-    // present, so the assertion above is not vacuous
+    // present, so the assertion above is not vacuous (ruling #6 scope)
     expect(bundle.rendered).toContain('"first_name":"Maya"');
     expect(bundle.rendered).toContain('1450');
+    expect(bundle.rendered).toContain('Greek yogurt bowl');
+    expect(bundle.rendered).toContain('knee felt fine on the squats');
+    expect(bundle.rendered).toContain('Week 3 done');
+    expect(bundle.rendered).toContain('CONSULT-ANSWER-MAYA');
+    expect(bundle.rendered).toContain('"last_night_sleep_hours":6.3');
+  });
+
+  it("P4 (same coach, same cohort) sees her own posts, wearables and answers but none of P1's", async () => {
+    const { svc } = setup();
+    const bundle = await svc.buildFresh(student(P4), NOW);
+    expect(bundle.rendered).toContain('ZELDA-CANARY post');
+    expect(bundle.rendered).toContain('ZELDA-CANARY screen answer');
+    expect(bundle.rendered).toContain('31111');
+    for (const c of ['Maya', 'Greek yogurt', 'Week 3 done', 'CONSULT-ANSWER-MAYA', 'knee felt fine', '8200', '6100'])
+      expect(bundle.rendered).not.toContain(c);
   });
 
   it('P4 (same coach) does not see P1 either, and the coach surface canary tables are never read', async () => {
@@ -291,7 +363,7 @@ describe('R3 builder — canary absence and exclusion list', () => {
     const own = await svc.build({ id: 'coach-A', role: 'coach' }, NOW);
     expect(own.context.coach.has_coach).toBe(false);
     expect(own.context.plan).toBeNull();
-    expect(own.query_count).toBeLessThanOrEqual(12);
+    expect(own.query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
   });
 
   it('an unknown user yields an empty context with everything marked missing', async () => {
@@ -307,7 +379,7 @@ describe('R3 builder — canary absence and exclusion list', () => {
 // ─── P2 / P3 ─────────────────────────────────────────────────────────────────
 
 describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)', () => {
-  it('P2: onboarding-calculated 1,500 kcal with the male floor applied; screening exposes ONLY the two booleans', async () => {
+  it('P2: onboarding-calculated 1,500 kcal with the male floor applied; safety-screen answers are his own (ruling #6)', async () => {
     const { svc, intake } = setup();
     const bundle = await svc.buildFresh(student(P2), NOW);
     const ctx = bundle.context;
@@ -323,13 +395,45 @@ describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)'
     expect(ctx.today.meals_logged).toBe(0);
     expect(ctx.data_quality.missing).toContain('today_logs');
 
-    // Operator ruling: no answers, no categories — only the two booleans.
-    expect(ctx.safety_intake).toEqual({ completed: true, clearance_recommended: true });
-    expect(Object.keys(ctx.safety_intake).sort()).toEqual(['clearance_recommended', 'completed']);
+    // Ruling #6: Roman sees Dan's own screen answers; the source's internal
+    // category bookkeeping is not part of the interface and stays out.
+    expect(ctx.safety_intake).toEqual({
+      completed: true,
+      clearance_recommended: true,
+      screen_answers: [
+        { question: 'Bone or joint problem?', answer: 'Yes, left knee replacement 2019', flagged: true },
+        { question: 'Blood pressure or heart medication?', answer: 'Yes, lisinopril', flagged: true },
+        { question: 'Chest pain with activity?', answer: 'No' },
+      ],
+    });
+    expect(Object.keys(ctx.safety_intake).sort()).toEqual([
+      'clearance_recommended',
+      'completed',
+      'screen_answers',
+    ]);
     expect(bundle.rendered).toContain(ROMAN_CLEARANCE_RECOMMENDED_INSTRUCTION);
+    expect(bundle.rendered).toContain('lisinopril');
     for (const c of INTAKE_CANARIES) expect(bundle.rendered).not.toContain(c);
-    // …even though the source knows them
     expect(JSON.stringify(intake.internal[P2])).toContain('joint_or_bone');
+    expect(ctx.consultation.answers).toHaveLength(2);
+    expect(ctx.wearables).toEqual({
+      connected: false,
+      providers: [],
+      last_synced_at: null,
+      avg_7d: {
+        steps: null,
+        active_kcal: null,
+        resting_hr_bpm: null,
+        hrv_ms: null,
+        sleep_hours: null,
+        sleep_efficiency_pct: null,
+        recovery_score: null,
+        readiness_score: null,
+      },
+      last_night_sleep_hours: null,
+      days: [],
+    });
+    expect(ctx.data_quality.missing).toContain('wearables');
   });
 
   it('P1 (no clearance) does not get the conservative instruction', async () => {
@@ -349,7 +453,13 @@ describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)'
     });
     expect(ctx.targets.source).toBe('none');
     expect(ctx.macro_method).toMatchObject({ floor_kcal: 1500, floor_applied: null });
-    expect(ctx.safety_intake).toEqual({ completed: false, clearance_recommended: false });
+    expect(ctx.safety_intake).toEqual({
+      completed: false,
+      clearance_recommended: false,
+      screen_answers: [],
+    });
+    expect(ctx.consultation).toEqual({ completed: false, completed_at: null, answers: [] });
+    expect(ctx.community_posts).toEqual([]);
     expect(ctx.coach).toEqual({
       has_coach: false,
       coach_first_name: null,
@@ -358,9 +468,18 @@ describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)'
     });
     expect(ctx.plan).toBeNull();
     expect(ctx.data_quality.missing).toEqual(
-      expect.arrayContaining(['targets', 'plan', 'today_logs', 'intake', 'coach', 'weight']),
+      expect.arrayContaining([
+        'targets',
+        'plan',
+        'today_logs',
+        'intake',
+        'consultation',
+        'coach',
+        'weight',
+        'wearables',
+      ]),
     );
-    expect(query_count).toBeLessThanOrEqual(12);
+    expect(query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
   });
 });
 
@@ -373,7 +492,7 @@ describe('R3 renderer — delimiting, hash and the token cap', () => {
     const b = await svc.buildFresh(student(P1), NOW);
     expect(
       a.rendered.startsWith(
-        `<client_data as_of="${LOCAL_TODAY_PT} 17:30 America/Los_Angeles" version="ctx-v1">`,
+        `<client_data as_of="${LOCAL_TODAY_PT} 17:30 America/Los_Angeles" version="ctx-v2">`,
       ),
     ).toBe(true);
     expect(a.rendered.endsWith('</client_data>')).toBe(true);
@@ -407,9 +526,42 @@ describe('R3 renderer — delimiting, hash and the token cap', () => {
       notes: pad(140),
     }));
     big.meal_plan = { title: 'Big', items: Array.from({ length: 12 }, () => pad(120)) };
-    big.coach.recent_messages = Array.from({ length: 3 }, (_, i) => ({
+    big.coach.recent_messages = Array.from({ length: 8 }, (_, i) => ({
       date: `2026-09-2${i}`,
+      from: (i % 2 ? 'client' : 'coach') as 'client' | 'coach',
       excerpt: pad(200),
+    }));
+    big.wearables.days = Array.from({ length: 7 }, (_, i) => ({
+      date: `2026-09-2${i}`,
+      steps: 8000,
+      active_kcal: 400,
+      resting_hr_bpm: 58,
+      hrv_ms: 44,
+      sleep_hours: 7.1,
+      sleep_efficiency_pct: 88,
+      recovery_score: 70,
+      readiness_score: 72,
+    }));
+    big.community_posts = Array.from({ length: 5 }, (_, i) => ({
+      date: `2026-09-2${i}`,
+      scope: 'cohort',
+      title: pad(80),
+      excerpt: pad(200),
+    }));
+    big.today.entries = Array.from({ length: 16 }, (_, i) => ({
+      meal: 'lunch',
+      name: pad(60),
+      kcal: 300,
+      protein_g: 20,
+      logged_at: `2026-09-30T1${i % 10}:00:00.000Z`,
+    }));
+    big.consultation.answers = Array.from({ length: 30 }, () => ({
+      question: pad(80),
+      answer: pad(200),
+    }));
+    big.safety_intake.screen_answers = Array.from({ length: 12 }, () => ({
+      question: pad(80),
+      answer: pad(200),
     }));
     big.coach.guidelines = pad(1500);
     big.profile.bio = pad(240);
@@ -445,12 +597,18 @@ describe('R3 renderer — delimiting, hash and the token cap', () => {
     const r = renderClientContext(big);
     expect(r.estimated_tokens).toBeLessThanOrEqual(ROMAN_CONTEXT_HARD_CAP_TOKENS);
     const order = [
+      'wearables.days',
+      'community_posts',
+      'today.entries',
+      'consultation.answers',
       'logged_workouts',
       'check_ins.notes',
       'meal_plan.items',
       'coach.recent_messages',
       'last_7_days.days',
       'plan.recent_completions',
+      'safety_intake.screen_answers.unflagged',
+      'coach.guidelines.short',
     ];
     expect(r.context.data_quality.truncated.length).toBeGreaterThan(0);
     expect(r.context.data_quality.truncated).toEqual(
@@ -641,7 +799,7 @@ describe('R3 GET /roman/context/me', () => {
     const { svc } = setup();
     const ctrl = new RomanContextController(svc);
     const out = await ctrl.me(asAuthedRequestDouble({ user: { id: P1, role: 'student' } }));
-    expect(out.version).toBe('ctx-v1');
+    expect(out.version).toBe('ctx-v2');
     expect(out.context.identity.first_name).toBe('Maya');
     expect(out.estimated_tokens).toBeLessThanOrEqual(ROMAN_CONTEXT_HARD_CAP_TOKENS);
     for (const c of CANARIES) expect(JSON.stringify(out)).not.toContain(c);
