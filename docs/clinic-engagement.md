@@ -103,7 +103,7 @@ To stop the job without a deploy, set `WORKOUT_REMINDERS_ENABLED=false`. The sch
 
 ## Data and RLS
 
-Migration `20270203000000_clinic_engagement` is additive and has a `down.sql`. The scheduler runs as service_role. Anonymous access is denied on all three tables by a RESTRICTIVE policy.
+Migration `20270213000000_clinic_engagement` is additive and has a `down.sql`. The scheduler runs as service_role. Anonymous access is denied on all three tables by a RESTRICTIVE policy.
 
 | Table                        | Who can SELECT                               |
 | ---------------------------- | -------------------------------------------- |

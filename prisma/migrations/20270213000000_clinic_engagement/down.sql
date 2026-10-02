@@ -1,4 +1,4 @@
--- Down for 20270203000000_clinic_engagement. Drops scheduler state only
+-- Down for 20270213000000_clinic_engagement. Drops scheduler state only
 -- (welcome jobs, per-coach welcome settings, reminder ledger) and the two
 -- workout-reminder preference columns.
 DROP TABLE IF EXISTS "WorkoutReminderDelivery";
