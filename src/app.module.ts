@@ -11,6 +11,7 @@ import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { PilotCoachAllowlistGuard } from './common/feature-flag/pilot-coach-allowlist.guard';
 import { ProfileModule } from './profile/profile.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
 import { WorkoutModule } from './workout/workout.module';
@@ -63,7 +64,12 @@ import { RomanModule } from './roman/roman.module';
 import { AiConsentModule } from './ai-consent/ai-consent.module';
 import { AiEgressModule } from './ai-egress/ai-egress.module';
 import { PtmModule } from './ptm/ptm.module';
-import { DiagnosticModule } from './diagnostic/diagnostic.module';
+// DiagnosticModule (src/diagnostic, the 40-point diagnostic quiz + AI roadmap)
+// is deliberately NOT imported: the quiz belongs to TGP Finance, not this
+// fitness product (owner 2026-10-01 15:25), so its /diagnostic routes are not
+// mounted. Its tables stay (no drops); existing rows are still covered by
+// data export and account deletion. test/diagnostic-quiz-off.spec.ts fails if
+// the module or any /diagnostic route comes back.
 import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -182,6 +188,7 @@ import { WearablesModule } from './wearables/wearables.module';
     AuthModule,
     ExtensionPairModule,
     ProfileModule,
+    OnboardingModule,
     FoodModule,
     LogModule,
     WorkoutModule,
@@ -318,8 +325,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // by the migration; per-user enrollment + completion tracking with
     // a PTM milestone signal on Day 7. See src/build-week/README.md.
     BuildWeekModule,
-    // Phase 3 — public 40-point diagnostic + AI roadmap.
-    DiagnosticModule,
+    // Phase 3 diagnostic quiz: switched off here (TGP Finance product). See
+    // the note at the DiagnosticModule import site above.
     // Phase 7B — Transformation Timeline. 4-lane chronological event
     // feed computed on the fly from existing tables (WeightLog,
     // ClientSignal, CoachMessage, BuildWeekEnrollment). No new migrations.
