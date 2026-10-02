@@ -15,7 +15,8 @@
 -- transaction (see 20260701235900_add_sub_coach_role_value), and nothing in
 -- this file uses the new values, so ADD VALUE is safe here.
 -- 3. The durable ban table and 4. the "CommunityWin" RLS rewrite are below
---    (fix round 2: B-610-2, A-610-2).
+--    (fix round 2: B-610-2, A-610-2). 5. the community_messages scope-shape
+--    check accepts comments on workspace-wide posts / challenges (C-610-4).
 
 ALTER TYPE "CommunityModerationTargetType" ADD VALUE IF NOT EXISTS 'voice_note';
 ALTER TYPE "CommunityModerationTargetType" ADD VALUE IF NOT EXISTS 'win';
@@ -200,3 +201,34 @@ DROP TRIGGER IF EXISTS trg_community_win_guard_moderation ON "CommunityWin";
 CREATE TRIGGER trg_community_win_guard_moderation
   BEFORE INSERT OR UPDATE ON "CommunityWin"
   FOR EACH ROW EXECUTE FUNCTION public.community_win_guard_moderation();
+
+-- ============================================================================
+-- 5. C-610-4 (found by the community live suites on a real Postgres):
+--    comments on workspace-wide posts and challenges.
+--    Post comments and challenge comments are stored as community_messages
+--    rows (scope 'cohort', plan_context_type = the comment discriminator,
+--    plan_context_id = the parent post / challenge) and copy the parent's
+--    cohort_id. A Hall post or a workspace-wide challenge has no cohort
+--    (cohort_id NULL), so community_messages_scope_shape_check (which required
+--    cohort_id for every scope 'cohort' row) rejected every such comment with
+--    23514 and the API answered 500. The check now also accepts a cohort-less
+--    'cohort' row when, and only when, it is a tagged comment that names its
+--    parent. Plain cohort chat messages still require cohort_id, DMs are
+--    unchanged. Re-adding the constraint validates existing rows; every
+--    existing row satisfies the old check, which implies the new one.
+-- ============================================================================
+ALTER TABLE "community_messages" DROP CONSTRAINT IF EXISTS "community_messages_scope_shape_check";
+ALTER TABLE "community_messages" ADD CONSTRAINT "community_messages_scope_shape_check" CHECK (
+    (
+        "scope" = 'cohort'
+        AND "dm_key" IS NULL
+        AND (
+            "cohort_id" IS NOT NULL
+            OR (
+                "plan_context_type" IN ('community_post_comment', 'community_challenge_comment')
+                AND "plan_context_id" IS NOT NULL
+            )
+        )
+    )
+    OR ("scope" = 'dm' AND "cohort_id" IS NULL AND "dm_key" IS NOT NULL)
+);

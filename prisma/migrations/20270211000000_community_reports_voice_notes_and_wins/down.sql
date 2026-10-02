@@ -15,6 +15,15 @@
 -- community_moderation_actions that use them must be deleted or re-pointed by
 -- hand before any rollback of the application code that writes them (older
 -- code would fail to parse those rows).
+-- Section 5 (comments on workspace-wide posts / challenges): restoring the
+-- original scope-shape check fails while any cohort-less comment row exists;
+-- delete or re-home those comments first.
+ALTER TABLE "community_messages" DROP CONSTRAINT IF EXISTS "community_messages_scope_shape_check";
+ALTER TABLE "community_messages" ADD CONSTRAINT "community_messages_scope_shape_check" CHECK (
+    ("scope" = 'cohort' AND "cohort_id" IS NOT NULL AND "dm_key" IS NULL)
+    OR ("scope" = 'dm' AND "cohort_id" IS NULL AND "dm_key" IS NOT NULL)
+);
+
 DROP TRIGGER IF EXISTS trg_community_win_guard_moderation ON "CommunityWin";
 DROP FUNCTION IF EXISTS public.community_win_guard_moderation();
 
