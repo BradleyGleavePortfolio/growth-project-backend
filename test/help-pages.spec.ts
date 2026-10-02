@@ -91,7 +91,7 @@ describe('PublicPagesController help pages', () => {
   it('reuses the operator-confirmed support email from trust-pages', () => {
     // Help and trust pages must agree on the single mailbox so a future
     // operator change happens in one place.
-    expect(SUPPORT_EMAIL).toBe('Bradley@Bradleytgpcoaching.com');
+    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
   });
 
   it('renders the support address only on the contact page intro and the shared footer', () => {

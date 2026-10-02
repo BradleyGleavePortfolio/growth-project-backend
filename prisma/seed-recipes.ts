@@ -1,40 +1,26 @@
 /**
- * One-shot seed script: creates 10 sample recipes tied to the first coach user
- * found in the database (or the first user if no coach exists).
+ * One-shot seed script: creates 10 sample recipes in ONE named coach's library,
+ * shared with that coach's own clients (never platform-wide; see
+ * src/recipes/recipe-access.ts).
  *
- * Run via Fly SSH:
- *   /home/user/.fly/bin/flyctl ssh console -a backend-spring-lake-3890 \
- *     --command "cd /app && node -e \"$(cat prisma/seed-recipes-compiled.js)\""
+ * The coach is explicit: SEED_RECIPES_COACH_ID must be the User.id of a user
+ * whose role is coach or owner. The script refuses to guess (it used to pick
+ * the first coach, or the first user, it found).
  *
- * Or locally after prisma generate:
- *   npx ts-node prisma/seed-recipes.ts
+ * Locally after prisma generate:
+ *   SEED_RECIPES_COACH_ID=<coach user id> npx ts-node prisma/seed-recipes.ts
+ *
+ * Production runs are operator-only (they write coach content).
  */
 
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// image_url policy for seed recipes:
-//
-// The original seed shipped a single hardcoded green-smoothie URL across all
-// recipes (audit bug). The fix is per-recipe images sourced from a stable
-// public CDN — TheMealDB (https://www.themealdb.com/) is the canonical
-// upstream because it is free, no-key, and serves a stable image path for
-// every meal in its catalog. We assign a TheMealDB image only when the
-// recipe title clearly maps to a meal in their catalog AND we have a
-// concrete known slug for that meal; otherwise the recipe's image_url is
-// left as `null` and the mobile UI falls back to its category placeholder
-// (mobile PR #137 already shipped that fallback).
-//
-// Each entry below picks a distinct upstream meal. If the operator later
-// wants to swap an image, the canonical URL shape is:
-//   https://www.themealdb.com/images/media/meals/<slug>.jpg
-// The slug can be pulled from any TheMealDB API response (e.g.
-// https://www.themealdb.com/api/json/v1/1/search.php?s=<query>).
-//
-// The fields are deliberately marked nullable rather than defaulted: null
-// means "no upstream confirmed" and the mobile placeholder renders; a
-// guessed-but-wrong URL would silently 404 in every coach inbox.
+// image_url policy for seed recipes: always null. TGP has no recipe-photo
+// storage, so the API never serves a recipe image link (remote links were an
+// App Store 1.2 / privacy risk, Opus C-625-1) and the mobile UI shows its
+// category placeholder. Do not add third-party image URLs here.
 
 const SAMPLE_RECIPES = [
   {
@@ -340,22 +326,29 @@ const SAMPLE_RECIPES = [
 async function main() {
   console.log('Seeding sample recipes...');
 
-  // Find a coach user or fall back to the first user.
-  let seedUser = await prisma.user.findFirst({
-    where: { role: 'coach' },
-    select: { id: true, name: true },
-  });
-
-  if (!seedUser) {
-    seedUser = await prisma.user.findFirst({ select: { id: true, name: true } });
+  const coachId = (process.env.SEED_RECIPES_COACH_ID ?? '').trim();
+  if (!coachId) {
+    console.error(
+      'SEED_RECIPES_COACH_ID is not set. Set it to the User.id of the coach whose clients should see these recipes.',
+    );
+    process.exit(1);
   }
-
-  if (!seedUser) {
-    console.error('No users found in DB. Register a user first.');
+  const seedUser = await prisma.user.findUnique({
+    where: { id: coachId },
+    select: { id: true, name: true, role: true, deleted_at: true },
+  });
+  if (!seedUser || seedUser.deleted_at) {
+    console.error(`No active user with id ${coachId}. Check SEED_RECIPES_COACH_ID.`);
+    process.exit(1);
+  }
+  if (seedUser.role !== 'coach' && seedUser.role !== 'owner') {
+    console.error(
+      `User ${coachId} has role ${seedUser.role}. Recipes can only be shared by a coach or the owner account.`,
+    );
     process.exit(1);
   }
 
-  console.log(`Seeding as: ${seedUser.name} (${seedUser.id})`);
+  console.log(`Seeding into the library of: ${seedUser.name} (${seedUser.id})`);
 
   let created = 0;
   let skipped = 0;
@@ -369,15 +362,16 @@ async function main() {
       continue;
     }
     await prisma.recipe.create({
-      data: { ...recipe, is_public: true, created_by_id: seedUser.id },
+      // is_public = shared with this coach's own clients only.
+      data: { ...recipe, image_url: null, is_public: true, created_by_id: seedUser.id },
     });
     created++;
     console.log(`  ✓ ${recipe.title}`);
   }
 
-  const total = await prisma.recipe.count();
+  const total = await prisma.recipe.count({ where: { created_by_id: seedUser.id } });
   console.log(`\nDone. Created: ${created}, Skipped (already exist): ${skipped}`);
-  console.log(`Total recipes in DB: ${total}`);
+  console.log(`Recipes in this coach's library: ${total}`);
 }
 
 main()

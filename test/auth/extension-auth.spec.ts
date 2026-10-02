@@ -27,9 +27,20 @@ jest.mock('@supabase/supabase-js', () => {
       auth: {
         signInWithPassword: (...args: unknown[]) =>
           g.__supaSignIn?.(...args) ?? Promise.resolve({ error: { message: 'not mocked' } }),
+        // A fresh Supabase user carries the metadata of the signUp that
+        // created it (A-597-1 ownership marker).
         signUp: (...args: unknown[]) =>
           g.__supaSignUp?.(...args) ??
-          Promise.resolve({ data: { user: { id: 'sup-new' } }, error: null }),
+          Promise.resolve({
+            data: {
+              user: {
+                id: 'sup-new',
+                user_metadata: (args[0] as { options?: { data?: unknown } } | undefined)?.options
+                  ?.data,
+              },
+            },
+            error: null,
+          }),
         signInWithIdToken: jest.fn(),
         getUser: jest.fn(),
         resetPasswordForEmail: jest.fn(),
@@ -227,7 +238,9 @@ describe('AuthService.extensionRefresh', () => {
 });
 
 describe('AuthService signup_ref persistence', () => {
-  let prismaMock: { user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock } };
+  let prismaMock: {
+    user: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+  };
   let service: AuthService;
 
   beforeEach(() => {
@@ -235,6 +248,8 @@ describe('AuthService signup_ref persistence', () => {
     prismaMock = {
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
+        // Clinic C13: register's duplicate check is case-insensitive (findFirst).
+        findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
           id: 'u-new',
           ...data,

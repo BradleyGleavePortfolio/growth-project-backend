@@ -27,7 +27,10 @@ export class PrepGuideController {
     @Query('week') week?: string,
   ): Promise<PrepGuideResult> {
     const weekStart = week || getMondayOfCurrentWeek();
-    return this.prepGuideService.getWeeklyPrepGuide(req.user.id, weekStart);
+    return this.prepGuideService.getWeeklyPrepGuide(
+      { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id },
+      weekStart,
+    );
   }
 }
 
