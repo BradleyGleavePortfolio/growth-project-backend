@@ -1107,9 +1107,9 @@ export const ENV_RULES: EnvRule[] = [
     values: ['on', 'off'],
     tier: 'optional',
     launch: 'switch',
-    default: '\'on\' (only "off" disables)',
+    default: 'off (only "on" enables; unset/off/other disable)',
     reason:
-      'Launch switch (operator 2026-10-01): kill switch for the booking reminder crons. Ships on; only "off" disables. Must stay on (unset or "on") for launch.',
+      'Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 the sweeps need an explicit "on"; unset now means off. Must be set to "on" for launch through the audited prod-switch manifest, after notification delivery/device QA.',
   },
   {
     name: 'DELETION_FINALIZE_CRON',

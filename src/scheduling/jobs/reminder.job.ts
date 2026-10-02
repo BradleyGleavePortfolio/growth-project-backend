@@ -56,10 +56,9 @@ export class SessionReminderJob {
     timeZone: 'UTC',
   })
   async runOneHourReminderSweep(): Promise<void> {
-    const enabled =
-      (process.env.BOOKING_REMINDERS_ENABLED ?? 'on') !== 'off';
+    const enabled = process.env.BOOKING_REMINDERS_ENABLED === 'on';
     if (!enabled) {
-      this.logger.debug('1h reminder cron skipped — BOOKING_REMINDERS_ENABLED=off');
+      this.logger.debug('1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable');
       return;
     }
     await this.dispatchWindow({
@@ -82,10 +81,9 @@ export class SessionReminderJob {
     timeZone: 'UTC',
   })
   async runTwentyFourHourReminderSweep(): Promise<void> {
-    const enabled =
-      (process.env.BOOKING_REMINDERS_ENABLED ?? 'on') !== 'off';
+    const enabled = process.env.BOOKING_REMINDERS_ENABLED === 'on';
     if (!enabled) {
-      this.logger.debug('24h reminder cron skipped — BOOKING_REMINDERS_ENABLED=off');
+      this.logger.debug('24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable');
       return;
     }
     await this.dispatchWindow({
