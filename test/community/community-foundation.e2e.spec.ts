@@ -4,8 +4,8 @@
  * Boots the real Nest HTTP layer (CommunityController + CommunityService +
  * CommunityRepository + the real RolesGuard / CommunityFeatureFlagGuard) wired
  * to the real PrismaService, and drives it over HTTP against a live, disposable
- * Postgres (the rls_fn_test database that already carries the User /
- * ClientPurchase / community_* tables).
+ * Postgres migrated with the real chain (`prisma migrate deploy`; CI job
+ * community-live-tests).
  *
  * GATE INTENT (R69): this suite is env-gated on COMMUNITY_TEST_DATABASE_URL.
  * When the var is unset the whole live block is `describe.skip`-ed and a reason
@@ -35,6 +35,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityController } from '../../src/community/community.controller';
 import { CommunityService } from '../../src/community/community.service';
@@ -46,6 +47,7 @@ import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -89,15 +91,8 @@ itLive('community v1-2 foundation (live DB)', () => {
       const userId = req.headers[H_USER] as string | undefined;
       // Mirror the real JwtAuthGuard: a missing/invalid token is 401, not 403.
       if (!userId) throw new UnauthorizedException();
-      // The rls_fn_test "User" table is minimal (id/role/name/coach_id only),
-      // so a typed findUnique would emit a SELECT on the absent supabase_id
-      // column. Read only the columns that exist via raw SQL and reconstruct
-      // the subset of the Prisma User the controller/service actually touch
-      // (id, role, coach_id).
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       if (req.headers[H_NOROLE] === 'true') {
         // Forge a JWT-minus-role-claim: strip the role before RolesGuard runs.
@@ -194,24 +189,15 @@ itLive('community v1-2 foundation (live DB)', () => {
     ids.student = randomUUID();
     ids.noRoleUser = randomUUID();
 
-    // The disposable rls_fn_test database carries a MINIMAL "User" table
-    // (id/role/name/coach_id only — no supabase_id/email, and id is TEXT not
-    // uuid). Prisma's typed user.createMany requires the full model, so users
-    // are seeded with parameterized raw SQL against the columns that exist.
-    // Community FKs are uuid columns with no enforced FK to User here, so
-    // uuid-format string ids work as both the TEXT User.id and the uuid refs.
-    const users: Array<[string, string, string, string | null]> = [
+    // Full "User" rows (the DB runs the real migration chain); uuid-format
+    // string ids serve as both the TEXT User.id and the uuid community refs.
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.student, 'student', 'Sam Member', ids.coachA],
       [ids.noRoleUser, 'student', 'No Role', null],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: {

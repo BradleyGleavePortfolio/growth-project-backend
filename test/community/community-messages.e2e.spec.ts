@@ -27,10 +27,13 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+import { PlanContextRepository } from '../../src/community/plan-context/plan-context.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
 import { CommunityMessagesEnabledGuard } from '../../src/community/community-write-flag.guard';
@@ -41,6 +44,7 @@ import { CommunityRealtimeService } from '../../src/community/realtime/community
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
@@ -81,10 +85,8 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       const req = ctx.switchToHttp().getRequest();
       const userId = req.headers[H_USER] as string | undefined;
       if (!userId) throw new UnauthorizedException();
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       req.user = user;
       return true;
@@ -143,6 +145,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       providers: [
         CommunityMessagesService,
         CommunityMessagesRepository,
+        // CommunityMessagesService validates plan-context tags on send.
+        PlanContextService,
+        PlanContextRepository,
         CommunityAccessService,
         CommunitySafetyService,
         CommunityFeatureFlagGuard,
@@ -193,19 +198,14 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     ids.studentA2 = randomUUID();
     ids.studentB = randomUUID();
 
-    const users: Array<[string, string, string, string | null]> = [
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentA2, 'student', 'Student A2', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: { coach_id: ids.coachA, name: 'WS A', slug: `ws-a-${tag}` },

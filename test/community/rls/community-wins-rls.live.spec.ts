@@ -20,8 +20,9 @@
  */
 import 'reflect-metadata';
 import { randomUUID } from 'crypto';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { liveDbUrl } from '../_support/community-db';
+import { insertLiveUser } from '../_support/community-live-seed';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -90,7 +91,7 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
     );
     await prisma.$executeRawUnsafe('GRANT SELECT ON "User" TO authenticated');
 
-    const users: Array<[string, string, string | null]> = [
+    const users: Array<[string, Role, string | null]> = [
       [id.coach, 'coach', null],
       [id.otherCoach, 'coach', null],
       [id.alice, 'student', id.coach],
@@ -100,9 +101,7 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
       [id.stranger, 'student', id.otherCoach],
     ];
     for (const [uid, role, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${uid}, ${role}, ${`RLS ${role} ${tag}`}, ${coachId})`;
+      await insertLiveUser(prisma, { id: uid, role, name: `RLS ${role} ${tag}`, coachId });
     }
     const ws = await prisma.communityWorkspace.create({
       data: { coach_id: id.coach, name: `Wins ${tag}`, slug: `wins-${tag}` },
