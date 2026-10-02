@@ -85,7 +85,7 @@ function makeService() {
   const getOwnedSession = jest.fn((..._a: unknown[]) =>
     Promise.resolve(makeSession()),
   );
-  const softDeleteSession = jest.fn((..._a: unknown[]) =>
+  const deleteSession = jest.fn((..._a: unknown[]) =>
     Promise.resolve(undefined),
   );
   const assertWithinRateLimit = jest.fn((..._a: unknown[]) =>
@@ -137,7 +137,7 @@ function makeService() {
   return {
     openOrResumeSession,
     getOwnedSession,
-    softDeleteSession,
+    deleteSession,
     assertWithinRateLimit,
     assertMayUseAi,
     appendMessage,
@@ -325,15 +325,16 @@ describe('RomanController — GET /roman/sessions/:id/messages', () => {
   });
 });
 
-describe('RomanController — DELETE /roman/sessions/:id (soft delete)', () => {
-  it('soft-deletes for the authenticated caller', async () => {
-    flagOn();
-    const { ctrl, service, req } = makeController();
-    await ctrl.deleteSession(req, 'sess_1');
-    expect(service.softDeleteSession).toHaveBeenCalledTimes(1);
-    const caller = service.softDeleteSession.mock.calls[0][0] as unknown as RomanCaller;
-    expect(caller.id).toBe('user-A');
-    expect(service.softDeleteSession.mock.calls[0][1]).toBe('sess_1');
+describe('RomanController — chat routes only (B-635-2)', () => {
+  it('no longer mounts the delete route (RomanChatsController owns list + delete, outside the flag)', () => {
+    expect(Object.getOwnPropertyNames(RomanController.prototype)).not.toContain('deleteSession');
+  });
+
+  it('GET /roman/sessions/:id/messages is no-store (a deleted transcript never lingers in a device cache)', () => {
+    const headers = Reflect.getMetadata('__headers__', RomanController.prototype.listMessages) as
+      | Array<{ name: string; value: string }>
+      | undefined;
+    expect(headers).toEqual([{ name: 'Cache-Control', value: 'no-store' }]);
   });
 });
 

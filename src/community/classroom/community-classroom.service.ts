@@ -8,12 +8,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import type {
-  CommunityClassroomMediaAsset,
-  CommunityClassroomPost,
-  User,
-} from '@prisma/client';
+import type { CommunityClassroomMediaAsset, CommunityClassroomPost, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import {
   STORAGE_PROVIDER,
   StorageNotConfiguredError,
@@ -81,6 +78,7 @@ export class CommunityClassroomService {
     private readonly repo: CommunityClassroomRepository,
     private readonly config: ConfigService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Config ───────────────────────────────────────────────────────────────
@@ -106,9 +104,7 @@ export class CommunityClassroomService {
    * lesson metadata is still returned. Signing failures are isolated per asset
    * so one bad key never blanks an entire feed.
    */
-  private async mediaView(
-    asset: CommunityClassroomMediaAsset,
-  ): Promise<ClassroomMediaView> {
+  private async mediaView(asset: CommunityClassroomMediaAsset): Promise<ClassroomMediaView> {
     let url: string | null = null;
     if (this.storage.isConfigured()) {
       try {
@@ -140,13 +136,8 @@ export class CommunityClassroomService {
     };
   }
 
-  private async postView(
-    post: ClassroomPostWithMedia,
-    now: Date,
-  ): Promise<ClassroomPostView> {
-    const media = await Promise.all(
-      post.media_assets.map((a) => this.mediaView(a)),
-    );
+  private async postView(post: ClassroomPostWithMedia, now: Date): Promise<ClassroomPostView> {
+    const media = await Promise.all(post.media_assets.map((a) => this.mediaView(a)));
     return {
       id: post.id,
       workspace_id: post.workspace_id,
@@ -179,10 +170,7 @@ export class CommunityClassroomService {
 
   /** True when the caller is the workspace coach or platform owner. */
   private async isCoach(workspaceId: string, user: User): Promise<boolean> {
-    return (
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id))
-    );
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
   /**
@@ -223,6 +211,9 @@ export class CommunityClassroomService {
     } else if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Two-way block: a lesson by a coach in a block relation with the member
+    // (either direction) reads as "does not exist", like the feed hides it.
+    await this.safety.assertVisibleTo(user.id, post.coach_id, NOT_FOUND);
     return post;
   }
 
@@ -385,16 +376,10 @@ export class CommunityClassroomService {
 
     const updated = await this.repo.updatePost(postId, {
       ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.body_markdown !== undefined
-        ? { body_markdown: input.body_markdown }
-        : {}),
-      ...(input.release_at !== undefined
-        ? { release_at: this.parseDate(input.release_at) }
-        : {}),
+      ...(input.body_markdown !== undefined ? { body_markdown: input.body_markdown } : {}),
+      ...(input.release_at !== undefined ? { release_at: this.parseDate(input.release_at) } : {}),
       ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
-      ...(input.pinned_order !== undefined
-        ? { pinned_order: input.pinned_order }
-        : {}),
+      ...(input.pinned_order !== undefined ? { pinned_order: input.pinned_order } : {}),
     });
     void post;
     return ClassroomPostResponseSchema.parse({
@@ -419,9 +404,7 @@ export class CommunityClassroomService {
     const post = await this.coachOwnedPost(user, postId);
 
     const releaseAt =
-      input.release_at !== undefined
-        ? this.parseDate(input.release_at)
-        : post.release_at;
+      input.release_at !== undefined ? this.parseDate(input.release_at) : post.release_at;
     const status = statusForPublish(releaseAt, now);
 
     const updated = await this.repo.updatePost(postId, {
@@ -479,10 +462,7 @@ export class CommunityClassroomService {
    * non-coach who can otherwise read the lesson still gets 403 here; a lesson in
    * another tenant resolves to 404 (existence never leaks).
    */
-  private async coachOwnedPost(
-    user: User,
-    postId: string,
-  ): Promise<ClassroomPostWithMedia> {
+  private async coachOwnedPost(user: User, postId: string): Promise<ClassroomPostWithMedia> {
     const post = await this.repo.findPostById(postId);
     if (!post || post.soft_deleted_at !== null) {
       throw new NotFoundException(NOT_FOUND);
@@ -558,19 +538,17 @@ export class CommunityClassroomService {
         })
       : await this.repo.listForStudent({
           workspaceId,
-          visibleCohortIds: await this.access.listAccessibleCohortIds(
-            workspaceId,
-            user.id,
-          ),
+          visibleCohortIds: await this.access.listAccessibleCohortIds(workspaceId, user.id),
           cohortFilter,
           now,
           limit: query.limit,
           cursor: query.cursor,
         });
 
-    const posts = await Promise.all(
-      page.items.map((p) => this.postView(p, now)),
-    );
+    // Two-way block: drop lessons authored by anyone in a block relation with
+    // the caller (cursor stays on the unfiltered page, as on every list).
+    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.coach_id);
+    const posts = await Promise.all(visibleItems.map((p) => this.postView(p, now)));
     return ClassroomFeedResponseSchema.parse({
       posts,
       next_cursor: page.nextCursor,
