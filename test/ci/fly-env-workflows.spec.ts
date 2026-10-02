@@ -164,6 +164,64 @@ describe('fly-env-sync.yml', () => {
     expect(check.run).not.toMatch(/\.digest|\.Digest/);
     expect(check.run).not.toMatch(/echo "\$\{listing\}"/);
   });
+
+  it('B-624-3: no flyctl output reaches the log; stderr is only classified with grep -q and removed by an EXIT trap', () => {
+    // Behaviour (hostile whitespace / newline / quoted / standalone values) is
+    // proven in fly-env-sync-behavior.spec.ts; this pins the shape so a later
+    // edit cannot reintroduce a "redact then print" relay.
+    const flySteps = job.steps.filter((s) => /^\s*flyctl /m.test(s.run ?? ''));
+    expect(flySteps.map((s) => s.name)).toEqual([
+      'Stage allowlisted secrets (names only in output)',
+      'Confirm staged names are listed on Fly (names and status only)',
+      'Apply staged secrets now (only when deploy_staged=true)',
+    ]);
+    const blocks = flySteps.map(
+      (s) => /# BEGIN fly_error_class[\s\S]*?# END fly_error_class\n/.exec(s.run ?? '')?.[0],
+    );
+    for (const b of blocks) expect(b).toEqual(expect.stringContaining('fly_error_class() {'));
+    expect(new Set(blocks).size).toBe(1);
+    // The classifier only tests the file (grep -q) and prints fixed words.
+    const code = blocks[0]!
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(code.match(/grep -[A-Za-z]+/g)).toEqual(Array(5).fill('grep -qiE'));
+    expect(code).not.toMatch(/\b(cat|sed|head|tail|awk|cut|tr|printf)\b [^|\n]*"\$1"/);
+    for (const s of flySteps) {
+      const run = s.run ?? '';
+      expect(run).not.toMatch(/\bsed\b/);
+      for (const line of run.split('\n').filter((l) => /^\s*flyctl /.test(l)))
+        expect(line).toMatch(
+          / (> \/dev\/null 2> fly-[a-z]+-stderr\.txt|--json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" 2> jq-stderr\.txt)$/,
+        );
+      for (const line of run.split('\n').filter((l) => /stderr\.txt/.test(l) && !/^\s*#/.test(l)))
+        expect([
+          line,
+          [
+            /^\s*flyctl .* 2> fly-[a-z]+-stderr\.txt( \| jq -r "\$\{filter\}" 2> jq-stderr\.txt)?$/,
+            /^\s*trap 'rm -f [a-z. -]+' EXIT$/,
+            /cls=\$\(fly_error_class fly-[a-z]+-stderr\.txt\)/,
+            /^\s*code=\$\(grep -oE 'ENVSYNC_\[A-Z_\]\+' jq-stderr\.txt \| head -n 1 \|\| true\)$/,
+          ].some((re) => re.test(line)),
+        ]).toEqual([line, true]);
+      // Every scratch file the step writes is removed by its EXIT trap.
+      const written = [
+        ...run.matchAll(/> ([a-z-]+\.txt)$/gm),
+        ...run.matchAll(/2> ([a-z-]+\.txt)/g),
+      ]
+        .map((m) => m[1])
+        .filter((f) => f !== 'staged-names.txt');
+      const trap = /trap 'rm -f ([^']+)' EXIT/.exec(run)?.[1].split(' ') ?? [];
+      expect(trap).toEqual(expect.arrayContaining(written));
+      expect(run.search(/^\s*trap '/m)).toBeGreaterThan(-1);
+      expect(run.search(/^\s*trap '/m)).toBeLessThan(run.search(/^\s*flyctl /m));
+    }
+    // The apply step's follow-up listing uses the post-check's exact projection.
+    const filterOf = (s: (typeof flySteps)[number]) =>
+      /^\s*filter='.*'$/m.exec(s.run ?? '')?.[0].trim();
+    expect(filterOf(flySteps[2])).toBeDefined();
+    expect(filterOf(flySteps[2])).toBe(filterOf(flySteps[1]));
+  });
 });
 
 describe('fly-env-truth.yml (read-only)', () => {
