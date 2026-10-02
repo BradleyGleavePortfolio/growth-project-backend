@@ -3,7 +3,7 @@
  *
  * Central registry for the R100 deploy-readiness board. The orchestrator at
  * `test/deploy-readiness.spec.ts` reads this file to learn which sub-scanners
- * make up the board, in what order they render, and which of the board's seven
+ * make up the board, in what order they render, and which of the board's
  * sections each one feeds. Keeping the registration here (rather than inline in
  * the spec) is the R100 "registration discipline" surface (R100 paragraph 7):
  * when a future builder adds an integration, secret, or feature flag they add a
@@ -11,7 +11,7 @@
  * a single entry here — instead of editing the orchestrator's control flow.
  *
  * This module imports NO scanner code and performs NO I/O. It is pure metadata:
- * the seven section ids, their human labels, and the registry/ledger file paths
+ * the section ids, their human labels, and the registry/ledger file paths
  * the orchestrator resolves against the repo root. The orchestrator binds these
  * ids to the concrete scanner invocations; that indirection lets the board grow
  * a new section by adding one id here plus its handler in the spec, never by
@@ -19,14 +19,16 @@
  */
 
 /**
- * The seven board sections, in render order, exactly mirroring R100 paragraphs
- * 1-4 expanded to the seven merged H4 sub-scanners (H4.A through H4.G). The id
+ * The board sections, in render order, mirroring R100 paragraphs 1-4 expanded
+ * to the merged H4 sub-scanners (H4.A through H4.G) plus the S-ENVTRUTH env
+ * registration invariant (a codebase invariant, so it gates on every PR). The id
  * is stable and machine-groupable; the orchestrator keys its section handlers
  * and its aggregate-exit tally off these ids.
  */
 export const BOARD_SECTIONS = [
   'STUB_VALUES',
   'PROD_SWITCHES',
+  'ENV_REGISTRATION',
   'WIRING',
   'ENV_DISCOVERY',
   'AUTO_FLIPPER',
@@ -82,6 +84,14 @@ export const SCANNER_REGISTRY: readonly ScannerRegistration[] = [
     mode: 'GATING',
     asserts:
       'The prod-switches registry is internally coherent (no duplicate names, no MUST_SET-but-auto-flip rows).',
+  },
+  {
+    section: 'ENV_REGISTRATION',
+    label: 'ENV REGISTRATION (code invariant)',
+    origin: 'S-ENVTRUTH prod-readiness/env-registration.ts',
+    mode: 'GATING',
+    asserts:
+      'Every env name runtime src/ reads (process.env, ConfigService get/getOrThrow, env helpers, template-built provider names) is registered in src/common/env-validation.ts ENV_RULES.',
   },
   {
     section: 'WIRING',
