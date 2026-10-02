@@ -8,7 +8,7 @@
 --   * "User".deleted_at (the audience predicate refuses soft-deleted users)
 --   * "SubCoachAssignment" with the production column names/types
 -- The onboarding migration itself is then applied VERBATIM
--- (prisma/migrations/20270202000000_clinic_onboarding_intake/migration.sql),
+-- (prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql),
 -- so the suite asserts the real tables, helper and policies.
 
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP(3);

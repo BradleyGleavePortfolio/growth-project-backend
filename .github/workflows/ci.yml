@@ -315,7 +315,7 @@ jobs:
         # Supabase-default table grants so RLS (not a missing GRANT) decides.
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-bootstrap.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270202000000_clinic_onboarding_intake/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
 
       - name: Run live RLS regression suite

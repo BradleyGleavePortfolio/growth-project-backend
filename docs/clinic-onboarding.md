@@ -298,7 +298,7 @@ or `null` before completion. The same data is in columns on
 
 ## Data model and RLS
 
-Migration `20270202000000_clinic_onboarding_intake` (additive):
+Migration `20270212000000_clinic_onboarding_intake` (additive):
 
 - `ClientOnboardingIntake` (one per client; head pointer + completion state).
   RLS: SELECT client self, the consultation coach audience
