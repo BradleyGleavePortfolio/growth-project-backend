@@ -7,6 +7,7 @@ import {
   CoachPaymentOpsController,
 } from '../src/checkout/payment-ops.controller';
 import { CursorPageQueryDto } from '../src/checkout/payment-ops.dto';
+import type { PayoutNoticeService } from '../src/checkout/payout-notice.service';
 import { DunningService } from '../src/checkout/dunning.service';
 import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
@@ -205,20 +206,38 @@ function makeAdminController() {
   return { ctrl, prisma, fee, dunning, splits, payoutReadiness, reconciliation, refundDispute, analytics, stripeConnect };
 }
 
+// Typed narrowing helper (no banned cast tokens): the stub only carries the
+// two methods the coach controller calls.
+const asPayoutNotices = (m: object): PayoutNoticeService => m as PayoutNoticeService;
+
 function makeCoachController() {
   const prisma = makePrismaStub();
   const fee = new FeePolicyService(prisma as any);
   const ledger = new SplitLedgerService(prisma as any);
   const payoutReadiness = { getForCoach: jest.fn() } as any;
   const analytics = { getCoachEarnings: jest.fn() } as any;
+  const payoutNotices = {
+    listForPayee: jest.fn(
+      async (_payee: string, _page: { cursor: string | null; limit: number }) => ({
+        open_balance: [],
+        needs_attention_count: 0,
+        notices: [],
+        next_cursor: null,
+      }),
+    ),
+    acknowledge: jest.fn(async (_payee: string, _id: string) => ({
+      acknowledged_at: '2026-10-02T00:00:00.000Z',
+    })),
+  };
   const ctrl = new CoachPaymentOpsController(
     prisma as any,
     fee,
     ledger,
     payoutReadiness,
     analytics,
+    asPayoutNotices(payoutNotices),
   );
-  return { ctrl, prisma, payoutReadiness, analytics };
+  return { ctrl, prisma, payoutReadiness, analytics, payoutNotices };
 }
 
 describe('AdminPaymentOpsController', () => {
@@ -457,6 +476,22 @@ describe('CoachPaymentOpsController', () => {
   function makeReq(userId: string, role: 'coach' | 'owner' = 'coach') {
     return { user: { id: userId, role } } as any;
   }
+
+  // S-FEE round 5 (OR-111-1): the Money page's held balance + payout notices
+  // are always read for the CALLER (req.user.id), never a coach_id argument.
+  it('adjustments: reads the caller own held balance and notices, page size capped', async () => {
+    const { ctrl, payoutNotices } = makeCoachController();
+    await ctrl.listAdjustments(makeReq('me'), { cursor: 'n-9', limit: 100 });
+    expect(payoutNotices.listForPayee).toHaveBeenCalledWith('me', { cursor: 'n-9', limit: 50 });
+    await ctrl.listAdjustments(makeReq('me'), {});
+    expect(payoutNotices.listForPayee).toHaveBeenLastCalledWith('me', { cursor: null, limit: 20 });
+  });
+
+  it('adjustments acknowledge: scoped to the caller', async () => {
+    const { ctrl, payoutNotices } = makeCoachController();
+    await ctrl.acknowledgeAdjustment(makeReq('me'), 'n-1');
+    expect(payoutNotices.acknowledge).toHaveBeenCalledWith('me', 'n-1');
+  });
 
   it('returns only the coach own purchases', async () => {
     const { ctrl, prisma } = makeCoachController();

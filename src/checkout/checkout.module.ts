@@ -21,6 +21,7 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { CronLeaseService } from './cron-lease.service';
 import { SettlementSweepCron } from './settlement-sweep.cron';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { PayoutNoticeService } from './payout-notice.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
 
 // CheckoutModule — Stripe Checkout session minting and ClientPurchase
@@ -88,6 +89,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
     CronLeaseService,
     SettlementSweepCron,
+    // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
+    PayoutNoticeService,
   ],
   exports: [
     CheckoutService,

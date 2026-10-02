@@ -383,7 +383,7 @@ describe('ChargeSettlementService', () => {
   });
 
   describe('refunds', () => {
-    it('full refund: reverse the coach transfer; the coach owes the non-returned fee; TGP nets 0', async () => {
+    it("full refund: reverse the coach transfer; the coach owes the non-returned fee and TGP's 2% (OR-111-1); TGP nets its 2%", async () => {
       const { svc, stripe, db, purchase, identity } = setup();
       stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
       await svc.settleCharge({ purchase, charge_id: 'ch_1' });
@@ -401,21 +401,21 @@ describe('ChargeSettlementService', () => {
       expect(db.recoveries).toHaveLength(1);
       expect(db.recoveries[0]).toMatchObject({
         payee_user_id: COACH,
-        amount_cents: 172,
+        amount_cents: 270,
         status: 'open',
         reason: 'refund',
       });
       expect(db.settlements[0]).toMatchObject({
-        target_platform_fee_cents: 0,
-        target_coach_net_cents: -172,
+        target_platform_fee_cents: 98,
+        target_coach_net_cents: -270,
       });
       expect(identity('ch_1')).toEqual({
         drift_cents: 0,
-        platform_net_cents: 0,
+        platform_net_cents: 98,
         platform_cash_cents: -172,
-        receivable_open_cents: 172,
+        receivable_open_cents: 270,
         // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
-        notes: ['platform_cash_negative: -172 (receivable_open 172)'],
+        notes: ['platform_cash_negative: -172 (receivable_open 270)'],
       });
 
       // Re-delivered refund webhook: nothing moves twice.
@@ -425,16 +425,16 @@ describe('ChargeSettlementService', () => {
       expect(stripe.reverseTransfer).toHaveBeenCalledTimes(1);
       expect(db.recoveries).toHaveLength(1);
 
-      // The next renewal nets the $1.72 before transferring.
+      // The next renewal nets the $2.70 (2% 98 + fee 172) before transferring.
       stripe.charges.set('ch_2', makeCharge({ id: 'ch_2', amount: 4_900, fee: 172 }));
       await svc.settleCharge({ purchase, charge_id: 'ch_2' });
       const renewalTransfer = db.transfers.find((t) => t.source_stripe_charge_id === 'ch_2')!;
       expect(renewalTransfer).toMatchObject({
-        amount_cents: 4_458,
-        netted_recovery_cents: 172,
+        amount_cents: 4_360,
+        netted_recovery_cents: 270,
         status: 'succeeded',
       });
-      expect(db.recoveries[0]).toMatchObject({ status: 'collected', collected_cents: 172 });
+      expect(db.recoveries[0]).toMatchObject({ status: 'collected', collected_cents: 270 });
       expect(identity('ch_2')).toEqual({
         drift_cents: 0,
         platform_net_cents: 98,
@@ -442,10 +442,15 @@ describe('ChargeSettlementService', () => {
         receivable_open_cents: 0,
         notes: [],
       });
-      expect(identity('ch_1').drift_cents).toBe(0);
+      expect(identity('ch_1')).toMatchObject({
+        drift_cents: 0,
+        platform_net_cents: 98,
+        platform_cash_cents: 98,
+        receivable_open_cents: 0,
+      });
     });
 
-    it('partial refund of $20 on $49: coach keeps $26.70, TGP keeps $0.58', async () => {
+    it('partial refund of $20 on $49: coach keeps $26.30, TGP keeps its $0.98 (OR-111-1)', async () => {
       const { svc, stripe, purchase, identity } = setup();
       stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
       await svc.settleCharge({ purchase, charge_id: 'ch_1' });
@@ -455,13 +460,13 @@ describe('ChargeSettlementService', () => {
       );
       await svc.applyAdjustments({ purchase, charge_id: 'ch_1', refunded_cents: 2_000 });
       expect(stripe.reverseTransfer).toHaveBeenCalledWith(
-        expect.objectContaining({ amount: 1_960 }),
+        expect.objectContaining({ amount: 2_000 }),
       );
-      expect(stripe.netTo('acct_coach')).toBe(2_670);
+      expect(stripe.netTo('acct_coach')).toBe(2_630);
       expect(identity('ch_1')).toEqual({
         drift_cents: 0,
-        platform_net_cents: 58,
-        platform_cash_cents: 58,
+        platform_net_cents: 98,
+        platform_cash_cents: 98,
         receivable_open_cents: 0,
         notes: [],
       });
@@ -477,14 +482,14 @@ describe('ChargeSettlementService', () => {
         makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }),
       );
       await svc.applyAdjustments({ purchase, charge_id: 'ch_1', refunded_cents: 4_900 });
-      expect(db.recoveries[0]).toMatchObject({ amount_cents: 4_802, status: 'open' });
+      expect(db.recoveries[0]).toMatchObject({ amount_cents: 4_900, status: 'open' });
       expect(identity('ch_1')).toEqual({
         drift_cents: 0,
-        platform_net_cents: 0,
+        platform_net_cents: 98,
         platform_cash_cents: -4802,
-        receivable_open_cents: 4802,
+        receivable_open_cents: 4900,
         // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
-        notes: ['platform_cash_negative: -4802 (receivable_open 4802)'],
+        notes: ['platform_cash_negative: -4802 (receivable_open 4900)'],
       });
     });
 
@@ -502,11 +507,11 @@ describe('ChargeSettlementService', () => {
       expect(stripe.netTo('acct_coach')).toBe(0);
       expect(identity('ch_team')).toEqual({
         drift_cents: 0,
-        platform_net_cents: 0,
+        platform_net_cents: 200,
         platform_cash_cents: -320,
-        receivable_open_cents: 320,
+        receivable_open_cents: 520,
         // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
-        notes: ['platform_cash_negative: -320 (receivable_open 320)'],
+        notes: ['platform_cash_negative: -320 (receivable_open 520)'],
       });
     });
   });
@@ -534,23 +539,23 @@ describe('ChargeSettlementService', () => {
       return ctx;
     }
 
-    it('created / lost: reverse the coach transfer; the coach owes the dispute fee; TGP nets 0', async () => {
+    it("created / lost: reverse the coach transfer; the coach owes the dispute fee, Stripe's fee and TGP's 2%; TGP nets its 2%", async () => {
       const { stripe, db, identity } = await disputed('lost');
       expect(stripe.reverseTransfer).toHaveBeenCalledWith(
         expect.objectContaining({ amount: 4_630 }),
       );
       expect(db.recoveries[0]).toMatchObject({
-        amount_cents: 1_672,
+        amount_cents: 1_770,
         status: 'open',
         reason: 'dispute',
       });
       expect(identity('ch_1')).toEqual({
         drift_cents: 0,
-        platform_net_cents: 0,
+        platform_net_cents: 98,
         platform_cash_cents: -1672,
-        receivable_open_cents: 1672,
+        receivable_open_cents: 1770,
         // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
-        notes: ['platform_cash_negative: -1672 (receivable_open 1672)'],
+        notes: ['platform_cash_negative: -1672 (receivable_open 1770)'],
       });
     });
 

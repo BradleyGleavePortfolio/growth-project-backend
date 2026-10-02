@@ -30,6 +30,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.service';
 import { DunningService } from './dunning.service';
+import { PAYOUT_NOTICE_PAGE_MAX, PayoutNoticeService } from './payout-notice.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import {
@@ -620,7 +621,37 @@ export class CoachPaymentOpsController {
     private ledger: SplitLedgerService,
     private payoutReadiness: PayoutReadinessService,
     private analytics: AdminAnalyticsService,
+    private payoutNotices: PayoutNoticeService,
   ) {}
+
+  // S-FEE round 5 (owner decision OR-111-1) — the Money page's "needs
+  // attention" read: the caller's open held balance per currency (what will
+  // be taken from their next sale(s)) and their refund / chargeback notices
+  // with the exact breakdown (what the client got back, what came back from
+  // that sale's payout, and the held amount split into TGP's 2%, Stripe's
+  // processing fee, the dispute fee and any share Stripe could not reverse).
+  // Always scoped to req.user.id (never a coach_id argument).
+  @Roles('coach', 'owner')
+  @Get('adjustments')
+  @ApiOperation({
+    summary: "The calling coach's held balance and refund / chargeback payout notices",
+  })
+  async listAdjustments(@Request() req: AuthedRequest, @Query() query: CursorPageQueryDto) {
+    return this.payoutNotices.listForPayee(req.user.id, {
+      cursor: query.cursor ?? null,
+      limit: Math.min(query.limit ?? 20, PAYOUT_NOTICE_PAGE_MAX),
+    });
+  }
+
+  // The coach has read a payout notice. Scoped to the caller: another
+  // coach's notice id is indistinguishable from a missing one (404).
+  @Roles('coach', 'owner')
+  @Post('adjustments/:id/acknowledge')
+  @ApiOperation({ summary: "Mark one of the calling coach's payout notices as read" })
+  @ApiResponse({ status: 404, description: 'PAYOUT_NOTICE_NOT_FOUND' })
+  async acknowledgeAdjustment(@Request() req: AuthedRequest, @Param('id') noticeId: string) {
+    return this.payoutNotices.acknowledge(req.user.id, noticeId);
+  }
 
   // Coach's own purchases — same data the OWNER drill-down view exposes,
   // but scoped to this coach.

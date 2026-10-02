@@ -9,7 +9,7 @@ SET LOCAL row_security = off;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "ChargeSettlement") OR EXISTS (SELECT 1 FROM "PayeeRecovery")
-     OR EXISTS (SELECT 1 FROM "TransferReversalOp") THEN
+     OR EXISTS (SELECT 1 FROM "TransferReversalOp") OR EXISTS (SELECT 1 FROM "PayoutAdjustmentNotice") THEN
     RAISE EXCEPTION 'S-FEE down refused: settlement rows exist; fix forward';
   END IF;
   IF EXISTS (
@@ -25,9 +25,9 @@ ALTER TABLE "ConnectTransfer" DROP CONSTRAINT IF EXISTS "ConnectTransfer_settlem
 DROP INDEX IF EXISTS "ConnectTransfer_settlement_id_idx";
 DROP TABLE IF EXISTS "CronLease";
 DROP TABLE IF EXISTS "TransferReversalOp";
+DROP TABLE IF EXISTS "PayoutAdjustmentNotice";
 DROP TABLE "PayeeRecovery";
 DROP TABLE "ChargeSettlement";
-ALTER TABLE "ConnectTransfer" DROP COLUMN "recovery_clawback_cents";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "reversal_seq";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "netted_recovery_cents";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "kind";

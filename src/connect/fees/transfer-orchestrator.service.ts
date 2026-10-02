@@ -132,7 +132,11 @@ export interface PlanTransferInput {
 // lost; the caller stops without moving money.
 export type MoneyFence = (db?: Prisma.TransactionClient) => Promise<void>;
 
-export type ReversalPurpose = 'adjust' | 'clawback' | 'legacy';
+// adjust: converge THIS charge's transfer after a refund / dispute. legacy: the
+// pre-S-FEE per-refund reversal. Owner decision OR-111-1 removed round 4's
+// 'clawback' (reversing a payee's OTHER past transfers): another charge's debt
+// is recovered by forward netting only.
+export type ReversalPurpose = 'adjust' | 'legacy';
 
 export type ReverseOutcome =
   | { status: 'succeeded'; transfer: ConnectTransfer; op_id: string | null }
@@ -371,8 +375,6 @@ export class TransferOrchestratorService {
     // Caller-chosen operation key (legacy path: one reversal per refund id).
     idempotency_key?: string;
     purpose?: ReversalPurpose;
-    // clawback: the PayeeRecovery this reversal collects.
-    recovery_id?: string | null;
     fence?: MoneyFence;
   }): Promise<ReverseOutcome> {
     if (args.idempotency_key) {
@@ -438,7 +440,6 @@ export class TransferOrchestratorService {
     args: {
       idempotency_key?: string;
       purpose?: ReversalPurpose;
-      recovery_id?: string | null;
       fence?: MoneyFence;
     },
   ): Promise<TransferReversalOp> {
@@ -458,23 +459,6 @@ export class TransferOrchestratorService {
           'another worker started a reversal on this transfer at the same time',
         );
       }
-      if (purpose === 'clawback' && args.recovery_id) {
-        // Reserve the cents on the recovery before Stripe moves them, so
-        // netting cannot collect the same cents concurrently.
-        const rec = await tx.payeeRecovery.findUniqueOrThrow({ where: { id: args.recovery_id } });
-        const collected = rec.collected_cents + amount;
-        const reserved = await tx.payeeRecovery.updateMany({
-          where: { id: rec.id, collected_cents: rec.collected_cents, status: 'open' },
-          data: {
-            collected_cents: collected,
-            status: collected >= rec.amount_cents ? 'collected' : 'open',
-            collected_at: collected >= rec.amount_cents ? new Date() : null,
-          },
-        });
-        if (reserved.count !== 1 || collected > rec.amount_cents) {
-          throw new ReversalUncertainError(row.id, key, 'the recovery changed while reserving it');
-        }
-      }
       return tx.transferReversalOp.create({
         data: {
           transfer_id: row.id,
@@ -483,7 +467,6 @@ export class TransferOrchestratorService {
           amount_cents: amount,
           base_reversed_cents: row.reversed_amount_cents,
           purpose,
-          recovery_id: args.recovery_id ?? null,
           status: 'pending',
         },
       });
@@ -594,9 +577,6 @@ export class TransferOrchestratorService {
           reversed_amount_cents: reversed,
           status: full ? 'reversed' : t.status,
           reversed_at: full ? new Date() : t.reversed_at,
-          ...(op.purpose === 'clawback'
-            ? { recovery_clawback_cents: { increment: op.amount_cents } }
-            : {}),
         },
       });
     });
@@ -612,21 +592,10 @@ export class TransferOrchestratorService {
 
   private async refuseReversal(op: TransferReversalOp, message: string): Promise<ReverseOutcome> {
     const transfer = await this.prisma.$transaction(async (tx) => {
-      const done = await tx.transferReversalOp.updateMany({
+      await tx.transferReversalOp.updateMany({
         where: { id: op.id, status: 'pending' },
         data: { status: 'refused', last_error: message.slice(0, 500), resolved_at: new Date() },
       });
-      if (done.count === 1 && op.purpose === 'clawback' && op.recovery_id) {
-        // Give the reserved cents back to the open recovery.
-        await tx.payeeRecovery.updateMany({
-          where: { id: op.recovery_id, collected_cents: { gte: op.amount_cents } },
-          data: {
-            collected_cents: { decrement: op.amount_cents },
-            status: 'open',
-            collected_at: null,
-          },
-        });
-      }
       return tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
     });
     this.logger.warn(

@@ -22,6 +22,11 @@ import {
 import { ChargeLock, isChargeLockBusy } from './charge-lock';
 import { FeePolicyService } from './fee-policy.service';
 import { DisputeStateUnavailableError, isRetryableMoneyError } from './money-errors';
+import {
+  payoutNoticeCopy,
+  type PayoutNoticeAmounts,
+  type PayoutNoticeEvent,
+} from './payout-notice-copy';
 import { SplitLedgerService } from './split-ledger.service';
 import {
   TransferOrchestratorService,
@@ -49,10 +54,18 @@ import {
 // Refunds / disputes: applyAdjustments re-derives every party's target with
 // computeAdjustedTargets and moves each payee to it: post pending transfers,
 // reverse posted transfers, and record whatever a reversal cannot recover
-// (the non-returned processing fee, a dispute fee, a reversal Stripe refused)
-// as a PayeeRecovery that is netted out of that payee's next transfers.
-// Stripe: "It's up to your platform to reconcile any amount owed back to it
-// by reducing subsequent transfer amounts or by reversing transfers."
+// (TGP's 2%, the non-returned processing fee, a dispute fee, a reversal Stripe
+// refused) as a PayeeRecovery that is netted out of that payee's next
+// transfers. Stripe: "It's up to your platform to reconcile any amount owed
+// back to it by reducing subsequent transfer amounts or by reversing
+// transfers."
+//
+// Owner decision OR-111-1 (round 5): only the refunded charge's OWN transfer
+// is ever reversed; recovery of what is still owed is forward-only netting
+// from the payee's next sale(s), carried across sales until settled. No
+// payout delay, no negative-balance debit, no Account Debit and no reversal
+// of another sale's transfer. Each refund / chargeback / dispute outcome
+// writes a PayoutAdjustmentNotice with the exact amounts for the payee.
 //
 // Concurrency (round 3, B-627-2): every money movement on one charge runs
 // under that charge's lock (ChargeLock): settleCharge, applyAdjustments and
@@ -90,10 +103,10 @@ export const BACKFILL_WINDOW_DAYS = 35;
 export const INVOICE_BACKFILL_CURSOR = 'sfee-invoice-backfill-cursor';
 export const INVOICE_BACKFILL_PAGES_PER_RUN = 4;
 export const STALE_AFTER_MS = 60 * 60_000;
-// B-627-3: open recoveries older than this raise an alert with the payee's
-// total open exposure; clawback looks back this far for reversible transfers.
+// Open recoveries older than this raise SFEE_RECOVERY_OPEN with the payee's
+// total open balance (OR-111-1: accepted residual for a coach who never sells
+// again; the next sale nets it).
 export const RECOVERY_ALERT_AFTER_MS = 24 * 60 * 60_000;
-export const CLAWBACK_LOOKBACK_DAYS = 90;
 
 export const SETTLEMENT_LOG_CODES = {
   stripeUnavailable: 'SFEE_SETTLEMENT_STRIPE_UNAVAILABLE',
@@ -105,7 +118,7 @@ export const SETTLEMENT_LOG_CODES = {
   reconcilePending: 'SFEE_RECONCILE_PENDING',
   reversalPending: 'SFEE_REVERSAL_PENDING',
   recoveryOpen: 'SFEE_RECOVERY_OPEN',
-  recoveryClawback: 'SFEE_RECOVERY_CLAWBACK',
+  noticeFailed: 'SFEE_NOTICE_FAILED',
 } as const;
 
 export interface SweepSummary {
@@ -118,7 +131,6 @@ export interface SweepSummary {
   stale_transfers: number;
   reversals_resolved: number;
   reconciled: number;
-  clawback_cents: number;
   open_recovery_payees: number;
 }
 
@@ -153,6 +165,9 @@ export interface AdjustmentInput {
   // moves (DisputeStateUnavailableError; the settlement is flagged for the
   // sweeper) — the event's own position is never used in its place.
   dispute_id?: string | null;
+  // OR-111-1: a dispute closed as lost changes no money (Stripe withdrew the
+  // funds when it opened) but the payee is told the hold is now final.
+  notice_event?: 'dispute_lost' | null;
 }
 
 type Leg = {
@@ -228,26 +243,105 @@ function stateKey(adj: ChargeAdjustments): string {
   return `${adj.refunded_cents}-${adj.dispute_withdrawn_cents}-${adj.dispute_fee_cents}`;
 }
 
+/**
+ * OR-111-1 — which payee notice an adjustment state calls for. A chargeback
+ * is any state with withdrawn funds; a dispute that stops withdrawing funds
+ * after a chargeback notice was won; a lost dispute is announced by the
+ * dispute-closed handler (hint). Anything else with refunded cents is a refund.
+ */
+export function noticeEventFor(
+  adj: ChargeAdjustments,
+  latestEvent: string | null,
+  hint: 'dispute_lost' | null,
+): PayoutNoticeEvent | null {
+  if (adj.dispute_withdrawn_cents > 0)
+    return hint === 'dispute_lost' ? 'dispute_lost' : 'chargeback';
+  if (latestEvent === 'chargeback') return 'dispute_won';
+  if (adj.refunded_cents > 0) return 'refund';
+  if (adj.dispute_fee_cents > 0 && latestEvent === null) return 'chargeback';
+  return null;
+}
+
+/**
+ * OR-111-1 — the exact amounts of one payee's notice, from the converged
+ * rows of one charge. held_cents is every live recovery on the charge for
+ * the payee (what TGP holds from their next sale(s)); its parts always sum
+ * to it: the fee part (only the selling coach bears fees: -target, capped by
+ * what is held) is attributed to TGP's 2% first, then Stripe's processing
+ * fee, then the dispute fee; the rest is the payee's share that Stripe
+ * refused to reverse (or never had to pay out).
+ */
+export function adjustmentNoticeAmounts(args: {
+  leg: Pick<Leg, 'leg' | 'target_cents'>;
+  split: Pick<ChargeSplit, 'gross_cents' | 'stripe_fee_cents' | 'platform_fee_cents'>;
+  adj: ChargeAdjustments;
+  currency: string;
+  transfers: Array<
+    Pick<
+      ConnectTransfer,
+      'kind' | 'status' | 'amount_cents' | 'netted_recovery_cents' | 'reversed_amount_cents'
+    >
+  >;
+  recoveries: Array<Pick<PayeeRecovery, 'status' | 'amount_cents' | 'collected_cents'>>;
+  previous_held_cents: number | null;
+}): PayoutNoticeAmounts {
+  let reversed = 0;
+  let reinstated = 0;
+  for (const t of args.transfers) {
+    if (t.status === 'failed') continue;
+    if (t.kind.endsWith('_reinstate')) {
+      reinstated += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
+    } else {
+      reversed += t.reversed_amount_cents;
+    }
+  }
+  let held = 0;
+  let heldOpen = 0;
+  for (const r of args.recoveries) {
+    if (r.status === 'released') continue;
+    held += r.amount_cents;
+    if (r.status === 'open') heldOpen += Math.max(0, r.amount_cents - r.collected_cents);
+  }
+  const feeOwed = args.leg.leg === 'coach' ? Math.max(0, -args.leg.target_cents) : 0;
+  let rest = Math.min(held, feeOwed);
+  const tgp = Math.min(rest, args.split.platform_fee_cents);
+  rest -= tgp;
+  const stripeFee = Math.min(rest, args.split.stripe_fee_cents);
+  rest -= stripeFee;
+  const disputeFee = Math.min(rest, args.adj.dispute_fee_cents);
+  const released =
+    args.previous_held_cents === null ? 0 : Math.max(0, args.previous_held_cents - held);
+  return {
+    currency: args.currency,
+    charge_gross_cents: args.split.gross_cents,
+    customer_refunded_cents: args.adj.refunded_cents + args.adj.dispute_withdrawn_cents,
+    reversed_cents: Math.max(0, reversed),
+    reinstated_cents: Math.max(0, reinstated),
+    released_cents: released,
+    held_cents: held,
+    held_tgp_fee_cents: tgp,
+    held_stripe_fee_cents: stripeFee,
+    held_dispute_fee_cents: disputeFee,
+    held_not_reversed_cents: held - tgp - stripeFee - disputeFee,
+    held_open_cents: Math.min(heldOpen, held),
+  };
+}
+
 /** A payee's current position on one settlement: what they hold for it. */
 export function payeePositionCents(
   transfers: Array<
     Pick<
       ConnectTransfer,
       'status' | 'amount_cents' | 'netted_recovery_cents' | 'reversed_amount_cents'
-    > & { recovery_clawback_cents?: number }
+    >
   >,
   recoveries: Array<Pick<PayeeRecovery, 'status' | 'amount_cents'>>,
 ): number {
   let position = 0;
   for (const t of transfers) {
     if (t.status === 'failed') continue;
-    // A clawback reversal moved cents off this transfer to settle a debt on
-    // another charge: still paid for this charge (like netting).
-    position +=
-      t.amount_cents +
-      t.netted_recovery_cents -
-      t.reversed_amount_cents +
-      (t.recovery_clawback_cents ?? 0);
+    // Netted cents settled a debt on another charge: still paid for this one.
+    position += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
   }
   for (const r of recoveries) {
     if (r.status === 'released') continue;
@@ -800,9 +894,6 @@ export class ChargeSettlementService {
       ? 0
       : await this.resolveStuckReversals(now, limit, pastDeadline);
     const reconciled = pastDeadline() ? 0 : await this.rerunFlagged(now, limit, pastDeadline);
-    const clawbackCents = pastDeadline()
-      ? 0
-      : await this.collectRecoveriesByClawback(now, limit, pastDeadline);
     const stale = await this.reportStale(now);
     return {
       retried: waiting.length,
@@ -814,7 +905,6 @@ export class ChargeSettlementService {
       stale_transfers: stale.transfers,
       reversals_resolved: reversalsResolved,
       reconciled,
-      clawback_cents: clawbackCents,
       open_recovery_payees: stale.recoveryPayees,
     };
   }
@@ -890,92 +980,6 @@ export class ChargeSettlementService {
       }
     }
     return done;
-  }
-
-  /**
-   * B-627-3 — collect open recoveries now instead of waiting for the payee's
-   * next sale: reverse the reversible remainder of the payee's other recent
-   * transfers (funds still in their Stripe balance), oldest debt first. Each
-   * reversal runs under the SOURCE charge's lock with the keyed reversal
-   * protocol; the recovery's cents are reserved before Stripe is called and
-   * released again if Stripe refuses. Returns the cents collected.
-   */
-  private async collectRecoveriesByClawback(
-    now: Date,
-    limit: number,
-    pastDeadline: () => boolean,
-  ): Promise<number> {
-    const open = await this.prisma.payeeRecovery.findMany({
-      where: { status: 'open' },
-      orderBy: { created_at: 'asc' },
-      take: limit,
-    });
-    const since = new Date(now.getTime() - CLAWBACK_LOOKBACK_DAYS * 86_400_000);
-    const refusedPayees = new Set<string>();
-    let collectedTotal = 0;
-    for (const r of open) {
-      if (pastDeadline()) break;
-      if (refusedPayees.has(r.payee_user_id)) continue;
-      const candidates = await this.prisma.connectTransfer.findMany({
-        where: {
-          destination_user_id: r.payee_user_id,
-          currency: r.currency,
-          status: 'succeeded',
-          stripe_transfer_id: { not: null },
-          settlement_id: { not: null },
-          created_at: { gte: since },
-        },
-        orderBy: { created_at: 'desc' },
-      });
-      for (const c of candidates) {
-        if (pastDeadline() || refusedPayees.has(r.payee_user_id)) break;
-        if (c.settlement_id === r.settlement_id) continue;
-        if (c.amount_cents - c.reversed_amount_cents <= 0) continue;
-        const source = await this.prisma.chargeSettlement.findUnique({
-          where: { id: c.settlement_id ?? '' },
-          select: { stripe_charge_id: true },
-        });
-        if (!source) continue;
-        try {
-          const got = await this.chargeLock.run(source.stripe_charge_id, async () => {
-            const fence = this.fenceFor(source.stripe_charge_id);
-            await this.transfers.resolvePendingReversals(c.id, fence);
-            const [t, rec] = await Promise.all([
-              this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: c.id } }),
-              this.prisma.payeeRecovery.findUniqueOrThrow({ where: { id: r.id } }),
-            ]);
-            const owed = rec.status === 'open' ? rec.amount_cents - rec.collected_cents : 0;
-            const take = Math.min(owed, t.amount_cents - t.reversed_amount_cents);
-            if (take <= 0 || t.status !== 'succeeded') {
-              return { cents: 0, done: owed <= 0, refused: false };
-            }
-            const res = await this.transfers.reverse({
-              transfer_row_id: t.id,
-              amount_cents: take,
-              purpose: 'clawback',
-              recovery_id: rec.id,
-              fence,
-            });
-            if (res.status === 'refused') return { cents: 0, done: false, refused: true };
-            return { cents: take, done: take >= owed, refused: false };
-          });
-          if (got.refused) refusedPayees.add(r.payee_user_id);
-          if (got.cents > 0) {
-            collectedTotal += got.cents;
-            this.logger.warn(
-              `${SETTLEMENT_LOG_CODES.recoveryClawback} recovery=${r.id} payee=${r.payee_user_id} transfer=${c.id} collected=${got.cents}`,
-            );
-          }
-          if (got.done) break;
-        } catch (err) {
-          this.logger.warn(
-            `${SETTLEMENT_LOG_CODES.recoveryClawback} recovery=${r.id} transfer=${c.id}: skipped (${(err as Error).message})`,
-          );
-          break;
-        }
-      }
-    }
-    return collectedTotal;
   }
 
   /**
@@ -1126,9 +1130,10 @@ export class ChargeSettlementService {
   }
 
   // Alert (error level, alert=true) on money that has waited over an hour,
-  // and (B-627-3, C-627-3) on recoveries open for more than a day, with each
-  // payee's total open exposure: TGP is fronting that money until it is
-  // collected (netting, clawback, or the owner's debit setting).
+  // and (C-627-3, OR-111-1) on recoveries open for more than a day, with each
+  // payee's total open balance: it is collected only by netting the payee's
+  // next sale(s). A payee who never sells again leaves it open (accepted
+  // residual per the owner decision); this alert is the operator's record.
   private async reportStale(
     now: Date,
   ): Promise<{ awaiting: number; transfers: number; recoveryPayees: number }> {
@@ -1182,7 +1187,7 @@ export class ChargeSettlementService {
     for (const [k, e] of exposure) {
       const [payee, currency] = k.split('|');
       this.logger.error(
-        `${SETTLEMENT_LOG_CODES.recoveryOpen} alert=true payee=${payee} currency=${currency} open_cents=${e.cents} recoveries=${e.count} oldest=${e.oldest.toISOString()}: TGP is fronting this until it is collected from the payee`,
+        `${SETTLEMENT_LOG_CODES.recoveryOpen} alert=true payee=${payee} currency=${currency} open_cents=${e.cents} recoveries=${e.count} oldest=${e.oldest.toISOString()}: held from the payee's next sale(s); still open until they sell again`,
       );
     }
     if (awaiting > 0) {
@@ -1366,8 +1371,9 @@ export class ChargeSettlementService {
           target_coach_net_cents: targets.coach_net_cents,
         };
       }
-      // TGP keeps no fee on refunded / charged-back principal: mirror the
-      // platform slice's reduction on its ledger row (absolute, idempotent).
+      // OR-111-1: TGP keeps its full 2% on refunds and disputes, so the
+      // platform slice's reversed_cents stays 0 (absolute, idempotent; a row
+      // written by an earlier rule is corrected here).
       const platformReversed = split.platform_fee_cents - targets.platform_fee_cents;
       await this.prisma.splitLedgerEntry.updateMany({
         where: {
@@ -1403,12 +1409,122 @@ export class ChargeSettlementService {
       // Drain before release: a refund recorded while we converged (its
       // webhook is waiting on this lock, or gave up) is applied now.
       const after = await this.succeededRefundCents(input.charge_id);
-      if (after <= next.refunded_cents) return adjusted ? 'adjusted' : 'unchanged';
+      if (after <= next.refunded_cents) {
+        // OR-111-1: tell each payee exactly what changed, from the converged
+        // state, still under the lock (idempotent per charge/leg/event/state).
+        await this.recordAdjustmentNotices(current, legs, next, input.notice_event ?? null);
+        return adjusted ? 'adjusted' : 'unchanged';
+      }
     }
     this.logger.warn(
       `applyAdjustments: refunds kept arriving charge=${input.charge_id}; the next delivery converges the rest`,
     );
     return adjusted ? 'adjusted' : 'deferred';
+  }
+
+  /**
+   * OR-111-1 — write the payee-facing record of the adjustment the charge has
+   * just converged to (one PayoutAdjustmentNotice per payee leg, event and
+   * adjustment state; a replay finds its key and writes nothing). Runs under
+   * the charge lock after every leg converged, so the amounts are the real
+   * ones: what the customer got back, what was taken back from this sale's
+   * own transfer, and what is held from the payee's next sale(s), split into
+   * TGP's 2%, Stripe's processing fee, the dispute fee and any share Stripe
+   * refused to reverse. Delivery (push / in-app / email) is done by the
+   * dispatcher after the lock is released. A failure here never undoes the
+   * money: the settlement is flagged and the sweeper re-runs it.
+   */
+  private async recordAdjustmentNotices(
+    row: ChargeSettlement,
+    legs: Leg[],
+    adj: ChargeAdjustments,
+    hint: 'dispute_lost' | null,
+  ): Promise<number> {
+    try {
+      const split = splitOf(row);
+      if (!split) return 0;
+      const [transfers, recoveries, priors] = await Promise.all([
+        this.prisma.connectTransfer.findMany({ where: { settlement_id: row.id } }),
+        this.prisma.payeeRecovery.findMany({ where: { settlement_id: row.id } }),
+        this.prisma.payoutAdjustmentNotice.findMany({
+          where: { settlement_id: row.id },
+          orderBy: { created_at: 'desc' },
+        }),
+      ]);
+      const sk = stateKey(adj);
+      let written = 0;
+      for (const leg of legs) {
+        const latest = priors.find(
+          (n) => n.payee_user_id === leg.payee_user_id && n.role === leg.leg,
+        );
+        const event = noticeEventFor(adj, latest?.event ?? null, hint);
+        if (!event) continue;
+        if (event !== 'dispute_lost' && latest?.state_key === sk) continue;
+        const amounts = adjustmentNoticeAmounts({
+          leg,
+          split,
+          adj,
+          currency: row.currency,
+          transfers: transfers.filter((t) => t.destination_user_id === leg.payee_user_id),
+          recoveries: recoveries.filter((r) => r.payee_user_id === leg.payee_user_id),
+          previous_held_cents: latest?.held_cents ?? null,
+        });
+        if (
+          latest &&
+          latest.event === event &&
+          latest.held_cents === amounts.held_cents &&
+          latest.reversed_cents === amounts.reversed_cents &&
+          latest.reinstated_cents === amounts.reinstated_cents &&
+          latest.customer_refunded_cents === amounts.customer_refunded_cents
+        ) {
+          continue; // nothing this payee can see changed (e.g. a fee-only update on the other leg)
+        }
+        const idempotencyKey = `tgp-notice-${row.stripe_charge_id}-${leg.leg}-${event}-${sk}`;
+        const exists = await this.prisma.payoutAdjustmentNotice.findUnique({
+          where: { idempotency_key: idempotencyKey },
+          select: { id: true },
+        });
+        if (exists) continue;
+        const copy = payoutNoticeCopy(event, leg.leg, amounts);
+        try {
+          await this.prisma.payoutAdjustmentNotice.create({
+            data: {
+              settlement_id: row.id,
+              payee_user_id: leg.payee_user_id,
+              role: leg.leg,
+              purchase_id: row.purchase_id,
+              stripe_charge_id: row.stripe_charge_id,
+              event,
+              currency: row.currency,
+              charge_gross_cents: amounts.charge_gross_cents,
+              customer_refunded_cents: amounts.customer_refunded_cents,
+              reversed_cents: amounts.reversed_cents,
+              reinstated_cents: amounts.reinstated_cents,
+              held_cents: amounts.held_cents,
+              held_tgp_fee_cents: amounts.held_tgp_fee_cents,
+              held_stripe_fee_cents: amounts.held_stripe_fee_cents,
+              held_dispute_fee_cents: amounts.held_dispute_fee_cents,
+              held_not_reversed_cents: amounts.held_not_reversed_cents,
+              held_open_cents: amounts.held_open_cents,
+              state_key: sk,
+              idempotency_key: idempotencyKey,
+              title: copy.title,
+              body: copy.body,
+            },
+          });
+          written += 1;
+        } catch (err) {
+          if (!isUniqueViolation(err)) throw err;
+        }
+      }
+      return written;
+    } catch (err) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${(err as Error).message}); the money is converged and the sweeper retries the notice`,
+      );
+      await this.flagForReconcile(row.stripe_charge_id, null, err);
+      return 0;
+    }
   }
 
   /** Cumulative succeeded refunds on a charge (one row per Stripe refund id). */
@@ -1594,31 +1710,39 @@ export class ChargeSettlementService {
       const give = await this.prisma.$transaction(async (tx) => {
         await fence(tx);
         let left = delta;
-        for (const r of recoveries) {
-          if (left <= 0) break;
-          if (r.status !== 'open') continue;
-          const releasable = r.amount_cents - r.collected_cents;
-          const x = Math.min(left, releasable);
-          if (x <= 0) continue;
-          const remaining = r.amount_cents - x;
-          const res = await tx.payeeRecovery.updateMany({
-            where: {
-              id: r.id,
-              amount_cents: r.amount_cents,
-              collected_cents: r.collected_cents,
-              status: 'open',
-            },
-            data: {
-              amount_cents: remaining,
-              status:
-                remaining === r.collected_cents
-                  ? r.collected_cents > 0
-                    ? 'collected'
-                    : 'released'
-                  : 'open',
-            },
-          });
-          if (res.count === 1) left -= x;
+        for (const first of recoveries) {
+          let r: PayeeRecovery | null = first;
+          // A CAS miss means another sale's netting collected part of this
+          // recovery at the same moment: re-read it and release what is left.
+          for (let attempt = 0; r && attempt < 3 && left > 0; attempt += 1) {
+            if (r.status !== 'open') break;
+            const releasable = r.amount_cents - r.collected_cents;
+            const x = Math.min(left, releasable);
+            if (x <= 0) break;
+            const remaining = r.amount_cents - x;
+            const res = await tx.payeeRecovery.updateMany({
+              where: {
+                id: r.id,
+                amount_cents: r.amount_cents,
+                collected_cents: r.collected_cents,
+                status: 'open',
+              },
+              data: {
+                amount_cents: remaining,
+                status:
+                  remaining === r.collected_cents
+                    ? r.collected_cents > 0
+                      ? 'collected'
+                      : 'released'
+                    : 'open',
+              },
+            });
+            if (res.count === 1) {
+              left -= x;
+              break;
+            }
+            r = await tx.payeeRecovery.findUnique({ where: { id: r.id } });
+          }
         }
         return left;
       });
@@ -1713,21 +1837,37 @@ export class ChargeSettlementService {
       orderBy: { created_at: 'asc' },
     });
     let netted = 0;
-    for (const r of open) {
-      const left = available - netted;
-      if (left <= 0) break;
-      const take = Math.min(left, r.amount_cents - r.collected_cents);
-      if (take <= 0) continue;
-      const collected = r.collected_cents + take;
-      const res = await tx.payeeRecovery.updateMany({
-        where: { id: r.id, collected_cents: r.collected_cents, status: 'open' },
-        data: {
-          collected_cents: collected,
-          status: collected >= r.amount_cents ? 'collected' : 'open',
-          collected_at: collected >= r.amount_cents ? new Date() : null,
-        },
-      });
-      if (res.count === 1) netted += take;
+    for (const first of open) {
+      let r: PayeeRecovery | null = first;
+      // CAS on (amount, collected, status): a concurrent netting on another
+      // sale or a won-dispute release on the recovery's own charge makes this
+      // miss; re-read and retry so the debt is neither collected twice nor
+      // skipped.
+      for (let attempt = 0; r && attempt < 3; attempt += 1) {
+        const left = available - netted;
+        if (left <= 0 || r.status !== 'open') break;
+        const take = Math.min(left, r.amount_cents - r.collected_cents);
+        if (take <= 0) break;
+        const collected = r.collected_cents + take;
+        const res = await tx.payeeRecovery.updateMany({
+          where: {
+            id: r.id,
+            amount_cents: r.amount_cents,
+            collected_cents: r.collected_cents,
+            status: 'open',
+          },
+          data: {
+            collected_cents: collected,
+            status: collected >= r.amount_cents ? 'collected' : 'open',
+            collected_at: collected >= r.amount_cents ? new Date() : null,
+          },
+        });
+        if (res.count === 1) {
+          netted += take;
+          break;
+        }
+        r = await tx.payeeRecovery.findUnique({ where: { id: r.id } });
+      }
     }
     return netted;
   }

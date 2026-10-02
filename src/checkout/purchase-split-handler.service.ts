@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import {
   ChargeSettlementService,
@@ -9,6 +9,7 @@ import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
+import { PayoutNoticeService } from './payout-notice.service';
 
 // PurchaseSplitHandlerService — bridges the lifecycle webhook handler
 // and the Phase 4 split machinery. Responsibilities:
@@ -42,6 +43,9 @@ export class PurchaseSplitHandlerService {
     private ledger: SplitLedgerService,
     private transfers: TransferOrchestratorService,
     private settlements: ChargeSettlementService,
+    // S-FEE round 5 (OR-111-1): re-delivers payout notices a webhook could
+    // not deliver. @Optional() for legacy hand-built wiring.
+    @Optional() private payoutNotices?: PayoutNoticeService,
   ) {}
 
   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
@@ -231,8 +235,19 @@ export class PurchaseSplitHandlerService {
     failed: number;
     deadline_reached?: boolean;
     settlements?: SweepSummary;
+    notices_delivered?: number;
   }> {
     const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
+    let noticesDelivered = 0;
+    if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
+      try {
+        noticesDelivered = await this.payoutNotices.dispatchPending(now);
+      } catch (err) {
+        this.logger.warn(
+          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${(err as Error).message}; the next run retries`,
+        );
+      }
+    }
     const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);
     let attempted = 0;
     let succeeded = 0;
@@ -254,6 +269,7 @@ export class PurchaseSplitHandlerService {
       failed,
       ...(deadlineReached ? { deadline_reached: true } : {}),
       settlements,
+      ...(noticesDelivered > 0 ? { notices_delivered: noticesDelivered } : {}),
     };
   }
 

@@ -243,16 +243,18 @@ export function computeChargeSplit(input: ChargeSplitInput): ChargeSplit {
  * disputes. Pure.
  *
  *   remaining     = gross - refunded - dispute_withdrawn
- *   platform_fee' = floor(platform_fee * max(0, remaining) / gross)  (TGP keeps
- *                   no fee on refunded or charged-back principal)
+ *   platform_fee' = platform_fee                    (owner decision OR-111-1:
+ *                   TGP keeps its 2% of the sale on every refund and dispute)
  *   head_coach'   = floor(head_coach * max(0, remaining) / gross)
  *   coach_net'    = remaining - stripe_fee - dispute_fee - platform_fee' - head_coach'
  *
  * Stripe does not return the original processing fee on a refund and keeps the
- * dispute fee, so both stay on the coach's side: the coach bears the refunded
- * principal and every fee, TGP never pays them. The platform's net position is
- * therefore exactly platform_fee' >= 0. A negative coach_net' is a recovery the
- * coach owes (collected by transfer reversal, then by netting future transfers).
+ * dispute fee, so both stay on the coach's side together with TGP's 2%: the
+ * coach bears the refunded principal, every Stripe fee on the charge and TGP's
+ * fee; TGP never pays any of them. The platform's net position is therefore
+ * exactly platform_fee' = platform_fee >= 0 once recovery completes. A
+ * negative coach_net' is what the coach owes on the charge: it is held from
+ * the coach's next sale(s) by forward netting (never from a past sale).
  */
 export function computeAdjustedTargets(
   split: ChargeSplit,
@@ -264,7 +266,7 @@ export function computeAdjustedTargets(
   const gross = split.gross_cents;
   const remaining = gross - refunded - withdrawn;
   const kept = Math.max(0, Math.min(gross, remaining));
-  const platformFee = gross === 0 ? 0 : Math.floor((split.platform_fee_cents * kept) / gross);
+  const platformFee = split.platform_fee_cents;
   const headCoach = gross === 0 ? 0 : Math.floor((split.head_coach_split_cents * kept) / gross);
   const coachNet = remaining - split.stripe_fee_cents - disputeFee - platformFee - headCoach;
   const platformCash = gross - split.stripe_fee_cents - refunded - withdrawn - disputeFee;

@@ -22,8 +22,8 @@ import { SETTLEMENT_MECHANISM_SCT, payeePositionCents } from './charge-settlemen
 // TGP really holds and what it is still owed, so an uncollected receivable is
 // never reported as cash:
 //   platform_cash_cents       = cash on the charge - cents that belong to
-//                               other charges' debts (netted in / clawed back
-//                               here) + cents already collected on this
+//                               other charges' debts (netted in here) + cents
+//                               already collected on this
 //                               charge's own recoveries
 //   receivable_open_cents     = this charge's recoveries not yet collected
 //   platform_net_cents        = platform_cash_cents + receivable_open_cents
@@ -81,8 +81,8 @@ export function settlementIdentityDrift(input: SettlementIdentityInput): {
   for (const t of input.transfers) {
     if (t.status === 'failed') continue;
     transferred += t.amount_cents - t.reversed_amount_cents;
-    // Netting and clawback on this charge's transfers paid other charges' debts.
-    nettedIn += t.netted_recovery_cents + (t.recovery_clawback_cents ?? 0);
+    // Netting on this charge's transfers paid other charges' debts.
+    nettedIn += t.netted_recovery_cents;
   }
   const live = input.recoveries.filter((r) => r.status !== 'released');
   const owed = live.reduce((n, r) => n + r.amount_cents, 0);

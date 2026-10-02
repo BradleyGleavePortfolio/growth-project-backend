@@ -128,13 +128,31 @@ export class Table {
     return row ? { ...row } : null;
   });
 
-  findMany = jest.fn(async (args: { where?: Row; orderBy?: unknown; take?: number } = {}) => {
-    const rows = this.sorted(
-      this.rows.filter((r) => matches(r, args.where, this.opts.rel)),
-      args.orderBy,
-    );
-    return (typeof args.take === 'number' ? rows.slice(0, args.take) : rows).map((r) => ({ ...r }));
-  });
+  findMany = jest.fn(
+    async (
+      args: {
+        where?: Row;
+        orderBy?: unknown;
+        take?: number;
+        cursor?: { id: string };
+        skip?: number;
+      } = {},
+    ) => {
+      let rows = this.sorted(
+        this.rows.filter((r) => matches(r, args.where, this.opts.rel)),
+        args.orderBy,
+      );
+      // Prisma cursor pagination: start at the cursor row, then skip.
+      if (args.cursor) {
+        const at = rows.findIndex((r) => r.id === args.cursor!.id);
+        rows = at < 0 ? [] : rows.slice(at);
+      }
+      if (typeof args.skip === 'number') rows = rows.slice(args.skip);
+      return (typeof args.take === 'number' ? rows.slice(0, args.take) : rows).map((r) => ({
+        ...r,
+      }));
+    },
+  );
 
   count = jest.fn(
     async (args: { where?: Row } = {}) =>
@@ -233,6 +251,8 @@ export interface SettlementDb {
   reversalOps?: Row[];
   // ChargeDispute rows (dispute webhook path).
   disputes?: Row[];
+  // PayoutAdjustmentNotice rows (round 5, OR-111-1 payee notices).
+  notices?: Row[];
 }
 
 export function makeSettlementDb(): SettlementDb {
@@ -248,6 +268,7 @@ export function makeSettlementDb(): SettlementDb {
     refunds: [],
     leases: [],
     reversalOps: [],
+    notices: [],
   };
 }
 
@@ -320,7 +341,6 @@ export function settlementTables(db: SettlementDb) {
         reversed_amount_cents: 0,
         netted_recovery_cents: 0,
         reversal_seq: 0,
-        recovery_clawback_cents: 0,
         kind: 'head_coach_split',
         settlement_id: null,
         stripe_transfer_id: null,
@@ -339,12 +359,25 @@ export function settlementTables(db: SettlementDb) {
       unique: ['stripe_dispute_id'],
       defaults: () => ({ ledger_reversed: false, closed_at: null, balance_transaction_id: null }),
     }),
+    payoutAdjustmentNotice: new Table(db.notices ?? (db.notices = []), {
+      prefix: 'pan',
+      unique: ['idempotency_key'],
+      defaults: () => ({
+        currency: 'usd',
+        reinstated_cents: 0,
+        push_status: 'pending',
+        email_status: 'pending',
+        dispatch_attempts: 0,
+        dispatch_claimed_at: null,
+        dispatched_at: null,
+        acknowledged_at: null,
+      }),
+    }),
     transferReversalOp: new Table(db.reversalOps ?? (db.reversalOps = []), {
       prefix: 'rop',
       unique: ['idempotency_key', 'stripe_reversal_id'],
       defaults: () => ({
         purpose: 'adjust',
-        recovery_id: null,
         status: 'pending',
         stripe_reversal_id: null,
         attempts: 0,

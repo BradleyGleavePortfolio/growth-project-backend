@@ -14,6 +14,7 @@ import {
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PayoutNoticeService } from './payout-notice.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
@@ -93,6 +94,10 @@ export class RefundDisputeHandlerService {
     // processing or dispute fee). @Optional() for legacy hand-built wiring;
     // production (CheckoutModule imports ConnectModule) always provides it.
     @Optional() private settlements?: ChargeSettlementService,
+    // S-FEE round 5 (OR-111-1) — delivers the exact-amount payout notices the
+    // settlement writes for each refund / chargeback / dispute outcome
+    // (push + in-app + email). @Optional() for legacy hand-built wiring.
+    @Optional() private payoutNotices?: PayoutNoticeService,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
@@ -106,6 +111,46 @@ export class RefundDisputeHandlerService {
   // NOT revoke entitlement (refund.updated, dispute.created/updated,
   // transfer.reversed, payout.*) ignore it.
   async handle(
+    event: {
+      id: string;
+      type: string;
+      data: { object: Record<string, unknown> };
+    },
+    tx?: WebhookTx,
+  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+    const result = await this.route(event, tx);
+    await this.deliverPayoutNotices(event);
+    return result;
+  }
+
+  // OR-111-1: deliver the payout notices the settlement recorded for this
+  // event's charge once the money step (and its lock) is done. Best effort:
+  // the notices are durable rows and the sweeper re-delivers undelivered ones.
+  private async deliverPayoutNotices(event: {
+    type: string;
+    data: { object: Record<string, unknown> };
+  }): Promise<void> {
+    if (!this.payoutNotices || !event.type.startsWith('charge.')) return;
+    const obj = event.data.object as { id?: unknown; charge?: unknown };
+    const chargeId =
+      event.type === 'charge.refunded'
+        ? typeof obj.id === 'string'
+          ? obj.id
+          : null
+        : typeof obj.charge === 'string'
+          ? obj.charge
+          : null;
+    if (!chargeId) return;
+    try {
+      await this.payoutNotices.dispatchForCharge(chargeId);
+    } catch (err) {
+      this.logger.warn(
+        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${(err as Error).message}; the sweeper delivers it`,
+      );
+    }
+  }
+
+  private async route(
     event: {
       id: string;
       type: string;
@@ -478,6 +523,14 @@ export class RefundDisputeHandlerService {
     reason: string | null;
   }): Promise<void> {
     try {
+      // OR-111-1: a settlement charge's refund already has an exact-amount
+      // payout notice (what the client got back, what came back from that
+      // sale's payout, what is held from the next sale). Deliver it and skip
+      // this generic line so the coach gets one alert, with the real numbers.
+      if (this.payoutNotices) {
+        const notices = await this.payoutNotices.dispatchForCharge(args.stripe_charge_id);
+        if (notices.recorded > 0) return;
+      }
       // Determine whether this refund is full (purchase fully refunded)
       // or partial — affects the message body and entitlement_revoked
       // payload field. We re-read the purchase rather than relying on
@@ -552,6 +605,7 @@ export class RefundDisputeHandlerService {
     chargeId: string,
     balanceTransactions: Array<{ amount?: number; fee?: number }> | undefined,
     disputeId?: string | null,
+    noticeEvent: 'dispute_lost' | null = null,
   ): Promise<boolean> {
     if (!this.settlements || !balanceTransactions) return false;
     const outcome = await this.settlements.applyAdjustments({
@@ -561,6 +615,7 @@ export class RefundDisputeHandlerService {
       // Read the dispute's current position under the charge lock, so an
       // older event processed late cannot undo a newer outcome.
       dispute_id: disputeId ?? null,
+      notice_event: noticeEvent,
     });
     return outcome !== 'legacy' && outcome !== 'no_settlement';
   }
@@ -707,6 +762,7 @@ export class RefundDisputeHandlerService {
           dispute.charge,
           dispute.balance_transactions,
           dispute.id,
+          dispute.status === 'lost' ? 'dispute_lost' : null,
         );
       }
     }

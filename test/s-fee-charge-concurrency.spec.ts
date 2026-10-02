@@ -201,17 +201,17 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
       }),
     ]);
     const s = ctx.settlementFor('ch_1');
-    // $30 refunded of $49: coach keeps 1900 - 172 fee - 38 TGP = 1690.
-    expect(s).toMatchObject({ refunded_cents: 3_000, target_coach_net_cents: 1_690 });
-    expect(ctx.stripe.netTo('acct_coach')).toBe(1_690);
-    expect(ctx.reversalTotal()).toBe(2_940);
-    expect(ctx.dbReversed()).toBe(2_940);
-    expect(ctx.ledgerReversed('destination')).toBe(2_940);
+    // $30 refunded of $49: coach keeps 1900 - 172 fee - 98 TGP (OR-111-1) = 1630.
+    expect(s).toMatchObject({ refunded_cents: 3_000, target_coach_net_cents: 1_630 });
+    expect(ctx.stripe.netTo('acct_coach')).toBe(1_630);
+    expect(ctx.reversalTotal()).toBe(3_000);
+    expect(ctx.dbReversed()).toBe(3_000);
+    expect(ctx.ledgerReversed('destination')).toBe(3_000);
     expect(ctx.openRecoveries()).toBe(0);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 38,
-      platform_cash_cents: 38,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });
@@ -239,15 +239,15 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
       }),
     ]);
     expect([...outcomes].sort()).toEqual(['adjusted', 'unchanged']);
-    expect([...ctx.stripe.reversalsByKey.values()].map((r) => r.amount)).toEqual([1_960]);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
-    expect(ctx.dbReversed()).toBe(1_960);
+    expect([...ctx.stripe.reversalsByKey.values()].map((r) => r.amount)).toEqual([2_000]);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+    expect(ctx.dbReversed()).toBe(2_000);
     // Probe at 606b4760: 3920 here.
-    expect(ctx.ledgerReversed('destination')).toBe(1_960);
+    expect(ctx.ledgerReversed('destination')).toBe(2_000);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 58,
-      platform_cash_cents: 58,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });
@@ -266,18 +266,18 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
       ),
     );
     // Full refund: the transfer is fully reversed and the coach owes the
-    // non-returned $1.72 fee; TGP nets exactly 0.
+    // non-returned $1.72 fee and TGP's $0.98 (OR-111-1); TGP nets its 98.
     expect(ctx.reversalTotal()).toBe(4_630);
     expect(ctx.stripe.netTo('acct_coach')).toBe(0);
-    expect(ctx.openRecoveries()).toBe(172);
+    expect(ctx.openRecoveries()).toBe(270);
     expect(ctx.ledgerReversed('destination')).toBe(4_630);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 0,
+      platform_net_cents: 98,
       platform_cash_cents: -172,
-      receivable_open_cents: 172,
+      receivable_open_cents: 270,
       // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
-      notes: ['platform_cash_negative: -172 (receivable_open 172)'],
+      notes: ['platform_cash_negative: -172 (receivable_open 270)'],
     });
   });
 
@@ -339,8 +339,8 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
     expect([a.ledger_just_reversed, b.ledger_just_reversed].filter(Boolean)).toHaveLength(1);
     expect(ctx.db.refunds).toHaveLength(1);
     expect(ctx.db.refunds[0]).toMatchObject({ ledger_reversed: true });
-    expect(ctx.reversalTotal()).toBe(1_960);
-    expect(ctx.ledgerReversed('destination')).toBe(1_960);
+    expect(ctx.reversalTotal()).toBe(2_000);
+    expect(ctx.ledgerReversed('destination')).toBe(2_000);
     expect(ctx.identity('ch_1').drift_cents).toBe(0);
   });
 
@@ -366,13 +366,13 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
       ['re_1', true],
       ['re_2', true],
     ]);
-    expect(ctx.reversalTotal()).toBe(2_940);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(1_690);
-    expect(ctx.ledgerReversed('destination')).toBe(2_940);
+    expect(ctx.reversalTotal()).toBe(3_000);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(1_630);
+    expect(ctx.ledgerReversed('destination')).toBe(3_000);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 38,
-      platform_cash_cents: 38,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });
@@ -419,8 +419,8 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
     releaseStripe();
     await first;
     // The holder drained re_2 before releasing: the coach is at the $30 target.
-    expect(ctx.stripe.netTo('acct_coach')).toBe(1_690);
-    expect(ctx.reversalTotal()).toBe(2_940);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(1_630);
+    expect(ctx.reversalTotal()).toBe(3_000);
     // Stripe redelivers the failed webhook: it marks re_2 applied, moves nothing.
     const redelivered = await ctx.handler.upsertAndApplyRefund({
       purchase: ctx.purchase,
@@ -431,11 +431,11 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
       reason: null,
     });
     expect(redelivered.ledger_just_reversed).toBe(true);
-    expect(ctx.reversalTotal()).toBe(2_940);
+    expect(ctx.reversalTotal()).toBe(3_000);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 38,
-      platform_cash_cents: 38,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });
@@ -458,14 +458,14 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
       }),
     ]);
     expect(ctx.db.transfers).toHaveLength(1);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.reversalTotal()).toBe(0);
     // The slice records the target, so the reported net is $26.70, not $46.30.
-    expect(ctx.ledgerReversed('destination')).toBe(1_960);
+    expect(ctx.ledgerReversed('destination')).toBe(2_000);
     expect(ctx.identity('ch_1')).toEqual({
       drift_cents: 0,
-      platform_net_cents: 58,
-      platform_cash_cents: 58,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });

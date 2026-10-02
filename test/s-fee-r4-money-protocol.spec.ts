@@ -2,15 +2,16 @@
 //   B-627-2  a 120 s lease admits a second live holder: fencing token on every
 //            money step; a stale holder is refused; a holder paused inside a
 //            Stripe call collapses onto the same keyed reversal.
-//   B-627-3  recoveries are an unsecured receivable: clawback from the payee's
-//            other reversible transfers, reinstatements netted, cash reported
-//            separately from receivables, open-recovery alerts.
+//   B-627-3  recoveries are an unsecured receivable: reinstatements netted,
+//            cash reported separately from receivables, open-recovery alerts.
+//            Round 5 (owner decision OR-111-1) removed round 4's clawback of
+//            the payee's other transfers: recovery is forward netting only.
 //   B-627-4  a stale dispute event moved money after a failed canonical read:
 //            refuse, flag, retry.
 //   B-627-5  an uncertain reversal became a second recovery: durable keyed
 //            reversal operation, reconcile by the Stripe reversal object.
 // Each test below fails on 2c57cc41 (no fence, event-position fallback, any
-// reversal error -> recovery, no clawback / cash split). No live Stripe or DB.
+// reversal error -> recovery, no cash split). No live Stripe or DB.
 import type {
   ChargeSettlement,
   ClientPurchase,
@@ -237,8 +238,8 @@ describe('B-627-2 fencing: a lease that expires under a live holder', () => {
     });
     bGo.open();
     await expect(b).resolves.toBe('adjusted');
-    // B, the only owner, moved the money once: 4630 -> 2670.
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    // B, the only owner, moved the money once: 4630 -> 2630.
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.reversalKeysSent()).toEqual([`tgp-tr-rev-${ctx.db.transfers[0].id}-op1`]);
   });
 
@@ -277,25 +278,25 @@ describe('B-627-2 fencing: a lease that expires under a live holder', () => {
       charge_id: 'ch_1',
       refunded_cents: 2_000,
     });
-    // Target for $30 refunded: TGP floor(98 * 19/49) = 38, coach 1900 - 172 - 38 = 1690.
-    expect(ctx.stripe.netTo('acct_coach')).toBe(1_690);
-    expect([...ctx.stripe.reversalsByKey.values()].map((r) => r.amount)).toEqual([1_960, 980]);
+    // Target for $30 refunded (OR-111-1: TGP keeps its 98): coach 1900 - 172 - 98 = 1630.
+    expect(ctx.stripe.netTo('acct_coach')).toBe(1_630);
+    expect([...ctx.stripe.reversalsByKey.values()].map((r) => r.amount)).toEqual([2_000, 1_000]);
     // A's op1 and B's re-drive of op1 share one key and one amount; op2 once.
     const sent = ctx.stripe.reverseTransfer.mock.calls.map(
       (c) => c[0] as { idempotencyKey: string; amount: number },
     );
     expect(sent.filter((c) => c.idempotencyKey.endsWith('-op1')).map((c) => c.amount)).toEqual([
-      1_960, 1_960,
+      2_000, 2_000,
     ]);
     expect(sent.filter((c) => c.idempotencyKey.endsWith('-op2')).map((c) => c.amount)).toEqual([
-      980,
+      1_000,
     ]);
-    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_940);
+    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(3_000);
     expect(ctx.openRecoveries()).toBe(0);
     expect(ctx.identity('ch_1')).toMatchObject({
       drift_cents: 0,
-      platform_net_cents: 38,
-      platform_cash_cents: 38,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
     });
   });
 });
@@ -314,13 +315,13 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
       charge_id: 'ch_1',
       refunded_cents: 2_000,
     });
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.openRecoveries()).toBe(0);
     expect(ctx.db.recoveries).toHaveLength(0);
     const op = ctx.db.reversalOps![0];
     expect(op).toMatchObject({
       status: 'succeeded',
-      amount_cents: 1_960,
+      amount_cents: 2_000,
       stripe_reversal_id: 'trr_1',
     });
     // Duplicate delivery: nothing moves.
@@ -340,8 +341,8 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
     });
     expect(ctx.identity('ch_1')).toMatchObject({
       drift_cents: 0,
-      platform_net_cents: 58,
-      platform_cash_cents: 58,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
     });
   });
 
@@ -366,7 +367,7 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
         refunded_cents: 2_000,
       }),
     ).rejects.toThrow('connection terminated');
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.db.recoveries).toHaveLength(0);
     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', attempts: 1 });
     // Durable retry flag for the sweeper.
@@ -382,7 +383,7 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
       status: 'succeeded',
       stripe_reversal_id: 'trr_1',
     });
-    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(1_960);
+    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_000);
     expect(ctx.openRecoveries()).toBe(0);
     expect(ctx.settlementFor('ch_1').reconcile_requested_at).toBeNull();
   });
@@ -399,12 +400,12 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
       }),
     ).rejects.toBeInstanceOf(ReversalUncertainError);
     expect(ctx.db.recoveries).toHaveLength(0);
-    expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', amount_cents: 1_960 });
+    expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', amount_cents: 2_000 });
     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
     await ctx.svc.runSettlementSweep(new Date(Date.now() + 5 * 60_000));
     const key = `tgp-tr-rev-${ctx.db.transfers[0].id}-op1`;
     expect(ctx.reversalKeysSent()).toEqual([key, key]);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.openRecoveries()).toBe(0);
     expect(ctx.settlementFor('ch_1').reconcile_requested_at).toBeNull();
   });
@@ -427,7 +428,7 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
     expect(ctx.db.refunds[0].ledger_reversed).toBeFalsy();
     const redelivered = await ctx.handler.upsertAndApplyRefund(refund);
     expect(redelivered.ledger_just_reversed).toBe(true);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.db.recoveries).toHaveLength(0);
   });
 
@@ -448,11 +449,11 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
     await ctx.handler.handle({
       id: 'evt_tr_rev',
       type: 'transfer.reversed',
-      data: { object: { id: 'tr_1', amount_reversed: 1_960, reversed: false } },
+      data: { object: { id: 'tr_1', amount_reversed: 2_000, reversed: false } },
     });
     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'succeeded' });
-    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(1_960);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
+    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_000);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
     expect(ctx.openRecoveries()).toBe(0);
   });
 
@@ -466,7 +467,7 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
       refunded_cents: 2_000,
     });
     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'refused' });
-    expect(ctx.openRecoveries()).toBe(1_960);
+    expect(ctx.openRecoveries()).toBe(2_000);
   });
 });
 
@@ -581,8 +582,8 @@ describe('B-627-4 a stale dispute event after a failed canonical read moves noth
   });
 });
 
-describe('B-627-3 recoveries: collected without waiting for a sale; cash vs receivable reported honestly', () => {
-  it("full refund: the 172 fee owed is clawed back from the coach's other recent transfer; both identities hold", async () => {
+describe('B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly', () => {
+  it("full refund: the coach's OTHER past transfer is never reversed; the 270 held (2% 98 + fee 172) is netted from the next sale", async () => {
     const ctx = setup();
     await settle(ctx, 'ch_1');
     await settle(ctx, 'ch_2');
@@ -595,56 +596,46 @@ describe('B-627-3 recoveries: collected without waiting for a sale; cash vs rece
       charge_id: 'ch_1',
       refunded_cents: 4_900,
     });
-    expect(ctx.openRecoveries()).toBe(172);
+    expect(ctx.openRecoveries()).toBe(270);
     expect(ctx.identity('ch_1')).toMatchObject({
+      platform_net_cents: 98,
       platform_cash_cents: -172,
-      receivable_open_cents: 172,
+      receivable_open_cents: 270,
     });
+    const ch2Transfer = ctx.db.transfers.find(
+      (t) => t.settlement_id === ctx.settlementFor('ch_2').id,
+    )!;
     const summary = await ctx.svc.runSettlementSweep(new Date(Date.now() + 5 * 60_000));
-    expect(summary.clawback_cents).toBe(172);
+    expect(summary).not.toHaveProperty('clawback_cents');
+    // Owner decision OR-111-1: no reversal of another sale's transfer.
+    expect(ctx.stripe.reversedOn(ch2Transfer.stripe_transfer_id)).toBe(0);
+    expect(ctx.db.reversalOps!.every((o) => o.transfer_id !== ch2Transfer.id)).toBe(true);
+    expect(ctx.openRecoveries()).toBe(270);
+    // The next sale nets it: 4630 - 270 = 4360 transferred.
+    await settle(ctx, 'ch_3');
+    const ch3Transfer = ctx.db.transfers.find(
+      (t) => t.settlement_id === ctx.settlementFor('ch_3').id,
+    )!;
+    expect(ch3Transfer).toMatchObject({ amount_cents: 4_360, netted_recovery_cents: 270 });
     expect(ctx.openRecoveries()).toBe(0);
-    // Coach: 0 on ch_1, 4630 - 172 on ch_2.
-    expect(ctx.stripe.netTo('acct_coach')).toBe(4_458);
     expect(ctx.identity('ch_1')).toEqual({
-      drift_cents: 0,
-      platform_net_cents: 0,
-      platform_cash_cents: 0,
-      receivable_open_cents: 0,
-      notes: [],
-    });
-    expect(ctx.identity('ch_2')).toEqual({
       drift_cents: 0,
       platform_net_cents: 98,
       platform_cash_cents: 98,
       receivable_open_cents: 0,
       notes: [],
     });
-    const op = ctx.db.reversalOps!.find((o) => o.purpose === 'clawback')!;
-    expect(op).toMatchObject({ status: 'succeeded', amount_cents: 172 });
-    // A second sweep collects nothing more.
-    const again = await ctx.svc.runSettlementSweep(new Date(Date.now() + 10 * 60_000));
-    expect(again.clawback_cents).toBe(0);
-    expect(ctx.stripe.netTo('acct_coach')).toBe(4_458);
-  });
-
-  it('clawback refused by Stripe gives the reserved cents back to the recovery', async () => {
-    const ctx = setup();
-    await settle(ctx, 'ch_1');
-    await settle(ctx, 'ch_2');
-    ctx.stripe.charges.set(
-      'ch_1',
-      makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }),
-    );
-    await ctx.svc.applyAdjustments({
-      purchase: ctx.purchase,
-      charge_id: 'ch_1',
-      refunded_cents: 4_900,
+    expect(ctx.identity('ch_3')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
+      receivable_open_cents: 0,
+      notes: [],
     });
-    ctx.stripe.failReversals = true;
-    const summary = await ctx.svc.runSettlementSweep(new Date(Date.now() + 5 * 60_000));
-    expect(summary.clawback_cents).toBe(0);
-    expect(ctx.openRecoveries()).toBe(172);
-    expect(ctx.db.recoveries[0]).toMatchObject({ collected_cents: 0, status: 'open' });
+    // A second sweep moves nothing.
+    const reversalsBefore = ctx.stripe.reverseTransfer.mock.calls.length;
+    await ctx.svc.runSettlementSweep(new Date(Date.now() + 10 * 60_000));
+    expect(ctx.stripe.reverseTransfer.mock.calls.length).toBe(reversalsBefore);
   });
 
   it('no other sale and a refused reversal: the residual is reported as negative cash and alerted per coach (owner decision)', async () => {
@@ -661,22 +652,21 @@ describe('B-627-3 recoveries: collected without waiting for a sale; cash vs rece
       dispute: { withdrawn_cents: 4_900, fee_cents: 1_500 },
       dispute_id: 'dp_1',
     });
-    // Coach target -1672 (fee 172 + dispute fee 1500); TGP has paid 4630 out.
-    expect(ctx.openRecoveries()).toBe(4_630 + 1_672);
+    // Coach target -1770 (2% 98 + fee 172 + dispute fee 1500); TGP has paid 4630 out.
+    expect(ctx.openRecoveries()).toBe(4_630 + 1_770);
     expect(ctx.identity('ch_1')).toMatchObject({
       drift_cents: 0,
-      platform_net_cents: 0,
+      platform_net_cents: 98,
       platform_cash_cents: -6_302,
-      receivable_open_cents: 6_302,
-      notes: ['platform_cash_negative: -6302 (receivable_open 6302)'],
+      receivable_open_cents: 6_400,
+      notes: ['platform_cash_negative: -6302 (receivable_open 6400)'],
     });
     const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const summary = await ctx.svc.runSettlementSweep(new Date(Date.now() + 25 * 60 * 60_000));
-    expect(summary.clawback_cents).toBe(0);
     expect(summary.open_recovery_payees).toBe(1);
     expect(errors.mock.calls.map((c) => String(c[0]))).toContainEqual(
       expect.stringMatching(
-        /^SFEE_RECOVERY_OPEN alert=true payee=coach-1 currency=usd open_cents=6302 recoveries=1/,
+        /^SFEE_RECOVERY_OPEN alert=true payee=coach-1 currency=usd open_cents=6400 recoveries=1/,
       ),
     );
   });
@@ -685,16 +675,16 @@ describe('B-627-3 recoveries: collected without waiting for a sale; cash vs rece
     const ctx = setup();
     await settle(ctx, 'ch_1');
     await settle(ctx, 'ch_2');
-    // Full refund on ch_1 with the reversal refused: the coach owes 4630 + 172.
+    // Full refund on ch_1 with the reversal refused: the coach owes 4630 + 270.
     ctx.stripe.failReversals = true;
     await ctx.svc.applyAdjustments({
       purchase: ctx.purchase,
       charge_id: 'ch_1',
       refunded_cents: 4_900,
     });
-    expect(ctx.openRecoveries()).toBe(4_802);
+    expect(ctx.openRecoveries()).toBe(4_900);
     ctx.stripe.failReversals = false;
-    // ch_2 is disputed (coach reversed to 0, owes 1672) and then won (owed back 3130).
+    // ch_2 is disputed (coach reversed to 0, owes 1770) and then won (owed back 3130).
     const created = [{ id: 'txn_dp_1', amount: -4_900, fee: 1_500 }];
     ctx.stripe.disputes.set('dp_2', { id: 'dp_2', balance_transactions: created });
     await ctx.svc.applyAdjustments({
@@ -713,8 +703,8 @@ describe('B-627-3 recoveries: collected without waiting for a sale; cash vs rece
       dispute_id: 'dp_2',
     });
     const reinstate = ctx.db.transfers.find((t) => t.kind === 'coach_reinstate')!;
-    // Won: target 3130 from -1672. The 1672 owed on ch_2 is released first;
-    // the 3130 paid back is netted in full against the 4802 owed on ch_1, so
+    // Won: target 3130 from -1770. The 1770 owed on ch_2 is released first;
+    // the 3130 paid back is netted in full against the 4900 owed on ch_1, so
     // nothing leaves TGP while the coach owes it more than that.
     expect(reinstate).toMatchObject({
       amount_cents: 0,
@@ -722,6 +712,6 @@ describe('B-627-3 recoveries: collected without waiting for a sale; cash vs rece
       status: 'netted',
     });
     expect(ctx.stripe.netTo('acct_coach')).toBe(netBefore);
-    expect(ctx.openRecoveries()).toBe(4_802 - 3_130);
+    expect(ctx.openRecoveries()).toBe(4_900 - 3_130);
   });
 });

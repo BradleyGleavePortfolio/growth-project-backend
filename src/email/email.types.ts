@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
+  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

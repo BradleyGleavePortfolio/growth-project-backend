@@ -3827,11 +3827,6 @@ model ConnectTransfer {
   // S-FEE round 4 — reversal operations started on this transfer (CAS slot:
   // at most one TransferReversalOp in flight per transfer).
   reversal_seq                  Int            @default(0)
-  // Part of reversed_amount_cents that collected another charge's
-  // PayeeRecovery from this payee (clawback). It still counts toward this
-  // charge's payee position: the payee was paid for this charge and the cents
-  // settled a debt on another one.
-  recovery_clawback_cents       Int            @default(0)
   created_at                    DateTime       @default(now())
   updated_at                    DateTime       @updatedAt
 
@@ -3857,9 +3852,10 @@ model TransferReversalOp {
   amount_cents        Int
   // The transfer's reversed_amount_cents when the operation started.
   base_reversed_cents Int
-  // adjust (refund / dispute convergence) | clawback (collects recovery_id) | legacy
+  // adjust (refund / dispute convergence of THIS charge's transfer) | legacy.
+  // Owner decision OR-111-1: a transfer is only ever reversed for its own
+  // charge; another charge's debt is recovered by forward netting only.
   purpose             String          @default("adjust")
-  recovery_id         String?
   // pending | succeeded | refused
   status              String          @default("pending")
   stripe_reversal_id  String?         @unique
@@ -3955,6 +3951,7 @@ model ChargeSettlement {
 
   transfers  ConnectTransfer[]
   recoveries PayeeRecovery[]
+  notices    PayoutAdjustmentNotice[]
 
   @@index([purchase_id])
   @@index([coach_user_id, created_at])
@@ -3987,6 +3984,59 @@ model PayeeRecovery {
 
   @@index([payee_user_id, status])
   @@index([settlement_id])
+}
+
+// S-FEE round 5 (owner decision OR-111-1) — the payee-facing record of one
+// refund / chargeback / dispute outcome on one charge: what the customer got
+// back, what was taken back from that sale's own payout, and what TGP holds
+// from the payee's next sale(s) (TGP 2% + every Stripe fee on the charge +
+// any share Stripe refused to reverse). Written under the charge lock after
+// the money converged, one row per (charge, payee leg, event, adjustment
+// state); the Money page reads it as "needs attention" and the dispatcher
+// sends the push / in-app alert / email once per row.
+//   role:  coach | head_coach
+//   event: refund | chargeback | dispute_won | dispute_lost
+//   held_cents = held_tgp_fee_cents + held_stripe_fee_cents
+//              + held_dispute_fee_cents + held_not_reversed_cents
+model PayoutAdjustmentNotice {
+  id                      String           @id @default(uuid())
+  settlement_id           String
+  settlement              ChargeSettlement @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
+  payee_user_id           String
+  role                    String
+  purchase_id             String
+  stripe_charge_id        String
+  event                   String
+  currency                String           @default("usd")
+  charge_gross_cents      Int
+  customer_refunded_cents Int
+  reversed_cents          Int
+  reinstated_cents        Int              @default(0)
+  held_cents              Int
+  held_tgp_fee_cents      Int
+  held_stripe_fee_cents   Int
+  held_dispute_fee_cents  Int
+  held_not_reversed_cents Int
+  // Part of held_cents not yet netted out of a later sale when the row was written.
+  held_open_cents         Int
+  state_key               String
+  // Deterministic per (charge, leg, event, adjustment state): replays collapse.
+  idempotency_key         String           @unique
+  title                   String
+  body                    String
+  // pending | sent | skipped | failed (push); pending | sent | logged | skipped | failed (email)
+  push_status             String           @default("pending")
+  email_status            String           @default("pending")
+  dispatch_attempts       Int              @default(0)
+  dispatch_claimed_at     DateTime?
+  dispatched_at           DateTime?
+  acknowledged_at         DateTime?
+  created_at              DateTime         @default(now())
+  updated_at              DateTime         @updatedAt
+
+  @@index([payee_user_id, created_at])
+  @@index([settlement_id])
+  @@index([dispatched_at, created_at])
 }
 
 // Phase 5 Connect — Dunning state per recurring purchase.

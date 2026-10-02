@@ -1,8 +1,8 @@
 -- S-FEE — per-charge settlement ledger for coach-package payments.
 --
 -- Additive except for one index swap on SplitLedgerEntry:
---   * new tables ChargeSettlement, PayeeRecovery, TransferReversalOp, CronLease
---     (RLS enabled + forced);
+--   * new tables ChargeSettlement, PayeeRecovery, TransferReversalOp, CronLease,
+--     PayoutAdjustmentNotice (RLS enabled + forced);
 --   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents
 --     (defaults keep every existing row valid: kind='head_coach_split');
 --   * SplitLedgerEntry's (purchase_id, kind, payee_user_id) unique is replaced
@@ -22,9 +22,8 @@ BEGIN;
 ALTER TABLE "ConnectTransfer" ADD COLUMN "settlement_id" TEXT;
 ALTER TABLE "ConnectTransfer" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'head_coach_split';
 ALTER TABLE "ConnectTransfer" ADD COLUMN "netted_recovery_cents" INTEGER NOT NULL DEFAULT 0;
--- Round 4: reversal operation slot and clawback share (B-627-3 / B-627-5).
+-- Round 4: reversal operation slot (B-627-5).
 ALTER TABLE "ConnectTransfer" ADD COLUMN "reversal_seq" INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE "ConnectTransfer" ADD COLUMN "recovery_clawback_cents" INTEGER NOT NULL DEFAULT 0;
 
 -- SplitLedgerEntry: per-charge uniqueness. The old 3-column unique is named
 -- "SplitLedgerEntry_purchase_kind_payee_idx" by the migration chain
@@ -127,7 +126,6 @@ CREATE TABLE "TransferReversalOp" (
     "amount_cents" INTEGER NOT NULL,
     "base_reversed_cents" INTEGER NOT NULL,
     "purpose" TEXT NOT NULL DEFAULT 'adjust',
-    "recovery_id" TEXT,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "stripe_reversal_id" TEXT,
     "attempts" INTEGER NOT NULL DEFAULT 0,
@@ -146,6 +144,57 @@ CREATE UNIQUE INDEX "TransferReversalOp_transfer_id_seq_key" ON "TransferReversa
 CREATE INDEX "TransferReversalOp_status_created_at_idx" ON "TransferReversalOp"("status", "created_at");
 ALTER TABLE "TransferReversalOp" ADD CONSTRAINT "TransferReversalOp_transfer_id_fkey"
   FOREIGN KEY ("transfer_id") REFERENCES "ConnectTransfer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- PayoutAdjustmentNotice: the payee-facing refund / chargeback record (round 5,
+-- owner decision OR-111-1). Amounts are integer cents in the settlement currency.
+CREATE TABLE "PayoutAdjustmentNotice" (
+    "id" TEXT NOT NULL,
+    "settlement_id" TEXT NOT NULL,
+    "payee_user_id" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "purchase_id" TEXT NOT NULL,
+    "stripe_charge_id" TEXT NOT NULL,
+    "event" TEXT NOT NULL,
+    "currency" TEXT NOT NULL DEFAULT 'usd',
+    "charge_gross_cents" INTEGER NOT NULL,
+    "customer_refunded_cents" INTEGER NOT NULL,
+    "reversed_cents" INTEGER NOT NULL,
+    "reinstated_cents" INTEGER NOT NULL DEFAULT 0,
+    "held_cents" INTEGER NOT NULL,
+    "held_tgp_fee_cents" INTEGER NOT NULL,
+    "held_stripe_fee_cents" INTEGER NOT NULL,
+    "held_dispute_fee_cents" INTEGER NOT NULL,
+    "held_not_reversed_cents" INTEGER NOT NULL,
+    "held_open_cents" INTEGER NOT NULL,
+    "state_key" TEXT NOT NULL,
+    "idempotency_key" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "push_status" TEXT NOT NULL DEFAULT 'pending',
+    "email_status" TEXT NOT NULL DEFAULT 'pending',
+    "dispatch_attempts" INTEGER NOT NULL DEFAULT 0,
+    "dispatch_claimed_at" TIMESTAMP(3),
+    "dispatched_at" TIMESTAMP(3),
+    "acknowledged_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "PayoutAdjustmentNotice_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "PayoutAdjustmentNotice_amounts_nonneg" CHECK (
+      "charge_gross_cents" >= 0 AND "customer_refunded_cents" >= 0 AND "reversed_cents" >= 0
+      AND "reinstated_cents" >= 0 AND "held_tgp_fee_cents" >= 0 AND "held_stripe_fee_cents" >= 0
+      AND "held_dispute_fee_cents" >= 0 AND "held_not_reversed_cents" >= 0
+      AND "held_open_cents" >= 0 AND "held_open_cents" <= "held_cents"
+    ),
+    CONSTRAINT "PayoutAdjustmentNotice_held_parts_sum" CHECK (
+      "held_cents" = "held_tgp_fee_cents" + "held_stripe_fee_cents" + "held_dispute_fee_cents" + "held_not_reversed_cents"
+    )
+);
+CREATE UNIQUE INDEX "PayoutAdjustmentNotice_idempotency_key_key" ON "PayoutAdjustmentNotice"("idempotency_key");
+CREATE INDEX "PayoutAdjustmentNotice_payee_user_id_created_at_idx" ON "PayoutAdjustmentNotice"("payee_user_id", "created_at");
+CREATE INDEX "PayoutAdjustmentNotice_settlement_id_idx" ON "PayoutAdjustmentNotice"("settlement_id");
+CREATE INDEX "PayoutAdjustmentNotice_dispatched_at_created_at_idx" ON "PayoutAdjustmentNotice"("dispatched_at", "created_at");
+ALTER TABLE "PayoutAdjustmentNotice" ADD CONSTRAINT "PayoutAdjustmentNotice_settlement_id_fkey"
+  FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- CronLease: single-runner lease for the scheduled settlement sweep, the
 -- per-charge money lock (name 'sfee-charge:<charge id>', deleted on release)
@@ -201,6 +250,19 @@ CREATE POLICY "payee_recovery_owner_all" ON "PayeeRecovery"
   FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
 DROP POLICY IF EXISTS "payee_recovery_payee_select" ON "PayeeRecovery";
 CREATE POLICY "payee_recovery_payee_select" ON "PayeeRecovery"
+  FOR SELECT TO public
+  USING (app.current_user_id() IS NOT NULL AND "payee_user_id" = app.current_user_id());
+
+ALTER TABLE "PayoutAdjustmentNotice" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "PayoutAdjustmentNotice" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "payout_adjustment_notice_service_role_all" ON "PayoutAdjustmentNotice";
+CREATE POLICY "payout_adjustment_notice_service_role_all" ON "PayoutAdjustmentNotice"
+  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "payout_adjustment_notice_owner_all" ON "PayoutAdjustmentNotice";
+CREATE POLICY "payout_adjustment_notice_owner_all" ON "PayoutAdjustmentNotice"
+  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
+DROP POLICY IF EXISTS "payout_adjustment_notice_payee_select" ON "PayoutAdjustmentNotice";
+CREATE POLICY "payout_adjustment_notice_payee_select" ON "PayoutAdjustmentNotice"
   FOR SELECT TO public
   USING (app.current_user_id() IS NOT NULL AND "payee_user_id" = app.current_user_id());
 

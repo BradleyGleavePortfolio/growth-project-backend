@@ -62,6 +62,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'payment-final-notice':
     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
   'payment-recovered': "You're all set — payment received",
+  // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
+  'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
 };
 
 // EmailService is the single entry point for sending transactional email.
