@@ -309,6 +309,15 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
             'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
 
+      - name: Bootstrap + apply the clinic onboarding intake migration (B607-3)
+        # Minimal extra relations the intake audience helper reads, then the
+        # onboarding migration VERBATIM (tables, helper, policies), then the
+        # Supabase-default table grants so RLS (not a missing GRANT) decides.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-bootstrap.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
+
       - name: Run live RLS regression suite
         # Use the dedicated rls-live jest config (jest.rls.config.js), which
         # selects the DB-requiring RLS specs the default build-and-test job now
@@ -320,7 +329,7 @@ jobs:
         # across workers on one connection. NODE_OPTIONS raises the heap: even
         # this single spec under --runInBand overruns Node's ~2GB default and
         # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
-        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts test/rls/onboarding-intake-rls.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
@@ -413,6 +422,9 @@ jobs:
         # Also runs test/profile-put-concurrency.live.spec.ts (#606 B606-3): the
         # PUT /profile per-user row-lock proof on real Postgres. It uses the same
         # MWB3_TEST_DATABASE_URL gate and the same reset + full-schema bootstrap.
+        # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
+        # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
+        # transfer on real Postgres; same gate and bootstrap.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -427,6 +439,7 @@ jobs:
             test/mwb-3-undo.spec.ts \
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
+            test/onboarding-tenancy-fence.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
