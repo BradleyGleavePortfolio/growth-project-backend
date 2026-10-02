@@ -37,10 +37,12 @@ import {
 } from '../../../src/community/safety/community-safety.service';
 import { CommunitySafetyController } from '../../../src/community/safety/community-safety.controller';
 import type { PrismaService } from '../../../src/prisma.service';
+import type { VoiceUploadProvider } from '../../../src/community/voice/voice-upload.provider';
 import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
 import type { CommunityNotificationsService } from '../../../src/community/notifications/community-notifications.service';
 import type { PlanContextService } from '../../../src/community/plan-context/plan-context.service';
 import { InMemoryPrisma } from './in-memory-prisma';
+import { SUPPORT_EMAIL } from '../../../src/public-pages/trust-pages.html';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -138,6 +140,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
       rt,
       np,
       prisma,
+      stub<VoiceUploadProvider>({ createSignedDownload: async () => null }),
     );
   });
 
@@ -290,13 +293,21 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(1);
     await safety.block(alice, bob.id);
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
-    await expect(dms.send(bob, wsId, alice.id, 'hello again')).rejects.toMatchObject({
-      response: { code: 'community.dm.blocked' },
-    });
-    await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(dms.listThread(alice, wsId, bob.id, {})).rejects.toBeInstanceOf(
-      ForbiddenException,
+    // Blocked person: indistinguishable from "not there" (same 404 body).
+    const notThere = await dms.send(bob, wsId, carol.id + '-gone', 'x').catch((e: unknown) => e);
+    const blockedErr = await dms.send(bob, wsId, alice.id, 'hello again').catch((e: unknown) => e);
+    expect(blockedErr).toBeInstanceOf(NotFoundException);
+    expect((blockedErr as NotFoundException).getResponse()).toEqual(
+      (notThere as NotFoundException).getResponse(),
     );
+    // Blocker: told it is their block, with the way back.
+    await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(dms.listThread(alice, wsId, bob.id, {})).rejects.toMatchObject({
+      response: {
+        code: 'community.dm.blocked_by_you',
+        message: expect.stringContaining('unblock them in Community safety'),
+      },
+    });
     expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
   });
 
@@ -332,11 +343,14 @@ describe('community UGC safety flow (Apple 1.2)', () => {
       }),
     ]);
     await safety.block(alice, bob.id);
-    await expect(dms.send(bob, wsId, alice.id, 'hi')).rejects.toMatchObject({
+    await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toMatchObject({
       response: {
-        code: 'community.dm.blocked',
+        code: 'community.dm.blocked_by_you',
         message: expect.stringContaining('Community safety'),
       },
+    });
+    await expect(dms.send(bob, wsId, alice.id, 'hi')).rejects.toMatchObject({
+      response: { code: 'community.dm.not_found', message: expect.stringContaining('Refresh') },
     });
     for (const body of bodies) {
       const msg = (body as { message: string }).message;
@@ -366,8 +380,11 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     expect(info.report_reasons.map((r) => r.code)).toEqual(
       COMMUNITY_REPORT_REASONS.map((r) => r.code),
     );
+    // One support address (OR-109-1): the repo's SUPPORT_EMAIL constant,
+    // with no env override that could make the app and the public pages differ.
+    expect(info.contact_email).toBe(SUPPORT_EMAIL);
     process.env.COMMUNITY_SAFETY_CONTACT_EMAIL = 'safety@example.test';
-    expect(safety.safetyInfo().contact_email).toBe('safety@example.test');
+    expect(safety.safetyInfo().contact_email).toBe(SUPPORT_EMAIL);
     delete process.env.COMMUNITY_SAFETY_CONTACT_EMAIL;
   });
 

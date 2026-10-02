@@ -9,7 +9,10 @@ const trim = ({ value }: { value: unknown }): unknown =>
 // mapped onto the schema's `message` moderation target type (comments are
 // stored as CommunityMessage rows — see CommunityCommentsService). The schema
 // enum CommunityModerationTargetType has no `comment` member.
-export const REPORT_TARGET_TYPES = ['message', 'post', 'comment'] as const;
+//
+// `voice_note` (community voice notes) and `win` (member wins) map 1:1 onto
+// the schema enum members added in 20270211000000.
+export const REPORT_TARGET_TYPES = ['message', 'post', 'comment', 'voice_note', 'win'] as const;
 export type ReportTargetType = (typeof REPORT_TARGET_TYPES)[number];
 
 /** POST /community/moderation/reports — file a report. */
@@ -55,7 +58,16 @@ export const CommunityModerationItemSchema = z
   .object({
     id: z.guid(),
     workspace_id: z.guid(),
-    target_type: z.enum(['message', 'post', 'reaction', 'event', 'challenge', 'member']),
+    target_type: z.enum([
+      'message',
+      'post',
+      'reaction',
+      'event',
+      'challenge',
+      'member',
+      'voice_note',
+      'win',
+    ]),
     target_id: z.guid(),
     reported_by_user_id: z.guid().nullable(),
     actor_user_id: z.guid().nullable(),
@@ -68,16 +80,12 @@ export const CommunityModerationItemSchema = z
   })
   .strict();
 
-export type CommunityModerationItemView = z.infer<
-  typeof CommunityModerationItemSchema
->;
+export type CommunityModerationItemView = z.infer<typeof CommunityModerationItemSchema>;
 
 export const CommunityModerationItemResponseSchema = z
   .object({ item: CommunityModerationItemSchema })
   .strict();
-export type CommunityModerationItemResponse = z.infer<
-  typeof CommunityModerationItemResponseSchema
->;
+export type CommunityModerationItemResponse = z.infer<typeof CommunityModerationItemResponseSchema>;
 
 export const CommunityModerationItemListResponseSchema = z
   .object({ items: z.array(CommunityModerationItemSchema) })

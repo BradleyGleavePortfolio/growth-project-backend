@@ -1365,6 +1365,9 @@ model CommunityWin {
   description String
   visibility  String   @default("circle") // "circle" | "public"
   created_at  DateTime @default(now())
+  // Set when a coach or the TGP team hides the win from the moderation queue
+  // (App Review 1.2). Hidden wins never appear in any feed.
+  hidden_at   DateTime?
 
   @@index([user_id])
   @@index([coach_id, created_at])
@@ -5687,6 +5690,8 @@ enum CommunityModerationTargetType {
   event
   challenge
   member
+  voice_note
+  win
 }
 
 enum CommunityModerationStatus {

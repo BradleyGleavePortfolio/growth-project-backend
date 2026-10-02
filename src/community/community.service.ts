@@ -4,6 +4,12 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberFirstName } from './member-display-name';
+import {
+  WIN_NOT_FOUND,
+  WIN_POSTING_REMOVED,
+  removedFromWorkspace,
+  winModerationWorkspaceId,
+} from './community-wins.policy';
 import { resolveCommunityFlag } from './community-feature-flag.guard';
 import {
   CommunityMeResponse,
@@ -415,48 +421,64 @@ export class CommunityService {
   }
 
   /**
-   * GET /community/feed — last 30 community wins (first names only).
-   * Returns: [{ id, displayName, action, createdAt }]
+   * GET /community/feed — the last 30 member wins the caller may see (see
+   * community-wins.policy.ts): the coach's circle when the coach runs a
+   * moderated community workspace, otherwise the caller's own wins only.
+   * Never another tenant's wins. Hidden wins, wins by members removed from
+   * the workspace, and wins by anyone in a block relation with the caller
+   * (either direction) are dropped. Other members appear by first name only.
    */
-  async getFeed(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
-
-    // Pull from roster-scoped wins if coach exists, otherwise return public wins
-    const whereClause = coachId ? { coach_id: coachId } : { visibility: 'public' };
+  async getFeed(userId: string): Promise<CommunityWinView[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, coach_id: true },
+    });
+    if (!user) return [];
+    const coachId = user.role === 'coach' ? user.id : user.coach_id;
+    const workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
+    const where =
+      workspaceId && coachId
+        ? { coach_id: coachId, hidden_at: null }
+        : { user_id: userId, hidden_at: null };
 
     const wins = await this.prisma.communityWin.findMany({
-      where: whereClause,
+      where,
       orderBy: { created_at: 'desc' },
       take: 30,
-      include: {
-        user: { select: { id: true, name: true } },
-      },
+      select: WIN_SELECT,
     });
 
+    let visible = wins;
+    if (workspaceId) {
+      const others = [...new Set(wins.map((w) => w.user_id))].filter((id) => id !== userId);
+      const removed = await removedFromWorkspace(this.prisma, workspaceId, others);
+      if (removed.size > 0) visible = visible.filter((w) => !removed.has(w.user_id));
+    }
     // Two-way block: hide wins by anyone in a block relation with the caller.
-    const visibleWins = await this.safety.filterBlocked(userId, wins, (w) => w.user_id);
-    return visibleWins.map((w) => ({
-      id: w.id,
-      // Client privacy: other members see first names only.
-      displayName: memberFirstName(w.user.name),
-      action: w.title, // "title" is the win action text
-      createdAt: w.created_at,
-    }));
+    visible = await this.safety.filterBlocked(userId, visible, (w) => w.user_id);
+    return visible.map((w) => winView(w, userId));
   }
 
   /**
-   * POST /community/wins — create a community win entry.
+   * POST /community/wins — share a win with the coach's circle. The content
+   * filter runs before the write (422 community.content.rejected, nothing
+   * stored). A member removed from the coach's community cannot post (403
+   * community.win.removed_member). Visibility is always the circle.
    */
   async postWin(
     userId: string,
     data: { title: string; description: string; visibility?: 'circle' | 'public' },
-  ) {
+  ): Promise<CommunityWinView> {
+    this.safety.assertAllowed(data.title, data.description);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { coach_id: true, role: true, id: true },
     });
     const coachId = user?.role === 'coach' ? user.id : (user?.coach_id ?? null);
+    const workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
+    if (workspaceId && (await removedFromWorkspace(this.prisma, workspaceId, [userId])).size > 0) {
+      throw new ForbiddenException(WIN_POSTING_REMOVED);
+    }
 
     const win = await this.prisma.communityWin.create({
       data: {
@@ -464,10 +486,80 @@ export class CommunityService {
         coach_id: coachId,
         title: data.title,
         description: data.description,
-        visibility: data.visibility ?? 'circle',
+        // No cross-tenant public feed: every win is shared with the circle.
+        visibility: 'circle',
       },
+      select: WIN_SELECT,
     });
-
-    return win;
+    return winView(win, userId);
   }
+
+  /**
+   * DELETE /community/wins/:id — the author deletes their own win (hard
+   * delete; it is their content). Anyone else, or a missing id, gets the same
+   * 404 so ids cannot be probed. Open reports on it show as "Removed".
+   */
+  async deleteWin(userId: string, winId: string): Promise<{ id: string; deleted: true }> {
+    const win = await this.prisma.communityWin.findUnique({
+      where: { id: winId },
+      select: { id: true, user_id: true },
+    });
+    if (!win || win.user_id !== userId) throw new NotFoundException(WIN_NOT_FOUND);
+    await this.prisma.communityWin.deleteMany({ where: { id: winId, user_id: userId } });
+    return { id: winId, deleted: true };
+  }
+}
+
+const WIN_SELECT = {
+  id: true,
+  user_id: true,
+  title: true,
+  description: true,
+  created_at: true,
+  user: { select: { name: true } },
+} as const;
+
+interface WinRow {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  created_at: Date;
+  user: { name: string | null } | null;
+}
+
+/**
+ * One member win as the app renders it. `displayName` / `action` /
+ * `createdAt` are the legacy keys older app builds read; new builds use the
+ * snake_case keys.
+ */
+export interface CommunityWinView {
+  id: string;
+  user_id: string;
+  display_name: string;
+  title: string;
+  description: string;
+  created_at: string;
+  is_mine: boolean;
+  displayName: string;
+  action: string;
+  createdAt: string;
+}
+
+function winView(w: WinRow, viewerId: string): CommunityWinView {
+  // Client privacy: other members see first names only.
+  const name = memberFirstName(w.user?.name);
+  const created = w.created_at.toISOString();
+  return {
+    id: w.id,
+    user_id: w.user_id,
+    display_name: name,
+    title: w.title,
+    description: w.description,
+    created_at: created,
+    is_mine: w.user_id === viewerId,
+    displayName: name,
+    action: w.title,
+    createdAt: created,
+  };
 }

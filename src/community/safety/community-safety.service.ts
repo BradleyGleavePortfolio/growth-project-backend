@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma.service';
 import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
+import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
 
 export const CONTENT_REJECTED = {
   error: 'content_rejected',
@@ -16,11 +17,26 @@ export const CONTENT_REJECTED = {
     'This message was not posted because it appears to contain abusive or explicit language. Please rephrase it.',
 } as const;
 
-export const DM_BLOCKED = {
+/**
+ * DM refusal for the person who placed the block: they know, so they get the
+ * way back (owner rule 13:34: what happened + what to do next).
+ */
+export const DM_BLOCKED_BY_YOU = {
   error: 'forbidden',
-  code: 'community.dm.blocked',
+  code: 'community.dm.blocked_by_you',
+  message: 'You blocked this member. To message them again, unblock them in Community safety.',
+} as const;
+
+/**
+ * DM refusal for the person who WAS blocked: the same 404 body as a DM with a
+ * member who is not there, so the block is never disclosed ("they are not
+ * told"). Kept identical to CommunityDmsService's not-found body.
+ */
+export const DM_UNAVAILABLE = {
+  error: 'not_found',
+  code: 'community.dm.not_found',
   message:
-    'You cannot message this member. If you need help, email the safety contact in Community safety.',
+    'This conversation is not available. The member may have left the community. Refresh and try again.',
 } as const;
 
 /**
@@ -60,7 +76,13 @@ export const COMMUNITY_REPORT_REASONS = [
   { code: 'other', label: 'Something else' },
 ] as const;
 
-export const DEFAULT_COMMUNITY_SAFETY_EMAIL = 'Bradley@Bradleytgpcoaching.com';
+/**
+ * The community safety contact shown to members is the one support address
+ * (OR-109-1): SUPPORT_EMAIL from src/public-pages/trust-pages.html.ts, the
+ * repo's single support constant. No separate env override, so the app,
+ * the public pages and the safety screen can never disagree.
+ */
+export const COMMUNITY_SAFETY_EMAIL: string = SUPPORT_EMAIL;
 
 /**
  * Community guidelines shown in Community > Community safety. Owner-approved
@@ -203,10 +225,26 @@ export class CommunitySafetyService {
     }
   }
 
+  /**
+   * A block in either direction closes the DM (open, read, send). The blocker
+   * gets 403 community.dm.blocked_by_you with the unblock step; the blocked
+   * person gets the plain not-found body, so the block is not disclosed.
+   */
   async assertDmAllowed(senderId: string, recipientId: string): Promise<void> {
-    if (await this.isBlockedEitherWay(senderId, recipientId)) {
-      throw new ForbiddenException(DM_BLOCKED);
+    const rows = await this.prisma.userBlock.findMany({
+      where: {
+        OR: [
+          { blocker_id: senderId, blocked_id: recipientId },
+          { blocker_id: recipientId, blocked_id: senderId },
+        ],
+      },
+      select: { blocker_id: true, blocked_id: true },
+    });
+    if (rows.length === 0) return;
+    if (rows.some((r) => r.blocker_id === senderId && r.blocked_id === recipientId)) {
+      throw new ForbiddenException(DM_BLOCKED_BY_YOU);
     }
+    throw new NotFoundException(DM_UNAVAILABLE);
   }
 
   /**
@@ -311,10 +349,8 @@ export class CommunitySafetyService {
     guidelines: string[];
     response_commitment: string;
   } {
-    const email =
-      (process.env.COMMUNITY_SAFETY_CONTACT_EMAIL ?? '').trim() || DEFAULT_COMMUNITY_SAFETY_EMAIL;
     return {
-      contact_email: email,
+      contact_email: COMMUNITY_SAFETY_EMAIL,
       report_reasons: COMMUNITY_REPORT_REASONS,
       guidelines: [...COMMUNITY_GUIDELINES],
       response_commitment: COMMUNITY_RESPONSE_COMMITMENT,

@@ -22,15 +22,14 @@ import {
   CommunityDmThreadResponse,
   CommunityDmThreadResponseSchema,
 } from '../dto/community-dm.dto';
-import { CommunitySafetyService } from '../safety/community-safety.service';
+import { CommunitySafetyService, DM_UNAVAILABLE } from '../safety/community-safety.service';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-const DM_NOT_FOUND = {
-  error: 'not_found',
-  code: 'community.dm.not_found',
-} as const;
+// Same body as the block refusal seen by a blocked member (DM_UNAVAILABLE),
+// so "not there" and "blocked you" are indistinguishable.
+const DM_NOT_FOUND = DM_UNAVAILABLE;
 
 const DM_DISABLED = {
   error: 'forbidden',

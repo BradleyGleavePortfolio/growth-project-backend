@@ -49,6 +49,7 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
@@ -156,6 +157,8 @@ itLive('community v1-3 moderation (live DB)', () => {
         SupabaseService,
         AnalyticsService,
         NotificationsService,
+        // Signs short-lived playback links for reported voice notes.
+        VoiceUploadProvider,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },

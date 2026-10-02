@@ -15,6 +15,8 @@ import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { CommunityModerationRepository } from './community-moderation.repository';
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
+import { VoiceUploadProvider } from '../voice/voice-upload.provider';
+import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -31,19 +33,66 @@ const MAX_PAGE = 200;
 const NOT_FOUND = {
   error: 'not_found',
   code: 'community.moderation.not_found',
+  message:
+    'This item could not be found. It may have been removed or already handled. Refresh and try again.',
 } as const;
 
 const FORBIDDEN = {
   error: 'forbidden',
   code: 'community.moderation.not_moderator',
+  message:
+    'Only the coach who runs this community, or the TGP team, can review reports here. If you need help, email the safety contact in Community safety.',
 } as const;
+
+/**
+ * A ban never removes the workspace coach or a platform owner (they run the
+ * space and its moderation). Members whose MEMBERSHIP role is coach or
+ * assistant can be banned by the workspace coach: they are members, not the
+ * space owner.
+ */
+export const CANNOT_BAN_COACH = {
+  error: 'forbidden',
+  code: 'community.moderation.cannot_ban_coach',
+  message:
+    'The coach who runs this community and the TGP team cannot be banned. You can hide the content instead.',
+} as const;
+
+/** Short-lived playback link for a reported voice note in the review queue. */
+const QUEUE_PLAYBACK_TTL_SECONDS = 15 * 60;
+
+/** Moderation target types the review queue renders and actions. */
+const QUEUE_TARGET_TYPES: CommunityModerationTargetType[] = [
+  'post',
+  'message',
+  'voice_note',
+  'win',
+];
+
+export type FlaggedTargetType = 'post' | 'message' | 'voice_note' | 'win';
+
+/** Playable media for a reported voice note (null for text targets). */
+export interface FlaggedMediaView {
+  kind: 'voice_note';
+  /** Signed, short-lived download URL; null when storage is unavailable. */
+  url: string | null;
+  duration_ms: number;
+  mime_type: string;
+}
 
 export interface FlaggedItemView {
   id: string;
   workspace_id: string;
-  target_type: 'post' | 'message';
+  target_type: FlaggedTargetType;
   target_id: string;
   content: string;
+  /** Voice notes: the audio to review. Removed or text targets: null. */
+  media: FlaggedMediaView | null;
+  /** True once the content was hidden or deleted (content reads "Removed"). */
+  removed: boolean;
+  /** created_at + 24 hours: the published review commitment for this report. */
+  respond_by: string;
+  /** True when the report is still open past respond_by. */
+  overdue: boolean;
   author_user_id: string | null;
   author_name: string;
   cohort_name: string | null;
@@ -86,6 +135,7 @@ export class CommunityModerationService {
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
     private readonly prisma: PrismaService,
+    private readonly voiceStorage: VoiceUploadProvider,
   ) {}
 
   private itemView(a: CommunityModerationAction): CommunityModerationItemView {
@@ -147,6 +197,9 @@ export class CommunityModerationService {
       };
     }
 
+    if (apiType === 'voice_note') return this.resolveVoiceNoteTarget(user, targetId);
+    if (apiType === 'win') return this.resolveWinTarget(user, targetId);
+
     // message OR comment — both are CommunityMessage rows.
     const msg = await this.messagesRepo.findById(targetId);
     if (!msg || msg.deleted_at) throw new NotFoundException(NOT_FOUND);
@@ -166,6 +219,70 @@ export class CommunityModerationService {
       targetType: 'message',
       targetId: msg.id,
     };
+  }
+
+  /**
+   * A voice note is reportable by anyone who can play it: a channel note by a
+   * member of its cohort (or of the workspace for a hall note), and the
+   * workspace coach / platform owner. Same 404 as "does not exist" otherwise.
+   * Audio is never text-filtered (there is no transcription), so report plus
+   * moderation is the safety control for voice.
+   */
+  private async resolveVoiceNoteTarget(
+    user: User,
+    targetId: string,
+  ): Promise<ResolvedReportTarget> {
+    const note = await this.prisma.communityVoiceNote.findUnique({
+      where: { id: targetId },
+      select: {
+        id: true,
+        workspace_id: true,
+        cohort_id: true,
+        conversation_id: true,
+        author_id: true,
+        soft_deleted_at: true,
+      },
+    });
+    if (!note || note.soft_deleted_at) throw new NotFoundException(NOT_FOUND);
+    const isModerator =
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(note.workspace_id, user.id));
+    if (!isModerator) {
+      if (note.conversation_id !== null) {
+        // Direct-message voice notes are not offered; only their author could
+        // ever read one, so nobody else can report it.
+        if (note.author_id !== user.id) throw new NotFoundException(NOT_FOUND);
+      } else if (note.cohort_id) {
+        const cohort = await this.access.findCohort(note.cohort_id);
+        if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
+          throw new NotFoundException(NOT_FOUND);
+        }
+      } else if (!(await this.access.canAccessWorkspace(note.workspace_id, user))) {
+        throw new NotFoundException(NOT_FOUND);
+      }
+    }
+    return { workspaceId: note.workspace_id, targetType: 'voice_note', targetId: note.id };
+  }
+
+  /**
+   * A member win is reportable by the people who can see it: teammates in the
+   * same coach's circle, the coach, and the platform owner. The report lands
+   * in the queue of the coach's community workspace (community-wins.policy).
+   */
+  private async resolveWinTarget(user: User, targetId: string): Promise<ResolvedReportTarget> {
+    const win = await this.prisma.communityWin.findUnique({
+      where: { id: targetId },
+      select: { id: true, user_id: true, coach_id: true, hidden_at: true },
+    });
+    if (!win || win.hidden_at) throw new NotFoundException(WIN_NOT_FOUND);
+    const sameCircle =
+      user.role === 'owner' ||
+      win.user_id === user.id ||
+      (win.coach_id !== null &&
+        (win.coach_id === user.id || (user.role === 'student' && user.coach_id === win.coach_id)));
+    if (!sameCircle) throw new NotFoundException(WIN_NOT_FOUND);
+    const workspaceId = await winModerationWorkspaceId(this.prisma, win.coach_id);
+    if (!workspaceId) throw new NotFoundException(WIN_NOT_FOUND);
+    return { workspaceId, targetType: 'win', targetId: win.id };
   }
 
   async report(
@@ -305,6 +422,20 @@ export class CommunityModerationService {
       const msg = await this.messagesRepo.findById(targetId);
       return msg?.sender_id ?? null;
     }
+    if (targetType === 'voice_note') {
+      const note = await this.prisma.communityVoiceNote.findUnique({
+        where: { id: targetId },
+        select: { author_id: true },
+      });
+      return note?.author_id ?? null;
+    }
+    if (targetType === 'win') {
+      const win = await this.prisma.communityWin.findUnique({
+        where: { id: targetId },
+        select: { user_id: true },
+      });
+      return win?.user_id ?? null;
+    }
     return null;
   }
 
@@ -321,33 +452,56 @@ export class CommunityModerationService {
     const ownerId = await this.contentOwnerId(targetType, targetId);
     if (!ownerId) return;
     if (await this.access.isWorkspaceCoach(workspaceId, ownerId)) {
-      throw new ForbiddenException({
-        error: 'forbidden',
-        code: 'community.moderation.cannot_ban_coach',
-      });
+      throw new ForbiddenException(CANNOT_BAN_COACH);
     }
     const owner = await this.prisma.user.findUnique({
       where: { id: ownerId },
       select: { role: true },
     });
     if (owner?.role === 'owner') {
-      throw new ForbiddenException({
-        error: 'forbidden',
-        code: 'community.moderation.cannot_ban_coach',
-      });
+      throw new ForbiddenException(CANNOT_BAN_COACH);
     }
-    await this.prisma.communityMembership.updateMany({
+    const removedAt = new Date();
+    const updated = await this.prisma.communityMembership.updateMany({
       where: { workspace_id: workspaceId, user_id: ownerId },
-      data: { status: 'removed', removed_at: new Date() },
+      data: { status: 'removed', removed_at: removedAt },
     });
+    if (updated.count === 0) {
+      // The author never joined a cohort here (possible for a member win:
+      // wins are shared with the coach's circle without a membership row).
+      // Record the ban as a removed membership in the default cohort so the
+      // first-touch bootstrap (upsert with update: {}) can never admit them
+      // and the wins feed / post path see them as removed.
+      const cohort = await this.prisma.communityCohort.findFirst({
+        where: { workspace_id: workspaceId, status: 'active', archived_at: null },
+        orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+        select: { id: true },
+      });
+      if (cohort) {
+        await this.prisma.communityMembership.upsert({
+          where: { cohort_id_user_id: { cohort_id: cohort.id, user_id: ownerId } },
+          create: {
+            workspace_id: workspaceId,
+            cohort_id: cohort.id,
+            user_id: ownerId,
+            role: 'student',
+            status: 'removed',
+            removed_at: removedAt,
+          },
+          update: { status: 'removed', removed_at: removedAt },
+        });
+      }
+    }
   }
 
   /**
    * GET /community/moderation/flagged — the coach's review queue across every
    * workspace they own (platform owner: every workspace), open reports only,
-   * oldest first, enriched with the reported content, its author and cohort
-   * so the mobile reviewer can decide without another round trip. Content of
-   * already-removed targets is shown as "Removed".
+   * oldest first (so the 24-hour commitment is worked in order), enriched
+   * with the reported content, its author and cohort so the mobile reviewer
+   * can decide without another round trip. Voice notes carry a short-lived
+   * playback link (`media`). Content of already-removed targets is shown as
+   * "Removed" with `removed: true`.
    */
   async listFlagged(user: User, query: { limit?: string }): Promise<{ items: FlaggedItemView[] }> {
     if (user.role !== 'coach' && user.role !== 'owner') {
@@ -357,18 +511,18 @@ export class CommunityModerationService {
     const rows = await this.prisma.communityModerationAction.findMany({
       where: {
         status: 'open',
-        target_type: { in: ['post', 'message'] },
+        target_type: { in: QUEUE_TARGET_TYPES },
         ...workspaceFilter,
       },
       orderBy: { created_at: 'asc' },
       take: this.parsePage(query.limit),
     });
     if (rows.length === 0) return { items: [] };
-    const postIds = rows.filter((r) => r.target_type === 'post').map((r) => r.target_id);
-    const msgIds = rows.filter((r) => r.target_type === 'message').map((r) => r.target_id);
-    const [posts, msgs] = await Promise.all([
+    const idsOf = (t: CommunityModerationTargetType) =>
+      rows.filter((r) => r.target_type === t).map((r) => r.target_id);
+    const [posts, msgs, notes, wins] = await Promise.all([
       this.prisma.communityPost.findMany({
-        where: { id: { in: postIds } },
+        where: { id: { in: idsOf('post') } },
         select: {
           id: true,
           title: true,
@@ -379,7 +533,7 @@ export class CommunityModerationService {
         },
       }),
       this.prisma.communityMessage.findMany({
-        where: { id: { in: msgIds } },
+        where: { id: { in: idsOf('message') } },
         select: {
           id: true,
           body: true,
@@ -388,9 +542,27 @@ export class CommunityModerationService {
           deleted_at: true,
         },
       }),
+      this.prisma.communityVoiceNote.findMany({
+        where: { id: { in: idsOf('voice_note') } },
+        select: {
+          id: true,
+          author_id: true,
+          cohort_id: true,
+          storage_key: true,
+          duration_ms: true,
+          mime_type: true,
+          soft_deleted_at: true,
+        },
+      }),
+      this.prisma.communityWin.findMany({
+        where: { id: { in: idsOf('win') } },
+        select: { id: true, user_id: true, title: true, description: true, hidden_at: true },
+      }),
     ]);
     const postById = new Map(posts.map((p) => [p.id, p]));
     const msgById = new Map(msgs.map((m) => [m.id, m]));
+    const noteById = new Map(notes.map((n) => [n.id, n]));
+    const winById = new Map(wins.map((w) => [w.id, w]));
     const authorIds = new Set<string>();
     const cohortIds = new Set<string>();
     for (const p of posts) {
@@ -401,6 +573,11 @@ export class CommunityModerationService {
       authorIds.add(m.sender_id);
       if (m.cohort_id) cohortIds.add(m.cohort_id);
     }
+    for (const n of notes) {
+      authorIds.add(n.author_id);
+      if (n.cohort_id) cohortIds.add(n.cohort_id);
+    }
+    for (const w of wins) authorIds.add(w.user_id);
     const [users, cohorts] = await Promise.all([
       this.prisma.user.findMany({
         where: { id: { in: [...authorIds] } },
@@ -414,41 +591,87 @@ export class CommunityModerationService {
     const nameById = new Map(users.map((u) => [u.id, u.name]));
     const cohortById = new Map(cohorts.map((c) => [c.id, c.name]));
 
-    const items: FlaggedItemView[] = rows.map((r) => {
-      let content = 'Removed';
-      let authorId: string | null = null;
-      let cohortId: string | null = null;
-      if (r.target_type === 'post') {
-        const p = postById.get(r.target_id);
-        if (p) {
-          authorId = p.author_id;
-          cohortId = p.cohort_id;
-          if (!p.deleted_at) {
-            content = [p.title, p.body].filter((x): x is string => !!x).join('\n\n');
+    const now = Date.now();
+    const items: FlaggedItemView[] = await Promise.all(
+      rows.map(async (r) => {
+        const respondBy = new Date(r.created_at.getTime() + REVIEW_WITHIN_MS);
+        let content = REMOVED_CONTENT;
+        let removed = true;
+        let media: FlaggedMediaView | null = null;
+        let authorId: string | null = null;
+        let cohortId: string | null = null;
+        let targetType: FlaggedTargetType = 'message';
+        if (r.target_type === 'post') {
+          targetType = 'post';
+          const p = postById.get(r.target_id);
+          if (p) {
+            authorId = p.author_id;
+            cohortId = p.cohort_id;
+            if (!p.deleted_at) {
+              content = [p.title, p.body].filter((x): x is string => !!x).join('\n\n');
+              removed = false;
+            }
+          }
+        } else if (r.target_type === 'voice_note') {
+          targetType = 'voice_note';
+          const n = noteById.get(r.target_id);
+          if (n) {
+            authorId = n.author_id;
+            cohortId = n.cohort_id;
+            if (!n.soft_deleted_at) {
+              content = voiceNoteLabel(n.duration_ms);
+              removed = false;
+              media = {
+                kind: 'voice_note',
+                url: await this.voiceStorage.createSignedDownload(
+                  n.storage_key,
+                  QUEUE_PLAYBACK_TTL_SECONDS,
+                ),
+                duration_ms: n.duration_ms,
+                mime_type: n.mime_type,
+              };
+            }
+          }
+        } else if (r.target_type === 'win') {
+          targetType = 'win';
+          const w = winById.get(r.target_id);
+          if (w) {
+            authorId = w.user_id;
+            if (!w.hidden_at) {
+              content = [w.title, w.description].filter((x) => !!x).join('\n\n');
+              removed = false;
+            }
+          }
+        } else {
+          const m = msgById.get(r.target_id);
+          if (m) {
+            authorId = m.sender_id;
+            cohortId = m.cohort_id;
+            if (!m.deleted_at) {
+              content = m.body ?? '';
+              removed = false;
+            }
           }
         }
-      } else {
-        const m = msgById.get(r.target_id);
-        if (m) {
-          authorId = m.sender_id;
-          cohortId = m.cohort_id;
-          if (!m.deleted_at) content = m.body ?? '';
-        }
-      }
-      return {
-        id: r.id,
-        workspace_id: r.workspace_id,
-        target_type: r.target_type === 'post' ? 'post' : 'message',
-        target_id: r.target_id,
-        content,
-        author_user_id: authorId,
-        author_name: (authorId && nameById.get(authorId)) || 'Member',
-        cohort_name: cohortId ? (cohortById.get(cohortId) ?? null) : null,
-        reason: r.reason,
-        notes: r.notes,
-        created_at: r.created_at.toISOString(),
-      };
-    });
+        return {
+          id: r.id,
+          workspace_id: r.workspace_id,
+          target_type: targetType,
+          target_id: r.target_id,
+          content,
+          media,
+          removed,
+          author_user_id: authorId,
+          author_name: (authorId && nameById.get(authorId)) || 'Member',
+          cohort_name: cohortId ? (cohortById.get(cohortId) ?? null) : null,
+          reason: r.reason,
+          notes: r.notes,
+          created_at: r.created_at.toISOString(),
+          respond_by: respondBy.toISOString(),
+          overdue: respondBy.getTime() < now,
+        };
+      }),
+    );
     return { items };
   }
 
@@ -470,6 +693,40 @@ export class CommunityModerationService {
           created_at: msg.created_at,
         });
       }
+      return;
+    }
+    if (targetType === 'voice_note') {
+      // Same soft delete as the author's own delete: every read path
+      // (list, by id, search, signed playback) skips soft-deleted notes.
+      const at = new Date();
+      await this.prisma.communityVoiceNote.updateMany({
+        where: { id: targetId, soft_deleted_at: null },
+        data: { soft_deleted_at: at },
+      });
+      await this.prisma.communitySearchEntry.updateMany({
+        where: { kind: 'voice_note_transcript', targetId, softDeletedAt: null },
+        data: { softDeletedAt: at },
+      });
+      return;
+    }
+    if (targetType === 'win') {
+      await this.prisma.communityWin.updateMany({
+        where: { id: targetId, hidden_at: null },
+        data: { hidden_at: new Date() },
+      });
     }
   }
+}
+
+const REMOVED_CONTENT = 'Removed';
+
+/** The published commitment: reports are reviewed within 24 hours. */
+export const REVIEW_WITHIN_MS = 24 * 60 * 60 * 1000;
+
+/** Queue label for a voice note, e.g. "Voice note, 0:42". */
+export function voiceNoteLabel(durationMs: number): string {
+  const total = Math.max(0, Math.round(durationMs / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, '0');
+  return `Voice note, ${minutes}:${seconds}`;
 }

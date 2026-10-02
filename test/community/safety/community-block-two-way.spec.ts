@@ -214,14 +214,24 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
 
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
     expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
+    // The blocked person (bob) sees the same 404 as a member who is not
+    // there, so the block is not disclosed; the blocker (alice) is told it is
+    // her block and how to undo it.
     await expect(dms.send(bob, wsId, alice.id, 'again')).rejects.toMatchObject({
-      response: { code: 'community.dm.blocked' },
+      status: 404,
+      response: { code: 'community.dm.not_found' },
     });
     await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toMatchObject({
-      response: { code: 'community.dm.blocked' },
+      status: 403,
+      response: { code: 'community.dm.blocked_by_you' },
     });
     await expect(dms.listThread(bob, wsId, alice.id, {})).rejects.toMatchObject({
-      response: { code: 'community.dm.blocked' },
+      status: 404,
+      response: { code: 'community.dm.not_found' },
+    });
+    await expect(dms.openThread(alice, wsId, bob.id)).rejects.toMatchObject({
+      status: 403,
+      response: { code: 'community.dm.blocked_by_you' },
     });
 
     await safety.unblock(alice, bob.id);
@@ -318,14 +328,19 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
           findMany: async () => students,
         },
         workoutSession: { groupBy: async () => [] },
+        // The coach runs a community workspace, so wins are shared with the
+        // coach's circle (community-wins.policy); nobody is removed.
+        communityWorkspace: { findFirst: async () => ({ id: WS }) },
+        communityMembership: { findMany: async () => [] },
         communityWin: {
           findMany: async () =>
             [ALICE, BOB, CAROL].map((id) => ({
               id: `win-${id}`,
               user_id: id,
               title: 'Logged a workout',
+              description: 'Forty minutes',
               created_at: new Date('2026-09-30T00:00:00.000Z'),
-              user: { id, name: 'Sam Member' },
+              user: { name: 'Sam Member' },
             })),
         },
       };
@@ -724,7 +739,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
  */
 const FILTER_CALL = /\b(filterBlocked|hiddenFromViewer|assertVisibleTo|visiblePost|authoriseDm)\(/;
 
-const FILTERED: Record<string, { file: string; method: string }> = {
+const FILTERED: Record<string, { file: string; method: string; entry?: string }> = {
   'CommunityPostsController.list': { file: 'posts/community-posts.service.ts', method: 'list' },
   'CommunityPostsController.getOne': { file: 'posts/community-posts.service.ts', method: 'getOne' },
   'CommunityPostsController.listComments': {
@@ -778,11 +793,13 @@ const FILTERED: Record<string, { file: string; method: string }> = {
   'CommunityClassroomController.getOne': {
     file: 'classroom/community-classroom.service.ts',
     method: 'readablePost',
+    entry: 'getOne',
   },
   'CommunityEventsController.list': { file: 'events/community-events.service.ts', method: 'list' },
   'CommunityEventsController.getOne': {
     file: 'events/community-events.service.ts',
     method: 'readableEvent',
+    entry: 'getOne',
   },
   'CommunityChallengesController.list': {
     file: 'challenges/community-challenges.service.ts',
@@ -791,6 +808,7 @@ const FILTERED: Record<string, { file: string; method: string }> = {
   'CommunityChallengesController.getOne': {
     file: 'challenges/community-challenges.service.ts',
     method: 'readableChallenge',
+    entry: 'getOne',
   },
 };
 
@@ -827,7 +845,7 @@ function controllerFiles(dir: string): string[] {
   return out;
 }
 
-function enumerateGetRoutes(): string[] {
+function enumerateGetRoutes(files: Map<string, string> = new Map()): string[] {
   const root = join(__dirname, '../../../src/community');
   const routes: string[] = [];
   for (const file of controllerFiles(root)) {
@@ -844,6 +862,7 @@ function enumerateGetRoutes(): string[] {
         if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
         if (Reflect.getMetadata(METHOD_METADATA, handler) !== RequestMethod.GET) continue;
         routes.push(`${exported.name}.${key}`);
+        files.set(`${exported.name}.${key}`, file);
       }
     }
     expect(relative(root, file)).not.toMatch(/^\.\./);
@@ -865,7 +884,8 @@ function methodBody(source: string, method: string): string {
 }
 
 describe('regression guard: every community read path is classified and filtered', () => {
-  const routes = enumerateGetRoutes();
+  const routeFiles = new Map<string, string>();
+  const routes = enumerateGetRoutes(routeFiles);
 
   it('extracts one method body only (the guard cannot pass on the whole file)', () => {
     const src =
@@ -894,6 +914,28 @@ describe('regression guard: every community read path is classified and filtered
     const body = methodBody(source, target.method);
     expect(body).not.toBe('');
     expect(body).toMatch(FILTER_CALL);
+  });
+
+  // C-610-2: the filtered service method must be the one the route actually
+  // reaches. The controller handler calls the entry method, and an entry that
+  // differs from the filtering helper calls that helper and returns its result.
+  it.each(Object.entries(FILTERED))('%s is wired to the filtered method', (route, target) => {
+    const [, handler] = route.split('.');
+    const controllerSource = readFileSync(String(routeFiles.get(route)), 'utf8');
+    const handlerBody = methodBody(controllerSource, handler);
+    expect(handlerBody).not.toBe('');
+    const entry = target.entry ?? target.method;
+    expect(handlerBody).toMatch(new RegExp(`return (?:await )?this\\.\\w+\\.${entry}\\(`));
+    if (entry !== target.method) {
+      const source = readFileSync(join(__dirname, '../../../src/community', target.file), 'utf8');
+      expect(methodBody(source, entry)).toMatch(new RegExp(`await this\\.${target.method}\\(`));
+    }
+  });
+
+  it('the wiring check rejects a handler that calls a different method', () => {
+    const src = '\nclass C {\n  async list() {\n    return this.svc.listAll(1);\n  }\n}\n';
+    expect(methodBody(src, 'list')).not.toMatch(/return (?:await )?this\.\w+\.list\(/);
+    expect(methodBody(src, 'list')).toMatch(/return (?:await )?this\.\w+\.listAll\(/);
   });
 
   it('the shared filter is two-way (queries both blocker_id and blocked_id)', () => {

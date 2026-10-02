@@ -35,6 +35,7 @@ type RepoMock = {
   createVoiceNote: jest.Mock;
   findById: jest.Mock;
   softDelete: jest.Mock;
+  softDeleteSearchEntries: jest.Mock;
   list: jest.Mock;
 };
 type UploadMock = {
@@ -113,6 +114,7 @@ describe('CommunityVoiceService', () => {
       createVoiceNote: jest.fn().mockResolvedValue(note()),
       findById: jest.fn().mockResolvedValue(note()),
       softDelete: jest.fn().mockResolvedValue(undefined),
+      softDeleteSearchEntries: jest.fn().mockResolvedValue(undefined),
       list: jest.fn().mockResolvedValue({ items: [note()], nextCursor: null }),
     };
     upload = {
@@ -226,13 +228,22 @@ describe('CommunityVoiceService', () => {
       );
     });
 
-    it('does not broadcast on a community channel for a DM note', async () => {
-      repo.createVoiceNote.mockResolvedValue(note({ cohort_id: null, conversation_id: CONV_A }));
-      await service.create(member, WS_A, {
-        ...VALID_CREATE,
-        cohort_id: undefined,
-        conversation_id: CONV_A,
-      });
+    it('refuses a DM voice note before any row is written (no DM thread binding)', async () => {
+      const err = await service
+        .create(member, WS_A, {
+          ...VALID_CREATE,
+          cohort_id: undefined,
+          conversation_id: CONV_A,
+        })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'community.voice.dm_not_supported',
+          message: expect.stringContaining('not in direct messages'),
+        }),
+      );
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
       await new Promise((r) => setImmediate(r));
       expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
     });
@@ -279,9 +290,40 @@ describe('CommunityVoiceService', () => {
       expect(res).toEqual({ deleted: true });
     });
 
-    it('403s a stranger trying to delete', async () => {
-      await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(ForbiddenException);
+    it('403s a member who can hear the note but did not record it', async () => {
+      const err = await service.delete(stranger, NOTE_A).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'community.voice.not_author',
+          message: expect.any(String),
+        }),
+      );
       expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('404s (not 403) a non-member, so a note id cannot be probed', async () => {
+      access.canAccessCohort.mockResolvedValue(false);
+      await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('404s a member in a block relation with the author (either direction)', async () => {
+      // prettier-ignore
+      // @ts-expect-error mocks are partial implementations of the injected deps
+      const blocked = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks([[MEMBER_ID, STRANGER_ID]]));
+      await expect(blocked.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('also hides the note from search when the author deletes it', async () => {
+      await service.delete(member, NOTE_A);
+      expect(repo.softDeleteSearchEntries).toHaveBeenCalledWith(NOTE_A, expect.any(Date));
+    });
+
+    it('404s an already-deleted note', async () => {
+      repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date() }));
+      await expect(service.delete(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

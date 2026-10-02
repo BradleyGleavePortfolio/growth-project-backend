@@ -31,6 +31,7 @@ const TO_ONE: Record<string, [string, string, string]> = {
   blocker: ['user', 'blocker_id', 'id'],
   sender: ['user', 'sender_id', 'id'],
   author: ['user', 'author_id', 'id'],
+  user: ['user', 'user_id', 'id'],
 };
 const TO_MANY: Record<string, [string, string]> = {
   memberships: ['communityMembership', 'workspace_id'],
@@ -72,6 +73,14 @@ const DEFAULTS: Record<string, () => Row> = {
     resolved_at: null,
   }),
   userBlock: () => ({}),
+  communityWin: () => ({ coach_id: null, visibility: 'circle', hidden_at: null }),
+  communityVoiceNote: () => ({
+    cohort_id: null,
+    conversation_id: null,
+    waveform_peaks: null,
+    soft_deleted_at: null,
+  }),
+  communitySearchEntry: () => ({ softDeletedAt: null }),
 };
 
 export class InMemoryPrisma {

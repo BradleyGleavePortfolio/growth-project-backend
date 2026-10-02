@@ -38,6 +38,28 @@ import { CommunitySafetyService } from '../safety/community-safety.service';
 const NOT_FOUND = {
   error: 'not_found',
   code: 'community.voice.not_found',
+  message:
+    'This voice note could not be found. It may have been deleted or removed. Refresh and try again.',
+} as const;
+
+/**
+ * Voice notes in direct messages are not offered: a DM thread is keyed by the
+ * pair of members (dm_key), not by a conversation id, so a DM voice note
+ * could never reach its recipient, and it would sit outside the DM block and
+ * report rules. Channel (cohort) and hall voice notes are the product.
+ */
+export const VOICE_DM_NOT_SUPPORTED = {
+  error: 'bad_request',
+  code: 'community.voice.dm_not_supported',
+  message:
+    'Voice notes can be shared in your community spaces, not in direct messages. Send a text message instead, or share the voice note in a space.',
+} as const;
+
+export const VOICE_NOT_AUTHOR = {
+  error: 'forbidden',
+  code: 'community.voice.not_author',
+  message:
+    'Only the person who recorded this voice note, or your coach, can delete it. You can report it instead.',
 } as const;
 
 /**
@@ -119,6 +141,8 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.mime_rejected',
+        message:
+          'This recording format is not supported. Record the voice note again in the app, then send it.',
         allowed: [...VOICE_NOTE_MIME_ALLOWLIST],
       });
     }
@@ -127,6 +151,7 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.duration_out_of_range',
+        message: `Voice notes can be up to ${Math.floor(maxDuration / 1000)} seconds long. Record a shorter one, then send it.`,
         max_duration_ms: maxDuration,
       });
     }
@@ -135,6 +160,7 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.size_out_of_range',
+        message: 'This recording is too large to send. Record a shorter voice note, then send it.',
         max_bytes: maxBytes,
       });
     }
@@ -147,6 +173,8 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.size_duration_mismatch',
+        message:
+          'This recording could not be checked. Record the voice note again in the app, then send it.',
         max_bytes_for_duration: maxBytesForDuration,
       });
     }
@@ -178,6 +206,8 @@ export class CommunityVoiceService {
       throw new ForbiddenException({
         error: 'forbidden',
         code: 'community.voice.not_entitled',
+        message:
+          'Voice notes are not included in your current plan. You can post a text message instead, or ask your coach about your plan.',
       });
     }
   }
@@ -206,13 +236,14 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.ambiguous_target',
+        message:
+          'A voice note can go to one space at a time. Choose one space, then send it again.',
       });
     }
     if (conversationId) {
-      // DM note — scoped to the author's thread. The author is always a
-      // participant of their own DM; cross-participant posting is mediated by
-      // the messaging domain, not this lane.
-      return { cohortId: null, conversationId };
+      // DM voice notes are not offered (VOICE_DM_NOT_SUPPORTED): refuse before
+      // any row is written.
+      throw new BadRequestException(VOICE_DM_NOT_SUPPORTED);
     }
     if (cohortId) {
       const cohort = await this.access.findCohort(cohortId);
@@ -339,6 +370,8 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.storage_key_rejected',
+        message:
+          'This recording could not be attached. Record the voice note again in the app, then send it.',
       });
     }
 
@@ -503,19 +536,23 @@ export class CommunityVoiceService {
     });
   }
 
+  /**
+   * Author delete (and workspace coach / platform owner). A member who cannot
+   * read the note gets the same 404 as a missing note (no existence leak); a
+   * member who can read it but did not record it gets 403 VOICE_NOT_AUTHOR.
+   * Soft delete: every read path, the review queue and search skip it, and
+   * no new playback link is ever signed for it.
+   */
   async delete(user: User, voiceNoteId: string): Promise<{ deleted: true }> {
-    const row = await this.repo.findById(voiceNoteId);
-    if (!row || row.soft_deleted_at !== null) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-    // Author or workspace coach/owner may soft-delete.
+    const row = await this.readableNote(user, voiceNoteId);
     if (row.author_id !== user.id && !(await this.isCoach(row.workspace_id, user))) {
-      throw new ForbiddenException({
-        error: 'forbidden',
-        code: 'community.voice.not_author',
-      });
+      // Blocked either way reads as missing, like every other voice read.
+      await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
+      throw new ForbiddenException(VOICE_NOT_AUTHOR);
     }
-    await this.repo.softDelete(voiceNoteId, new Date());
+    const at = new Date();
+    await this.repo.softDelete(voiceNoteId, at);
+    await this.repo.softDeleteSearchEntries(voiceNoteId, at);
     return { deleted: true };
   }
 }

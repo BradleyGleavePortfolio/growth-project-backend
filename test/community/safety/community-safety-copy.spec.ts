@@ -10,8 +10,9 @@ import {
   COMMUNITY_GUIDELINES,
   COMMUNITY_REPORT_REASONS,
   COMMUNITY_RESPONSE_COMMITMENT,
-  DEFAULT_COMMUNITY_SAFETY_EMAIL,
+  COMMUNITY_SAFETY_EMAIL,
 } from '../../../src/community/safety/community-safety.service';
+import { SUPPORT_EMAIL } from '../../../src/public-pages/trust-pages.html';
 import { safetyWithBlocks } from './safety-test-helpers';
 
 const APPROVED_GUIDELINES = [
@@ -32,7 +33,10 @@ const APPROVED_COMMITMENT =
   'break them repeatedly lose access. If you block someone, they can no longer see your posts ' +
   'or message you, and they are not told.';
 
-const APPROVED_SAFETY_EMAIL = 'Bradley@Bradleytgpcoaching.com';
+// OR-109-1: the safety contact is the repo's one SUPPORT_EMAIL constant
+// (backend #631 sets it to the owner's support inbox, ruling 10-01 14:19).
+// Pinned by identity, so this spec stays true before and after #631 lands.
+const APPROVED_SAFETY_EMAIL = SUPPORT_EMAIL;
 
 const APPROVED_REPORT_REASON_LABELS = [
   'Harassment or bullying',
@@ -67,17 +71,16 @@ describe('community safety copy (owner-approved 2026-10-01)', () => {
     expect(info.response_commitment.startsWith(APPROVED_24H_SENTENCE)).toBe(true);
   });
 
-  it('serves Bradley@Bradleytgpcoaching.com as the safety contact by default', () => {
+  it('serves SUPPORT_EMAIL (the one support constant) as the safety contact', () => {
     delete process.env.COMMUNITY_SAFETY_CONTACT_EMAIL;
-    expect(DEFAULT_COMMUNITY_SAFETY_EMAIL).toBe(APPROVED_SAFETY_EMAIL);
+    expect(COMMUNITY_SAFETY_EMAIL).toBe(APPROVED_SAFETY_EMAIL);
     expect(safety.safetyInfo().contact_email).toBe(APPROVED_SAFETY_EMAIL);
-    process.env.COMMUNITY_SAFETY_CONTACT_EMAIL = '   ';
-    expect(safety.safetyInfo().contact_email).toBe(APPROVED_SAFETY_EMAIL);
+    expect(APPROVED_SAFETY_EMAIL).toMatch(/^[^@\s]+@[^@\s]+\.[a-z]+$/i);
   });
 
-  it('lets COMMUNITY_SAFETY_CONTACT_EMAIL change the contact without an app update', () => {
+  it('ignores the retired COMMUNITY_SAFETY_CONTACT_EMAIL override (one address everywhere)', () => {
     process.env.COMMUNITY_SAFETY_CONTACT_EMAIL = 'safety@example.test';
-    expect(safety.safetyInfo().contact_email).toBe('safety@example.test');
+    expect(safety.safetyInfo().contact_email).toBe(APPROVED_SAFETY_EMAIL);
   });
 
   it('offers the approved report reasons', () => {

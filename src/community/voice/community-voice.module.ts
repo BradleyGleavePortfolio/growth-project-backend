@@ -53,6 +53,8 @@ import { VoiceUploadProvider } from './voice-upload.provider';
     CommunityFeatureFlagGuard,
     VoiceUploadProvider,
   ],
-  exports: [CommunityVoiceService],
+  // VoiceUploadProvider: the moderation queue signs short-lived playback
+  // links for reported voice notes.
+  exports: [CommunityVoiceService, VoiceUploadProvider],
 })
 export class CommunityVoiceModule {}

@@ -96,6 +96,14 @@ export class CommunityVoiceRepository {
     });
   }
 
+  /** Hide any search row for a deleted note (defence in depth). */
+  async softDeleteSearchEntries(id: string, at: Date): Promise<void> {
+    await this.prisma.communitySearchEntry.updateMany({
+      where: { kind: 'voice_note_transcript', targetId: id, softDeletedAt: null },
+      data: { softDeletedAt: at },
+    });
+  }
+
   /**
    * List voice notes most-recent-first. A coach/owner sees every non-deleted
    * note in the workspace (optionally narrowed to a cohort/conversation); a
@@ -121,8 +129,7 @@ export class CommunityVoiceRepository {
                 {
                   cohort_id: {
                     in:
-                      filter.visibleCohortIds &&
-                      filter.visibleCohortIds.length > 0
+                      filter.visibleCohortIds && filter.visibleCohortIds.length > 0
                         ? filter.visibleCohortIds
                         : ['__none__'],
                   },
@@ -139,9 +146,7 @@ export class CommunityVoiceRepository {
       workspace_id: filter.workspaceId,
       soft_deleted_at: null,
       ...(filter.cohortId !== null ? { cohort_id: filter.cohortId } : {}),
-      ...(filter.conversationId !== null
-        ? { conversation_id: filter.conversationId }
-        : {}),
+      ...(filter.conversationId !== null ? { conversation_id: filter.conversationId } : {}),
       ...visibility,
     };
 
@@ -149,14 +154,11 @@ export class CommunityVoiceRepository {
       where,
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       take: take + 1,
-      ...(filter.cursor
-        ? { cursor: { id: filter.cursor }, skip: 1 }
-        : {}),
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
 
     const items = rows.slice(0, take);
-    const nextCursor =
-      rows.length > take ? items[items.length - 1].id : null;
+    const nextCursor = rows.length > take ? items[items.length - 1].id : null;
     return { items, nextCursor };
   }
 }
