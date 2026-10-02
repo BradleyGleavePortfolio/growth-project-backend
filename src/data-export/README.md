@@ -24,6 +24,15 @@ The `/download` endpoint is **not** protected by the main JWT guard — the down
 |-------|--------|-------|
 | `DataExportRequest` | `id`, `user_id`, `status`, `file_url`, `created_at`, `completed_at`, `expires_at`, `file_size_bytes`, `sha256` | One row per export request. |
 | `User` | `id`, `email`, `name` | Read-only — used to look up email + name for the notification. |
+| `DataExportArchiveCleanup` (`data_export_archive_cleanup`) | `export_id`, `machine`, `reason`, `attempts`, `last_error_code`, `created_at`, `last_attempt_at` | B-608-11. One row per archive that must still be removed from the local disk of `machine` after its request row is gone (`request_removed`) or a run failed (`failed_run`). Holds no user id. Service-role only (RLS). |
+
+### Archive cleanup guarantees (B-608-11)
+
+- Deleting an archive treats only `ENOENT` as success. `EACCES`, `EIO`, any other unlink error, or a non-`local://` URL is an error.
+- When an export finishes after its request row was erased, or a run fails after writing its archive, the worker deletes the archive itself. If that fails it writes a cleanup record for this machine (`os.hostname()`, the Fly machine id), reports to Sentry (`data export archive cleanup failed`, errno code only), and the runner rejects. "archive deleted" is logged only after the archive is confirmed gone.
+- The nightly cleanup (03:30 UTC, every machine) first drains its own machine's records: the path is always `<DATA_EXPORT_FS_DIR>/<export_id>.json` derived from the id (never stored), the record is deleted only when the unlink succeeds or reports `ENOENT`, and a persisting error bumps `attempts` and stays queued. A record whose archive a READY row owns is dropped without touching the file. Records from other machines older than 48 hours are reported for the operator.
+- Expiry deletes the file first; only then is the row marked `EXPIRED` with `file_url` cleared (rows already marked `EXPIRED` by a download attempt are included). A failed delete leaves the row as it is for the next run.
+- The orphan sweep (files older than an hour with no request row) stays as a second safety net.
 
 ---
 

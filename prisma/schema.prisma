@@ -1577,6 +1577,26 @@ model DataExportRequest {
   @@map("data_export_request")
 }
 
+// B-608-11: a data-export archive that must still be removed from the local
+// disk of `machine` (os.hostname(), the Fly machine id) after its request row
+// is gone or no longer owns it. Written only when deleting the archive failed
+// with an error other than ENOENT; drained by the nightly data-export cleanup
+// on that machine, and deleted only once the archive is confirmed gone. Holds
+// no user id or personal data: the export id is a random UUID and the path is
+// derived from it (exportArchivePath), never stored.
+model DataExportArchiveCleanup {
+  export_id       String   @id
+  machine         String
+  reason          String
+  attempts        Int      @default(1)
+  last_error_code String
+  created_at      DateTime @default(now())
+  last_attempt_at DateTime @default(now())
+
+  @@index([machine, created_at])
+  @@map("data_export_archive_cleanup")
+}
+
 // Consent layer v1: per-(client, coach, scope) record of whether the
 // client has granted the coach access to a given slice of their data.
 //

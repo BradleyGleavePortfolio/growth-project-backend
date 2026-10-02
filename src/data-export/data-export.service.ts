@@ -6,10 +6,17 @@ import {
   GoneException,
   Logger,
 } from '@nestjs/common';
-import { exportArchiveDir, exportArchivePath, EXPORT_ARCHIVE_NAME } from './data-export.paths';
+import {
+  exportArchiveDir,
+  exportArchivePath,
+  EXPORT_ARCHIVE_NAME,
+  isExportId,
+} from './data-export.paths';
 import { PrismaService } from '../prisma.service';
 import { DataExportStatus, Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/node';
 import * as crypto from 'crypto';
+import { hostname } from 'os';
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
 // ─── Environment variables ──────────────────────────────────────────────────
@@ -40,6 +47,51 @@ function getTokenKey(): Uint8Array {
 interface DownloadTokenClaims extends JWTPayload {
   eid: string; // export request id
   type: string; // 'data_export_download'
+}
+
+/** Why an archive must go although no request row owns it (B-608-11). */
+export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
+
+/** Cleanup records drained per machine per nightly run. */
+const ARCHIVE_CLEANUP_BATCH = 500;
+/** A cleanup record another machine has not drained within this window is reported. */
+const ARCHIVE_CLEANUP_STALE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The machine whose local disk holds an archive. On Fly the hostname is the
+ * machine id; every machine runs the nightly cleanup for its own records.
+ */
+export function archiveMachine(): string {
+  return hostname().slice(0, 255) || 'unknown-host';
+}
+
+/** A stable, value-free code for a storage error (errno like EACCES / EIO). */
+export function storageErrorCode(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : 'UNKNOWN';
+}
+
+/**
+ * Removing an export archive failed with something other than ENOENT
+ * (B-608-11). `recorded` says whether a durable cleanup record now owns the
+ * retry; when it is false the nightly orphan sweep is the only remaining path.
+ */
+export class DataExportArchiveCleanupError extends Error {
+  readonly code = 'DATA_EXPORT_ARCHIVE_CLEANUP_FAILED';
+  constructor(
+    readonly exportId: string,
+    readonly reason: ArchiveCleanupReason,
+    readonly storageCode: string,
+    readonly recorded: boolean,
+  ) {
+    super(
+      `Deleting the archive of export ${exportId} failed (${storageCode}); ` +
+        (recorded
+          ? 'a cleanup record keeps it queued for the nightly data-export cleanup on this machine.'
+          : 'recording the cleanup also failed, so only the nightly orphan sweep can remove it.'),
+    );
+    this.name = 'DataExportArchiveCleanupError';
+  }
 }
 
 @Injectable()
@@ -260,10 +312,27 @@ export class DataExportService {
    * from storage, and mark the row EXPIRED.
    */
   async expireOldExports(): Promise<void> {
+    // B-608-11: archives whose deletion failed earlier come first. A drain
+    // failure is reported and never blocks the rest of the cleanup.
+    try {
+      await this.drainArchiveCleanups();
+    } catch (err) {
+      this.logger.error(
+        `Data export archive cleanup drain failed (${storageErrorCode(err)}): ${(err as Error).message}. ` +
+          'Every pending cleanup record stays queued for the next nightly run.',
+      );
+      Sentry.captureMessage('data export archive cleanup drain failed', {
+        level: 'error',
+        tags: { code: storageErrorCode(err) },
+      });
+    }
     await this.sweepOrphanArchives();
+    // READY rows past expiry, plus rows already marked EXPIRED lazily by a
+    // download attempt that still carry a file (their bytes must go too).
     const expired = await this.prisma.dataExportRequest.findMany({
       where: {
-        status: DataExportStatus.READY,
+        status: { in: [DataExportStatus.READY, DataExportStatus.EXPIRED] },
+        file_url: { not: null },
         expires_at: { lte: new Date() },
       },
     });
@@ -271,17 +340,118 @@ export class DataExportService {
     for (const record of expired) {
       try {
         if (record.file_url) {
+          // Throws on anything but ENOENT; the row then stays as it is and
+          // the next nightly run retries (B-608-11).
           await this._deleteStoredFile(record.file_url);
         }
         await this.prisma.dataExportRequest.update({
           where: { id: record.id },
-          data: { status: DataExportStatus.EXPIRED },
+          data: { status: DataExportStatus.EXPIRED, file_url: null },
         });
         this.logger.log(`Expired export ${record.id} for user ${record.user_id}`);
       } catch (err) {
-        this.logger.error(`Failed to expire export ${record.id}: ${(err as Error).message}`);
+        this.logger.error(
+          `Failed to expire export ${record.id} (${storageErrorCode(err)}): ${(err as Error).message}. ` +
+            'The row keeps its file reference and the next nightly run retries.',
+        );
       }
     }
+  }
+
+  /**
+   * B-608-11: retry every archive cleanup this machine recorded. A record is
+   * deleted only once its archive is confirmed gone (unlink succeeded, or
+   * ENOENT on the machine that wrote it); any other error bumps `attempts`
+   * and keeps it queued. The path is always derived from the export id, so a
+   * record can never point the unlink at another file. Records written by
+   * other machines are left to them; ones older than 48 hours are reported.
+   */
+  async drainArchiveCleanups(
+    now: Date = new Date(),
+  ): Promise<{ removed: number; pending: number }> {
+    const machine = archiveMachine();
+    const records = await this.prisma.dataExportArchiveCleanup.findMany({
+      where: { machine },
+      orderBy: { created_at: 'asc' },
+      take: ARCHIVE_CLEANUP_BATCH,
+    });
+    let removed = 0;
+    let pending = 0;
+    for (const r of records) {
+      if (!isExportId(r.export_id)) {
+        // The table CHECK constraint makes this unreachable; never unlink it.
+        this.logger.error(
+          'Data export archive cleanup skipped a record whose export id is not a safe file name.',
+        );
+        pending += 1;
+        continue;
+      }
+      // A request row that still records this archive as its READY file owns
+      // it (download, expiry, erasure): the record is stale, the file stays.
+      const owner = await this.prisma.dataExportRequest.findFirst({
+        where: {
+          id: r.export_id,
+          status: DataExportStatus.READY,
+          file_url: `local://${exportArchivePath(r.export_id)}`,
+        },
+        select: { id: true },
+      });
+      if (!owner) {
+        try {
+          await this._unlinkArchive(r.export_id);
+        } catch (err) {
+          const code = storageErrorCode(err);
+          await this.prisma.dataExportArchiveCleanup.update({
+            where: { export_id: r.export_id },
+            data: { attempts: { increment: 1 }, last_error_code: code, last_attempt_at: now },
+          });
+          this.logger.error(
+            `Deleting the archive of export ${r.export_id} failed again (${code}, attempt ${r.attempts + 1}); ` +
+              `it stays queued for the next nightly run. Fix: check the permissions and disk health of ` +
+              `DATA_EXPORT_FS_DIR on machine ${machine}.`,
+          );
+          Sentry.captureMessage('data export archive cleanup failed', {
+            level: 'error',
+            tags: { code, reason: r.reason, stage: 'drain' },
+            extra: { export_id: r.export_id, attempts: r.attempts + 1 },
+          });
+          pending += 1;
+          continue;
+        }
+      }
+      await this.prisma.dataExportArchiveCleanup.deleteMany({
+        where: { export_id: r.export_id, machine },
+      });
+      if (owner) {
+        this.logger.warn(
+          `Dropped the cleanup record of export ${r.export_id}: a READY request row owns the archive.`,
+        );
+      } else {
+        this.logger.log(
+          `Export ${r.export_id}: archive deleted by the nightly cleanup (attempt ${r.attempts + 1}).`,
+        );
+        removed += 1;
+      }
+    }
+    const stale = await this.prisma.dataExportArchiveCleanup.count({
+      where: {
+        machine: { not: machine },
+        created_at: { lt: new Date(now.getTime() - ARCHIVE_CLEANUP_STALE_MS) },
+      },
+    });
+    if (stale > 0) {
+      this.logger.error(
+        `${stale} data export archive cleanup record(s) from other machines are older than 48 hours. ` +
+          'Fix: list them in data_export_archive_cleanup, remove <DATA_EXPORT_FS_DIR>/<export_id>.json on each ' +
+          'listed machine (or confirm the machine and its disk are gone), then delete the record.',
+      );
+      Sentry.captureMessage('data export archive cleanup records stale on other machines', {
+        level: 'error',
+        tags: { stage: 'stale' },
+        extra: { count: stale },
+      });
+    }
+    return { removed, pending };
   }
 
   /**
@@ -363,8 +533,12 @@ export class DataExportService {
         },
       });
       if (done.count === 0) {
-        await this._deleteStoredFile(fileUrl);
+        // From here this path owns the cleanup; the catch below must not
+        // retry it. _discardArchive throws (after recording a durable cleanup)
+        // on anything but ENOENT, so the runner rejects instead of claiming
+        // the archive is gone (B-608-11).
         fileUrl = null;
+        await this._discardArchive(exportId, 'request_removed');
         this.logger.warn(
           `Export ${exportId} finished after its request was removed; archive deleted`,
         );
@@ -387,8 +561,17 @@ export class DataExportService {
         `Export ${exportId} failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
-      // Never leave an archive behind on a failed run (B-608-3).
-      if (fileUrl) await this._deleteStoredFile(fileUrl);
+      // Never leave an archive behind on a failed run (B-608-3). If deleting
+      // it fails, _discardArchive has recorded a durable cleanup; the run
+      // still rejects with its original error (B-608-11).
+      if (fileUrl) {
+        fileUrl = null;
+        try {
+          await this._discardArchive(exportId, 'failed_run');
+        } catch (cleanupErr) {
+          this.logger.error((cleanupErr as Error).message);
+        }
+      }
       await this.prisma.dataExportRequest.updateMany({
         where: { id: exportId },
         data: { status: DataExportStatus.FAILED },
@@ -655,22 +838,78 @@ export class DataExportService {
     return `local://${filePath}`;
   }
 
+  /**
+   * Delete a stored archive. Only ENOENT (already gone) counts as success;
+   * every other unlink error propagates (B-608-11). A URL this service cannot
+   * delete is an error too, never a silent success.
+   */
   private async _deleteStoredFile(fileUrl: string): Promise<void> {
-    if (fileUrl.startsWith('local://')) {
-      const filePath = fileUrl.replace('local://', '');
-      const { unlink } = await import('fs/promises');
-      try {
-        await unlink(filePath);
-      } catch {
-        // File may already be gone.
-      }
-      return;
+    if (!fileUrl.startsWith('local://')) {
+      // S3 deletion is a future enhancement — requires @aws-sdk/client-s3.
+      throw Object.assign(
+        new Error('The export archive has a storage URL this server cannot delete (not local://).'),
+        { code: 'UNSUPPORTED_STORAGE_URL' },
+      );
     }
+    const { unlink } = await import('fs/promises');
+    try {
+      await unlink(fileUrl.slice('local://'.length));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
 
-    // S3 deletion is a future enhancement — requires @aws-sdk/client-s3.
-    this.logger.warn(
-      `Cannot delete non-local file URL: ${fileUrl}. S3 deletion requires @aws-sdk/client-s3.`,
-    );
+  /** Delete `<DATA_EXPORT_FS_DIR>/<exportId>.json`; ENOENT counts as deleted. */
+  private async _unlinkArchive(exportId: string): Promise<void> {
+    if (!isExportId(exportId)) {
+      throw Object.assign(new Error('Refusing to delete an archive for an unsafe export id.'), {
+        code: 'INVALID_EXPORT_ID',
+      });
+    }
+    await this._deleteStoredFile(`local://${exportArchivePath(exportId)}`);
+  }
+
+  /**
+   * Remove the archive of an export that no request row owns (B-608-11).
+   * Resolves only when the archive is confirmed gone. On any other error it
+   * writes (or bumps) a durable cleanup record for this machine, reports to
+   * Sentry, and throws DataExportArchiveCleanupError.
+   */
+  private async _discardArchive(exportId: string, reason: ArchiveCleanupReason): Promise<void> {
+    try {
+      await this._unlinkArchive(exportId);
+      return;
+    } catch (err) {
+      const code = storageErrorCode(err);
+      let recorded = false;
+      if (isExportId(exportId)) {
+        try {
+          const machine = archiveMachine();
+          await this.prisma.dataExportArchiveCleanup.upsert({
+            where: { export_id: exportId },
+            create: { export_id: exportId, machine, reason, last_error_code: code },
+            update: {
+              machine,
+              reason,
+              attempts: { increment: 1 },
+              last_error_code: code,
+              last_attempt_at: new Date(),
+            },
+          });
+          recorded = true;
+        } catch (recordErr) {
+          this.logger.error(
+            `Recording the archive cleanup of export ${exportId} failed: ${(recordErr as Error).message}`,
+          );
+        }
+      }
+      Sentry.captureMessage('data export archive cleanup failed', {
+        level: 'error',
+        tags: { code, reason, stage: 'discard', recorded: String(recorded) },
+        extra: { export_id: exportId },
+      });
+      throw new DataExportArchiveCleanupError(exportId, reason, code, recorded);
+    }
   }
 
   /**

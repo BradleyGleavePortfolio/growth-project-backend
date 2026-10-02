@@ -162,8 +162,11 @@ export class AccountDeletionStorageService {
     // Every export of the user, not only finished ones (B-608-3): an export
     // still building writes `<DATA_EXPORT_FS_DIR>/<id>.json`, so that path is
     // removed too. An archive written after this transaction commits is
-    // removed by the export worker itself (its READY update finds no row) or
-    // by the nightly orphan sweep in DataExportService.expireOldExports.
+    // removed by the export worker itself (its READY update finds no row); if
+    // that unlink fails with anything but ENOENT, the worker records a durable
+    // data_export_archive_cleanup row that the nightly cleanup drains
+    // (B-608-11), with the orphan sweep in DataExportService.expireOldExports
+    // as a second safety net.
     const exports = await tx.dataExportRequest.findMany({
       where: { user_id: userId },
       select: { id: true, file_url: true },

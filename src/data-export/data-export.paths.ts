@@ -15,3 +15,12 @@ export function exportArchivePath(exportId: string): string {
 
 /** File names the export worker writes: `<request id>.json`. */
 export const EXPORT_ARCHIVE_NAME = /^([0-9A-Za-z_-]{1,64})\.json$/;
+
+/**
+ * An export id that is safe to turn into an archive path: no separator, no
+ * dot, so `exportArchivePath(id)` always names a file directly inside
+ * `exportArchiveDir()` (B-608-11 foreign-file isolation).
+ */
+export function isExportId(id: string): boolean {
+  return /^[0-9A-Za-z_-]{1,64}$/.test(id);
+}
