@@ -303,3 +303,38 @@ describe('SessionReminderJob — findDueReminders helper', () => {
     expect(due.map((s) => s.id)).toEqual(['s-in']);
   });
 });
+
+describe('SessionReminderJob — explicit launch switch', () => {
+  const original = process.env.BOOKING_REMINDERS_ENABLED;
+  afterEach(() => {
+    if (original === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+    else process.env.BOOKING_REMINDERS_ENABLED = original;
+  });
+
+  it.each([undefined, '', 'off', 'false', 'true', 'ON', 'invalid'])(
+    'does not dispatch either reminder when configured as %s',
+    async (value) => {
+      if (value === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+      else process.env.BOOKING_REMINDERS_ENABLED = value;
+      const prisma = buildPrismaFake([]);
+      const job = new SessionReminderJob(prisma as never, buildBookingEmitter() as never);
+      await job.runOneHourReminderSweep();
+      await job.runTwentyFourHourReminderSweep();
+      expect(prisma.coachingSession.findMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('dispatches both cron windows only with explicit on', async () => {
+    process.env.BOOKING_REMINDERS_ENABLED = 'on';
+    const prisma = buildPrismaFake([
+      session({ id: 'one-hour', startsInMinutes: 60 }),
+      session({ id: 'one-day', startsInMinutes: 1440 }),
+    ]);
+    const emitter = buildBookingEmitter();
+    const job = new SessionReminderJob(prisma as never, emitter as never);
+    await job.runOneHourReminderSweep();
+    await job.runTwentyFourHourReminderSweep();
+    expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
+    expect(emitter.emitReminder24h).toHaveBeenCalledTimes(2);
+  });
+});

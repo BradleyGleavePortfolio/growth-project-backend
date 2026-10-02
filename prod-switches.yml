@@ -171,7 +171,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: jobs
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "Native booking 24h and 1h reminders. Explicit on enables both sweeps; unset/off/other values disable. Set on at launch after notification delivery/device QA."
   - name: BOOKING_REMINDER_1H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
