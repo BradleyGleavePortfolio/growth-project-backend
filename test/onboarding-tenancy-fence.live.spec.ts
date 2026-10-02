@@ -13,12 +13,18 @@
  *      current coach (unit-level: test/onboarding.service.spec.ts "A607-3").
  *   3. The statement is valid against the real Prisma schema (table, column
  *      names, enum cast).
+ *   4. A-607-4: the in-transaction membership decision
+ *      (`lockMembershipHeadCoachIdInTx`) holds the seat / delegation row FOR
+ *      SHARE, so main's seat archival and last-delegation close (which never
+ *      touch User) wait until the completion ends; one that committed first
+ *      is seen as "no head".
  *
  * Gated on MWB3_TEST_DATABASE_URL (the mwb-3-live-tests CI job); skipped with a
  * logged reason elsewhere.
  */
 import { PrismaService } from '../src/prisma.service';
 import { lockUserRow } from '../src/onboarding/onboarding.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
 
@@ -132,5 +138,128 @@ liveDescribe('A607-3 live: completion tenancy fence vs coach transfer (Postgres)
     await prisma.user.update({ where: { id: CLIENT }, data: { coach_id: COACH_B } });
     const row = await prisma.$transaction((tx) => lockUserRow(tx, CLIENT));
     expect(row?.coach_id).toBe(COACH_B);
+  });
+
+  // ── A-607-4 ──────────────────────────────────────────────────────────────
+  const HEAD = 'a607-4-head';
+  const SUB = 'a607-4-sub';
+  async function membershipWorld(): Promise<{ seatId: string; delegationId: string }> {
+    await prisma.subCoachAssignment.deleteMany({ where: { sub_coach_id: SUB } });
+    await prisma.teamSubCoachAssignment.deleteMany({ where: { sub_coach_id: SUB } });
+    for (const id of [HEAD, SUB]) {
+      await prisma.user.upsert({
+        where: { id },
+        create: {
+          id,
+          supabase_id: `sb-${id}`,
+          email: `${id}@example.test`,
+          name: id,
+          role: 'coach',
+        },
+        update: {},
+      });
+    }
+    await prisma.user.update({ where: { id: SUB }, data: { coach_id: HEAD } });
+    const seat = await prisma.teamSubCoachAssignment.create({
+      data: { head_coach_id: HEAD, sub_coach_id: SUB },
+    });
+    const delegation = await prisma.subCoachAssignment.create({
+      data: { head_coach_id: HEAD, sub_coach_id: SUB, client_id: CLIENT },
+    });
+    return { seatId: seat.id, delegationId: delegation.id };
+  }
+
+  /** Returns the head decided inside the completion; asserts the retirement waited for it. */
+  async function decisionHeldAgainst(retire: () => Promise<unknown>): Promise<string | null> {
+    const scope = new SubCoachScopeService(prisma);
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let decided: () => void = () => undefined;
+    const decidedP = new Promise<void>((resolve) => {
+      decided = resolve;
+    });
+    let retired = false;
+    const completion = prisma.$transaction(
+      async (tx) => {
+        const row = await lockUserRow(tx, SUB);
+        const head = await scope.lockMembershipHeadCoachIdInTx(tx, SUB, row);
+        decided();
+        await released;
+        return head;
+      },
+      { timeout: 60_000, maxWait: 10_000 },
+    );
+    await decidedP;
+    const retirement = retire().then(() => {
+      retired = true;
+    });
+    const deadline = Date.now() + 20_000;
+    while ((await lockWaiters()) < 1) {
+      if (Date.now() > deadline)
+        throw new Error('membership retirement never blocked on the completion');
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // Blocked on the row the completion holds: not retired while it decides.
+    expect(retired).toBe(false);
+    release();
+    const inside = await completion;
+    await retirement;
+    expect(retired).toBe(true);
+    return inside;
+  }
+
+  it('A-607-4: a seat archival (User untouched) waits while the completion holds its decision', async () => {
+    const { seatId, delegationId } = await membershipWorld();
+    await prisma.subCoachAssignment.update({
+      where: { id: delegationId },
+      data: { unassigned_at: new Date() },
+    });
+    const r = await decisionHeldAgainst(() =>
+      prisma.teamSubCoachAssignment.update({
+        where: { id: seatId },
+        data: { archived_at: new Date() },
+      }),
+    );
+    expect(r).toBe(HEAD);
+  }, 60_000);
+
+  it('A-607-4: the last delegation close (User untouched) waits while the completion holds its decision', async () => {
+    const { seatId, delegationId } = await membershipWorld();
+    await prisma.teamSubCoachAssignment.update({
+      where: { id: seatId },
+      data: { archived_at: new Date() },
+    });
+    const r = await decisionHeldAgainst(() =>
+      prisma.subCoachAssignment.update({
+        where: { id: delegationId },
+        data: { unassigned_at: new Date() },
+      }),
+    );
+    expect(r).toBe(HEAD);
+  }, 60_000);
+
+  it('A-607-4: retirement that committed first is seen in the transaction as no head', async () => {
+    const { seatId, delegationId } = await membershipWorld();
+    const scope = new SubCoachScopeService(prisma);
+    const before = await prisma.$transaction(async (tx) =>
+      scope.lockMembershipHeadCoachIdInTx(tx, SUB, await lockUserRow(tx, SUB)),
+    );
+    expect(before).toBe(HEAD);
+    await prisma.teamSubCoachAssignment.update({
+      where: { id: seatId },
+      data: { archived_at: new Date() },
+    });
+    await prisma.subCoachAssignment.update({
+      where: { id: delegationId },
+      data: { unassigned_at: new Date() },
+    });
+    const after = await prisma.$transaction(async (tx) =>
+      scope.lockMembershipHeadCoachIdInTx(tx, SUB, await lockUserRow(tx, SUB)),
+    );
+    expect(after).toBeNull();
+    // The pointer alone is not membership.
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: SUB } })).coach_id).toBe(HEAD);
   });
 });

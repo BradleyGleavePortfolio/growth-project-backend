@@ -7,11 +7,12 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { OnboardingService } from '../src/onboarding/onboarding.service';
+import { isLockConflict, OnboardingService } from '../src/onboarding/onboarding.service';
 import { parseFixture } from '../src/onboarding/clinic-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
-import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -23,9 +24,6 @@ function asPrisma(m: object): PrismaService {
 }
 function asBuilder(m: object): WorkoutBuilderService {
   return m as WorkoutBuilderService;
-}
-function asScope(m: object): SubCoachScopeService {
-  return m as SubCoachScopeService;
 }
 
 type Row = Record<string, unknown>;
@@ -69,6 +67,10 @@ function makeWorld() {
       unassigned_at: null,
     },
   ];
+  // Team Mode seats (TeamSubCoachAssignment). Main's membership rule (#597)
+  // reads these first; sub-1 is a team member through its open delegation
+  // sca-1 above, so the default world needs none (INT-607-1).
+  const teamSeats: Row[] = [];
   // Client workout assignments created by assignProgramToClient.
   const workoutAssignments: Row[] = [];
   for (const p of fx.programs) {
@@ -178,6 +180,33 @@ function makeWorld() {
           : [];
       }
       if (/FROM "UserProfile" WHERE "user_id" = \? FOR UPDATE$/.test(sql)) return [];
+      // A-607-4: the in-transaction membership decision (seat, then delegation).
+      if (
+        /FROM "TeamSubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "archived_at" IS NULL LIMIT 1 FOR SHARE$/.test(
+          sql,
+        )
+      ) {
+        const seat = teamSeats.find(
+          (a) =>
+            a.head_coach_id === values[0] &&
+            a.sub_coach_id === values[1] &&
+            (a.archived_at ?? null) === null,
+        );
+        return seat ? [{ id: seat.id }] : [];
+      }
+      if (
+        /FROM "SubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "unassigned_at" IS NULL LIMIT 1 FOR SHARE$/.test(
+          sql,
+        )
+      ) {
+        const open = subAssignments.find(
+          (a) =>
+            a.head_coach_id === values[0] &&
+            a.sub_coach_id === values[1] &&
+            (a.unassigned_at ?? null) === null,
+        );
+        return open ? [{ id: open.id ?? 'delegation' }] : [];
+      }
       throw new Error(`unexpected raw SQL in double: ${sql}`);
     }),
     user: {
@@ -188,6 +217,11 @@ function makeWorld() {
     subCoachAssignment: {
       findFirst: jest.fn(
         async ({ where }: { where: Row }) => subAssignments.find((a) => match(a, where)) ?? null,
+      ),
+    },
+    teamSubCoachAssignment: {
+      findFirst: jest.fn(
+        async ({ where }: { where: Row }) => teamSeats.find((a) => match(a, where)) ?? null,
       ),
     },
     clientWorkoutAssignment: {
@@ -440,16 +474,13 @@ function makeWorld() {
     }),
   };
   // Sub-coach overlay: sub-1 (under coach-1) is assigned client-1;
-  // sub-x belongs to another head and has no assignment here. The service no
-  // longer consults this legacy scope for the consultation read (A607-1):
-  // the double answers true for sub-1 regardless of tenancy, which is
-  // exactly the stale grant the current-tenancy predicate must ignore.
-  const subCoachScope = {
-    canAccessClient: jest.fn(
-      async (reader: string, client: string) => reader === 'sub-1' && client === 'client-1',
-    ),
-  };
-  const svc = new OnboardingService(asPrisma(prisma), asBuilder(builder), asScope(subCoachScope));
+  // sub-x belongs to another head and has no assignment here. The
+  // consultation read asks main's REAL SubCoachScopeService (over this same
+  // double) only for explicit team membership (INT-607-1); it never uses the
+  // legacy canAccessClient scope (A607-1), which the spy below proves.
+  const subCoachScope = new SubCoachScopeService(asPrisma(prisma));
+  const legacyScope = jest.spyOn(subCoachScope, 'canAccessClient');
+  const svc = new OnboardingService(asPrisma(prisma), asBuilder(builder), subCoachScope);
   // The real consent gate: P0 alone first, then answers.
   const consentThenSave = async (
     clientId: string,
@@ -484,6 +515,8 @@ function makeWorld() {
     plans,
     users,
     subAssignments,
+    teamSeats,
+    legacyScope,
     workoutAssignments,
     programs,
     masterIds,
@@ -493,10 +526,13 @@ function makeWorld() {
   };
 }
 
+// The exact P0 the mobile app (#310) sends: copy version + sha256 of the
+// whole screen text it showed (consult-consent-copy.ts).
 const CONSENT = {
   agreed: true,
-  copy_version: 'consult-consent-v2',
+  copy_version: 'consult-consent-v3',
   agreed_at: '2026-10-01T11:59:00.000Z',
+  text_sha256: CONSULT_CONSENT_V3_TEXT_SHA256,
 };
 
 const COMPLETE = {
@@ -512,7 +548,7 @@ const COMPLETE = {
   S3: 'gym',
   N1: 'none',
   N2: ['nothing'],
-  P0: { agreed: true, copy_version: 'consult-consent-v2', agreed_at: '2026-10-01T11:59:00.000Z' },
+  P0: CONSENT,
   P1: 'no',
   P2: 'no',
   P3: 'no',
@@ -522,6 +558,13 @@ const COMPLETE = {
   P7: 'no',
   C1: '2026-10-05',
 };
+
+/** A copy of a stored intake's answers (to build a tampered record). */
+function answersOf(row: Row): Record<string, unknown> {
+  const a = row.answers;
+  if (typeof a !== 'object' || a === null || Array.isArray(a)) throw new Error('no answers');
+  return Object.fromEntries(Object.entries(a));
+}
 
 async function code(p: Promise<unknown>): Promise<string> {
   try {
@@ -563,7 +606,7 @@ describe('PUT /me/onboarding/consultation', () => {
     );
     expect(out.completed_chapters).toContain('safety');
     const intake = w.intakes[0];
-    expect(intake.disclaimer_version).toBe('consult-consent-v2');
+    expect(intake.disclaimer_version).toBe('consult-consent-v3');
     expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
     expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
@@ -573,7 +616,7 @@ describe('PUT /me/onboarding/consultation', () => {
       'client-1',
       {
         version: 'consult-v1',
-        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
+        answers: { P0: { ...CONSENT, agreed_at: '2026-10-01T12:30:00.000Z' } },
       },
       new Date(later.getTime() + 1),
     );
@@ -617,7 +660,7 @@ describe('consent before answers (privacy ruling 2026-09-30 18:24)', () => {
     );
     expect(first.revision).toBe(1);
     expect(w.intakes[0]).toMatchObject({
-      disclaimer_version: 'consult-consent-v2',
+      disclaimer_version: 'consult-consent-v3',
       disclaimer_accepted_at: NOW,
     });
     const { P0: _p0, ...rest } = COMPLETE;
@@ -682,14 +725,30 @@ describe('POST /me/onboarding/complete', () => {
     });
   });
 
-  it('consent_missing at complete when the accepted copy version is no longer current', async () => {
-    const w = await ready();
-    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v3';
-    try {
-      expect(await code(w.svc.complete('client-1', NOW))).toBe('consent_missing');
-    } finally {
-      delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
-    }
+  it('consent_missing at complete when the stored consent is not a current, provable v3 record', async () => {
+    // A stamp for a version that is no longer accepted (v2: no compat window).
+    const stale = await ready();
+    stale.intakes[0].disclaimer_version = 'consult-consent-v2';
+    stale.intakes[0].answers = {
+      ...answersOf(stale.intakes[0]),
+      P0: { ...CONSENT, copy_version: 'consult-consent-v2' },
+    };
+    expect(await code(stale.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // A v3 stamp whose stored P0 no longer proves the v3 text.
+    const tampered = await ready();
+    tampered.intakes[0].answers = {
+      ...answersOf(tampered.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'a'.repeat(64) },
+    };
+    expect(await code(tampered.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // A stamp that names a different version than the stored P0.
+    const split = await ready();
+    split.intakes[0].disclaimer_version = 'consult-consent-v4';
+    expect(await code(split.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // No server stamp at all.
+    const unstamped = await ready();
+    unstamped.intakes[0].disclaimer_accepted_at = null;
+    expect(await code(unstamped.svc.complete('client-1', NOW))).toBe('consent_missing');
   });
 
   it('clinic_not_configured when the coach has no program set', async () => {
@@ -923,7 +982,7 @@ describe('GET /coach/clients/:clientId/consultation', () => {
       note: 'On stairs',
     });
     expect(v.screening.items[0].question.length).toBeGreaterThan(20);
-    expect(v.consent).toEqual({ version: 'consult-consent-v2', agreed_at: NOW.toISOString() });
+    expect(v.consent).toEqual({ version: 'consult-consent-v3', agreed_at: NOW.toISOString() });
   });
 
   it('an assigned sub-coach can read; earlier revisions stay readable after edits', async () => {
@@ -1047,10 +1106,246 @@ describe('A607-1: consultation read uses CURRENT tenancy only', () => {
     await expect(w.svc.canCoachRead('coach-1', 'client-1')).resolves.toBe(false);
   });
 
-  it('a sub_coach-role reader on the current team with an open assignment can read', async () => {
+  it("INT-607-1: a sub_coach-role user is not a team member under main's rule (role must be coach)", async () => {
+    // Main's SubCoachScopeService (#597) counts only role = 'coach' rows as
+    // team members, and no code path writes role 'sub_coach'. The open
+    // assignment alone therefore grants nothing, exactly as everywhere else.
     const w = await saved();
     user(w, 'sub-1').role = 'sub_coach';
-    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(true);
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(false);
+    // The head keeps its direct-roster access.
+    await expect(w.svc.canCoachRead('coach-1', 'client-1')).resolves.toBe(true);
+  });
+
+  it('never consults the legacy canAccessClient scope', async () => {
+    const w = await saved();
+    await w.svc.canCoachRead('sub-1', 'client-1');
+    await w.svc.canCoachRead('sub-x', 'client-1');
+    await w.svc.canCoachRead('coach-1', 'client-2');
+    expect(w.legacyScope).not.toHaveBeenCalled();
+  });
+});
+
+/** The double's $transaction (attached with Object.assign, so not in its static type). */
+const txOf = (w: ReturnType<typeof makeWorld>): jest.Mock =>
+  Reflect.get(w.prisma, '$transaction') as jest.Mock;
+
+describe("INT-607-1: the completion clone's tenant follows main's explicit membership rule", () => {
+  const user = (w: ReturnType<typeof makeWorld>, uid: string) => w.users.find((u) => u.id === uid)!;
+  async function ready() {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    return w;
+  }
+  const tenantsOf = (w: ReturnType<typeof makeWorld>) => ({
+    program: w.createdClones.map((c) => c.coach_id),
+    plans: [
+      ...new Set(
+        w.plans
+          .filter((pl) => w.createdClones.some((c) => c.id === pl.program_id))
+          .map((pl) => pl.coach_id),
+      ),
+    ],
+  });
+
+  it('a head coach (no coach_id) keeps the clone in its own tenant', async () => {
+    const w = await ready();
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('a phantom-tagged coach (bare coach_id, no membership row) keeps the clone in its own tenant', async () => {
+    // Old guest checkout stamped coach-1.coach_id = other-coach. Without a
+    // seat or delegation from other-coach, other-coach must never own (and
+    // list) this client's plans.
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+    expect(w.createdClones[0].owner_user_id).toBe('coach-1');
+  });
+
+  it("an explicit team member's client clone lands in the head's tenant", async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    w.teamSeats.push({
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    });
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(w.createdClones[0].owner_user_id).toBe('coach-1');
+  });
+
+  it('the coach row moving to another head under the fence re-runs against the current team', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    w.teamSeats.push({
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    });
+    // Commits after the membership read, before the fenced transaction.
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      user(w, 'coach-1').coach_id = 'third-head';
+    };
+    await w.svc.complete('client-1', NOW);
+    // The first attempt rolled back; the re-run sees no membership under
+    // third-head, so the only clone is in coach-1's own tenant.
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  // ── A-607-4: main retires membership WITHOUT touching User ──────────────
+  const seatUnder = (w: ReturnType<typeof makeWorld>) => {
+    user(w, 'coach-1').coach_id = 'other-coach';
+    const seat: Row = {
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    };
+    w.teamSeats.push(seat);
+    return seat;
+  };
+  const membershipLocks = (w: ReturnType<typeof makeWorld>) =>
+    w.prisma.$queryRaw.mock.calls
+      .map((c: unknown[]) => (c[0] as TemplateStringsArray).join('?').replace(/\s+/g, ' ').trim())
+      .filter((sql: string) => /"(TeamSubCoachAssignment|SubCoachAssignment)"/.test(sql));
+
+  it('A-607-4 (Sol reproduction): a seat archived after the membership read never writes the removed head', async () => {
+    const w = await ready();
+    const seat = seatUnder(w);
+    // Main's multi-head removal archives only the seat; User is unchanged.
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      seat.archived_at = NOW;
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(
+      await new SubCoachScopeService(asPrisma(w.prisma)).getHeadCoachIdForSubCoach('coach-1'),
+    ).toBeNull();
+    expect(user(w, 'coach-1').coach_id).toBe('other-coach');
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('A-607-4: the last delegation closed after the membership read never writes the removed head', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    const delegation: Row = {
+      id: 'deleg-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      client_id: 'someone',
+      unassigned_at: null,
+    };
+    w.subAssignments.push(delegation);
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      delegation.unassigned_at = NOW; // SubCoachReassignService closes it; User unchanged
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('A-607-4: a membership added after an earlier null read re-runs and lands in the head tenant', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach'; // bare pointer: no membership yet
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      w.teamSeats.push({
+        id: 'seat-new',
+        head_coach_id: 'other-coach',
+        sub_coach_id: 'coach-1',
+        archived_at: null,
+      });
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(w.createdClones).toHaveLength(1);
+  });
+
+  it('A-607-4 control: unchanged membership completes in one transaction, the seat read FOR SHARE in it', async () => {
+    const w = await ready();
+    seatUnder(w);
+    w.prisma.$queryRaw.mockClear();
+    txOf(w).mockClear();
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(txOf(w)).toHaveBeenCalledTimes(1);
+    const locks = membershipLocks(w);
+    expect(locks).toHaveLength(1);
+    expect(locks[0]).toMatch(/"archived_at" IS NULL LIMIT 1 FOR SHARE$/);
+  });
+
+  it('A-607-4 control: a head coach (no coach_id) takes no membership lock', async () => {
+    const w = await ready();
+    w.prisma.$queryRaw.mockClear();
+    await w.svc.complete('client-1', NOW);
+    expect(membershipLocks(w)).toHaveLength(0);
+  });
+});
+
+describe('C-607-3: a lock conflict aborted by Postgres is retried, then a retryable 409', () => {
+  const lockConflict = () =>
+    new Prisma.PrismaClientKnownRequestError(
+      'Transaction failed due to a write conflict or a deadlock',
+      {
+        code: 'P2034',
+        clientVersion: 'test',
+      },
+    );
+
+  it('one deadlock: the attempt rolled back and the re-run completes once', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const real = txOf(w).getMockImplementation()!;
+    txOf(w).mockImplementationOnce(async () => {
+      throw lockConflict();
+    });
+    txOf(w).mockImplementation(real);
+    const out = await w.svc.complete('client-1', NOW);
+    expect(out).toBeTruthy();
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.intakes[0].completion_claim_token ?? null).toBeNull();
+  });
+
+  it('deadlocks on every attempt: 409 completion_in_progress, the claim released, nothing written', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    txOf(w).mockImplementation(async () => {
+      throw lockConflict();
+    });
+    await expect(w.svc.complete('client-1', NOW)).rejects.toMatchObject({
+      response: { code: 'completion_in_progress' },
+    });
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.intakes[0].completion_claim_token ?? null).toBeNull();
+  });
+
+  it('a raw-statement deadlock (P2010 / 40P01) is the same lock conflict; other errors are not', () => {
+    const raw = new Prisma.PrismaClientKnownRequestError(
+      'Raw query failed. Code: `40P01`. Message: `deadlock detected`',
+      {
+        code: 'P2010',
+        clientVersion: 'test',
+        meta: { code: '40P01', message: 'deadlock detected' },
+      },
+    );
+    expect(isLockConflict(raw)).toBe(true);
+    expect(isLockConflict(lockConflict())).toBe(true);
+    expect(
+      isLockConflict(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      ),
+    ).toBe(false);
+    expect(isLockConflict(new Error('deadlock detected'))).toBe(false);
   });
 });
 
@@ -1460,44 +1755,153 @@ describe('A607-3: finalisation never writes for a former coach', () => {
 });
 
 describe('D2 consent: box 1 only gates completion; box 2 is never required (#607 does not depend on #601)', () => {
-  it('the accepted P0 copy version defaults to consult-consent-v2; v1 is no longer current', async () => {
+  it('the accepted P0 copy is consult-consent-v3 with its exact text digest; v1 and v2 are not current', async () => {
     const w = makeWorld();
+    for (const P0 of [
+      { agreed: true, copy_version: 'consult-consent-v1' },
+      { agreed: true, copy_version: 'consult-consent-v2' },
+      // v2 with the v3 digest is still v2: version and text must both match.
+      { ...CONSENT, copy_version: 'consult-consent-v2' },
+    ]) {
+      expect(
+        await code(
+          w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW),
+        ),
+      ).toBe('consent_missing');
+    }
+    expect(w.intakes).toHaveLength(0);
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect(answersOf(w.intakes[0]).P0).toEqual(CONSENT);
+  });
+
+  it('a v3 P0 without the exact v3 text digest is not consent and nothing is stored', async () => {
+    const w = makeWorld();
+    const { text_sha256: _sha, ...noDigest } = CONSENT;
+    for (const P0 of [
+      noDigest,
+      { ...CONSENT, text_sha256: 'b'.repeat(64) },
+      // The box 2 (AI) copy digest is not the screen digest.
+      {
+        ...CONSENT,
+        text_sha256: 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4',
+      },
+    ]) {
+      expect(
+        await code(
+          w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW),
+        ),
+      ).toBe('consent_missing');
+    }
+    expect(w.intakes).toHaveLength(0);
+    expect(w.revisions).toHaveLength(0);
+    // A malformed digest is a shape error (400), also before any write.
+    await expect(
+      w.svc.saveConsultation(
+        'client-1',
+        { version: 'consult-v1', answers: { P0: { ...CONSENT, text_sha256: 'NOT-HEX' } } },
+        NOW,
+      ),
+    ).rejects.toMatchObject({ response: { code: 'invalid_answers' } });
+    expect(w.intakes).toHaveLength(0);
+  });
+
+  it('a stored P0 that no longer proves the v3 text is not on file: answers are refused until P0 is re-sent', async () => {
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+    w.intakes[0].answers = {
+      ...answersOf(w.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'c'.repeat(64) },
+    };
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(false);
     expect(
       await code(
         w.svc.saveConsultation(
           'client-1',
-          {
-            version: 'consult-v1',
-            answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
-          },
+          { version: 'consult-v1', answers: { G1: 'fat_loss' } },
           NOW,
         ),
       ),
     ).toBe('consent_missing');
+    // A stale v2 stamp reads the same way.
+    w.intakes[0].answers = { ...answersOf(w.intakes[0]), P0: { ...CONSENT } };
+    w.intakes[0].disclaimer_version = 'consult-consent-v2';
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(false);
+    // Re-sending the exact v3 P0 alone restores it.
     await w.svc.saveConsultation(
       'client-1',
-      {
-        version: 'consult-v1',
-        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
-      },
+      { version: 'consult-v1', answers: { P0: CONSENT } },
       NOW,
     );
-    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v2');
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
   });
 
-  it('CONSULT_CONSENT_COPY_VERSIONS still overrides the default', async () => {
+  it('C-607-5: re-sending a provable v3 over an unprovable stored v3 re-stamps the acceptance time', async () => {
+    const LATER = new Date('2026-10-02T09:30:00.000Z');
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
+    // A proven resume keeps the original time.
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      LATER,
+    );
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
+    // The stored v3 P0 stops proving the v3 text (hand-edited row).
+    w.intakes[0].answers = {
+      ...answersOf(w.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'c'.repeat(64) },
+    };
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      LATER,
+    );
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(LATER);
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+  });
+
+  it('CONSULT_CONSENT_COPY_VERSIONS only chooses among versions with known text', async () => {
+    // Unknown names cannot be verified, so they are ignored; v2 is unknown.
     process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v1, consult-consent-v2';
     try {
       const w = makeWorld();
+      expect(
+        await code(
+          w.svc.saveConsultation(
+            'client-1',
+            {
+              version: 'consult-v1',
+              answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
+            },
+            NOW,
+          ),
+        ),
+      ).toBe('consent_missing');
+      // No known name in the list: the default (v3) still applies.
       await w.svc.saveConsultation(
         'client-1',
-        {
-          version: 'consult-v1',
-          answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
-        },
+        { version: 'consult-v1', answers: { P0: CONSENT } },
         NOW,
       );
-      expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v1');
+      expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
     } finally {
       delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
     }
@@ -1524,7 +1928,7 @@ describe('D2 consent: box 1 only gates completion; box 2 is never required (#607
           'client-1',
           {
             version: 'consult-v1',
-            answers: { P0: { agreed: true, copy_version: 'consult-consent-v2', ...extra } },
+            answers: { P0: { ...CONSENT, ...extra } },
           },
           NOW,
         ),

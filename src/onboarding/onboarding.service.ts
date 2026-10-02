@@ -17,8 +17,9 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
 import {
   CONSULTATION_VERSION,
-  acceptedConsentVersions,
   consentCopyVersion,
+  currentConsentVersionOf,
+  isCurrentConsentAnswer,
   macroDisplayFor,
   selectionAnswersFrom,
   completedChapters,
@@ -150,12 +151,29 @@ export async function lockUserRow(
   return rows[0] ?? null;
 }
 
+/**
+ * C-607-3: Postgres aborted the transaction to resolve a lock conflict.
+ * P2034 is Prisma's code for a write conflict or deadlock; a raw statement
+ * (the FOR SHARE fences) surfaces the SQLSTATE in P2010's meta or the message.
+ */
+export function isLockConflict(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code === 'P2034') return true;
+  if (err.code !== 'P2010') return false;
+  const meta = err.meta ?? {};
+  const sqlState = typeof meta.code === 'string' ? meta.code : '';
+  return (
+    ['40P01', '40001', '55P03'].includes(sqlState) ||
+    /deadlock detected|could not serialize access/i.test(err.message)
+  );
+}
+
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 const COACH_FLAG_BODY =
-  'A new client finished their consultation and asked for extra care. Please review before their first session.';
+  'A new client finished their consultation and was flagged for extra care. Please review before their first session.';
 
 function conflict(
   code: OnboardingConflictCode,
@@ -171,6 +189,26 @@ function toJson(v: unknown): Prisma.InputJsonValue {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The P0 copy version a stored intake holds current consent for, or null.
+ * Current = server-stamped (`disclaimer_accepted_at`), the stamp names an
+ * accepted version, and the stored P0 proves that same version's exact text
+ * (copy_version + text_sha256, consult-consent-copy.ts). Used by the save
+ * gate, GET `consent_recorded` and completion, so all three agree.
+ */
+function onFileConsentVersion(
+  intake: {
+    disclaimer_accepted_at: Date | null;
+    disclaimer_version: string | null;
+    answers: unknown;
+  } | null,
+): string | null {
+  if (!intake?.disclaimer_accepted_at || !intake.disclaimer_version) return null;
+  const answers = intake.answers;
+  const version = currentConsentVersionOf(isRecord(answers) ? answers.P0 : undefined);
+  return version !== null && version === intake.disclaimer_version ? version : null;
 }
 
 interface ProgramSetEntry {
@@ -205,14 +243,26 @@ function readMaterialisation(v: unknown): Materialisation | null {
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
+  /**
+   * Main's team-membership rule (#597, C13 Opus A1). The consultation read
+   * asks it one question only, "is this coach an EXPLICIT member of a head
+   * coach's team, and of which head?" (getHeadCoachIdForSubCoach), so the API
+   * and every other tenant surface share one definition. SubCoachModule is
+   * @Global, so production always injects it; the fallback builds the same
+   * service over the same PrismaService (tests, standalone construction).
+   */
+  private readonly membership: SubCoachScopeService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
-    @Optional() private readonly subCoachScope?: SubCoachScopeService,
+    @Optional() subCoachScope?: SubCoachScopeService,
     @Optional()
     @Inject(ONBOARDING_COMPLETION_HOOKS)
     private readonly completionHooks: OnboardingCompletionHook[] = [],
-  ) {}
+  ) {
+    this.membership = subCoachScope ?? new SubCoachScopeService(prisma);
+  }
 
   // ─── GET /coach/clients/:clientId/consultation ─────────────────────────
   /**
@@ -220,6 +270,14 @@ export class OnboardingService {
    * open assignment to the client, or the head coach of the client's coach
    * may read. Everyone else, including the client, gets 404 (no existence
    * oracle).
+   *
+   * INT-607-1: "head coach of" and "sub-coach on the team of" use main's
+   * explicit membership rule (#597 C13 Opus A1, SubCoachScopeService): a coach
+   * is on head H's team only when role = 'coach', coach_id = H AND an active
+   * TeamSubCoachAssignment(H, coach) or an open SubCoachAssignment(H, coach)
+   * exists. A bare coach_id is NOT membership: old guest checkouts stamped
+   * coach_id onto coach buyers (phantom sub-coaches), and the phantom "head"
+   * must never read the buyer coach's clients' screening answers.
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
     // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
@@ -234,14 +292,16 @@ export class OnboardingService {
       select: { coach_id: true, role: true, deleted_at: true },
     });
     if (!client || client.role !== 'student' || client.deleted_at || !client.coach_id) return false;
+    // coach_id is deliberately not read here: team membership comes only from
+    // the explicit-membership rule below (INT-607-1).
     const [reader, clientCoach] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: readerId },
-        select: { id: true, role: true, coach_id: true, deleted_at: true },
+        select: { id: true, role: true, deleted_at: true },
       }),
       this.prisma.user.findUnique({
         where: { id: client.coach_id },
-        select: { id: true, role: true, coach_id: true, deleted_at: true },
+        select: { id: true, role: true, deleted_at: true },
       }),
     ]);
     if (!reader || reader.deleted_at) return false;
@@ -251,12 +311,23 @@ export class OnboardingService {
 
     // 1) The client's current coach.
     if (clientCoach.id === reader.id) return true;
-    // 2) The current head coach of the client's current coach.
-    if (clientCoach.coach_id && clientCoach.coach_id === reader.id && !reader.coach_id) return true;
-    // 3) A sub-coach currently on the client's head's team with an open
+    // Explicit team membership (main's rule; null = not a member of any
+    // team, i.e. head of their own roster). Read live on every request.
+    const [clientCoachHead, readerHead] = await Promise.all([
+      this.membership.getHeadCoachIdForSubCoach(clientCoach.id),
+      this.membership.getHeadCoachIdForSubCoach(reader.id),
+    ]);
+    // The client's current head: the head of the client's coach when that
+    // coach is an explicit team member, otherwise the client's coach itself.
+    const head = clientCoachHead ?? clientCoach.id;
+    // 2) The current head coach of the client's current coach: the client's
+    //    coach is an explicit member of the reader's team, and the reader is
+    //    not itself a member of another team.
+    if (clientCoachHead !== null && clientCoachHead === reader.id && readerHead === null)
+      return true;
+    // 3) An explicit member of the client's head's team with an open
     //    assignment issued by that same head for this client.
-    const head = clientCoach.coach_id ?? clientCoach.id;
-    if (!reader.coach_id || reader.coach_id !== head) return false;
+    if (readerHead === null || readerHead !== head) return false;
     const open = await this.prisma.subCoachAssignment.findFirst({
       where: {
         sub_coach_id: reader.id,
@@ -393,7 +464,6 @@ export class OnboardingService {
     // and use for coaching); its record is the server-stamped
     // disclaimer_version + disclaimer_accepted_at on the intake. Box 2 (AI
     // processing) lives in the AI consent ledger and is never read here.
-    const accepted = acceptedConsentVersions();
     const patchP0 = patch.P0;
     if (patchP0 === null) {
       throw new BadRequestException({
@@ -403,14 +473,15 @@ export class OnboardingService {
         errors: [{ key: 'P0', message: 'consent cannot be cleared here' }],
       });
     }
-    if (isRecord(patchP0) && !accepted.includes(consentCopyVersion(patchP0) ?? '')) {
+    // A P0 counts only with an accepted copy version AND the sha256 of that
+    // version's exact screen text (consult-consent-copy.ts): the record must
+    // prove which text the client agreed to.
+    if (isRecord(patchP0) && !isCurrentConsentAnswer(patchP0)) {
       throw conflict('consent_missing', 'Please accept the current version of the agreement');
     }
-    const consentOnFile = Boolean(
-      existing?.disclaimer_accepted_at &&
-      existing.disclaimer_version &&
-      accepted.includes(existing.disclaimer_version),
-    );
+    // On file = a server stamp for an accepted version whose stored P0 still
+    // proves that exact version's text.
+    const consentOnFile = onFileConsentVersion(existing) !== null;
     if (!consentOnFile) {
       const otherKeys = Object.keys(patch).filter((k) => k !== 'P0');
       if (!isRecord(patchP0) || otherKeys.length > 0) {
@@ -423,13 +494,17 @@ export class OnboardingService {
     const merged = mergeAnswers(stored, patch);
     const chapters = completedChapters(merged);
 
-    // P0: server-stamped acknowledgement. Re-stamped only when the copy
-    // version changes, so a resume does not move the accepted time.
+    // P0: server-stamped acknowledgement. Re-stamped when the copy version
+    // changes, or when the stored stamp is not provable (Opus C-607-5: a
+    // stored v3 whose P0 no longer proves the v3 text keeps no unproven
+    // time), so a resume of a proven consent does not move the accepted time.
     const p0 = isRecord(merged.P0) ? merged.P0 : null;
     const p0Version = p0 ? consentCopyVersion(p0) : null;
     const disclaimer_version = p0Version;
     const disclaimer_accepted_at = p0Version
-      ? existing?.disclaimer_version === p0Version && existing.disclaimer_accepted_at
+      ? consentOnFile &&
+        existing?.disclaimer_version === p0Version &&
+        existing.disclaimer_accepted_at
         ? existing.disclaimer_accepted_at
         : now
       : null;
@@ -520,7 +595,9 @@ export class OnboardingService {
       answers,
       completed_chapters: intake?.completed_chapters ?? [],
       missing_required: missingRequired(answers),
-      consent_recorded: Boolean(intake?.disclaimer_accepted_at),
+      // True only while a CURRENT consent is on file (see onFileConsentVersion);
+      // a stale or unprovable P0 reads false, so the app sends P0 first.
+      consent_recorded: onFileConsentVersion(intake) !== null,
       saved_at: intake?.saved_at?.toISOString() ?? null,
       completed: Boolean(intake?.completed_at),
       completed_at: intake?.completed_at?.toISOString() ?? null,
@@ -537,7 +614,11 @@ export class OnboardingService {
       try {
         return await this.completeOnce(clientId, now);
       } catch (err) {
-        if (!(err instanceof TenancyChangedError)) throw err;
+        // C-607-3: a lock conflict the database resolved by aborting this
+        // attempt (deadlock, serialization failure) rolled everything back;
+        // it is re-run like an attachment change, then answered with the
+        // retryable 409 below, never a bare 500.
+        if (!(err instanceof TenancyChangedError) && !isLockConflict(err)) throw err;
         if (attempt >= COMPLETE_TENANCY_ATTEMPTS) {
           throw conflict(
             'completion_in_progress',
@@ -570,6 +651,11 @@ export class OnboardingService {
     if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
       throw conflict('not_attached', 'This account is not attached to a coach yet');
     }
+    // INT-607-1: the client clone's tenant is the coach's head ONLY when the
+    // coach is an explicit member of that head's team (main's #597 rule); a
+    // bare coach_id stamped by an old guest checkout keeps the clone in the
+    // coach's own tenant, so a phantom head never lists the client's plans.
+    const coachTeamHead = await this.membership.getHeadCoachIdForSubCoach(coach.id);
 
     const answers: Answers = isRecord(intake?.answers)
       ? (JSON.parse(JSON.stringify(intake?.answers)) as Answers)
@@ -585,11 +671,9 @@ export class OnboardingService {
     // D2 box 1 only: the training waiver plus collection and use for
     // coaching, recorded on the intake as the server-stamped P0. The
     // optional AI box (box 2, #601 / R2a ledger) is never consulted here.
-    if (
-      !intake.disclaimer_accepted_at ||
-      !isRecord(answers.P0) ||
-      !acceptedConsentVersions().includes(intake.disclaimer_version ?? '')
-    ) {
+    // The stamp must name an accepted version AND the stored P0 must prove
+    // that version's exact text (copy_version + text_sha256).
+    if (onFileConsentVersion(intake) === null) {
       throw conflict('consent_missing', 'The training agreement has not been accepted');
     }
     const resolved = resolveMacroInputs(macroRawFromAnswers(answers), now);
@@ -673,6 +757,18 @@ export class OnboardingService {
           ) {
             throw new TenancyChangedError();
           }
+          // A-607-4: the clone's tenant is decided HERE, from the locked coach
+          // row and the membership row that proves it (also locked FOR SHARE),
+          // never from the read before this transaction: main retires a seat
+          // or the last delegation without touching User. If the decision
+          // differs from the pre-read, the attempt rolls back and re-runs
+          // against the current team (same path as an attachment change).
+          const tenantHead = await this.membership.lockMembershipHeadCoachIdInTx(
+            tx,
+            coach.id,
+            liveCoach,
+          );
+          if (tenantHead !== coachTeamHead) throw new TenancyChangedError();
 
           // CLAIM FENCE: complete the row only while this worker still holds
           // (token, revision). Takes the intake row lock; a second worker
@@ -695,7 +791,7 @@ export class OnboardingService {
 
           const program = await this.materialiseAndAssignInTx(
             tx,
-            { id: coach.id, coach_id: liveCoach.coach_id },
+            { id: coach.id, tenant_id: tenantHead ?? coach.id },
             clientId,
             entry.program_id,
             sel,
@@ -969,7 +1065,7 @@ export class OnboardingService {
    */
   private async materialiseAndAssignInTx(
     tx: Prisma.TransactionClient,
-    coach: { id: string; coach_id: string | null },
+    coach: { id: string; tenant_id: string },
     clientId: string,
     masterId: string,
     sel: ProgramSelection,
@@ -981,7 +1077,7 @@ export class OnboardingService {
     assignment_ids: string[];
     first_plan_id: string;
   }> {
-    const tenantId = coach.coach_id ?? coach.id;
+    const tenantId = coach.tenant_id;
     const master = await tx.workoutProgram.findUnique({ where: { id: masterId } });
     // Tenancy: the master must be the attached coach's own live template.
     if (!master || master.owner_user_id !== coach.id || !master.is_template || master.archived_at) {

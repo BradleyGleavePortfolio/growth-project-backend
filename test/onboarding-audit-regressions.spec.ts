@@ -24,6 +24,10 @@ import type { AuditService } from '../src/audit/audit.service';
 //           sub-coach access can survive it.
 //   Opus    every signed-in role reaches the coach consultation route's
 //           tenancy check (404), none is stopped by RolesGuard (403).
+//   INT-607-1 the phantom chain: a bare coach_id (stamped by an old guest
+//           checkout) is not team membership, so a phantom "head" and its
+//           real sub-coach read nothing of the buyer coach's clients; the
+//           real head, a team member and an assigned sub-coach still read.
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
 
@@ -57,7 +61,7 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
       cause: 'save',
       created_at: NOW,
       disclaimer_accepted_at: NOW,
-      disclaimer_version: 'consult-consent-v2',
+      disclaimer_version: 'consult-consent-v3',
       screening_any_yes: true,
       answers: { P1: 'yes', P1_note: 'synthetic sensitive note' },
     }));
@@ -104,6 +108,214 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
       { status: 404 },
     );
     expect(revisionRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("INT-607-1: phantom chain under main's explicit membership rule (#597 C13 Opus A1)", () => {
+  type U = { id: string; role: string; coach_id: string | null; deleted_at: Date | null };
+  type Seat = { id: string; head_coach_id: string; sub_coach_id: string; archived_at: Date | null };
+  type Sca = {
+    id: string;
+    head_coach_id: string;
+    sub_coach_id: string;
+    client_id: string;
+    unassigned_at: Date | null;
+  };
+  const u = (id: string, role: string, coach_id: string | null = null): U => ({
+    id,
+    role,
+    coach_id,
+    deleted_at: null,
+  });
+
+  // HEAD runs a real team: TEAM_COACH holds a Team Mode seat and owns a
+  //   roster (CLIENT_T); ASSIGNED is a delegated sub-coach on CLIENT_H.
+  // SELLER sold a package to BUYER (a self-serve coach) through an old guest
+  //   checkout that stamped BUYER.coach_id = SELLER with NO membership row:
+  //   BUYER is a phantom sub-coach and SELLER a phantom head. SELLER_SUB is
+  //   SELLER's real team member and holds a stale open assignment from
+  //   SELLER on BUYER's client (written while the old scope trusted the
+  //   phantom).
+  // TAGGED is a real head (its own team: TAGGED_SUB with a seat) whose own
+  //   row also carries a stamped coach_id = SELLER with no membership.
+  function world() {
+    const users: U[] = [
+      u('head', 'coach'),
+      u('team-coach', 'coach', 'head'),
+      u('assigned', 'coach', 'head'),
+      u('seller', 'coach'),
+      u('buyer', 'coach', 'seller'),
+      u('seller-sub', 'coach', 'seller'),
+      u('tagged', 'coach', 'seller'),
+      u('tagged-sub', 'coach', 'tagged'),
+      u('foreign', 'coach'),
+      u('client-h', 'student', 'head'),
+      u('client-t', 'student', 'team-coach'),
+      u('client-b', 'student', 'buyer'),
+      u('client-st', 'student', 'tagged-sub'),
+    ];
+    const seats: Seat[] = [
+      { id: 'seat-1', head_coach_id: 'head', sub_coach_id: 'team-coach', archived_at: null },
+      { id: 'seat-2', head_coach_id: 'seller', sub_coach_id: 'seller-sub', archived_at: null },
+      { id: 'seat-3', head_coach_id: 'tagged', sub_coach_id: 'tagged-sub', archived_at: null },
+    ];
+    const scas: Sca[] = [
+      {
+        id: 'sca-h',
+        head_coach_id: 'head',
+        sub_coach_id: 'assigned',
+        client_id: 'client-h',
+        unassigned_at: null,
+      },
+      {
+        id: 'sca-phantom',
+        head_coach_id: 'seller',
+        sub_coach_id: 'seller-sub',
+        client_id: 'client-b',
+        unassigned_at: null,
+      },
+    ];
+    const matches = (row: object, where: Record<string, unknown>) =>
+      Object.entries(where).every(([k, v]) => (row as Record<string, unknown>)[k] === v);
+    const prisma = {
+      user: {
+        findUnique: jest.fn(
+          async ({ where }: { where: { id: string } }) =>
+            users.find((x) => x.id === where.id) ?? null,
+        ),
+      },
+      teamSubCoachAssignment: {
+        findFirst: jest.fn(
+          async ({ where }: { where: Record<string, unknown> }) =>
+            seats.find((x) => matches(x, where)) ?? null,
+        ),
+      },
+      subCoachAssignment: {
+        findFirst: jest.fn(
+          async ({ where }: { where: Record<string, unknown> }) =>
+            scas.find((x) => matches(x, where)) ?? null,
+        ),
+      },
+    };
+    const scope = new SubCoachScopeService(asPrisma(prisma));
+    const svc = new OnboardingService(asPrisma(prisma), asBuilder({}), scope);
+    return { users, seats, scas, prisma, scope, svc };
+  }
+
+  const READERS = [
+    'head',
+    'team-coach',
+    'assigned',
+    'seller',
+    'buyer',
+    'seller-sub',
+    'tagged',
+    'tagged-sub',
+    'foreign',
+  ];
+  async function audience(w: ReturnType<typeof world>, client: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const r of READERS) if (await w.svc.canCoachRead(r, client)) out.push(r);
+    return out;
+  }
+
+  it('the phantom head and its real sub-coach read nothing of the buyer coach clients', async () => {
+    const w = world();
+    // Main's rule: BUYER has coach_id but no membership row -> not a member.
+    await expect(w.scope.getHeadCoachIdForSubCoach('buyer')).resolves.toBeNull();
+    await expect(w.svc.canCoachRead('seller', 'client-b')).resolves.toBe(false);
+    await expect(w.svc.canCoachRead('seller-sub', 'client-b')).resolves.toBe(false);
+    expect(await audience(w, 'client-b')).toEqual(['buyer']);
+  });
+
+  it('the consultation read itself answers 404 to the phantom head and reads no revision', async () => {
+    const w = world();
+    const revisionRead = jest.fn();
+    Object.assign(w.prisma, {
+      clientOnboardingIntake: { findUnique: jest.fn() },
+      clientOnboardingIntakeRevision: { findUnique: revisionRead, findMany: revisionRead },
+    });
+    await expect(w.svc.getCoachConsultation('seller', 'client-b')).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(w.svc.listCoachConsultationRevisions('seller', 'client-b')).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(revisionRead).not.toHaveBeenCalled();
+  });
+
+  it('real head, Team Mode member and assigned sub-coach still read', async () => {
+    const w = world();
+    expect(await audience(w, 'client-h')).toEqual(['head', 'assigned']);
+    expect(await audience(w, 'client-t')).toEqual(['head', 'team-coach']);
+  });
+
+  it('a real head whose own row carries a stamped coach_id still heads its own team', async () => {
+    // Main treats TAGGED as the head of its own roster (no membership under
+    // SELLER), so it reads its explicit team member's client; SELLER does not.
+    const w = world();
+    expect(await audience(w, 'client-st')).toEqual(['tagged', 'tagged-sub']);
+  });
+
+  it('archiving the Team Mode seat removes the head immediately; the coach keeps its own roster', async () => {
+    const w = world();
+    w.seats[0].archived_at = NOW;
+    expect(await audience(w, 'client-t')).toEqual(['team-coach']);
+  });
+
+  it('an open delegation is membership too (main rule), and revoking it removes the head', async () => {
+    const w = world();
+    w.seats[0].archived_at = NOW;
+    w.scas.push({
+      id: 'sca-t',
+      head_coach_id: 'head',
+      sub_coach_id: 'team-coach',
+      client_id: 'client-h',
+      unassigned_at: null,
+    });
+    expect(await audience(w, 'client-t')).toEqual(['head', 'team-coach']);
+    w.scas[w.scas.length - 1].unassigned_at = NOW;
+    expect(await audience(w, 'client-t')).toEqual(['team-coach']);
+  });
+
+  it('the phantom becomes a real team member only with an explicit row', async () => {
+    const w = world();
+    w.seats.push({
+      id: 'seat-4',
+      head_coach_id: 'seller',
+      sub_coach_id: 'buyer',
+      archived_at: null,
+    });
+    // Now SELLER is BUYER's head, and SELLER_SUB's assignment from SELLER is
+    // issued by the client's current head.
+    expect(await audience(w, 'client-b')).toEqual(['seller', 'buyer', 'seller-sub']);
+  });
+
+  it('a member sub-coach is never a head for its own sub-team', async () => {
+    // TEAM_COACH (member of HEAD) seats a coach of its own: main says
+    // TEAM_COACH is a sub-coach, so it gets no head read on that coach's client.
+    const w = world();
+    w.users.push(u('nested', 'coach', 'team-coach'), u('client-n', 'student', 'nested'));
+    w.seats.push({
+      id: 'seat-5',
+      head_coach_id: 'team-coach',
+      sub_coach_id: 'nested',
+      archived_at: null,
+    });
+    await expect(w.svc.canCoachRead('team-coach', 'client-n')).resolves.toBe(false);
+    await expect(w.svc.canCoachRead('nested', 'client-n')).resolves.toBe(true);
+  });
+
+  it("without an injected scope the service builds main's SubCoachScopeService (same answers)", async () => {
+    const w = world();
+    const standalone = new OnboardingService(asPrisma(w.prisma), asBuilder({}));
+    for (const c of ['client-h', 'client-t', 'client-b', 'client-st'])
+      for (const r of READERS)
+        expect({ r, c, v: await standalone.canCoachRead(r, c) }).toEqual({
+          r,
+          c,
+          v: await w.svc.canCoachRead(r, c),
+        });
   });
 });
 

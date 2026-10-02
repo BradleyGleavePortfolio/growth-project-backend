@@ -11,6 +11,7 @@ import {
   type Answers,
 } from '../src/onboarding/consultation-answers';
 import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
+import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
 
@@ -29,7 +30,12 @@ const COMPLETE: Answers = {
   N1: 'none',
   N2: ['nothing'],
   N3: '3',
-  P0: { agreed: true, copy_version: 'consult-consent-v2', agreed_at: '2026-10-01T11:59:00.000Z' },
+  P0: {
+    agreed: true,
+    copy_version: 'consult-consent-v3',
+    agreed_at: '2026-10-01T11:59:00.000Z',
+    text_sha256: CONSULT_CONSENT_V3_TEXT_SHA256,
+  },
   P1: 'no',
   P2: 'no',
   P3: 'no',

@@ -4,3 +4,4 @@ DROP TABLE IF EXISTS "ClinicProgramSet";
 DROP TABLE IF EXISTS "ClientOnboardingIntakeRevision";
 DROP TABLE IF EXISTS "ClientOnboardingIntake";
 DROP FUNCTION IF EXISTS app.can_read_client_consultation(text);
+DROP FUNCTION IF EXISTS app.sub_coach_membership_head(text);

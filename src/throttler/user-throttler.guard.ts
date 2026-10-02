@@ -1,5 +1,8 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import type { ThrottlerRequest } from '@nestjs/throttler';
+import { THROTTLER_LIMIT, THROTTLER_TTL } from '@nestjs/throttler/dist/throttler.constants';
+import { THROTTLER_NAMES } from './throttler.config';
 
 // Paths that must NEVER be rate-limited regardless of traffic. Health check
 // endpoints are hit by the platform (Fly.io) every few seconds; counting them
@@ -30,15 +33,14 @@ const HEALTH_PATHS = new Set(['/health', '/healthz', '/readyz']);
  * reserve IP-keyed limits for pre-auth surfaces (login, signup, forgot-
  * password) where there is no user identity yet.
  *
- * Security model for bucket-key selection:
- *   - Public endpoints that lack a Bearer token use IP-based limits (correct).
- *   - Authenticated endpoints bucket by decoded Supabase subject (consistent
- *     per-user bucketing; full JWT verification is JwtAuthGuard's job).
- *   - The attack surface for sub-forgery is low because forge-sub just yields
- *     a new per-sub bucket that is still limit-enforced. Sensitive public
- *     routes (register, login, forgot-password) use explicit @Throttle
- *     decorators with low caps, so the per-IP fallback on those routes is
- *     the more important control anyway.
+ * Security model for bucket-key selection (C14 fix round, Sol SOL-C14-A1):
+ *   - Only a VERIFIED subject selects a user bucket: `req.user.id`, set by
+ *     JwtAuthGuard (registered as APP_GUARD before this guard). The
+ *     Authorization header is never decoded here, so a forged Bearer `sub`
+ *     cannot pick or rotate a bucket.
+ *   - Everything else (public routes, missing or invalid tokens) uses the
+ *     trusted client IP. Sensitive public routes (register, login,
+ *     forgot-password) use explicit @Throttle decorators with low caps.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
@@ -56,6 +58,31 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     return super.canActivate(context);
   }
 
+  // C14 — THROTTLER ISOLATION. The parent guard runs every named throttler on
+  // every route at its module-level baseline unless the route carries
+  // @SkipThrottle({ [name]: true }). That made low baselines meant for one
+  // route (auth-password-reset 3/h, auth-login-per-min 5/min, …) reject
+  // unrelated public reads after 3 anonymous hits from one IP. Rule: a named
+  // throttler other than `default` applies ONLY to routes that declare it via
+  // @Throttle({ [name]: {...} }) on the handler or controller. `default`
+  // keeps applying to every route (route-level override or global baseline).
+  protected async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
+    const { context, throttler } = requestProps;
+    if (!this.routeDeclaresThrottler(context, throttler.name)) {
+      return true;
+    }
+    return super.handleRequest(requestProps);
+  }
+
+  /** `default` always applies; any other name only when the route opted in. */
+  routeDeclaresThrottler(context: ExecutionContext, name: string | undefined): boolean {
+    if (!name || name === THROTTLER_NAMES.DEFAULT) return true;
+    const targets = [context.getHandler(), context.getClass()];
+    const limit = this.reflector.getAllAndOverride<unknown>(THROTTLER_LIMIT + name, targets);
+    const ttl = this.reflector.getAllAndOverride<unknown>(THROTTLER_TTL + name, targets);
+    return limit !== undefined || ttl !== undefined;
+  }
+
   protected async getTracker(req: Record<string, any>): Promise<string> {
     // Priority 1: req.user already populated by JwtAuthGuard (route-local guard
     // or because this guard runs after auth in the middleware chain for this route).
@@ -65,38 +92,15 @@ export class UserThrottlerGuard extends ThrottlerGuard {
       return `user:${userId}`;
     }
 
-    // Priority 2: For authenticated routes where JwtAuthGuard has NOT yet run
-    // (global guard order: UserThrottlerGuard → JwtAuthGuard), decode the Bearer
-    // token without verification to get the Supabase subject claim.
-    // SECURITY NOTE: We only do this for already-authenticated surfaces — i.e.,
-    // when the Authorization header is a Bearer token. Public endpoints that are
-    // hit without a token still get IP-keyed limits. An attacker who forges a
-    // JWT with a fake sub just gets their own per-sub bucket (still limited),
-    // and the signed limits on sensitive public routes use explicit @Throttle
-    // decorators with low caps, so the per-IP fallback on those routes is the
-    // more important control anyway.
-    const auth = (req?.headers?.authorization ?? '') as string;
-    if (auth.startsWith('Bearer ')) {
-      try {
-        const token = auth.slice(7);
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf8');
-          const payload = JSON.parse(payloadJson) as Record<string, unknown>;
-          // Use sub (Supabase auth UUID) as a stable bucket key.
-          // We don't verify the signature here — the purpose is consistent
-          // per-user bucketing, not auth. JwtAuthGuard performs full verification.
-          const sub = payload.sub as string | undefined;
-          if (typeof sub === 'string' && sub.length > 0) {
-            return `user:${sub}`;
-          }
-        }
-      } catch {
-        // Malformed token — fall through to IP
-      }
-    }
+    // C14 fix round (Sol SOL-C14-A1): NO unverified Bearer decoding. The
+    // previous "priority 2" read `sub` from an UNVERIFIED Authorization
+    // header, so on public auth routes (where JwtAuthGuard returns early) a
+    // forged token with a fresh `sub` picked a fresh rate bucket per request.
+    // Only `req.user`, set by JwtAuthGuard after signature verification (it
+    // runs before this guard as an APP_GUARD), may select a user bucket;
+    // everything else is keyed by the trusted client IP.
 
-    // Priority 3: IP-based for unauthenticated requests (no Bearer token present).
+    // Priority 2: IP-based for every request without a verified user.
     // Audit #5 P1-5 — for the public storefront routes mounted at
     // /v1/packages/public/join/:token/* the IP-only bucket is leaky under
     // CGNAT / carrier-grade NAT: hundreds of mobile customers behind one

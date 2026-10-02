@@ -1,14 +1,10 @@
-// Module-level OpenAI mock. The ai.service file constructs a Perplexity
-// client at import time, so we have to replace `openai` before importing
-// the service. The mock exposes a settable `__nextResponse` so individual
-// tests can choose the model output (or throw) without re-importing.
+// R2b — client chat goes to Anthropic only (box 2 names Anthropic; client
+// data is never sent to Perplexity). `mockCreate` is the Coach AI engine
+// double (AnthropicAdapter.complete): it receives the { system, user } prompt
+// and the options, and resolves { text, tokensIn, tokensOut }. `engineReady`
+// stands in for CoachAIStateService.isReady() (false = deterministic only).
 const mockCreate = jest.fn();
-jest.mock('openai', () => {
-  const ctor = jest.fn().mockImplementation(() => ({
-    chat: { completions: { create: mockCreate } },
-  }));
-  return { __esModule: true, default: ctor };
-});
+let engineReady = true;
 
 import {
   AiService,
@@ -25,6 +21,12 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { AIGuardrailsService } from '../src/ai/ai-guardrails.service';
 import { ClientAIContext } from '../src/ai/client-ai-context.types';
+import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import type { AiEgressService } from '../src/ai-egress/ai-egress.service';
+import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
+import { clientDataSubject } from '../src/ai-egress/ai-egress.types';
+import type { AnthropicAdapter } from '../src/ai/adapters/anthropic.adapter';
+import type { CoachAIStateService } from '../src/ai/coach/coach-ai-state.service';
 
 function makeContext(): ClientAIContext {
   return {
@@ -133,7 +135,7 @@ function makeQuotaStub() {
   return { rows, keyOf, userAIQuota, aiRequestAudit: { create: jest.fn().mockResolvedValue({}) } };
 }
 
-function makeService(prismaOverride?: any) {
+function makeService(prismaOverride?: any, egress: AiEgressService = grantAllEgress()) {
   // Build the ai.service with a context service stub returning a known
   // context. We don't go through PrismaService here because we want the
   // tests to focus on chat orchestration (prompt assembly, fallback,
@@ -153,25 +155,30 @@ function makeService(prismaOverride?: any) {
   const quota = makeQuotaStub();
   const prisma = (prismaOverride ?? quota) as any;
   const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
-  return { svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub), ctxSvc, quota: prisma };
+  const engine = fakeOf<AnthropicAdapter>({ complete: mockCreate });
+  const state = fakeOf<CoachAIStateService>({ isReady: () => engineReady });
+  return {
+    svc: new AiService(prisma, ctxSvc as any, guardrails, analyticsStub, egress, engine, state),
+    ctxSvc,
+    quota: prisma,
+  };
 }
 
 describe('AiService.chat', () => {
   beforeEach(() => {
+    engineReady = true;
     mockCreate.mockReset();
   });
 
   it('uses the typed context to build the system prompt', async () => {
-    process.env.PERPLEXITY_API_KEY = 'test-key';
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'Eat 200g protein and stay on your calorie target.' } }],
+      text: 'Eat 200g protein and stay on your calorie target.',
     });
     const { svc } = makeService();
     const result = await svc.chat('u1', 'how am I doing today', []);
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const args = mockCreate.mock.calls[0][0];
-    const system = args.messages[0].content as string;
-    expect(args.messages[0].role).toBe('system');
+    const system = args.system as string;
     // Prompt must include APP_PRESCRIBED targets and coach last-message marker.
     expect(system).toContain('APP_PRESCRIBED');
     expect(system).toContain('calories=2400');
@@ -179,11 +186,11 @@ describe('AiService.chat', () => {
     // Reply round-trips and surfaces context generation timestamp.
     expect(result.reply).toContain('200g protein');
     expect(result.context_generated_at).toBe('2026-04-27T12:00:00Z');
-    expect(result.model_used).toBe('perplexity');
+    expect(result.model_used).toBe('anthropic');
   });
 
-  it('falls back gracefully when no API key is configured', async () => {
-    delete process.env.PERPLEXITY_API_KEY;
+  it('falls back gracefully when the Coach AI engine is not ready', async () => {
+    engineReady = false;
     const { svc } = makeService();
     const result = await svc.chat('u1', 'how am I doing today', []);
     expect(mockCreate).not.toHaveBeenCalled();
@@ -193,7 +200,6 @@ describe('AiService.chat', () => {
   });
 
   it('falls back when the provider throws', async () => {
-    process.env.PERPLEXITY_API_KEY = 'test-key';
     mockCreate.mockRejectedValue(new Error('upstream 500'));
     const { svc } = makeService();
     const result = await svc.chat('u1', 'macro plan please', []);
@@ -202,9 +208,8 @@ describe('AiService.chat', () => {
   });
 
   it('runs guardrails on the model reply and reports what was applied', async () => {
-    process.env.PERPLEXITY_API_KEY = 'test-key';
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'Try 1100 calories and eat 100g protein daily.' } }],
+      text: 'Try 1100 calories and eat 100g protein daily.',
     });
     const { svc } = makeService();
     const result = await svc.chat('u1', 'help me cut', []);
@@ -216,9 +221,8 @@ describe('AiService.chat', () => {
   });
 
   it('prepends a coach-referral when the user asks a medical question', async () => {
-    process.env.PERPLEXITY_API_KEY = 'test-key';
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'Take an anti-inflammatory.' } }],
+      text: 'Take an anti-inflammatory.',
     });
     const { svc } = makeService();
     const result = await svc.chat('u1', 'I think I have an injury in my shoulder', []);
@@ -227,35 +231,38 @@ describe('AiService.chat', () => {
   });
 
   it('does not pass conversation_history beyond the last 10 turns', async () => {
-    process.env.PERPLEXITY_API_KEY = 'test-key';
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
+      text: 'ok',
     });
     const { svc } = makeService();
     const big = Array.from({ length: 25 }, (_, i) => ({ role: 'user' as const, content: `msg ${i}` }));
     await svc.chat('u1', 'final', big);
     const args = mockCreate.mock.calls[0][0];
-    // 1 system + 10 history + 1 final = 12
-    expect(args.messages.length).toBe(12);
+    // 10 history lines + the final user line, folded into the user turn.
+    const lines = (args.user as string).split('\n');
+    expect(lines).toHaveLength(11);
+    expect(lines[0]).toBe('User: msg 15');
+    expect(lines[10]).toBe('User: final');
   });
 });
 
 describe('AiService.chat daily token quota (A1)', () => {
   beforeEach(() => {
+    engineReady = true;
     mockCreate.mockReset();
-    process.env.PERPLEXITY_API_KEY = 'test-key';
   });
 
   it('under cap: the call proceeds and the daily counter increments', async () => {
     // Provider reports actual usage so we reconcile the reservation down.
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'On track. Hit your 200g protein.' } }],
-      usage: { total_tokens: 250 },
+      text: 'On track. Hit your 200g protein.',
+      tokensIn: 250,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const result = await svc.chat('u1', 'how am I doing today', []);
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(result.model_used).toBe('perplexity');
+    expect(result.model_used).toBe('anthropic');
     // One ledger row, reconciled to the provider's actual 250 tokens, 1 request.
     const rows = [...quota.rows.values()];
     expect(rows).toHaveLength(1);
@@ -289,8 +296,9 @@ describe('AiService.chat daily token quota (A1)', () => {
 
   it('day rollover: a new quota_date gets a fresh budget row', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 300 },
+      text: 'ok',
+      tokensIn: 300,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const day1 = new Date(Date.UTC(2026, 3, 27));
@@ -314,7 +322,7 @@ describe('AiService.chat daily token quota (A1)', () => {
     // expected capacity from the observed reservation size rather than the old
     // output-only MAX_TOKENS_PER_CALL.
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
+      text: 'ok',
     });
 
     // Measure the per-call reservation empirically: one isolated call on a
@@ -329,7 +337,7 @@ describe('AiService.chat daily token quota (A1)', () => {
     // toward the concurrent-run invocation assertion below.
     mockCreate.mockClear();
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
+      text: 'ok',
     });
 
     const { svc, quota } = makeService();
@@ -357,8 +365,9 @@ describe('AiService.chat daily token quota (A1)', () => {
     // Provider reports a total far larger than MAX_TOKENS_PER_CALL (600) — i.e.
     // the input side dominated. The ledger must reflect the true 1500 total.
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 1500 },
+      text: 'ok',
+      tokensIn: 1500,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     await svc.chat('u1', 'how am I doing today', []);
@@ -378,8 +387,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // reservation estimate.
   it('total-token accounting: high-total calls are gated pre-spend by the daily cap', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 4000 },
+      text: 'ok',
+      tokensIn: 4000,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     // Each call reconciles to 4000 real tokens. With a 6600 worst-case
@@ -439,8 +449,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // actual and day2 is never touched.
   it('midnight cross: reconciles against the reservation day, not the reconcile-time day', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 250 },
+      text: 'ok',
+      tokensIn: 250,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const day1 = new Date(Date.UTC(2026, 3, 27));
@@ -462,8 +473,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // The pre-call check rejects on the already-consumed total, before the model.
   it('hard cap: a tiny call is rejected once consumed has reached the cap', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 50 },
+      text: 'ok',
+      tokensIn: 50,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     // Seed today's row already AT the cap.
@@ -490,8 +502,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // authoritative for the daily total.
   it('hard cap: a call that would push total over cap is rejected pre-spend', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 50 },
+      text: 'ok',
+      tokensIn: 50,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const today = (svc as any).getQuotaDate() as Date;
@@ -522,8 +535,9 @@ describe('AiService.chat daily token quota (A1)', () => {
     // reservation estimate (PER_CALL_TOKEN_RESERVATION = 6600). The best-effort
     // pre-estimate does not provably rule this out, so we defend against it.
     mockCreate.mockResolvedValueOnce({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 50000 },
+      text: 'ok',
+      tokensIn: 50000,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     await svc.chat('u1', 'first call', []);
@@ -541,8 +555,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   it('empty-text-but-has-usage: reconciles real usage instead of full refund', async () => {
     mockCreate.mockResolvedValue({
       // Empty completion content, but the provider still billed 420 total tokens.
-      choices: [{ message: { content: '' } }],
-      usage: { total_tokens: 420 },
+      text: '',
+      tokensIn: 420,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const result = await svc.chat('u1', 'how am I doing today', []);
@@ -560,7 +575,7 @@ describe('AiService.chat daily token quota (A1)', () => {
   // genuinely free call and IS fully refunded (so we don't over-charge).
   it('empty-text-and-no-usage: fully refunds the reservation (genuinely free)', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: '' } }],
+      text: '',
       // no usage field at all
     });
     const { svc, quota } = makeService();
@@ -576,8 +591,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // cap blocks the spend up front rather than discovering it after the fact.
   it('over-budget request is rejected 429 PRE-spend (provider mock not invoked)', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 50 },
+      text: 'ok',
+      tokensIn: 50,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     const today = (svc as any).getQuotaDate() as Date;
@@ -610,8 +626,9 @@ describe('AiService.chat daily token quota (A1)', () => {
   // total, never up.
   it('reconcile decrements: real usage below the worst-case reservation refunds the difference', async () => {
     mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 300 },
+      text: 'ok',
+      tokensIn: 300,
+      tokensOut: 0,
     });
     const { svc, quota } = makeService();
     await svc.chat('u1', 'how am I doing today', []);
@@ -636,8 +653,9 @@ describe('AiService.chat daily token quota (A1)', () => {
     // far above the tiny real usage; after reconcile the ledger equals the real
     // 42 tokens, not the reservation.
     mockCreate.mockResolvedValueOnce({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 42 },
+      text: 'ok',
+      tokensIn: 42,
+      tokensOut: 0,
     });
     const over = makeService();
     await over.svc.chat('u1', 'short question', []);
@@ -653,8 +671,9 @@ describe('AiService.chat daily token quota (A1)', () => {
     // pre-gate bounded it, because the pre-gate is best-effort, not a hard cap.
     mockCreate.mockReset();
     mockCreate.mockResolvedValueOnce({
-      choices: [{ message: { content: 'ok' } }],
-      usage: { total_tokens: 5200 },
+      text: 'ok',
+      tokensIn: 5200,
+      tokensOut: 0,
     });
     const under = makeService();
     await under.svc.chat('u1', 'hi', []); // tiny input, large real usage
@@ -741,6 +760,7 @@ describe('AiService.chat Anthropic output cap (A1 P3)', () => {
       ctxSvc,
       guardrails,
       analyticsStub,
+      grantAllEgress(),
       anthropic,
       coachAIState,
     );
@@ -749,5 +769,64 @@ describe('AiService.chat Anthropic output cap (A1 P3)', () => {
     expect(complete).toHaveBeenCalledTimes(1);
     const opts = complete.mock.calls[0][1];
     expect(opts.maxTokens).toBe(MAX_TOKENS_PER_CALL);
+  });
+});
+
+// R2b — /ai/chat sends the caller's own context to Anthropic: their live
+// box-2 grant is required, checked before any quota is reserved and again
+// by the adapter at send time.
+describe('AiService.chat — R2b box-2 consent', () => {
+  beforeEach(() => {
+    engineReady = true;
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ text: 'Keep going.', tokensIn: 5, tokensOut: 5 });
+  });
+
+  it('grant: answered by Anthropic with the caller as data subject', async () => {
+    const { egress } = egressWithGrants(['u1']);
+    const { svc } = makeService(undefined, egress);
+    const result = await svc.chat('u1', 'how am I doing', []);
+    expect(result.model_used).toBe('anthropic');
+    expect(mockCreate.mock.calls[0][1].dataSubject).toEqual(clientDataSubject('u1', 'client'));
+    expect(mockCreate.mock.calls[0][1].surface).toBe('ai.client_chat');
+  });
+
+  it('no grant: 403 with the client wording, before any quota is reserved; nothing sent', async () => {
+    const { egress } = egressWithGrants([]);
+    const { svc, quota } = makeService(undefined, egress);
+    const err = await svc.chat('u1', 'how am I doing', []).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect((err as AiConsentRequiredException).getResponse()).toMatchObject({
+      code: 'ai_consent_required',
+      message: "You haven't allowed AI help yet. You can turn it on in Settings > Privacy.",
+    });
+    expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('revoked: the next message is refused', async () => {
+    const { egress, reader } = egressWithGrants(['u1']);
+    const { svc } = makeService(undefined, egress);
+    await svc.chat('u1', 'hi', []);
+    reader.revoke('u1');
+    await expect(svc.chat('u1', 'hi', [])).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('ledger error: fails closed', async () => {
+    const { egress, reader } = egressWithGrants(['u1']);
+    reader.failWith = new Error('db down');
+    const { svc } = makeService(undefined, egress);
+    await expect(svc.chat('u1', 'hi', [])).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('engine not ready: deterministic reply, nothing leaves the server, no consent needed', async () => {
+    engineReady = false;
+    const { egress, reader } = egressWithGrants([]);
+    const { svc } = makeService(undefined, egress);
+    const result = await svc.chat('u1', 'hi', []);
+    expect(result.model_used).toBe('fallback');
+    expect(reader.calls).toHaveLength(0);
   });
 });

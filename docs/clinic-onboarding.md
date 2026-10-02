@@ -24,22 +24,46 @@ consent is on file for the user, the only accepted request is P0 on its own:
 ```json
 {
   "version": "consult-v1",
-  "answers": { "P0": { "agreed": true, "copy_version": "consult-consent-v2" } }
+  "answers": {
+    "P0": {
+      "agreed": true,
+      "copy_version": "consult-consent-v3",
+      "agreed_at": "ISO",
+      "text_sha256": "79ceeb6b8316ee9e3f583fe678e2463584c6dda4c93b5c95746dfe5c52ef31c9"
+    }
+  }
 }
 ```
 
 Any other request (answers without P0, or answers bundled with the first P0)
 is rejected with `409 { code: "consent_missing" }` before anything is
-written, so those answers are never stored. A P0 with a copy version that is
-not current (`CONSULT_CONSENT_COPY_VERSIONS`, default `consult-consent-v2`)
-is also `409 consent_missing`; `P0: null` (withdrawal) is `400
+written, so those answers are never stored. `P0: null` (withdrawal) is `400
 invalid_answers`.
+
+**The server stores what was shown.** A P0 counts as consent only when BOTH
+hold: `copy_version` is an accepted version (default `consult-consent-v3`,
+the only version the server knows), AND `text_sha256` is the sha256 (UTF-8,
+lowercase hex) of that version's exact screen text. The text lives in
+`src/onboarding/consult-consent-copy.ts`: title, paragraphs 1-3, box 1 label,
+paragraph 4, box 2 label and footer joined with `"\n\n"`, byte-identical to
+mobile #310 `consentCopyText()` (pinned there as `CONSENT_COPY_SHA256`). Its
+paragraph 4 + `"\n\n"` + box 2 label is byte-identical to the AI consent
+ledger's `client-ai-v4` copy (sha256 `fbf82140...34f4`); both digests are
+pinned and recomputed from the text in `test/onboarding-consent-copy.spec.ts`.
+Any other version (including `consult-consent-v2`, which no live client ever
+recorded), a missing `text_sha256`, or a different digest is
+`409 consent_missing` and nothing is written. `CONSULT_CONSENT_COPY_VERSIONS`
+(comma-separated) may only choose among versions the server knows the text
+of; unknown names are ignored (logged once) and a list with no known name
+falls back to the default. `consent_recorded` on `GET /me/onboarding` and the
+completion gate use the same rule: the server stamp must name an accepted
+version AND the stored P0 must still prove that version's text.
 
 **D2 consent (operator ruling D2, 2026-10-01).** The
 P0 screen shows two boxes. P0 here is **box 1 only** (required): the training
 waiver plus collection and use of the client's information by The Growth
 Project and their coach for coaching. The server stamps `disclaimer_version`
-(the `copy_version` that was shown, default `consult-consent-v2`) and
+(the `copy_version` that was shown, default `consult-consent-v3`) and
 `disclaimer_accepted_at` on the intake; that stamp is the box-1 record and the
 only consent `POST /me/onboarding/complete` requires (`consent_missing` when it
 is absent or not current). **Box 2** (optional: Roman and the coach's AI
@@ -194,7 +218,7 @@ up).
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `not_attached`            | the client has no coach (or the coach account is not a coach)                                                      |
 | `consultation_incomplete` | required answers missing; `missing: string[]` lists keys (also used when macro inputs are implausible)             |
-| `consent_missing`         | no current-version P0 acknowledgement                                                                              |
+| `consent_missing`         | no current P0 acknowledgement (accepted `copy_version` with that version's `text_sha256`)                          |
 | `clinic_not_configured`   | the coach has no seeded program set, or its master/space rows are missing or not the coach's own                   |
 | `completion_in_progress`  | another completion for this client is running, or the answers changed since this attempt read them (retry shortly) |
 
@@ -209,6 +233,10 @@ Effects, in order:
    row and snapshot writer `assignProgramToClient` uses), under the verified
    coach's id. The selection is always recomputed from the answers being
    completed (fix round A607-2: nothing from an earlier attempt is replayed).
+   The clone's tenant (`WorkoutProgram.coach_id` / `WorkoutPlan.coach_id`) is
+   the coach's head only when the coach is an explicit member of that head's
+   team (main's #597 rule, fix round INT-607-1); otherwise the coach itself,
+   so a bare `coach_id` never puts a client's plans in another coach's lists.
    A failed or fenced-off attempt leaves no clone and no assignment, so a
    safety answer added meanwhile can never complete against an older,
    higher-intensity program; as defence in depth every other not-started
@@ -239,13 +267,26 @@ computed and stored. The same two fields are on `GET /api/me/macros/current`.
 ### `GET /api/coach/clients/:clientId/consultation[?revision=N]`
 
 Readers (CURRENT tenancy only, evaluated from live rows on every request,
-fix round A607-1): the client's current coach (`User.coach_id`); the current
-head coach of that coach; or a sub-coach whose current head is the client's
-current head AND who holds an open `SubCoachAssignment` for the client issued
-by that head. The client must be a live student and the reader and the
-client's coach live coach-type users. A transfer, a sub-coach moved to
-another team, or a revoked assignment loses access immediately; the
-attach-code transfer also closes every open assignment for the client.
+fix rounds A607-1 and INT-607-1): the client's current coach
+(`User.coach_id`); the head coach of that coach; or a sub-coach on the
+client's current head's team who holds an open `SubCoachAssignment` for the
+client issued by that head.
+
+"Head of" and "on the team of" use main's explicit membership rule (#597,
+C13 Opus A1; `SubCoachScopeService.getHeadCoachIdForSubCoach`, SQL twin
+`app.sub_coach_membership_head`): a coach is on head H's team only when
+`role = 'coach'`, `coach_id = H` and an active `TeamSubCoachAssignment(H,
+coach)` or an open `SubCoachAssignment(H, coach)` exists. A bare `coach_id`
+is not membership: old guest checkouts stamped `coach_id` onto coach buyers,
+and such a phantom "head" reads nothing of the buyer coach's clients. The
+client's current head is the membership head of the client's coach, or the
+client's coach itself when it is not a team member. A head coach reads only
+when it is not itself a member of another team.
+
+The client must be a live student and the reader and the client's coach live
+coach-type users. A transfer, a sub-coach moved to another team, an archived
+team seat or a revoked assignment loses access immediately. Code entry never
+moves a client to another coach (409 `already_attached_to_different_coach`).
 Anyone else, including the client, gets `404`. `@Roles` lists every Role
 enum value (coach, student, owner, sub_coach) so no signed-in role is
 stopped with a `403`; the service decides and every refusal is `404`. The
@@ -276,7 +317,7 @@ used by the RLS policies.
     "any_yes": true,
     "items": [{ "key": "P2", "question": "...", "answer": "yes", "note": "..." }]
   },
-  "consent": { "version": "consult-consent-v2", "agreed_at": "ISO" }
+  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" }
 }
 ```
 
@@ -319,7 +360,11 @@ the required `rls-live-tests` CI job against Postgres 15 with this migration
 applied verbatim. It runs as the non-bypass `authenticated`/`anon` roles with
 the production GUCs and asserts, for every reader x client pair and after each
 tenancy change, that `OnboardingService.canCoachRead` equals what RLS lets the
-reader SELECT from both tables; plus self-only INSERT, coach read-only, no
+reader SELECT from both tables; that `app.sub_coach_membership_head` equals
+main's `SubCoachScopeService.getHeadCoachIdForSubCoach` for every fixture user
+in every state; the phantom chain (INT-607-1: a phantom head and its real
+sub-coach read nothing of a buyer coach's clients until an explicit
+membership row exists); plus self-only INSERT, coach read-only, no
 re-owning, immutable revisions, no public `ClinicProgramSet` writes and anon
 denial. The platform owner is the one documented difference (RLS admits it via
 `app.is_owner()`; the coach API does not).
