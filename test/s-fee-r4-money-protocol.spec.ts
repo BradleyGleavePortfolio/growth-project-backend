@@ -449,7 +449,7 @@ describe('B-627-5 an uncertain reversal never becomes a second recovery', () => 
       id: 'evt_tr_rev',
       type: 'transfer.reversed',
       data: { object: { id: 'tr_1', amount_reversed: 1_960, reversed: false } },
-    } as never);
+    });
     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'succeeded' });
     expect(ctx.db.transfers[0].reversed_amount_cents).toBe(1_960);
     expect(ctx.stripe.netTo('acct_coach')).toBe(2_670);
@@ -519,12 +519,14 @@ describe('B-627-4 a stale dispute event after a failed canonical read moves noth
   it('a malformed canonical response (no balance_transactions) is refused, not trusted', async () => {
     const ctx = setup();
     await wonDispute(ctx);
+    // Stripe answers without the dispute's balance transactions.
     ctx.stripe.retrieveDispute.mockResolvedValueOnce({
       id: 'dp_1',
       amount: 4_900,
       currency: 'usd',
       status: 'won',
-    } as never);
+      balance_transactions: undefined,
+    });
     await expect(
       ctx.svc.applyAdjustments({
         purchase: ctx.purchase,
@@ -572,7 +574,7 @@ describe('B-627-4 a stale dispute event after a failed canonical read moves noth
             balance_transactions: created,
           },
         },
-      } as never),
+      }),
     ).rejects.toBeInstanceOf(DisputeStateUnavailableError);
     expect(ctx.notifications.createNotification).toHaveBeenCalledTimes(1);
     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);

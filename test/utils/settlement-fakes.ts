@@ -455,7 +455,7 @@ export class FakeStripe extends StripeConnectApiService {
   }> = [];
   disputes = new Map<
     string,
-    { id: string; balance_transactions: Array<{ id: string; amount: number; fee: number }> }
+    { id: string; balance_transactions?: Array<{ id: string; amount: number; fee: number }> }
   >();
 
   retrieveCharge = jest.fn(async (id: string) => {
