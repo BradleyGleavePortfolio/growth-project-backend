@@ -131,6 +131,19 @@ the API key is configured.
 - Empty/blank message body → 400 from the global validation pipe.
 - Guardrail rewrites → reply still returns 200; the rewrite is not an
   error.
+- No live box-2 AI consent grant → 403 `{code: "ai_consent_required",
+  message}`. A server-side egress policy block → 503 `{code:
+  "ai_egress_blocked", message, requestId}`; the reference is also in the
+  `X-Request-ID` response header. Mobile decides on status plus `code`,
+  never on message text.
+- Roman streams the same codes in its SSE error event as exactly `{code,
+  message}`, because mobile's strict parser rejects any other key; the
+  reference for a streamed refusal is the `X-Request-ID` header
+  (`src/roman/roman-sse-error.ts`, pinned by
+  `test/roman/roman-sse-error-contract.spec.ts`).
+- Community AI triage failure → 503 `{code: "ai_triage_unavailable",
+  message}`, never an empty triage, so the coach sees that triage is
+  unavailable and the inbox is complete.
 
 ## Tests
 
