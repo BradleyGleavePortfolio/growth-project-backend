@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase, DunningState, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -105,6 +106,11 @@ export const DUNNING_NOTICE_BACKOFF_MS = [
 export const DUNNING_NOTICE_MAX_ATTEMPTS = 6;
 /** Grace before the sweep picks up a pending row the claimer never sent. */
 export const DUNNING_NOTICE_PENDING_GRACE_MS = 10 * 60_000;
+/**
+ * S-DUNNING-R4 (B-628-6): how long one worker owns a claimed delivery
+ * ('sending'). After it, a crashed worker's claim may be taken over.
+ */
+export const DUNNING_NOTICE_CLAIM_MS = 10 * 60_000;
 
 export function dunningCycleKey(enteredAt: Date): string {
   return String(enteredAt.getTime());
@@ -123,6 +129,44 @@ const CLASSIFIER = new DunningEscalationClassifier();
 
 /** Dispute statuses that end a dispute cycle in the client's favour. */
 const DISPUTE_WON_STATUSES = new Set(['won', 'warning_closed']);
+
+/** A delivery row this worker holds (B-628-6). */
+interface ClaimedDelivery {
+  id: string;
+  channel: DunningChannel;
+  token: string;
+  /** Attempts including this claim. */
+  attempts: number;
+  /** Transport idempotency attempt (email key suffix). */
+  keyAttempt: number;
+}
+
+/** The dispute a `charge.dispute.closed` event closes (B-628-8). */
+interface ClosingDispute {
+  disputeId: string | null;
+  chargeId: string | null;
+  status: string | null;
+}
+
+/**
+ * Dispute obligations that still block a purchase-wide reversal lock: every
+ * dispute not closed in the client's favour (open, under review or lost).
+ * The closing dispute counts with its event status; it is matched by its
+ * Stripe dispute id, or by charge when the event carries no id.
+ */
+export function outstandingDisputes<
+  T extends { stripe_dispute_id: string; stripe_charge_id: string; status: string },
+>(disputes: T[], closing: ClosingDispute | null): T[] {
+  const isClosing = (d: T): boolean =>
+    closing != null &&
+    (closing.disputeId
+      ? d.stripe_dispute_id === closing.disputeId
+      : closing.chargeId != null && d.stripe_charge_id === closing.chargeId);
+  return disputes.filter((d) => {
+    const status = isClosing(d) ? (closing?.status ?? d.status) : d.status;
+    return !DISPUTE_WON_STATUSES.has(status);
+  });
+}
 
 /** What the client app reads to render the Day 0-9 banner or the lockout. */
 export interface ClientDunningStatus {
@@ -359,8 +403,19 @@ export class DunningV2Service {
    * Send the notices for a claimed step: client push / email / in-app blocker
    * and, at Day 7, the coach on all three channels (classifier ladder).
    * Never throws; a transport failure is logged by the dispatcher.
+   *
+   * S-DUNNING-R4 (B-628-6): every delivery row is CLAIMED before its
+   * transport is called (CAS to 'sending' with a fresh claim token and an
+   * expiry), the cycle is re-checked after the claim, and the receipt is
+   * written only by the claim holder. So two workers never send the same
+   * row, and a stale worker cannot overwrite a newer receipt. `rowIds`
+   * (retry path) limits the dispatch to the rows that are actually due.
    */
-  async dispatchClaim(claim: DunningV2StepClaim | null, now: Date = new Date()): Promise<void> {
+  async dispatchClaim(
+    claim: DunningV2StepClaim | null,
+    now: Date = new Date(),
+    opts: { rowIds?: string[] } = {},
+  ): Promise<void> {
     if (!claim || !this.dispatcher) return;
     try {
       const ctx = await this.buildDispatchContext(claim);
@@ -375,21 +430,40 @@ export class DunningV2Service {
           dunning_state_id: claim.dunningStateId,
           cycle_key: claim.cycleKey,
           step_index: claim.stepIndex,
-          status: { in: ['pending', 'failed'] },
+          ...(opts.rowIds ? { id: { in: opts.rowIds } } : {}),
+          status: { in: ['pending', 'failed', 'sending'] },
         },
       });
-      if (rows.length === 0) return;
-      const attempt = Math.max(...rows.map((r) => r.attempts));
-      const { results } = await this.dispatcher.dispatchStepDetailed(ctx, undefined, {
-        channels: rows.map((r) => r.channel as DunningChannel),
-        attempt,
-      });
-      for (const row of rows) {
-        const result: ChannelResult = results[row.channel as DunningChannel] ?? {
-          status: 'skipped',
-          error: 'not part of this step',
-        };
-        await this.recordDelivery(row, result, now);
+      const claimed = await this.claimDeliveries(rows, now, opts.rowIds != null);
+      if (claimed.length === 0) return;
+      // The cycle may have ended (paid, canceled, locked) between the read
+      // and the claim: close the claimed rows instead of sending.
+      if (!(await this.cycleStillLive(claim.dunningStateId, claim.cycleKey))) {
+        for (const c of claimed) {
+          await this.prisma.dunningNoticeDelivery.updateMany({
+            where: { id: c.id, claim_token: c.token, status: 'sending' },
+            data: { status: 'canceled', claim_token: null, next_attempt_at: null },
+          });
+        }
+        return;
+      }
+      // One transport call per idempotency attempt (normally one group).
+      const byAttempt = new Map<number, ClaimedDelivery[]>();
+      for (const c of claimed) {
+        byAttempt.set(c.keyAttempt, [...(byAttempt.get(c.keyAttempt) ?? []), c]);
+      }
+      for (const [attempt, group] of byAttempt) {
+        const { results } = await this.dispatcher.dispatchStepDetailed(ctx, undefined, {
+          channels: group.map((c) => c.channel),
+          attempt,
+        });
+        for (const c of group) {
+          const result: ChannelResult = results[c.channel] ?? {
+            status: 'skipped',
+            error: 'not part of this step',
+          };
+          await this.recordDelivery(c, result, now);
+        }
       }
     } catch (err) {
       this.logger.warn(
@@ -398,54 +472,164 @@ export class DunningV2Service {
     }
   }
 
+  /**
+   * CAS-claim each eligible delivery: a pending row (first dispatch), a due
+   * pending/failed row (retry path), or a 'sending' row whose claim expired
+   * (its worker died). The CAS matches the row's status, attempt count and
+   * claim token as read, so exactly one worker wins it. A takeover reuses the
+   * expired claim's transport attempt, so an email that did go out is
+   * de-duplicated by its idempotency key.
+   */
+  private async claimDeliveries(
+    rows: Array<{
+      id: string;
+      channel: string;
+      status: string;
+      attempts: number;
+      next_attempt_at: Date | null;
+      claim_token: string | null;
+      key_attempt: number | null;
+    }>,
+    now: Date,
+    retryPath: boolean,
+  ): Promise<ClaimedDelivery[]> {
+    const out: ClaimedDelivery[] = [];
+    for (const row of rows) {
+      const due = row.next_attempt_at != null && row.next_attempt_at.getTime() <= now.getTime();
+      const takeover = row.status === 'sending';
+      const eligible = takeover
+        ? due
+        : row.status === 'pending'
+          ? !retryPath || due
+          : retryPath && due;
+      if (!eligible) continue;
+      const where = {
+        id: row.id,
+        status: row.status,
+        attempts: row.attempts,
+        claim_token: row.claim_token ?? null,
+      };
+      if (row.attempts >= DUNNING_NOTICE_MAX_ATTEMPTS) {
+        const res = await this.prisma.dunningNoticeDelivery.updateMany({
+          where,
+          data: { status: 'dead', claim_token: null, next_attempt_at: null },
+        });
+        if (res.count === 1) {
+          this.logger.error(
+            JSON.stringify({
+              event: 'dunning_v2.notice_dead',
+              delivery_id: row.id,
+              attempts: row.attempts,
+            }),
+          );
+        }
+        continue;
+      }
+      const token = randomUUID();
+      const keyAttempt = takeover && row.key_attempt != null ? row.key_attempt : row.attempts;
+      const res = await this.prisma.dunningNoticeDelivery.updateMany({
+        where,
+        data: {
+          status: 'sending',
+          claim_token: token,
+          key_attempt: keyAttempt,
+          attempts: row.attempts + 1,
+          next_attempt_at: new Date(now.getTime() + DUNNING_NOTICE_CLAIM_MS),
+        },
+      });
+      if (res.count !== 1) continue;
+      out.push({
+        id: row.id,
+        channel: row.channel as DunningChannel,
+        token,
+        attempts: row.attempts + 1,
+        keyAttempt,
+      });
+    }
+    return out;
+  }
+
+  /** The cycle a delivery belongs to is still the live, unlocked one. */
+  private async cycleStillLive(stateId: string, cycleKey: string): Promise<boolean> {
+    const state = await this.prisma.dunningState.findUnique({ where: { id: stateId } });
+    return (
+      state != null &&
+      state.status === 'active' &&
+      state.locked_out_at == null &&
+      state.client_canceled_at == null &&
+      state.entered_at != null &&
+      dunningCycleKey(state.entered_at) === cycleKey
+    );
+  }
+
+  /** Write a receipt only while this worker still holds the claim. */
   private async recordDelivery(
-    row: { id: string; attempts: number },
+    c: ClaimedDelivery,
     result: ChannelResult,
     now: Date,
   ): Promise<void> {
+    const fence = { id: c.id, claim_token: c.token, status: 'sending' };
+    let res: { count: number };
+    let dead = false;
     if (result.status === 'sent' || result.status === 'skipped') {
-      await this.prisma.dunningNoticeDelivery.update({
-        where: { id: row.id },
+      res = await this.prisma.dunningNoticeDelivery.updateMany({
+        where: fence,
         data: {
           status: result.status,
-          attempts: row.attempts + 1,
+          claim_token: null,
           sent_at: result.status === 'sent' ? now : null,
           last_error: result.error ?? null,
           next_attempt_at: null,
         },
       });
+    } else {
+      dead = c.attempts >= DUNNING_NOTICE_MAX_ATTEMPTS;
+      const backoff =
+        DUNNING_NOTICE_BACKOFF_MS[Math.min(c.attempts - 1, DUNNING_NOTICE_BACKOFF_MS.length - 1)];
+      res = await this.prisma.dunningNoticeDelivery.updateMany({
+        where: fence,
+        data: {
+          status: dead ? 'dead' : 'failed',
+          claim_token: null,
+          last_error: (result.error ?? 'delivery failed').slice(0, 500),
+          next_attempt_at: dead ? null : new Date(now.getTime() + backoff),
+        },
+      });
+    }
+    if (res.count !== 1) {
+      // A newer claim owns the row (this worker's claim expired): its
+      // receipt wins; this one is dropped, never overwriting it.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'dunning_v2.notice_stale_receipt',
+          delivery_id: c.id,
+          result: result.status,
+        }),
+      );
       return;
     }
-    const attempts = row.attempts + 1;
-    const dead = attempts >= DUNNING_NOTICE_MAX_ATTEMPTS;
-    const backoff =
-      DUNNING_NOTICE_BACKOFF_MS[Math.min(attempts - 1, DUNNING_NOTICE_BACKOFF_MS.length - 1)];
-    await this.prisma.dunningNoticeDelivery.update({
-      where: { id: row.id },
-      data: {
-        status: dead ? 'dead' : 'failed',
-        attempts,
-        last_error: (result.error ?? 'delivery failed').slice(0, 500),
-        next_attempt_at: dead ? null : new Date(now.getTime() + backoff),
-      },
-    });
     if (dead) {
       this.logger.error(
-        JSON.stringify({ event: 'dunning_v2.notice_dead', delivery_id: row.id, attempts }),
+        JSON.stringify({
+          event: 'dunning_v2.notice_dead',
+          delivery_id: c.id,
+          attempts: c.attempts,
+        }),
       );
     }
   }
 
   /**
-   * Retry due outbox rows (failed with backoff elapsed, or pending past the
-   * grace after a crash). A row whose cycle ended, changed, locked or was
-   * ended by the client is closed as 'canceled' instead of sent.
+   * Retry due outbox rows (failed with backoff elapsed, pending past the
+   * grace after a crash, or 'sending' whose claim expired). A row whose cycle
+   * ended, changed, locked or was ended by the client is closed as
+   * 'canceled' instead of sent. Only the due rows of a group are dispatched.
    */
   async retryDueNotices(now: Date = new Date(), limit = 200): Promise<{ retried: number }> {
     if (!this.enabled() || !this.dispatcher) return { retried: 0 };
     const due = await this.prisma.dunningNoticeDelivery.findMany({
       where: {
-        status: { in: ['pending', 'failed'] },
+        status: { in: ['pending', 'failed', 'sending'] },
         next_attempt_at: { lte: now },
       },
       orderBy: { next_attempt_at: 'asc' },
@@ -471,8 +655,14 @@ export class DunningV2Service {
         dunningCycleKey(state.entered_at) === first.cycle_key;
       if (!live) {
         await this.prisma.dunningNoticeDelivery.updateMany({
-          where: { id: { in: rows.map((r) => r.id) }, status: { in: ['pending', 'failed'] } },
-          data: { status: 'canceled', next_attempt_at: null },
+          where: {
+            id: { in: rows.map((r) => r.id) },
+            OR: [
+              { status: { in: ['pending', 'failed'] } },
+              { status: 'sending', next_attempt_at: { lte: now } },
+            ],
+          },
+          data: { status: 'canceled', claim_token: null, next_attempt_at: null },
         });
         continue;
       }
@@ -485,6 +675,7 @@ export class DunningV2Service {
           cycleKey: first.cycle_key,
         },
         now,
+        { rowIds: rows.map((r) => r.id) },
       );
       retried += 1;
     }
@@ -576,13 +767,14 @@ export class DunningV2Service {
       // subscription (which stays active and keeps renewing). A won dispute
       // resolves the cycle instead of locking.
       if (purchase.status === 'canceled') return 'skipped';
+      // S-DUNNING-R4 (B-628-8): the cycle is settled only when EVERY dispute
+      // on the purchase is closed in the client's favour, not the latest one.
       const disputes = await this.prisma.chargeDispute.findMany({
         where: { purchase_id: purchase.id },
-        orderBy: { created_at: 'desc' },
-        take: 1,
+        select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
       });
-      if (disputes[0] && DISPUTE_WON_STATUSES.has(disputes[0].status)) {
-        await this.resolveDisputeCycle(row.purchase_id, now);
+      if (disputes.length > 0 && outstandingDisputes(disputes, null).length === 0) {
+        await this.resolveDisputeCycle(row.purchase_id, now, null);
         return 'skipped';
       }
     } else if (purchase.status !== 'past_due' && purchase.status !== 'unpaid') {
@@ -861,6 +1053,8 @@ export class DunningV2Service {
     chargeId: string | null;
     paymentIntentId?: string | null;
     status: string | null;
+    /** The closing Stripe dispute (`dp_...`); matched before the charge. */
+    disputeId?: string | null;
     now?: Date;
   }): Promise<{ resolved: boolean; reason: string }> {
     if (!this.enabled()) return { resolved: false, reason: 'flag_off' };
@@ -872,12 +1066,32 @@ export class DunningV2Service {
       input.paymentIntentId ?? null,
     );
     if (!purchaseId) return { resolved: false, reason: 'purchase_unresolved' };
-    const resolved = await this.resolveDisputeCycle(purchaseId, input.now ?? new Date());
-    return { resolved, reason: resolved ? 'dispute_won' : 'no_open_dispute_cycle' };
+    const closing: ClosingDispute = {
+      disputeId: input.disputeId ?? null,
+      chargeId: input.chargeId ?? null,
+      status: input.status,
+    };
+    const out = await this.resolveDisputeCycle(purchaseId, input.now ?? new Date(), closing);
+    if (out === 'blocked') return { resolved: false, reason: 'other_dispute_outstanding' };
+    return out
+      ? { resolved: true, reason: 'dispute_won' }
+      : { resolved: false, reason: 'no_open_dispute_cycle' };
   }
 
-  private async resolveDisputeCycle(purchaseId: string, now: Date): Promise<boolean> {
+  /**
+   * Resolve a purchase's dispute cycle. B-628-8: inside the transaction,
+   * aggregate every dispute obligation on the purchase; the closing dispute
+   * (if any) counts with its event status, because the refund/dispute handler
+   * may not have written it yet. Any other dispute that is still open, or
+   * lost, keeps the cycle (and its lock) as it is.
+   */
+  private async resolveDisputeCycle(
+    purchaseId: string,
+    now: Date,
+    closing: ClosingDispute | null,
+  ): Promise<boolean | 'blocked'> {
     let resolved = false;
+    let blocked = false;
     let wasLocked = false;
     let stateId = '';
     await this.prisma.$transaction(async (tx) => {
@@ -890,6 +1104,22 @@ export class DunningV2Service {
         state.status !== 'active' ||
         state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
       ) {
+        return;
+      }
+      const disputes = await tx.chargeDispute.findMany({
+        where: { purchase_id: purchaseId },
+        select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+      });
+      const open = outstandingDisputes(disputes, closing);
+      if (open.length > 0) {
+        blocked = true;
+        this.logger.log(
+          JSON.stringify({
+            event: 'dunning_v2.dispute_cycle_kept',
+            purchase_id: purchaseId,
+            outstanding: open.map((d) => d.stripe_dispute_id),
+          }),
+        );
         return;
       }
       const res = await tx.dunningState.updateMany({
@@ -926,6 +1156,7 @@ export class DunningV2Service {
       this.telemetry.recovered(purchaseId, 'manual');
       if (wasLocked) this.telemetry.lockoutExited(purchaseId, { dunning_state_id: stateId });
     }
+    if (blocked) return 'blocked';
     return resolved;
   }
 

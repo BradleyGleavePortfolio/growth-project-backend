@@ -4059,6 +4059,13 @@ model DunningNoticeDelivery {
   last_error       String?
   next_attempt_at  DateTime?
   sent_at          DateTime?
+  /// S-DUNNING-R4 (B-628-6): the worker that claimed this delivery
+  /// ('sending'; next_attempt_at is then the claim's expiry). Only that
+  /// holder may write the receipt.
+  claim_token      String?
+  /// Transport idempotency attempt of the current claim; a takeover of an
+  /// expired claim reuses it so an email that did go out is not sent again.
+  key_attempt      Int?
   created_at       DateTime     @default(now())
   updated_at       DateTime     @updatedAt
 

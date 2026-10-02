@@ -791,11 +791,470 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
       const a = await errorOf(stalled);
       expect(a.status).toBe(409);
       expect(a.body.code).toBe('BILLING_ACTION_IN_PROGRESS');
+      // R4 (B-628-11): A's intent was journaled before its pay call; its
+      // stale receipt write was refused, so the journal still says `paying`.
       expect(w.fake.find('clientBillingOperation', { id: opA!.id })).toMatchObject({
-        phase: 'started',
+        phase: 'paying',
         fence: fenceA,
+        lines: [expect.objectContaining({ invoice_id: 'in_dv2_renewal_1', result: 'paying' })],
       });
       expect(w.stripe.charges).toHaveLength(1);
+    });
+  });
+});
+
+/**
+ * S-DUNNING-R4 (fix round 4): the boundaries Sol's round-3 audit executed
+ * (ops/aud-sol3-112/backend628-independent-boundaries.spec.ts), turned into
+ * regression tests. Each one fails on 739e9a54.
+ */
+describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notice delivery', () => {
+  const prevFlag = process.env['FEATURE_DUNNING_V2'];
+  const prevPk = process.env['STRIPE_PUBLISHABLE_KEY'];
+  let w: World;
+
+  beforeEach(() => {
+    process.env['FEATURE_DUNNING_V2'] = 'true';
+    process.env['STRIPE_PUBLISHABLE_KEY'] = 'pk_test_r4';
+    jest.useFakeTimers({ now: T0, doNotFake: ['setImmediate', 'nextTick'] });
+    w = buildWorld();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    if (prevFlag === undefined) delete process.env['FEATURE_DUNNING_V2'];
+    else process.env['FEATURE_DUNNING_V2'] = prevFlag;
+    if (prevPk === undefined) delete process.env['STRIPE_PUBLISHABLE_KEY'];
+    else process.env['STRIPE_PUBLISHABLE_KEY'] = prevPk;
+  });
+
+  /** Fail the first journal write (inside a transaction) once `when()` holds. */
+  function failJournalWriteOnce(when: () => boolean): void {
+    const makeClient = w.fake.client.bind(w.fake);
+    let armed = true;
+    jest.spyOn(w.fake, 'client').mockImplementation((viaTx = false) => {
+      const client = makeClient(viaTx);
+      if (viaTx) {
+        const update = client.clientBillingOperation.update;
+        client.clientBillingOperation.update = async (args: unknown) => {
+          if (armed && when()) {
+            armed = false;
+            throw new Error('journal transaction failed before commit');
+          }
+          return update(args);
+        };
+      }
+      return client;
+    });
+  }
+
+  const cardOp = (setupId: string) =>
+    w.fake.find('clientBillingOperation', { setup_intent_id: setupId, kind: 'card_pay' });
+
+  describe('B-628-11: each pay / void intent is journaled before Stripe acts', () => {
+    it('pay, then the receipt write fails: the intent was committed first and the same-SetupIntent retry reports the 15000 cents collected once', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      const approved = await approveAll(w);
+      let journalAtPay: unknown = null;
+      const pay = w.stripe.payInvoice.bind(w.stripe);
+      jest.spyOn(w.stripe, 'payInvoice').mockImplementation(async (args) => {
+        journalAtPay = w.fake
+          .rows('clientBillingOperation')
+          .find((o) => o.kind === 'card_pay')?.lines;
+        return pay(args);
+      });
+      failJournalWriteOnce(() => w.stripe.charges.length > 0);
+      const first = await cardUpdate(w, 'pm_new_ok', 91, approved);
+      expect(w.stripe.charges).toHaveLength(1);
+      // The intent (identity, currency, approved amount, key) was durable
+      // before the pay call.
+      expect(journalAtPay).toEqual([
+        expect.objectContaining({
+          invoice_id: 'in_dv2_renewal_1',
+          currency: 'usd',
+          amount_due_cents: 15000,
+          result: 'paying',
+          idempotency_key: `tgp-1a-pay-in_dv2_renewal_1-${first.setupId}`,
+        }),
+      ]);
+      // The first answer never claims nothing was charged.
+      expect(first.res.outcome).not.toBe('saved');
+      expect(first.res.plans[0]?.outcome).toBe('uncertain');
+      const retry = await w.billing.confirmCardUpdate('client-1', first.setupId, approved);
+      expect(retry.amount_paid_cents).toBe(15000);
+      expect(retry.paid_totals).toEqual([{ currency: 'usd', amount_cents: 15000 }]);
+      expect(w.stripe.charges).toHaveLength(1);
+      expectIntegerCents(retry.amount_paid_cents, retry.amount_due_cents);
+    });
+
+    it('the webhook restored the plan before the retry: the replay still reports the 15000 cents from Stripe', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      const approved = await approveAll(w);
+      failJournalWriteOnce(() => w.stripe.charges.length > 0);
+      const first = await cardUpdate(w, 'pm_new_ok', 92, approved);
+      expect(w.stripe.charges).toHaveLength(1);
+      await w.handler.handle(fixture('invoice.paid'));
+      await flush();
+      expect(purchaseRow(w)?.status).not.toBe('past_due');
+      const retry = await w.billing.confirmCardUpdate('client-1', first.setupId, approved);
+      expect(retry.amount_paid_cents).toBe(15000);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('the background reconciler turns the committed intent into a paid receipt', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      const approved = await approveAll(w);
+      failJournalWriteOnce(() => w.stripe.charges.length > 0);
+      const first = await cardUpdate(w, 'pm_new_ok', 93, approved);
+      expect(cardOp(first.setupId)?.completed_at ?? null).toBeNull();
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      const op = cardOp(first.setupId)!;
+      expect(op.completed_at).toBeInstanceOf(Date);
+      expect(op.lines).toEqual([
+        expect.objectContaining({
+          invoice_id: 'in_dv2_renewal_1',
+          result: 'paid',
+          amount_paid_cents: 15000,
+        }),
+      ]);
+    });
+
+    it('the intent write itself fails: Stripe is never called and nothing is collected', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      const approved = await approveAll(w);
+      const paySpy = jest.spyOn(w.stripe, 'payInvoice');
+      failJournalWriteOnce(() => true);
+      const first = await cardUpdate(w, 'pm_new_ok', 94, approved);
+      expect(paySpy).not.toHaveBeenCalled();
+      expect(w.stripe.charges).toHaveLength(0);
+      expect(first.res.plans[0]?.outcome).toBe('failed');
+    });
+
+    it('void, then the receipt write fails: the void intent was committed first and the resumed cancel reports 1 invoice / 15000 cents forgiven', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      let journalAtVoid: unknown = null;
+      const voidFn = w.stripe.voidInvoice.bind(w.stripe);
+      jest.spyOn(w.stripe, 'voidInvoice').mockImplementation(async (args) => {
+        journalAtVoid = w.fake
+          .rows('clientBillingOperation')
+          .find((o) => o.kind === 'cancel')?.lines;
+        return voidFn(args);
+      });
+      failJournalWriteOnce(() => w.stripe.invoices.get('in_dv2_renewal_1')?.status === 'void');
+      await expect(w.billing.cancelPlan('client-1', 'purchase-1')).rejects.toThrow(
+        'journal transaction failed before commit',
+      );
+      expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('void');
+      expect(journalAtVoid).toEqual([
+        expect.objectContaining({
+          invoice_id: 'in_dv2_renewal_1',
+          amount_due_cents: 15000,
+          result: 'voiding',
+          idempotency_key: 'tgp-2a-void-in_dv2_renewal_1',
+        }),
+      ]);
+      const retry = await w.billing.cancelPlan('client-1', 'purchase-1');
+      expect(retry).toMatchObject({
+        outcome: 'ended',
+        voided_invoice_count: 1,
+        voided_amount_cents: 15000,
+        currency: 'usd',
+      });
+      expect(retry.message).toContain('$150.00');
+    });
+    it('a superseded update whose intent never got a receipt is settled as already paid by someone else, never as a second payment', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      let release: () => void = () => undefined;
+      let first = true;
+      w.stripe.beforePay = () =>
+        first
+          ? new Promise<void>((resolve) => {
+              first = false;
+              release = resolve;
+            })
+          : undefined;
+      const setupA = await w.billing.createCardSetup('client-1', UUID(40));
+      w.stripe.confirmSetupIntentInSheet(setupA.setup_intent_id, 'pm_new_ok');
+      const approved = await approveAll(w);
+      const stalled = w.billing.confirmCardUpdate('client-1', setupA.setup_intent_id, approved);
+      for (let i = 0; i < 300 && w.stripe.callsOf('payInvoice').length === 0; i += 1) await flush();
+      w.fake.find('clientBillingLease', { purchase_id: 'purchase-1' })!.holder_until = new Date(
+        Date.now() - 1,
+      );
+      const b = await cardUpdate(w, 'pm_new_ok', 41, approved);
+      expect(b.res.amount_paid_cents).toBe(15000);
+      release();
+      await stalled.catch(() => undefined);
+      // A's replay: Stripe replays A's own answer (invoice already paid).
+      const replayA = await w.billing.confirmCardUpdate(
+        'client-1',
+        setupA.setup_intent_id,
+        approved,
+      );
+      expect(replayA.paid_totals).toEqual([]);
+      // The reconciler settles A's intent the same way.
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      expect(cardOp(setupA.setup_intent_id)?.lines).toEqual([
+        expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+  });
+
+  describe('B-628-8: a won dispute settles only its own obligation', () => {
+    function lockedDisputeCycle(): void {
+      const state = stateRow(w)!;
+      state.last_failure_reason = 'charge_disputed';
+      state.locked_out_at = at(10 * DAY);
+      purchaseRow(w)!.entitlement_active = false;
+      w.fake.seed('connectTransfer', {
+        id: 'tr-won',
+        purchase_id: 'purchase-1',
+        source_stripe_charge_id: 'ch_won',
+      });
+    }
+    const dispute = (id: string, charge: string, status: string, day: number) =>
+      w.fake.seed('chargeDispute', {
+        id,
+        purchase_id: 'purchase-1',
+        stripe_charge_id: charge,
+        stripe_dispute_id: `dp_${id}`,
+        amount_cents: 15000,
+        currency: 'usd',
+        status,
+        created_at: at(day * DAY),
+      });
+
+    it('one won charge does not clear another charge still under dispute (Sol probe)', async () => {
+      await failRenewal(w);
+      lockedDisputeCycle();
+      dispute('won', 'ch_won', 'won', 1);
+      dispute('open', 'ch_open', 'needs_response', 2);
+      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_won', status: 'won' });
+      expect(closed).toEqual({ resolved: false, reason: 'other_dispute_outstanding' });
+      expect(stateRow(w)).toMatchObject({
+        status: 'active',
+        last_failure_reason: 'charge_disputed',
+      });
+      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+      expect(purchaseRow(w)?.entitlement_active).toBe(false);
+    });
+
+    it('a lost dispute on another charge is an outstanding obligation too', async () => {
+      await failRenewal(w);
+      lockedDisputeCycle();
+      dispute('won', 'ch_won', 'needs_response', 1);
+      dispute('lost', 'ch_lost', 'lost', 2);
+      const closed = await w.v2.onDisputeClosed({
+        chargeId: 'ch_won',
+        disputeId: 'dp_won',
+        status: 'won',
+      });
+      expect(closed.resolved).toBe(false);
+      expect(purchaseRow(w)?.entitlement_active).toBe(false);
+    });
+
+    it('a replayed old won closure after a new dispute opened does not lift the new lock', async () => {
+      await failRenewal(w);
+      lockedDisputeCycle();
+      dispute('won', 'ch_won', 'won', 1);
+      dispute('new', 'ch_won', 'needs_response', 5); // a second dispute on the same charge
+      const replay = await w.v2.onDisputeClosed({
+        chargeId: 'ch_won',
+        disputeId: 'dp_won',
+        status: 'won',
+      });
+      expect(replay.resolved).toBe(false);
+      expect(stateRow(w)?.status).toBe('active');
+    });
+
+    it('the closing event wins over a table row the dispute handler has not updated yet: last open dispute won -> resolved and unlocked', async () => {
+      await failRenewal(w);
+      lockedDisputeCycle();
+      dispute('a', 'ch_a', 'won', 1);
+      dispute('won', 'ch_won', 'under_review', 2); // the event closes this one
+      const closed = await w.v2.onDisputeClosed({
+        chargeId: 'ch_won',
+        disputeId: 'dp_won',
+        status: 'won',
+      });
+      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
+      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
+      expect(purchaseRow(w)?.entitlement_active).toBe(true);
+    });
+  });
+
+  describe('B-628-6: each notice delivery is claimed before its transport is called', () => {
+    /** Day 1: the push fails once, leaving a failed, due-later row. */
+    async function failedDay1Push(): Promise<Record<string, unknown>> {
+      await failRenewal(w);
+      w.push.mockResolvedValue({ delivered: false, code: 'provider-error' });
+      jest.setSystemTime(at(DAY + HOUR));
+      await w.v2.runSweep(at(DAY + HOUR));
+      const row = w.fake
+        .rows('dunningNoticeDelivery')
+        .find((r) => r.channel === 'client_push' && r.step_index === 1)!;
+      expect(row.status).toBe('failed');
+      return row;
+    }
+
+    it('two concurrent retry workers send the due push once (Sol probe)', async () => {
+      const row = await failedDay1Push();
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      w.push.mockReset();
+      w.push.mockImplementation(async () => {
+        await gate;
+        return { delivered: true };
+      });
+      jest.setSystemTime(at(DAY + 2 * HOUR));
+      const a = w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      const b = w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      await flush();
+      expect(w.push).toHaveBeenCalledTimes(1);
+      release();
+      await Promise.all([a, b]);
+      expect(w.push).toHaveBeenCalledTimes(1);
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })).toMatchObject({
+        status: 'sent',
+        attempts: 2,
+        claim_token: null,
+      });
+    });
+
+    it('a stale worker whose claim expired cannot overwrite the newer receipt', async () => {
+      const row = await failedDay1Push();
+      let releaseSlow: () => void = () => undefined;
+      const slowGate = new Promise<void>((resolve) => {
+        releaseSlow = resolve;
+      });
+      w.push.mockReset();
+      w.push.mockImplementationOnce(async () => {
+        await slowGate;
+        return { delivered: false, code: 'provider-error' };
+      });
+      w.push.mockImplementation(async () => ({ delivered: true }));
+      jest.setSystemTime(at(DAY + 2 * HOUR));
+      const slow = w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      await flush();
+      // The slow worker's claim expires; a new worker takes the row over.
+      jest.setSystemTime(at(DAY + 2 * HOUR + 11 * MIN));
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR + 11 * MIN));
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })?.status).toBe('sent');
+      releaseSlow();
+      await slow;
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })).toMatchObject({
+        status: 'sent',
+        attempts: 3,
+      });
+    });
+
+    it('a crashed worker (claim expired, outcome unknown): the email takeover reuses the same idempotency key', async () => {
+      await failRenewal(w);
+      w.email.mockImplementation(async () => ({ status: 'failed', error: 'provider 500' }));
+      jest.setSystemTime(at(DAY + HOUR));
+      await w.v2.runSweep(at(DAY + HOUR));
+      const row = w.fake
+        .rows('dunningNoticeDelivery')
+        .find((r) => r.channel === 'client_email' && r.step_index === 1)!;
+      // A worker claimed retry attempt 1 and died after (maybe) sending.
+      Object.assign(row, {
+        status: 'sending',
+        claim_token: 'dead-worker',
+        key_attempt: 1,
+        attempts: 2,
+        next_attempt_at: at(DAY + 2 * HOUR),
+      });
+      w.email.mockReset();
+      w.email.mockImplementation(async () => ({ status: 'skipped' }));
+      jest.setSystemTime(at(DAY + 3 * HOUR));
+      await w.v2.retryDueNotices(at(DAY + 3 * HOUR));
+      expect(w.email).toHaveBeenCalledTimes(1);
+      const key = (w.email.mock.calls[0] as unknown[])[0] as { idempotencyKey: string };
+      expect(key.idempotencyKey).toMatch(/:email:1:r1$/);
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })).toMatchObject({
+        status: 'skipped',
+        attempts: 3,
+        claim_token: null,
+      });
+    });
+
+    it('the cycle ends between the retry read and the send: the claimed row is canceled, nothing is sent', async () => {
+      const row = await failedDay1Push();
+      w.push.mockReset();
+      w.push.mockImplementation(async () => ({ delivered: true }));
+      const v2 = w.v2 as unknown as { buildDispatchContext: (c: unknown) => Promise<unknown> };
+      const build = v2.buildDispatchContext.bind(w.v2);
+      jest.spyOn(v2, 'buildDispatchContext').mockImplementation(async (c: unknown) => {
+        const ctx = await build(c);
+        stateRow(w)!.status = 'resolved'; // paid meanwhile
+        return ctx;
+      });
+      jest.setSystemTime(at(DAY + 2 * HOUR));
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      expect(w.push).not.toHaveBeenCalled();
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })?.status).toBe(
+        'canceled',
+      );
+    });
+
+    it('a due channel does not drag a not-yet-due channel of the same step into the send', async () => {
+      const row = await failedDay1Push();
+      const email = w.fake
+        .rows('dunningNoticeDelivery')
+        .find((r) => r.channel === 'client_email' && r.step_index === 1)!;
+      Object.assign(email, { status: 'failed', attempts: 1, next_attempt_at: at(DAY + 5 * HOUR) });
+      w.push.mockReset();
+      w.push.mockImplementation(async () => ({ delivered: true }));
+      w.email.mockClear();
+      jest.setSystemTime(at(DAY + 2 * HOUR));
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      expect(w.push).toHaveBeenCalledTimes(1);
+      expect(w.email).not.toHaveBeenCalled();
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })?.status).toBe('sent');
+      expect(w.fake.find('dunningNoticeDelivery', { id: email.id as string })?.status).toBe(
+        'failed',
+      );
+    });
+  });
+
+  describe('B-322-7 contract: the partial-busy answer the paired client must accept', () => {
+    it('one plan paid, another plan busy: outcome in_progress with the 15000 cents paid and partial access', async () => {
+      await failRenewal(w);
+      addSecondPlan(w);
+      jest.setSystemTime(at(2 * DAY));
+      w.fake.seed('clientBillingLease', {
+        purchase_id: 'purchase-2',
+        holder: 'another-live-worker',
+        holder_until: new Date(Date.now() + 120000),
+        fence: 4,
+      });
+      const { res } = await cardUpdate(w, 'pm_new_ok', 95);
+      expect(res).toMatchObject({
+        outcome: 'in_progress',
+        amount_paid_cents: 15000,
+        paid_totals: [{ currency: 'usd', amount_cents: 15000 }],
+        access_state: 'partial',
+      });
+      expect(res.plans.map((p) => p.outcome).sort()).toEqual(['in_progress', 'paid']);
+      expect(w.stripe.charges).toHaveLength(1);
+      if (process.env['DUMP_R4_CONTRACT']) {
+        // eslint-disable-next-line no-console
+        console.log(`R4_CONTRACT ${JSON.stringify(res)}`);
+      }
     });
   });
 });

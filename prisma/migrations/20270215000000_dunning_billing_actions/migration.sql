@@ -10,7 +10,10 @@
 --   "ClientBillingOperation": durable journal of one 1A pay / 2A cancel
 --     (phase, per-invoice integer-cent lines); the reconciler resumes it.
 --   "DunningNoticeDelivery": durable per-channel notice outbox, keyed per
---     cycle, retried by the hourly sweep.
+--     cycle, retried by the hourly sweep. Each delivery is claimed (CAS to
+--     'sending' with a claim_token; next_attempt_at is then the claim's
+--     expiry) before its transport is called; receipts are written only by
+--     the holder of that claim (R4).
 -- RLS: the three tables are server-only (service_role full access; anon and
 -- authenticated get nothing). No client ever reads them directly.
 
@@ -60,6 +63,8 @@ CREATE TABLE "DunningNoticeDelivery" (
     "last_error" TEXT,
     "next_attempt_at" TIMESTAMP(3),
     "sent_at" TIMESTAMP(3),
+    "claim_token" TEXT,
+    "key_attempt" INTEGER,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 

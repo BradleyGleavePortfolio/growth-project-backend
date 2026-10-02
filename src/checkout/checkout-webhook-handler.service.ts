@@ -296,12 +296,14 @@ export class CheckoutWebhookHandlerService {
   private fireDisputeClosed(event: StripeEvent): void {
     if (!this.dunningV2) return;
     const obj = event.data.object as {
+      id?: string | null;
       charge?: string | null;
       payment_intent?: string | null;
       status?: string | null;
     };
     void this.dunningV2
       .onDisputeClosed({
+        disputeId: obj.id ?? null,
         chargeId: obj.charge ?? null,
         paymentIntentId: obj.payment_intent ?? null,
         status: obj.status ?? null,

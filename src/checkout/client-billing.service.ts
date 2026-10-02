@@ -116,7 +116,20 @@ export type InvoiceLineResult =
   | 'uncertain'
   | 'failed'
   | 'not_approved'
-  | 'not_attempted';
+  | 'not_attempted'
+  // S-DUNNING-R4 (B-628-11): the intent journaled BEFORE the Stripe call.
+  // A line still in this state after a crash means "Stripe may have acted";
+  // recovery re-reads the invoice before reporting anything.
+  | 'paying'
+  | 'voiding';
+
+/** Results whose money truth must be re-read from Stripe before reporting. */
+const UNSETTLED_RESULTS: ReadonlySet<string> = new Set([
+  'paying',
+  'requires_action',
+  'uncertain',
+  'processing',
+]);
 
 export interface InvoiceLine {
   invoice_id: string;
@@ -127,6 +140,8 @@ export interface InvoiceLine {
   amount_paid_cents: number;
   result: InvoiceLineResult;
   decline_code?: string | null;
+  /** The Stripe idempotency key of the pay / void call (journaled before it). */
+  idempotency_key?: string | null;
 }
 
 export type PlanAccess = 'restored' | 'updating' | 'unchanged';
@@ -273,6 +288,16 @@ export function isDisputeCycle(state: DunningState | null | undefined): boolean 
 
 function isDelinquent(p: PurchaseWithDunning): boolean {
   return DELINQUENT_STATUSES.has(p.status) || p.dunning?.status === 'active';
+}
+
+/** Stripe idempotency key of a 1A invoice payment (journaled before the call). */
+export function payIdempotencyKey(invoiceId: string, setupIntentId: string): string {
+  return `tgp-1a-pay-${invoiceId}-${setupIntentId}`;
+}
+
+/** Stripe idempotency key of a 2A invoice void (journaled before the call). */
+export function voidIdempotencyKey(invoiceId: string): string {
+  return `tgp-2a-void-${invoiceId}`;
 }
 
 function errorCodeOf(err: HttpException): string {
@@ -463,6 +488,7 @@ export class ClientBillingService {
     const replayed = await this.replayedPlans(
       purchases.filter((p) => !isDelinquent(p)),
       setupIntentId,
+      paymentMethodId,
     );
     const coachNames = await this.coachNames([...delinquent, ...replayed.map((r) => r.purchase)]);
     const plans: PlanPayResult[] = [];
@@ -554,15 +580,11 @@ export class ClientBillingService {
         }
         // A bank confirmation / unknown result from the earlier confirm:
         // if the invoice is paid now, that payment belongs to this update.
-        if (['requires_action', 'uncertain', 'processing'].includes(prior.result)) {
-          const fresh = await this.safeRetrieveInvoice(prior.invoice_id);
-          if (fresh?.status === 'paid') {
-            lines.push({
-              ...prior,
-              amount_paid_cents: this.paidCents(fresh, null),
-              result: 'paid',
-            });
-          }
+        // B-628-11: a `paying` intent whose receipt never committed is
+        // settled from Stripe, so collected money is never reported as 0.
+        if (UNSETTLED_RESULTS.has(prior.result)) {
+          const settled = await this.settledLine(prior, paymentMethodId, setupIntentId);
+          if (settled) lines.push(settled);
         }
       }
       let invoices: StripeInvoiceObject[];
@@ -601,14 +623,21 @@ export class ClientBillingService {
           continue;
         }
         await this.renewLease(lease);
+        // B-628-11: commit the invoice identity, currency, approved amount
+        // and idempotency key BEFORE the pay call. If this write fails no
+        // money has moved; if a later write fails, recovery finds this line.
+        const intent: InvoiceLine = {
+          ...base,
+          result: 'paying',
+          idempotency_key: payIdempotencyKey(inv.id, setupIntentId),
+        };
+        lines.push(intent);
+        await this.saveOperation(lease, op.id, 'paying', lines, null, false);
         attemptedPay = true;
         const out = await this.payOne(inv, paymentMethodId, setupIntentId);
-        lines.push({
-          ...base,
-          amount_paid_cents: out.amountPaidCents,
-          result: out.kind,
-          decline_code: out.declineCode ?? null,
-        });
+        intent.amount_paid_cents = out.amountPaidCents;
+        intent.result = out.kind;
+        intent.decline_code = out.declineCode ?? null;
         await this.saveOperation(lease, op.id, 'paying', lines, null, false);
         if (out.kind === 'requires_action') {
           stop = 'requires_action';
@@ -648,7 +677,12 @@ export class ClientBillingService {
       await this.saveOperation(lease, op.id, plan.outcome, lines, plan.error_code, terminal);
       return { plan, clientSecret };
     } catch (err) {
-      this.fillPlan(plan, lines);
+      // A `paying` line whose answer was not recorded is reported as
+      // unknown (never as unpaid); the journal keeps the intent.
+      this.fillPlan(
+        plan,
+        lines.map((l) => (l.result === 'paying' ? { ...l, result: 'uncertain' as const } : l)),
+      );
       if (err instanceof BillingLeaseLostError) {
         plan.outcome = 'in_progress';
         plan.error_code = 'BILLING_ACTION_SUPERSEDED';
@@ -674,6 +708,7 @@ export class ClientBillingService {
   private async replayedPlans(
     candidates: PurchaseWithDunning[],
     setupIntentId: string,
+    paymentMethodId: string,
   ): Promise<Array<{ purchase: PurchaseWithDunning; lines: InvoiceLine[] }>> {
     if (candidates.length === 0) return [];
     const ops = await this.prisma.clientBillingOperation.findMany({
@@ -685,10 +720,21 @@ export class ClientBillingService {
     });
     const out: Array<{ purchase: PurchaseWithDunning; lines: InvoiceLine[] }> = [];
     for (const p of candidates) {
-      const lines = ops
+      const lines: InvoiceLine[] = [];
+      for (const l of ops
         .filter((o) => o.purchase_id === p.id)
-        .flatMap((o) => this.linesOf(o.lines))
-        .filter((l) => l.amount_paid_cents > 0);
+        .flatMap((o) => this.linesOf(o.lines))) {
+        if (l.amount_paid_cents > 0) {
+          lines.push(l);
+          continue;
+        }
+        // B-628-11: the pay landed but its receipt never committed (and the
+        // webhook has since restored the plan): Stripe says what was paid.
+        if (UNSETTLED_RESULTS.has(l.result)) {
+          const settled = await this.settledLine(l, paymentMethodId, setupIntentId);
+          if (settled && settled.amount_paid_cents > 0) lines.push(settled);
+        }
+      }
       if (lines.length > 0) out.push({ purchase: p, lines });
     }
     return out;
@@ -720,6 +766,42 @@ export class ClientBillingService {
     return plan;
   }
 
+  /**
+   * B-628-11: settle a journaled line whose answer was never recorded, from
+   * Stripe's canonical state. Returns null while the invoice is not paid. A
+   * `paying` intent on an invoice that is paid now is re-asked with the SAME
+   * idempotency key: Stripe replays the original answer, so a payment this
+   * update made is reported as paid and one Stripe (or another update) made
+   * as already_paid. A paid invoice cannot be charged again, so the replay
+   * never moves money.
+   */
+  private async settledLine(
+    prior: InvoiceLine,
+    paymentMethodId: string | null,
+    setupIntentId: string,
+  ): Promise<InvoiceLine | null> {
+    const fresh = await this.safeRetrieveInvoice(prior.invoice_id);
+    if (fresh?.status !== 'paid') return null;
+    if (prior.result === 'paying' && paymentMethodId) {
+      const out = await this.payOne(fresh, paymentMethodId, setupIntentId);
+      if (out.kind === 'already_paid')
+        return { ...prior, amount_paid_cents: 0, result: 'already_paid' };
+      if (out.kind === 'paid') {
+        return {
+          ...prior,
+          amount_paid_cents: out.amountPaidCents || prior.amount_due_cents,
+          result: 'paid',
+        };
+      }
+      return null;
+    }
+    return {
+      ...prior,
+      amount_paid_cents: this.paidCents(fresh, null) || prior.amount_due_cents,
+      result: 'paid',
+    };
+  }
+
   private fillPlan(plan: PlanPayResult, lines: InvoiceLine[]): void {
     plan.invoices = lines;
     plan.amount_paid_cents = lines.reduce((s, l) => s + l.amount_paid_cents, 0);
@@ -737,7 +819,7 @@ export class ClientBillingService {
       const res = await this.stripe.payInvoice({
         invoiceId: inv.id,
         paymentMethodId,
-        idempotencyKey: `tgp-1a-pay-${inv.id}-${setupIntentId}`,
+        idempotencyKey: payIdempotencyKey(inv.id, setupIntentId),
       });
       if (res.status === 'paid') {
         return { kind: 'paid', amountPaidCents: this.paidCents(res, inv) };
@@ -1213,26 +1295,66 @@ export class ClientBillingService {
         if (period === 'unknown') throw this.planChangeUnknown(0);
       }
       const opId = await this.recordCancelIntent(purchase, lease, existing?.id ?? null);
-      // Lines of a resumed operation are the invoices it already voided.
-      const lines: InvoiceLine[] = existing?.lines ?? [];
+      // Lines of a resumed operation are the invoices it already voided,
+      // plus (B-628-11) any `voiding` intent whose receipt never committed:
+      // Stripe's canonical state decides those before anything is counted.
+      const lines: InvoiceLine[] = [];
+      for (const prior of existing?.lines ?? []) {
+        if (prior.result !== 'voiding') {
+          lines.push(prior);
+          continue;
+        }
+        const fresh = await this.safeRetrieveInvoice(prior.invoice_id);
+        if (fresh?.status === 'void') {
+          lines.push({ ...prior, result: 'not_attempted' });
+        } else if (fresh == null) {
+          // Unknown: keep the intent; the reconciler resumes.
+          await this.saveOperation(
+            lease,
+            opId,
+            'voiding',
+            [...lines, prior],
+            'VOID_INCOMPLETE',
+            false,
+          );
+          throw this.planChangeUnknown(lines.length);
+        }
+        // Paid meanwhile: step 5 decides. Still open: voided again below.
+      }
       let voidedCount = lines.length;
       let voidedCents = lines.reduce((sum, l) => sum + l.amount_due_cents, 0);
       for (const inv of invoices) {
+        if (lines.some((l) => l.invoice_id === inv.id)) continue;
         const due = this.dueCents(inv);
         await this.renewLease(lease);
+        // B-628-11: commit the void intent (identity, currency, amount, key)
+        // before the Stripe call.
+        const intent: InvoiceLine = {
+          invoice_id: inv.id,
+          currency: normalizeCurrency(inv.currency ?? purchase.currency),
+          amount_due_cents: due,
+          amount_paid_cents: 0,
+          result: 'voiding',
+          idempotency_key: voidIdempotencyKey(inv.id),
+        };
+        lines.push(intent);
+        await this.saveOperation(lease, opId, 'voiding', lines, null, false);
         try {
           await this.stripe.voidInvoice({
             invoiceId: inv.id,
-            idempotencyKey: `tgp-2a-void-${inv.id}`,
+            idempotencyKey: voidIdempotencyKey(inv.id),
           });
         } catch (err) {
           const fresh = await this.safeRetrieveInvoice(inv.id);
           if (fresh?.status === 'paid') {
             // A Stripe retry paid it between list and void; step 5 decides.
+            lines.splice(lines.indexOf(intent), 1);
+            await this.saveOperation(lease, opId, 'voiding', lines, null, false);
             continue;
           }
           if (fresh?.status !== 'void') {
             // The intent stays recorded: the reconciler finishes the cancel.
+            if (fresh != null) lines.splice(lines.indexOf(intent), 1);
             await this.saveOperation(lease, opId, 'voiding', lines, 'VOID_INCOMPLETE', false);
             if (
               err instanceof StripeConnectApiError &&
@@ -1247,13 +1369,7 @@ export class ClientBillingService {
         }
         voidedCount += 1;
         voidedCents += due;
-        lines.push({
-          invoice_id: inv.id,
-          currency: normalizeCurrency(inv.currency ?? purchase.currency),
-          amount_due_cents: due,
-          amount_paid_cents: 0,
-          result: 'not_attempted',
-        });
+        intent.result = 'not_attempted';
         await this.saveOperation(lease, opId, 'voiding', lines, null, false);
       }
       const period = await this.latestPeriodState(purchase);
@@ -1575,12 +1691,35 @@ export class ClientBillingService {
       if (!op || op.completed_at) return true;
       const lines = this.linesOf(op.lines);
       let unsettled = false;
+      // B-628-11: a `paying` intent is settled with the update's own card
+      // (same idempotency key), never charged anew in the background.
+      let paymentMethodId: string | null = null;
+      if (op.setup_intent_id && lines.some((l) => l.result === 'paying')) {
+        try {
+          const si = await this.stripe.retrieveSetupIntent(op.setup_intent_id);
+          const pm = si.payment_method;
+          paymentMethodId = typeof pm === 'string' ? pm : (pm?.id ?? null);
+        } catch (err) {
+          this.logger.warn(
+            `reconcile: setup intent re-read failed op=${opId}: ${(err as Error).message}`,
+          );
+        }
+      }
       for (const l of lines) {
-        if (!['uncertain', 'processing', 'requires_action'].includes(l.result)) continue;
+        if (!UNSETTLED_RESULTS.has(l.result)) continue;
+        if (l.result === 'paying' && !paymentMethodId) {
+          unsettled = true;
+          continue;
+        }
         const fresh = await this.safeRetrieveInvoice(l.invoice_id);
         if (fresh?.status === 'paid') {
-          l.result = 'paid';
-          l.amount_paid_cents = this.paidCents(fresh, null) || l.amount_due_cents;
+          const settled = await this.settledLine(l, paymentMethodId, op.setup_intent_id ?? '');
+          if (!settled) {
+            unsettled = true;
+            continue;
+          }
+          l.result = settled.result;
+          l.amount_paid_cents = settled.amount_paid_cents;
         } else if (fresh?.status === 'void' || fresh?.status === 'uncollectible') {
           l.result = 'failed';
         } else {
@@ -1621,6 +1760,7 @@ export class ClientBillingService {
       amount_paid_cents: l.amount_paid_cents,
       result: l.result,
       decline_code: l.decline_code ?? null,
+      idempotency_key: l.idempotency_key ?? null,
     }));
   }
 
@@ -1640,6 +1780,7 @@ export class ClientBillingService {
         amount_paid_cents: paid,
         result: (typeof r.result === 'string' ? r.result : 'uncertain') as InvoiceLineResult,
         decline_code: typeof r.decline_code === 'string' ? r.decline_code : null,
+        idempotency_key: typeof r.idempotency_key === 'string' ? r.idempotency_key : null,
       });
     }
     return out;
