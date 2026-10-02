@@ -15,6 +15,7 @@ import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
   ERASURE_MANIFEST,
+  OPTIONAL_USER_TABLES,
   ErasureEntry,
   executeErasureManifest,
   delegateKey,
@@ -103,6 +104,12 @@ describe('erasure manifest: schema coverage', () => {
     const missing = refs
       .filter((r) => {
         if (entriesFor(r.model, r.field).length > 0) return false;
+        // A raw, existence-guarded step for a table an unmerged PR adds (#609)
+        // is an explicit decision too; it keeps covering the table once that
+        // PR's models land in schema.prisma.
+        if (OPTIONAL_USER_TABLES.some((o) => o.table === r.model && o.column === r.field)) {
+          return false;
+        }
         // An email copy on a row that is deleted outright goes with the row.
         return !(
           r.kind === 'email' &&
@@ -235,9 +242,48 @@ class Store {
         },
       });
     }
+    // Raw steps (OPTIONAL_USER_TABLES): a table "exists" when the parsed
+    // schema has the model (e.g. once #607/#609 land), and the guarded
+    // DELETE / detach is applied to the seeded rows like a real database.
+    const render = (strings: TemplateStringsArray, values: unknown[]) => {
+      const params: unknown[] = [];
+      const text = strings.reduce((acc, part, i) => {
+        if (i === 0) return part;
+        const v = values[i - 1];
+        // Prisma.raw(...) fragments (identifiers) carry their text in `.sql`.
+        const frag = typeof v === 'object' && v !== null ? Reflect.get(v, 'sql') : undefined;
+        if (typeof frag === 'string') return acc + frag + part;
+        params.push(v);
+        return acc + '?' + part;
+      }, '');
+      return { text: text.replace(/\s+/g, ' ').trim(), params };
+    };
     const client: Record<string, unknown> = {
-      $executeRaw: async () => 0,
-      $queryRaw: async () => [{ present: false }],
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const reg = /^public\."(\w+)"$/.exec(String(values[0] ?? ''));
+        return [{ present: !!reg && this.s.has(reg[1]) }];
+      },
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const { text, params } = render(strings, values);
+        const del = /^DELETE FROM "(\w+)" WHERE "(\w+)" = \?$/.exec(text);
+        const det = /^UPDATE "(\w+)" SET "(\w+)" = NULL WHERE "(\w+)" = \?$/.exec(text);
+        if (del && this.s.has(del[1])) {
+          const t = this.rows(del[1]);
+          const keep = t.filter((r) => r[del[2]] !== params[0]);
+          this.tables.set(del[1], keep);
+          return t.length - keep.length;
+        }
+        if (det && this.s.has(det[1])) {
+          let count = 0;
+          for (const r of this.rows(det[1])) {
+            if (r[det[3]] !== params[0]) continue;
+            r[det[2]] = null;
+            count += 1;
+          }
+          return count;
+        }
+        return 0;
+      },
     };
     for (const [k, v] of delegates) client[k] = v;
     return client as Prisma.TransactionClient;
