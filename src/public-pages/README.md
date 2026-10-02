@@ -125,6 +125,16 @@ health data privacy policy, terms of service, security posture, and
 operational status URLs filed with the App Store, the Play Store, and
 the Stripe Customer Portal. They live in `trust-pages.html.ts`.
 
+### Vendor deletion and backup procedures
+
+The deletion and backup promises on `/privacy`, `/consumer-health-privacy`
+and `/help/delete-account` are backed by
+[`docs/privacy/vendor-deletion-and-backups.md`](../../docs/privacy/vendor-deletion-and-backups.md):
+per vendor what is deleted, how, by whom and when, how backups age out, the
+restore-without-resurrection procedure, and the owner checklist of
+unverified items. Changing a deletion or retention sentence means updating
+that document in the same PR.
+
 ### Policy accuracy rules (2026-09-30 rewrite)
 
 - `/privacy` and `/consumer-health-privacy` describe only behaviour the
