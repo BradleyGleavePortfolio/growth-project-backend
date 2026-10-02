@@ -415,7 +415,10 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
         signal.removeEventListener('abort', onDeadline);
       }
     });
-    const length = Number(res.headers.get('content-length'));
+    // C-636-3: with a content-encoding the header is the encoded length, not
+    // the bytes fetch hands us (it decodes transparently); report no size.
+    const encoded = (res.headers.get('content-encoding') ?? 'identity').trim().toLowerCase();
+    const length = encoded === 'identity' ? Number(res.headers.get('content-length')) : NaN;
     const reader = res.body?.getReader();
     async function* chunks(): AsyncIterable<Uint8Array> {
       if (!reader) return;

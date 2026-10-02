@@ -102,6 +102,61 @@ const LINK_INVALID_MESSAGE =
 const LINK_EXPIRED_MESSAGE =
   'This download link has expired. Go back to the app, open Request my data and tap Download file again.';
 
+/** A recorded archive size usable as Content-Length, else null. */
+function confirmedFileSize(size: number | null): number | null {
+  return size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null;
+}
+
+/** Stable page order for exported tables (pagination by skip needs one). */
+const CHRONOLOGICAL: ReadonlyArray<Record<string, 'asc'>> = [{ created_at: 'asc' }, { id: 'asc' }];
+
+/** Recipe columns exported for recipes the user created. */
+const RECIPE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  title: true,
+  description: true,
+  image_url: true,
+  prep_time_min: true,
+  cook_time_min: true,
+  servings: true,
+  calories: true,
+  protein: true,
+  carbs: true,
+  fat: true,
+  ingredients: true,
+  instructions: true,
+  tags: true,
+  is_public: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/**
+ * Roman session columns. `subject_context_json` (an internal context blob
+ * that can carry a coach brief about another person) and the voice-budget
+ * counters are not personal data of the requester and are left out.
+ */
+const ROMAN_SESSION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  surface: true,
+  day_key: true,
+  message_count: true,
+  started_at: true,
+  last_activity_at: true,
+  created_at: true,
+};
+
+/** Roman message columns: what was said, by whom, when, and which model replied. */
+const ROMAN_MESSAGE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  session_id: true,
+  role: true,
+  content: true,
+  model_id: true,
+  interrupted: true,
+  created_at: true,
+};
+
 /** Why an archive must go although no request row owns it (B-608-11). */
 export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
 
@@ -469,7 +524,9 @@ export class DataExportService {
     return {
       exportId: ready.id,
       fileName: archiveFileName(ready),
-      size: read.size ?? ready.file_size_bytes,
+      // C-636-3: the stored size (proven equal to the archive at put) wins
+      // over whatever length header storage or a CDN sent.
+      size: confirmedFileSize(ready.file_size_bytes) ?? read.size,
       chunks: read.chunks,
     };
   }
@@ -768,9 +825,28 @@ export class DataExportService {
     stage: string,
   ): Promise<Error> {
     if (storageErrorCode(err) === 'STORAGE_NOT_FOUND') {
-      await this._retireLostArchive(record);
+      if (!(await this._retireLostArchive(record))) {
+        // B-636-5: the row still says READY, so "request a new export" would
+        // hit the 24 h limit. Answer the retryable 503 instead; the next tap
+        // re-runs stat() and retries this same conditional retirement.
+        return this._retirementFailedError(record.id, stage);
+      }
     }
     return this._storageHttpError(err, record.id, stage);
+  }
+
+  private _retirementFailedError(exportId: string, stage: string): Error {
+    this.logger.error(
+      `Export ${exportId}: archive missing but still READY (${stage}); answered 503.`,
+    );
+    Sentry.captureMessage('data export missing-archive retirement failed', {
+      level: 'error',
+      tags: { code: 'DATA_EXPORT_RETIRE_FAILED', stage },
+    });
+    return new ServiceUnavailableException({
+      code: C.STORAGE_UNAVAILABLE,
+      message: STORAGE_UNAVAILABLE_MESSAGE,
+    });
   }
 
   /**
@@ -778,7 +854,12 @@ export class DataExportService {
    * no file. Conditional on the row still being READY with exactly this
    * archive, so a concurrent supersede, expiry or erasure is never undone.
    */
-  private async _retireLostArchive(record: DataExportRequest): Promise<void> {
+  /**
+   * Returns true when the row no longer offers this archive (retired now, or
+   * already moved on by a supersede, expiry or erasure), false when the
+   * retirement write itself failed and the row may still say READY.
+   */
+  private async _retireLostArchive(record: DataExportRequest): Promise<boolean> {
     try {
       const done = await this.prisma.dataExportRequest.updateMany({
         where: { id: record.id, status: DataExportStatus.READY, file_url: record.file_url },
@@ -789,11 +870,14 @@ export class DataExportService {
           `Export ${record.id}: archive confirmed missing; marked FAILED so the user can request a new export.`,
         );
       }
+      return true;
     } catch (dbErr) {
-      // The 410 still goes out; the next attempt retries the retirement.
+      // Not retired: the caller answers a retryable 503, never the
+      // "request a new export" advice (B-636-5).
       this.logger.error(
         `Export ${record.id}: retiring the missing archive failed: ${(dbErr as Error).message}`,
       );
+      return false;
     }
   }
 
@@ -992,6 +1076,10 @@ export class DataExportService {
       ptmPredictions,
       auditLogs,
       dataExportRequests,
+      createdRecipes,
+      romanSessions,
+      romanMessages,
+      aiConsentEvents,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -1041,6 +1129,27 @@ export class DataExportService {
       this._streamAll('ptmPrediction', { user_id: userId }),
       this._streamAuditLogs(userId),
       this._streamAll('dataExportRequest', { user_id: userId }),
+      // C-636-2: recipes the user wrote (not only the ids of saved ones).
+      this._streamAll(
+        'recipe',
+        { created_by_id: userId },
+        { select: RECIPE_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      // C-636-2: Roman/AI chats are kept until the person deletes them, so
+      // they are part of "download my data". Only the user's own sessions
+      // that are not deleted; an erased chat is never exported.
+      this._streamAll(
+        'romanSession',
+        { user_id: userId, deleted_at: null },
+        { select: ROMAN_SESSION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'romanMessage',
+        { user_id: userId, session: { user_id: userId, deleted_at: null } },
+        { select: ROMAN_MESSAGE_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      // C-636-2: the AI-processing consent ledger (every grant and withdrawal).
+      this._streamAll('aiProcessingConsentEvent', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
     ]);
 
     const completedAt = new Date();
@@ -1086,6 +1195,10 @@ export class DataExportService {
       // AuditLog: only entries where the user is the target.
       audit_log_entries_about_user: auditLogs,
       data_export_requests: dataExportRequests,
+      created_recipes: createdRecipes,
+      roman_sessions: romanSessions,
+      roman_messages: romanMessages,
+      ai_processing_consent_events: aiConsentEvents,
     };
 
     const jsonForHash = JSON.stringify(archive);
@@ -1101,7 +1214,11 @@ export class DataExportService {
   /**
    * Generic helper: page through a model's rows 500 at a time.
    */
-  private async _streamAll(model: string, where: Record<string, unknown>): Promise<unknown[]> {
+  private async _streamAll(
+    model: string,
+    where: Record<string, unknown>,
+    shape: { select?: Record<string, true>; orderBy?: ReadonlyArray<Record<string, 'asc'>> } = {},
+  ): Promise<unknown[]> {
     const PAGE = 500;
     const results: unknown[] = [];
     let skip = 0;
@@ -1116,6 +1233,8 @@ export class DataExportService {
     while (true) {
       const page: unknown[] = await delegate.findMany({
         where,
+        ...(shape.select ? { select: shape.select } : {}),
+        ...(shape.orderBy ? { orderBy: [...shape.orderBy] } : {}),
         skip,
         take: PAGE,
       });

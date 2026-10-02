@@ -10,9 +10,9 @@ GDPR Article 20 right to data portability. Lets every user (coach or client) req
 
 | Method | Path | Auth | Request body | Response |
 |--------|------|------|-------------|---------|
-| `POST` | `/v1/me/data-export/request` | JWT (any role) | none | `{ id, status: "PENDING", created_at, message }` — 202. 409 `DATA_EXPORT_IN_PROGRESS` (one is being built) or `DATA_EXPORT_RATE_LIMITED` (a downloadable export from the last 24 h exists). 503 `DATA_EXPORT_STORAGE_UNAVAILABLE` when the previous archive could not be retired. |
-| `GET` | `/v1/me/data-export/status` | JWT (any role) | none | `{ id, status, created_at, completed_at, expires_at, file_size_bytes, download_available, download_token, next_request_at }` — 200; 404 `DATA_EXPORT_NOT_FOUND` if never requested. A run stuck past 30 min is reported `FAILED`, unless the worker committed READY meanwhile (the row is re-read after the reap). |
-| `POST` | `/v1/me/data-export/download-link` | JWT (any role) | none | `{ download_path, token, expires_at, file_name, file_size_bytes }` — 200, for the caller's latest export only. 404 `DATA_EXPORT_NOT_FOUND`, 409 `DATA_EXPORT_NOT_READY`, 410 `DATA_EXPORT_EXPIRED` / `DATA_EXPORT_FILE_MISSING`. |
+| `POST` | `/v1/me/data-export/request` | JWT (any account role, incl. `sub_coach`; B-636-6) | none | `{ id, status: "PENDING", created_at, message }` — 202. 409 `DATA_EXPORT_IN_PROGRESS` (one is being built) or `DATA_EXPORT_RATE_LIMITED` (a downloadable export from the last 24 h exists). 503 `DATA_EXPORT_STORAGE_UNAVAILABLE` when the previous archive could not be retired. |
+| `GET` | `/v1/me/data-export/status` | JWT (any account role, incl. `sub_coach`; B-636-6) | none | `{ id, status, created_at, completed_at, expires_at, file_size_bytes, download_available, download_token, next_request_at }` — 200; 404 `DATA_EXPORT_NOT_FOUND` if never requested. A run stuck past 30 min is reported `FAILED`, unless the worker committed READY meanwhile (the row is re-read after the reap). |
+| `POST` | `/v1/me/data-export/download-link` | JWT (any account role, incl. `sub_coach`; B-636-6) | none | `{ download_path, token, expires_at, file_name, file_size_bytes }` — 200, for the caller's latest export only. 404 `DATA_EXPORT_NOT_FOUND`, 409 `DATA_EXPORT_NOT_READY`, 410 `DATA_EXPORT_EXPIRED` / `DATA_EXPORT_FILE_MISSING`. |
 | `GET` | `/v1/me/data-export/download?token=<jwt>` | Link token in query | none | 200, archive streamed as `attachment; filename="tgp-data-export-<date>.json"`, `Cache-Control: no-store`. 401 `DATA_EXPORT_LINK_INVALID` / `DATA_EXPORT_LINK_EXPIRED`, 409, 410, 503 as above. Browsers (`Accept: text/html`) get a plain page with the next step and the request reference. |
 
 The `/download` endpoint is **not** protected by the main JWT guard: the app opens it in the phone's browser, which has no Bearer token. The link token is the credential (see below).
@@ -72,6 +72,10 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `ptm_predictions` | `PtmPrediction` | All PTM prediction rows for the user. |
 | `audit_log_entries_about_user` | `AuditLog` | Only entries where `target_id` equals the user (what was logged **about** them). Actor entries are excluded to protect others' privacy. |
 | `data_export_requests` | `DataExportRequest` | Full history of this user's export requests. |
+| `created_recipes` | `Recipe` | Every recipe the user created (title, macros, ingredients, instructions, tags, sharing flag, dates), oldest first. |
+| `roman_sessions` | `RomanSession` | The user's own Roman/AI chat sessions that are not deleted (`deleted_at` null): id, surface, day, message count, dates. The internal `subject_context_json` blob and voice-budget counters are left out. A chat the user deleted is never exported. |
+| `roman_messages` | `RomanMessage` | Every turn (user and assistant) of those sessions, oldest first: role, content, the model id of an assistant reply, interrupted flag, date. Scoped by both `user_id` and the session's owner. |
+| `ai_processing_consent_events` | `AiProcessingConsentEvent` | The full AI-processing consent ledger: every grant and withdrawal with processor, purpose, copy version and copy digest. |
 
 ---
 

@@ -18,7 +18,6 @@ import * as Sentry from '@sentry/node';
 import { DataExportDownload, DataExportService } from './data-export.service';
 import { SUPPORT_EMAIL } from '../public-pages/trust-pages.html';
 import { Public } from '../common/decorators/public.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
 
 /**
  * DataExportController — GDPR Article 20 right to data portability.
@@ -62,7 +61,9 @@ export class DataExportController {
   // matches the semantics of the legal/GDPR commitment we make to users.
   // GDPR Art. 12(3) ("without undue delay and in any event within one month")
   // does not require us to permit multiple parallel exports per user.
-  @Roles('student', 'coach', 'owner')
+  // B-636-6: no @Roles. Every authenticated account (student, coach,
+  // sub_coach, owner) may export its own data; the global JwtAuthGuard
+  // authenticates and the service scopes by req.user.id (same as #608 B-608-7).
   @Post('request')
   @HttpCode(HttpStatus.ACCEPTED)
   async requestExport(@Req() req: Request) {
@@ -85,7 +86,7 @@ export class DataExportController {
    */
   // C5 PR-A audit: read-only status of the caller's own most recent export.
   // Scoped by req.user.id; never accepts a userId parameter. Any logged-in role.
-  @Roles('student', 'coach', 'owner')
+  // B-636-6: no @Roles; self-scoped, every account role incl. sub_coach.
   @Get('status')
   async getStatus(@Req() req: Request) {
     const userId = (req.user as { id: string }).id;
@@ -101,7 +102,7 @@ export class DataExportController {
    * Errors: 404 DATA_EXPORT_NOT_FOUND, 409 DATA_EXPORT_NOT_READY,
    * 410 DATA_EXPORT_EXPIRED / DATA_EXPORT_FILE_MISSING.
    */
-  @Roles('student', 'coach', 'owner')
+  // B-636-6: no @Roles; self-scoped, every account role incl. sub_coach.
   @Post('download-link')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

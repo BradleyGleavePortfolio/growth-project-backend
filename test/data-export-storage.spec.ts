@@ -386,7 +386,7 @@ function fakeDb() {
       },
     },
   };
-  return { prisma: stub<PrismaService>(prisma), rows, users, cleanup, audits };
+  return { prisma: stub<PrismaService>(prisma), raw: prisma, rows, users, cleanup, audits };
 }
 
 /** One service instance (an API machine or a worker machine). */
@@ -703,6 +703,41 @@ describe('SupabaseArchiveStore', () => {
     expect(st.store().owns(`supabase-storage://data-exports/${ID}.json`, ID)).toBe(true);
     expect(st.store().owns('supabase-storage://data-exports/other.json', ID)).toBe(false);
     expect(st.store().owns(`supabase-storage://coach-media/${ID}.json`, ID)).toBe(false);
+  });
+
+  // C-636-3: fetch decodes a compressed body, so the encoded content-length
+  // must not become the Content-Length the browser is told.
+  it('reports no size when storage answers with a content-encoding', async () => {
+    const st = fakeStorage();
+    await st.store().put(ID, ARCHIVE);
+    st.fetchImpl.mockImplementationOnce(
+      async () =>
+        new Response(new Uint8Array(ARCHIVE), {
+          status: 200,
+          headers: { 'content-length': '7', 'content-encoding': 'gzip' },
+        }),
+    );
+    const read = await st.store().read(ID);
+    expect(read.size).toBeNull();
+    await readAll(read.chunks);
+  });
+
+  it('the download size is the recorded archive size, not the storage header', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    await readyExport(db, st);
+    const svc = instance(db, st);
+    const token = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    st.fetchImpl.mockImplementationOnce(
+      async () =>
+        new Response(new Uint8Array(ARCHIVE), {
+          status: 200,
+          headers: { 'content-length': '3' },
+        }),
+    );
+    const dl = await svc.openDownload(token);
+    expect(dl.size).toBe(ARCHIVE.length);
+    await readAll(dl.chunks);
   });
 
   it('reads through a 60-second signed URL used only server-side; missing archive is STORAGE_NOT_FOUND', async () => {
@@ -1435,6 +1470,46 @@ describe('export lifecycle', () => {
     expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_FILE_MISSING');
     expect(db.rows.get(id)?.status).toBe(DataExportStatus.FAILED);
     expect((await requestOnly(svc, A)).status).toBe(DataExportStatus.PENDING);
+  });
+
+  // B-636-5: a failed retirement write used to answer 410 FILE_MISSING
+  // ("request a new export") while the row stayed READY, so the replacement
+  // the app offered answered RATE_LIMITED. A failed write now answers the
+  // retryable 503, and the next tap retires the row and lets a new export run.
+  it('a failed retirement write answers a retryable 503; the retry retires the row and a replacement works', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const id = await readyExport(db, st);
+    const svc = instance(db, st);
+    const delegate = db.raw.dataExportRequest;
+    const realUpdateMany = delegate.updateMany;
+    let failures = 1;
+    delegate.updateMany = async (args: Parameters<typeof realUpdateMany>[0]) => {
+      if (args.data.status === DataExportStatus.FAILED && failures > 0) {
+        failures -= 1;
+        throw new Error('connection reset');
+      }
+      return realUpdateMany(args);
+    };
+    const token = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    st.objects.delete(`${id}.json`);
+
+    expect(await codeOf(svc.openDownload(token))).toBe('DATA_EXPORT_STORAGE_UNAVAILABLE');
+    expect(mockCaptureMessage).toHaveBeenCalledWith(
+      'data export missing-archive retirement failed',
+      expect.objectContaining({ tags: expect.objectContaining({ stage: 'download' }) }),
+    );
+    expect(db.rows.get(id)?.status).toBe(DataExportStatus.READY);
+
+    // The database is healthy again: the retry tells the truth and retires.
+    expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_FILE_MISSING');
+    const status = await svc.getLatestStatus(A);
+    expect(status).toMatchObject({ status: DataExportStatus.FAILED, download_available: false });
+    const next = await requestOnly(svc, A);
+    expect(next.status).toBe(DataExportStatus.PENDING);
+    await runOn(instance(db, st), next.id, A);
+    const fresh = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    expect((await readAll((await svc.openDownload(fresh)).chunks)).equals(ARCHIVE)).toBe(true);
   });
 
   it('a transient Storage failure never retires a READY export', async () => {
