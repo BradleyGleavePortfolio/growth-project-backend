@@ -9,7 +9,7 @@
   ],
   "app": "backend-spring-lake-3890",
   "flags": {
-    "FEATURE_AI_CONSENT_LEDGER_ENABLED": "unset",
+    "FEATURE_AI_CONSENT_LEDGER_ENABLED": "true",
     "FEATURE_COMMUNITY_SCHEMA": "unset",
     "FEATURE_COMMUNITY_API": "unset",
     "FEATURE_COMMUNITY_POSTS": "unset",
