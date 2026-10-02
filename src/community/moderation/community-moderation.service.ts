@@ -408,8 +408,18 @@ export class CommunityModerationService {
    *    leaves the member a ban notice;
    *  - a weaker action or a Dismiss on an actioned report is refused with
    *    409 community.moderation.already_actioned before anything is written;
-   *  - the resolution is a compare-and-set inside the notice transaction, so a
+   *  - the resolution is a compare-and-set inside the action transaction, so a
    *    concurrent action is re-evaluated instead of silently overwritten.
+   *
+   * B-610-13 (atomic enforcement): the resolution (compare-and-set), the
+   * enforcement (ban row + memberships removed, content hidden), the recording
+   * erasure intent and the member-readable notice are ONE database
+   * transaction. Either all of them commit or none do: a failed notice write,
+   * a failed commit or a process that dies mid-action leaves the member with
+   * full access, the content visible and the report open, so the moderator's
+   * retry (or the queue) applies it cleanly. Only external work runs after the
+   * commit: the storage erasure attempt (durably recorded inside the
+   * transaction and retried by VoiceErasureService), realtime and push.
    */
   async act(
     user: User,
@@ -428,34 +438,34 @@ export class CommunityModerationService {
     const ownerId =
       action === 'dismiss' ? null : await this.contentOwnerId(item.target_type, item.target_id);
 
-    let erasures: VoiceErasureRow[] = [];
-    if (action === 'ban') {
-      // A ban removes the content AND the author's access to the workspace:
-      // a durable ban row (B-610-2) plus every membership -> removed. The
-      // access service denies banned members everything (Hall, cohorts, DMs,
-      // voice, challenges) and the bootstrap never re-admits them.
-      // banAuthor runs first: it rejects banning the workspace coach / a
-      // platform owner BEFORE anything is written, so a refused ban never
-      // leaves the content half-actioned.
-      await this.banAuthor(item.workspace_id, ownerId, user.id, item.id);
-      erasures = await this.hideTarget(item.target_type, item.target_id);
-    }
-    if (action === 'hide') {
-      erasures = await this.hideTarget(item.target_type, item.target_id);
-    }
+    // A ban never removes the workspace coach or a platform owner. Checked
+    // BEFORE the transaction opens, so a refused ban writes nothing at all.
+    if (action === 'ban') await this.assertBannable(item.workspace_id, ownerId);
 
     const status: CommunityModerationStatus = action === 'dismiss' ? 'dismissed' : 'actioned';
-    // B-610-4: the resolution and the member-readable notice commit together,
-    // so a report is never marked actioned without the member being told in
-    // the app. Push stays a best-effort extra on top, sent only when this
-    // call wrote a new notice.
+    // Push stays a best-effort extra on top of the stored notice, sent only
+    // when this call wrote a new notice.
     const notify = action !== 'dismiss' && ownerId !== null && ownerId !== user.id;
-    const { resolved, notice } = await this.prisma.$transaction(async (tx) => {
+    const { resolved, notice, erasures } = await this.prisma.$transaction(async (tx) => {
+      // The compare-and-set comes first: it takes the report's row lock, so a
+      // concurrent moderator waits and is then re-evaluated against our
+      // committed outcome.
       const row = await this.resolveGuarded(
         item,
         { actorId: user.id, status, action, notes: notes ?? null },
         tx,
       );
+      let work: VoiceErasureRow[] = [];
+      if (action === 'ban') {
+        // A ban removes the content AND the author's access to the workspace:
+        // a durable ban row (B-610-2) plus every membership -> removed. The
+        // access service denies banned members everything (Hall, cohorts,
+        // DMs, voice, challenges) and the bootstrap never re-admits them.
+        await this.banAuthor(tx, item.workspace_id, ownerId, user.id, item.id);
+      }
+      if (action === 'ban' || action === 'hide') {
+        work = await this.hideTarget(tx, item.target_type, item.target_id);
+      }
       let result: ModerationNoticeResult = 'skipped';
       if (notify && ownerId) {
         result = await storeModerationNotice(tx, {
@@ -466,23 +476,32 @@ export class CommunityModerationService {
           targetId: row.target_id,
         });
       }
-      return { resolved: row, notice: result };
+      return { resolved: row, notice: result, erasures: work };
     });
     const noticeStored = notice !== 'skipped';
 
     // B-610-5: a hidden/banned voice note's recording erasure was recorded
-    // durably in hideTarget (before the soft delete). Try it now; anything
-    // not verified stays open and VoiceErasureService retries it.
+    // durably in the action transaction (hideTarget, before the soft delete).
+    // Storage is external, so it is tried only now, after the commit;
+    // anything not verified stays open and VoiceErasureService retries it.
     if (erasures.length > 0) {
-      const outcome = await attemptVoiceErasures(
-        this.prisma,
-        this.voiceStorage,
-        erasures,
-        this.logger,
-      );
-      if (outcome.pending > 0) {
-        this.logger.warn(
-          `moderation ${resolved.id}: voice recording removal not yet verified; erasure recorded and retried`,
+      try {
+        const outcome = await attemptVoiceErasures(
+          this.prisma,
+          this.voiceStorage,
+          erasures,
+          this.logger,
+        );
+        if (outcome.pending > 0) {
+          this.logger.warn(
+            `moderation ${resolved.id}: voice recording removal not yet verified; erasure recorded and retried`,
+          );
+        }
+      } catch (err) {
+        // The action and its erasure work are committed; the retry cron owns
+        // the work from here, so the moderator still gets the real outcome.
+        this.logger.error(
+          `moderation ${resolved.id}: erasure attempt failed after commit (${(err as Error).message}); VoiceErasureService retries it`,
         );
       }
     }
@@ -599,18 +618,11 @@ export class CommunityModerationService {
   }
 
   /**
-   * Ban the content owner from the workspace (B-610-2): a durable ban row
-   * (authoritative for every read/write/bootstrap path, independent of
-   * cohorts) plus every membership there -> removed. Never bans the workspace
-   * coach or a platform owner (a ban must not lock a space out of its own
-   * moderator).
+   * A ban never removes the workspace coach or a platform owner (a ban must
+   * not lock a space out of its own moderator). Read-only, run before the
+   * action transaction opens.
    */
-  private async banAuthor(
-    workspaceId: string,
-    ownerId: string | null,
-    actorId: string,
-    moderationActionId: string,
-  ): Promise<void> {
+  private async assertBannable(workspaceId: string, ownerId: string | null): Promise<void> {
     if (!ownerId) return;
     if (await this.access.isWorkspaceCoach(workspaceId, ownerId)) {
       throw new ForbiddenException(CANNOT_BAN_COACH);
@@ -622,45 +634,59 @@ export class CommunityModerationService {
     if (owner?.role === 'owner') {
       throw new ForbiddenException(CANNOT_BAN_COACH);
     }
+  }
+
+  /**
+   * Ban the content owner from the workspace (B-610-2): a durable ban row
+   * (authoritative for every read/write/bootstrap path, independent of
+   * cohorts) plus every membership there -> removed. Runs inside the action
+   * transaction (B-610-13); assertBannable has already refused a coach/owner.
+   */
+  private async banAuthor(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    ownerId: string | null,
+    actorId: string,
+    moderationActionId: string,
+  ): Promise<void> {
+    if (!ownerId) return;
     const removedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await recordWorkspaceBan(tx, {
-        workspaceId,
-        userId: ownerId,
-        bannedById: actorId,
-        moderationActionId,
-        at: removedAt,
-      });
-      const updated = await tx.communityMembership.updateMany({
-        where: { workspace_id: workspaceId, user_id: ownerId },
-        data: { status: 'removed', removed_at: removedAt },
-      });
-      if (updated.count === 0) {
-        // The author never joined a cohort here (possible for a member win).
-        // The ban row above is what every path checks; a removed membership
-        // in the current default cohort is kept as well so membership-only
-        // readers (older code paths, reports) also see them as removed.
-        const cohort = await tx.communityCohort.findFirst({
-          where: { workspace_id: workspaceId, status: 'active', archived_at: null },
-          orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
-          select: { id: true },
-        });
-        if (cohort) {
-          await tx.communityMembership.upsert({
-            where: { cohort_id_user_id: { cohort_id: cohort.id, user_id: ownerId } },
-            create: {
-              workspace_id: workspaceId,
-              cohort_id: cohort.id,
-              user_id: ownerId,
-              role: 'student',
-              status: 'removed',
-              removed_at: removedAt,
-            },
-            update: { status: 'removed', removed_at: removedAt },
-          });
-        }
-      }
+    await recordWorkspaceBan(tx, {
+      workspaceId,
+      userId: ownerId,
+      bannedById: actorId,
+      moderationActionId,
+      at: removedAt,
     });
+    const updated = await tx.communityMembership.updateMany({
+      where: { workspace_id: workspaceId, user_id: ownerId },
+      data: { status: 'removed', removed_at: removedAt },
+    });
+    if (updated.count === 0) {
+      // The author never joined a cohort here (possible for a member win).
+      // The ban row above is what every path checks; a removed membership
+      // in the current default cohort is kept as well so membership-only
+      // readers (older code paths, reports) also see them as removed.
+      const cohort = await tx.communityCohort.findFirst({
+        where: { workspace_id: workspaceId, status: 'active', archived_at: null },
+        orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+        select: { id: true },
+      });
+      if (cohort) {
+        await tx.communityMembership.upsert({
+          where: { cohort_id_user_id: { cohort_id: cohort.id, user_id: ownerId } },
+          create: {
+            workspace_id: workspaceId,
+            cohort_id: cohort.id,
+            user_id: ownerId,
+            role: 'student',
+            status: 'removed',
+            removed_at: removedAt,
+          },
+          update: { status: 'removed', removed_at: removedAt },
+        });
+      }
+    }
   }
 
   /**
@@ -845,52 +871,56 @@ export class CommunityModerationService {
     return { items };
   }
 
-  /** Soft-hide the content a moderation action targets, where applicable. */
+  /**
+   * Soft-hide the content a moderation action targets, where applicable,
+   * inside the action transaction (B-610-13). Returns the recorded erasure
+   * work for a voice note (attempted by act() after the commit).
+   */
   private async hideTarget(
+    tx: Prisma.TransactionClient,
     targetType: CommunityModerationTargetType,
     targetId: string,
   ): Promise<VoiceErasureRow[]> {
+    // B-610-13: every read and write here uses the action transaction.
     if (targetType === 'post') {
-      const post = await this.postsRepo.findById(targetId);
-      if (post && !post.deleted_at) await this.postsRepo.softDelete(post.id);
+      const post = await this.postsRepo.findById(targetId, tx);
+      if (post && !post.deleted_at) await this.postsRepo.softDelete(post.id, tx);
       return [];
     }
     if (targetType === 'message') {
-      const msg = await this.messagesRepo.findById(targetId);
+      const msg = await this.messagesRepo.findById(targetId, tx);
       if (msg && !msg.deleted_at) {
-        await this.messagesRepo.softDelete({
-          id: msg.id,
-          created_at: msg.created_at,
-        });
+        await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
       }
       return [];
     }
     if (targetType === 'voice_note') {
       // Same soft delete as the author's own delete: every read path
       // (list, by id, search, signed playback) skips soft-deleted notes.
-      // The recording itself is erased after the report closes (act()).
+      // The recording itself is erased after the action commits (act()).
       const at = new Date();
-      const note = await this.prisma.communityVoiceNote.findUnique({
+      const note = await tx.communityVoiceNote.findUnique({
         where: { id: targetId },
         select: { storage_key: true },
       });
       // B-610-5 round 5: the recording erasure is recorded durably BEFORE
-      // the soft delete, so a crash or storage outage can never strand it.
+      // the soft delete (and, B-610-13, in the same transaction), so a crash
+      // or storage outage can never strand it.
       const work = note
-        ? await recordVoiceErasures(this.prisma, objectTargets([note.storage_key]), 'moderation')
+        ? await recordVoiceErasures(tx, objectTargets([note.storage_key]), 'moderation')
         : [];
-      await this.prisma.communityVoiceNote.updateMany({
+      await tx.communityVoiceNote.updateMany({
         where: { id: targetId, soft_deleted_at: null },
         data: { soft_deleted_at: at },
       });
-      await this.prisma.communitySearchEntry.updateMany({
+      await tx.communitySearchEntry.updateMany({
         where: { kind: 'voice_note_transcript', targetId, softDeletedAt: null },
         data: { softDeletedAt: at },
       });
       return work;
     }
     if (targetType === 'win') {
-      await this.prisma.communityWin.updateMany({
+      await tx.communityWin.updateMany({
         where: { id: targetId, hidden_at: null },
         data: { hidden_at: new Date() },
       });

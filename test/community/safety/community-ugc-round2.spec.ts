@@ -439,8 +439,8 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
       // Simulate the notice insert failing inside the transaction: the
       // resolution must not be returned (and on Postgres is rolled back).
       jest.spyOn(db, '$transaction').mockImplementation(async (fn) =>
-        realTx(async () => {
-          const failing = new Proxy(db, {
+        realTx(async (tx) => {
+          const failing = new Proxy(tx, {
             get: (t, prop: string) =>
               prop === 'notification'
                 ? {
@@ -549,14 +549,16 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
     it('a Ban that lands between our read and our Warn makes the Warn a coded 409, never a downgrade', async () => {
       const n = seedNote(bob);
       const r = await moderation.report(alice, 'voice_note', n.id, 'other', undefined);
-      const orig = CommunityModerationRepository.prototype.resolveIfUnchanged;
-      const spy = jest
-        .spyOn(CommunityModerationRepository.prototype, 'resolveIfUnchanged')
-        .mockImplementationOnce(async function (this: CommunityModerationRepository, ...args) {
-          const row = db.table('communityModerationAction').find((x) => x.id === r.item.id);
-          if (row) Object.assign(row, { status: 'actioned', action: 'ban' });
-          return orig.apply(this, args);
-        });
+      // B-610-13: our compare-and-set now runs inside the action transaction,
+      // which rolls back on the 409. The competing Ban is another moderator's
+      // COMMITTED transaction, so it lands after our read and before ours
+      // opens (a change made inside our transaction would roll back with it).
+      const realTx = db.$transaction.bind(db);
+      const spy = jest.spyOn(db, '$transaction').mockImplementationOnce(async (fn) => {
+        const row = db.table('communityModerationAction').find((x) => x.id === r.item.id);
+        if (row) Object.assign(row, { status: 'actioned', action: 'ban' });
+        return realTx(fn);
+      });
       const err = await moderation.act(coach, r.item.id, 'warn', undefined).catch((e) => e);
       spy.mockRestore();
       expect(err).toBeInstanceOf(ConflictException);

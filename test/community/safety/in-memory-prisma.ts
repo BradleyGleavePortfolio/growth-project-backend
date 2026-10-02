@@ -7,6 +7,16 @@ import { randomUUID } from 'crypto';
  * composite unique keys, to-one relation filters, `some` on to-many
  * relations, nested select, orderBy, take. It is deliberately strict: an
  * unknown delegate method throws so the spec cannot pass by accident.
+ *
+ * Transactions (B-610-13) behave like Postgres for what the specs assert:
+ *  - the callback gets a separate transaction client (no `$transaction`);
+ *  - a throw inside the callback, or a failing `beforeCommit` hook (a lost
+ *    connection / process death before COMMIT), rolls back EVERY write made
+ *    through that client, restoring the exact rows the tests hold;
+ *  - a write through the ROOT client while a transaction is open throws: on
+ *    Postgres it would commit on another connection, outside the
+ *    transaction, so code that is meant to be atomic cannot pass by
+ *    accident.
  */
 
 type Row = Record<string, unknown>;
@@ -102,8 +112,23 @@ const DEFAULTS: Record<string, () => Row> = {
   }),
 };
 
+const WRITE_METHODS = new Set(['create', 'update', 'updateMany', 'upsert', 'deleteMany']);
+
+interface TableSnapshot {
+  array: Row[];
+  rows: Array<[Row, Row]>;
+}
+
 export class InMemoryPrisma {
   readonly tables: Record<string, Row[]> = {};
+  /** Open interactive transactions (root writes are refused while > 0). */
+  openTransactions = 0;
+  /**
+   * Called after a transaction callback resolves and before it "commits".
+   * A throw here rolls the transaction back (lost connection / process death
+   * before COMMIT). Tests set it; null = commit.
+   */
+  beforeCommit: ((writes: string[]) => void) | null = null;
 
   constructor() {
     const handler: ProxyHandler<InMemoryPrisma> = {
@@ -133,7 +158,50 @@ export class InMemoryPrisma {
   }
 
   async $transaction<T>(fn: (tx: InMemoryPrisma) => Promise<T>): Promise<T> {
-    return fn(this);
+    const snapshot = this.snapshot();
+    const writes: string[] = [];
+    const tx = new Proxy(this, {
+      get: (target, prop: string) => {
+        if (prop === '$transaction') return undefined;
+        if (prop in target) return Reflect.get(target, prop);
+        return target.delegate(prop, writes);
+      },
+    });
+    this.openTransactions += 1;
+    try {
+      const out = await fn(tx);
+      this.beforeCommit?.(writes);
+      return out;
+    } catch (err) {
+      this.restore(snapshot);
+      throw err;
+    } finally {
+      this.openTransactions -= 1;
+    }
+  }
+
+  private snapshot(): Record<string, TableSnapshot> {
+    const snap: Record<string, TableSnapshot> = {};
+    for (const [name, array] of Object.entries(this.tables)) {
+      snap[name] = { array, rows: array.map((r) => [r, structuredClone(r)]) };
+    }
+    return snap;
+  }
+
+  /** Roll back in place: the same array and row objects, original fields. */
+  private restore(snap: Record<string, TableSnapshot>): void {
+    for (const name of Object.keys(this.tables)) {
+      if (!snap[name]) delete this.tables[name];
+    }
+    for (const [name, { array, rows }] of Object.entries(snap)) {
+      array.length = 0;
+      for (const [row, fields] of rows) {
+        for (const k of Object.keys(row)) delete row[k];
+        Object.assign(row, fields);
+        array.push(row);
+      }
+      this.tables[name] = array;
+    }
   }
 
   private matches(name: string, row: Row, where: Where | undefined): boolean {
@@ -238,7 +306,32 @@ export class InMemoryPrisma {
     });
   }
 
-  private delegate(name: string): Record<string, (args?: Args) => Promise<unknown>> {
+  private delegate(
+    name: string,
+    txWrites?: string[],
+  ): Record<string, (args?: Args) => Promise<unknown>> {
+    const methods = this.delegateMethods(name);
+    const guarded: Record<string, (args?: Args) => Promise<unknown>> = {};
+    for (const [method, impl] of Object.entries(methods)) {
+      if (!WRITE_METHODS.has(method)) {
+        guarded[method] = impl;
+        continue;
+      }
+      guarded[method] = async (args?: Args) => {
+        if (txWrites) {
+          txWrites.push(`${name}.${method}`);
+        } else if (this.openTransactions > 0) {
+          throw new Error(
+            `InMemoryPrisma: ${name}.${method} went through the root client while a transaction is open; on Postgres it would commit outside that transaction`,
+          );
+        }
+        return impl(args);
+      };
+    }
+    return guarded;
+  }
+
+  private delegateMethods(name: string): Record<string, (args?: Args) => Promise<unknown>> {
     const rows = () => this.table(name);
     const find = (args: Args = {}) => rows().filter((r) => this.matches(name, r, args.where));
     const apply = (r: Row, data: Row) => {

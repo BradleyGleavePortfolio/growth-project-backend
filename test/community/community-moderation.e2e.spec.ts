@@ -249,6 +249,10 @@ itLive('community v1-3 moderation (live DB)', () => {
 
   async function cleanup() {
     const userIds = [ids.coachA, ids.studentA, ids.studentA2].filter(Boolean);
+    await prisma.notification.deleteMany({ where: { user_id: { in: userIds } } });
+    await prisma.communityWorkspaceBan.deleteMany({
+      where: { workspace_id: { in: [ids.wsA].filter(Boolean) } },
+    });
     await prisma.communityModerationAction.deleteMany({
       where: { workspace_id: { in: [ids.wsA].filter(Boolean) } },
     });
@@ -319,6 +323,97 @@ itLive('community v1-3 moderation (live DB)', () => {
       } else {
         expect(get.status).toBe(404);
       }
+    });
+  });
+
+  // B-610-13 (#610 fix round 6, GPT-6.1 Sol): on real Postgres, a Ban whose
+  // member-notice insert fails inside the action transaction leaves NOTHING
+  // behind: no ban row, memberships still active, the content visible, the
+  // report open, no notice. The failure is a real database error (a probe
+  // trigger on "Notification" for this member only), not a mocked client,
+  // so the rollback is Postgres's own. The retry then applies all of it.
+  describe('B-610-13: Ban + member notice are one transaction (live DB)', () => {
+    it('5. a notice insert that fails in Postgres rolls back the ban; the retry applies everything once', async () => {
+      const message = await prisma.communityMessage.create({
+        data: {
+          workspace_id: ids.wsA,
+          cohort_id: ids.cohortA,
+          scope: 'cohort',
+          kind: 'text',
+          sender_id: ids.studentA2,
+          body: 'second reportable message',
+          visibility: 'active',
+        },
+      });
+      const report = await call('POST', `/api/community/moderation/reports`, asUser(ids.studentA), {
+        target_type: 'message',
+        target_id: message.id,
+        reason: 'spam',
+      });
+      expect(report.status).toBe(201);
+      const reportId: string = report.body.item.id;
+
+      const banCount = () =>
+        prisma.communityWorkspaceBan.count({
+          where: { workspace_id: ids.wsA, user_id: ids.studentA2, lifted_at: null },
+        });
+      const memberStatuses = async () =>
+        (
+          await prisma.communityMembership.findMany({
+            where: { workspace_id: ids.wsA, user_id: ids.studentA2 },
+            select: { status: true },
+          })
+        ).map((m) => m.status);
+      const noticeCount = () => prisma.notification.count({ where: { user_id: ids.studentA2 } });
+      const messageRow = () =>
+        prisma.communityMessage.findFirst({
+          where: { id: message.id },
+          select: { deleted_at: true },
+        });
+      const reportRow = () =>
+        prisma.communityModerationAction.findUnique({
+          where: { id: reportId },
+          select: { status: true, action: true },
+        });
+
+      const probe = `b610_13_notice_probe_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+      await prisma.$executeRawUnsafe(
+        `CREATE FUNCTION ${probe}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'B-610-13 probe: notice insert refused'; END $$`,
+      );
+      try {
+        await prisma.$executeRawUnsafe(
+          `CREATE TRIGGER ${probe} BEFORE INSERT ON "Notification" FOR EACH ROW WHEN (NEW.user_id = '${ids.studentA2}') EXECUTE FUNCTION ${probe}()`,
+        );
+        const failed = await call(
+          'PATCH',
+          `/api/community/moderation/items/${reportId}`,
+          asUser(ids.coachA),
+          { action: 'ban' },
+        );
+        expect(failed.status).toBe(500);
+        expect(await banCount()).toBe(0);
+        expect(await memberStatuses()).toEqual(['active']);
+        expect((await messageRow())?.deleted_at).toBeNull();
+        expect(await reportRow()).toEqual({ status: 'open', action: null });
+        expect(await noticeCount()).toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${probe} ON "Notification"`);
+        await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS ${probe}()`);
+      }
+
+      const retried = await call(
+        'PATCH',
+        `/api/community/moderation/items/${reportId}`,
+        asUser(ids.coachA),
+        { action: 'ban' },
+      );
+      expect(retried.status).toBe(200);
+      expect(retried.body.item).toMatchObject({ status: 'actioned', action: 'ban' });
+      expect(retried.body.member_notice.stored).toBe(true);
+      expect(await banCount()).toBe(1);
+      expect(await memberStatuses()).toEqual(['removed']);
+      expect((await messageRow())?.deleted_at).toBeInstanceOf(Date);
+      expect(await noticeCount()).toBe(1);
     });
   });
 });

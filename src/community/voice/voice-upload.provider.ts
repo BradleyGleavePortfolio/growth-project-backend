@@ -88,6 +88,62 @@ interface SupabaseStorageWithSignedUpload {
   }>;
 }
 
+/**
+ * The bucket-level part of the storage client (B-610-8): erasure confirms the
+ * configured bucket really exists before it trusts an "absent" answer, because
+ * the storage server answers a lookup in a bucket that does not exist with
+ * the same object-level "not found" and an empty listing.
+ */
+interface SupabaseStorageBuckets {
+  getBucket?: (id: string) => Promise<{
+    data: { id?: string | null; name?: string | null } | null;
+    error: { message: string } | null;
+  }>;
+}
+
+/** The storage error fields the SDK (storage-js StorageApiError) exposes. */
+export interface VoiceStorageError {
+  message?: string | null;
+  /** The server's code from the JSON body ("404", "NoSuchKey" ...), else the HTTP status. */
+  statusCode?: string | null;
+  /** The HTTP status of the response. */
+  status?: number | null;
+}
+
+/**
+ * Supabase Storage creates this marker object when a folder is made in the
+ * dashboard. It is not a recording and never has a canonical key (C-610-9).
+ */
+export const EMPTY_FOLDER_PLACEHOLDER = '.emptyFolderPlaceholder';
+
+/**
+ * B-610-8: the one storage answer that proves an exact object is gone.
+ *
+ * Supabase Storage answers a lookup of a missing object with the body
+ * `{ statusCode: "404", error: "not_found", message: "Object not found" }`
+ * (HTTP 400 on older servers, 404 on newer; the SDK keeps the body code as
+ * `statusCode` and the HTTP status as `status`). Everything else is NOT proof
+ * the recording is gone and keeps the erasure open: a generic 400 ("Bad
+ * request"), "Bucket not found", auth failures (403 / invalid JWT), 5xx,
+ * transport errors, a 404 without the object message, or a message without
+ * the 404 code.
+ */
+export function isObjectNotFound(error: VoiceStorageError | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.statusCode ?? '').trim();
+  if (code !== '404' && code !== 'NoSuchKey') return false;
+  const status = error.status;
+  if (status !== undefined && status !== null && status !== 400 && status !== 404) return false;
+  return /^object not found\.?$/i.test(String(error.message ?? '').trim());
+}
+
+/** Short, key-free description of a storage error for logs. */
+function describeStorageError(error: VoiceStorageError): string {
+  const status = error.status ?? 'none';
+  const code = error.statusCode ?? 'none';
+  return `status=${status} code=${code} message=${String(error.message ?? '').slice(0, 120)}`;
+}
+
 /** Result of a stat on an uploaded voice object (publish-time verification). */
 export type VoiceObjectStat =
   | { state: 'present'; size: number | null; contentType: string | null }
@@ -378,39 +434,98 @@ export class VoiceUploadProvider {
   }
 
   /**
-   * Erasure verification (B-610-5 round 5): true when the exact object reads
-   * back missing, false while it is still present, null when storage could not
-   * answer (the erasure stays open and is retried).
+   * Erasure verification (B-610-5 round 5, B-610-8): true ONLY when storage
+   * proves the exact object is absent (isObjectNotFound) AND the configured
+   * bucket is confirmed to exist; false while the object is still present;
+   * null for every other answer (generic 400, bucket/auth/config errors, 5xx,
+   * transport faults, an ambiguous not-found), so the erasure stays open and
+   * is retried. Deliberately separate from statObject: publish may treat
+   * "cannot confirm" as missing (it refuses either way), erasure must not.
    */
   async objectGone(storageKey: string): Promise<boolean | null> {
-    const owner = storageKey.split('/')[0] ?? '';
-    const stat = await this.statObject(storageKey, owner);
-    if (stat.state === 'missing') return true;
-    if (stat.state === 'present') return false;
-    return null;
+    const bucketName = this.bucket();
+    if (!isSignableVoiceKey(bucketName, storageKey)) return null;
+    let client: ReturnType<SupabaseService['getClient']>;
+    try {
+      client = this.supabase.getClient();
+    } catch {
+      return null;
+    }
+    try {
+      const storage: SupabaseStorageWithSignedUpload = client.storage.from(bucketName);
+      const info = storage.info;
+      if (typeof info !== 'function') return null;
+      const result = await info.call(storage, storageKey);
+      if (!result.error) return result.data ? false : null;
+      if (!isObjectNotFound(result.error)) {
+        this.logger.warn(`voice erasure check inconclusive: ${describeStorageError(result.error)}`);
+        return null;
+      }
+    } catch (err) {
+      this.logger.warn(`voice erasure check failed: ${(err as Error).message}`);
+      return null;
+    }
+    return (await this.bucketConfirmed(client, bucketName)) ? true : null;
   }
 
   /**
    * Erasure verification for an owner folder: true when `<bucket>/<ownerId>/`
-   * lists empty, false while files remain, null when storage could not answer.
+   * lists no recordings (the dashboard folder placeholder is not one, C-610-9)
+   * AND the bucket is confirmed to exist (B-610-8: a missing bucket lists
+   * empty too), false while files remain, null when storage could not answer.
    */
   async ownerFolderEmpty(ownerId: string): Promise<boolean | null> {
     const folder = voiceOwnerFolder(ownerId);
     if (!folder) return true;
-    let storage: SupabaseStorageWithSignedUpload;
+    const bucketName = this.bucket();
+    let client: ReturnType<SupabaseService['getClient']>;
     try {
-      storage = this.supabase.getClient().storage.from(this.bucket());
+      client = this.supabase.getClient();
     } catch {
       return null;
     }
-    const list = storage.list;
-    if (typeof list !== 'function') return null;
     try {
-      const page = await list.call(storage, folder, { limit: 1, offset: 0 });
+      const storage: SupabaseStorageWithSignedUpload = client.storage.from(bucketName);
+      const list = storage.list;
+      if (typeof list !== 'function') return null;
+      // A page of 10, not 1: the placeholder sorts first and must not hide a
+      // real file behind it.
+      const page = await list.call(storage, folder, { limit: 10, offset: 0 });
       if (page.error) return null;
-      return (page.data ?? []).filter((o) => !!o.name).length === 0;
+      const files = (page.data ?? []).filter(
+        (o) => !!o.name && o.name !== EMPTY_FOLDER_PLACEHOLDER,
+      );
+      if (files.length > 0) return false;
     } catch {
       return null;
+    }
+    return (await this.bucketConfirmed(client, bucketName)) ? true : null;
+  }
+
+  /**
+   * B-610-8: true only when storage returns the configured bucket itself.
+   * A missing bucket, an auth/config error, a transport fault or an SDK build
+   * without getBucket is "not confirmed".
+   */
+  private async bucketConfirmed(
+    client: ReturnType<SupabaseService['getClient']>,
+    bucketName: string,
+  ): Promise<boolean> {
+    try {
+      const buckets: SupabaseStorageBuckets = client.storage;
+      const fn = buckets.getBucket;
+      if (typeof fn !== 'function') return false;
+      const result = await fn.call(buckets, bucketName);
+      if (result.error || !result.data) {
+        if (result.error) {
+          this.logger.warn(`voice erasure bucket check failed: ${result.error.message}`);
+        }
+        return false;
+      }
+      return result.data.id === bucketName || result.data.name === bucketName;
+    } catch (err) {
+      this.logger.warn(`voice erasure bucket check failed: ${(err as Error).message}`);
+      return false;
     }
   }
 
@@ -438,7 +553,9 @@ export class VoiceUploadProvider {
       try {
         const page = await list.call(storage, folder, { limit: 100, offset: 0 });
         if (page.error) return { removed, failed: true };
-        names = (page.data ?? []).map((o) => o.name).filter((n) => !!n);
+        names = (page.data ?? [])
+          .map((o) => o.name)
+          .filter((n) => !!n && n !== EMPTY_FOLDER_PLACEHOLDER);
       } catch {
         return { removed, failed: true };
       }

@@ -100,7 +100,12 @@ function storageClient(opts: { failRemove?: boolean } = {}) {
   };
   const client = {
     auth: { admin: { deleteUser: jest.fn(async () => ({ error: null })) } },
-    storage: { from: jest.fn(() => bucket) },
+    storage: {
+      from: jest.fn(() => bucket),
+      // B-610-8: erasure trusts an absent answer only once the configured
+      // bucket is confirmed to exist (the real client has getBucket).
+      getBucket: jest.fn(async (id: string) => ({ data: { id, name: id }, error: null })),
+    },
   };
   return { client, removed, listed };
 }
@@ -180,7 +185,11 @@ describe('account deletion erases community voice notes (B-610-5)', () => {
     const { client } = storageClient();
     const service = await build(permissivePrisma(calls, { failErasureRecord: true }), client);
     await expect(
-      service.adminForceDelete(USER_ID, { actorId: 'admin-1', actorRole: 'owner', actorEmail: null }),
+      service.adminForceDelete(USER_ID, {
+        actorId: 'admin-1',
+        actorRole: 'owner',
+        actorEmail: null,
+      }),
     ).rejects.toThrow('erasure table unavailable');
     expect(
       calls.some((c) => c.delegate === 'communityVoiceNote' && c.method === 'updateMany'),
