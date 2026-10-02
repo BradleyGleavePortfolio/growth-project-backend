@@ -12,7 +12,7 @@
 //  - 14-day grace, finalization within one day, no grace on an admin
 //    deletion: backend #608 src/account-deletion/account-deletion.service.ts
 //    (graceDays default 14, FINALIZE_WINDOW_MS, adminForceDelete);
-//  - 30-day reply, 45 days for consumer health data, Roman 180 days, backups
+//  - 30-day reply, 45 days for consumer health data, Roman kept until deleted, backups
 //    six months: src/public-pages/trust-pages.html.ts.
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -28,8 +28,8 @@ import {
   type HelpPage,
 } from '../src/public-pages/help-pages.html';
 import {
-  ACCOUNT_DELETION_EMAIL,
   DELETE_ACCOUNT_HELP_PATH,
+  SUPPORT_EMAIL,
   policyFooterLinks,
   renderTrustPage,
   type TrustPage,
@@ -173,7 +173,8 @@ describe('/help/delete-account content', () => {
   });
 
   it('gives a working email route with a subject line and identity check, never a password', () => {
-    expect(ACCOUNT_DELETION_EMAIL).toBe('Bradleyapple1031@gmail.com');
+    // One support address everywhere (owner rule): the deletion route uses it.
+    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
     expect(DELETION_EMAIL_SUBJECT).toBe('Delete my account');
     expect(text).toContain(
       'Email Bradleyapple1031@gmail.com with the subject line “Delete my account”.',
@@ -227,13 +228,14 @@ describe('/help/delete-account content', () => {
     );
   });
 
-  it('states the timings: 14-day grace, one day to finish, 30-day reply, Roman 180 days', () => {
+  it('states the timings: 14-day grace, one day to finish, 30-day reply, Roman kept until deleted', () => {
     expect(text).toContain(
       'In the app: a 14-day grace period starts when you confirm. When it ends, your data is deleted within one day, and the app shows the date.',
     );
     expect(text).toContain('By email: we reply within 30 days of receiving your request.');
     expect(text).toContain('answered within 45 days');
-    expect(text).toContain('each message is deleted automatically 180 days after it is sent');
+    expect(text).toContain('Roman conversations: kept until you delete them or your account.');
+    expect(text).not.toMatch(/180 days|deleted automatically/);
     expect(text).toContain(
       'There is no 14-day grace period for a deletion we carry out at your request, so it cannot be cancelled.',
     );
@@ -242,6 +244,29 @@ describe('/help/delete-account content', () => {
     expect(visibleText(renderTrustPage('privacy'))).toContain('14-day grace period');
     expect(visibleText(renderTrustPage('consumer-health'))).toContain(
       'within 45 days of receiving your request',
+    );
+  });
+
+  // Sol B-611-3: no coach-unavailable signal exists; same wording as mobile #313.
+  it('a coach deleting: clients are no longer linked to them (no "coach unavailable" promise)', () => {
+    expect(text).toContain('without your contact details, and are no longer linked to you.');
+    expect(text).not.toMatch(/no longer available/);
+  });
+
+  // Sol B-611-4: every linked help page tells the same deletion timeline.
+  it('FAQ and support match the 14-day cancellable, then permanent, deletion (no thirty-day reversal)', () => {
+    for (const slug of ['faq', 'support', 'delete-account'] as const) {
+      const t = visibleText(renderHelpPage(slug));
+      expect(t).not.toMatch(
+        /thirty-day|soft-delete window|deletion can be reversed|deletion reversals/i,
+      );
+    }
+    const faq = visibleText(renderHelpPage('faq'));
+    expect(faq).toContain('has a 14-day grace period in which they can cancel it in the app');
+    expect(faq).toContain('permanently deleted and cannot be recovered');
+    const support = visibleText(renderHelpPage('support'));
+    expect(support).toContain(
+      'A deletion can be cancelled in the app during its 14-day grace period; once it is complete it cannot be reversed.',
     );
   });
 

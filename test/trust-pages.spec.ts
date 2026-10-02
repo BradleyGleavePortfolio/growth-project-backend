@@ -325,14 +325,40 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     }
   });
 
-  it('describes Roman: Anthropic, private from the coach, 180 days, client delete, staff access', () => {
+  it('describes Roman: Anthropic, private from the coach, kept until deleted, client delete, staff access', () => {
     expect(text).toMatch(/Roman is an AI assistant powered by Anthropic/);
     expect(text).toMatch(/Roman conversations are not visible to your coach/);
-    expect(text).toMatch(/deleted automatically 180 days after each message is sent/);
+    // Owner rule (OR-110-1): past AI chats are kept, no time-based purge.
+    expect(text).toMatch(/Roman conversations are kept until you delete them or your account/);
+    expect(text).toMatch(/Roman conversations — kept until you delete them or your account/);
     expect(text).toMatch(/delete a conversation at any time/);
     expect(text).toMatch(/only for support, safety and debugging/);
     expect(text).toMatch(/two separate boxes on one screen/);
     expect(text).toMatch(/never your coach’s private notes/);
+  });
+
+  it('no page states a time-based purge of Roman conversations', () => {
+    const pages: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
+    for (const page of pages) {
+      expect(visibleText(renderTrustPage(page))).not.toMatch(/180 days|deleted automatically/);
+    }
+  });
+
+  // Owner rule: the income/body/lifestyle diagnostic quiz is another product.
+  it('says nothing about a diagnostic quiz or income questions', () => {
+    const pages: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
+    for (const page of pages) {
+      expect(visibleText(renderTrustPage(page))).not.toMatch(/quiz|income|diagnostic (test|assessment|questionnaire)/i);
+    }
+  });
+
+  // Sol B-611-2: deletion keeps more than payment records; say exactly what.
+  it('deletion retention names every category kept, not only payment records', () => {
+    expect(text).not.toMatch(/We keep only the payment records the law requires\./);
+    expect(text).toContain('We keep only what we must: the payment records the law requires; security and audit logs;');
+    expect(text).toContain('one deletion record with a random reference, the date and the result');
+    expect(text).toContain('for 30 days, a minimal closed-account record and a one-way code used to check the deletion’s status');
+    expect(text).toContain('your sign-in provider’s account ID while removing it there is still being retried');
   });
 
   it('covers retention, deletion, rights, no sale and children 16+', () => {

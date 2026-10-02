@@ -147,12 +147,13 @@ the Stripe Customer Portal. They live in `trust-pages.html.ts`.
 - Roman copy must match the owner rulings and the D2 two-box consent
   (owner-approved 2026-10-01 09:07 PDT): box 1 (required) is the
   personal-training waiver plus collection and use for coaching
-  (`consult-consent-v2`); box 2 (optional, unticked) is Roman and coach
-  AI drafts processed by Anthropic (AI consent ledger, `client-ai-v3`),
+  (`consult-consent-v3`, backend #607 / mobile #310); box 2 (optional, unticked) is Roman and coach
+  AI drafts processed by Anthropic (AI consent ledger, `client-ai-v4`, backend #635),
   withdrawn in Settings > Privacy > Roman and AI; stopping all
   collection is Settings > Account > Delete account. Also: private from
-  coaches, staff access only for support / safety / debugging, 180-day
-  retention, client delete. The consumer health "Consent" section is
+  coaches, staff access only for support / safety / debugging, kept
+  until the client deletes them or the account (owner OR-110-1: no
+  time-based purge), client delete. The consumer health "Consent" section is
   the approved text byte for byte (pinned in `test/trust-pages.spec.ts`).
 - The clinic partner is never named. Copy says "clinic partner".
 - Section links go through `safeHref()`: site-relative paths, `mailto:`

@@ -106,6 +106,10 @@ describe('PublicPagesController help pages', () => {
       if (slug === 'contact') {
         // Contact: intro + footer (display) + footer (mailto href).
         expect(occurrences).toBeGreaterThanOrEqual(2);
+      } else if (slug === 'delete-account') {
+        // The email deletion route uses the one support address (owner
+        // rule): its instruction + its mailto button + the footer pair.
+        expect(occurrences).toBe(5);
       } else {
         // Other pages: footer display + footer mailto href = 2.
         expect(occurrences).toBe(2);

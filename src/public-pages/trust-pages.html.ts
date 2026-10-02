@@ -44,9 +44,6 @@ export const CONSUMER_HEALTH_POLICY_PATH = '/consumer-health-privacy';
 // Privacy Policy, the /help nav and the shared policy footer.
 export const DELETE_ACCOUNT_HELP_PATH = '/help/delete-account';
 
-// Mailbox for deletion requests from people who cannot use the app, as set
-// by the operator for the Google Play deletion page (2026-10-01 15:30 PT).
-export const ACCOUNT_DELETION_EMAIL = 'Bradleyapple1031@gmail.com';
 
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
 
@@ -199,7 +196,7 @@ function privacyContent(): TrustPageContent {
         paragraphs: [
           'Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
           'When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you.',
-          'Roman conversations are deleted automatically 180 days after each message is sent. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again.',
+          'Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again.',
           'If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data).',
           'Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988.',
         ],
@@ -235,7 +232,7 @@ function privacyContent(): TrustPageContent {
         heading: 'How long we keep it',
         bullets: [
           'Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it.',
-          'Roman conversations — up to 180 days per message, or less if you delete them.',
+          'Roman conversations — kept until you delete them or your account.',
           'Food search results — 24 hours in our cache.',
           'Payment, invoice and tax records — as long as the law requires.',
           'Security and audit logs — as long as needed to protect the service and meet legal duties.',
@@ -246,7 +243,7 @@ function privacyContent(): TrustPageContent {
       {
         heading: 'Deleting your account',
         paragraphs: [
-          'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only the payment records the law requires.',
+          'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and, for 30 days, a minimal closed-account record and a one-way code used to check the deletion’s status, together with your sign-in provider’s account ID while removing it there is still being retried.',
           `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too.`,
         ],
         links: [

@@ -24,7 +24,6 @@
 // under the public hostname.
 
 import {
-  ACCOUNT_DELETION_EMAIL,
   CONSUMER_HEALTH_POLICY_PATH,
   DELETE_ACCOUNT_HELP_PATH,
   PRIVACY_POLICY_PATH,
@@ -450,7 +449,7 @@ function faqContent(): HelpPageContent {
           {
             question: 'A client deleted their account. Where did they go?',
             answer:
-              'They are gone from your roster and their data is in a thirty-day soft-delete window before permanent removal. Within that window the deletion can be reversed if the client requests it. After thirty days, recovery is not possible.',
+              'They are gone from your roster. A client who deletes their account in the app has a 14-day grace period in which they can cancel it in the app. When it ends, their data is permanently deleted and cannot be recovered.',
           },
         ],
       },
@@ -490,7 +489,7 @@ function supportContent(): HelpPageContent {
           'A billing charge failed and Stripe is showing a state that does not match what your console shows.',
           'Data we hold is wrong (a client appears in the wrong roster, a message is missing, a profile field will not save).',
           'A security or privacy concern of any kind. These get same-day attention.',
-          'Account merge requests (you signed up with the wrong provider) and account-deletion reversals within the thirty-day soft-delete window.',
+          'Account merge requests (you signed up with the wrong provider) and questions about a pending account deletion. A deletion can be cancelled in the app during its 14-day grace period; once it is complete it cannot be reversed.',
         ],
       },
       {
@@ -641,7 +640,7 @@ function contactContent(): HelpPageContent {
 //    FINALIZE_WINDOW_MS one day); admin force-delete has no grace period.
 //  - Deleted vs kept: #608 account-deletion.manifest.ts / README "Operator
 //    policy" and #313 PERMANENTLY_DELETED / KEPT_RECORDS / BILLING_NOTE.
-//  - Roman 180 days, backups six months, 30-day reply, 45 days for consumer
+//  - Roman kept until deleted (owner OR-110-1), backups six months, 30-day reply, 45 days for consumer
 //    health data: the Privacy Policy and Consumer Health Data Privacy Policy
 //    (./trust-pages.html.ts).
 // Ships with #608/#313: do not publish before that behaviour is live.
@@ -673,7 +672,7 @@ function deleteAccountContent(): HelpPageContent {
       {
         heading: 'Ask us by email if you do not have the app',
         paragraphs: [
-          `Email ${ACCOUNT_DELETION_EMAIL} with the subject line “${DELETION_EMAIL_SUBJECT}”. So we can confirm the account is yours:`,
+          `Email ${SUPPORT_EMAIL} with the subject line “${DELETION_EMAIL_SUBJECT}”. So we can confirm the account is yours:`,
         ],
         bullets: [
           'Send it from the email address you use to sign in to the app.',
@@ -687,8 +686,8 @@ function deleteAccountContent(): HelpPageContent {
         ],
         links: [
           {
-            label: `Email ${ACCOUNT_DELETION_EMAIL}`,
-            href: `mailto:${ACCOUNT_DELETION_EMAIL}?subject=${encodeURIComponent(DELETION_EMAIL_SUBJECT)}`,
+            label: `Email ${SUPPORT_EMAIL}`,
+            href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(DELETION_EMAIL_SUBJECT)}`,
           },
         ],
       },
@@ -716,7 +715,7 @@ function deleteAccountContent(): HelpPageContent {
         bullets: [
           'Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details.',
           'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
-          'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and see that their coach is no longer available.',
+          'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
           'Backups: our providers overwrite backups on a rolling schedule, and no copy is kept more than six months after a confirmed deletion request.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
         ],
@@ -727,7 +726,7 @@ function deleteAccountContent(): HelpPageContent {
         bullets: [
           'In the app: a 14-day grace period starts when you confirm. When it ends, your data is deleted within one day, and the app shows the date.',
           'By email: we reply within 30 days of receiving your request. Requests about consumer health data under Washington law are answered within 45 days, as our Consumer Health Data Privacy Policy explains.',
-          'Roman conversations: while your account is open, each message is deleted automatically 180 days after it is sent. When your account is deleted, they are deleted with it.',
+          'Roman conversations: kept until you delete them or your account. When your account is deleted, they are deleted with it.',
         ],
         links: [
           { label: 'Privacy Policy', href: PRIVACY_POLICY_PATH },
