@@ -261,9 +261,8 @@ jobs:
           fly_machine_check() {
             local rc cls out
             out=machine.json
-            if [ "$1" = after ]; then out=machine-after.json; fi
             set +e
-            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" < /dev/null > ssh-stdout.txt 2> fly-ssh-stderr.txt
             rc=$?
             set -e
             if [ "${rc}" -ne 0 ]; then
@@ -271,7 +270,7 @@ jobs:
               printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
               echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
             else
-              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . before
             fi
             rm -f ssh-stdout.txt fly-ssh-stderr.txt
           }
@@ -279,7 +278,7 @@ jobs:
           fly_list_state fly-state.tsv "nothing could be planned and nothing was changed" || exit 1
           # Source checks (booleans only) and the in-machine check command.
           "${FEM[@]}" prepare "${MANIFEST}" "${RULES}" .
-          fly_machine_check before
+          fly_machine_check
           "${FEM[@]}" plan "${MANIFEST}" "${RULES}" .
 
       - name: Stage the planned changes (apply mode only; no restart)
@@ -495,9 +494,8 @@ jobs:
           fly_machine_check() {
             local rc cls out
             out=machine.json
-            if [ "$1" = after ]; then out=machine-after.json; fi
             set +e
-            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" < /dev/null > ssh-stdout.txt 2> fly-ssh-stderr.txt
             rc=$?
             set -e
             if [ "${rc}" -ne 0 ]; then
@@ -505,7 +503,7 @@ jobs:
               printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
               echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
             else
-              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . before
             fi
             rm -f ssh-stdout.txt fly-ssh-stderr.txt
           }
@@ -523,7 +521,7 @@ jobs:
           set -euo pipefail
           umask 077
           cd "${RUNNER_TEMP}/fly-env-sync"
-          trap 'rm -f fly-deploy-stderr.txt fly-list-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
+          trap 'rm -f fly-deploy-stderr.txt fly-list-stderr.txt fly-machines-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
           # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
           # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
           # in its errors, so no flyctl output is ever printed, filtered or
@@ -588,9 +586,8 @@ jobs:
           fly_machine_check() {
             local rc cls out
             out=machine.json
-            if [ "$1" = after ]; then out=machine-after.json; fi
             set +e
-            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" < /dev/null > ssh-stdout.txt 2> fly-ssh-stderr.txt
             rc=$?
             set -e
             if [ "${rc}" -ne 0 ]; then
@@ -598,16 +595,82 @@ jobs:
               printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
               echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
             else
-              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . before
             fi
             rm -f ssh-stdout.txt fly-ssh-stderr.txt
           }
           # END fly_helpers
-          if [ ! -s changed.txt ] && [ ! -s pending.txt ]; then
-            echo "Nothing changed and nothing managed is waiting for a deploy, so flyctl secrets deploy was skipped and no machine restarts."
-            exit 0
+          # BEGIN fly_fleet (apply-now completion only; B-637-1)
+          # Every machine is enumerated with `machines list --json` (jq projects
+          # id + state only) and EVERY started machine runs the in-machine
+          # check. The verdict comes from `verify deployed`, which fails closed:
+          # exit 0 = proven, 1 = error, 3 = not proven yet (retry).
+          fly_fleet_check() {
+            local filter fly_rc jq_rc cls id state rc
+            rm -f machines.tsv machines-unavailable.json machine-after-*.json
+            filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [((.id // .ID // "") | tostring), ((.state // .State // "unknown") | tostring)] | @tsv end end'
+            (
+              set +e
+              flyctl machines list -a "${APP}" --json 2> fly-machines-stderr.txt | jq -r "${filter}" > machines.tsv 2> jq-stderr.txt
+              echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+            )
+            read -r fly_rc jq_rc < list-status.txt
+            if [ "${fly_rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-machines-stderr.txt)
+              printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > machines-unavailable.json
+              rm -f machines.tsv fly-machines-stderr.txt
+              return 0
+            fi
+            rm -f fly-machines-stderr.txt
+            if [ "${jq_rc}" -ne 0 ]; then
+              printf '{"unavailable":true,"errorClass":"bad_json"}\n' > machines-unavailable.json
+              rm -f machines.tsv
+              return 0
+            fi
+            while IFS=$'\t' read -r id state <&3; do
+              if [ "${state}" != started ] || ! printf '%s' "${id}" | grep -qE '^[0-9a-z]{8,32}$'; then
+                continue
+              fi
+              set +e
+              flyctl ssh console -a "${APP}" --machine "${id}" -C "$(cat compare.cmd)" < /dev/null > ssh-stdout.txt 2> fly-ssh-stderr.txt
+              rc=$?
+              set -e
+              if [ "${rc}" -ne 0 ]; then
+                cls=$(fly_error_class fly-ssh-stderr.txt)
+                printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "machine-after-${id}.json"
+              else
+                "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "after-${id}" < /dev/null
+              fi
+              rm -f ssh-stdout.txt fly-ssh-stderr.txt
+            done 3< machines.tsv
+          }
+          # END fly_fleet
+          attempts="${FLY_ENV_VERIFY_ATTEMPTS:-6}"
+          delay="${FLY_ENV_VERIFY_DELAY_SECONDS:-20}"
+          case "${attempts}" in '' | *[!0-9]*) attempts=6 ;; esac
+          case "${delay}" in '' | *[!0-9]*) delay=20 ;; esac
+          if [ "${attempts}" -lt 1 ] || [ "${attempts}" -gt 20 ]; then attempts=6; fi
+          if [ "${delay}" -gt 120 ]; then delay=20; fi
+          need=""
+          if [ -s changed.txt ]; then need="this run staged changes"; fi
+          if [ -s pending.txt ]; then need="${need:+${need}; }names staged earlier are waiting for a deploy"; fi
+          if [ -s unproven.txt ]; then need="${need:+${need}; }the in-machine check before this step did not run, so the running state is unproven"; fi
+          if [ -z "${need}" ]; then
+            # Nothing to apply: prove every started machine without a restart.
+            fly_list_state fly-state-deployed.tsv "the running state could not be verified" || exit 1
+            fly_fleet_check
+            set +e
+            "${FEM[@]}" verify "${MANIFEST}" "${RULES}" . deployed retry
+            rc=$?
+            set -e
+            if [ "${rc}" -eq 0 ]; then
+              echo "Nothing changed and nothing was waiting, so flyctl secrets deploy was skipped and no machine restarted."
+              exit 0
+            fi
+            if [ "${rc}" -ne 3 ]; then exit "${rc}"; fi
+            need="a started machine does not hold the manifest yet"
           fi
-          echo "Applying staged secrets to ${APP} (one rolling machine restart)."
+          echo "Applying staged secrets to ${APP} (one rolling machine restart): ${need}."
           set +e
           flyctl secrets deploy -a "${APP}" > /dev/null 2> fly-deploy-stderr.txt
           rc=$?
@@ -617,9 +680,23 @@ jobs:
             echo "::error::flyctl secrets deploy failed (exit ${rc}, error class ${cls}) for ${APP}. The changes stay staged and the next fly deploy applies them. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}") Then re-run this workflow in apply mode with deploy_staged=true."
             exit 1
           fi
-          fly_list_state fly-state-deployed.tsv "the deployed state could not be verified (flyctl secrets deploy already succeeded)" || exit 1
-          fly_machine_check after
-          "${FEM[@]}" verify "${MANIFEST}" "${RULES}" . deployed
+          # Bounded retry: the rolling restart can take a while; the verdict is
+          # proven (exit 0) or an error with a Fix on the last attempt (exit 1).
+          i=1
+          while :; do
+            fly_list_state fly-state-deployed.tsv "the deployed state could not be verified (flyctl secrets deploy already succeeded)" || exit 1
+            fly_fleet_check
+            final=retry
+            if [ "${i}" -ge "${attempts}" ]; then final=final; fi
+            set +e
+            "${FEM[@]}" verify "${MANIFEST}" "${RULES}" . deployed "${final}"
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 3 ]; then exit "${rc}"; fi
+            echo "Attempt ${i} of ${attempts}: not proven yet; checking again in ${delay}s."
+            sleep "${delay}"
+            i=$((i + 1))
+          done
 
       - name: Remove scratch files
         if: ${{ always() }}

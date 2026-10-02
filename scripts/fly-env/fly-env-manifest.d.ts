@@ -19,6 +19,28 @@ export interface FlyEnvManifest {
 
 export interface ExtractedRule {
   values: string[] | null;
+  unsetIs: 'on' | 'off' | null;
+}
+
+export interface KillSwitch {
+  name: string;
+  unsetIs: 'on' | 'off';
+  action: 'set' | 'unset';
+  value: string;
+  manifest: string;
+  command: string;
+}
+
+export interface FleetList {
+  machines?: Array<{ id: string; state: string }>;
+  malformed?: number;
+  unavailable?: boolean;
+  errorClass?: string;
+}
+
+export interface Fleet {
+  list: FleetList;
+  checks: Record<string, MachineCheck>;
 }
 
 export interface Precondition {
@@ -54,6 +76,7 @@ export interface Plan {
   setSecrets: string[];
   unset: string[];
   pending: string[];
+  unproven: string[];
   otherStaged: string[];
   otherStagedMalformed: number;
 }
@@ -63,6 +86,8 @@ export interface Verification {
   warnings: string[];
   lines: string[];
   pending: string[];
+  retry: string[];
+  proven: { started: string[]; idle: string[] } | null;
 }
 
 export const APP: string;
@@ -120,7 +145,29 @@ export function verifyState(
   manifest: FlyEnvManifest,
   flyState: Map<string, string>,
   phase: 'staged' | 'deployed',
-  machine: MachineCheck | null,
+  fleet: Fleet | null,
+  opts?: { final?: boolean },
 ): Verification;
-export function renderPlan(plan: Plan, digest: string, machine: MachineCheck): string[];
+export function proveFleet(
+  all: Array<[string, 'present' | 'absent']>,
+  notDeployed: string[],
+  fleet: Fleet,
+): { retry: string[]; proven: { started: string[]; idle: string[] } };
+export function parseMachineList(text: string): {
+  machines: Array<{ id: string; state: string }>;
+  malformed: number;
+};
+export function offValue(values: string[]): string | null;
+export function killSwitches(
+  manifest: FlyEnvManifest,
+  rules: Map<string, ExtractedRule>,
+): KillSwitch[];
+export const MACHINE_ID_RE: RegExp;
+export const VERIFY_EXIT_RETRY: number;
+export function renderPlan(
+  plan: Plan,
+  digest: string,
+  machine: MachineCheck,
+  kills?: KillSwitch[],
+): string[];
 export function main(argv: string[]): void;

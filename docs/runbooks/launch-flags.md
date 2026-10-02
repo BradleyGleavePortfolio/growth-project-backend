@@ -58,22 +58,73 @@ gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mod
 
 Apply re-plans, then stages exactly the planned changes with `flyctl secrets set --stage` and `flyctl secrets unset --stage`. Staging does **not** restart machines. It then lists Fly again and proves that every managed name is present or absent exactly as declared. Any mismatch fails the run, names the mismatched names and gives a fix. Staged changes take effect at the next deploy (`fly-deploy.yml`) or right away with `deploy_staged=true`.
 
-## 4. Apply now: one rolling restart, then verify in the machine
+## 4. Apply now: one rolling restart, then proof from every started machine
 
 ```
 gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=apply -f confirm=SET -f deploy_staged=true
 ```
 
-After staging and verifying, the workflow runs `flyctl secrets deploy` (one rolling restart). It does this only if something changed in this run, or if a managed name was staged earlier and is not live yet. When there is nothing to apply, the deploy step is skipped and no machine restarts. After the deploy, it lists Fly again and re-runs the in-machine check. The run fails unless the machine holds every declared value (`match`) and none of the names declared unset.
+Apply-now fails closed (B-637-1). It succeeds only when it has proven the running state. A warning is never treated as proof.
 
-## 5. Roll back
+1. **Deploy decision.** `flyctl secrets deploy` (one rolling restart) runs when any of these is true:
+   - this run staged a change;
+   - a managed name staged earlier is not live yet;
+   - the in-machine check before this step did not run, so the plan could not prove the running state. A name that is absent from the listing could be "never set" or "unset staged, still live".
+     When none of these is true, the step first checks every started machine without a restart. Only if every machine proves the manifest is the deploy skipped. If any machine differs, it deploys.
+2. **Fleet proof, with a bounded retry.** The step lists Fly (`secrets list --json`) and every machine (`machines list --json`). It then runs the in-machine check on **every started machine** (`flyctl ssh console --machine <id>`). The run passes only when all of these hold:
+   - every managed name is present or absent exactly as declared;
+   - every declared name is `Deployed`;
+   - at least one machine is started and none is mid-transition;
+   - every started machine holds every declared value (`match`) and none of the unset names.
+     Until then it checks again: 6 attempts, 20 s apart. After the last attempt it fails with the exact reasons (names and machine ids only) and a fix. The change stays staged, so re-running apply with `deploy_staged=true` is safe.
+3. **Stopped machines** cannot be checked. They are named in a warning, and the success line counts started machines only. Re-run plan after they start; every row must read `keep`.
 
-A rollback is just another flip:
+## 5. Roll back and emergency kill
 
-1. Open a one-line PR that sets the flag back to `"unset"` (or to `"false"` / `"off"` where the code default is on and you need it off: `SIGNUP_ROLE_CHOICE_ENABLED` and `FEATURE_COMMUNITY_SCHEMA` default on).
-2. After merge, run apply with `deploy_staged=true`. The workflow runs `flyctl secrets unset --stage`, then one deploy, then proves the name is gone from Fly and from the running machine.
+The emergency kill depends on the flag's default (`unsetIs` in its `ENV_RULES` rule). **Unsetting a defaults-on switch turns it back ON.** For those switches the kill is to set the explicit off value. Only defaults-off switches are killed by unsetting them.
 
-In an emergency where waiting for review is not possible, the kill switch is still `fly secrets unset -a backend-spring-lake-3890 <NAME>` from a trusted terminal, which restarts machines immediately. Follow it at once with the matching one-line manifest PR. Until that PR merges, the plan reports the drift (`set` for the name the manifest still declares), and an apply would turn the flag back on, so do not run apply before the revert PR merges.
+Planned rollback (normal path):
+
+1. Open a one-line PR with the manifest line from the table below. For a defaults-off flag that line is `"unset"`. For a defaults-on switch it is `"false"`.
+2. After merge, run apply with `deploy_staged=true`. The workflow stages the change (`--stage`), runs one deploy, and proves the effective state in every started machine.
+
+Emergency, when waiting for review is not possible:
+
+1. Run the per-flag emergency kill from the table, from a trusted terminal. It restarts machines immediately.
+2. At once, open the matching one-line manifest PR (the last column). Until it merges, the plan reports drift, and an apply would undo the kill. **Do not run apply before that PR merges.**
+3. After it merges, run plan. The row must read `keep`, and the in-machine column must show the effective state (`match` for a set kill, `absent` for an unset kill).
+
+The table below is generated by `node scripts/fly-env/fly-env-manifest.js kill-switches .github/fly-env-desired-state.json src/common/env-validation.ts`, and `test/ci/fly-env-manifest.spec.ts` fails if it drifts. Every plan also prints the defaults-on kills.
+
+```text
+NAME | unset means | emergency kill (Fly) | manifest line after the kill
+FEATURE_AI_CONSENT_LEDGER_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_AI_CONSENT_LEDGER_ENABLED | "FEATURE_AI_CONSENT_LEDGER_ENABLED": "unset"
+FEATURE_COMMUNITY_SCHEMA | on | fly secrets set -a backend-spring-lake-3890 FEATURE_COMMUNITY_SCHEMA=false (never unset: that turns it on) | "FEATURE_COMMUNITY_SCHEMA": "false"
+FEATURE_COMMUNITY_API | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_API | "FEATURE_COMMUNITY_API": "unset"
+FEATURE_COMMUNITY_POSTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_POSTS | "FEATURE_COMMUNITY_POSTS": "unset"
+FEATURE_COMMUNITY_MESSAGES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_MESSAGES | "FEATURE_COMMUNITY_MESSAGES": "unset"
+FEATURE_COMMUNITY_PUSH | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_PUSH | "FEATURE_COMMUNITY_PUSH": "unset"
+FEATURE_COMMUNITY_REALTIME | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_REALTIME | "FEATURE_COMMUNITY_REALTIME": "unset"
+FEATURE_COMMUNITY_VOICE_NOTES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_VOICE_NOTES | "FEATURE_COMMUNITY_VOICE_NOTES": "unset"
+FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT | "FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT": "unset"
+FEATURE_COMMUNITY_DM | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_DM | "FEATURE_COMMUNITY_DM": "unset"
+FEATURE_COMMUNITY_ACKS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_ACKS | "FEATURE_COMMUNITY_ACKS": "unset"
+FEATURE_COMMUNITY_PLAN_TAGS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_PLAN_TAGS | "FEATURE_COMMUNITY_PLAN_TAGS": "unset"
+FEATURE_COMMUNITY_SEARCH | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_SEARCH | "FEATURE_COMMUNITY_SEARCH": "unset"
+FEATURE_COMMUNITY_TELEMETRY | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_TELEMETRY | "FEATURE_COMMUNITY_TELEMETRY": "unset"
+FEATURE_COMMUNITY_WEARABLE_PROMPTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_WEARABLE_PROMPTS | "FEATURE_COMMUNITY_WEARABLE_PROMPTS": "unset"
+FEATURE_COMMUNITY_AI_TRIAGE | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_AI_TRIAGE | "FEATURE_COMMUNITY_AI_TRIAGE": "unset"
+FEATURE_COMMUNITY_CHALLENGES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CHALLENGES | "FEATURE_COMMUNITY_CHALLENGES": "unset"
+FEATURE_COMMUNITY_EVENTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_EVENTS | "FEATURE_COMMUNITY_EVENTS": "unset"
+FEATURE_COMMUNITY_CLASSROOM_POSTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CLASSROOM_POSTS | "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset"
+BOOKING_REMINDERS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 BOOKING_REMINDERS_ENABLED | "BOOKING_REMINDERS_ENABLED": "unset"
+SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SIGNUP_ROLE_CHOICE_ENABLED=false (never unset: that turns it on) | "SIGNUP_ROLE_CHOICE_ENABLED": "false"
+FEATURE_WEARABLES_INGEST_POST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_INGEST_POST | "FEATURE_WEARABLES_INGEST_POST": "unset"
+FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_TEMPLATES | "FEATURE_MWB_TEMPLATES": "unset"
+FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"
+FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
+FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
+```
 
 ## Deploy-window sequences
 
@@ -90,8 +141,8 @@ In an emergency where waiting for review is not possible, the kill switch is sti
 
 ## Notes and limits
 
-- The in-machine check runs in one started machine (`flyctl ssh console` picks it). After `flyctl secrets deploy` completes, every machine has been restarted with the same secrets. `FLY_API_TOKEN` must be allowed to open ssh sessions; a deploy token is enough.
+- The plan's in-machine check samples one started machine (`flyctl ssh console` picks it), and a failure there is only a warning, because plan and stage-only never claim the running state. Apply-now checks every started machine and fails closed. `FLY_API_TOKEN` must be allowed to list machines and open ssh sessions; a deploy token is enough.
 - `flyctl secrets deploy` applies every staged secret on the app, including ones staged by other workflows. The plan lists those names.
 - Fly's listing digest is a server-side tag that no client can reproduce, so it is never used to decide "unchanged". The in-machine check makes that decision.
-- To add a flag: give its rule a one-line `values: [...]` in `ENV_RULES`, add it to `flags` with a gate, then let `test/ci/fly-env-manifest.spec.ts` confirm the closed set and the manifest agree. A name with a closed set that is neither managed nor excluded fails the tests.
+- To add a flag: give its rule a one-line `values: [...]` and a one-line `unsetIs: 'on' | 'off'` (what the code does when the name is absent) in `ENV_RULES`, add it to `flags` with a gate, then let `test/ci/fly-env-manifest.spec.ts` confirm the closed set and the manifest agree. A name with a closed set that is neither managed nor excluded fails the tests.
 - To add a GitHub-sourced secret: register it in `ENV_RULES`, add it to `secrets` with a gate, and add `NAME: ${{ secrets.NAME }}` to the `BEGIN SOURCES` blocks of the plan and stage steps. The specs fail if those blocks and the manifest disagree.

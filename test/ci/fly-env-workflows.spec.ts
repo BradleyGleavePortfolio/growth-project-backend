@@ -190,13 +190,14 @@ describe('fly-env-sync.yml (manifest-driven plan / apply; B-FLAGS-2)', () => {
       expect(run).toMatch(/^\s*set \+x$/m);
       for (const line of run.split('\n').filter((l) => /^\s*flyctl /.test(l)))
         expect(line).toMatch(
-          / (> \/dev\/null 2> fly-[a-z]+-stderr\.txt|--json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt|-C "\$\(cat compare\.cmd\)" > ssh-stdout\.txt 2> fly-ssh-stderr\.txt)$/,
+          / (> \/dev\/null 2> fly-[a-z]+-stderr\.txt|--json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt|--json 2> fly-machines-stderr\.txt \| jq -r "\$\{filter\}" > machines\.tsv 2> jq-stderr\.txt|-C "\$\(cat compare\.cmd\)" < \/dev\/null > ssh-stdout\.txt 2> fly-ssh-stderr\.txt)$/,
         );
       for (const line of run.split('\n').filter((l) => /stderr\.txt/.test(l) && !/^\s*#/.test(l)))
         expect([
           line,
           [
-            /^\s*flyctl .* 2> fly-[a-z]+-stderr\.txt( \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt)?$/,
+            /^\s*flyctl .* 2> fly-[a-z]+-stderr\.txt( \| jq -r "\$\{filter\}" > ("\$1"|machines\.tsv) 2> jq-stderr\.txt)?$/,
+            /^\s*rm -f (machines\.tsv )?fly-machines-stderr\.txt$/,
             /^\s*trap 'rm -f [a-z. -]+' EXIT$/,
             /cls=\$\(fly_error_class fly-[a-z]+-stderr\.txt\)/,
             /^\s*code=\$\(grep -oE 'ENVSYNC_\[A-Z_\]\+' jq-stderr\.txt \| head -n 1 \|\| true\)$/,

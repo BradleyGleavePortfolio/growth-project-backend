@@ -13,7 +13,7 @@ import { join } from 'path';
 
 import { ENV_RULES } from '../../src/common/env-validation';
 import * as fem from '../../scripts/fly-env/fly-env-manifest';
-import type { FlyEnvManifest, MachineCheck } from '../../scripts/fly-env/fly-env-manifest';
+import type { Fleet, FlyEnvManifest, MachineCheck } from '../../scripts/fly-env/fly-env-manifest';
 
 const ROOT = join(__dirname, '..', '..');
 const MANIFEST_FILE = join(ROOT, '.github/fly-env-desired-state.json');
@@ -71,10 +71,11 @@ describe('ENV_RULES extraction (runner side, no TypeScript)', () => {
   it('reads exactly the names and closed value sets of the imported ENV_RULES', () => {
     expect([...rules.keys()].sort()).toEqual([...new Set(ENV_RULES.map((r) => r.name))].sort());
     for (const r of ENV_RULES)
-      expect([r.name, rules.get(r.name)?.values ?? null]).toEqual([
+      expect([
         r.name,
-        r.values ? [...r.values] : null,
-      ]);
+        rules.get(r.name)?.values ?? null,
+        rules.get(r.name)?.unsetIs ?? null,
+      ]).toEqual([r.name, r.values ? [...r.values] : null, r.unsetIs ?? null]);
   });
 
   it('fails closed on a values line it cannot read', () => {
@@ -93,6 +94,135 @@ describe('ENV_RULES extraction (runner side, no TypeScript)', () => {
       .map((r) => r.name)
       .sort();
     expect(withValues).toEqual(Object.keys(base().flags).sort());
+  });
+});
+
+describe('emergency kill per flag (B-637-2): defaults-on switches are killed by a set, never an unset', () => {
+  const kills = fem.killSwitches(base(), rules);
+  const DEFAULTS_ON = ['FEATURE_COMMUNITY_SCHEMA', 'SIGNUP_ROLE_CHOICE_ENABLED'];
+
+  it('every managed flag declares unsetIs, and exactly the defaults-on switches are "on"', () => {
+    for (const n of Object.keys(base().flags))
+      expect([n, ['on', 'off'].includes(rules.get(n)?.unsetIs ?? '')]).toEqual([n, true]);
+    expect(
+      kills
+        .filter((k) => k.unsetIs === 'on')
+        .map((k) => k.name)
+        .sort(),
+    ).toEqual(DEFAULTS_ON);
+  });
+
+  it('unsetIs agrees with the registry default text of every managed flag', () => {
+    const onText = /^(?:'?on'?\b|unset\s*(?:→|=|->)\s*on\b)/i;
+    for (const r of ENV_RULES.filter((x) => x.values))
+      expect([r.name, onText.test(r.default ?? '')]).toEqual([r.name, r.unsetIs === 'on']);
+  });
+
+  it('the real code readers: absent = on and the kill value = off for both defaults-on switches', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isCommunitySchemaEnabled } =
+      require('../../src/community/community-schema.feature') as {
+        isCommunitySchemaEnabled: () => boolean;
+      };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { signupRoleChoiceEnabled } = require('../../src/auth/auth.service') as {
+      signupRoleChoiceEnabled: () => boolean;
+    };
+    const readers: Record<string, () => boolean> = {
+      FEATURE_COMMUNITY_SCHEMA: isCommunitySchemaEnabled,
+      SIGNUP_ROLE_CHOICE_ENABLED: signupRoleChoiceEnabled,
+    };
+    for (const name of DEFAULTS_ON) {
+      const saved = process.env[name];
+      try {
+        delete process.env[name];
+        expect([name, 'unset', readers[name]()]).toEqual([name, 'unset', true]);
+        const k = kills.find((x) => x.name === name)!;
+        process.env[name] = k.value;
+        expect([name, k.value, readers[name]()]).toEqual([name, 'false', false]);
+      } finally {
+        if (saved === undefined) delete process.env[name];
+        else process.env[name] = saved;
+      }
+    }
+  });
+
+  it('defaults-on kills are a set of the off value; defaults-off kills are an unset', () => {
+    for (const k of kills) {
+      if (k.unsetIs === 'on') {
+        expect(k).toMatchObject({ action: 'set', value: 'false' });
+        expect(k.command).toBe(`fly secrets set -a ${fem.APP} ${k.name}=false`);
+        expect(k.manifest).toBe(`"${k.name}": "false"`);
+      } else {
+        expect(k).toMatchObject({ action: 'unset', value: 'unset' });
+        expect(k.command).toBe(`fly secrets unset -a ${fem.APP} ${k.name}`);
+      }
+    }
+  });
+
+  it('validation rejects a managed flag without unsetIs, and a defaults-on flag with no off value', () => {
+    const src = (line: string) =>
+      `export const ENV_RULES: EnvRule[] = [\n  {\n    name: 'FEATURE_DUNNING_V2',\n    values: ['true', 'false'],\n${line}  },\n];\n`;
+    const only = (): FlyEnvManifest => ({
+      ...baseline(),
+      flags: { FEATURE_DUNNING_V2: 'unset' },
+      secrets: {},
+      gates: { FEATURE_DUNNING_V2: 'the gate' },
+      excluded: {},
+    });
+    const noUnsetIs = fem.validateManifest(only(), fem.extractEnvRules(src('')));
+    expect(noUnsetIs.join('\n')).toMatch(
+      /flags\.FEATURE_DUNNING_V2 has no unsetIs in ENV_RULES.*Fix:/,
+    );
+    const onNoOff = fem.validateManifest(
+      only(),
+      fem.extractEnvRules(
+        src('')
+          .replace("['true', 'false']", "['true']")
+          .replace('  },', "    unsetIs: 'on',\n  },"),
+      ),
+    );
+    expect(onNoOff.join('\n')).toMatch(
+      /defaults on \(unsetIs 'on'\) but its closed set has no off value.*Fix:/,
+    );
+    expect(() => fem.extractEnvRules(src("    unsetIs: 'maybe',\n"))).toThrow(
+      /unsetIs line could not be read \(rule FEATURE_DUNNING_V2\)\. Fix:/,
+    );
+  });
+
+  it('the kill-switches CLI, the plan and the runbook give the same per-flag kill', () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        join(ROOT, 'scripts/fly-env/fly-env-manifest.js'),
+        'kill-switches',
+        MANIFEST_FILE,
+        RULES_FILE,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(0);
+    const table = r.stdout.trim().split('\n');
+    expect(table).toHaveLength(Object.keys(base().flags).length + 1);
+    const runbook = readFileSync(join(ROOT, 'docs/runbooks/launch-flags.md'), 'utf8');
+    for (const line of table) expect([line, runbook.includes(line)]).toEqual([line, true]);
+    for (const name of DEFAULTS_ON) {
+      expect(runbook).not.toContain(`fly secrets unset -a ${fem.APP} ${name}`);
+      expect(runbook).toContain(
+        `fly secrets set -a ${fem.APP} ${name}=false (never unset: that turns it on)`,
+      );
+    }
+    // No universal "unset is the kill switch" instruction is left.
+    expect(runbook).not.toMatch(/emergency[^\n]*`fly secrets unset[^`]*<NAME>`/i);
+    const plan = fem.renderPlan(
+      fem.planChanges(baseline(), new Map(), { results: {} }, {}),
+      'd'.repeat(64),
+      { results: {} },
+      kills,
+    );
+    expect(plan.join('\n')).toContain(
+      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false.',
+    );
   });
 });
 
@@ -634,25 +764,173 @@ describe('planChanges / verifyState matrix', () => {
     );
     expect(v2.errors).toEqual([]);
     expect(v2.pending).toEqual(['FEATURE_AI_CONSENT_LEDGER_ENABLED']);
+    // Deployed phase (B-637-1): proven only by every started machine.
+    const allAbsent = Object.fromEntries(
+      [...Object.keys(m.flags), ...Object.keys(m.secrets)].map((n) => [n, 'absent']),
+    );
+    const good = ok({ ...allAbsent, ...OAUTH_M, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'match' });
+    const DEPLOYED = fly({ ...OAUTH, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' });
+    const fleet = (checks: Record<string, MachineCheck>, machines = Object.keys(checks)) => ({
+      list: { machines: machines.map((id) => ({ id, state: 'started' })), malformed: 0 },
+      checks,
+    });
     const v3 = fem.verifyState(
       m,
-      fly({ ...OAUTH, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }),
+      DEPLOYED,
       'deployed',
-      ok({
-        ...OAUTH_M,
-        FEATURE_AI_CONSENT_LEDGER_ENABLED: 'differs',
-        FEATURE_DUNNING_V2: 'present',
+      fleet({
+        e2865013b42d78: ok({
+          ...allAbsent,
+          ...OAUTH_M,
+          FEATURE_AI_CONSENT_LEDGER_ENABLED: 'differs',
+          FEATURE_DUNNING_V2: 'present',
+        }),
       }),
+      { final: true },
     );
     expect(v3.errors.join('\n')).toMatch(
-      /does not match the manifest for: FEATURE_AI_CONSENT_LEDGER_ENABLED \(differs\) FEATURE_DUNNING_V2 \(present\)\. Fix:/,
+      /machine e2865013b42d78 does not match the manifest for: FEATURE_AI_CONSENT_LEDGER_ENABLED \(differs\) FEATURE_DUNNING_V2 \(present\)\. Fix:/,
     );
-    const v4 = fem.verifyState(
-      m,
-      fly({ ...OAUTH, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }),
-      'deployed',
-      ok({ ...OAUTH_M, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'match' }),
+    const v4 = fem.verifyState(m, DEPLOYED, 'deployed', fleet({ e2865013b42d78: good }), {
+      final: true,
+    });
+    expect(v4).toMatchObject({ errors: [], warnings: [], retry: [] });
+    expect(v4.proven).toEqual({ started: ['e2865013b42d78'], idle: [] });
+  });
+
+  it('deployed phase fails closed: every unproven case is a retry, and an error with a Fix on the last attempt', () => {
+    const allAbsent = Object.fromEntries(
+      [...Object.keys(m.flags), ...Object.keys(m.secrets)].map((n) => [n, 'absent']),
     );
-    expect(v4).toMatchObject({ errors: [], warnings: [] });
+    const good = ok({ ...allAbsent, ...OAUTH_M, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'match' });
+    const DEPLOYED = fly({ ...OAUTH, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' });
+    const cases: Array<[string, Map<string, string>, Fleet | null, RegExp]> = [
+      ['no fleet data at all', DEPLOYED, null, /fleet could not be enumerated/],
+      [
+        'machines list unavailable',
+        DEPLOYED,
+        { list: { unavailable: true, errorClass: 'network' }, checks: {} },
+        /error class network\), so the fleet could not be enumerated/,
+      ],
+      [
+        'a started machine without a check',
+        DEPLOYED,
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'started' }], malformed: 0 },
+          checks: {},
+        },
+        /machine e2865013b42d78: the in-machine check did not run \(error class not_run\)/,
+      ],
+      [
+        'a started machine whose check was unavailable',
+        DEPLOYED,
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'started' }], malformed: 0 },
+          checks: { e2865013b42d78: { unavailable: true, errorClass: 'auth' } },
+        },
+        /the in-machine check did not run \(error class auth\)/,
+      ],
+      [
+        'a result missing for a managed name',
+        DEPLOYED,
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'started' }], malformed: 0 },
+          checks: {
+            e2865013b42d78: ok({ ...OAUTH_M, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'match' }),
+          },
+        },
+        /FEATURE_DUNNING_V2 \(not checked\)/,
+      ],
+      [
+        'still Staged on Fly',
+        fly({ ...OAUTH, FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Staged' }),
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'started' }], malformed: 0 },
+          checks: { e2865013b42d78: good },
+        },
+        /not report these names as Deployed yet: FEATURE_AI_CONSENT_LEDGER_ENABLED/,
+      ],
+      [
+        'no started machine',
+        DEPLOYED,
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'stopped' }], malformed: 0 },
+          checks: {},
+        },
+        /no machine is started/,
+      ],
+      [
+        'an unrecognised state word is never echoed',
+        DEPLOYED,
+        {
+          list: {
+            machines: [
+              { id: 'e2865013b42d78', state: 'started' },
+              { id: '148e272a5d7d89', state: 'Kq7-leak value' },
+            ],
+            malformed: 0,
+          },
+          checks: { e2865013b42d78: good },
+        },
+        /machine 148e272a5d7d89 is unrecognized, not started/,
+      ],
+      [
+        'a malformed machine id',
+        DEPLOYED,
+        {
+          list: { machines: [{ id: 'e2865013b42d78', state: 'started' }], malformed: 2 },
+          checks: { e2865013b42d78: good },
+        },
+        /returned 2 entries without a valid machine id/,
+      ],
+    ];
+    for (const [label, state, fl, re] of cases) {
+      const retry = fem.verifyState(m, state, 'deployed', fl, { final: false });
+      expect([label, retry.errors, retry.retry.join('; ')]).toEqual([
+        label,
+        [],
+        expect.stringMatching(re),
+      ]);
+      const last = fem.verifyState(m, state, 'deployed', fl, { final: true });
+      expect([label, last.retry]).toEqual([label, []]);
+      expect([label, last.errors.join('\n')]).toEqual([
+        label,
+        expect.stringMatching(/^The running state is not proven after the last check: .*\. Fix: /),
+      ]);
+      expect(last.errors.join('\n')).toMatch(re);
+      expect(last.errors.join('\n')).not.toContain('Kq7');
+    }
+  });
+
+  it('parseMachineList keeps valid ids and counts the rest without showing them', () => {
+    expect(
+      fem.parseMachineList(
+        'e2865013b42d78\tstarted\n../etc\tstarted\n\tstopped\n148e272a5d7d89\tSTOPPED\n',
+      ),
+    ).toEqual({
+      machines: [
+        { id: 'e2865013b42d78', state: 'started' },
+        { id: '148e272a5d7d89', state: 'stopped' },
+      ],
+      malformed: 2,
+    });
+  });
+
+  it('an absent listing with no in-machine check is unproven, never "absent, as declared" (B-637-1)', () => {
+    const p = fem.planChanges(
+      baseline(),
+      fly(OAUTH),
+      { unavailable: true, errorClass: 'auth' },
+      {},
+    );
+    expect(row(p, 'FEATURE_DUNNING_V2')).toMatchObject({ action: 'keep', machine: 'unavailable' });
+    expect(row(p, 'FEATURE_DUNNING_V2').reason).toMatch(/unproven/);
+    expect(p.unproven).toContain('FEATURE_DUNNING_V2');
+    expect(p.unproven).toContain('GOOGLE_OAUTH_CLIENT_ID');
+    const text = fem
+      .renderPlan(p, 'd'.repeat(64), { unavailable: true, errorClass: 'auth' })
+      .join('\n');
+    expect(text).toContain('the running machines are unproven for:');
+    expect(text).not.toContain('Fly already matches the manifest');
   });
 });

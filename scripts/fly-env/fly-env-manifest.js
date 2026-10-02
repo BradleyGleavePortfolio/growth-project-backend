@@ -171,7 +171,7 @@ function extractEnvRules(source) {
     const name = /^\s{4}name:\s*'([A-Z][A-Z0-9_]*)',\s*$/.exec(line);
     if (name) {
       current = name[1];
-      if (!rules.has(current)) rules.set(current, { values: null });
+      if (!rules.has(current)) rules.set(current, { values: null, unsetIs: null });
       continue;
     }
     if (/^\s{4}values\??\s*:/.test(line)) {
@@ -183,6 +183,16 @@ function extractEnvRules(source) {
       }
       const values = m[1] === '' ? [] : m[1].split(',').map((s) => s.trim().slice(1, -1));
       rules.get(current).values = values;
+      continue;
+    }
+    if (/^\s{4}unsetIs\??\s*:/.test(line)) {
+      const m = /^\s{4}unsetIs:\s*'(on|off)',\s*$/.exec(line);
+      if (!m || current === null) {
+        throw new ManifestError(
+          `An ENV_RULES unsetIs line could not be read (${current === null ? 'it is not inside a rule with a name line' : `rule ${current}`}). Fix: write it on one line as "unsetIs: 'on'," or "unsetIs: 'off'," directly after the rule's values line.`,
+        );
+      }
+      rules.get(current).unsetIs = m[1];
       continue;
     }
     if (/^\s{2}\},?\s*$/.test(line)) current = null;
@@ -264,6 +274,37 @@ function parseManifestText(text) {
   return manifest;
 }
 
+/** The off value of a closed set: "false" or "off" (null when neither). */
+function offValue(values) {
+  if (values.includes('false')) return 'false';
+  if (values.includes('off')) return 'off';
+  return null;
+}
+
+/**
+ * The emergency kill for every managed flag (B-637-2). A defaults-on switch
+ * (unsetIs 'on') is killed by SETTING its off value: unsetting it turns it back
+ * on. A defaults-off switch is killed by unsetting it. Returns
+ * [{ name, unsetIs, action: 'set' | 'unset', value, manifest, command }].
+ */
+function killSwitches(manifest, rules) {
+  return Object.keys(manifest.flags).map((name) => {
+    const rule = rules.get(name);
+    const on = rule.unsetIs === 'on';
+    const value = on ? offValue(rule.values) : UNSET;
+    return {
+      name,
+      unsetIs: rule.unsetIs,
+      action: on ? 'set' : 'unset',
+      value,
+      manifest: `"${name}": "${value}"`,
+      command: on
+        ? `fly secrets set -a ${APP} ${name}=${value}`
+        : `fly secrets unset -a ${APP} ${name}`,
+    };
+  });
+}
+
 /** Static validation against ENV_RULES. Returns a list of error messages (empty = OK). */
 function validateManifest(manifest, rules) {
   const errors = [];
@@ -295,6 +336,15 @@ function validateManifest(manifest, rules) {
         `flags.${name} has no closed value set in ENV_RULES. Fix: add "values: [...]," to its rule in src/common/env-validation.ts (the exact strings its code reads), or move it out of flags.`,
       );
       continue;
+    }
+    if (rule.unsetIs !== 'on' && rule.unsetIs !== 'off') {
+      errors.push(
+        `flags.${name} has no unsetIs in ENV_RULES, so its emergency kill is unknown. Fix: add "unsetIs: 'on'," (the code treats an absent name as on) or "unsetIs: 'off'," after its values line in src/common/env-validation.ts.`,
+      );
+    } else if (rule.unsetIs === 'on' && offValue(rule.values) === null) {
+      errors.push(
+        `flags.${name} defaults on (unsetIs 'on') but its closed set has no off value, so it cannot be killed. Fix: add "false" or "off" to its values (the string its code reads as off).`,
+      );
     }
     if (rule.values.includes(UNSET))
       errors.push(
@@ -553,10 +603,14 @@ function parseFlyState(tsv) {
  *   machine   { results: { NAME: match | differs | absent | present } } from the
  *             in-machine check, or { unavailable: true, errorClass } when it failed
  *   sources   sourceChecks() output
- * Returns { rows, errors, setFlags: [[name, value]], setSecrets: [name], unset: [name], pending: [name] }.
+ * Returns { rows, errors, setFlags: [[name, value]], setSecrets: [name], unset: [name], pending: [name], unproven: [name] }.
  * `pending` = names whose Fly state is already right but the running machine
  * does not have it yet (staged earlier, not deployed); they need a deploy, not
  * another write.
+ * `unproven` = names the plan writes nothing for although the in-machine check
+ * did not run, so the running machine may still differ (B-637-1): an absent
+ * listing cannot tell "never set" from "unset staged, still live". Apply-now
+ * treats them as needing a deploy plus proof from every started machine.
  */
 function planChanges(manifest, flyState, machine, sources) {
   const rows = [];
@@ -565,6 +619,7 @@ function planChanges(manifest, flyState, machine, sources) {
   const setSecrets = [];
   const unset = [];
   const pending = [];
+  const unproven = [];
   const results = machine && !machine.unavailable && machine.results ? machine.results : null;
   const entries = [
     ...Object.entries(manifest.flags).map(([n, v]) => ({ name: n, kind: 'flag', declared: v })),
@@ -583,6 +638,10 @@ function planChanges(manifest, flyState, machine, sources) {
       } else if (inMachine === 'present') {
         pending.push(e.name);
         reason = 'unset is staged on Fly; the running machine still has it until the next deploy';
+      } else if (!results) {
+        unproven.push(e.name);
+        reason =
+          'absent on Fly, but the in-machine check did not run, so an unset staged earlier may still be live (unproven)';
       } else reason = 'absent, as declared';
     } else if (e.declared === 'present') {
       if (fly === 'absent') {
@@ -594,6 +653,9 @@ function planChanges(manifest, flyState, machine, sources) {
       } else if (fly !== 'Deployed' || inMachine === 'absent') {
         pending.push(e.name);
         reason = `present on Fly (${fly}) but not yet in the running machine; needs a deploy`;
+      } else if (!results) {
+        unproven.push(e.name);
+        reason = 'present and deployed on Fly, but the in-machine check did not run (unproven)';
       } else reason = 'present and deployed; value owned outside this manifest';
     } else {
       const src = e.kind === 'secret' ? sources[e.name] : 'ok';
@@ -653,19 +715,110 @@ function planChanges(manifest, flyState, machine, sources) {
     else otherStagedMalformed += 1;
   }
   otherStaged.sort();
-  return { rows, errors, setFlags, setSecrets, unset, pending, otherStaged, otherStagedMalformed };
+  return {
+    rows,
+    errors,
+    setFlags,
+    setSecrets,
+    unset,
+    pending,
+    unproven,
+    otherStaged,
+    otherStagedMalformed,
+  };
+}
+
+const MACHINE_ID_RE = /^[0-9a-z]{8,32}$/;
+const MACHINE_IDLE = ['stopped', 'suspended'];
+const MACHINE_GONE = ['destroyed', 'destroying'];
+
+/**
+ * Prove the running fleet against the manifest (apply-now only). `all` is
+ * [[name, 'present' | 'absent']]. Returns { retry: [reason], proven: { started, idle } }.
+ * Reasons never contain a value: only names, machine ids and fixed words.
+ */
+function proveFleet(all, notDeployed, fleet) {
+  const retry = [];
+  const started = [];
+  const idle = [];
+  if (notDeployed.length) {
+    retry.push(`Fly does not report these names as Deployed yet: ${notDeployed.join(' ')}`);
+  }
+  const list = fleet.list || { unavailable: true, errorClass: 'not_run' };
+  if (list.unavailable) {
+    retry.push(
+      `flyctl machines list --json did not run cleanly (error class ${list.errorClass || 'unclassified'}), so the fleet could not be enumerated`,
+    );
+    return { retry, proven: { started, idle } };
+  }
+  if (list.malformed) {
+    retry.push(
+      `flyctl machines list --json returned ${list.malformed} entr${list.malformed === 1 ? 'y' : 'ies'} without a valid machine id, so those machines cannot be checked`,
+    );
+  }
+  for (const m of list.machines) {
+    if (m.state === 'started') started.push(m.id);
+    else if (MACHINE_IDLE.includes(m.state)) idle.push(m.id);
+    else if (!MACHINE_GONE.includes(m.state)) {
+      const st = /^[a-z_]{1,20}$/.test(m.state) ? m.state : 'unrecognized';
+      retry.push(`machine ${m.id} is ${st}, not started (a rolling restart may still be running)`);
+    }
+  }
+  if (!started.length) {
+    retry.push('no machine is started, so no running machine could prove the manifest');
+  }
+  for (const id of started) {
+    const c = (fleet.checks || {})[id];
+    if (!c || c.unavailable || !c.results) {
+      retry.push(
+        `machine ${id}: the in-machine check did not run (error class ${(c && c.errorClass) || 'not_run'})`,
+      );
+      continue;
+    }
+    const wrong = [];
+    for (const [name, want] of all) {
+      const r = c.results[name];
+      const ok = want === 'absent' ? r === 'absent' : r === 'match' || r === 'present';
+      if (!ok) wrong.push(`${name} (${r === undefined ? 'not checked' : r})`);
+    }
+    if (wrong.length)
+      retry.push(`machine ${id} does not match the manifest for: ${wrong.join(' ')}`);
+  }
+  return { retry, proven: { started, idle } };
 }
 
 /**
- * Verify Fly against the manifest after staging (phase "staged") or after
- * `flyctl secrets deploy` (phase "deployed"). Presence and absence are exact
- * for every managed name. In the deployed phase every name declared with a
- * value must be Deployed and, when the in-machine check ran, the machine must
- * hold the declared value (match) and must not hold any declared-unset name.
- * Returns { errors, warnings, lines, pending } (pending = declared-present
- * names not yet Deployed).
+ * Parse the jq projection of `flyctl machines list --json` (id TAB state per
+ * line). Lines without a valid id are counted, never shown.
  */
-function verifyState(manifest, flyState, phase, machine) {
+function parseMachineList(text) {
+  const machines = [];
+  let malformed = 0;
+  for (const line of text.split('\n')) {
+    if (line === '') continue;
+    const [id, state = ''] = line.split('\t');
+    if (!MACHINE_ID_RE.test(id)) malformed += 1;
+    else machines.push({ id, state: state.trim().toLowerCase() });
+  }
+  return { machines, malformed };
+}
+
+/**
+ * Verify Fly against the manifest after staging (phase "staged") or for the
+ * apply-now completion (phase "deployed"). Presence and absence are exact for
+ * every managed name in both phases.
+ * The deployed phase fails closed (B-637-1). It is proven only when every name
+ * declared with a value is Deployed, the fleet is enumerated, at least one
+ * machine is started, no machine is mid-transition, and EVERY started machine
+ * ran the in-machine check and holds every declared value and none of the
+ * unset names. Otherwise it returns `retry` reasons. With opts.final (last
+ * attempt) those reasons become an error with a Fix. It never reports success
+ * from the Fly listing alone.
+ *   fleet  { list: { machines: [{ id, state }], malformed } | { unavailable, errorClass },
+ *            checks: { <machine id>: in-machine result | { unavailable, errorClass } } }
+ * Returns { errors, warnings, lines, pending, retry, proven }.
+ */
+function verifyState(manifest, flyState, phase, fleet, opts = {}) {
   const errors = [];
   const warnings = [];
   const lines = [];
@@ -693,35 +846,40 @@ function verifyState(manifest, flyState, phase, machine) {
       `These names are declared "unset" but Fly still lists them: ${extra.join(' ')}. Fix: re-run this workflow in apply mode; if they stay listed, run 'fly secrets unset --stage -a ${APP} <name>' from a trusted terminal, then re-run in plan mode.`,
     );
   }
+  let retry = [];
+  let proven = null;
   if (phase === 'deployed') {
-    if (notDeployed.length) {
-      warnings.push(
-        `flyctl secrets deploy succeeded, but Fly does not report these names as Deployed yet: ${notDeployed.join(' ')}. Fix: run 'fly status -a ${APP}' to check that the rolling restart finished, then re-run this workflow in plan mode; if they still show Staged, re-run in apply mode with deploy_staged=true.`,
+    const r = proveFleet(
+      all,
+      notDeployed,
+      fleet || { list: { unavailable: true, errorClass: 'not_run' }, checks: {} },
+    );
+    retry = r.retry;
+    proven = r.proven;
+    if (errors.length) retry = [];
+    if (retry.length && opts.final) {
+      errors.push(
+        `The running state is not proven after the last check: ${retry.join('; ')}. Fix: run 'fly status -a ${APP}' and wait until every machine is started on the latest release, make sure 'fly ssh console -a ${APP} -C "node --version"' works, then re-run this workflow in apply mode with deploy_staged=true; the change stays staged until a deploy succeeds and is proven.`,
       );
+      retry = [];
     }
-    if (machine && machine.unavailable) {
+    if (!errors.length && !retry.length && proven.idle.length) {
       warnings.push(
-        `The in-machine check after deploy did not run (error class ${machine.errorClass || 'unclassified'}), so the running values are proven by the Fly listing only. Fix: re-run this workflow in plan mode once 'fly ssh console -a ${APP}' works; every row should read keep.`,
+        `${proven.idle.length} machine(s) are not running (${proven.idle.join(' ')}), so they were not checked; they cannot serve requests until they start. Fix: after they start, re-run this workflow in plan mode; every row must read keep.`,
       );
-    } else if (machine && machine.results) {
-      const wrong = [];
-      for (const [name, want] of all) {
-        const r = machine.results[name];
-        if (r === undefined) continue;
-        if (want === 'absent' ? r !== 'absent' : r !== 'match' && r !== 'present')
-          wrong.push(`${name} (${r})`);
-      }
-      if (wrong.length) {
-        errors.push(
-          `After flyctl secrets deploy the running machine does not match the manifest for: ${wrong.join(' ')}. Fix: run 'fly status -a ${APP}' and wait for the rolling restart to finish, then re-run this workflow in plan mode; if it still differs, re-run in apply mode with deploy_staged=true.`,
-        );
-      }
     }
   }
-  return { errors, warnings, lines, pending: phase === 'staged' ? notDeployed : [] };
+  return {
+    errors,
+    warnings,
+    lines,
+    pending: phase === 'staged' ? notDeployed : [],
+    retry,
+    proven,
+  };
 }
 
-function renderPlan(plan, digest, machine) {
+function renderPlan(plan, digest, machine, kills = []) {
   const out = [];
   const m = machine.unavailable
     ? `unavailable (error class ${machine.errorClass || 'unclassified'}); deployed values are unproven`
@@ -736,18 +894,30 @@ function renderPlan(plan, digest, machine) {
   }
   const changes = plan.setFlags.length + plan.setSecrets.length + plan.unset.length;
   out.push(
-    `Plan: ${plan.setFlags.length + plan.setSecrets.length} to set, ${plan.unset.length} to unset, ${plan.pending.length} staged earlier and waiting for a deploy, ${plan.rows.filter((r) => r.action === 'keep').length} unchanged.`,
+    `Plan: ${plan.setFlags.length + plan.setSecrets.length} to set, ${plan.unset.length} to unset, ${plan.pending.length} staged earlier and waiting for a deploy, ${plan.rows.filter((r) => r.action === 'keep').length} unchanged${plan.unproven.length ? ` (${plan.unproven.length} of them unproven in the running machine)` : ''}.`,
   );
   if (plan.otherStaged.length || plan.otherStagedMalformed) {
     out.push(
       `Not managed here but staged on Fly (deploy_staged=true would apply these too): ${plan.otherStaged.join(' ') || 'none'}${plan.otherStagedMalformed ? ` plus ${plan.otherStagedMalformed} malformed name(s), not shown` : ''}.`,
     );
   }
-  out.push(
-    changes === 0 && plan.pending.length === 0
-      ? 'Fly already matches the manifest: apply would write nothing and restart nothing.'
-      : `Apply stages ${changes} change(s) without a restart; they take effect at the next deploy, or now with deploy_staged=true (one rolling restart).`,
-  );
+  if (changes === 0 && plan.pending.length === 0 && plan.unproven.length === 0) {
+    out.push('Fly already matches the manifest: apply would write nothing and restart nothing.');
+  } else if (changes === 0 && plan.pending.length === 0) {
+    out.push(
+      `Fly lists every managed name exactly as declared, but the in-machine check did not run, so the running machines are unproven for: ${plan.unproven.join(' ')}. Apply writes nothing; apply with deploy_staged=true runs one deploy and then must prove every started machine, or it fails.`,
+    );
+  } else {
+    out.push(
+      `Apply stages ${changes} change(s) without a restart; they take effect at the next deploy, or now with deploy_staged=true (one rolling restart, then every started machine must prove the manifest).`,
+    );
+  }
+  const setKills = kills.filter((k) => k.action === 'set');
+  if (kills.length) {
+    out.push(
+      `Emergency kill (B-637-2; docs/runbooks/launch-flags.md): defaults-on switches are killed by SETTING their off value, never by unsetting: ${setKills.map((k) => `${k.name}=${k.value}`).join(' ') || 'none'}. The other ${kills.length - setKills.length} flags default off and are killed by unsetting them.`,
+    );
+  }
   return out;
 }
 
@@ -769,13 +939,14 @@ function writeLines(file, items) {
   fs.writeFileSync(file, items.map((i) => `${i}\n`).join(''), { mode: 0o600 });
 }
 
-const SUBCOMMANDS = ['validate', 'prepare', 'parse-compare', 'plan', 'verify'];
+const SUBCOMMANDS = ['validate', 'kill-switches', 'prepare', 'parse-compare', 'plan', 'verify'];
+const VERIFY_EXIT_RETRY = 3;
 
 function main(argv) {
-  const [cmd, manifestFile, envValidationFile, dir, extra] = argv;
+  const [cmd, manifestFile, envValidationFile, dir, extra, attempt] = argv;
   if (!SUBCOMMANDS.includes(cmd) || !manifestFile || !envValidationFile) {
     fail(
-      `usage: fly-env-manifest.js ${SUBCOMMANDS.join('|')} <manifest.json> <env-validation.ts> [<scratch dir> [before|after|staged|deployed]]. Fix: call it the way .github/workflows/fly-env-sync.yml does.`,
+      `usage: fly-env-manifest.js ${SUBCOMMANDS.join('|')} <manifest.json> <env-validation.ts> [<scratch dir> [before|after-<machine id>|staged|deployed [retry|final]]]. Fix: call it the way .github/workflows/fly-env-sync.yml does.`,
     );
   }
   let loaded;
@@ -784,7 +955,7 @@ function main(argv) {
   } catch (e) {
     fail(`desired-state manifest: ${e.message}`);
   }
-  const { manifest, errors, digest } = loaded;
+  const { manifest, rules, errors, digest } = loaded;
   if (errors.length) {
     for (const e of errors) process.stderr.write(`::error::desired-state manifest: ${e}\n`);
     process.exit(1);
@@ -794,6 +965,17 @@ function main(argv) {
     process.stdout.write(
       `Desired state OK: ${Object.keys(manifest.flags).length} flags (${declared} declared with a value), ${Object.keys(manifest.secrets).length} secrets, ${Object.keys(manifest.excluded).length} excluded; manifest sha256 ${digest}\n`,
     );
+    return;
+  }
+  if (cmd === 'kill-switches') {
+    process.stdout.write(
+      'NAME | unset means | emergency kill (Fly) | manifest line after the kill\n',
+    );
+    for (const k of killSwitches(manifest, rules)) {
+      process.stdout.write(
+        `${k.name} | ${k.unsetIs} | ${k.command}${k.action === 'set' ? ' (never unset: that turns it on)' : ''} | ${k.manifest}\n`,
+      );
+    }
     return;
   }
   if (!dir || !fs.existsSync(dir)) {
@@ -816,7 +998,16 @@ function main(argv) {
     return;
   }
   if (cmd === 'parse-compare') {
-    const out = f(extra === 'after' ? 'machine-after.json' : 'machine.json');
+    let out = f('machine.json');
+    if (extra && extra.startsWith('after-')) {
+      const id = extra.slice('after-'.length);
+      if (!MACHINE_ID_RE.test(id)) {
+        fail(
+          'parse-compare got an invalid machine id. Fix: call it the way .github/workflows/fly-env-sync.yml does (after-<machine id>).',
+        );
+      }
+      out = f(`machine-after-${id}.json`);
+    }
     try {
       const results = parseCompareOutput(
         fs.readFileSync(f('ssh-stdout.txt'), 'utf8'),
@@ -846,7 +1037,7 @@ function main(argv) {
       machine,
       sources,
     );
-    const lines = renderPlan(plan, digest, machine);
+    const lines = renderPlan(plan, digest, machine, killSwitches(manifest, rules));
     process.stdout.write(`${lines.join('\n')}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) {
       fs.appendFileSync(
@@ -865,6 +1056,7 @@ function main(argv) {
     writeLines(f('set-secrets.txt'), plan.setSecrets);
     writeLines(f('unset.txt'), plan.unset);
     writeLines(f('pending.txt'), plan.pending);
+    writeLines(f('unproven.txt'), plan.unproven);
     return;
   }
   // verify
@@ -875,11 +1067,22 @@ function main(argv) {
       'utf8',
     ),
   );
-  const machineAfter =
-    phase === 'deployed' && fs.existsSync(f('machine-after.json'))
-      ? readJson(f('machine-after.json'))
-      : null;
-  const v = verifyState(manifest, flyState, phase, machineAfter);
+  let fleet = null;
+  if (phase === 'deployed') {
+    const list = fs.existsSync(f('machines.tsv'))
+      ? parseMachineList(fs.readFileSync(f('machines.tsv'), 'utf8'))
+      : fs.existsSync(f('machines-unavailable.json'))
+        ? readJson(f('machines-unavailable.json'))
+        : { unavailable: true, errorClass: 'not_run' };
+    const checks = {};
+    for (const m of list.machines || []) {
+      const file = f(`machine-after-${m.id}.json`);
+      if (fs.existsSync(file)) checks[m.id] = readJson(file);
+    }
+    fleet = { list, checks };
+  }
+  const final = attempt !== 'retry';
+  const v = verifyState(manifest, flyState, phase, fleet, { final });
   process.stdout.write(`${v.lines.join('\n')}\n`);
   for (const w of v.warnings) process.stdout.write(`::warning::${w}\n`);
   if (v.errors.length) {
@@ -894,9 +1097,12 @@ function main(argv) {
     process.stdout.write(
       'Verified: every managed name is present or absent on Fly exactly as declared. Staged values take effect at the next deploy, or now with deploy_staged=true.\n',
     );
+  } else if (v.retry.length) {
+    process.stdout.write(`Not proven yet: ${v.retry.join('; ')}.\n`);
+    process.exit(VERIFY_EXIT_RETRY);
   } else {
     process.stdout.write(
-      'Verified after deploy: every managed name is present or absent exactly as declared, and the running machine matches.\n',
+      `Verified: every managed name is present or absent on Fly exactly as declared, every declared name is Deployed, and all ${v.proven.started.length} started machine(s) (${v.proven.started.join(' ')}) hold every declared value and none of the unset names.\n`,
     );
   }
 }
@@ -926,6 +1132,12 @@ module.exports = {
   parseFlyState,
   planChanges,
   verifyState,
+  proveFleet,
+  parseMachineList,
+  killSwitches,
+  offValue,
+  MACHINE_ID_RE,
+  VERIFY_EXIT_RETRY,
   renderPlan,
   main,
 };

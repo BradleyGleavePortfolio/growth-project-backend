@@ -38,6 +38,10 @@ const VALUE = 'leakcanary-ids-9f8e7d6c5b4a3921.apps.googleusercontent.com';
 const OLD_VALUE = 'leakcanary-oldvalue-0a1b2c3d4e5f';
 const DIGEST = 'leakcanary-digest-1a2b3c4d5e6f7a8b';
 const LOCK_SECRET = 'ab'.repeat(32);
+// Fly machine ids (14 hex characters).
+const MACHINE_1 = 'e2865013b42d78';
+const MACHINE_2 = '148e272a5d7d89';
+const MACHINE_3 = '3d8d9e1c2b4a77';
 
 interface Step {
   name?: string;
@@ -72,6 +76,7 @@ let app = '';
 let stage = false;
 let json = false;
 let command = null;
+let machineId = null;
 const pos = [];
 for (let i = 0; i < rest.length; i += 1) {
   const a = rest[i];
@@ -79,6 +84,7 @@ for (let i = 0; i < rest.length; i += 1) {
   else if (a === '--stage') stage = true;
   else if (a === '--json' || a === '-j') json = true;
   else if (a === '-C' || a === '--command') command = rest[++i];
+  else if (a === '--machine') machineId = rest[++i];
   else pos.push(a);
 }
 const log = (line) => fs.appendFileSync(path.join(dir, 'calls.log'), line + '\\n');
@@ -172,6 +178,16 @@ switch (sub) {
       process.exit(Number(env('FAKE_DEPLOY_RC', '0')));
     }
     fs.writeFileSync(path.join(dir, 'deployed'), '');
+    const stalePath = path.join(dir, 'machine-env-stale.json');
+    if (env('FAKE_STALE_MACHINE', '') !== '') {
+      if (env('FAKE_STALE_STUCK', '') === '1') {
+        if (!fs.existsSync(stalePath))
+          fs.writeFileSync(stalePath, JSON.stringify({ ...machine, ...JSON.parse(env('FAKE_STALE_ENV', '{}')) }));
+      } else {
+        fs.writeFileSync(path.join(dir, 'stale-cleared'), '');
+        if (fs.existsSync(stalePath)) fs.unlinkSync(stalePath);
+      }
+    }
     if (env('FAKE_DEPLOY_NOOP', '') !== '1') {
       for (const k of Object.keys(machine)) delete machine[k];
       for (const [k, v] of Object.entries(state)) {
@@ -183,16 +199,53 @@ switch (sub) {
     process.stdout.write('RAWFLYSTDOUT-deploy Updating machines ${DIGEST}\\n');
     break;
   }
+  case 'machines list': {
+    log('machines list json=' + (json ? 1 : 0));
+    const rc = Number(env('FAKE_MACHINES_RC', '0'));
+    if (rc !== 0) {
+      failWith(env('FAKE_MACHINES_ERR', 'raw'), Object.values(machine));
+      process.exit(rc);
+    }
+    if (env('FAKE_MACHINES_SHAPE', '') === 'not-array') {
+      process.stdout.write(JSON.stringify({ machines: [] }));
+      break;
+    }
+    const list = env('FAKE_MACHINES', '${MACHINE_1}:started')
+      .split(',')
+      .filter(Boolean)
+      .map((e) => {
+        const [id, st] = e.split(':');
+        return { id, name: 'm-' + id, state: st, region: 'sea', config: { env: { PRIMARY_REGION: 'sea' } } };
+      });
+    process.stdout.write(JSON.stringify(list, null, 2) + '\\n');
+    break;
+  }
   case 'ssh console': {
-    log('ssh console');
+    log('ssh console' + (machineId ? ' machine=' + machineId : ''));
+    if (deployed && Number(env('FAKE_SSH_AFTER_FAILS', '0')) > 0) {
+      const cf = path.join(dir, 'ssh-after-count');
+      const n = fs.existsSync(cf) ? Number(fs.readFileSync(cf, 'utf8')) : 0;
+      fs.writeFileSync(cf, String(n + 1));
+      if (n < Number(env('FAKE_SSH_AFTER_FAILS', '0'))) {
+        failWith('network', []);
+        process.exit(1);
+      }
+    }
     const rc = Number(deployed ? env('FAKE_SSH_AFTER_RC', '0') : env('FAKE_SSH_RC', '0'));
     if (rc !== 0) {
       failWith(env('FAKE_SSH_ERR', 'raw'), Object.values(machine));
       process.exit(rc);
     }
     process.stderr.write('Connecting to fdaa:0:1::2... complete RAWFLYSTDERR-ssh\\n');
+    let menv = machine;
+    if (machineId && machineId === env('FAKE_STALE_MACHINE', '')) {
+      const stalePath = path.join(dir, 'machine-env-stale.json');
+      if (fs.existsSync(stalePath)) menv = JSON.parse(fs.readFileSync(stalePath, 'utf8'));
+      else if (!fs.existsSync(path.join(dir, 'stale-cleared')))
+        menv = { ...machine, ...JSON.parse(env('FAKE_STALE_ENV', '{}')) };
+    }
     const r = cp.spawnSync('sh', ['-c', command], {
-      env: { PATH: process.env.PATH, ...machine },
+      env: { PATH: process.env.PATH, ...menv },
       encoding: 'utf8',
     });
     process.stdout.write(r.stdout);
@@ -385,6 +438,8 @@ function runJob(o: RunOptions = {}): JobRun {
         GITHUB_WORKSPACE: ws,
         RUNNER_TEMP: temp,
         GITHUB_STEP_SUMMARY: summaryFile,
+        // No real waiting between apply-now attempts in tests.
+        FLY_ENV_VERIFY_DELAY_SECONDS: '0',
         ...(o.fakeEnv ?? {}),
         ...resolveEnv(step.env, secrets, inputs),
       },
@@ -576,8 +631,13 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
         'secrets deploy',
       ]);
       expect(run.machine.BOOKING_REMINDERS_ENABLED).toBe('on');
+      expect(run.calls.slice(-3)).toEqual([
+        'secrets list json=1',
+        'machines list json=1',
+        `ssh console machine=${MACHINE_1}`,
+      ]);
       expect(step(run, DEPLOY).out).toContain(
-        'Verified after deploy: every managed name is present or absent exactly as declared, and the running machine matches.',
+        `Verified: every managed name is present or absent on Fly exactly as declared, every declared name is Deployed, and all 1 started machine(s) (${MACHINE_1}) hold every declared value and none of the unset names.`,
       );
       expectNoLeak(run);
     });
@@ -593,8 +653,10 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
       expect(writes(run)).toEqual([]);
       expect(step(run, STAGE).out).toContain('Nothing to stage: Fly already matches the manifest.');
       expect(step(run, DEPLOY).out).toContain(
-        'flyctl secrets deploy was skipped and no machine restarts.',
+        'Nothing changed and nothing was waiting, so flyctl secrets deploy was skipped and no machine restarted.',
       );
+      // B-637-1: the no-restart path still proves every started machine.
+      expect(run.calls).toContain(`ssh console machine=${MACHINE_1}`);
     });
 
     it('a deployed value that differs in the machine is re-set', () => {
@@ -874,6 +936,200 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
     });
   });
 
+  describe('apply-now completion fails closed (B-637-1)', () => {
+    const SSH_HOSTILE = { FAKE_SSH_ERR: 'hostile' };
+
+    it('Sol regression 1: deploy leaves the ledger Staged and absent in the machine, then ssh fails: the job fails, never "verified"', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
+        fakeEnv: {
+          FAKE_DEPLOY_KEEP_STAGED: '1',
+          FAKE_DEPLOY_NOOP: '1',
+          FAKE_SSH_AFTER_RC: '1',
+          ...SSH_HOSTILE,
+          FLY_ENV_VERIFY_ATTEMPTS: '2',
+        },
+      });
+      expect(run.ok).toBe(false);
+      const out = step(run, DEPLOY).out;
+      expect(out).toContain('::error::The running state is not proven after the last check:');
+      expect(out).toContain(
+        'Fly does not report these names as Deployed yet: FEATURE_AI_CONSENT_LEDGER_ENABLED',
+      );
+      expect(out).toContain(
+        `machine ${MACHINE_1}: the in-machine check did not run (error class unclassified)`,
+      );
+      expect(out).not.toMatch(/Verified|machine matches/);
+      expectFixOnEveryProblem(run);
+      expectNoLeak(run);
+    });
+
+    it('Sol regression 2: an unset staged earlier, absent listing, machine still true, ssh fails: it deploys and then fails, never a green no-op', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        machineExtra: { FEATURE_DUNNING_V2: 'true' },
+        fakeEnv: {
+          FAKE_SSH_RC: '1',
+          FAKE_SSH_AFTER_RC: '1',
+          ...SSH_HOSTILE,
+          FLY_ENV_VERIFY_ATTEMPTS: '2',
+        },
+      });
+      expect(planRow(run, 'FEATURE_DUNNING_V2')).toBe(
+        'FEATURE_DUNNING_V2 | flag | unset | absent | unavailable | keep | absent on Fly, but the in-machine check did not run, so an unset staged earlier may still be live (unproven)',
+      );
+      expect(step(run, PLAN).out).toContain('the running machines are unproven for:');
+      expect(writes(run)).toEqual(['secrets deploy']);
+      expect(step(run, DEPLOY).out).toContain(
+        'the in-machine check before this step did not run, so the running state is unproven',
+      );
+      // The staged unset reached the machine (the deploy ran), but the job
+      // still fails because no running machine could prove it.
+      expect(run.machine.FEATURE_DUNNING_V2).toBeUndefined();
+      expect(run.ok).toBe(false);
+      expect(step(run, DEPLOY).out).toContain(
+        `machine ${MACHINE_1}: the in-machine check did not run`,
+      );
+      expect(step(run, DEPLOY).out).not.toContain('Verified:');
+      expectFixOnEveryProblem(run);
+      expectNoLeak(run);
+    });
+
+    it('an unproven pre-check with a working post-check: one deploy, then every started machine proves the manifest', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        machineExtra: { FEATURE_DUNNING_V2: 'true' },
+        fakeEnv: { FAKE_SSH_RC: '1' },
+      });
+      expect(writes(run)).toEqual(['secrets deploy']);
+      expect(run.ok).toBe(true);
+      expect(run.machine.FEATURE_DUNNING_V2).toBeUndefined();
+      expect(step(run, DEPLOY).out).toContain(`all 1 started machine(s) (${MACHINE_1})`);
+    });
+
+    it('plan and stage-only stay truthful warnings (exit 0) when ssh is unavailable; nothing claims the machine matches', () => {
+      const run = runJob({ mode: 'apply', fakeEnv: { FAKE_SSH_RC: '1' } });
+      expect(run.ok).toBe(true);
+      expect(writes(run)).toEqual([]);
+      expect(step(run, PLAN).out).toContain('the running machines are unproven for:');
+      expect(run.log).not.toMatch(/machine matches|hold every declared value/);
+      expect(step(run, DEPLOY).ran).toBe(false);
+    });
+
+    it('bounded retry: a check that fails once and then works is proven on the next attempt', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
+        fakeEnv: { FAKE_SSH_AFTER_FAILS: '1', FLY_ENV_VERIFY_ATTEMPTS: '3' },
+      });
+      expect(run.ok).toBe(true);
+      const out = step(run, DEPLOY).out;
+      expect(out).toContain('Attempt 1 of 3: not proven yet');
+      expect(out).toContain(`all 1 started machine(s) (${MACHINE_1}) hold every declared value`);
+      expect(writes(run).filter((c) => c === 'secrets deploy')).toHaveLength(1);
+    });
+
+    it('every started machine is checked: a second machine that missed the deploy fails the job by machine id', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
+        fakeEnv: {
+          FAKE_MACHINES: `${MACHINE_1}:started,${MACHINE_2}:started`,
+          FAKE_STALE_MACHINE: MACHINE_2,
+          FAKE_STALE_STUCK: '1',
+          FLY_ENV_VERIFY_ATTEMPTS: '2',
+        },
+      });
+      expect(run.ok).toBe(false);
+      expect(run.calls).toContain(`ssh console machine=${MACHINE_1}`);
+      expect(run.calls).toContain(`ssh console machine=${MACHINE_2}`);
+      expect(step(run, DEPLOY).out).toContain(
+        `machine ${MACHINE_2} does not match the manifest for: FEATURE_AI_CONSENT_LEDGER_ENABLED (absent)`,
+      );
+      expect(step(run, DEPLOY).out).not.toContain(`machine ${MACHINE_1} does not match`);
+      expectFixOnEveryProblem(run);
+    });
+
+    it('nothing staged but a started machine still holds an old value: the no-restart probe fails, so it deploys and proves', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        fakeEnv: {
+          FAKE_MACHINES: `${MACHINE_1}:started,${MACHINE_2}:started`,
+          FAKE_STALE_MACHINE: MACHINE_2,
+          FAKE_STALE_ENV: JSON.stringify({ FEATURE_DUNNING_V2: 'true' }),
+        },
+      });
+      expect(writes(run)).toEqual(['secrets deploy']);
+      expect(step(run, DEPLOY).out).toContain('a started machine does not hold the manifest yet');
+      expect(run.ok).toBe(true);
+      expect(step(run, DEPLOY).out).toContain(
+        `all 2 started machine(s) (${MACHINE_1} ${MACHINE_2})`,
+      );
+    });
+
+    it('a stopped machine is named in a warning with a Fix, and the success line counts started machines only', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
+        fakeEnv: { FAKE_MACHINES: `${MACHINE_1}:started,${MACHINE_3}:stopped` },
+      });
+      expect(run.ok).toBe(true);
+      expect(run.calls).not.toContain(`ssh console machine=${MACHINE_3}`);
+      expect(step(run, DEPLOY).out).toContain(
+        `::warning::1 machine(s) are not running (${MACHINE_3}), so they were not checked`,
+      );
+      expect(step(run, DEPLOY).out).toContain(`all 1 started machine(s) (${MACHINE_1})`);
+      expectFixOnEveryProblem(run);
+    });
+
+    it.each<[string, Record<string, string>, string]>([
+      ['no started machine', { FAKE_MACHINES: `${MACHINE_3}:stopped` }, 'no machine is started'],
+      [
+        'a machine mid-transition',
+        { FAKE_MACHINES: `${MACHINE_1}:started,${MACHINE_2}:replacing` },
+        `machine ${MACHINE_2} is replacing, not started`,
+      ],
+      [
+        'machines list fails (hostile output withheld)',
+        { FAKE_MACHINES_RC: '1', FAKE_MACHINES_ERR: 'hostile' },
+        'flyctl machines list --json did not run cleanly (error class unclassified)',
+      ],
+      [
+        'machines list is not a JSON array',
+        { FAKE_MACHINES_SHAPE: 'not-array' },
+        'flyctl machines list --json did not run cleanly (error class bad_json)',
+      ],
+      [
+        'a machine entry without a valid id',
+        { FAKE_MACHINES: `${MACHINE_1}:started,../x:started` },
+        'returned 1 entry without a valid machine id',
+      ],
+    ])('fails closed: %s', (_label, fakeEnv, reason) => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
+        fakeEnv: { ...fakeEnv, FLY_ENV_VERIFY_ATTEMPTS: '1' },
+      });
+      expect(run.ok).toBe(false);
+      expect(step(run, DEPLOY).out).toContain(
+        '::error::The running state is not proven after the last check:',
+      );
+      expect(step(run, DEPLOY).out).toContain(reason);
+      expect(step(run, DEPLOY).out).not.toContain('Verified:');
+      expectFixOnEveryProblem(run);
+      expectNoLeak(run);
+    });
+  });
+
   describe('verification is exact (B-633-1: no false green)', () => {
     it('a set that did not stick fails the staged verification by name', () => {
       const run = runJob({
@@ -892,26 +1148,36 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
         mode: 'apply',
         deployStaged: true,
         edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
-        fakeEnv: { FAKE_DEPLOY_NOOP: '1' },
+        fakeEnv: { FAKE_DEPLOY_NOOP: '1', FLY_ENV_VERIFY_ATTEMPTS: '2' },
       });
       expect(run.ok).toBe(false);
       expect(step(run, DEPLOY).out).toContain(
-        'After flyctl secrets deploy the running machine does not match the manifest for: FEATURE_AI_CONSENT_LEDGER_ENABLED (absent). Fix:',
+        '::error::The running state is not proven after the last check: Fly does not report these names as Deployed yet: FEATURE_AI_CONSENT_LEDGER_ENABLED;',
       );
+      expect(step(run, DEPLOY).out).toContain(
+        `machine ${MACHINE_1} does not match the manifest for: FEATURE_AI_CONSENT_LEDGER_ENABLED (absent). Fix:`,
+      );
+      expect(step(run, DEPLOY).out).not.toContain('Verified:');
       expectFixOnEveryProblem(run);
     });
 
-    it('names still Staged after deploy are a warning with a Fix, not a failure', () => {
+    it('B-637-1: names still Staged after deploy fail closed after the bounded retry (never a green warning)', () => {
       const run = runJob({
         mode: 'apply',
         deployStaged: true,
         edits: { 'flags.FEATURE_AI_CONSENT_LEDGER_ENABLED': 'true' },
-        fakeEnv: { FAKE_DEPLOY_KEEP_STAGED: '1' },
+        fakeEnv: { FAKE_DEPLOY_KEEP_STAGED: '1', FLY_ENV_VERIFY_ATTEMPTS: '3' },
       });
-      expect(run.ok).toBe(true);
-      expect(step(run, DEPLOY).out).toContain(
-        '::warning::flyctl secrets deploy succeeded, but Fly does not report these names as Deployed yet: FEATURE_AI_CONSENT_LEDGER_ENABLED.',
+      expect(run.ok).toBe(false);
+      const out = step(run, DEPLOY).out;
+      expect(out).toContain('Attempt 1 of 3: not proven yet');
+      expect(out).toContain('Attempt 2 of 3: not proven yet');
+      expect(out).toContain(
+        '::error::The running state is not proven after the last check: Fly does not report these names as Deployed yet: FEATURE_AI_CONSENT_LEDGER_ENABLED',
       );
+      expect(out).not.toContain('Verified:');
+      expect(writes(run).filter((c) => c === 'secrets deploy')).toHaveLength(1);
+      expect(run.calls.filter((c) => c === 'machines list json=1')).toHaveLength(3);
       expectFixOnEveryProblem(run);
     });
 
@@ -941,12 +1207,14 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
           'fly-state-deployed.tsv',
           'fly-state-staged.tsv',
           'fly-state.tsv',
-          'machine-after.json',
+          `machine-after-${MACHINE_1}.json`,
           'machine.json',
+          'machines.tsv',
           'pending.txt',
           'set-flags.txt',
           'set-secrets.txt',
           'sources.json',
+          'unproven.txt',
           'unset.txt',
         ].sort(),
       );
