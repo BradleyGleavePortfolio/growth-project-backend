@@ -95,7 +95,7 @@ Redis in CI), `test/throttler-isolation.spec.ts` (40-person room).
 | `PUT /notifications/preferences`          | PUT    | `notifications-prefs`   | 30    | 1 min  | user-id (authenticated)|
 | `POST /bloodwork/*`                       | POST   | `bloodwork-write`       | 30    | 1 min  | user-id (authenticated)|
 | `GET /coach/command-center/*`             | GET    | `coach-command-center`  | 60    | 1 min  | user-id (authenticated)|
-| `POST /diagnostic/submit`                 | POST   | `diagnostic-submit`     | 5     | 1 hr   | IP (unauthenticated)   |
+| `POST /diagnostic/submit` (not mounted, B-QUIZ-OFF) | POST | `diagnostic-submit` | 5   | 1 hr   | IP (unauthenticated)   |
 | All other routes                          | any    | `default`               | 300   | 1 min  | user-id or IP          |
 
 **Health check whitelist:** `GET /health`, `GET /healthz`, `GET /readyz` are
@@ -147,7 +147,7 @@ restart. Every var has a safe default that is production-appropriate.
 | `NOTIF_PREFS_PER_MIN`         | `30`    | 1   | 1 000  | Per-user notification preference writes per minute.         |
 | `BLOODWORK_WRITE_PER_MIN`     | `30`    | 1   | 1 000  | Per-user bloodwork POST writes per minute.                  |
 | `COACH_CMD_CENTER_PER_MIN`    | `60`    | 1   | 1 000  | Per-user coach command-center GET reads per minute.         |
-| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | `5` | 1   | 1 000  | Per-IP diagnostic submit requests per hour (unauthenticated lead-capture endpoint). |
+| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | `5` | 1   | 1 000  | Per-IP diagnostic submit requests per hour. Inert: the diagnostic routes are not mounted (B-QUIZ-OFF). |
 | `REDIS_URL`                   | unset   | —   | —      | When set, `ThrottlerModule` uses Redis storage so limits are shared across all Fly machines. When unset, in-memory storage is used (safe for dev/test; limits do NOT cross machines in prod). |
 
 ---

@@ -27,6 +27,7 @@ import {
 } from '../../../src/community/challenges/community-challenges.repository';
 import { COMMENT_CONTEXT_TYPE } from '../../../src/community/messages/community-messages.repository';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const WORKSPACE = '22222222-2222-2222-2222-222222222222';
@@ -97,6 +98,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         repo as never,
         realtime as never,
         planContext as never,
+        safetyWithBlocks(),
       );
     });
 
@@ -111,18 +113,16 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         repo.findById.mockResolvedValue(
           message({ plan_context_type: ctx, plan_context_id: COHORT }),
         );
-        await expect(service.getOne(member, MSG_ID)).rejects.toBeInstanceOf(
-          NotFoundException,
-        );
+        await expect(service.getOne(member, MSG_ID)).rejects.toBeInstanceOf(NotFoundException);
       });
 
       it(`edit 404s a ${label} (no update issued)`, async () => {
         repo.findById.mockResolvedValue(
           message({ plan_context_type: ctx, plan_context_id: COHORT }),
         );
-        await expect(
-          service.edit(member, MSG_ID, 'tampered'),
-        ).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.edit(member, MSG_ID, 'tampered')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
         expect(repo.updateBody).not.toHaveBeenCalled();
       });
 
@@ -130,9 +130,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         repo.findById.mockResolvedValue(
           message({ plan_context_type: ctx, plan_context_id: COHORT }),
         );
-        await expect(service.remove(member, MSG_ID)).rejects.toBeInstanceOf(
-          NotFoundException,
-        );
+        await expect(service.remove(member, MSG_ID)).rejects.toBeInstanceOf(NotFoundException);
         expect(repo.softDelete).not.toHaveBeenCalled();
       });
     }
