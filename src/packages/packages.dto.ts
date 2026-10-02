@@ -6,6 +6,7 @@ import {
   IsIn,
   Min,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreatePackageDto {
@@ -18,8 +19,11 @@ export class CreatePackageDto {
   @MaxLength(1000)
   description?: string;
 
+  // Clinic C01 — 0 = a FREE package (claimed via POST /v1/packages/:id/claim-free,
+  // never sent to Stripe). Any positive amount must be ≥ 50 cents (Stripe floor).
+  @ValidateIf((o: CreatePackageDto) => o.amount_cents !== 0)
   @IsInt()
-  @Min(50) // 50 cents minimum
+  @Min(50, { message: 'amount_cents must be 0 (free) or at least 50' })
   amount_cents!: number;
 
   @IsString()
@@ -86,9 +90,12 @@ export class UpdatePackageDto {
   @MaxLength(1000)
   description?: string;
 
+  // Clinic C01 — 0 = free (see CreatePackageDto). Note PackagesService.update
+  // still applies its pricing-lock rules to any price change.
   @IsOptional()
+  @ValidateIf((o: UpdatePackageDto) => o.amount_cents !== undefined && o.amount_cents !== 0)
   @IsInt()
-  @Min(50)
+  @Min(50, { message: 'amount_cents must be 0 (free) or at least 50' })
   amount_cents?: number;
 
   @IsOptional()

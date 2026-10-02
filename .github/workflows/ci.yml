@@ -9,6 +9,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Live Redis for the throttler-storage proofs (test/support/live-redis.ts):
+    # the production limiter is the @nest-lab Redis adapter's Lua script behind
+    # withFailOpenStorage, which a mock cannot reproduce. Only the suites that
+    # read THROTTLER_LIVE_REDIS_URL connect to it; REDIS_URL stays unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
 
@@ -75,6 +89,7 @@ jobs:
         run: npm test --if-present
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
 
       # Confirm the env-validation rules accept a fully-populated prod env.
       # Catches accidental rule additions that would brick the next deploy
@@ -309,6 +324,18 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run AI consent ledger live RLS suite (R2a)
+        # Applies prisma/migrations/20270203000000_ai_processing_consent_ledger
+        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers
+        # above, then proves self-only reads (client vs stranger vs the client's
+        # coach vs the application owner role vs anon), no non-service writes,
+        # the append-only trigger, CHECK/unique/FK behaviour and down/up. The
+        # spec refuses to skip under CI=true (Sol B-R2-1 on #601: the consent
+        # RLS suite must actually execute in a required job).
+        run: npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
@@ -383,6 +410,9 @@ jobs:
             "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"
 
       - name: Run MWB-3 autosave/undo live suite (default-lane specs)
+        # Also runs test/profile-put-concurrency.live.spec.ts (#606 B606-3): the
+        # PUT /profile per-user row-lock proof on real Postgres. It uses the same
+        # MWB3_TEST_DATABASE_URL gate and the same reset + full-schema bootstrap.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -396,6 +426,7 @@ jobs:
             test/mwb-3-autosave.service.spec.ts \
             test/mwb-3-undo.spec.ts \
             test/mwb-3-revision-prune.cron.spec.ts \
+            test/profile-put-concurrency.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096

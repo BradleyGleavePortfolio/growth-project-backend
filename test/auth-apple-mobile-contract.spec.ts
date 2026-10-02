@@ -193,7 +193,10 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
     headers: { 'user-agent': 'GrowthProject/1.0 iOS' },
   };
 
-  it('mobile body → appleAuth(identity_token, "Given Family", invite_code, ctx, undefined)', async () => {
+  // C13 (#597) appends `intended_role` as the 6th positional argument; a
+  // body without it forwards `undefined` (client default) — pinned here so
+  // the mobile contract and the role-choice contract are asserted together.
+  it('mobile body → appleAuth(identity_token, "Given Family", invite_code, ctx, undefined, undefined)', async () => {
     const { controller, appleAuth } = buildController();
     const dto = await validateBody(MOBILE_FIRST_AUTH_BODY);
     const result = await controller.appleAuth(dto, req);
@@ -202,12 +205,27 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       IDENTITY_TOKEN,
       'Jane Clinic',
       'GP-CLINIC',
-      { ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' },
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
+      undefined,
       undefined,
     );
   });
 
-  it('legacy body → appleAuth(token, full_name, invite_code, ctx, raw_nonce) exactly as before', async () => {
+  it('mobile body with intended_role=coach forwards it as the 6th argument', async () => {
+    const { controller, appleAuth } = buildController();
+    const dto = await validateBody({ identity_token: IDENTITY_TOKEN, intended_role: 'coach' });
+    await controller.appleAuth(dto, req);
+    expect(appleAuth).toHaveBeenCalledWith(
+      IDENTITY_TOKEN,
+      undefined,
+      undefined,
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
+      undefined,
+      'coach',
+    );
+  });
+
+  it('legacy body → appleAuth(token, full_name, invite_code, ctx, raw_nonce, undefined) exactly as before', async () => {
     const { controller, appleAuth } = buildController();
     const dto = await validateBody({
       token: IDENTITY_TOKEN,
@@ -219,8 +237,9 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       IDENTITY_TOKEN,
       'Jane Clinic',
       undefined,
-      { ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' },
+      expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       'raw-nonce-0123456789abcdef',
+      undefined,
     );
   });
 });

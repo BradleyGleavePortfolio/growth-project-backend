@@ -586,6 +586,21 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000].',
   },
   {
+    name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
+    tier: 'optional',
+    reason: 'Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500].',
+  },
+  {
+    name: 'SIGNUP_ROLE_CHOICE_ENABLED',
+    tier: 'optional',
+    reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
+  },
+  {
+    name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
+    tier: 'optional',
+    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
+  },
+  {
     name: 'AUTH_PWD_RESET_PER_HOUR',
     tier: 'optional',
     reason: 'Phase 10 — per-IP password-reset email requests per hour (POST /auth/forgot-password). Defaults to 3; clamped to [1, 1000].',

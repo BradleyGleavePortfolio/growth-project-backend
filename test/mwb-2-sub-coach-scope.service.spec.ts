@@ -26,7 +26,8 @@ const CLIENT_OUT_OF_SCOPE = 'client-out-of-scope';
 
 interface PrismaMock {
   user: { findUnique: jest.Mock; findMany: jest.Mock };
-  subCoachAssignment: { findMany: jest.Mock };
+  subCoachAssignment: { findMany: jest.Mock; findFirst: jest.Mock };
+  teamSubCoachAssignment: { findFirst: jest.Mock };
 }
 
 describe('SubCoachScopeService.canAccessClient (MWB-2 §7.2 matrix)', () => {
@@ -50,7 +51,21 @@ describe('SubCoachScopeService.canAccessClient (MWB-2 §7.2 matrix)', () => {
         // findMany; default returns the in-scope client as a live student.
         findMany: jest.fn(),
       },
-      subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
+      subCoachAssignment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      // C13 fix round: SUB_COACH holds an active Team Mode seat under
+      // HEAD_COACH (explicit membership); nobody else does.
+      teamSubCoachAssignment: {
+        findFirst: jest.fn(({ where }: { where: { head_coach_id: string; sub_coach_id: string } }) =>
+          Promise.resolve(
+            where.sub_coach_id === SUB_COACH && where.head_coach_id === HEAD_COACH
+              ? { id: 'seat-1' }
+              : null,
+          ),
+        ),
+      },
     };
     svc = new SubCoachScopeService(prisma as unknown as PrismaService);
   });

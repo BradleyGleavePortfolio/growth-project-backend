@@ -118,6 +118,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: auth
     description: "Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000]."
+  - name: AUTH_SIGNUP_WITH_CODE_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500]."
   - name: AUTH_LOGIN_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1372,6 +1378,17 @@ switches:
     owner: platform
     description: "Cron schedule for the account-deletion finalize job. Optional; absent falls back to the in-code default schedule."
 
+  # ── R2a AI processing consent ledger (D2 consent contract, box 2;
+  # 2026-10-01). Default OFF: the box-2 copy is pending owner sign-off and may
+  # change in place until the flag is first switched on. Operator flips it with
+  # the copy sign-off; never auto-flipped. ──
+  - name: FEATURE_AI_CONSENT_LEDGER_ENABLED
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: ai
+    description: "AI processing consent ledger (R2a). 'true' mounts GET /api/me/ai-consent + POST/DELETE /api/me/ai-consent/roman; otherwise 503 AI_CONSENT_UNAVAILABLE and hasClientAiConsent() is false for everyone."
+
   # ── Scout / tgp-importer readiness slice (R-SCOUT-READINESS-1, 2026-07-22):
   # register the three existing importer feature flags in the prod-readiness
   # registry as explicit default-OFF. Config + test only; no runtime change and
@@ -1401,3 +1418,15 @@ switches:
     auto_flip_on_in_prod: false
     owner: importer
     description: "S12-B1 pilot-coach allowlist (IMPORTER). Comma-separated User.id UUIDs admitted to the flag-gated importer surface; unset/empty/malformed = nobody (fail closed). Value is a list, not a boolean, so STUB_ALLOWED rather than OFF; never auto-flipped."
+  - name: SIGNUP_ROLE_CHOICE_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker."
+  - name: AUTH_OAUTH_COACH_SIGNUP_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."
