@@ -43,6 +43,8 @@ import {
   isOverlapConstraintViolation,
 } from '../src/scheduling/scheduling-session-lifecycle.service';
 import { SchedulingService } from '../src/scheduling/scheduling.service';
+import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
+import { NotificationKind } from '../src/notifications/notification-kind';
 import type { ActorContext } from '../src/scheduling/scheduling.types';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
@@ -135,6 +137,8 @@ function slot(daysAhead: number, minuteOffset = 0): { start: Date; end: Date } {
 liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
   let prisma: PrismaService;
   let svc: SchedulingService;
+  let reminderJob: SessionReminderJob;
+  let liveNotifications: SilentNotifications;
   let statements: string[];
 
   beforeAll(async () => {
@@ -202,6 +206,8 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
       new ZoomVideoAdapter(),
     );
     svc = new SchedulingService(prisma, audit, registry, emitter);
+    reminderJob = new SessionReminderJob(prisma, emitter);
+    liveNotifications = notifications;
   }, 240_000);
 
   afterAll(async () => {
@@ -423,6 +429,89 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
     const check = await prisma.$queryRaw<Array<{ conname: string }>>`
       SELECT conname FROM pg_constraint WHERE conname = 'NotificationDeliveryLog_status_check'`;
     expect(check).toHaveLength(1);
+  });
+
+  // S-SCHED-5 (B-634-7): the real CHECK must accept every status the reminder
+  // job writes. Park -> excluded from recovery -> re-armed by the band pass,
+  // run through the real SessionReminderJob against Postgres.
+  it('S-SCHED-5 B-634-7: the status check allows parked; park, recovery exclusion and re-arm work on Postgres', async () => {
+    const clientId = CLIENT_IDS[0];
+    const MIN = 60_000;
+    const now = Date.now();
+    const wholeMinute = (ms: number) => new Date(Math.floor(ms / MIN) * MIN);
+    const start = wholeMinute(now + 120 * MIN);
+    const session = await prisma.coachingSession.create({
+      data: {
+        coach_id: COACH_ID,
+        client_id: clientId,
+        session_type_id: TYPE_ID,
+        status: 'scheduled',
+        start_at: start,
+        end_at: new Date(start.getTime() + 30 * MIN),
+        title: 'Quick Q/A Call',
+        approved_at: new Date(now - 3 * 24 * 60 * MIN),
+      },
+    });
+    // A retry row kept from an earlier, sooner start (the session moved later).
+    const row = await prisma.notificationDeliveryLog.create({
+      data: {
+        session_id: session.id,
+        user_id: clientId,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        status: 'retry',
+        attempts: 1,
+        claim_token: 'live-earlier-claim',
+        session_start_at: wholeMinute(now + 30 * MIN),
+        inapp_done_at: new Date(now - 10 * MIN),
+      },
+    });
+    // The real cron entry point (BOOKING_REMINDERS_ENABLED=on for the call).
+    const tick = async () => {
+      const prev = process.env.BOOKING_REMINDERS_ENABLED;
+      process.env.BOOKING_REMINDERS_ENABLED = 'on';
+      try {
+        await reminderJob.runOneHourReminderSweep();
+      } finally {
+        if (prev === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+        else process.env.BOOKING_REMINDERS_ENABLED = prev;
+      }
+    };
+    try {
+      const pushesBefore = liveNotifications.pushToUser.mock.calls.length;
+      // 1. Recovery sees the retry for an earlier start of a session that is
+      //    now 120 minutes out: it is parked, and Postgres accepts the write.
+      await tick();
+      const parked = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
+      expect(parked).toMatchObject({ status: 'parked', last_error: 'parked:moved_later', lease_until: null });
+      expect(parked.inapp_done_at).not.toBeNull();
+      // 2. A parked row is out of the recovery page: the next tick neither
+      //    parks nor sends it again.
+      await tick();
+      const still = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
+      expect(still).toMatchObject({ status: 'parked', attempts: parked.attempts, claim_token: parked.claim_token });
+      expect(liveNotifications.pushToUser.mock.calls.length).toBe(pushesBefore);
+      // 3. The session's new start reaches the 1h band: the band pass re-arms
+      //    the parked row for the new revision and delivers it once.
+      const inBand = wholeMinute(Date.now() + 60 * MIN);
+      await prisma.coachingSession.update({
+        where: { id: session.id },
+        data: { start_at: inBand, end_at: new Date(inBand.getTime() + 30 * MIN) },
+      });
+      await tick();
+      const rearmed = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
+      expect(rearmed.status).toBe('sent');
+      expect(rearmed.session_start_at?.getTime()).toBe(inBand.getTime());
+      const clientPushes = liveNotifications.pushToUser.mock.calls
+        .slice(pushesBefore)
+        .filter((c: unknown[]) => c[0] === clientId);
+      expect(clientPushes).toHaveLength(1);
+      // 4. The CHECK still refuses a value outside the job's set.
+      await expect(
+        prisma.notificationDeliveryLog.update({ where: { id: row.id }, data: { status: 'bogus' } }),
+      ).rejects.toThrow(/NotificationDeliveryLog_status_check/);
+    } finally {
+      await prisma.notificationDeliveryLog.deleteMany({ where: { session_id: session.id } });
+    }
   });
 
   it('S-SCHED-3 C-634-2: the range preflight names active rows that end before they start', async () => {

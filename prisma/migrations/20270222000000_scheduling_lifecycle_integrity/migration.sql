@@ -117,9 +117,14 @@ ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "push_done_at" TI
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "notification_id" TEXT;
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "last_error" TEXT;
 
+-- S-SCHED-5 (B-634-7): 'parked' is a reminder row that belongs to an
+-- earlier start of a session moved later; it leaves the recovery page with
+-- its receipts kept and is re-armed when the new start reaches the band.
+-- The value set must equal REMINDER_DELIVERY_STATUSES in
+-- src/scheduling/jobs/reminder.job.ts (test/scheduling-delivery-status-contract.spec.ts).
 ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
 ALTER TABLE "NotificationDeliveryLog" ADD CONSTRAINT "NotificationDeliveryLog_status_check"
-  CHECK ("status" IN ('sending', 'retry', 'sent', 'gave_up') AND "attempts" >= 1);
+  CHECK ("status" IN ('sending', 'retry', 'sent', 'gave_up', 'parked') AND "attempts" >= 1);
 
 -- The reminder sweep reads unfinished delivery work on every tick (S-SCHED-4
 -- B-634-2: retries and dead workers' claims are selected on their own, not

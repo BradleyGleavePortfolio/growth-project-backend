@@ -84,9 +84,17 @@ export const REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES = 65;
 // 24h cron). Only sessions confirmed at their current time before the band
 // reached them qualify, so a late booking never gets a back-dated reminder.
 export const REMINDER_CATCHUP_MINUTES = 30;
-// Sessions read per sweep for the catch-up pass.
+// Page size of the catch-up walk (keyset-paged over the whole interval).
 export const REMINDER_CATCHUP_BATCH = 200;
 const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_provider'];
+
+// S-SCHED-5 (B-634-7): every value the reminder job writes to
+// NotificationDeliveryLog.status. The database CHECK
+// NotificationDeliveryLog_status_check (migration 20270222000000) must allow
+// exactly this set; test/scheduling-delivery-status-contract.spec.ts pins it
+// and the in-memory test DB enforces the migration's own list.
+export const REMINDER_DELIVERY_STATUSES = ['sending', 'retry', 'sent', 'gave_up', 'parked'] as const;
+export type ReminderDeliveryStatus = (typeof REMINDER_DELIVERY_STATUSES)[number];
 
 interface ReminderClaim {
   id: string;
@@ -622,41 +630,65 @@ export class SessionReminderJob {
       ),
     );
     if (from.getTime() >= args.lower.getTime()) return { sessions: [], failed: false };
-    let candidates: CoachingSession[];
-    let logs: Array<{ session_id: string; user_id: string }>;
+    // S-SCHED-5 round 2 (B-634-2): walk the WHOLE catch-up interval with a
+    // keyset cursor on (start_at, id), one bounded page at a time, filtering
+    // each page by delivery rows. Settled or late-booked sessions can no
+    // longer fill a single page and hide a trailing session whose first
+    // claim was never written: every remindable session in the interval is
+    // examined on every tick. The interval is 30 minutes of start times, so
+    // the walk is finite; each page is an indexed (status, start_at) range.
+    const leadMs = args.lowerOffsetMinutes * 60 * 1000;
+    const out: Array<{ session: CoachingSession; onlyUsers: Set<string> }> = [];
+    let cursor: { start_at: Date; id: string } | null = null;
     try {
-      candidates = await this.prisma.coachingSession.findMany({
-        where: {
-          status: { in: [...REMINDABLE_STATUSES] },
-          start_at: { gte: from, lt: args.lower },
-        },
-        orderBy: { start_at: 'asc' },
-        take: REMINDER_CATCHUP_BATCH,
-      });
-      const ids = candidates.map((c) => c.id).filter((id) => !args.skipIds.has(id));
-      if (ids.length === 0) return { sessions: [], failed: false };
-      logs = await this.prisma.notificationDeliveryLog.findMany({
-        where: { kind: args.kind, session_id: { in: ids } },
-        select: { session_id: true, user_id: true },
-      });
+      for (;;) {
+        const page: CoachingSession[] = await this.prisma.coachingSession.findMany({
+          where: {
+            status: { in: [...REMINDABLE_STATUSES] },
+            start_at: { gte: from, lt: args.lower },
+            ...(cursor
+              ? {
+                  OR: [
+                    { start_at: { gt: cursor.start_at } },
+                    { start_at: cursor.start_at, id: { gt: cursor.id } },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: [{ start_at: 'asc' }, { id: 'asc' }],
+          take: REMINDER_CATCHUP_BATCH,
+        });
+        if (page.length === 0) break;
+        const last = page[page.length - 1];
+        cursor = { start_at: last.start_at, id: last.id };
+        const candidates = page.filter((c) => {
+          if (args.skipIds.has(c.id)) return false;
+          // No back-dated reminder for a session confirmed after its band.
+          const confirmedAt = c.approved_at ?? c.created_at ?? null;
+          return !(confirmedAt && confirmedAt.getTime() > c.start_at.getTime() - leadMs);
+        });
+        if (candidates.length > 0) {
+          const logs = await this.prisma.notificationDeliveryLog.findMany({
+            where: { kind: args.kind, session_id: { in: candidates.map((c) => c.id) } },
+            select: { session_id: true, user_id: true },
+          });
+          const have = new Set(logs.map((l) => `${l.session_id}|${l.user_id}`));
+          for (const session of candidates) {
+            const onlyUsers = new Set<string>();
+            for (const userId of [session.client_id, session.coach_id]) {
+              if (userId && !have.has(`${session.id}|${userId}`)) onlyUsers.add(userId);
+            }
+            if (onlyUsers.size > 0) out.push({ session, onlyUsers });
+          }
+        }
+        if (page.length < REMINDER_CATCHUP_BATCH) break;
+      }
     } catch (err) {
       this.logger.error(
         `reminder catch-up read failed: kind=${args.kind} err=${describeError(err)}`,
       );
-      return { sessions: [], failed: true };
-    }
-    const have = new Set(logs.map((l) => `${l.session_id}|${l.user_id}`));
-    const leadMs = args.lowerOffsetMinutes * 60 * 1000;
-    const out: Array<{ session: CoachingSession; onlyUsers: Set<string> }> = [];
-    for (const session of candidates) {
-      if (args.skipIds.has(session.id)) continue;
-      const confirmedAt = session.approved_at ?? session.created_at ?? null;
-      if (confirmedAt && confirmedAt.getTime() > session.start_at.getTime() - leadMs) continue;
-      const onlyUsers = new Set<string>();
-      for (const userId of [session.client_id, session.coach_id]) {
-        if (userId && !have.has(`${session.id}|${userId}`)) onlyUsers.add(userId);
-      }
-      if (onlyUsers.size > 0) out.push({ session, onlyUsers });
+      // Sessions found on earlier pages are still claimed this tick.
+      return { sessions: out, failed: true };
     }
     if (out.length > 0) {
       this.logger.warn(

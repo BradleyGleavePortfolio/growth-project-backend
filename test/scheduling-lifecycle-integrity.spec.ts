@@ -2180,3 +2180,150 @@ describe('S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe 
     }
   });
 });
+
+/**
+ * S-SCHED-5 round 2 (Sol + Opus B-634-2 @ 4d987916): the catch-up pass must
+ * reach a session whose first claim failed even when more than one page of
+ * already-reminded sessions starts earlier in the catch-up interval. Each
+ * case fails on 4d987916 (first 200 sessions read, filtered after the limit).
+ */
+describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the first page', () => {
+  const MIN = 60_000;
+  afterEach(() => jest.setSystemTime(NOW));
+  function addConfirmed(db: SchedulingFakeDb, id: string, start: Date, coachId: string): void {
+    db.addSession({
+      id,
+      coach_id: coachId,
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * MIN),
+      video_url: 'https://meet.example.com/r6',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+    });
+  }
+  function settled(db: SchedulingFakeDb, sessionId: string, userId: string, kind: string, start: Date) {
+    db.deliveryLogs.push({
+      id: `sent-${sessionId}-${userId}`,
+      session_id: sessionId,
+      user_id: userId,
+      kind,
+      status: 'sent',
+      attempts: 1,
+      lease_until: null,
+      claim_token: null,
+      session_start_at: start,
+      inapp_done_at: NOW,
+      push_done_at: NOW,
+      notification_id: null,
+      last_error: null,
+      created_at: NOW,
+    });
+  }
+  function failInserts(db: SchedulingFakeDb) {
+    const create = db.notificationDeliveryLog.create;
+    db.notificationDeliveryLog.create = async () => {
+      throw new Prisma.PrismaClientKnownRequestError('synthetic pool timeout before insert', {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    };
+    return () => {
+      db.notificationDeliveryLog.create = create;
+    };
+  }
+
+  it.each([
+    {
+      label: '1h',
+      kind: NotificationKind.BOOKING_REMINDER_1H,
+      // Final due tick: the trailing session sits at the band's lower edge.
+      trailingMinutes: 55,
+      // 250 settled sessions earlier in the catch-up interval at the next tick.
+      prefixFrom: 31,
+      prefixSpan: 18,
+      cadence: 5,
+      run: (r: SessionReminderJob) => r.runOneHourReminderSweep(),
+    },
+    {
+      label: '24h',
+      kind: NotificationKind.BOOKING_REMINDER_24H,
+      trailingMinutes: 24 * 60 - 14,
+      // Absolute 23h31m..23h44m: below the band now, and still in the
+      // catch-up interval (and ahead of the trailing session) at +15m.
+      prefixFrom: 24 * 60 - 29,
+      prefixSpan: 14,
+      cadence: 15,
+      run: (r: SessionReminderJob) => r.runTwentyFourHourReminderSweep(),
+    },
+  ])(
+    '$label: a first claim that failed is delivered at the next real tick behind 250 already-reminded sessions',
+    async ({ kind, trailingMinutes, prefixFrom, prefixSpan, cadence, run }) => {
+      const { db, notifications, reminder } = harness();
+      for (let i = 0; i < 250; i++) {
+        const start = new Date(
+          NOW.getTime() + prefixFrom * MIN + Math.floor((i * prefixSpan * MIN) / 250 / MIN) * MIN,
+        );
+        const coachId = `coach-prefix-${i}`;
+        addConfirmed(db, `prefix-${String(i).padStart(3, '0')}`, start, coachId);
+        settled(db, `prefix-${String(i).padStart(3, '0')}`, 'client-1', kind, start);
+        settled(db, `prefix-${String(i).padStart(3, '0')}`, coachId, kind, start);
+      }
+      const trailingStart = new Date(NOW.getTime() + trailingMinutes * MIN);
+      addConfirmed(db, 'trailing', trailingStart, 'coach-1');
+      const restore = failInserts(db);
+      await withReminders(() => run(reminder));
+      expect(db.deliveryLogs.filter((l) => l.session_id === 'trailing')).toHaveLength(0);
+      restore();
+      // Advance real cadence through the catch-up interval; the trailing
+      // session must be claimed and delivered exactly once on the way.
+      for (let t = 1; t * cadence <= 30; t++) {
+        jest.setSystemTime(new Date(NOW.getTime() + t * cadence * MIN));
+        await withReminders(() => run(reminder));
+      }
+      const trailingRows = db.deliveryLogs.filter((l) => l.session_id === 'trailing');
+      expect(trailingRows.map((l) => [l.user_id, l.status]).sort()).toEqual([
+        ['client-1', 'sent'],
+        ['coach-1', 'sent'],
+      ]);
+      const trailingSends = notifications.rows.filter(
+        (r) => r.kind === kind && (r.payload as Record<string, unknown>)?.sessionId === 'trailing',
+      );
+      expect(trailingSends).toHaveLength(2);
+      // Nothing in the settled prefix was sent again.
+      expect(
+        notifications.rows.filter((r) =>
+          String((r.payload as Record<string, unknown>)?.sessionId ?? '').startsWith('prefix-'),
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it('the walk keeps the no-back-dated-reminder rule behind a full page (late booking is skipped)', async () => {
+    const { db, notifications, reminder } = harness();
+    for (let i = 0; i < 210; i++) {
+      const start = new Date(NOW.getTime() + (26 + (i % 20)) * MIN);
+      const id = `p-${String(i).padStart(3, '0')}`;
+      addConfirmed(db, id, start, `coach-p-${i}`);
+      settled(db, id, 'client-1', NotificationKind.BOOKING_REMINDER_1H, start);
+      settled(db, id, `coach-p-${i}`, NotificationKind.BOOKING_REMINDER_1H, start);
+    }
+    const late = new Date(NOW.getTime() + 50 * MIN);
+    db.addSession({
+      id: 'late-booked',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: late,
+      end_at: new Date(late.getTime() + 15 * MIN),
+      approved_at: NOW,
+      created_at: NOW,
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(db.deliveryLogs.filter((l) => l.session_id === 'late-booked')).toHaveLength(0);
+    expect(notifications.rows).toHaveLength(0);
+  });
+});

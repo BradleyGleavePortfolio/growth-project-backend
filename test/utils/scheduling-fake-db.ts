@@ -16,9 +16,45 @@
  * each await exactly as they would against a real pool; the control test
  * turns both guards off to prove the harness can reproduce a double booking.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../../src/prisma.service';
 
 type Row = Record<string, unknown>;
+
+// S-SCHED-5 (B-634-7): the delivery-status values the real database accepts,
+// read from the migration's own NotificationDeliveryLog_status_check, so a
+// status the CHECK does not allow fails here exactly as it fails in Postgres.
+export function migrationDeliveryStatuses(): string[] {
+  const sql = fs.readFileSync(
+    path.resolve(
+      __dirname,
+      '..',
+      '..',
+      'prisma',
+      'migrations',
+      '20270222000000_scheduling_lifecycle_integrity',
+      'migration.sql',
+    ),
+    'utf8',
+  );
+  const m = /"NotificationDeliveryLog_status_check"\s*CHECK\s*\(\s*"status"\s+IN\s*\(([^)]*)\)/.exec(sql);
+  if (!m) throw new Error('NotificationDeliveryLog_status_check not found in migration 20270222000000');
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+}
+const DELIVERY_STATUSES = new Set(migrationDeliveryStatuses());
+
+function checkDeliveryStatus(data: Row): void {
+  if (!('status' in data)) return;
+  if (DELIVERY_STATUSES.has(String(data.status))) return;
+  // Postgres 23514 check_violation, surfaced by Prisma as an unknown request error.
+  throw Object.assign(
+    new Error(
+      `new row for relation "NotificationDeliveryLog" violates check constraint "NotificationDeliveryLog_status_check" (status=${String(data.status)})`,
+    ),
+    { code: '23514' },
+  );
+}
 
 const OCCUPYING = new Set(['requested', 'scheduled', 'pending_provider']);
 
@@ -465,6 +501,7 @@ export class SchedulingFakeDb {
           l.kind === args.data.kind,
       );
       if (dup) throw Object.assign(new TypeError('Unique constraint failed'), { code: 'P2002' });
+      checkDeliveryStatus(args.data);
       // Column defaults of migration 20270222000000.
       const row = {
         id: `log-${++this.seq}`,
@@ -500,6 +537,7 @@ export class SchedulingFakeDb {
     },
     updateMany: async (args: { where?: Row; data: Row }) => {
       await this.tick();
+      checkDeliveryStatus(args.data);
       let count = 0;
       this.deliveryLogs.forEach((l, i) => {
         if (!this.matches(l, args.where, 'other')) return;
