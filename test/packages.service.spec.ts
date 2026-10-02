@@ -178,6 +178,21 @@ describe('PackagesService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('C01 — allows exactly 0 (free package, one_time, no Stripe) but not 0 for recurring or a combo', async () => {
+      const free = await svc.create('c1', { name: 'Clinic comp', amount_cents: 0 });
+      expect(free.amount_cents).toBe(0);
+      expect(free.stripe_price_id ?? null).toBeNull();
+      await expect(
+        svc.create('c1', { name: 'r0', amount_cents: 0, billing_type: 'recurring', interval: 'month' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        svc.create('c1', { name: 'combo0', amount_cents: 0, recurring_amount_cents: 1000 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.create('c1', { name: 'one cent', amount_cents: 1 })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
     it('rejects recurring without interval', async () => {
       await expect(
         svc.create('c1', {

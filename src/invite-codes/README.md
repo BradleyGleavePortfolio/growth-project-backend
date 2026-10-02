@@ -88,25 +88,43 @@ Both refuse:
 - Codes whose owning coach has `subscription_status` of `canceled` or
   `paused` (the coach is not currently accepting clients).
 
-## Atomic attach
+## Atomic attach (the ONE canonical writer)
 
-`attachUserToCoachByCode(userId, code)` runs in a Prisma interactive
-transaction:
+`attachUserToCoachByCode(userId, code)` is the only code path that sets
+`User.coach_id` from an invite code. `/auth/attach-invite-code`,
+`/auth/select-role`, `/auth/signup-with-code`, `/auth/google` and
+`/auth/apple` all delegate to it.
 
-1. Resolve the code to a coach id (via `CoachProfile` first, then
-   legacy `InviteCode`).
-2. Refuse OWNER callers — OWNERs are not coached.
-3. For legacy codes, re-check `revoked` / `expires_at` / `max_uses`
-   inside the transaction and bump `used_count` with optimistic
-   concurrency on the row's prior `used_count`. The second concurrent
-   redeemer of the last seat fails with `Invalid or expired invite
-   code`.
-4. Update the user with `role: 'student'` and the resolved
-   `coach_id`.
+1. Trim and resolve the code to its coach (`CoachProfile` permanent code
+   first, then `InviteCode` row) with **no** lifecycle checks yet.
+2. Refuse `owner` (`owner_cannot_redeem`) and `coach` / `sub_coach`
+   (`coach_cannot_redeem`) — never demoted, never re-parented.
+3. Redeemer already attached:
+   - to the **same** coach → idempotent success `already_attached: true`:
+     no write, no seat, no `INVITE_REDEEMED` event — even if the invite is
+     now exhausted, expired or revoked (a retried single-use invite must
+     succeed; attach state cannot change, so there is nothing to protect);
+   - to a **different** coach → `409 already_attached_to_different_coach`.
+4. New redemption: full lifecycle (revoked / expired / exhausted / coach
+   role), coach subscription (`coach_not_accepting_clients`), then in ONE
+   transaction on a fresh read: intended-recipient check
+   (`invite_intended_email_mismatch`), capacity-conditional seat bump
+   (`used_count < max_uses`), first-redeemer attribution
+   (`accepted_by_user_id`), and the conditional attach
+   `updateMany({ id, role: 'student', coach_id: null })`. A lost race rolls
+   the seat back and resolves to `already_attached` (same coach) or 409.
 
-The `bumped.count !== 1` guard is the optimistic-concurrency lever —
-Prisma `updateMany` returns the affected row count and we treat
-anything other than 1 as a lost race.
+Response contract for callers (mobile): `already_attached: true` means "this
+client already belongs to this coach"; it is **not** a fresh redemption. A
+returning Google/Apple sign-in that still carries a cached code gets
+`invite_attached: true` from this replay path. The replay does not re-check
+the coach's subscription, because it changes no state. Do not show
+"you joined" UI or count a new client from it; only `already_attached: false`
+is a new redemption.
+
+Tests: `test/invite-attach-idempotent-replay.spec.ts`,
+`test/select-role-canonical-attach.spec.ts`,
+`test/invite-attach-reliability.spec.ts`.
 
 ## Security and tenancy rules
 

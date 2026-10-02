@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import {
   DunningLockoutGuard,
   isAllowedWhileLocked,
+  isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
 import { LOCKED_DUNNING_CODE } from '../src/checkout/dunning-v2/dunning-v2.cadence';
@@ -64,8 +65,48 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'admin/auth/impersonate',
     'coach/me', // only the coach BILLING subtree is carved out
     'coach/me/clients',
+    // The AI consent carve-out is method-aware (isPrivacyOperationWhileLocked);
+    // the method-blind path rules never admit it, or anything under /me.
+    'me/ai-consent',
+    'me/ai-consent/roman',
+    'me',
+    'me/profile',
+    'me/ai-consent-export',
+    'me/ai-consentroman',
+    'coach/me/ai-consent',
   ])('BLOCKS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(false);
+  });
+});
+
+describe('isPrivacyOperationWhileLocked (exact METHOD + PATH, Sol B-622-1)', () => {
+  it.each([
+    ['GET', 'me/ai-consent'],
+    ['get', 'me/ai-consent'],
+    ['POST', 'me/ai-consent/roman'],
+    ['DELETE', 'me/ai-consent/roman'],
+  ])('ALLOWS %s %s', (m, p) => {
+    expect(isPrivacyOperationWhileLocked(m, p)).toBe(true);
+  });
+
+  it.each([
+    ['GET', 'me/ai-consent/export'],
+    ['POST', 'me/ai-consent/roman/messages'],
+    ['POST', 'me/ai-consent'],
+    ['GET', 'me/ai-consent/roman'],
+    ['PUT', 'me/ai-consent/roman'],
+    ['PATCH', 'me/ai-consent/roman'],
+    ['DELETE', 'me/ai-consent'],
+    ['HEAD', 'me/ai-consent'],
+    ['OPTIONS', 'me/ai-consent/roman'],
+    ['GET', 'me/ai-consent/'],
+    ['GET', 'me/ai-consent-export'],
+    ['GET', 'coach/me/ai-consent'],
+    ['GET', 'me'],
+    [undefined, 'me/ai-consent'],
+    ['', 'me/ai-consent/roman'],
+  ])('BLOCKS %s %s', (m, p) => {
+    expect(isPrivacyOperationWhileLocked(m, p)).toBe(false);
   });
 });
 
