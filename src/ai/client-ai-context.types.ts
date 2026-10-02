@@ -168,14 +168,14 @@ export interface FastingSummary {
   last_fast: { duration_hours: number; ended_at: string } | null;
 }
 
-// M1 — Next upcoming coaching session for the client.
+// M1 — Next upcoming coaching session for the client. R2b (A-626-2): no
+// coach-internal note field; the client's AI context is own-data only.
 export interface NextSessionSummary {
   date: string; // ISO-8601
   title: string;
-  coach_note: string | null;
 }
 
-// M1 — A single community win (anonymised, roster-scoped).
+// M1 — One of the client's OWN community wins (R2b: never another member's).
 export interface CommunityWinSummary {
   title: string;
   created_at: string; // ISO-8601

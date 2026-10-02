@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import type { User } from '@prisma/client';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import {
@@ -8,6 +9,12 @@ import {
 } from '../inbox/community-coach-inbox.repository';
 import { CommunityAccessService } from '../community-access.service';
 import { TriageCacheService } from './triage-cache.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import {
+  AiConsentRequiredException,
+  AiEgressPolicyException,
+} from '../../ai-egress/ai-consent-required.exception';
+import { AiTriageUnavailableException } from './ai-triage-unavailable.exception';
 import buildInboxTriagePrompt, {
   PROMPT_VERSION as INBOX_TRIAGE_VERSION,
   TriagePromptItem,
@@ -79,6 +86,9 @@ const ALARMIST_PATTERNS: readonly RegExp[] = [
 interface Candidate {
   id: string;
   kind: 'message' | 'post';
+  // R2b — the client whose words these are; only authors with a live box-2
+  // grant enter the prompt. Never sent to the provider.
+  authorId: string;
   preview: string;
   cohortName: string;
   authorDisplayName: string;
@@ -95,6 +105,8 @@ export class AiTriageService {
     private readonly repo: CommunityCoachInboxRepository,
     private readonly access: CommunityAccessService,
     private readonly cache: TriageCacheService,
+    // R2b — box-2 consent filter for the authors in the prompt.
+    private readonly egress: AiEgressService,
   ) {}
 
   /**
@@ -108,12 +120,44 @@ export class AiTriageService {
     if (cohortIds.length === 0) {
       throw new ForbiddenException(NOT_COACH);
     }
+    return this.triageOnce(user, cohortIds, true);
+  }
 
-    const candidates = await this.fetchCandidates(cohortIds);
-    const freshnessKey = TriageCacheService.freshnessKey({
+  /**
+   * One triage pass. C-626-3 — if an author withdraws box 2 between the
+   * consent filter and the send, the gateway refuses the whole prompt; the
+   * pass is then re-run ONCE from a fresh candidate fetch and consent read,
+   * so the remaining consenting authors still get triage instead of an
+   * unexplained empty result.
+   */
+  private async triageOnce(
+    user: User,
+    cohortIds: string[],
+    mayRefilter: boolean,
+  ): Promise<TriageResponse> {
+    const fetched = await this.fetchCandidates(cohortIds);
+    // R2b — only items whose author holds a live box-2 grant reach the AI
+    // (D2 box 2: "only your own data is used", processed by Anthropic). The
+    // rest stay in the regular inbox, untriaged. The grant is read live here
+    // and again by the gateway at send time.
+    const consented = await this.egress.consentedClients(fetched.map((c) => c.authorId));
+    const candidates = fetched.filter((c) => consented.has(c.authorId));
+    // The cache key covers the exact consented item set, so a withdrawal
+    // changes the key and a cached triage built from that author's words is
+    // never served again.
+    const freshnessKey = `${TriageCacheService.freshnessKey({
       itemCount: candidates.length,
       newestCreatedAt: newestCreatedAt(candidates),
-    });
+    })}:${createHash('sha256')
+      .update(
+        candidates
+          .map((c) => c.id)
+          .sort()
+          .join(','),
+      )
+      .digest('hex')
+      .slice(0, 16)}`;
+    const authorIds = [...new Set(candidates.map((c) => c.authorId))];
 
     // Cache check — a fresh (non-expired, same-freshness) row short-circuits
     // the whole pipeline. A new unanswered message changes freshnessKey → miss.
@@ -135,12 +179,16 @@ export class AiTriageService {
 
     let raw: string;
     try {
-      raw = await this.invokeWithTimeout(user, prompt.system, prompt.user);
+      raw = await this.invokeWithTimeout(user, prompt.system, prompt.user, authorIds);
     } catch (err) {
+      if (mayRefilter && err instanceof AiConsentRequiredException) {
+        this.logger.log(`triage consent changed before send coach=${user.id}; re-filtering once`);
+        return this.triageOnce(user, cohortIds, false);
+      }
       this.logger.warn(
         `triage LLM failed/timed out coach=${user.id}: ${(err as Error).message}`,
       );
-      return emptyTriage(new Date());
+      throw this.unavailable(err);
     }
 
     let parsed = this.tryParse(raw);
@@ -148,19 +196,23 @@ export class AiTriageService {
       const repairUser = this.repairPrompt(prompt.user, raw);
       let repaired: string;
       try {
-        repaired = await this.invokeWithTimeout(user, prompt.system, repairUser);
+        repaired = await this.invokeWithTimeout(user, prompt.system, repairUser, authorIds);
       } catch (err) {
+        if (mayRefilter && err instanceof AiConsentRequiredException) {
+          this.logger.log(`triage consent changed before repair coach=${user.id}; re-filtering once`);
+          return this.triageOnce(user, cohortIds, false);
+        }
         this.logger.warn(
           `triage repair failed coach=${user.id}: ${(err as Error).message}`,
         );
-        return emptyTriage(new Date());
+        throw this.unavailable(err);
       }
       parsed = this.tryParse(repaired);
       if (!parsed) {
         this.logger.warn(
-          `triage output invalid after repair coach=${user.id} — failing empty`,
+          `triage output invalid after repair coach=${user.id} — triage unavailable`,
         );
-        return emptyTriage(new Date());
+        throw new AiTriageUnavailableException();
       }
     }
 
@@ -175,6 +227,16 @@ export class AiTriageService {
       `triage generated coach=${user.id} items=${response.source_item_ids.length} model=${this.lastModelUsed} prompt=${INBOX_TRIAGE_VERSION}`,
     );
     return response;
+  }
+
+  /**
+   * C-626-4 — an AI failure is an explicit 503 `ai_triage_unavailable`, never
+   * an empty triage the coach would read as "nothing needs attention". An
+   * egress policy refusal keeps its own code (503 `ai_egress_blocked`, a
+   * server defect with a support path). Failures are never cached.
+   */
+  private unavailable(err: unknown): AiEgressPolicyException | AiTriageUnavailableException {
+    return err instanceof AiEgressPolicyException ? err : new AiTriageUnavailableException();
   }
 
   /**
@@ -293,6 +355,7 @@ export class AiTriageService {
     return {
       id: m.id,
       kind: 'message',
+      authorId: m.sender.id,
       preview: preview(m.body),
       cohortName,
       authorDisplayName: m.sender.name,
@@ -304,6 +367,7 @@ export class AiTriageService {
     return {
       id: p.id,
       kind: 'post',
+      authorId: p.author.id,
       preview: preview(p.body ?? p.title ?? ''),
       cohortName,
       authorDisplayName: p.author.name,
@@ -334,11 +398,14 @@ export class AiTriageService {
     user: User,
     systemPrompt: string,
     userMessage: string,
+    authorIds: readonly string[],
   ): Promise<string> {
     const invocation = this.gateway.invoke({
       capability: COMMUNITY_AI_TRIAGE_CAPABILITY,
       requester: { id: user.id, role: user.role },
       tenantCoachId: user.id,
+      // R2b — every author in the prompt (cohort-scoped above).
+      dataClientIds: authorIds,
       userMessage,
       systemPrompt,
       maxTokens: 1200,
