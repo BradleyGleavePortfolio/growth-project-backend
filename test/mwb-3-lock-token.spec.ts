@@ -421,6 +421,13 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
         coach_id: HEAD_COACH_ID,
       },
     });
+    // Clinic C13 fix round: SubCoachScopeService requires an explicit
+    // membership relation (an active Team Mode seat or an open Phase 11
+    // delegation) — `role='coach' + coach_id` alone no longer makes a
+    // sub-coach. Give the fixture the seat a head coach would have created.
+    await prisma.teamSubCoachAssignment.create({
+      data: { head_coach_id: HEAD_COACH_ID, sub_coach_id: IN_TEAM_SUBCOACH_ID },
+    });
     // A DIFFERENT head coach (foreign tenant).
     await prisma.user.create({
       data: {
@@ -442,6 +449,13 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
         role: 'coach',
         coach_id: OTHER_HEAD_COACH_ID,
       },
+    });
+    // Clinic C13 fix round: SubCoachScopeService requires an explicit
+    // membership relation (an active Team Mode seat or an open Phase 11
+    // delegation) — `role='coach' + coach_id` alone no longer makes a
+    // sub-coach. Give the fixture the seat a head coach would have created.
+    await prisma.teamSubCoachAssignment.create({
+      data: { head_coach_id: OTHER_HEAD_COACH_ID, sub_coach_id: OTHER_TEAM_SUBCOACH_ID },
     });
     // A STUDENT principal — never a coach; getHeadCoachIdForSubCoach returns
     // null, so the gate must DENY (403), never granting plan-edit rights.

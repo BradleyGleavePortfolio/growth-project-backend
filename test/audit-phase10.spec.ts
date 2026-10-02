@@ -131,14 +131,44 @@ describe('AuditService append-only contract', () => {
     expect(deleteMethods).toHaveLength(0);
   });
 
-  it('exposes only write and list methods (plus constructor)', () => {
+  it('exposes only write, writeTx and list methods (plus constructor)', () => {
     const svc = new AuditService(buildPrisma());
     const publicMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(svc)).filter(
       (m) => m !== 'constructor' && !m.startsWith('_'),
     );
-    // write + list are the only public methods
-    expect(publicMethods).toEqual(expect.arrayContaining(['write', 'list']));
-    expect(publicMethods.filter((m) => m !== 'write' && m !== 'list')).toHaveLength(0);
+    // write + list are the only public methods, plus the clinic C13
+    // transactional `writeTx` (an INSERT through a caller-supplied tx client
+    // that throws instead of swallowing — still append-only).
+    const ALLOWED = ['write', 'writeTx', 'list'];
+    expect(publicMethods).toEqual(expect.arrayContaining(['write', 'list', 'writeTx']));
+    expect(publicMethods.filter((m) => !ALLOWED.includes(m))).toHaveLength(0);
+  });
+
+  it('writeTx inserts through the supplied transaction client and propagates failures', async () => {
+    const svc = new AuditService(buildPrisma());
+    const create = jest.fn(async ({ data }: any) => ({ id: 'al-1', ...data }));
+    const tx: any = { auditLog: { create } };
+    await svc.writeTx(tx, {
+      action: AuditAction.USER_ROLE_CHANGED,
+      actorId: 'u1',
+      actorRole: null,
+      targetType: 'user',
+      targetId: 'u1',
+      metadata: { to: 'coach' },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'user.role_changed',
+        actor_id: 'u1',
+        actor_role: null,
+        target_type: 'user',
+        target_id: 'u1',
+      }),
+    });
+    create.mockRejectedValueOnce(new Error('audit down'));
+    await expect(
+      svc.writeTx(tx, { action: AuditAction.USER_ROLE_CHANGED, targetType: 'user' }),
+    ).rejects.toThrow('audit down');
   });
 });
 

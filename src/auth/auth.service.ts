@@ -3,22 +3,34 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
   UnauthorizedException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
   ServiceUnavailableException,
+  NotFoundException,
 } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 // Named import (not `import ws from 'ws'`) — see supabase.service.ts for why.
 import { WebSocket as WS } from 'ws';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   InviteCodesService,
   INVITE_CODE_MAX_LENGTH,
   INVITE_CODE_MIN_LENGTH,
   INVITE_CODE_PREFIX,
+  generateInviteCodeCandidate,
+  coachCannotRedeemBody,
+  isCoachLikeRole,
+  inviteAttachErrorCode,
+  INVITE_ATTACH_ERROR,
+  type InviteAttachErrorCode,
 } from '../invite-codes/invite-codes.service';
+import type { IntendedRole } from './auth.dto';
+import { normalizeEmail } from './email-normalize';
+import { LoginThrottleResetService } from '../throttler/login-throttle-reset.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AuditAction, AuditService, AuditWriteInput } from '../audit/audit.service';
@@ -43,6 +55,130 @@ function selfServiceBecomeCoachEnabled(): boolean {
   return (process.env.ALLOW_SELF_SERVICE_BECOME_COACH ?? '').toLowerCase() === 'true';
 }
 
+// Clinic launch C13 (owner direction 2026-09-30, supersedes the "no
+// self-promotion" clause of R-ONBOARDING-ROLE-GATE-1 for SIGNUP TIME ONLY):
+// a brand-new account may be created directly as a coach. This is not a
+// runtime escalation — there is no existing account, no roster, no data —
+// and it goes through exactly one code path (`createSignupUser`) that every
+// signup provider shares. The gate above is untouched: an EXISTING account
+// can still only become a coach via OWNER promote (or the legacy env-gated
+// become-coach).
+//
+// Attempts to find an unused CoachProfile.invite_code before the signup tx.
+const SIGNUP_COACH_CODE_ATTEMPTS = 8;
+// Re-runs of the coach signup transaction when the pre-checked invite code
+// loses a P2002 race on CoachProfile.invite_code (the whole tx is retried
+// with a fresh code; nothing else is retried).
+const SIGNUP_COACH_TX_ATTEMPTS = 3;
+
+// Kill switch (fix round, Opus B2 / Grok C7). Default ON. When 'false' | '0' |
+// 'off', `intended_role` is accepted by the DTOs (so older/newer app builds
+// never get a 400) but IGNORED: every signup creates a client, and
+// /auth/signup-policy reports `role_choice: false` so the picker is hidden.
+export function signupRoleChoiceEnabled(): boolean {
+  const v = (process.env.SIGNUP_ROLE_CHOICE_ENABLED ?? 'true').trim().toLowerCase();
+  return v !== 'false' && v !== '0' && v !== 'off';
+}
+
+// Grok B3: Supabase's enumeration protection answers `signUp` for an
+// already-registered address with a placeholder user (`identities: []`) and
+// no error. Treat that exactly like our own duplicate check.
+function isObfuscatedExistingSupabaseUser(
+  user: { identities?: unknown } | null | undefined,
+): boolean {
+  return !!user && Array.isArray(user.identities) && user.identities.length === 0;
+}
+
+// A-597-1 (Sol): a P2002 on User.email / User.supabase_id means a competing
+// signup for the same address committed first. The winner owns the Supabase
+// identity (Supabase returns the SAME unconfirmed user to both callers), so
+// the loser must never delete it.
+function isSignupIdentityUniqueViolation(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false;
+  const target = (err.meta as { target?: unknown } | undefined)?.target;
+  const fields = Array.isArray(target)
+    ? target.map(String)
+    : typeof target === 'string'
+      ? [target]
+      : [];
+  return fields.some((f) => f.includes('email') || f.includes('supabase_id'));
+}
+
+// A-597-1: per-request ownership marker written into the Supabase user's
+// metadata at signUp. Supabase never updates an existing unconfirmed user on
+// a repeated signUp ("do not update the user because we can't be sure of
+// their claimed identity", auth signup.go), so the marker on the returned
+// user names the request that CREATED the identity.
+//
+// Fix round 4: the marker is `<nonce>.<HMAC-SHA256(server key, canonical email)>`
+// so only THIS server can mint one. `user_metadata` is writable through the
+// public anon `signUp`, so an unauthenticated marker would let anyone label an
+// identity "created by /auth/register"; the MAC makes stranded-identity
+// adoption (`adoptStrandedSignupIdentity`) no wider than a normal register.
+// Keyed with the service-role key (never sent anywhere); without a key no
+// marker verifies and adoption is simply off.
+export const SIGNUP_ATTEMPT_METADATA_KEY = 'tgp_signup_attempt';
+function signupAttemptMarker(user: { user_metadata?: unknown } | null | undefined): string | null {
+  const meta = user?.user_metadata;
+  if (!meta || typeof meta !== 'object') return null;
+  const v = (meta as Record<string, unknown>)[SIGNUP_ATTEMPT_METADATA_KEY];
+  return typeof v === 'string' ? v : null;
+}
+function signupAttemptMac(canonicalEmail: string): string | null {
+  // MAC over the canonical address only (the caller-typed address, never any
+  // value read back from Supabase); the nonce travels in clear and only makes
+  // each request's marker unique for the creator check in `register`.
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  if (key.length < 16) return null;
+  return crypto
+    .createHmac('sha256', key)
+    .update(`tgp-signup-attempt:v2:${canonicalEmail}`)
+    .digest('base64url');
+}
+export function mintSignupAttemptMarker(canonicalEmail: string): string {
+  return `${crypto.randomUUID()}.${signupAttemptMac(canonicalEmail) ?? 'unsigned'}`;
+}
+export function isServerMintedSignupMarker(marker: string | null, canonicalEmail: string): boolean {
+  if (!marker) return false;
+  const dot = marker.indexOf('.');
+  if (dot <= 0) return false;
+  const expected = signupAttemptMac(canonicalEmail);
+  if (!expected) return false;
+  const got = Buffer.from(marker.slice(dot + 1));
+  const want = Buffer.from(expected);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+// Opus B-597-2: proof that the caller knows the password of a Supabase
+// identity it did NOT create. GoTrue checks the password BEFORE the
+// confirmation state (auth token.go: `invalid_credentials` first, then
+// `email_not_confirmed`), so `email_not_confirmed` means "right password,
+// still unconfirmed". Anything else is not proof.
+function isEmailNotConfirmedError(
+  error: { code?: unknown; message?: unknown } | null | undefined,
+): boolean {
+  if (!error) return false;
+  if (error.code === 'email_not_confirmed') return true;
+  return typeof error.message === 'string' && /email not confirmed/i.test(error.message);
+}
+function isInviteCodeUniqueViolation(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false;
+  const target = (err.meta as { target?: unknown } | undefined)?.target;
+  const fields = Array.isArray(target)
+    ? target.map(String)
+    : typeof target === 'string'
+      ? [target]
+      : [];
+  return fields.some((f) => f.includes('invite_code'));
+}
+
+type SignupProvider = 'email' | 'google' | 'apple';
+// `throttleIp` (Opus C13-C1) is the TRUSTED client IP the rate limiter uses
+// (Fly-Client-IP first, same resolution as UserThrottlerGuard). `ip` stays the
+// audit-row IP. The OAuth coach-signup ceiling must never key on the
+// client-controlled first X-Forwarded-For hop.
+type AuditCtx = { ip?: string | null; userAgent?: string | null; throttleIp?: string | null };
+
 @Injectable()
 export class AuthService {
   private supabaseAdmin;
@@ -55,6 +191,9 @@ export class AuthService {
     private audit: AuditService,
     private appleVerifier: AppleVerifierService,
     private googleVerifier: GoogleVerifierService,
+    // Optional so the many hand-built AuthService test doubles keep compiling;
+    // AuthModule always wires it (ThrottlerModule is imported there).
+    @Optional() private loginThrottle?: LoginThrottleResetService,
   ) {
     // Supabase Admin SDK for user management (service role key).
     // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
@@ -85,13 +224,289 @@ export class AuthService {
     });
   }
 
-  async register(data: {
-    email: string;
-    password: string;
-    name: string;
-    phone?: string;
-    ref?: string;
-  }) {
+  // Clinic launch C03 — one attach path for signup-with-code / Google / Apple.
+  // The auth call itself never fails because of the attach (the user IS
+  // signed in and can retry via /auth/attach-invite-code), but the outcome is
+  // no longer swallowed: callers get `invite_attached` plus a safe reason
+  // code in `invite_attach_error` and mobile can show the right screen.
+  private async tryAttachInviteCode(
+    flow: 'signupWithCode' | 'googleAuth' | 'appleAuth',
+    userId: string,
+    inviteCode: string,
+  ): Promise<{ invite_attached: boolean; invite_attach_error?: InviteAttachErrorCode }> {
+    try {
+      await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
+      return { invite_attached: true };
+    } catch (err) {
+      const code = inviteAttachErrorCode(err);
+      this.logger.warn(
+        `${flow} invite_code attach failed for user=${userId} code=${code}: ${(err as Error).message}`,
+      );
+      return { invite_attached: false, invite_attach_error: code };
+    }
+  }
+
+  // ---- C13: signup-time role choice --------------------------------------
+  //
+  // The ONLY place a client-supplied role reaches the User table. Called by
+  // register / googleAuth / appleAuth strictly on the "no local row exists"
+  // branch; existing rows never pass through here.
+  //
+  //   intended_role absent | 'client'  -> `role: 'student'` via the exact same
+  //                                        prisma.user.create as before.
+  //   intended_role 'coach'            -> ONE transaction: User(role coach) +
+  //                                        CoachSubscription upsert
+  //                                        {tier free, status active, update {}}
+  //                                        (identical to becomeCoach; never
+  //                                        overwrites a row) + CoachProfile with
+  //                                        a fresh GP- invite code (what
+  //                                        /coaches/me/invite-link would
+  //                                        otherwise lazily mint). Then a
+  //                                        USER_ROLE_CHANGED audit row with
+  //                                        actor = the new user.
+  //
+  // A new coach is created with coach_id = null (forced, Grok C1) and no
+  // invite code is ever redeemed on this path, so the "student with a
+  // coach_id becomes a coach" combination cannot arise here. The reverse
+  // direction (a coach gaining a coach_id through guest checkout or a code)
+  // is closed in GuestCheckoutService / InviteCodesService (fix round A1/B1).
+  //
+  // Fix round: the user.role_changed audit row is written INSIDE the
+  // transaction with the throwing AuditService.writeTx, so a coach row can
+  // never exist without its audit row (Opus B3 / Grok B2). actorRole is null:
+  // there was no prior role (becomeCoach records the old role, 'student').
+  private async createSignupUser(
+    data: Prisma.UserUncheckedCreateInput,
+    intendedRole: IntendedRole | undefined,
+    provider: SignupProvider,
+    ctx: AuditCtx = {},
+    opts: { inviteCode?: string } = {},
+  ) {
+    if (this.effectiveIntendedRole(intendedRole) !== 'coach') {
+      return this.prisma.user.create({ data: { ...data, role: 'student' } });
+    }
+
+    let inviteCode = opts.inviteCode ?? (await this.pickUnusedCoachInviteCode());
+    const auditBase: Omit<
+      AuditWriteInput,
+      'actorId' | 'targetUserId' | 'targetId' | 'tenantCoachId' | 'actorEmail'
+    > = {
+      action: AuditAction.USER_ROLE_CHANGED,
+      actorRole: null,
+      targetType: 'user',
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      metadata: { from: null, to: 'coach', via: 'signup_role_choice', provider },
+    };
+
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const user = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.user.create({
+            data: { ...data, role: 'coach', coach_id: null },
+          });
+          // Same shape as becomeCoach: `update: {}` never touches an existing row.
+          await tx.coachSubscription.upsert({
+            where: { coach_id: created.id },
+            create: { coach_id: created.id, tier: 'free', status: 'active' },
+            update: {},
+          });
+          // Grok C5: `plan_tier` / `ai_monthly_spend_cap_cents` keep their
+          // schema defaults (flat_300 / 5000) exactly like promoteUser and
+          // becomeCoach. Neither is load-bearing for entitlements: the AI
+          // envelope is CoachAIBudget (tier-aware, see ai-credits), and the
+          // sub-coach capacity map already resolves unknown tiers to the
+          // flat_300 value. Introducing a new tier string here would be a
+          // schema-level decision, not a signup one.
+          await tx.coachProfile.create({
+            data: { user_id: created.id, invite_code: inviteCode },
+          });
+          // Reviewable like every other elevation: actor = target so operators
+          // scanning user.role_changed see signup-time coaches next to promote /
+          // become-coach rows. Throws -> whole transaction rolls back.
+          await this.audit.writeTx(tx, {
+            ...auditBase,
+            actorId: created.id,
+            actorEmail: created.email,
+            targetUserId: created.id,
+            targetId: created.id,
+            tenantCoachId: created.id,
+          });
+          return created;
+        });
+        this.analytics.capture(user.id, Events.COACH_PROMOTED, {
+          via: 'signup_role_choice',
+          provider,
+          tier: 'free',
+        });
+        return user;
+      } catch (err) {
+        // Only the invite-code race is retried (Grok B3 / Opus C10): the
+        // pre-check ran outside the tx, so a concurrent coach signup can
+        // still win the same code. Anything else (email/supabase_id P2002,
+        // audit failure, DB outage) propagates unchanged.
+        if (isInviteCodeUniqueViolation(err) && attempt < SIGNUP_COACH_TX_ATTEMPTS) {
+          this.logger.warn(
+            `createSignupUser: invite code collision on attempt ${attempt}, retrying with a fresh code`,
+          );
+          inviteCode = await this.pickUnusedCoachInviteCode();
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  // CoachProfile.invite_code is @unique. A unique violation inside an
+  // interactive transaction aborts it, so we pick a free candidate up front
+  // (31^6 space; a collision after this check is astronomically unlikely and
+  // is retried once more by createSignupUser).
+  private async pickUnusedCoachInviteCode(): Promise<string> {
+    for (let attempt = 0; attempt < SIGNUP_COACH_CODE_ATTEMPTS; attempt++) {
+      const candidate = generateInviteCodeCandidate();
+      const taken = await this.prisma.coachProfile.findUnique({
+        where: { invite_code: candidate },
+        select: { id: true },
+      });
+      if (!taken) return candidate;
+    }
+    throw new InternalServerErrorException('Could not allocate a coach invite code');
+  }
+
+  // Kill switch applied at every entry point: when SIGNUP_ROLE_CHOICE_ENABLED
+  // is off, 'coach' degrades to the default (client) instead of erroring.
+  private effectiveIntendedRole(intendedRole: IntendedRole | undefined): IntendedRole | undefined {
+    if (!signupRoleChoiceEnabled()) return undefined;
+    return intendedRole;
+  }
+
+  // Case-insensitive "does this address already have a row" lookup (Grok A1).
+  // `User.email` is a case-sensitive unique index and legacy rows were stored
+  // as typed, so an exact `findUnique` misses `Jane@Example.com` when Google
+  // presents `jane@example.com`. Oldest row wins if legacy duplicates exist.
+  private async findUserByEmailInsensitive(email: string) {
+    return this.prisma.user.findFirst({
+      where: { email: { equals: normalizeEmail(email), mode: 'insensitive' } },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  // Sol A-597-1 (fix round 4): registration NEVER deletes a Supabase
+  // identity. Any delete issued after a failed local insert races every
+  // other binder of the same identity — a retried registration, and the
+  // Google/Apple create/link paths that Supabase auto-links by verified
+  // email — and a database lock cannot fence an external delete that outlives
+  // its transaction. So an identity whose local row could not be committed is
+  // RETAINED and recovered without any destructive step:
+  //   * unconfirmed: the next /auth/register for the address gets the same
+  //     identity back from Supabase and binds it (same path as today);
+  //   * confirmed (the user clicked the verification link first): the first
+  //     successful password sign-in adopts it as a client
+  //     (`adoptStrandedSignupIdentity`), exactly like Google/Apple first
+  //     contact; Google/Apple sign-in for the address binds it too.
+  // Logged by Supabase id only, for reconciliation.
+  private logRetainedSignupIdentity(
+    supabaseUserId: string,
+    createdByThisRequest: boolean,
+    reason: string,
+  ) {
+    this.logger.warn(
+      `register: retained Supabase user ${supabaseUserId} without a local row after ${reason} ` +
+        `(created_by_this_request=${createdByThisRequest}); recovered by retry, OAuth or first password sign-in`,
+    );
+  }
+
+  // A-597-1 recovery for a CONFIRMED stranded identity. Only reached after
+  // Supabase verified the password and no local row matches the verified id
+  // or the canonical address. Only identities that carry the register marker
+  // are adopted (a Supabase user created some other way still gets 401), and
+  // always as a client with no coach: role choice and invite attach are not
+  // replayed from user-editable metadata. A concurrent adopter/binder that
+  // commits first wins (P2002 → re-read).
+  private async adoptStrandedSignupIdentity(
+    supaUser: { id?: unknown; email?: unknown; user_metadata?: unknown } | null | undefined,
+    canonicalEmail: string,
+    ctx: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const supabaseUserId = typeof supaUser?.id === 'string' ? supaUser.id : '';
+    const verifiedEmail = typeof supaUser?.email === 'string' ? normalizeEmail(supaUser.email) : '';
+    if (
+      !supabaseUserId ||
+      verifiedEmail !== canonicalEmail ||
+      !isServerMintedSignupMarker(signupAttemptMarker(supaUser), canonicalEmail)
+    ) {
+      return null;
+    }
+    const meta = supaUser?.user_metadata as Record<string, unknown> | undefined;
+    const fullName = typeof meta?.full_name === 'string' ? meta.full_name.trim() : '';
+    try {
+      const created = await this.createSignupUser(
+        {
+          supabase_id: supabaseUserId,
+          email: canonicalEmail,
+          name: fullName || canonicalEmail.split('@')[0],
+          phone: null,
+          signup_ref: null,
+        },
+        undefined,
+        'email',
+        ctx,
+      );
+      this.logger.warn(`login: adopted stranded Supabase user ${supabaseUserId} as a client`);
+      return this.prisma.user.findUnique({ where: { id: created.id }, include: { profile: true } });
+    } catch (err) {
+      if (!isSignupIdentityUniqueViolation(err)) throw err;
+      return this.prisma.user.findUnique({
+        where: { supabase_id: supabaseUserId },
+        include: { profile: true },
+      });
+    }
+  }
+
+  // Grok B4: never create or link a local row for a Google identity whose
+  // email Google/Supabase has not confirmed. An unverified address could
+  // otherwise mint a coach (or link an email row) for an address the caller
+  // does not control. Rows matched by supabase_id are unaffected.
+  private googleEmailVerified(supaUser: {
+    email_confirmed_at?: string | null;
+    identities?: Array<{
+      provider?: string;
+      identity_data?: Record<string, unknown> | null;
+    }> | null;
+  }): boolean {
+    if (supaUser.email_confirmed_at) return true;
+    return (supaUser.identities ?? []).some(
+      (i) => i.provider === 'google' && i.identity_data?.email_verified === true,
+    );
+  }
+
+  // `invite_code` + `intended_role: 'coach'` is contradictory (a code attaches
+  // the user to a coach AS A CLIENT). Refuse before any provider round-trip so
+  // neither a Supabase user nor a local row is created for an ambiguous body.
+  private assertRoleChoiceCompatibleWithInviteCode(
+    intendedRole: IntendedRole | undefined,
+    inviteCode: string | undefined,
+  ) {
+    if (intendedRole === 'coach' && inviteCode) {
+      throw new BadRequestException({
+        error: 'intended_role_not_allowed_with_invite_code',
+        message:
+          'An invite code enrols you as a client of that coach. Remove the invite code to create a coach account, or sign up as a client.',
+      });
+    }
+  }
+
+  async register(
+    data: {
+      email: string;
+      password: string;
+      name: string;
+      phone?: string;
+      ref?: string;
+      intended_role?: IntendedRole;
+    },
+    ctx: AuditCtx = {},
+  ) {
     // Validate password strength before sending to Supabase
     const { password } = data;
     if (
@@ -105,9 +520,20 @@ export class AuthService {
       );
     }
 
+    // Fix round (Grok A1 / Opus C2): one canonical address for the existence
+    // check, the Supabase call and the stored value. Case-insensitive lookup
+    // so a case variant of a known address is a duplicate, not a new coach.
+    const email = normalizeEmail(data.email);
+    const intendedRole = this.effectiveIntendedRole(data.intended_role);
+
     // Check if user already exists in our DB
-    const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await this.findUserByEmailInsensitive(email);
     if (existing) throw new ConflictException('Email already registered');
+
+    // Grok B3: allocate the coach invite code BEFORE the Supabase signUp so
+    // the only post-signUp failure points are the DB write itself.
+    const inviteCode =
+      intendedRole === 'coach' ? await this.pickUnusedCoachInviteCode() : undefined;
 
     // Use Supabase native signup — this sends a real verification email automatically.
     // The redirect URL tells Supabase where to send the user after clicking the link.
@@ -117,29 +543,81 @@ export class AuthService {
       { realtime: { transport: WS as any } },
     );
 
+    // A-597-1: per-request ownership marker (see SIGNUP_ATTEMPT_METADATA_KEY).
+    const signupAttempt = mintSignupAttemptMarker(email);
     const { data: signupData, error } = await supaClient.auth.signUp({
-      email: data.email,
+      email,
       password: data.password,
       options: {
         emailRedirectTo: `${process.env.SUPABASE_REDIRECT_URL || 'tgp://verified'}`,
-        data: { full_name: data.name },
+        data: { full_name: data.name, [SIGNUP_ATTEMPT_METADATA_KEY]: signupAttempt },
       },
     });
 
     if (error) throw new BadRequestException(error.message);
     if (!signupData.user) throw new BadRequestException('Signup failed');
+    // Supabase enumeration protection: an existing address comes back as a
+    // placeholder user with `identities: []`. Same answer as our own check,
+    // and no local row is ever bound to the placeholder id.
+    if (isObfuscatedExistingSupabaseUser(signupData.user)) {
+      throw new ConflictException('Email already registered');
+    }
 
-    // Create user record in our DB immediately (role selection happens after verify)
-    const user = await this.prisma.user.create({
-      data: {
-        supabase_id: signupData.user.id,
-        email: data.email,
-        name: data.name,
-        phone: data.phone || null,
-        role: 'student',
-        signup_ref: data.ref ?? null,
-      },
-    });
+    // Create user record in our DB immediately. C13: role is fixed here from
+    // `intended_role` (default client/student); it is never re-selectable later.
+    const supabaseUserId = signupData.user.id;
+    // A-597-1: did THIS request create the Supabase identity, or did Supabase
+    // hand back an existing unconfirmed one (a concurrent or earlier signup)?
+    // Nothing is ever deleted either way (fix round 4).
+    const createdByThisRequest = signupAttemptMarker(signupData.user) === signupAttempt;
+    if (!createdByThisRequest) {
+      // Opus B-597-2: Supabase handed back an EXISTING unconfirmed identity
+      // whose password it did not update. Bind it only if this caller proves
+      // it knows that password; otherwise someone else (possibly an attacker
+      // using the public anon signUp) set it, and binding would let them sign
+      // in to this account once the owner confirms. Nothing is bound or
+      // deleted on refusal.
+      const proof = await supaClient.auth.signInWithPassword({ email, password: data.password });
+      if (!isEmailNotConfirmedError(proof.error)) {
+        this.logger.warn(
+          `register: retained Supabase user ${supabaseUserId} not bound: caller did not prove its password`,
+        );
+        throw new ConflictException({
+          code: 'signup_pending',
+          message: 'Check your email to finish signing up, or reset your password.',
+        });
+      }
+    }
+    let user;
+    try {
+      user = await this.createSignupUser(
+        {
+          supabase_id: supabaseUserId,
+          email,
+          name: data.name,
+          phone: data.phone || null,
+          signup_ref: data.ref ?? null,
+        },
+        intendedRole,
+        'email',
+        ctx,
+        { inviteCode },
+      );
+    } catch (err) {
+      const reason = `local user create failed (${err instanceof Error ? err.constructor.name : 'error'})`;
+      if (isSignupIdentityUniqueViolation(err)) {
+        // A competing signup / OAuth binder for this address committed first
+        // and owns the identity (and its fixed role). Answer like our own
+        // duplicate check.
+        this.logger.warn(
+          `register: competing signup won for Supabase user ${supabaseUserId}; identity kept`,
+        );
+        throw new ConflictException('Email already registered');
+      }
+      // A-597-1: retain, never delete (see logRetainedSignupIdentity).
+      this.logRetainedSignupIdentity(supabaseUserId, createdByThisRequest, reason);
+      throw err;
+    }
 
     // Psych Report #4: Analytics — user_registered server-side event
     this.analytics.capture(user.id, Events.USER_REGISTERED, {
@@ -152,7 +630,8 @@ export class AuthService {
       message: 'Verification email sent! Please check your inbox.',
       requires_verification: true,
       user_id: user.id,
-      email: data.email,
+      email,
+      role: user.role,
     };
   }
 
@@ -185,11 +664,16 @@ export class AuthService {
   // audit-log metadata tag; the returned token/user shape is identical for
   // every caller. Extracted so `login` and `extensionLogin` cannot drift.
   private async _passwordLogin(
-    email: string,
+    rawEmail: string,
     password: string,
     ctx: { ip?: string | null; userAgent?: string | null },
     source: 'email_password' | 'extension',
   ) {
+    // B-597-1 (Sol): signup stores the canonical address (normalizeEmail), so
+    // every sign-in path canonicalises the same way before any lookup. A user
+    // who registered as `Jane@Example.com` signs in with that spelling, the
+    // lowercase one, or any case variant.
+    const email = normalizeEmail(rawEmail);
     // Authenticate via Supabase
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',
@@ -212,6 +696,7 @@ export class AuthService {
       if (source === 'extension') failMetadata.source = 'extension';
       void this.prisma.user
         .findUnique({ where: { email }, select: { id: true, email: true } })
+        .then((u) => u ?? this.findUserByEmailInsensitive(email))
         .then((u) => {
           const auditInput: AuditWriteInput = {
             action: AuditAction.AUTH_LOGIN_FAILED,
@@ -236,11 +721,39 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Find user in our DB
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: { profile: true },
-    });
+    // Find user in our DB. B-597-1: resolve by the VERIFIED Supabase user id
+    // first (independent of the caller's spelling), then the canonical
+    // address, then a case-insensitive match for legacy rows stored as typed.
+    const verifiedSupabaseId = (data as { user?: { id?: unknown } | null }).user?.id;
+    let user =
+      typeof verifiedSupabaseId === 'string' && verifiedSupabaseId.length > 0
+        ? await this.prisma.user.findUnique({
+            where: { supabase_id: verifiedSupabaseId },
+            include: { profile: true },
+          })
+        : null;
+    if (!user) {
+      user = await this.prisma.user.findUnique({
+        where: { email },
+        include: { profile: true },
+      });
+    }
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } },
+        orderBy: { created_at: 'asc' },
+        include: { profile: true },
+      });
+    }
+    if (!user) {
+      // A-597-1 fix round 4: a confirmed identity stranded by a failed
+      // registration is adopted here instead of being deleted at signup.
+      user = await this.adoptStrandedSignupIdentity(
+        (data as { user?: { id?: unknown; email?: unknown; user_metadata?: unknown } | null }).user,
+        email,
+        ctx,
+      );
+    }
 
     if (!user) throw new UnauthorizedException('User not found');
 
@@ -422,10 +935,24 @@ export class AuthService {
         max_length: INVITE_CODE_MAX_LENGTH,
         prefix: INVITE_CODE_PREFIX,
       },
+      // C13: mobile shows the client/coach picker on account creation and
+      // sends `intended_role` on /auth/register, /auth/google, /auth/apple.
+      // `false` when the SIGNUP_ROLE_CHOICE_ENABLED kill switch is off (the
+      // field is still accepted and ignored, so no build ever gets a 400).
+      role_choice: signupRoleChoiceEnabled(),
+      role_choice_field: 'intended_role',
+      role_choice_values: ['client', 'coach'],
     };
   }
 
-  async googleAuth(token: string, inviteCode?: string) {
+  async googleAuth(
+    token: string,
+    inviteCode?: string,
+    intendedRole?: IntendedRole,
+    ctx: AuditCtx = {},
+  ) {
+    intendedRole = this.effectiveIntendedRole(intendedRole);
+    this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
     // The mobile app uses Supabase OAuth flow (expo-auth-session).
     // The token here is a Supabase access_token from the OAuth redirect.
     // We use the admin SDK to look up the user by their access token.
@@ -457,7 +984,7 @@ export class AuthService {
 
     // Supabase types email as optional — Google provider always returns one, but TS
     // doesn't know that. Bail out early under strict mode rather than trust the `!`.
-    const supaEmail = supaUser.email;
+    const supaEmail = supaUser.email ? normalizeEmail(supaUser.email) : undefined;
     if (!supaEmail) {
       throw new UnauthorizedException('Google account has no email');
     }
@@ -467,8 +994,16 @@ export class AuthService {
     let isNewUser = false;
 
     if (!user) {
+      // Grok B4: creating or linking a row requires a confirmed address.
+      if (!this.googleEmailVerified(supaUser)) {
+        this.logger.warn(
+          `googleAuth: refusing to create/link a row for an unverified Google email (supabase_id=${supaUser.id})`,
+        );
+        throw new UnauthorizedException('Google auth failed — email address is not verified');
+      }
       // Also check by email in case user registered with email first
-      user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
+      // (case-insensitive, Grok A1).
+      user = await this.findUserByEmailInsensitive(supaEmail);
 
       if (user) {
         // Account-takeover guard. Refuse to rebind a row whose supabase_id is
@@ -493,14 +1028,22 @@ export class AuthService {
           data: { supabase_id: supaUser.id },
         });
       } else {
-        user = await this.prisma.user.create({
-          data: {
+        // C13: brand-new row — the only branch where intended_role applies.
+        // Grok B5: a new COACH consumes a per-IP slot that login success
+        // never resets (client creates are not counted — clinic QR intake).
+        if (intendedRole === 'coach') {
+          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.throttleIp ?? ctx.ip);
+        }
+        user = await this.createSignupUser(
+          {
             supabase_id: supaUser.id,
             email: supaEmail,
             name: supaUser.user_metadata?.full_name || supaEmail,
-            role: 'student',
           },
-        });
+          intendedRole,
+          'google',
+          ctx,
+        );
         isNewUser = true;
         this.analytics.capture(user.id, Events.USER_REGISTERED_GOOGLE, {
           role: user.role,
@@ -511,18 +1054,28 @@ export class AuthService {
 
     // If mobile passed an invite_code on the Google exchange, attach the
     // user to the coach in the same call. Failures are non-fatal — we still
-    // log the user in so they can retry via /auth/attach-invite-code.
+    // log the user in so they can retry via /auth/attach-invite-code — but
+    // the outcome is reported (C03). Same-coach re-attach is idempotent and a
+    // different-coach code is refused inside attachUserToCoachByCode, so the
+    // call is safe for returning users too.
     let invite_attached = false;
-    if (inviteCode && !user.coach_id) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+    let invite_attach_error: InviteAttachErrorCode | undefined;
+    if (inviteCode && isCoachLikeRole(user.role)) {
+      // Fix round (Opus B1 / Grok A2): a coach/owner signing in with a stale
+      // QR / deep-link code is never demoted to a client. The service-level
+      // guard in attachUserToCoachByCode throws `coach_cannot_redeem` too;
+      // skipping here avoids even the attempt.
+      this.logger.warn(
+        `googleAuth: ignoring invite_code for user=${user.id} role=${user.role} (coach_cannot_redeem)`,
+      );
+      invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
+    } else if (inviteCode) {
+      const attach = await this.tryAttachInviteCode('googleAuth', user.id, inviteCode);
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
+      if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({ where: { id: user.id } });
         if (refreshed) user = refreshed;
-        invite_attached = true;
-      } catch (err) {
-        this.logger.warn(
-          `googleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
-        );
       }
     }
 
@@ -530,6 +1083,7 @@ export class AuthService {
       access_token: token,
       is_new_user: isNewUser,
       invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -550,9 +1104,12 @@ export class AuthService {
     token: string,
     fullName?: string,
     inviteCode?: string,
-    ctx: { ip?: string | null; userAgent?: string | null } = {},
+    ctx: AuditCtx = {},
     raw_nonce?: string,
+    intendedRole?: IntendedRole,
   ) {
+    intendedRole = this.effectiveIntendedRole(intendedRole);
+    this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
     if (!this.appleVerifier.isConfigured()) {
       // Feature-tier env var APPLE_AUDIENCES is not set on this deployment.
       // 503 (rather than a 401) so mobile can distinguish "not configured
@@ -631,7 +1188,7 @@ export class AuthService {
     }
 
     const supaUser = signInData.user;
-    const supaEmail = supaUser.email || appleEmail;
+    const supaEmail = normalizeEmail(supaUser.email || appleEmail);
 
     // Upsert user in our DB (Apple users are pre-verified by Apple itself).
     let user = await this.prisma.user.findUnique({
@@ -642,8 +1199,9 @@ export class AuthService {
     if (!user) {
       // Also check by email in case the user registered via email or Google
       // first — link the Supabase ID onto the existing row instead of
-      // creating a duplicate. Mirrors googleAuth's email-link fallback.
-      user = await this.prisma.user.findUnique({ where: { email: supaEmail } });
+      // creating a duplicate. Mirrors googleAuth's email-link fallback
+      // (case-insensitive, Grok A1).
+      user = await this.findUserByEmailInsensitive(supaEmail);
 
       if (user) {
         // Account-takeover guard — see googleAuth above for rationale.
@@ -677,14 +1235,21 @@ export class AuthService {
           (typeof supaUser.user_metadata?.full_name === 'string' &&
             supaUser.user_metadata.full_name) ||
           supaEmail;
-        user = await this.prisma.user.create({
-          data: {
+        // C13: brand-new row — the only branch where intended_role applies.
+        // Grok B5: per-IP ceiling on OAuth-minted coaches (see googleAuth).
+        if (intendedRole === 'coach') {
+          await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.throttleIp ?? ctx.ip);
+        }
+        user = await this.createSignupUser(
+          {
             supabase_id: supaUser.id,
             email: supaEmail,
             name: resolvedName,
-            role: 'student',
           },
-        });
+          intendedRole,
+          'apple',
+          ctx,
+        );
         isNewUser = true;
         this.analytics.capture(user.id, Events.USER_REGISTERED_APPLE, {
           role: user.role,
@@ -701,20 +1266,25 @@ export class AuthService {
 
     // If mobile passed an invite_code on the Apple exchange, attach the
     // user to the coach in the same call. Failures are non-fatal — we still
-    // log the user in so they can retry via /auth/attach-invite-code.
+    // log the user in so they can retry via /auth/attach-invite-code — but
+    // the outcome is reported (C03); see googleAuth for the same contract.
     let invite_attached = false;
-    if (inviteCode && !user.coach_id) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(user.id, inviteCode);
+    let invite_attach_error: InviteAttachErrorCode | undefined;
+    if (inviteCode && isCoachLikeRole(user.role)) {
+      // Fix round (Opus B1 / Grok A2) — see googleAuth.
+      this.logger.warn(
+        `appleAuth: ignoring invite_code for user=${user.id} role=${user.role} (coach_cannot_redeem)`,
+      );
+      invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
+    } else if (inviteCode) {
+      const attach = await this.tryAttachInviteCode('appleAuth', user.id, inviteCode);
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
+      if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({
           where: { id: user.id },
         });
         if (refreshed) user = refreshed;
-        invite_attached = true;
-      } catch (err) {
-        this.logger.warn(
-          `appleAuth invite_code attach failed for user=${user.id}: ${(err as Error).message}`,
-        );
       }
     }
 
@@ -729,7 +1299,7 @@ export class AuthService {
       targetId: user.id,
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
-      metadata: { is_new_user: isNewUser, invite_attached },
+      metadata: { is_new_user: isNewUser, invite_attached, invite_attach_error: invite_attach_error ?? null },
     });
 
     return {
@@ -737,6 +1307,7 @@ export class AuthService {
       refresh_token: signInData.session.refresh_token,
       is_new_user: isNewUser,
       invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -766,78 +1337,45 @@ export class AuthService {
     if (me?.role === 'owner') {
       throw new ForbiddenException('Owners cannot redeem a coach invite');
     }
+    // Fix round (Opus B1 / Grok A2): a coach-like account can neither be
+    // demoted to a client nor attached to another coach's roster here.
+    // R-ROLE-CHOICE-1 — the role is fixed at creation; OWNER promote/demote
+    // is the only path. Same structured code as attachUserToCoachByCode.
+    if (isCoachLikeRole(me?.role)) {
+      throw new ForbiddenException(coachCannotRedeemBody());
+    }
 
-    // No invite code — preserve the pre-invite-code behavior exactly: student
-    // role, no coach linkage. Existing clients that never sent a code keep
-    // working unchanged.
+    if (!me) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Sol SOL-C13-A1 — /auth/select-role is NOT a second invite writer.
+    // Role is fixed at account creation (R-ROLE-CHOICE-1): every non-owner,
+    // non-coach-like account is already `student`, so the codeless path is a
+    // read-only acknowledgement and never rewrites `role`. With a code, the
+    // request is delegated to the ONE canonical attach operation
+    // (InviteCodesService.attachUserToCoachByCode), which refuses to
+    // re-parent a client already attached to a different coach, checks the
+    // intended recipient, the coach's subscription and seat capacity, and
+    // writes coach_id only through a conditional (student, coach_id IS NULL)
+    // update inside its transaction.
     if (!inviteCode) {
-      const user = await this.prisma.user.update({
-        where: { id: userId },
-        data: { role },
-      });
-      return { role: user.role };
+      if (me.role !== 'student') {
+        // Defensive: unreachable for the roles that exist today (owner and
+        // coach-like are refused above), but never silently rewrite a role.
+        throw new ForbiddenException(coachCannotRedeemBody());
+      }
+      return { role: me.role };
     }
 
-    // Invite-code path: validate, then atomically link the student to the
-    // coach and bump used_count. Run both writes in an interactive transaction
-    // and re-check the guard (revoked, expires_at, max_uses) inside so two
-    // concurrent redemptions can't slip through on the last seat.
-    const validation = await this.inviteCodes.validate(inviteCode);
-    if (!validation.valid) {
-      throw new BadRequestException('Invalid or expired invite code');
-    }
-
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        // updateMany is the guarded increment. `max_uses: null` means unlimited;
-        // otherwise we bump only if the row's used_count is still below its
-        // own max_uses. Prisma doesn't support column-to-column comparison in
-        // updateMany, so we fetch the current row first and include its
-        // used_count as a lower bound — effectively optimistic concurrency.
-        const current = await tx.inviteCode.findUnique({
-          where: { id: validation.invite_code_id },
-        });
-        if (!current || current.revoked) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.max_uses !== null && current.used_count >= current.max_uses) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-
-        const updated = await tx.inviteCode.updateMany({
-          where: {
-            id: validation.invite_code_id,
-            revoked: false,
-            used_count: current.used_count,
-          },
-          data: { used_count: { increment: 1 } },
-        });
-        if (updated.count !== 1) {
-          // Lost the race to another concurrent redemption — fail closed.
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-
-        const user = await tx.user.update({
-          where: { id: userId },
-          data: { role, coach_id: validation.coach_id },
-        });
-        return user;
-      });
+    const attached = await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
+    if (!attached.already_attached) {
       this.analytics.capture(userId, Events.INVITE_REDEEMED, {
         via: 'select_role',
-        coach_id: validation.coach_id,
+        coach_id: attached.coach_id,
       });
-      return { role: result.role, coach_id: result.coach_id };
-    } catch (err) {
-      if (err instanceof BadRequestException) throw err;
-      this.logger.warn(
-        `invite code redemption failed for ${inviteCode}: ${(err as Error).message}`,
-      );
-      throw new BadRequestException('Invalid or expired invite code');
     }
+    return { role: attached.role, coach_id: attached.coach_id };
   }
 
   async getMe(userId: string) {
@@ -886,7 +1424,8 @@ export class AuthService {
       { realtime: { transport: WS as any } },
     );
 
-    const { error } = await supaClient.auth.resetPasswordForEmail(email, {
+    // B-597-1: same canonical address as signup and sign-in.
+    const { error } = await supaClient.auth.resetPasswordForEmail(normalizeEmail(email), {
       redirectTo: 'tgp://reset-password',
     });
 
@@ -914,8 +1453,31 @@ export class AuthService {
     phone?: string;
     invite_code?: string;
     ref?: string;
+    intended_role?: IntendedRole;
   }) {
     const gateEnabled = (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
+
+    // C13: a code-based signup ALWAYS creates a client. Refuse 'coach'
+    // up front (before Supabase signUp) with a stable error code so mobile
+    // can route the user to the plain /auth/register coach path instead.
+    // Grok C2: the code says WHY — with a code it is the contradiction, without
+    // one it is the endpoint (this route never provisions coaches). Ignored
+    // entirely when the kill switch is off (then 'coach' is a no-op client).
+    if (this.effectiveIntendedRole(data.intended_role) === 'coach') {
+      throw new BadRequestException(
+        data.invite_code
+          ? {
+              error: 'intended_role_not_allowed_with_invite_code',
+              message:
+                'Signing up with an invite code always creates a client account. Use the standard signup without a code to create a coach account.',
+            }
+          : {
+              error: 'coach_signup_requires_register_endpoint',
+              message:
+                'This endpoint only creates client accounts. Use POST /auth/register with intended_role=coach to create a coach account.',
+            },
+      );
+    }
 
     if (gateEnabled && !data.invite_code) {
       throw new BadRequestException('Coach invite code is required');
@@ -933,24 +1495,36 @@ export class AuthService {
       name: data.name,
       phone: data.phone,
       ref: data.ref,
+      // intended_role deliberately NOT forwarded: always a client here.
     });
 
+    // C03: the code was previewed as valid above, but the attach can still
+    // fail (seat race, coach paused between preview and attach, DB error).
+    // The account exists either way; report the outcome instead of hiding it.
+    let invite_attached = false;
+    let invite_attach_error: InviteAttachErrorCode | undefined;
     if (data.invite_code) {
-      try {
-        await this.inviteCodes.attachUserToCoachByCode(registered.user_id, data.invite_code);
-      } catch (err) {
-        this.logger.warn(
-          `signupWithCode attach failed for user=${registered.user_id}: ${(err as Error).message}`,
-        );
-      }
+      const attach = await this.tryAttachInviteCode(
+        'signupWithCode',
+        registered.user_id,
+        data.invite_code,
+      );
+      invite_attached = attach.invite_attached;
+      invite_attach_error = attach.invite_attach_error;
     }
 
     this.analytics.capture(registered.user_id, Events.USER_SIGNUP_WITH_CODE, {
       had_invite_code: !!data.invite_code,
       gate_enabled: gateEnabled,
+      invite_attached,
+      invite_attach_error: invite_attach_error ?? null,
     });
 
-    return registered;
+    return {
+      ...registered,
+      invite_attached,
+      ...(invite_attach_error ? { invite_attach_error } : {}),
+    };
   }
 
   async becomeCoach(

@@ -23,6 +23,7 @@ describe('InviteCodesService', () => {
       user: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       // Team Mode (PR #118) — createForCoach now auto-detects sub-
       // coach attribution via this lookup. Default returns null so
@@ -396,6 +397,7 @@ describe('InviteCodesService', () => {
         user: { id: 'coach-1', role: 'coach' },
       });
       prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'paused' });
+      prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'student', coach_id: null });
       await expect(
         service.attachUserToCoachByCode('user-1', 'GP-PAUSED'),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -412,18 +414,17 @@ describe('InviteCodesService', () => {
       prismaMock.user.findUnique.mockResolvedValue({
         id: 'student-1',
         role: 'student',
-      });
-      prismaMock.user.update.mockResolvedValue({
-        id: 'student-1',
-        role: 'student',
-        coach_id: 'coach-1',
+        coach_id: null,
       });
       const r = await service.attachUserToCoachByCode('student-1', 'GP-OK1234');
-      expect(r).toEqual({ role: 'student', coach_id: 'coach-1' });
-      expect(prismaMock.user.update).toHaveBeenCalledWith({
-        where: { id: 'student-1' },
-        data: { role: 'student', coach_id: 'coach-1' },
+      expect(r).toEqual({ role: 'student', coach_id: 'coach-1', already_attached: false });
+      // C03: conditional attach — only a student with NO coach is written, and
+      // only coach_id changes (role is never rewritten by code entry).
+      expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'student-1', role: 'student', coach_id: null },
+        data: { coach_id: 'coach-1' },
       });
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
   });
 });

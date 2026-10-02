@@ -182,30 +182,46 @@ export class AuditService {
 
   constructor(private prisma: PrismaService) {}
 
+  // Single place that maps AuditWriteInput onto the AuditLog columns, so
+  // `write` (best-effort) and `writeTx` (transactional, throwing) can never
+  // drift apart.
+  static buildRow(input: AuditWriteInput): Prisma.AuditLogUncheckedCreateInput {
+    return {
+      action: input.action,
+      actor_id: input.actorId ?? null,
+      actor_role: input.actorRole ?? null,
+      actor_email_snapshot: input.actorEmail ?? null,
+      target_user_id: input.targetUserId ?? null,
+      target_type: input.targetType ?? null,
+      target_id: input.targetId ?? null,
+      tenant_coach_id: input.tenantCoachId ?? null,
+      ip: input.ip ?? null,
+      user_agent: input.userAgent ?? null,
+      metadata:
+        input.metadata != null ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
+    };
+  }
+
+  /**
+   * Transactional, THROWING variant for elevations that must not exist
+   * without their audit row (clinic C13: signup-time coach provisioning).
+   * Runs on the caller's `tx` so a failed audit insert rolls the whole
+   * transaction back instead of being logged and forgotten. Deliberately
+   * ignores the AUDIT_LOGGING_ENABLED kill switch — that switch exists for
+   * short debugging windows on best-effort writes, not for privilege
+   * changes on a public signup path.
+   */
+  async writeTx(tx: Prisma.TransactionClient, input: AuditWriteInput): Promise<void> {
+    await tx.auditLog.create({ data: AuditService.buildRow(input) });
+  }
+
   async write(input: AuditWriteInput): Promise<void> {
     // Kill switch: AUDIT_LOGGING_ENABLED=off disables all writes without
     // requiring call-site changes. Safe default is "on".
     if (!auditLoggingEnabled()) return;
 
     try {
-      await this.prisma.auditLog.create({
-        data: {
-          action: input.action,
-          actor_id: input.actorId ?? null,
-          actor_role: input.actorRole ?? null,
-          actor_email_snapshot: input.actorEmail ?? null,
-          target_user_id: input.targetUserId ?? null,
-          target_type: input.targetType ?? null,
-          target_id: input.targetId ?? null,
-          tenant_coach_id: input.tenantCoachId ?? null,
-          ip: input.ip ?? null,
-          user_agent: input.userAgent ?? null,
-          metadata:
-            input.metadata != null
-              ? (input.metadata as Prisma.InputJsonValue)
-              : Prisma.DbNull,
-        },
-      });
+      await this.prisma.auditLog.create({ data: AuditService.buildRow(input) });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
