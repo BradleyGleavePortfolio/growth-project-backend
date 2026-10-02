@@ -92,6 +92,23 @@ export interface EnvRule {
   //   'optional-integration' an integration that is NOT a launch dependency;
   //                          its flags must be explicitly false or unset
   launch?: 'required' | 'switch' | 'optional-integration';
+  // S-FLAGS (B-FLAGS-2) — the closed set of values this switch's code reads
+  // with a distinct meaning, written exactly as they must be set on Fly. The
+  // desired-state manifest (.github/fly-env-desired-state.json) may declare
+  // only one of these, or leave the name unset; the fly-env-sync loader
+  // (scripts/fly-env/fly-env-manifest.js) reads this field from this file and
+  // test/ci/fly-env-manifest.spec.ts proves the two agree. Descriptive only;
+  // never read at runtime and never changes boot behaviour. Keep it on ONE
+  // line as `values: ['a', 'b'],` (the loader parses that exact shape).
+  values?: readonly string[];
+  // S-FLAGS (B-FLAGS-2, B-637-2) — what this switch's code does when the name
+  // is absent: 'on' (defaults on; only its off value disables it) or 'off'.
+  // Required with `values`. It decides the emergency kill: a defaults-on
+  // switch is killed by SETTING its off value ('false' / 'off'), never by
+  // unsetting it (that turns it back on); a defaults-off switch is killed by
+  // unsetting it. Descriptive only; never read at runtime. One line, as
+  // `unsetIs: 'on',` directly after the `values` line.
+  unsetIs?: 'on' | 'off';
 }
 
 export const ENV_RULES: EnvRule[] = [
@@ -638,6 +655,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'SIGNUP_ROLE_CHOICE_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
@@ -1100,11 +1119,13 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'BOOKING_REMINDERS_ENABLED',
+    values: ['on', 'off'],
+    unsetIs: 'off',
     tier: 'optional',
     launch: 'switch',
-    default: '\'on\' (only "off" disables)',
+    default: 'off (only "on" enables; unset/off/other disable)',
     reason:
-      'Launch switch (operator 2026-10-01): kill switch for the booking reminder crons. Ships on; only "off" disables. Must stay on (unset or "on") for launch.',
+      'Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 the sweeps need an explicit "on"; unset now means off. Must be set to "on" for launch through the audited prod-switch manifest, after notification delivery/device QA.',
   },
   {
     name: 'DELETION_FINALIZE_CRON',
@@ -1265,6 +1286,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: "off (on only when exactly 'true', case-insensitive)",
     reason:
@@ -1805,18 +1828,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_DUNNING_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Dunning v2 flag.',
   },
   {
     name: 'FEATURE_COMMUNITY_SCHEMA',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: 'unset → on (only "false" disables)',
     reason: 'Community schema presence flag; downstream community mounts back off when "false".',
   },
   {
     name: 'FEATURE_COMMUNITY_API',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true"; FEATURE_COMMUNITY_API_ALLOWLIST can open it per user)',
     reason: 'Community API master flag. Set at the Wave-1 launch deploy.',
@@ -1830,96 +1859,128 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COMMUNITY_MESSAGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community message writes. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_POSTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community post writes. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_DM',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community DMs. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_PUSH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community push notifications. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_REALTIME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community realtime. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_TELEMETRY',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community telemetry (no user text). Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_PLAN_TAGS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community plan-context tags.',
   },
   {
     name: 'FEATURE_COMMUNITY_ACKS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community acknowledgements.',
   },
   {
     name: 'FEATURE_COMMUNITY_AI_TRIAGE',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community AI triage.',
   },
   {
     name: 'FEATURE_COMMUNITY_CHALLENGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community challenges.',
   },
   {
     name: 'FEATURE_COMMUNITY_CLASSROOM_POSTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community classroom posts.',
   },
   {
     name: 'FEATURE_COMMUNITY_EVENTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community events.',
   },
   {
     name: 'FEATURE_COMMUNITY_SEARCH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community search.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community voice notes.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Require an entitlement for community voice notes.',
   },
   {
     name: 'FEATURE_COMMUNITY_WEARABLE_PROMPTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community wearable prompts.',
@@ -1932,18 +1993,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_MWB_AUTOSAVE_UNDO',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder autosave + undo (needs MWB_AUTOSAVE_LOCK_TOKEN_SECRET when on).',
   },
   {
     name: 'FEATURE_MWB_TEMPLATES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder templates.',
   },
   {
     name: 'FEATURE_NAMED_REGIMES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Named regimes.',
@@ -2004,6 +2071,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_WEARABLES_INGEST_POST',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → POST wearable samples returns disabled (only "true")',
     reason: 'Wearable samples ingest endpoint. Set at the launch deploy.',
