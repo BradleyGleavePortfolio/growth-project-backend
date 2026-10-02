@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { WorkoutBuilderService } from '../../workout-builder/workout-builder.service';
+import { ProgramDeliveryService } from '../../workout-builder/program-delivery.service';
 import { ResolverSubCoachScope } from './sub-coach-scope.helper';
 import type {
   AssignableAssetMaterialiseInput,
@@ -40,6 +41,18 @@ import type {
 //   That UUID is stable from the cron's POV (the drop row already
 //   committed) so per-PR-10-call idempotency holds.
 //
+// S-MWB Programs: when asset_id is a master WorkoutProgram (the id the coach
+// Programs library and the regimes list use for asset_type `workout_program`),
+// the drop delivers the WHOLE program: ProgramDeliveryService copies it onto
+// the client by value and schedules every day from the drop's fire time
+// (week*7 + day days). It runs inside the ambient fan-out transaction when one
+// is passed (paid checkout, $0 invite grant, free-package claim), so a rollback
+// takes the copy with it; its exactly-once key is the unique
+// WorkoutProgram.delivery_key `pkg:p=<purchase>:c=<content>` (or
+// `pkg:drop=<scheduledDropId>` for a cron re-send). materialisedRef is the
+// FIRST assignment id, so the client's deliverables row opens day 1.
+// A legacy asset_id that is a WorkoutPlan id keeps the single-plan path below.
+//
 // tx-honoring: WorkoutBuilderService opens its own internal transactions
 // and does not accept an external tx. When the immediate-at-checkout caller
 // passes `tx` we therefore cannot push it into the delegate — we rely on
@@ -59,6 +72,7 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
   constructor(
     private readonly workoutBuilder: WorkoutBuilderService,
     private readonly scope: ResolverSubCoachScope,
+    @Optional() private readonly programDelivery?: ProgramDeliveryService,
   ) {}
 
   canHandle(assetType: string): boolean {
@@ -69,6 +83,36 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
     const acting = await this.scope.resolve(input.coachId, input.clientId);
+
+    if (this.programDelivery) {
+      const master = await this.programDelivery.findDeliverableMaster(
+        acting.tenantCoachId,
+        input.assetId,
+        input.tx,
+      );
+      if (master) {
+        const deliveryInput = {
+          masterProgramId: master.id,
+          tenantCoachId: acting.tenantCoachId,
+          actingUserId: acting.tenantCoachId,
+          authorKind: 'coach' as const,
+          clientId: input.clientId,
+          startAt: new Date(Date.now() + ASSIGN_DEFAULT_OFFSET_MS),
+          deliveryKey: this.buildProgramDeliveryKey({
+            clientId: input.clientId,
+            assetId: input.assetId,
+            clientPurchaseId: input.clientPurchaseId ?? null,
+            contentId: input.contentId ?? null,
+            scheduledDropId: input.scheduledDropId ?? null,
+          }),
+          source: 'package' as const,
+        };
+        const delivered = input.tx
+          ? await this.programDelivery.deliverInTx(input.tx, deliveryInput)
+          : await this.programDelivery.deliver(deliveryInput);
+        return { materialisedRef: delivered.first_assignment_id };
+      }
+    }
 
     // Schedule for "now" by default; PR-9/PR-10 will pass an explicit
     // `scheduled_for` via the fan-out brief. For the resolver-only PR
@@ -108,6 +152,24 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
       throw new Error('WorkoutAssetResolver: assignPlan returned no id');
     }
     return { materialisedRef: String((assignment as { id: string }).id) };
+  }
+
+  // Program delivery key (WorkoutProgram.delivery_key, UNIQUE). Same stability
+  // rules as the plan key below: the (purchase, content) pair survives an
+  // outer-tx rollback + webhook retry; a cron re-send (push_seq > 0) passes
+  // only its own drop id and therefore gets a genuinely fresh copy.
+  private buildProgramDeliveryKey(parts: {
+    clientId: string;
+    assetId: string;
+    clientPurchaseId: string | null;
+    contentId: string | null;
+    scheduledDropId: string | null;
+  }): string {
+    if (parts.clientPurchaseId && parts.contentId) {
+      return `pkg:p=${parts.clientPurchaseId}:c=${parts.contentId}`;
+    }
+    if (parts.scheduledDropId) return `pkg:drop=${parts.scheduledDropId}`;
+    return `pkg:${parts.clientId}:${parts.assetId}:no-drop`;
   }
 
   // Build the WorkoutBuilderIdempotencyKey value. PREFERRED form

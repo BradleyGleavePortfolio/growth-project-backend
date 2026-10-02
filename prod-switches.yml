@@ -189,7 +189,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: scheduling
-    description: "Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 only an explicit on enables both sweeps; unset/off/other values disable. Must be set to on for launch through the audited prod-switch manifest, after notification delivery/device QA."
+    description: "Launch switch (operator 2026-10-01): booking reminder crons. Code default is on (only \"off\" disables); must stay unset or on for launch."
   - name: BOOKING_REMINDER_1H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
