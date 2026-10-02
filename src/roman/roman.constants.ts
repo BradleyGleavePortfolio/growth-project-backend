@@ -10,6 +10,13 @@ export const ROMAN_RATE_LIMIT_PRO_PER_DAY = 500;
 export const ROMAN_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Bound on the erased-session shells the rate limiter reads back. A user has
+ * at most one session per (surface, UTC day), so a 24h window holds about
+ * four; the bound only guards against bad data.
+ */
+export const ROMAN_ERASED_SESSIONS_SCAN_MAX = 16;
+
+/**
  * Max prior turns included in an API call (brief §3). Phase 1 ships a simple
  * tail-slice of the most recent N turns; Phase 1.1 summarises older turns into
  * a single "earlier in this session: …" line.

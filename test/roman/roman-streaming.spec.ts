@@ -109,6 +109,23 @@ function makePrisma(sessionOwner = 'user-A') {
 
   const romanSession = {
     findFirst: jest.fn(async () => (session.deleted_at ? null : session)),
+    findMany: jest.fn(async () => []),
+    updateMany: jest.fn(
+      async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        if (where.id !== session.id || where.user_id !== session.user_id || session.deleted_at) {
+          return { count: 0 };
+        }
+        if (
+          data.message_count &&
+          typeof data.message_count === 'object' &&
+          'increment' in (data.message_count as object)
+        ) {
+          session.message_count += 1;
+        }
+        if (data.last_activity_at) session.last_activity_at = new Date();
+        return { count: 1 };
+      },
+    ),
     update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
       if (
         data.message_count &&

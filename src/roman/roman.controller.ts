@@ -5,7 +5,7 @@
  *   POST   /roman/sessions                  open or resume (idempotent on day-key)
  *   GET    /roman/sessions/:id/messages      paginated, newest first
  *   POST   /roman/sessions/:id/messages      submit a user turn → SSE assistant stream
- *   DELETE /roman/sessions/:id               soft-delete
+ *   DELETE /roman/sessions/:id               erase (messages hard-deleted)
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
@@ -164,13 +164,16 @@ export class RomanController {
     }
   }
 
-  // ─── DELETE /roman/sessions/:id — soft-delete ──────────────────────────────
+  // ─── DELETE /roman/sessions/:id — erase the conversation ───────────────────
+  // The messages are hard-deleted (owner 2026-10-01 20:32 / OR-110-1: kept
+  // until the client deletes them or their account). See
+  // RomanService.deleteSession.
   @Delete('sessions/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles('student', 'coach', 'owner')
   async deleteSession(@Req() req: AuthedRequest, @Param('id') id: string) {
     const caller = await this.callerOf(req);
-    await this.roman.softDeleteSession(caller, id);
+    await this.roman.deleteSession(caller, id);
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────

@@ -20,12 +20,8 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type {
-  Prisma,
-  RomanMessage,
-  RomanSession,
-  RomanSurface,
-} from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { RomanMessage, RomanSession, RomanSurface } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AiEgressService, AnthropicHandle } from '../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
@@ -48,6 +44,7 @@ import {
   ROMAN_RATE_LIMIT_FREE_PER_DAY,
   ROMAN_RATE_LIMIT_PRO_PER_DAY,
   ROMAN_RATE_LIMIT_WINDOW_MS,
+  ROMAN_ERASED_SESSIONS_SCAN_MAX,
 } from './roman.constants';
 import { isRomanChatEnabled } from './roman.feature';
 import {
@@ -162,15 +159,50 @@ export class RomanService {
     return session;
   }
 
-  /** Soft-delete a session the caller owns (sets deleted_at). Idempotent. */
-  async softDeleteSession(
-    caller: RomanCaller,
-    sessionId: string,
-  ): Promise<void> {
+  /**
+   * Delete a session the caller owns. The conversation is ERASED, not hidden:
+   * Roman chats are kept until the client deletes them or their account (owner
+   * decision 2026-10-01 20:32, operator ruling OR-110-1; box-2 copy
+   * client-ai-v4 and the privacy policy say exactly this). There is no
+   * time-based purge.
+   *
+   * In one transaction, scoped to the caller's own session AND user_id:
+   *   1. tombstone the session row (deleted_at, subject context cleared) —
+   *      the row lock makes a concurrent `appendMessage` either commit first
+   *      (and be erased by step 2) or see the tombstone and write nothing;
+   *   2. hard-delete every message of the session;
+   *   3. keep only a content-free count of the user turns that were inside the
+   *      rolling rate-limit window, so deleting a chat never resets the daily
+   *      Roman cap (`assertWithinRateLimit` adds it back while the shell is
+   *      recent). The shell holds no text; account deletion removes it.
+   * A second delete of the same session is a 404 (the session is gone).
+   */
+  async deleteSession(caller: RomanCaller, sessionId: string): Promise<void> {
     const session = await this.getOwnedSession(caller, sessionId);
-    await this.prisma.romanSession.update({
-      where: { id: session.id },
-      data: { deleted_at: new Date() },
+    const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
+    await this.prisma.$transaction(async (tx) => {
+      const marked = await tx.romanSession.updateMany({
+        where: { id: session.id, user_id: caller.id, deleted_at: null },
+        data: { deleted_at: new Date(), subject_context_json: Prisma.DbNull },
+      });
+      if (marked.count === 0) {
+        throw new NotFoundException('Roman session not found');
+      }
+      const erasedUserTurnsInWindow = await tx.romanMessage.count({
+        where: {
+          session_id: session.id,
+          user_id: caller.id,
+          role: 'user',
+          created_at: { gte: since },
+        },
+      });
+      await tx.romanMessage.deleteMany({
+        where: { session_id: session.id, user_id: caller.id },
+      });
+      await tx.romanSession.updateMany({
+        where: { id: session.id, user_id: caller.id },
+        data: { message_count: erasedUserTurnsInWindow },
+      });
     });
   }
 
@@ -212,7 +244,10 @@ export class RomanService {
   /**
    * Append a turn to a session and bump the denormalised bookkeeping
    * (message_count, last_activity_at) in a single transaction so the count
-   * never drifts from reality.
+   * never drifts from reality. The bookkeeping update runs first and only
+   * matches a live session the caller owns, so a turn (for example a streamed
+   * reply finishing after the client deleted the chat) is never written into
+   * an erased conversation: it is a 404 and nothing is stored.
    */
   async appendMessage(
     caller: RomanCaller,
@@ -228,7 +263,17 @@ export class RomanService {
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
-      const message = await tx.romanMessage.create({
+      const live = await tx.romanSession.updateMany({
+        where: { id: sessionId, user_id: caller.id, deleted_at: null },
+        data: {
+          message_count: { increment: 1 },
+          last_activity_at: new Date(),
+        },
+      });
+      if (live.count === 0) {
+        throw new NotFoundException('Roman session not found');
+      }
+      return tx.romanMessage.create({
         data: {
           session_id: sessionId,
           user_id: caller.id,
@@ -241,14 +286,6 @@ export class RomanService {
           parent_message_id: data.parentMessageId ?? null,
         },
       });
-      await tx.romanSession.update({
-        where: { id: sessionId },
-        data: {
-          message_count: { increment: 1 },
-          last_activity_at: new Date(),
-        },
-      });
-      return message;
     });
   }
 
@@ -264,21 +301,40 @@ export class RomanService {
 
   /**
    * Throw a structured 429 when the caller has exhausted their 24h user-turn
-   * budget. Counts only `user` turns in the rolling window. OWNER is exempt.
+   * budget. Counts `user` turns in the rolling window, plus the content-free
+   * count of user turns erased by `deleteSession` from a recently active
+   * session (so deleting a chat never resets the cap; conservative: those
+   * turns count until the erased session's last activity leaves the window).
+   * OWNER is exempt.
    */
   async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
     if (caller.role === 'owner') return;
     const cap = this.rateLimitCapFor(caller);
     const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
-    const used = await this.prisma.romanMessage.count({
+    const live = await this.prisma.romanMessage.count({
       where: {
         user_id: caller.id,
         role: 'user',
         created_at: { gte: since },
       },
     });
+    // At most one session per (user, surface, UTC day), so this is a handful
+    // of rows; the bound is defensive.
+    const erased = await this.prisma.romanSession.findMany({
+      where: {
+        user_id: caller.id,
+        deleted_at: { not: null },
+        last_activity_at: { gte: since },
+        message_count: { gt: 0 },
+      },
+      select: { message_count: true, last_activity_at: true },
+      orderBy: { last_activity_at: 'asc' },
+      take: ROMAN_ERASED_SESSIONS_SCAN_MAX,
+    });
+    const used = live + erased.reduce((n, r) => n + r.message_count, 0);
     if (used >= cap) {
-      // Retry-after = time until the oldest counted turn falls out of window.
+      // Retry-after = time until the oldest counted turn (or erased session's
+      // last activity) falls out of the window.
       const oldest = await this.prisma.romanMessage.findFirst({
         where: {
           user_id: caller.id,
@@ -287,17 +343,18 @@ export class RomanService {
         },
         orderBy: { created_at: 'asc' },
       });
-      const retryAfterSeconds = oldest
-        ? Math.max(
-            1,
-            Math.ceil(
-              (oldest.created_at.getTime() +
-                ROMAN_RATE_LIMIT_WINDOW_MS -
-                Date.now()) /
-                1000,
-            ),
-          )
-        : Math.ceil(ROMAN_RATE_LIMIT_WINDOW_MS / 1000);
+      const candidates = [
+        ...(oldest ? [oldest.created_at.getTime()] : []),
+        ...erased.map((r) => r.last_activity_at.getTime()),
+      ];
+      const earliest = candidates.length > 0 ? Math.min(...candidates) : null;
+      const retryAfterSeconds =
+        earliest !== null
+          ? Math.max(
+              1,
+              Math.ceil((earliest + ROMAN_RATE_LIMIT_WINDOW_MS - Date.now()) / 1000),
+            )
+          : Math.ceil(ROMAN_RATE_LIMIT_WINDOW_MS / 1000);
       throw new HttpException(
         {
           code: ROMAN_ERROR_RATE_LIMIT,

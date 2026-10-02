@@ -85,7 +85,7 @@ function makeService() {
   const getOwnedSession = jest.fn((..._a: unknown[]) =>
     Promise.resolve(makeSession()),
   );
-  const softDeleteSession = jest.fn((..._a: unknown[]) =>
+  const deleteSession = jest.fn((..._a: unknown[]) =>
     Promise.resolve(undefined),
   );
   const assertWithinRateLimit = jest.fn((..._a: unknown[]) =>
@@ -137,7 +137,7 @@ function makeService() {
   return {
     openOrResumeSession,
     getOwnedSession,
-    softDeleteSession,
+    deleteSession,
     assertWithinRateLimit,
     assertMayUseAi,
     appendMessage,
@@ -330,10 +330,10 @@ describe('RomanController — DELETE /roman/sessions/:id (soft delete)', () => {
     flagOn();
     const { ctrl, service, req } = makeController();
     await ctrl.deleteSession(req, 'sess_1');
-    expect(service.softDeleteSession).toHaveBeenCalledTimes(1);
-    const caller = service.softDeleteSession.mock.calls[0][0] as unknown as RomanCaller;
+    expect(service.deleteSession).toHaveBeenCalledTimes(1);
+    const caller = service.deleteSession.mock.calls[0][0] as unknown as RomanCaller;
     expect(caller.id).toBe('user-A');
-    expect(service.softDeleteSession.mock.calls[0][1]).toBe('sess_1');
+    expect(service.deleteSession.mock.calls[0][1]).toBe('sess_1');
   });
 });
 

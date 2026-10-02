@@ -94,6 +94,52 @@ function makeFakePrisma() {
         sessions.push(row);
         return row;
       }),
+      // Matches the live-session predicate the service uses
+      // ({ id, user_id, deleted_at: null }) and applies the same fields as
+      // `update`, plus a plain message_count / subject_context_json set.
+      updateMany: jest.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          const hits = sessions.filter((r) => matchSession(where, r));
+          for (const row of hits) {
+            if (data.deleted_at) row.deleted_at = data.deleted_at as Date;
+            if ('subject_context_json' in data) row.subject_context_json = null;
+            if (data.last_activity_at) row.last_activity_at = data.last_activity_at as Date;
+            if (typeof data.message_count === 'number') row.message_count = data.message_count;
+            else if (
+              data.message_count &&
+              typeof data.message_count === 'object' &&
+              'increment' in (data.message_count as object)
+            ) {
+              row.message_count += (data.message_count as { increment: number }).increment;
+            }
+          }
+          return { count: hits.length };
+        },
+      ),
+      findMany: jest.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            user_id: string;
+            last_activity_at?: { gte: Date };
+            message_count?: { gt: number };
+          };
+        }) =>
+          sessions.filter(
+            (r) =>
+              r.user_id === where.user_id &&
+              r.deleted_at !== null &&
+              (!where.last_activity_at || r.last_activity_at >= where.last_activity_at.gte) &&
+              (!where.message_count || r.message_count > where.message_count.gt),
+          ),
+      ),
       update: jest.fn(
         async ({
           where,
@@ -163,9 +209,21 @@ function makeFakePrisma() {
           return typeof take === 'number' ? rows.slice(0, take) : rows;
         },
       ),
+      deleteMany: jest.fn(
+        async ({ where }: { where: { session_id: string; user_id: string } }) => {
+          const before = messages.length;
+          for (let i = messages.length - 1; i >= 0; i -= 1) {
+            if (messages[i].session_id === where.session_id && messages[i].user_id === where.user_id) {
+              messages.splice(i, 1);
+            }
+          }
+          return { count: before - messages.length };
+        },
+      ),
       count: jest.fn(
         async ({ where }: { where: Record<string, unknown> }) =>
           messages.filter((m) => {
+            if (where.session_id && m.session_id !== where.session_id) return false;
             if (where.user_id && m.user_id !== where.user_id) return false;
             if (where.role && m.role !== where.role) return false;
             if (
@@ -255,15 +313,113 @@ describe('RomanService — sessions', () => {
     ).rejects.toThrow('Roman session not found');
   });
 
-  it('soft-deletes a session (sets deleted_at, hides from resume)', async () => {
+  it('deleting a session hides it from resume (a fresh session opens)', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
-    await svc.softDeleteSession(CALLER, s.id);
+    await svc.deleteSession(CALLER, s.id);
     expect(prisma._state.sessions[0].deleted_at).toBeInstanceOf(Date);
     // A subsequent open creates a fresh session (the deleted one is hidden).
     const next = await svc.openOrResumeSession(CALLER, 'client');
     expect(next.id).not.toBe(s.id);
+  });
+});
+
+// Owner 2026-10-01 20:32 + OR-110-1: Roman chats are kept until the client
+// deletes them or their account. A client delete must ERASE the transcript
+// (box-2 copy client-ai-v4 and the privacy policy promise exactly that).
+describe('RomanService — client delete erases the conversation', () => {
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+
+  it('hard-deletes every message of the session and clears the subject context', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client', { brief: 'private context' });
+    await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'my knee hurts on squats' });
+    await svc.appendMessage(CALLER, s.id, { role: 'roman', content: 'Let us adjust the depth.' });
+    const theirs = await svc.openOrResumeSession(OTHER, 'client');
+    await svc.appendMessage(OTHER, theirs.id, { role: 'user', content: 'keep me' });
+
+    await svc.deleteSession(CALLER, s.id);
+
+    const mine = prisma._state.messages.filter((m) => m.user_id === CALLER.id);
+    expect(mine).toHaveLength(0);
+    expect(JSON.stringify(prisma._state.sessions)).not.toContain('private context');
+    expect(JSON.stringify(prisma._state.messages)).not.toContain('knee');
+    // Tenancy: another user's conversation is untouched.
+    expect(prisma._state.messages.map((m) => m.content)).toEqual(['keep me']);
+    // The erase is scoped to the caller's own session AND user_id.
+    expect(prisma.romanMessage.deleteMany).toHaveBeenCalledWith({
+      where: { session_id: s.id, user_id: CALLER.id },
+    });
+  });
+
+  it('a non-owner cannot delete (404) and nothing is erased', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'mine' });
+    await expect(svc.deleteSession(OTHER, s.id)).rejects.toThrow('Roman session not found');
+    expect(prisma._state.messages).toHaveLength(1);
+    expect(prisma.romanMessage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('a second delete of the same session is 404', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.deleteSession(CALLER, s.id);
+    await expect(svc.deleteSession(CALLER, s.id)).rejects.toThrow('Roman session not found');
+  });
+
+  it('a turn arriving after the delete (e.g. a streamed reply finishing) is refused and never stored', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'question' });
+    await svc.deleteSession(CALLER, s.id);
+    await expect(
+      svc.appendMessage(CALLER, s.id, { role: 'roman', content: 'late reply' }),
+    ).rejects.toThrow('Roman session not found');
+    expect(prisma._state.messages).toHaveLength(0);
+    expect(prisma.romanMessage.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('deleting a chat never resets the daily Roman cap', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
+      await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
+    }
+    await svc.deleteSession(CALLER, s.id);
+    expect(prisma._state.messages).toHaveLength(0);
+    // The shell keeps only a content-free count of the erased in-window turns.
+    expect(prisma._state.sessions[0].message_count).toBe(ROMAN_RATE_LIMIT_FREE_PER_DAY);
+    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
+      response: { code: 'ROMAN_RATE_LIMIT' },
+    });
+    const err = await svc
+      .assertWithinRateLimit(CALLER)
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect((err as HttpException).getStatus()).toBe(429);
+    const retry = ((err as HttpException).getResponse() as { retryAfterSeconds: number })
+      .retryAfterSeconds;
+    expect(retry).toBeGreaterThan(0);
+    expect(retry).toBeLessThanOrEqual(24 * 60 * 60);
+  });
+
+  it('erased turns stop counting once the erased session is outside the window', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
+      await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
+    }
+    await svc.deleteSession(CALLER, s.id);
+    prisma._state.sessions[0].last_activity_at = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await expect(svc.assertWithinRateLimit(CALLER)).resolves.toBeUndefined();
   });
 });
 
