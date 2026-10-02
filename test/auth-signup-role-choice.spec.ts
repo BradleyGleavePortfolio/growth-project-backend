@@ -120,6 +120,9 @@ const makeVerifierMock = (configured: boolean): any => ({
 const makeThrottleMock = (): any => ({
   consumeOAuthCoachSignupSlot: jest.fn(async () => {}),
   resetLoginCounters: jest.fn(async () => {}),
+  // C14 A1: the shared per-account lock wraps every password sign-in; the
+  // double just runs the attempt.
+  guardPasswordLogin: jest.fn((_email: string, attempt: () => Promise<unknown>) => attempt()),
 });
 
 function p2002(target: string[]): Prisma.PrismaClientKnownRequestError {
