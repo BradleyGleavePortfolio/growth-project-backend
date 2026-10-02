@@ -65,7 +65,7 @@ export interface UpdatePackageInput {
   currency?: string;
   billing_type?: 'one_time' | 'recurring';
   interval?: 'week' | 'month' | 'year' | null;
-  interval_count?: number;
+  interval_count?: number | null;
   duration_periods?: number | null;
   recurring_amount_cents?: number | null;
   recurring_interval?: 'week' | 'month' | 'year' | null;
@@ -153,16 +153,14 @@ export class PackagesService {
         amount_cents: input.amount_cents,
         currency: (input.currency ?? 'usd').toLowerCase(),
         billing_type: input.billing_type ?? 'one_time',
-        interval: input.billing_type === 'recurring' ? input.interval ?? 'month' : null,
+        interval: input.billing_type === 'recurring' ? (input.interval ?? 'month') : null,
         interval_count: input.interval_count ?? 1,
         duration_periods: input.duration_periods ?? null,
         recurring_amount_cents: input.recurring_amount_cents ?? null,
-        recurring_interval: input.recurring_amount_cents != null
-          ? input.recurring_interval ?? 'month'
-          : null,
-        recurring_interval_count: input.recurring_amount_cents != null
-          ? input.recurring_interval_count ?? 1
-          : null,
+        recurring_interval:
+          input.recurring_amount_cents != null ? (input.recurring_interval ?? 'month') : null,
+        recurring_interval_count:
+          input.recurring_amount_cents != null ? (input.recurring_interval_count ?? 1) : null,
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
@@ -178,34 +176,44 @@ export class PackagesService {
     const row = await this.requireOwnedPackage(coachUserId, packageId);
     // Build the diff first so we can decide whether to clear the cached Price.
     const data: Record<string, unknown> = {};
-    if (input.name !== undefined) data.name = input.name;
+    // Non-nullable columns ignore an explicit null (the DTO lets null through
+    // @IsOptional); nullable ones treat null as "clear".
+    if (input.name != null) data.name = input.name;
     if (input.description !== undefined) data.description = input.description;
-    if (input.amount_cents !== undefined) data.amount_cents = input.amount_cents;
-    if (input.currency !== undefined) data.currency = input.currency.toLowerCase();
-    if (input.billing_type !== undefined) data.billing_type = input.billing_type;
+    if (input.amount_cents != null) data.amount_cents = input.amount_cents;
+    if (input.currency != null) data.currency = input.currency.toLowerCase();
+    if (input.billing_type != null) data.billing_type = input.billing_type;
     if (input.interval !== undefined) data.interval = input.interval;
-    if (input.interval_count !== undefined) data.interval_count = input.interval_count;
+    // interval_count is NOT NULL (default 1): null resets it to 1.
+    if (input.interval_count !== undefined) data.interval_count = input.interval_count ?? 1;
     if (input.duration_periods !== undefined) data.duration_periods = input.duration_periods;
+    // S-FEE round 4 (B-629-4): switching to one-time clears the cadence even
+    // when the client does not send billing_interval, so a recurring package
+    // can become one-time (and then free) in one PATCH.
+    if (data.billing_type === 'one_time' && !('interval' in data) && row.interval != null) {
+      data.interval = null;
+    }
     if (input.recurring_amount_cents !== undefined)
       data.recurring_amount_cents = input.recurring_amount_cents;
-    if (input.recurring_interval !== undefined)
-      data.recurring_interval = input.recurring_interval;
+    if (input.recurring_interval !== undefined) data.recurring_interval = input.recurring_interval;
     if (input.recurring_interval_count !== undefined)
       data.recurring_interval_count = input.recurring_interval_count;
-    if (input.is_active !== undefined) data.is_active = input.is_active;
+    if (input.is_active != null) data.is_active = input.is_active;
 
-    // Validate the merged shape.
+    // Validate the merged shape. B-629-4: a key present in `data` wins, even
+    // when its value is null (`??` used to fall back to the stored interval,
+    // so { billing_type: 'one_time', billing_interval: null } was refused).
+    const merged = <K extends keyof CoachPackage>(key: K): unknown =>
+      key in data ? data[key] : row[key];
     this.assertValidPricing(
       {
-        name: (data.name as string) ?? row.name,
-        amount_cents: (data.amount_cents as number) ?? row.amount_cents,
-        currency: (data.currency as string) ?? row.currency,
-        billing_type: ((data.billing_type as 'one_time' | 'recurring') ?? row.billing_type) as
-          'one_time' | 'recurring',
-        interval: ((data.interval as 'week' | 'month' | 'year' | null) ?? row.interval) as
-          'week' | 'month' | 'year' | null,
-        interval_count: (data.interval_count as number) ?? row.interval_count,
-        duration_periods: (data.duration_periods as number | null) ?? row.duration_periods,
+        name: merged('name') as string,
+        amount_cents: merged('amount_cents') as number,
+        currency: merged('currency') as string,
+        billing_type: merged('billing_type') as 'one_time' | 'recurring',
+        interval: merged('interval') as 'week' | 'month' | 'year' | null,
+        interval_count: merged('interval_count') as number,
+        duration_periods: merged('duration_periods') as number | null,
         recurring_amount_cents:
           'recurring_amount_cents' in data
             ? (data.recurring_amount_cents as number | null)
@@ -254,16 +262,14 @@ export class PackagesService {
     const recurringChanged =
       ('recurring_amount_cents' in data &&
         data.recurring_amount_cents !== row.recurring_amount_cents) ||
-      ('recurring_interval' in data &&
-        data.recurring_interval !== row.recurring_interval) ||
+      ('recurring_interval' in data && data.recurring_interval !== row.recurring_interval) ||
       ('recurring_interval_count' in data &&
         data.recurring_interval_count !== row.recurring_interval_count) ||
       ('currency' in data && data.currency !== row.currency);
     if (recurringChanged) data.recurring_stripe_price_id = null;
 
     const durationChanged =
-      'duration_periods' in data &&
-      data.duration_periods !== row.duration_periods;
+      'duration_periods' in data && data.duration_periods !== row.duration_periods;
 
     // B1 — pricing lock. If ANY price-shaping field changed (primary price,
     // recurring companion, OR duration_periods), the edit may not proceed
@@ -274,8 +280,7 @@ export class PackagesService {
     // Pure name/description/status/availability edits (priceChanged ==
     // recurringChanged == durationChanged == false) are ALWAYS allowed and
     // skip the lock + transaction entirely.
-    const priceShapingChanged =
-      priceChanged || recurringChanged || durationChanged;
+    const priceShapingChanged = priceChanged || recurringChanged || durationChanged;
 
     if (!priceShapingChanged) {
       return this.prisma.coachPackage.update({
@@ -530,15 +535,11 @@ export class PackagesService {
   // ownership check. Mirrors the resolver-sub-coach-scope.helper used
   // by the asset resolvers (PR-7).
   async resolveEffectiveCoachId(callerUserId: string): Promise<string> {
-    const headCoachId =
-      await this.subCoachScope.getHeadCoachIdForSubCoach(callerUserId);
+    const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(callerUserId);
     return headCoachId ?? callerUserId;
   }
 
-  async requireOwnedPackage(
-    coachUserId: string,
-    packageId: string,
-  ): Promise<CoachPackage> {
+  async requireOwnedPackage(coachUserId: string, packageId: string): Promise<CoachPackage> {
     const row = await this.prisma.coachPackage.findFirst({
       where: { id: packageId, coach_id: coachUserId },
     });
@@ -585,10 +586,7 @@ export class PackagesService {
   // an empty string into stripe_price_id and break the next one-time
   // checkout. This writer lets the companion-mint path persist the
   // Product without touching stripe_price_id.
-  async setStripeProductId(
-    packageId: string,
-    stripeProductId: string,
-  ): Promise<void> {
+  async setStripeProductId(packageId: string, stripeProductId: string): Promise<void> {
     await this.prisma.coachPackage.update({
       where: { id: packageId },
       data: { stripe_product_id: stripeProductId },
@@ -673,11 +671,7 @@ export class PackagesService {
       });
     }
     if (input.billing_type === 'recurring') {
-      if (
-        input.interval !== 'week' &&
-        input.interval !== 'month' &&
-        input.interval !== 'year'
-      ) {
+      if (input.interval !== 'week' && input.interval !== 'month' && input.interval !== 'year') {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           code: 'PACKAGE_INVALID',
@@ -735,16 +729,14 @@ export class PackagesService {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           code: 'PACKAGE_INVALID',
-          message:
-            'recurring companion price is only valid when primary billing_type=one_time',
+          message: 'recurring companion price is only valid when primary billing_type=one_time',
         });
       }
       if (!allRecurring) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           code: 'PACKAGE_INVALID',
-          message:
-            'recurring companion requires recurring_amount_cents and recurring_interval',
+          message: 'recurring companion requires recurring_amount_cents and recurring_interval',
         });
       }
       if (
@@ -767,10 +759,7 @@ export class PackagesService {
           message: 'recurring_interval must be week | month | year',
         });
       }
-      if (
-        r.count !== null &&
-        (!Number.isInteger(r.count) || (r.count as number) < 1)
-      ) {
+      if (r.count !== null && (!Number.isInteger(r.count) || (r.count as number) < 1)) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
           code: 'PACKAGE_INVALID',

@@ -10,9 +10,12 @@
 -- cover every column). Backfill, oldest evidence first:
 --   1. a package that is published now has been on sale since at least its
 --      current published_at;
---   2. a package with a purchase or a guest checkout was on sale when the
+--   2. a package with a real purchase or a guest checkout was on sale when the
 --      first of those was created (this recovers packages that were sold and
---      later unpublished).
+--      later unpublished). Round 4 (B-629-3): only real Stripe purchases count
+--      ("source" IS NULL AND "amount_cents" > 0). Invite-grant and free-claim
+--      rows (#595, "source" set, $0) are written for draft packages too, so
+--      they are not evidence that the package was ever on sale.
 -- A package with neither has no recoverable history and is treated as a draft
 -- (the floor applies on its next publish), which is the conservative side.
 ALTER TABLE "CoachPackage" ADD COLUMN IF NOT EXISTS "first_published_at" TIMESTAMP(3);
@@ -27,6 +30,7 @@ FROM (
   SELECT s."package_id", MIN(s."created_at") AS "first_sold_at"
   FROM (
     SELECT "package_id", "created_at" FROM "ClientPurchase"
+    WHERE "source" IS NULL AND "amount_cents" > 0
     UNION ALL
     SELECT "package_id", "created_at" FROM "GuestCheckout"
   ) AS s

@@ -23,9 +23,12 @@ export class CreatePackageDto {
   @Min(0, { message: 'amount_cents must be 0 (free) or a positive number of cents.' })
   amount_cents!: number;
 
+  // S-FEE round 4 (C-629-2): optional, like the service (which defaults to
+  // 'usd'); the mobile editor did not send it and every create was a 400.
+  @IsOptional()
   @IsString()
   @IsIn(['usd', 'gbp', 'eur', 'aud', 'cad'])
-  currency!: string;
+  currency?: string;
 
   @IsString()
   @IsIn(['one_time', 'recurring'])
@@ -111,15 +114,18 @@ export class UpdatePackageDto {
   @IsIn(['one_time', 'recurring'])
   billing_type?: string;
 
+  // S-FEE round 4 (B-629-4): pass null to clear the cadence (a one-time
+  // package has none); switching billing_type to one_time clears it anyway.
   @IsOptional()
   @IsString()
   @IsIn(['week', 'month', 'year'])
-  billing_interval?: string;
+  billing_interval?: string | null;
 
+  // null resets the count to 1.
   @IsOptional()
   @IsInt()
   @Min(1)
-  billing_interval_count?: number;
+  billing_interval_count?: number | null;
 
   // PR-6 B6 — duration_periods exposed on write. Pass `null` to
   // clear (unlimited). Validator allows int ≥ 1; the service treats

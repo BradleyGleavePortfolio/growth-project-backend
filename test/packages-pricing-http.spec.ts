@@ -85,7 +85,9 @@ function packagesDb() {
   const db = {
     rows,
     coachPackage,
-    clientPurchase: { count: async () => 0 },
+    // Active recurring subscribers the pricing lock counts.
+    activeSubscribers: 0,
+    clientPurchase: { count: async () => db.activeSubscribers },
     $queryRaw: async () => [],
     $transaction: async (cb: (tx: object) => Promise<unknown>) => cb(db),
   };
@@ -274,6 +276,119 @@ describe('S-FEE #629 package pricing over HTTP (production pipe + filter)', () =
     const cadence = await call('PATCH', `/v1/coach/packages/${id}`, { billing_interval: 'week' });
     expect(cadence.status).toBe(400);
     expect(cadence.body).toMatchObject({ code: 'PACKAGE_PRICE_BELOW_MINIMUM' });
+  });
+
+  it('C-629-2: POST without currency creates a usd package (the mobile editor omits it)', async () => {
+    const r = await call('POST', '/v1/coach/packages', {
+      name: 'Intro',
+      billing_type: 'one_time',
+      amount_cents: 2500,
+    });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ currency: 'usd', amount_cents: 2500 });
+  });
+
+  it('C-629-2: a body the DTO rejects answers PACKAGE_INVALID naming the field and the next action', async () => {
+    const cur = await call('POST', '/v1/coach/packages', {
+      ...base,
+      amount_cents: 2500,
+      currency: 'xyz',
+    });
+    expect(cur.status).toBe(400);
+    expect(cur.body).toMatchObject({
+      statusCode: 400,
+      code: 'PACKAGE_INVALID',
+      error: 'PACKAGE_INVALID',
+      message:
+        'currency must be one of the following values: usd, gbp, eur, aud, cad. Check currency and save again.',
+    });
+    const extra = await call('POST', '/v1/coach/packages', {
+      ...base,
+      amount_cents: 2500,
+      price: 25,
+    });
+    expect(extra.status).toBe(400);
+    expect(extra.body).toMatchObject({
+      code: 'PACKAGE_INVALID',
+      message: 'Remove price: packages do not accept that field.',
+    });
+    const frac = await call('PATCH', '/v1/coach/packages/pkg-x', { amount_cents: 19.99 });
+    expect(frac.status).toBe(400);
+    expect(frac.body).toMatchObject({
+      code: 'PACKAGE_INVALID',
+      message:
+        'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free. Check amount_cents and save again.',
+    });
+    // Service refusals keep their own code.
+    const low = await call('POST', '/v1/coach/packages', { ...base, amount_cents: 1000 });
+    expect(low.body).toMatchObject({ code: 'PACKAGE_PRICE_BELOW_MINIMUM' });
+    expect(db.rows).toHaveLength(0);
+  });
+
+  it('B-629-4: a recurring $25 package with no subscribers switches to one-time with billing_interval null, then to free', async () => {
+    const monthly = await call('POST', '/v1/coach/packages', {
+      ...base,
+      amount_cents: 2500,
+      billing_type: 'recurring',
+      billing_interval: 'month',
+    });
+    const id = String(monthly.body?.id);
+    const once = await call('PATCH', `/v1/coach/packages/${id}`, {
+      billing_type: 'one_time',
+      billing_interval: null,
+    });
+    expect(once.status).toBe(200);
+    expect(once.body).toMatchObject({
+      billing_type: 'one_time',
+      interval: null,
+      amount_cents: 2500,
+    });
+    const free = await call('PATCH', `/v1/coach/packages/${id}`, { amount_cents: 0 });
+    expect(free.status).toBe(200);
+    expect(free.body).toMatchObject({ billing_type: 'one_time', interval: null, amount_cents: 0 });
+  });
+
+  it('B-629-4: switching to one-time without sending billing_interval clears it; one PATCH can go straight to free', async () => {
+    const monthly = await call('POST', '/v1/coach/packages', {
+      ...base,
+      amount_cents: 2500,
+      billing_type: 'recurring',
+      billing_interval: 'month',
+      billing_interval_count: 3,
+    });
+    const r = await call('PATCH', `/v1/coach/packages/${monthly.body?.id}`, {
+      billing_type: 'one_time',
+      amount_cents: 0,
+      billing_interval_count: null,
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({
+      billing_type: 'one_time',
+      interval: null,
+      interval_count: 1,
+      amount_cents: 0,
+    });
+  });
+
+  it('B-629-4: with active subscribers the switch is still PACKAGE_PRICING_LOCKED', async () => {
+    const monthly = await call('POST', '/v1/coach/packages', {
+      ...base,
+      amount_cents: 2500,
+      billing_type: 'recurring',
+      billing_interval: 'month',
+    });
+    db.activeSubscribers = 1;
+    const r = await call('PATCH', `/v1/coach/packages/${monthly.body?.id}`, {
+      billing_type: 'one_time',
+      billing_interval: null,
+    });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({
+      code: 'PACKAGE_PRICING_LOCKED',
+      message:
+        'Pricing is locked because this package has active subscribers. Create a new package for new pricing.',
+    });
+    expect(db.rows[0]).toMatchObject({ billing_type: 'recurring', interval: 'month' });
   });
 
   it('a never-published draft below $19.99 cannot be published (draft floor unchanged)', async () => {
