@@ -17,8 +17,9 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
 import {
   CONSULTATION_VERSION,
-  acceptedConsentVersions,
   consentCopyVersion,
+  currentConsentVersionOf,
+  isCurrentConsentAnswer,
   macroDisplayFor,
   selectionAnswersFrom,
   completedChapters,
@@ -171,6 +172,26 @@ function toJson(v: unknown): Prisma.InputJsonValue {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The P0 copy version a stored intake holds current consent for, or null.
+ * Current = server-stamped (`disclaimer_accepted_at`), the stamp names an
+ * accepted version, and the stored P0 proves that same version's exact text
+ * (copy_version + text_sha256, consult-consent-copy.ts). Used by the save
+ * gate, GET `consent_recorded` and completion, so all three agree.
+ */
+function onFileConsentVersion(
+  intake: {
+    disclaimer_accepted_at: Date | null;
+    disclaimer_version: string | null;
+    answers: unknown;
+  } | null,
+): string | null {
+  if (!intake?.disclaimer_accepted_at || !intake.disclaimer_version) return null;
+  const answers = intake.answers;
+  const version = currentConsentVersionOf(isRecord(answers) ? answers.P0 : undefined);
+  return version !== null && version === intake.disclaimer_version ? version : null;
 }
 
 interface ProgramSetEntry {
@@ -426,7 +447,6 @@ export class OnboardingService {
     // and use for coaching); its record is the server-stamped
     // disclaimer_version + disclaimer_accepted_at on the intake. Box 2 (AI
     // processing) lives in the AI consent ledger and is never read here.
-    const accepted = acceptedConsentVersions();
     const patchP0 = patch.P0;
     if (patchP0 === null) {
       throw new BadRequestException({
@@ -436,14 +456,15 @@ export class OnboardingService {
         errors: [{ key: 'P0', message: 'consent cannot be cleared here' }],
       });
     }
-    if (isRecord(patchP0) && !accepted.includes(consentCopyVersion(patchP0) ?? '')) {
+    // A P0 counts only with an accepted copy version AND the sha256 of that
+    // version's exact screen text (consult-consent-copy.ts): the record must
+    // prove which text the client agreed to.
+    if (isRecord(patchP0) && !isCurrentConsentAnswer(patchP0)) {
       throw conflict('consent_missing', 'Please accept the current version of the agreement');
     }
-    const consentOnFile = Boolean(
-      existing?.disclaimer_accepted_at &&
-      existing.disclaimer_version &&
-      accepted.includes(existing.disclaimer_version),
-    );
+    // On file = a server stamp for an accepted version whose stored P0 still
+    // proves that exact version's text.
+    const consentOnFile = onFileConsentVersion(existing) !== null;
     if (!consentOnFile) {
       const otherKeys = Object.keys(patch).filter((k) => k !== 'P0');
       if (!isRecord(patchP0) || otherKeys.length > 0) {
@@ -553,7 +574,9 @@ export class OnboardingService {
       answers,
       completed_chapters: intake?.completed_chapters ?? [],
       missing_required: missingRequired(answers),
-      consent_recorded: Boolean(intake?.disclaimer_accepted_at),
+      // True only while a CURRENT consent is on file (see onFileConsentVersion);
+      // a stale or unprovable P0 reads false, so the app sends P0 first.
+      consent_recorded: onFileConsentVersion(intake) !== null,
       saved_at: intake?.saved_at?.toISOString() ?? null,
       completed: Boolean(intake?.completed_at),
       completed_at: intake?.completed_at?.toISOString() ?? null,
@@ -623,11 +646,9 @@ export class OnboardingService {
     // D2 box 1 only: the training waiver plus collection and use for
     // coaching, recorded on the intake as the server-stamped P0. The
     // optional AI box (box 2, #601 / R2a ledger) is never consulted here.
-    if (
-      !intake.disclaimer_accepted_at ||
-      !isRecord(answers.P0) ||
-      !acceptedConsentVersions().includes(intake.disclaimer_version ?? '')
-    ) {
+    // The stamp must name an accepted version AND the stored P0 must prove
+    // that version's exact text (copy_version + text_sha256).
+    if (onFileConsentVersion(intake) === null) {
       throw conflict('consent_missing', 'The training agreement has not been accepted');
     }
     const resolved = resolveMacroInputs(macroRawFromAnswers(answers), now);

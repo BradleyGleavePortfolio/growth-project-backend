@@ -12,6 +12,7 @@ import { parseFixture } from '../src/onboarding/clinic-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -498,10 +499,13 @@ function makeWorld() {
   };
 }
 
+// The exact P0 the mobile app (#310) sends: copy version + sha256 of the
+// whole screen text it showed (consult-consent-copy.ts).
 const CONSENT = {
   agreed: true,
-  copy_version: 'consult-consent-v2',
+  copy_version: 'consult-consent-v3',
   agreed_at: '2026-10-01T11:59:00.000Z',
+  text_sha256: CONSULT_CONSENT_V3_TEXT_SHA256,
 };
 
 const COMPLETE = {
@@ -517,7 +521,7 @@ const COMPLETE = {
   S3: 'gym',
   N1: 'none',
   N2: ['nothing'],
-  P0: { agreed: true, copy_version: 'consult-consent-v2', agreed_at: '2026-10-01T11:59:00.000Z' },
+  P0: CONSENT,
   P1: 'no',
   P2: 'no',
   P3: 'no',
@@ -527,6 +531,13 @@ const COMPLETE = {
   P7: 'no',
   C1: '2026-10-05',
 };
+
+/** A copy of a stored intake's answers (to build a tampered record). */
+function answersOf(row: Row): Record<string, unknown> {
+  const a = row.answers;
+  if (typeof a !== 'object' || a === null || Array.isArray(a)) throw new Error('no answers');
+  return Object.fromEntries(Object.entries(a));
+}
 
 async function code(p: Promise<unknown>): Promise<string> {
   try {
@@ -568,7 +579,7 @@ describe('PUT /me/onboarding/consultation', () => {
     );
     expect(out.completed_chapters).toContain('safety');
     const intake = w.intakes[0];
-    expect(intake.disclaimer_version).toBe('consult-consent-v2');
+    expect(intake.disclaimer_version).toBe('consult-consent-v3');
     expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
     expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
@@ -578,7 +589,7 @@ describe('PUT /me/onboarding/consultation', () => {
       'client-1',
       {
         version: 'consult-v1',
-        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
+        answers: { P0: { ...CONSENT, agreed_at: '2026-10-01T12:30:00.000Z' } },
       },
       new Date(later.getTime() + 1),
     );
@@ -622,7 +633,7 @@ describe('consent before answers (privacy ruling 2026-09-30 18:24)', () => {
     );
     expect(first.revision).toBe(1);
     expect(w.intakes[0]).toMatchObject({
-      disclaimer_version: 'consult-consent-v2',
+      disclaimer_version: 'consult-consent-v3',
       disclaimer_accepted_at: NOW,
     });
     const { P0: _p0, ...rest } = COMPLETE;
@@ -687,14 +698,30 @@ describe('POST /me/onboarding/complete', () => {
     });
   });
 
-  it('consent_missing at complete when the accepted copy version is no longer current', async () => {
-    const w = await ready();
-    process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v3';
-    try {
-      expect(await code(w.svc.complete('client-1', NOW))).toBe('consent_missing');
-    } finally {
-      delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
-    }
+  it('consent_missing at complete when the stored consent is not a current, provable v3 record', async () => {
+    // A stamp for a version that is no longer accepted (v2: no compat window).
+    const stale = await ready();
+    stale.intakes[0].disclaimer_version = 'consult-consent-v2';
+    stale.intakes[0].answers = {
+      ...answersOf(stale.intakes[0]),
+      P0: { ...CONSENT, copy_version: 'consult-consent-v2' },
+    };
+    expect(await code(stale.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // A v3 stamp whose stored P0 no longer proves the v3 text.
+    const tampered = await ready();
+    tampered.intakes[0].answers = {
+      ...answersOf(tampered.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'a'.repeat(64) },
+    };
+    expect(await code(tampered.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // A stamp that names a different version than the stored P0.
+    const split = await ready();
+    split.intakes[0].disclaimer_version = 'consult-consent-v4';
+    expect(await code(split.svc.complete('client-1', NOW))).toBe('consent_missing');
+    // No server stamp at all.
+    const unstamped = await ready();
+    unstamped.intakes[0].disclaimer_accepted_at = null;
+    expect(await code(unstamped.svc.complete('client-1', NOW))).toBe('consent_missing');
   });
 
   it('clinic_not_configured when the coach has no program set', async () => {
@@ -928,7 +955,7 @@ describe('GET /coach/clients/:clientId/consultation', () => {
       note: 'On stairs',
     });
     expect(v.screening.items[0].question.length).toBeGreaterThan(20);
-    expect(v.consent).toEqual({ version: 'consult-consent-v2', agreed_at: NOW.toISOString() });
+    expect(v.consent).toEqual({ version: 'consult-consent-v3', agreed_at: NOW.toISOString() });
   });
 
   it('an assigned sub-coach can read; earlier revisions stay readable after edits', async () => {
@@ -1548,44 +1575,121 @@ describe('A607-3: finalisation never writes for a former coach', () => {
 });
 
 describe('D2 consent: box 1 only gates completion; box 2 is never required (#607 does not depend on #601)', () => {
-  it('the accepted P0 copy version defaults to consult-consent-v2; v1 is no longer current', async () => {
+  it('the accepted P0 copy is consult-consent-v3 with its exact text digest; v1 and v2 are not current', async () => {
     const w = makeWorld();
+    for (const P0 of [
+      { agreed: true, copy_version: 'consult-consent-v1' },
+      { agreed: true, copy_version: 'consult-consent-v2' },
+      // v2 with the v3 digest is still v2: version and text must both match.
+      { ...CONSENT, copy_version: 'consult-consent-v2' },
+    ]) {
+      expect(
+        await code(
+          w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW),
+        ),
+      ).toBe('consent_missing');
+    }
+    expect(w.intakes).toHaveLength(0);
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect(answersOf(w.intakes[0]).P0).toEqual(CONSENT);
+  });
+
+  it('a v3 P0 without the exact v3 text digest is not consent and nothing is stored', async () => {
+    const w = makeWorld();
+    const { text_sha256: _sha, ...noDigest } = CONSENT;
+    for (const P0 of [
+      noDigest,
+      { ...CONSENT, text_sha256: 'b'.repeat(64) },
+      // The box 2 (AI) copy digest is not the screen digest.
+      {
+        ...CONSENT,
+        text_sha256: 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4',
+      },
+    ]) {
+      expect(
+        await code(
+          w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW),
+        ),
+      ).toBe('consent_missing');
+    }
+    expect(w.intakes).toHaveLength(0);
+    expect(w.revisions).toHaveLength(0);
+    // A malformed digest is a shape error (400), also before any write.
+    await expect(
+      w.svc.saveConsultation(
+        'client-1',
+        { version: 'consult-v1', answers: { P0: { ...CONSENT, text_sha256: 'NOT-HEX' } } },
+        NOW,
+      ),
+    ).rejects.toMatchObject({ response: { code: 'invalid_answers' } });
+    expect(w.intakes).toHaveLength(0);
+  });
+
+  it('a stored P0 that no longer proves the v3 text is not on file: answers are refused until P0 is re-sent', async () => {
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+    w.intakes[0].answers = {
+      ...answersOf(w.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'c'.repeat(64) },
+    };
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(false);
     expect(
       await code(
         w.svc.saveConsultation(
           'client-1',
-          {
-            version: 'consult-v1',
-            answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
-          },
+          { version: 'consult-v1', answers: { G1: 'fat_loss' } },
           NOW,
         ),
       ),
     ).toBe('consent_missing');
+    // A stale v2 stamp reads the same way.
+    w.intakes[0].answers = { ...answersOf(w.intakes[0]), P0: { ...CONSENT } };
+    w.intakes[0].disclaimer_version = 'consult-consent-v2';
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(false);
+    // Re-sending the exact v3 P0 alone restores it.
     await w.svc.saveConsultation(
       'client-1',
-      {
-        version: 'consult-v1',
-        answers: { P0: { agreed: true, copy_version: 'consult-consent-v2' } },
-      },
+      { version: 'consult-v1', answers: { P0: CONSENT } },
       NOW,
     );
-    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v2');
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
   });
 
-  it('CONSULT_CONSENT_COPY_VERSIONS still overrides the default', async () => {
+  it('CONSULT_CONSENT_COPY_VERSIONS only chooses among versions with known text', async () => {
+    // Unknown names cannot be verified, so they are ignored; v2 is unknown.
     process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v1, consult-consent-v2';
     try {
       const w = makeWorld();
+      expect(
+        await code(
+          w.svc.saveConsultation(
+            'client-1',
+            {
+              version: 'consult-v1',
+              answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
+            },
+            NOW,
+          ),
+        ),
+      ).toBe('consent_missing');
+      // No known name in the list: the default (v3) still applies.
       await w.svc.saveConsultation(
         'client-1',
-        {
-          version: 'consult-v1',
-          answers: { P0: { agreed: true, copy_version: 'consult-consent-v1' } },
-        },
+        { version: 'consult-v1', answers: { P0: CONSENT } },
         NOW,
       );
-      expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v1');
+      expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
     } finally {
       delete process.env.CONSULT_CONSENT_COPY_VERSIONS;
     }
@@ -1612,7 +1716,7 @@ describe('D2 consent: box 1 only gates completion; box 2 is never required (#607
           'client-1',
           {
             version: 'consult-v1',
-            answers: { P0: { agreed: true, copy_version: 'consult-consent-v2', ...extra } },
+            answers: { P0: { ...CONSENT, ...extra } },
           },
           NOW,
         ),

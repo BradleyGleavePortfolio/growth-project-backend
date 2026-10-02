@@ -24,22 +24,46 @@ consent is on file for the user, the only accepted request is P0 on its own:
 ```json
 {
   "version": "consult-v1",
-  "answers": { "P0": { "agreed": true, "copy_version": "consult-consent-v2" } }
+  "answers": {
+    "P0": {
+      "agreed": true,
+      "copy_version": "consult-consent-v3",
+      "agreed_at": "ISO",
+      "text_sha256": "79ceeb6b8316ee9e3f583fe678e2463584c6dda4c93b5c95746dfe5c52ef31c9"
+    }
+  }
 }
 ```
 
 Any other request (answers without P0, or answers bundled with the first P0)
 is rejected with `409 { code: "consent_missing" }` before anything is
-written, so those answers are never stored. A P0 with a copy version that is
-not current (`CONSULT_CONSENT_COPY_VERSIONS`, default `consult-consent-v2`)
-is also `409 consent_missing`; `P0: null` (withdrawal) is `400
+written, so those answers are never stored. `P0: null` (withdrawal) is `400
 invalid_answers`.
+
+**The server stores what was shown.** A P0 counts as consent only when BOTH
+hold: `copy_version` is an accepted version (default `consult-consent-v3`,
+the only version the server knows), AND `text_sha256` is the sha256 (UTF-8,
+lowercase hex) of that version's exact screen text. The text lives in
+`src/onboarding/consult-consent-copy.ts`: title, paragraphs 1-3, box 1 label,
+paragraph 4, box 2 label and footer joined with `"\n\n"`, byte-identical to
+mobile #310 `consentCopyText()` (pinned there as `CONSENT_COPY_SHA256`). Its
+paragraph 4 + `"\n\n"` + box 2 label is byte-identical to the AI consent
+ledger's `client-ai-v4` copy (sha256 `fbf82140...34f4`); both digests are
+pinned and recomputed from the text in `test/onboarding-consent-copy.spec.ts`.
+Any other version (including `consult-consent-v2`, which no live client ever
+recorded), a missing `text_sha256`, or a different digest is
+`409 consent_missing` and nothing is written. `CONSULT_CONSENT_COPY_VERSIONS`
+(comma-separated) may only choose among versions the server knows the text
+of; unknown names are ignored (logged once) and a list with no known name
+falls back to the default. `consent_recorded` on `GET /me/onboarding` and the
+completion gate use the same rule: the server stamp must name an accepted
+version AND the stored P0 must still prove that version's text.
 
 **D2 consent (operator ruling D2, 2026-10-01).** The
 P0 screen shows two boxes. P0 here is **box 1 only** (required): the training
 waiver plus collection and use of the client's information by The Growth
 Project and their coach for coaching. The server stamps `disclaimer_version`
-(the `copy_version` that was shown, default `consult-consent-v2`) and
+(the `copy_version` that was shown, default `consult-consent-v3`) and
 `disclaimer_accepted_at` on the intake; that stamp is the box-1 record and the
 only consent `POST /me/onboarding/complete` requires (`consent_missing` when it
 is absent or not current). **Box 2** (optional: Roman and the coach's AI
@@ -194,7 +218,7 @@ up).
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `not_attached`            | the client has no coach (or the coach account is not a coach)                                                      |
 | `consultation_incomplete` | required answers missing; `missing: string[]` lists keys (also used when macro inputs are implausible)             |
-| `consent_missing`         | no current-version P0 acknowledgement                                                                              |
+| `consent_missing`         | no current P0 acknowledgement (accepted `copy_version` with that version's `text_sha256`)                          |
 | `clinic_not_configured`   | the coach has no seeded program set, or its master/space rows are missing or not the coach's own                   |
 | `completion_in_progress`  | another completion for this client is running, or the answers changed since this attempt read them (retry shortly) |
 
@@ -293,7 +317,7 @@ used by the RLS policies.
     "any_yes": true,
     "items": [{ "key": "P2", "question": "...", "answer": "yes", "note": "..." }]
   },
-  "consent": { "version": "consult-consent-v2", "agreed_at": "ISO" }
+  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" }
 }
 ```
 

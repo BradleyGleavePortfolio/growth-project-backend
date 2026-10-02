@@ -9,6 +9,12 @@
  */
 import { ageInYears, LBS_PER_KG } from '../macros/macro-calculator';
 import type { SelectionAnswers } from './program-rules';
+import { Logger } from '@nestjs/common';
+import {
+  CONSULT_CONSENT_V3,
+  consultConsentTextSha256,
+  unknownConsultConsentVersions,
+} from './consult-consent-copy';
 
 export const CONSULTATION_VERSION = 'consult-v1';
 
@@ -16,26 +22,65 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * P0 consent copy versions the server accepts as "current". P0 is box 1 of
  * the D2 consent screen (operator ruling 2026-10-01): the training waiver
  * plus collection and use of the client's information by The Growth Project
- * and their coach for coaching. The mobile app sends
- * `copy_version: 'consult-consent-v2'` (the D2 two-box copy). Override
- * (comma-separated) with CONSULT_CONSENT_COPY_VERSIONS when the approved
- * copy changes.
+ * and their coach for coaching. The mobile app (#310) sends
+ * `{ agreed: true, copy_version: 'consult-consent-v3', agreed_at, text_sha256 }`
+ * where `text_sha256` is the sha256 of the whole screen it showed
+ * (consult-consent-copy.ts). A P0 counts only when BOTH match: an accepted
+ * version and that version's pinned text digest (`isCurrentConsentAnswer`).
+ *
+ * v3 only (no live client ever recorded v2). CONSULT_CONSENT_COPY_VERSIONS
+ * (comma-separated) may narrow or widen the accepted set, but only among the
+ * versions whose exact text the server knows (CONSULT_CONSENT_COPIES): an
+ * unknown name can never be verified, so it is ignored (logged once as a
+ * warning), and a list with no known name falls back to the default.
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
  * stored on the intake, and is never required by this module.
  */
-export const DEFAULT_CONSULT_CONSENT_COPY_VERSION = 'consult-consent-v2';
+export const DEFAULT_CONSULT_CONSENT_COPY_VERSION = CONSULT_CONSENT_V3;
+
+const warnedConsentVersionLists = new Set<string>();
 
 export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = env.CONSULT_CONSENT_COPY_VERSIONS;
+  if (!raw) return [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
+  const unknown = unknownConsultConsentVersions(raw);
+  if (unknown.length > 0 && !warnedConsentVersionLists.has(raw)) {
+    warnedConsentVersionLists.add(raw);
+    new Logger('Onboarding').warn(
+      `CONSULT_CONSENT_COPY_VERSIONS lists ${unknown.join(', ')}, which the server has no consent text for; those names are ignored`,
+    );
+  }
   const list = raw
-    ? raw
-        .split(',')
-        .map((v) => v.trim())
-        .filter((v) => v.length > 0)
-    : [];
-  return list.length > 0 ? list : [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0 && consultConsentTextSha256(v) !== null);
+  return list.length > 0 ? [...new Set(list)] : [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
+}
+
+/**
+ * The copy version a P0 acknowledgement proves the client agreed to, or null
+ * when it proves nothing current: `agreed === true`, an accepted copy version,
+ * and `text_sha256` equal to that version's pinned full-screen digest. A
+ * missing or different digest means the server cannot tell what was shown,
+ * so it is not consent.
+ */
+export function currentConsentVersionOf(
+  p0: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (typeof p0 !== 'object' || p0 === null || Array.isArray(p0)) return null;
+  const o = p0 as Record<string, unknown>;
+  if (o.agreed !== true) return null;
+  const version = consentCopyVersion(o);
+  if (!version || !acceptedConsentVersions(env).includes(version)) return null;
+  const pinned = consultConsentTextSha256(version);
+  return pinned !== null && o.text_sha256 === pinned ? version : null;
+}
+
+export function isCurrentConsentAnswer(p0: unknown, env: NodeJS.ProcessEnv = process.env): boolean {
+  return currentConsentVersionOf(p0, env) !== null;
 }
 
 export type AnswerValue = string | number | boolean | string[] | Record<string, unknown>;
