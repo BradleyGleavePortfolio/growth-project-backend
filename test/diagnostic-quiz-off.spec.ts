@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
-import { NestContainer } from '@nestjs/core';
+import { ModulesContainer } from '@nestjs/core';
 import { INestApplication, Type } from '@nestjs/common';
 import { MODULE_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { AppModule } from '../src/app.module';
@@ -65,13 +65,13 @@ describe('B-QUIZ-OFF: the TGP Finance diagnostic quiz is switched off in the fit
   jest.setTimeout(90_000);
 
   let app: INestApplication;
-  let container: NestContainer;
+  let container: ModulesContainer;
   let openApiPaths: string[] = [];
   let baseUrl = '';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    container = (moduleRef as unknown as { container: NestContainer }).container;
+    container = moduleRef.get(ModulesContainer);
     app = moduleRef.createNestApplication();
     await app.init();
     openApiPaths = Object.keys(buildOpenApiDocument(app).paths ?? {});
@@ -93,7 +93,7 @@ describe('B-QUIZ-OFF: the TGP Finance diagnostic quiz is switched off in the fit
   });
 
   it('the live container holds no diagnostic module, controller or roadmap provider', () => {
-    const modules = [...container.getModules().values()];
+    const modules = [...container.values()];
     expect(modules.length).toBeGreaterThan(20);
     expect(modules.some((m) => m.metatype === DiagnosticModule)).toBe(false);
     const controllers = modules.flatMap((m) => [...m.controllers.keys()]);
