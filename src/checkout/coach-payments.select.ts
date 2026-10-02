@@ -34,6 +34,11 @@ export const COACH_PURCHASE_SELECT = {
   updated_at: true,
 } as const satisfies Prisma.ClientPurchaseSelect;
 
+/** Shape of a purchase row on a coach-facing route. */
+export type CoachPurchaseView = Prisma.ClientPurchaseGetPayload<{
+  select: typeof COACH_PURCHASE_SELECT;
+}>;
+
 /** SplitLedgerEntry fields a coach may see (amounts, state, Stripe charge / transfer ids). */
 export const COACH_LEDGER_SELECT = {
   id: true,
