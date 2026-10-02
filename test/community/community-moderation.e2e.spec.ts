@@ -364,7 +364,23 @@ itLive('community v1-3 moderation (live DB)', () => {
             select: { status: true },
           })
         ).map((m) => m.status);
-      const noticeCount = () => prisma.notification.count({ where: { user_id: ids.studentA2 } });
+      // Notices for THIS report only: case 4's Hide already stored one for
+      // this member on another report.
+      const noticeCount = async () =>
+        (
+          await prisma.notification.findMany({
+            where: { user_id: ids.studentA2 },
+            select: { payload: true },
+          })
+        ).filter((n) => {
+          const payload = n.payload;
+          return (
+            typeof payload === 'object' &&
+            payload !== null &&
+            !Array.isArray(payload) &&
+            payload.moderation_action_id === reportId
+          );
+        }).length;
       const messageRow = () =>
         prisma.communityMessage.findFirst({
           where: { id: message.id },
