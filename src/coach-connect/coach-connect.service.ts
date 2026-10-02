@@ -236,6 +236,8 @@ export class CoachConnectService {
         package_id: { in: packages.map((p) => p.id) },
         entitlement_active: true,
         coach_user_id: coachUserId,
+        // C01 — $0 grants are reported separately, not as subscribers.
+        source: null,
       },
       _count: { _all: true },
     });
@@ -281,6 +283,7 @@ export class CoachConnectService {
         coach_user_id: coachUserId,
         entitlement_active: true,
         billing_type: 'recurring',
+        source: null, // C01 — grants carry $0 and are not MRR
       },
       select: { amount_cents: true, package: { select: { interval: true } } },
     });
@@ -306,6 +309,7 @@ export class CoachConnectService {
         coach_user_id: coachUserId,
         status: 'canceled',
         canceled_at: { gte: thirtyAgo },
+        source: null, // C01 — revoked grants are status 'revoked' and excluded anyway
       },
     });
 
@@ -338,6 +342,7 @@ export class CoachConnectService {
               coach_user_id: { in: subCoachIds },
               status: 'canceled',
               canceled_at: { gte: thirtyAgo },
+              source: null, // C01
             },
           });
 

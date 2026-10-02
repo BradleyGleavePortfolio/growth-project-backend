@@ -120,6 +120,8 @@ export class AdminAnalyticsService {
           where: {
             created_at: { gte: from, lte: to },
             status: { in: ['paid', 'active', 'past_due', 'canceled', 'refunded', 'disputed', 'chargeback_lost'] },
+            // C01 — $0 grants (invite_grant:* / free_package_claim) are not purchases.
+            source: null,
           },
         }),
         this.prisma.splitLedgerEntry.findMany({
@@ -302,6 +304,8 @@ export class AdminAnalyticsService {
           where: {
             coach_user_id: coachUserId,
             created_at: { gte: from, lte: to },
+            // C01 — $0 grants are not purchases.
+            source: null,
           },
         }),
         this.prisma.payoutSnapshot.findUnique({

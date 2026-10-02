@@ -149,6 +149,9 @@ export class ReconciliationService {
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
         status: { in: ['paid', 'active', 'past_due', 'canceled'] },
+        // C01 — $0 grants have no Stripe charge; they are not reconcilable
+        // and must not consume the sweep budget.
+        source: null,
         OR: [
           { reconciliation: null },
           {
