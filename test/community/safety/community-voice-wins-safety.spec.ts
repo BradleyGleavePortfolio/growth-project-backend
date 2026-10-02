@@ -181,6 +181,7 @@ describe('voice notes and member wins: report, review, block, delete (Apple 1.2)
     const np = stub<CommunityNotificationsService>(push);
     const storage = stub<VoiceUploadProvider>({
       createSignedDownload: signDownload,
+      removeObjects: jest.fn(async (keys: string[]) => ({ removed: keys.length, failed: false })),
       bucket: () => 'voice-notes',
       ttlSeconds: () => 600,
     });
@@ -234,7 +235,8 @@ describe('voice notes and member wins: report, review, block, delete (Apple 1.2)
       });
       expect(Date.parse(item.respond_by) - Date.parse(item.created_at)).toBe(REVIEW_WITHIN_MS);
       // The playback link is short-lived (15 minutes) and signed for this note's object.
-      expect(signDownload).toHaveBeenCalledWith(`${bob.id}/1700000000-abc.m4a`, 15 * 60);
+      // A-610-1: signing is bound to the author's folder (third argument).
+      expect(signDownload).toHaveBeenCalledWith(`${bob.id}/1700000000-abc.m4a`, 15 * 60, bob.id);
       // Other tenants' coaches and members never see the queue item.
       expect((await moderation.listFlagged(otherCoach, {})).items).toHaveLength(0);
       await expect(moderation.listFlagged(alice, {})).rejects.toBeInstanceOf(ForbiddenException);

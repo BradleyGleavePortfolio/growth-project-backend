@@ -85,6 +85,22 @@ export class CommunityVoiceRepository {
     return created;
   }
 
+  /** Any row (live or soft-deleted) already holding this storage key. */
+  async findByStorageKey(storageKey: string): Promise<{ id: string } | null> {
+    return this.prisma.communityVoiceNote.findFirst({
+      where: { storage_key: storageKey },
+      select: { id: true },
+    });
+  }
+
+  /** Every note an author recorded (live or soft-deleted), for account deletion. */
+  async findAllByAuthor(authorId: string): Promise<Array<{ id: string; storage_key: string }>> {
+    return this.prisma.communityVoiceNote.findMany({
+      where: { author_id: authorId },
+      select: { id: true, storage_key: true },
+    });
+  }
+
   async findById(id: string): Promise<CommunityVoiceNote | null> {
     return this.prisma.communityVoiceNote.findUnique({ where: { id } });
   }

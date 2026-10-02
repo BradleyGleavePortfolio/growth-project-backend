@@ -57,6 +57,7 @@ describe('CommunityCohortMembersService', () => {
     findUserByEmail: jest.Mock;
     findUserById: jest.Mock;
     upsertMembership: jest.Mock;
+    liftWorkspaceBan: jest.Mock;
     removeMembership: jest.Mock;
   };
   let service: CommunityCohortMembersService;
@@ -73,6 +74,7 @@ describe('CommunityCohortMembersService', () => {
       findUserByEmail: jest.fn(),
       findUserById: jest.fn(),
       upsertMembership: jest.fn(),
+      liftWorkspaceBan: jest.fn().mockResolvedValue(false),
       removeMembership: jest.fn(),
     };
     service = new CommunityCohortMembersService(access as never, repo as never, safetyWithBlocks());

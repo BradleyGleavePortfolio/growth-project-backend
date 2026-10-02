@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberFirstName } from './member-display-name';
+import { isBannedFromWorkspace } from './community-ban';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -137,7 +138,9 @@ export class CommunityService {
       // membership in their coach's default cohort. Idempotent via upsert.
       if (user.coach_id) {
         const cohort = await this.repo.findDefaultCohortForCoach(user.coach_id);
-        if (cohort) {
+        // B-610-2: a durable ban survives new/archived/re-ordered cohorts, so
+        // first-touch bootstrap never re-admits a banned member.
+        if (cohort && !(await isBannedFromWorkspace(this.prisma, cohort.workspace_id, user.id))) {
           membership = await this.repo.bootstrapStudentMembership({
             workspaceId: cohort.workspace_id,
             cohortId: cohort.id,
@@ -436,8 +439,13 @@ export class CommunityService {
     if (!user) return [];
     const coachId = user.role === 'coach' ? user.id : user.coach_id;
     const workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
+    // B-610-2: a member banned (or removed) from the coach's community no
+    // longer sees teammates' wins; they keep seeing their own.
+    const viewerRemoved =
+      workspaceId !== null &&
+      (await removedFromWorkspace(this.prisma, workspaceId, [userId])).has(userId);
     const where =
-      workspaceId && coachId
+      workspaceId && coachId && !viewerRemoved
         ? { coach_id: coachId, hidden_at: null }
         : { user_id: userId, hidden_at: null };
 

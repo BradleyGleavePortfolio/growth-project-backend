@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
@@ -33,6 +35,7 @@ import {
 import { CommunityVoiceRepository, type VoiceNoteSeed } from './community-voice.repository';
 import { resolveVoiceEntitlementRequired } from './community-voice-flag.guard';
 import { VoiceUploadProvider } from './voice-upload.provider';
+import { verifyPublishableVoiceKey } from './voice-storage-key';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const NOT_FOUND = {
@@ -53,6 +56,42 @@ export const VOICE_DM_NOT_SUPPORTED = {
   code: 'community.voice.dm_not_supported',
   message:
     'Voice notes can be shared in your community spaces, not in direct messages. Send a text message instead, or share the voice note in a space.',
+} as const;
+
+/** A-610-1: a key the server did not mint for this caller (or a stale one). */
+export const VOICE_STORAGE_KEY_REJECTED = {
+  error: 'bad_request',
+  code: 'community.voice.storage_key_rejected',
+  message:
+    'This recording could not be attached. Record the voice note again in the app, then send it.',
+} as const;
+
+/** A-610-1: nothing was uploaded at the minted key (or it does not match). */
+export const VOICE_UPLOAD_MISSING = {
+  error: 'bad_request',
+  code: 'community.voice.upload_missing',
+  message:
+    'We could not find the uploaded recording. Check your connection, record the voice note again, then send it.',
+} as const;
+
+export const VOICE_UPLOAD_MISMATCH = {
+  error: 'bad_request',
+  code: 'community.voice.upload_mismatch',
+  message:
+    'The uploaded recording does not match what was recorded. Record the voice note again in the app, then send it.',
+} as const;
+
+export const VOICE_KEY_ALREADY_USED = {
+  error: 'conflict',
+  code: 'community.voice.already_posted',
+  message: 'This recording was already posted. Refresh to see it, or record a new voice note.',
+} as const;
+
+export const VOICE_STORAGE_UNAVAILABLE = {
+  error: 'service_unavailable',
+  code: 'community.voice.storage_unavailable',
+  message:
+    'Voice notes cannot be checked right now. Your recording was not posted. Try sending it again in a minute.',
 } as const;
 
 export const VOICE_NOT_AUTHOR = {
@@ -265,7 +304,8 @@ export class CommunityVoiceService {
   // ── Views ──────────────────────────────────────────────────────────────────
 
   private async noteView(row: CommunityVoiceNote): Promise<VoiceNoteView> {
-    const url = await this.upload.createSignedDownload(row.storage_key);
+    // A-610-1: signed only for a canonical key inside the AUTHOR's folder.
+    const url = await this.upload.createSignedDownload(row.storage_key, undefined, row.author_id);
     return {
       id: row.id,
       workspace_id: row.workspace_id,
@@ -303,15 +343,15 @@ export class CommunityVoiceService {
     this.assertWithinLimits(dto);
 
     const mime: VoiceNoteMimeType = dto.mime_type;
-    const signed = await this.upload.createSignedUpload(user.id, {
+    const signed = await this.upload.createSignedUploadWithKey(user.id, {
       duration_sec: Math.ceil(dto.duration_ms / 1000),
       size_bytes: dto.bytes,
       content_type: mime,
     });
-    // The provider's public_url embeds the object path; we derive the storage
-    // key (the path within the bucket) from it so the client persists the same
-    // key the server minted. The key is `${authorId}/<ts>-<rand>.<ext>`.
-    const storageKey = this.deriveStorageKey(signed.public_url, user.id);
+    // The exact key the server minted (`<authorId>/<ms>-<nonce>-<mac>.<ext>`,
+    // voice-storage-key.ts). The client echoes it on create(), where the MAC
+    // proves it was issued to this caller.
+    const storageKey = signed.storage_key;
 
     this.track(user.id, COMMUNITY_TELEMETRY_EVENTS.voiceUploadIssued, {
       workspace_id: workspaceId,
@@ -330,25 +370,6 @@ export class CommunityVoiceService {
     });
   }
 
-  /**
-   * Extract the bucket-relative storage key from the provider's public URL,
-   * asserting the author-id namespace prefix (bucket-binding). The public URL
-   * shape is `.../object/public/<bucket>/<authorId>/<file>`; we take everything
-   * after the bucket segment. Falls back to re-minting a key if the URL shape
-   * is unexpected so we never return a key outside the author's namespace.
-   */
-  private deriveStorageKey(publicUrl: string, authorId: string): string {
-    const bucket = this.upload.bucket();
-    const marker = `/${bucket}/`;
-    const idx = publicUrl.indexOf(marker);
-    if (idx >= 0) {
-      const key = publicUrl.slice(idx + marker.length);
-      if (key.startsWith(`${authorId}/`)) return key;
-    }
-    // Unexpected shape — mint a fresh namespaced key rather than trust the URL.
-    return `${authorId}/${Date.now()}-fallback`;
-  }
-
   // ── Create (durable insert after upload confirmed) ───────────────────────────
 
   async create(
@@ -363,24 +384,47 @@ export class CommunityVoiceService {
     await this.assertEntitled(workspaceId, user);
     this.assertWithinLimits(dto);
 
-    // Bucket binding: the storage key MUST live in the caller's namespace. A
-    // forged key for another principal's path is rejected — the server never
-    // trusts a client-supplied key outside `${authorId}/`.
-    if (!dto.storage_key.startsWith(`${user.id}/`)) {
-      throw new BadRequestException({
-        error: 'bad_request',
-        code: 'community.voice.storage_key_rejected',
-        message:
-          'This recording could not be attached. Record the voice note again in the app, then send it.',
-      });
-    }
-
     const scope = await this.resolveWriteScope(
       workspaceId,
       user,
       dto.cohort_id,
       dto.conversation_id,
     );
+
+    // A-610-1 bucket binding: only a key the server minted for THIS caller
+    // (valid issuance MAC, canonical shape, recent) is accepted, checked after
+    // the same normalization the storage SDK + fetch apply, so a dot-segment,
+    // encoded, foreign-owner or other-bucket key never gets a row or a
+    // signing request.
+    const keyCheck = verifyPublishableVoiceKey(this.upload.bucket(), dto.storage_key, user.id);
+    if (!keyCheck.ok) {
+      this.logger.warn(`voice publish refused: storage key ${keyCheck.reason}`);
+      throw new BadRequestException(VOICE_STORAGE_KEY_REJECTED);
+    }
+
+    // One row per recording: a key already published (even one a moderator
+    // later hid or the author deleted) can never be re-published.
+    if (await this.repo.findByStorageKey(dto.storage_key)) {
+      throw new ConflictException(VOICE_KEY_ALREADY_USED);
+    }
+
+    // Upload confirmed: the object must exist at the exact minted key, be
+    // audio, and fit the declared limits (the stored size is authoritative).
+    const stat = await this.upload.statObject(dto.storage_key, user.id);
+    if (stat.state === 'unavailable') {
+      throw new ServiceUnavailableException(VOICE_STORAGE_UNAVAILABLE);
+    }
+    if (stat.state === 'missing') {
+      throw new BadRequestException(VOICE_UPLOAD_MISSING);
+    }
+    const storedBytes = stat.size ?? dto.bytes;
+    if (
+      (stat.contentType !== null && !stat.contentType.toLowerCase().startsWith('audio/')) ||
+      storedBytes <= 0
+    ) {
+      throw new BadRequestException(VOICE_UPLOAD_MISMATCH);
+    }
+    this.assertWithinLimits({ ...dto, bytes: storedBytes });
 
     const seed: VoiceNoteSeed = {
       workspaceId,
@@ -389,7 +433,7 @@ export class CommunityVoiceService {
       authorId: user.id,
       storageKey: dto.storage_key,
       durationMs: dto.duration_ms,
-      bytes: dto.bytes,
+      bytes: storedBytes,
       mimeType: dto.mime_type,
       waveformPeaks: null,
     };
@@ -537,22 +581,53 @@ export class CommunityVoiceService {
   }
 
   /**
-   * Author delete (and workspace coach / platform owner). A member who cannot
+   * Author delete (and workspace coach / platform owner).
+   *
+   * B-610-3: the author can always delete their own note, checked BEFORE any
+   * read/membership rule, so a member who was removed, banned or lost their
+   * plan can still take their own recording down. Anyone else who cannot
    * read the note gets the same 404 as a missing note (no existence leak); a
    * member who can read it but did not record it gets 403 VOICE_NOT_AUTHOR.
-   * Soft delete: every read path, the review queue and search skip it, and
-   * no new playback link is ever signed for it.
+   *
+   * B-610-5: the note and its search row are soft-deleted (no read path,
+   * queue or search shows it and nothing signs it again), then the recording
+   * object itself is erased from storage.
    */
   async delete(user: User, voiceNoteId: string): Promise<{ deleted: true }> {
+    const own = await this.repo.findById(voiceNoteId);
+    if (own && own.author_id === user.id) {
+      if (own.soft_deleted_at !== null) {
+        // Already deleted: finish any storage cleanup a storage outage left
+        // behind, then answer like a missing note (unchanged contract).
+        await this.eraseRecording(own);
+        throw new NotFoundException(NOT_FOUND);
+      }
+      await this.softDeleteNote(own);
+      await this.eraseRecording(own);
+      return { deleted: true };
+    }
     const row = await this.readableNote(user, voiceNoteId);
-    if (row.author_id !== user.id && !(await this.isCoach(row.workspace_id, user))) {
+    if (!(await this.isCoach(row.workspace_id, user))) {
       // Blocked either way reads as missing, like every other voice read.
       await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
       throw new ForbiddenException(VOICE_NOT_AUTHOR);
     }
-    const at = new Date();
-    await this.repo.softDelete(voiceNoteId, at);
-    await this.repo.softDeleteSearchEntries(voiceNoteId, at);
+    await this.softDeleteNote(row);
+    await this.eraseRecording(row);
     return { deleted: true };
+  }
+
+  private async softDeleteNote(row: CommunityVoiceNote): Promise<void> {
+    const at = new Date();
+    await this.repo.softDelete(row.id, at);
+    await this.repo.softDeleteSearchEntries(row.id, at);
+  }
+
+  /** Erase the stored audio. The row is already unsignable, so a failure is logged, not thrown. */
+  private async eraseRecording(row: CommunityVoiceNote): Promise<void> {
+    const result = await this.upload.removeObjects([row.storage_key]);
+    if (result.failed) {
+      this.logger.warn(`voice note ${row.id}: recording removal failed; note stays soft-deleted`);
+    }
   }
 }

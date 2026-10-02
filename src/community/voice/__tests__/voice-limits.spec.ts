@@ -33,10 +33,12 @@ function buildService(): {
   const createSignedUpload = jest.fn().mockResolvedValue({
     upload_url: 'https://signed/put',
     public_url: `https://x/object/public/voice-notes/${MEMBER_ID}/k.m4a`,
+    storage_key: `${MEMBER_ID}/k.m4a`,
     expires_at: '2026-03-01T00:10:00.000Z',
   });
   const upload = {
-    createSignedUpload,
+    // A-610-1: issueUploadUrl uses the variant that returns the minted key.
+    createSignedUploadWithKey: createSignedUpload,
     bucket: jest.fn().mockReturnValue('voice-notes'),
     ttlSeconds: jest.fn().mockReturnValue(600),
   };

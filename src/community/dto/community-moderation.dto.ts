@@ -82,8 +82,24 @@ export const CommunityModerationItemSchema = z
 
 export type CommunityModerationItemView = z.infer<typeof CommunityModerationItemSchema>;
 
+/**
+ * B-610-4: what the affected member was told after hide/warn/ban. `stored`
+ * means a member-readable notice was written atomically with the resolution
+ * (they see it in Community safety); `push` is only ever an attempted extra.
+ * Absent on report creation.
+ */
+export const CommunityModerationMemberNoticeSchema = z
+  .object({
+    stored: z.boolean(),
+    push: z.enum(['attempted', 'not_sent']),
+  })
+  .strict();
+
 export const CommunityModerationItemResponseSchema = z
-  .object({ item: CommunityModerationItemSchema })
+  .object({
+    item: CommunityModerationItemSchema,
+    member_notice: CommunityModerationMemberNoticeSchema.optional(),
+  })
   .strict();
 export type CommunityModerationItemResponse = z.infer<typeof CommunityModerationItemResponseSchema>;
 

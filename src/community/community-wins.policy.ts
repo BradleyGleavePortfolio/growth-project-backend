@@ -1,4 +1,5 @@
 import type { PrismaService } from '../prisma.service';
+import { bannedAmong } from './community-ban';
 
 /**
  * Member wins (More > Community "Share a win") safety policy, App Review 1.2.
@@ -14,8 +15,9 @@ import type { PrismaService } from '../prisma.service';
  *   so a member sees only their own wins. There is no cross-tenant "public"
  *   feed: `visibility: 'public'` is accepted for old clients and stored as
  *   `circle`.
- * - A ban from that workspace (membership `removed`) hides the member's wins
- *   from teammates and stops them posting new ones.
+ * - A ban from that workspace (durable ban row, or membership `removed`)
+ *   hides the member's wins from teammates, stops them posting new ones, and
+ *   limits their own feed to their own wins (B-610-2).
  * - A Hide from the queue sets `hidden_at`; hidden wins never appear again.
  */
 
@@ -51,8 +53,9 @@ export async function winModerationWorkspaceId(
 }
 
 /**
- * Users among `userIds` who were removed (banned) from the workspace: they
- * hold at least one `removed` membership row there and no active one.
+ * Users among `userIds` who were removed (banned) from the workspace: an
+ * active durable ban (community_workspace_bans, B-610-2), or at least one
+ * `removed` membership row there and no active one.
  */
 export async function removedFromWorkspace(
   prisma: PrismaService,
@@ -70,7 +73,7 @@ export async function removedFromWorkspace(
     if (r.status === 'removed') removedRow.add(r.user_id);
     if (r.status === 'active') active.add(r.user_id);
   }
-  const removed = new Set<string>();
+  const removed = await bannedAmong(prisma, workspaceId, userIds);
   for (const id of removedRow) if (!active.has(id)) removed.add(id);
   return removed;
 }

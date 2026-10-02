@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { isSignableVoiceKey, mintVoiceKey, voiceOwnerFolder } from './voice-storage-key';
 
 /**
  * voice-upload.provider.ts — typed extraction of the Supabase signed-upload
@@ -70,7 +71,28 @@ interface SupabaseStorageWithSignedUpload {
     error: { message: string } | null;
   }>;
   getPublicUrl?: (path: string) => { data: { publicUrl?: string } | null };
+  info?: (path: string) => Promise<{
+    data: { size?: number | null; contentType?: string | null } | null;
+    error: { message: string; statusCode?: string; status?: number } | null;
+  }>;
+  remove?: (paths: string[]) => Promise<{
+    data: Array<{ name?: string }> | null;
+    error: { message: string } | null;
+  }>;
+  list?: (
+    path: string,
+    options?: { limit?: number; offset?: number },
+  ) => Promise<{
+    data: Array<{ name: string; id?: string | null }> | null;
+    error: { message: string } | null;
+  }>;
 }
+
+/** Result of a stat on an uploaded voice object (publish-time verification). */
+export type VoiceObjectStat =
+  | { state: 'present'; size: number | null; contentType: string | null }
+  | { state: 'missing' }
+  | { state: 'unavailable' };
 
 /** Cryptographic random token for storage object paths (hex, URL-safe). */
 function randomToken(bytes = 8): string {
@@ -85,19 +107,14 @@ export class VoiceUploadProvider {
 
   /** Bucket name — env override (`SUPABASE_VOICE_BUCKET`) or default. */
   bucket(): string {
-    return (
-      (process.env.SUPABASE_VOICE_BUCKET ?? '').trim() || VOICE_DEFAULT_BUCKET
-    );
+    return (process.env.SUPABASE_VOICE_BUCKET ?? '').trim() || VOICE_DEFAULT_BUCKET;
   }
 
   /** Signed-upload TTL in seconds — env (`VOICE_SIGNED_URL_TTL_SEC`), clamped. */
   ttlSeconds(): number {
     const raw = parseInt(process.env.VOICE_SIGNED_URL_TTL_SEC ?? '', 10);
     if (!Number.isFinite(raw)) return VOICE_UPLOAD_TTL_SEC;
-    return Math.min(
-      Math.max(raw, VOICE_UPLOAD_TTL_CLAMP.min),
-      VOICE_UPLOAD_TTL_CLAMP.max,
-    );
+    return Math.min(Math.max(raw, VOICE_UPLOAD_TTL_CLAMP.min), VOICE_UPLOAD_TTL_CLAMP.max);
   }
 
   /**
@@ -134,7 +151,17 @@ export class VoiceUploadProvider {
    */
   buildObjectPath(ownerId: string, contentType: string): string {
     const ext = this.contentTypeToExt(contentType);
-    return `${ownerId}/${Date.now()}-${randomToken(8)}.${ext}`;
+    try {
+      // A-610-1: the file name carries an issuance MAC (voice-storage-key.ts)
+      // so a community publish can prove the server minted this exact key for
+      // this caller. Letters, digits and dashes only: normalization-stable.
+      return mintVoiceKey(ownerId, ext);
+    } catch {
+      // Unmintable (no signing secret, unusual owner id or extension): the
+      // legacy shape still works for DM uploads, and a community publish
+      // refuses it (no MAC), so nothing unsafe can be published from it.
+      return `${ownerId}/${Date.now()}-${randomToken(8)}.${ext}`;
+    }
   }
 
   /**
@@ -154,6 +181,22 @@ export class VoiceUploadProvider {
     ownerId: string,
     request: SignedVoiceUploadRequest,
   ): Promise<SignedVoiceUploadResponse> {
+    const { upload_url, public_url, expires_at } = await this.createSignedUploadWithKey(
+      ownerId,
+      request,
+    );
+    return { upload_url, public_url, expires_at };
+  }
+
+  /**
+   * Same as createSignedUpload, plus the exact bucket-relative storage key the
+   * server minted (community voice persists that key, never one re-derived
+   * from a URL).
+   */
+  async createSignedUploadWithKey(
+    ownerId: string,
+    request: SignedVoiceUploadRequest,
+  ): Promise<SignedVoiceUploadResponse & { storage_key: string }> {
     const supabase = this.supabase.getClient();
     const bucket = this.bucket();
     const objectPath = this.buildObjectPath(ownerId, request.content_type);
@@ -164,8 +207,7 @@ export class VoiceUploadProvider {
       // forbidden double-cast. The SDK exposes createSignedUploadUrl() since
       // v2.30; the method signature varies across minor versions, so we narrow
       // to a small shape rather than rely on the SDK's typed export.
-      const storage: SupabaseStorageWithSignedUpload =
-        supabase.storage.from(bucket);
+      const storage: SupabaseStorageWithSignedUpload = supabase.storage.from(bucket);
       const fn = storage.createSignedUploadUrl;
       // SDK version-skew guard (DELIBERATE — preserved from the original): an
       // older/newer SDK build may not expose createSignedUploadUrl at all. The
@@ -187,9 +229,7 @@ export class VoiceUploadProvider {
       signedUrl = result.data.signedUrl;
     } catch (err) {
       if (err instanceof NotImplementedException) throw err;
-      this.logger.warn(
-        `Supabase voice signed-upload failed: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Supabase voice signed-upload failed: ${(err as Error).message}`);
       throw new NotImplementedException({
         error: 'VOICE_STORAGE_UNAVAILABLE',
         reason: (err as Error).message,
@@ -199,8 +239,7 @@ export class VoiceUploadProvider {
     // Public URL is deterministic when the bucket is public; for private
     // buckets the render path issues a short-lived download URL on demand. We
     // return both so the deployment can persist whichever it uses.
-    const storageForPublic: SupabaseStorageWithSignedUpload =
-      supabase.storage.from(bucket);
+    const storageForPublic: SupabaseStorageWithSignedUpload = supabase.storage.from(bucket);
     const publicUrlFn = storageForPublic.getPublicUrl;
     const publicUrl =
       (typeof publicUrlFn === 'function'
@@ -213,6 +252,7 @@ export class VoiceUploadProvider {
       upload_url: signedUrl,
       public_url: publicUrl,
       expires_at: expiresAt.toISOString(),
+      storage_key: objectPath,
     };
   }
 
@@ -231,7 +271,16 @@ export class VoiceUploadProvider {
   async createSignedDownload(
     storageKey: string,
     expiresInSeconds?: number,
+    ownerId?: string,
   ): Promise<string | null> {
+    const bucketName = this.bucket();
+    // A-610-1: re-check the key before EVERY sign, after the same
+    // normalization the SDK + fetch apply. A dot segment, encoded or foreign
+    // key never reaches the privileged signer (no request, no URL).
+    if (!isSignableVoiceKey(bucketName, storageKey, ownerId)) {
+      this.logger.warn('voice signed-download refused: key failed the canonical check');
+      return null;
+    }
     let supabase: ReturnType<SupabaseService['getClient']>;
     try {
       supabase = this.supabase.getClient();
@@ -243,8 +292,7 @@ export class VoiceUploadProvider {
     const bucket = this.bucket();
     const ttl = expiresInSeconds ?? this.ttlSeconds();
     try {
-      const storage: SupabaseStorageWithSignedUpload =
-        supabase.storage.from(bucket);
+      const storage: SupabaseStorageWithSignedUpload = supabase.storage.from(bucket);
       const fn = storage.createSignedUrl;
       // Version-skew guard preserved: an SDK build without createSignedUrl
       // degrades to a disabled player rather than throwing.
@@ -258,5 +306,113 @@ export class VoiceUploadProvider {
       );
       return null;
     }
+  }
+
+  /**
+   * Publish-time verification (A-610-1): the object the client says it
+   * uploaded must exist at the exact minted key; its stored size and type are
+   * returned so the caller can compare them with the declared metadata.
+   */
+  async statObject(storageKey: string, ownerId: string): Promise<VoiceObjectStat> {
+    const bucketName = this.bucket();
+    if (!isSignableVoiceKey(bucketName, storageKey, ownerId)) return { state: 'missing' };
+    let storage: SupabaseStorageWithSignedUpload;
+    try {
+      storage = this.supabase.getClient().storage.from(bucketName);
+    } catch {
+      return { state: 'unavailable' };
+    }
+    const fn = storage.info;
+    if (typeof fn !== 'function') return { state: 'unavailable' };
+    try {
+      const result = await fn.call(storage, storageKey);
+      if (result.error) {
+        const status = Number(result.error.statusCode ?? result.error.status ?? NaN);
+        if (status === 404 || status === 400 || /not.?found/i.test(result.error.message)) {
+          return { state: 'missing' };
+        }
+        return { state: 'unavailable' };
+      }
+      if (!result.data) return { state: 'missing' };
+      const size = typeof result.data.size === 'number' ? result.data.size : null;
+      const contentType =
+        typeof result.data.contentType === 'string' ? result.data.contentType : null;
+      return { state: 'present', size, contentType };
+    } catch (err) {
+      this.logger.warn(`voice stat failed: ${(err as Error).message}`);
+      return { state: 'unavailable' };
+    }
+  }
+
+  /**
+   * Erase voice objects (B-610-5): author delete, moderation hide/ban and
+   * account deletion. Only canonical keys are sent to storage. Returns how
+   * many were removed and whether any storage call failed (callers log it;
+   * the row is already soft-deleted, so nothing is ever signed again).
+   */
+  async removeObjects(storageKeys: string[]): Promise<{ removed: number; failed: boolean }> {
+    const bucketName = this.bucket();
+    const keys = [...new Set(storageKeys)].filter((k) => isSignableVoiceKey(bucketName, k));
+    if (keys.length === 0) return { removed: 0, failed: false };
+    let storage: SupabaseStorageWithSignedUpload;
+    try {
+      storage = this.supabase.getClient().storage.from(bucketName);
+    } catch {
+      return { removed: 0, failed: true };
+    }
+    const fn = storage.remove;
+    if (typeof fn !== 'function') return { removed: 0, failed: true };
+    let removed = 0;
+    let failed = false;
+    for (let i = 0; i < keys.length; i += 100) {
+      try {
+        const result = await fn.call(storage, keys.slice(i, i + 100));
+        if (result.error) failed = true;
+        else removed += result.data?.length ?? 0;
+      } catch (err) {
+        failed = true;
+        this.logger.warn(`voice remove failed: ${(err as Error).message}`);
+      }
+    }
+    return { removed, failed };
+  }
+
+  /**
+   * Erase every object in `<bucket>/<ownerId>/` (account deletion, B-610-5):
+   * published, unpublished and DM uploads alike.
+   */
+  async removeOwnerFolder(ownerId: string): Promise<{ removed: number; failed: boolean }> {
+    const folder = voiceOwnerFolder(ownerId);
+    if (!folder) return { removed: 0, failed: false };
+    let storage: SupabaseStorageWithSignedUpload;
+    try {
+      storage = this.supabase.getClient().storage.from(this.bucket());
+    } catch {
+      return { removed: 0, failed: true };
+    }
+    const list = storage.list;
+    if (typeof list !== 'function') return { removed: 0, failed: true };
+    let removed = 0;
+    let failed = false;
+    // Each pass lists the first page and removes it; bounded so a storage
+    // fault can never loop forever.
+    for (let pass = 0; pass < 50; pass += 1) {
+      let names: string[];
+      try {
+        const page = await list.call(storage, folder, { limit: 100, offset: 0 });
+        if (page.error) return { removed, failed: true };
+        names = (page.data ?? []).map((o) => o.name).filter((n) => !!n);
+      } catch {
+        return { removed, failed: true };
+      }
+      if (names.length === 0) break;
+      const result = await this.removeObjects(names.map((n) => `${folder}/${n}`));
+      removed += result.removed;
+      if (result.failed || result.removed === 0) {
+        failed = failed || result.failed || result.removed === 0;
+        break;
+      }
+    }
+    return { removed, failed };
   }
 }

@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
@@ -49,8 +50,7 @@ export const DeletionAuditEvent = {
   ADMIN_FORCE_DELETE: 'admin_force_delete',
 } as const;
 
-export type DeletionAuditEventValue =
-  (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
+export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -130,7 +130,8 @@ export class AccountDeletionService {
       user.deletion_requested_at
     ) {
       return {
-        message: 'A deletion request is already pending for your account. You can cancel it from Settings.',
+        message:
+          'A deletion request is already pending for your account. You can cancel it from Settings.',
         expires_at: user.deletion_token_expires_at.toISOString(),
       };
     }
@@ -198,9 +199,7 @@ export class AccountDeletionService {
 
   // ── Step 2: Confirm via one-time email link ───────────────────────────────────
 
-  async confirmDeletion(
-    token: string,
-  ): Promise<{ message: string; purge_after: string }> {
+  async confirmDeletion(token: string): Promise<{ message: string; purge_after: string }> {
     const hash = this.hashToken(token);
 
     const user = await this.prisma.user.findFirst({
@@ -374,7 +373,10 @@ export class AccountDeletionService {
    * dual write is intentional so GDPR auditors and security teams each
    * have their own query surface.
    */
-  async adminForceDelete(targetUserId: string, opts: AdminDeleteOptions): Promise<{ message: string }> {
+  async adminForceDelete(
+    targetUserId: string,
+    opts: AdminDeleteOptions,
+  ): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.deleted_at) {
@@ -442,9 +444,7 @@ export class AccountDeletionService {
   async runFinalizeCron(): Promise<void> {
     this.logger.log('AccountDeletion finalize cron: starting');
 
-    const cutoff = new Date(
-      Date.now() - this.graceDays * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - this.graceDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
@@ -499,9 +499,7 @@ export class AccountDeletionService {
         finalized += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`,
-        );
+        this.logger.error(`AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`);
         errors.push({ userId: candidate.id, error: msg });
       }
     }
@@ -592,9 +590,7 @@ export class AccountDeletionService {
       if (!preCheck) return { skipped: 'user-not-found' };
       if (preCheck.deleted_at) return { skipped: 'already-deleted' };
       if (!preCheck.deletion_confirmed_at) {
-        this.logger.warn(
-          `finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`,
-        );
+        this.logger.warn(`finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`);
         return { skipped: 'cancelled' };
       }
     }
@@ -658,9 +654,7 @@ export class AccountDeletionService {
 
     // ── 6. Delete Lesson rows where this user was the coach ──────────
     // coach_id is non-nullable. LessonCompletion rows cascade via their FK.
-    await this.prisma.lesson
-      .deleteMany({ where: { coach_id: userId } })
-      .catch(() => undefined);
+    await this.prisma.lesson.deleteMany({ where: { coach_id: userId } }).catch(() => undefined);
 
     // ── 7. Delete WorkoutRoutine rows created by this user ────────────
     // creator_id is non-nullable. RoutineExercise rows cascade.
@@ -723,6 +717,17 @@ export class AccountDeletionService {
       .updateMany({ where: { coach_id: userId }, data: { coach_id: null } })
       .catch(() => undefined);
 
+    // ── 10b. Community voice notes (B-610-5, OR-110-1, Apple 5.1.1(v)) ─────
+    // Every voice note the user recorded is soft-deleted with its transcript
+    // search row (no feed, queue or search shows it and nothing signs it
+    // again), then the recordings are erased from storage: the exact keys on
+    // their rows plus everything else in their `voice-notes/<uid>/` folder
+    // (unpublished uploads, DM voice uploads). The User row is tombstoned,
+    // not deleted, so no FK cascade would do this. Storage is external:
+    // failures are logged (the rows are already unsignable) and do not block
+    // the rest of the deletion, like the auth revocation below.
+    await this.eraseCommunityVoice(userId, now);
+
     // ── 11. Revoke Supabase auth identity ──────────────────────────────────
     // Best-effort: a failure here is logged but does not block local deletion.
     // Placed OUTSIDE the $transaction because Supabase is an external call.
@@ -731,10 +736,7 @@ export class AccountDeletionService {
         where: { id: userId },
         select: { supabase_id: true },
       });
-      if (
-        originalUser?.supabase_id &&
-        !originalUser.supabase_id.startsWith('deleted-')
-      ) {
+      if (originalUser?.supabase_id && !originalUser.supabase_id.startsWith('deleted-')) {
         const adminClient = this.supabase.getClient();
         await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
       }
@@ -848,6 +850,48 @@ export class AccountDeletionService {
     });
   }
 
+  /** B-610-5: soft-delete the user's voice notes + search rows, then erase the audio. */
+  private async eraseCommunityVoice(userId: string, now: Date): Promise<void> {
+    let keys: string[] = [];
+    try {
+      const notes = await this.prisma.communityVoiceNote.findMany({
+        where: { author_id: userId },
+        select: { id: true, storage_key: true },
+      });
+      keys = notes.map((n) => n.storage_key);
+      if (notes.length > 0) {
+        // Rows first: once soft-deleted nothing signs them again. Both writes
+        // are idempotent, so a retried deletion converges.
+        await this.prisma.communityVoiceNote.updateMany({
+          where: { author_id: userId, soft_deleted_at: null },
+          data: { soft_deleted_at: now },
+        });
+        await this.prisma.communitySearchEntry.updateMany({
+          where: {
+            kind: 'voice_note_transcript',
+            targetId: { in: notes.map((n) => n.id) },
+            softDeletedAt: null,
+          },
+          data: { softDeletedAt: now },
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `finalizeUserDeletion: voice note soft-delete failed for ${userId}: ${(err as Error).message}`,
+      );
+    }
+    const storage = new VoiceUploadProvider(this.supabase);
+    const byKey = await storage.removeObjects(keys);
+    const byFolder = await storage.removeOwnerFolder(userId);
+    if (byKey.failed || byFolder.failed) {
+      this.logger.error(
+        `finalizeUserDeletion: voice recording removal incomplete for ${userId} ` +
+          `(removed ${byKey.removed + byFolder.removed}); rows are soft-deleted and unsignable, ` +
+          'retry the storage cleanup for this folder.',
+      );
+    }
+  }
+
   // ── Email ─────────────────────────────────────────────────────────────────────
 
   private async sendConfirmationEmail(
@@ -870,7 +914,9 @@ export class AccountDeletionService {
     // Do not send a second email after confirmation — the mobile client
     // shows the in-app status instead.
     // Do not log email, name, token, or any URL derived from the token.
-    void email; void name; void token;
+    void email;
+    void name;
+    void token;
     this.logger.warn(
       `AccountDeletion: confirmation pending — email not yet configured. ` +
         `Token stored in DB, expires ${expiresAt.toISOString()}. ` +

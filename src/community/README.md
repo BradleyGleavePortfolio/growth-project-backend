@@ -162,6 +162,39 @@ app; Hide sets `hidden_at`; members removed from the workspace cannot post
 (`403 community.win.removed_member`) and their wins leave the feed. Other
 members appear by first name only.
 
+### 6. Fix round 2 (#610: Sol BLOCK, AUD-OPUS-2)
+
+- **Voice storage keys (A-610-1).** `POST .../voice-notes/upload-url` mints
+  `<author>/<ms>-<nonce>-<mac>.<ext>` (`voice/voice-storage-key.ts`, HMAC over
+  owner + time + nonce + ext; secret `VOICE_KEY_SIGNING_SECRET`, else derived
+  from the service-role key). `create()` accepts only a key minted for the
+  caller within 24h, checked after the same normalization the storage SDK and
+  fetch apply, then confirms the uploaded object (`info()`: present, audio,
+  within limits; stored size wins). Every signing call re-checks the key and
+  binds it to the author's folder. Codes: `community.voice.storage_key_rejected`,
+  `upload_missing`, `upload_mismatch`, `already_posted`, `storage_unavailable`.
+- **Durable bans (B-610-2).** `community_workspace_bans` (`community-ban.ts`):
+  checked by every access path, the `/me` bootstrap and the wins feed/post.
+  Only an explicit re-add by the coach lifts it.
+- **Safety wherever wins are (B-610-1).** Safety, report and review routes are
+  `@CommunityAlwaysReachable` (wins do not depend on FEATURE_COMMUNITY_API),
+  and block accepts a teammate from the wins circle with zero memberships.
+- **Member notices (B-610-4).** Hide / Warn / Ban store a member-readable
+  notice in the resolution transaction (`safety/community-moderation-notices.ts`,
+  `GET /community/safety/notices`, `POST /community/safety/notices/:id/read`);
+  push is a best-effort extra. The act response carries
+  `member_notice: { stored, push: 'attempted' | 'not_sent' }`.
+- **Erasure (B-610-3, B-610-5).** The author can always delete their own
+  voice note (even after a ban); author delete, Hide and Ban erase the
+  recording object; account deletion soft-deletes every voice note + search
+  row and removes the `voice-notes/<uid>/` folder.
+- **Wins RLS (A-610-2).** `20270211000000` migrates `public` wins to `circle`,
+  drops the world-readable arm, respects `hidden_at`, tenancy, bans and blocks
+  (`app.community_win_teammate_visible`), and a trigger stops non-moderators
+  writing `hidden_at` / `user_id` / `coach_id` / `visibility`. Live proof:
+  `test/community/rls/community-wins-rls.live.spec.ts` (CI job
+  `community-live-tests`).
+
 ### Operational requirement (not code)
 
 Reports land in the coach queue and are reviewed within 24 hours, every day

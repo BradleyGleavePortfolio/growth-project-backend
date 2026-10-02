@@ -332,6 +332,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         // coach's circle (community-wins.policy); nobody is removed.
         communityWorkspace: { findFirst: async () => ({ id: WS }) },
         communityMembership: { findMany: async () => [] },
+        communityWorkspaceBan: { findMany: async () => [] },
         communityWin: {
           findMany: async () =>
             [ALICE, BOB, CAROL].map((id) => ({
@@ -826,6 +827,8 @@ const EXEMPT: Record<string, string> = {
   'PlanContextController.resolve': 'resolves a plan reference id, no member-authored content',
   'CommunitySafetyController.info': 'static safety copy',
   'CommunitySafetyController.list': "the caller's own block list",
+  'CommunitySafetyController.notices':
+    "the caller's own moderation notices (fixed server copy, no other member's content)",
   'CommunityController.getMe': "the caller's own membership and flags",
   'CommunityController.getWorkspace': 'workspace metadata (name, coach), no member content',
   'CommunityController.getCohorts': 'cohort metadata, no member content',

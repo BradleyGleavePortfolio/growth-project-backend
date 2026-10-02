@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type {
   CommunityModerationAction,
   CommunityModerationStatus,
@@ -64,14 +65,20 @@ export class CommunityModerationRepository {
     });
   }
 
-  async resolve(params: {
-    itemId: string;
-    actorId: string;
-    status: CommunityModerationStatus;
-    action: string;
-    notes: string | null;
-  }): Promise<CommunityModerationAction> {
-    return this.prisma.communityModerationAction.update({
+  async resolve(
+    params: {
+      itemId: string;
+      actorId: string;
+      status: CommunityModerationStatus;
+      action: string;
+      notes: string | null;
+    },
+    // Optional transaction client: act() commits the resolution together with
+    // the member's moderation notice (B-610-4).
+    tx?: Prisma.TransactionClient,
+  ): Promise<CommunityModerationAction> {
+    const db = tx ?? this.prisma;
+    return db.communityModerationAction.update({
       where: { id: params.itemId },
       data: {
         actor_id: params.actorId,

@@ -223,6 +223,9 @@ export class CommunityCohortMembersService {
       if (!target) throw new NotFoundException(USER_NOT_FOUND);
       // Direct assign of a known user → active immediately (idempotent: an
       // existing/removed row is revived to the requested role + active).
+      // This is the explicit reinstatement path: it lifts a durable community
+      // ban in this workspace (B-610-2) so access and membership agree.
+      await this.repo.liftWorkspaceBan(cohort.workspace_id, target.id, user.id);
       const row = await this.repo.upsertMembership({
         workspaceId: cohort.workspace_id,
         cohortId: cohort.id,

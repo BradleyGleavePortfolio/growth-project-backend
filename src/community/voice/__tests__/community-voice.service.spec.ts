@@ -18,6 +18,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
 import { CommunityVoiceService } from '../community-voice.service';
+import { mintVoiceKey } from '../voice-storage-key';
 import type { IssueVoiceUploadDto } from '../community-voice.dto';
 import { makeUser } from './test-user.factory';
 import { safetyWithBlocks } from '../../../../test/community/safety/safety-test-helpers';
@@ -32,6 +33,7 @@ type AccessMock = {
   membershipInWorkspace: jest.Mock;
 };
 type RepoMock = {
+  findByStorageKey: jest.Mock;
   createVoiceNote: jest.Mock;
   findById: jest.Mock;
   softDelete: jest.Mock;
@@ -40,6 +42,9 @@ type RepoMock = {
 };
 type UploadMock = {
   createSignedUpload: jest.Mock;
+  createSignedUploadWithKey: jest.Mock;
+  statObject: jest.Mock;
+  removeObjects: jest.Mock;
   createSignedDownload: jest.Mock;
   bucket: jest.Mock;
   ttlSeconds: jest.Mock;
@@ -100,6 +105,9 @@ describe('CommunityVoiceService', () => {
 
   beforeEach(() => {
     process.env.FEATURE_COMMUNITY_TELEMETRY = 'true';
+    // A-610-1: create() accepts only server-minted keys (issuance MAC).
+    process.env.VOICE_KEY_SIGNING_SECRET = 'test-voice-key-secret';
+    VALID_CREATE.storage_key = mintVoiceKey(MEMBER_ID, 'm4a');
     delete process.env.FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT;
     access = {
       findWorkspace: jest.fn().mockResolvedValue({ id: WS_A }),
@@ -111,6 +119,7 @@ describe('CommunityVoiceService', () => {
       membershipInWorkspace: jest.fn().mockResolvedValue(true),
     };
     repo = {
+      findByStorageKey: jest.fn().mockResolvedValue(null),
       createVoiceNote: jest.fn().mockResolvedValue(note()),
       findById: jest.fn().mockResolvedValue(note()),
       softDelete: jest.fn().mockResolvedValue(undefined),
@@ -123,6 +132,16 @@ describe('CommunityVoiceService', () => {
         public_url: `https://x/object/public/voice-notes/${MEMBER_ID}/1700000000-abc.m4a`,
         expires_at: '2026-03-01T00:10:00.000Z',
       }),
+      createSignedUploadWithKey: jest.fn().mockResolvedValue({
+        upload_url: 'https://signed.upload/put',
+        public_url: `https://x/object/public/voice-notes/${MEMBER_ID}/1700000000-abc.m4a`,
+        storage_key: `${MEMBER_ID}/1700000000-abc.m4a`,
+        expires_at: '2026-03-01T00:10:00.000Z',
+      }),
+      statObject: jest
+        .fn()
+        .mockResolvedValue({ state: 'present', size: 120000, contentType: 'audio/mp4' }),
+      removeObjects: jest.fn().mockResolvedValue({ removed: 1, failed: false }),
       createSignedDownload: jest.fn().mockResolvedValue('https://signed.download/get'),
       bucket: jest.fn().mockReturnValue('voice-notes'),
       ttlSeconds: jest.fn().mockReturnValue(600),
@@ -165,7 +184,7 @@ describe('CommunityVoiceService', () => {
           mime_type: 'audio/mp4',
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(upload.createSignedUpload).not.toHaveBeenCalled();
+      expect(upload.createSignedUploadWithKey).not.toHaveBeenCalled();
     });
 
     it('rejects a disallowed mime type with 400 (no URL minted)', async () => {
@@ -184,7 +203,7 @@ describe('CommunityVoiceService', () => {
           mime_type: spoof.mime_type as IssueVoiceUploadDto['mime_type'],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(upload.createSignedUpload).not.toHaveBeenCalled();
+      expect(upload.createSignedUploadWithKey).not.toHaveBeenCalled();
     });
   });
 

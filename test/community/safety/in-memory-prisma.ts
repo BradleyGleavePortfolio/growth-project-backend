@@ -81,6 +81,19 @@ const DEFAULTS: Record<string, () => Row> = {
     soft_deleted_at: null,
   }),
   communitySearchEntry: () => ({ softDeletedAt: null }),
+  communityMembership: () => ({
+    dm_enabled: null,
+    removed_at: null,
+    last_read_message_at: null,
+    notify_level: null,
+  }),
+  communityWorkspaceBan: () => ({
+    banned_by_id: null,
+    moderation_action_id: null,
+    lifted_at: null,
+    lifted_by_id: null,
+  }),
+  notification: () => ({ payload: null, deep_link: null, read_at: null }),
 };
 
 export class InMemoryPrisma {

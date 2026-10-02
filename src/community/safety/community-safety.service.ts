@@ -9,6 +9,12 @@ import { PrismaService } from '../../prisma.service';
 import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
+import { winModerationWorkspaceId } from '../community-wins.policy';
+import {
+  COMMUNITY_MODERATION_NOTICE_KIND,
+  type ModerationNoticeView,
+  noticeView,
+} from './community-moderation-notices';
 
 export const CONTENT_REJECTED = {
   error: 'content_rejected',
@@ -62,6 +68,12 @@ export const BLOCK_WORKSPACE_COACH = {
   code: 'community.block.workspace_coach',
   message:
     'You cannot block your coach. You can report a message or post, or email the safety contact in Community safety.',
+} as const;
+
+export const NOTICE_NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.notice.not_found',
+  message: 'This notice could not be found. Refresh Community safety to see your notices.',
 } as const;
 
 /** Report reasons offered by the app (stored verbatim in the moderation row). */
@@ -266,7 +278,10 @@ export class CommunitySafetyService {
     if (!target || target.deleted_at) {
       throw new NotFoundException(BLOCK_NOT_FOUND);
     }
-    if (!(await this.sharesWorkspace(viewer.id, targetUserId))) {
+    if (
+      !(await this.sharesWorkspace(viewer.id, targetUserId)) &&
+      !(await this.sharesWinsCircle(viewer.id, targetUserId))
+    ) {
       throw new NotFoundException(BLOCK_NOT_FOUND);
     }
     const coachesViewer = await this.prisma.communityWorkspace.findFirst({
@@ -319,6 +334,59 @@ export class CommunitySafetyService {
         blocked_at: r.created_at.toISOString(),
       })),
     };
+  }
+
+  /**
+   * B-610-1: true when the target's wins can appear in the viewer's wins
+   * feed (or the other way round): both are clients of the same coach, that
+   * coach runs a community workspace (the wins audience). Wins are shown without any cohort membership, so this is
+   * what lets a never-joined member block a teammate they can see.
+   */
+  private async sharesWinsCircle(a: string, b: string): Promise<boolean> {
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [a, b] } },
+      select: { id: true, role: true, coach_id: true, deleted_at: true },
+    });
+    const ua = users.find((u) => u.id === a);
+    const ub = users.find((u) => u.id === b);
+    if (!ua || !ub || ua.deleted_at || ub.deleted_at) return false;
+    if (ua.role !== 'student' || ub.role !== 'student') return false;
+    if (!ua.coach_id || ua.coach_id !== ub.coach_id) return false;
+    // Blocking only ever reduces contact, so a ban on either side does not
+    // take this safety control away.
+    return (await winModerationWorkspaceId(this.prisma, ua.coach_id)) !== null;
+  }
+
+  // ── Moderation notices (B-610-4) ─────────────────────────────────────────
+
+  /** The caller's own moderation notices, newest first (always readable). */
+  async listNotices(viewer: { id: string }): Promise<{
+    notices: ModerationNoticeView[];
+    unread_count: number;
+  }> {
+    const rows = await this.prisma.notification.findMany({
+      where: { user_id: viewer.id, kind: COMMUNITY_MODERATION_NOTICE_KIND },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      select: { id: true, payload: true, created_at: true, read_at: true },
+    });
+    const notices = rows
+      .map((r) => noticeView(r))
+      .filter((n): n is ModerationNoticeView => n !== null);
+    return { notices, unread_count: notices.filter((n) => !n.read).length };
+  }
+
+  /** Mark one of the caller's notices read. Someone else's id is a 404. */
+  async markNoticeRead(
+    viewer: { id: string },
+    noticeId: string,
+  ): Promise<{ id: string; read: true }> {
+    const res = await this.prisma.notification.updateMany({
+      where: { id: noticeId, user_id: viewer.id, kind: COMMUNITY_MODERATION_NOTICE_KIND },
+      data: { read_at: new Date() },
+    });
+    if (res.count === 0) throw new NotFoundException(NOTICE_NOT_FOUND);
+    return { id: noticeId, read: true };
   }
 
   /** True when both users hold (or own) a membership in a common workspace. */
