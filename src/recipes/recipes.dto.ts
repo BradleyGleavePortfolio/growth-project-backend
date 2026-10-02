@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsArray,
   IsBoolean,
+  ArrayMaxSize,
   MaxLength,
   Min,
   Max,
@@ -20,6 +21,12 @@ export class CreateRecipeDto {
   @MaxLength(2000)
   description?: string;
 
+  /**
+   * Accepted only as absent, null or blank. TGP has no recipe-photo storage,
+   * so any link is refused with 400 RECIPE_IMAGE_URL_NOT_ALLOWED (see
+   * recipe-access.ts). Kept in the contract so the refusal is specific
+   * instead of a generic "property should not exist".
+   */
   @IsOptional()
   @IsString()
   @MaxLength(1000)
@@ -57,17 +64,29 @@ export class CreateRecipeDto {
   fat!: number;
 
   @IsArray()
+  @ArrayMaxSize(100)
   @IsString({ each: true })
+  @MaxLength(500, { each: true })
   ingredients!: string[];
 
   @IsArray()
+  @ArrayMaxSize(100)
   @IsString({ each: true })
+  @MaxLength(2000, { each: true })
   instructions!: string[];
 
   @IsArray()
+  @ArrayMaxSize(20)
   @IsString({ each: true })
+  @MaxLength(50, { each: true })
   tags!: string[];
 
+  /**
+   * Share with the creator's OWN clients. Never platform-wide: there is no
+   * public recipe feed. Default false (private to the creator). Only a coach
+   * or the owner account may send true; a client gets 403
+   * RECIPE_SHARING_COACH_ONLY.
+   */
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;

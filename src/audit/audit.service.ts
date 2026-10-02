@@ -69,6 +69,14 @@ export const AuditAction = {
   // was missed.
   NOTIFICATION_PREF_CHANGE: 'notification.pref_change',
 
+  // --- Entitlement grants (clinic C01) — $0 ClientPurchase rows created
+  // by InviteGrantService (invite-code package bindings, free packages).
+  ENTITLEMENT_GRANTED: 'entitlement.granted',
+  ENTITLEMENT_GRANT_REVOKED: 'entitlement.grant_revoked',
+  /** C01 — a bound code was redeemed but the grant could not be made (attach still succeeded). */
+  ENTITLEMENT_GRANT_SKIPPED: 'entitlement.grant_skipped',
+  INVITE_CODE_BINDING_SET: 'invite_code.binding_set',
+
   // --- Billing ---
   BILLING_SUBSCRIPTION_UPDATED: 'billing.subscription_updated',
   BILLING_SUBSCRIPTION_CANCELED: 'billing.subscription_canceled',
