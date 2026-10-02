@@ -10,8 +10,8 @@
  *   - the rls-live-tests CI job actually runs the live suite (Sol B-R2-1);
  *   - the flag is registered default OFF in prod-switches.yml and .env.example;
  *   - AppModule mounts AiConsentModule;
- *   - this PR does not touch AI call sites (enforcement is R2b): no file
- *     outside src/ai-consent imports the ledger yet.
+ *   - R2b: AI call sites never import the ledger directly; only the egress
+ *     gate in src/ai-egress (and app.module) does.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -77,7 +77,7 @@ describe('R2a wiring', () => {
     expect(imports).toContain(AiConsentModule);
   });
 
-  it('no AI call site is touched in this PR: only src/ai-consent and app.module import the ledger', () => {
+  it('only the AI egress gate (src/ai-egress) and app.module import the ledger', () => {
     const hits: string[] = [];
     const walk = (dir: string): void => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -90,7 +90,12 @@ describe('R2a wiring', () => {
     };
     walk(path.join(ROOT, 'src'));
     const outside = hits.filter((h) => !h.startsWith('src/ai-consent/'));
-    // R2b extends this list with each gated AI call site it wires.
-    expect(outside).toEqual(['src/app.module.ts']);
+    // R2b — every AI call site reaches the ledger only through AiEgressService
+    // (src/ai-egress); none imports it directly.
+    expect(outside.sort()).toEqual([
+      'src/ai-egress/ai-egress.module.ts',
+      'src/ai-egress/ai-egress.service.ts',
+      'src/app.module.ts',
+    ]);
   });
 });

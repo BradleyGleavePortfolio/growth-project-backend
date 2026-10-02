@@ -33,6 +33,12 @@ export const ConsentScope = {
   // toggle alone does NOT imply AI processing.
   HEALTH_BLOODWORK: 'health.bloodwork',
   HEALTH_BLOODWORK_AI: 'health.bloodwork_ai',
+  // Clinic C01 — the ONE quick in-app "I agree" box shown at onboarding
+  // (owner ruling): covers the personal-training waiver AND letting the
+  // coach / platform see the client's in-app data. With
+  // FEATURE_CONTRACTS_ENABLED on, this record (not an external e-sign
+  // waiver) is what activates comp / invite package grants.
+  ONBOARDING_AGREEMENT: 'onboarding.agreement',
 } as const;
 
 export type ConsentScopeValue = (typeof ConsentScope)[keyof typeof ConsentScope];
@@ -73,6 +79,32 @@ export class ConsentService {
     private prisma: PrismaService,
     private audit: AuditService,
   ) {}
+
+  private readonly grantedListeners: Array<
+    (clientId: string, coachId: string, scope: string) => unknown
+  > = [];
+
+  /**
+   * Register a callback fired after a consent is newly granted (or already
+   * granted on a retry). Used by InviteGrantService to activate pending comp
+   * grants the moment the onboarding agreement is recorded. Listener errors
+   * are logged and never fail the consent write.
+   */
+  onGranted(listener: (clientId: string, coachId: string, scope: string) => unknown): void {
+    this.grantedListeners.push(listener);
+  }
+
+  private async notifyGranted(clientId: string, coachId: string, scope: string): Promise<void> {
+    for (const l of this.grantedListeners) {
+      try {
+        await l(clientId, coachId, scope);
+      } catch (err) {
+        this.logger.warn(
+          `consent onGranted listener failed scope=${scope}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
 
   static isKnownScope(scope: string): scope is ConsentScopeValue {
     return SCOPE_SET.has(scope);
@@ -165,6 +197,8 @@ export class ConsentService {
     // writing audit. A re-grant of an already-granted scope is a no-op
     // and shouldn't pollute the log on a double-tap.
     if (existing && ConsentService.rowIsGranted(existing)) {
+      // Still notify: a retry after a failed activation must recover.
+      await this.notifyGranted(clientId, coachId, scope);
       return this.toRow(existing);
     }
 
@@ -202,6 +236,7 @@ export class ConsentService {
       metadata: { scope, coach_id: coachId },
     });
 
+    await this.notifyGranted(clientId, coachId, scope);
     return this.toRow(updated);
   }
 

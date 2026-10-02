@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import type {
   ChargeDispute,
   ChargeRefund,
@@ -924,6 +924,13 @@ export class RefundDisputeHandlerService {
     });
     if (!purchase) {
       throw new Error(`createAdminRefund: no purchase ${args.purchase_id}`);
+    }
+    // C01 — a $0 grant has no charge; refunding it is a category error.
+    if (purchase.source) {
+      throw new BadRequestException({
+        error: 'GRANT_NOT_REFUNDABLE',
+        message: 'This entitlement is a $0 grant, not a purchase; use POST /v1/entitlements/grants/revoke',
+      });
     }
     // Resolve the underlying charge id. For one_time prefer the saved PI;
     // for recurring use the most recent destination ledger slice.

@@ -42,6 +42,7 @@ import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
 import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
 import { StubProviderAdapter } from '../src/ai/gateway/providers/stub-provider.adapter';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 // ---------------------------------------------------------------------------
 // Mini Prisma mock. Shared across the three materialiser sub-tests so we
@@ -646,7 +647,7 @@ describe('Stream 2 §3 — AiGatewayService draft.* role-gate (layer 2)', () => 
     const stub = new StubProviderAdapter();
     const fakeAnthropic = { name: 'anthropic', complete: jest.fn() } as any;
     const registry = new AiProviderRegistry(stub, fakeAnthropic);
-    return new AiGatewayService(buildPrisma(), config, redaction, registry, undefined, audit);
+    return new AiGatewayService(buildPrisma(), config, redaction, registry, grantAllEgress(), undefined, audit);
   }
 
   it.each([
