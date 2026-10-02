@@ -3,6 +3,11 @@ import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
 import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
 import { StubProviderAdapter } from '../src/ai/gateway/providers/stub-provider.adapter';
+import { deriveGatewayDataSubject } from '../src/ai/gateway/ai-gateway.service';
+import { AiEgressService } from '../src/ai-egress/ai-egress.service';
+import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
+import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
+import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
   const created = { audits: [] as any[], drafts: [] as any[] };
@@ -22,10 +27,30 @@ function buildPrisma() {
         return row;
       }),
     },
+    // R2b — roster for the gateway's tenancy pre-flight: coach-1 coaches
+    // client-1 and client-2 directly; sub-1 holds client-3 by delegation.
+    user: {
+      findMany: jest.fn(async ({ where }: any) =>
+        ['client-1', 'client-2']
+          .filter((id) => where.id.in.includes(id) && where.coach_id === 'coach-1')
+          .map((id) => ({ id })),
+      ),
+    },
+    subCoachAssignment: {
+      findMany: jest.fn(async ({ where }: any) =>
+        where.sub_coach_id === 'sub-1' && where.client_id.in.includes('client-3')
+          ? [{ client_id: 'client-3' }]
+          : [],
+      ),
+    },
   } as any;
 }
 
-function buildSvc(prisma = buildPrisma()) {
+function buildSvc(
+  prisma = buildPrisma(),
+  egress: AiEgressService = grantAllEgress(),
+  anthropicComplete: jest.Mock = jest.fn(),
+) {
   const config = new AiGatewayConfig();
   const redaction = new AiRedactionService();
   const stub = new StubProviderAdapter();
@@ -34,10 +59,10 @@ function buildSvc(prisma = buildPrisma()) {
   // resolves to never-called and rely on the gateway's stub routing.
   const fakeAnthropicAdapter = {
     name: 'anthropic',
-    complete: jest.fn(),
+    complete: anthropicComplete,
   } as any;
   const registry = new AiProviderRegistry(stub, fakeAnthropicAdapter);
-  const svc = new AiGatewayService(prisma, config, redaction, registry);
+  const svc = new AiGatewayService(prisma, config, redaction, registry, egress);
   return { svc, prisma, registry };
 }
 
@@ -180,5 +205,152 @@ describe('AiGatewayService', () => {
         systemPrompt: 'ctx',
       }),
     ).rejects.toThrow(/requester/);
+  });
+});
+
+describe('AiGatewayService — R2b box-2 consent', () => {
+  const ORIGINAL_ENV = process.env;
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    process.env.AI_GATEWAY_ENABLED = 'true';
+    process.env.AI_GATEWAY_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    process.env.AI_GATEWAY_CAPABILITIES = 'client_chat';
+    delete process.env.AI_GATEWAY_REQUIRE_APPROVAL;
+  });
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  // The real AnthropicProviderAdapter hands req.dataSubject to the egress
+  // gate at send time; this fake does the same so revocation between the
+  // pre-flight and the send is observable.
+  function sendingAdapter(egress: AiEgressService): jest.Mock {
+    return jest.fn(async (req: any) => {
+      await egress.assertMaySend(req.dataSubject, 'anthropic', 'gateway');
+      return {
+        text: 'ok',
+        enabled: true,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        promptTokenEstimate: 1,
+        responseTokenEstimate: 1,
+        meta: {},
+      };
+    });
+  }
+
+  const coachAbout = (subjectUserId: string) => ({
+    capability: 'client_chat',
+    requester: { id: 'coach-1', role: 'coach' as const },
+    subjectUserId,
+    userMessage: 'How is this client doing?',
+    systemPrompt: 'x',
+  });
+
+  it('grant: the request is sent with the client as data subject', async () => {
+    const { egress } = egressWithGrants(['client-1']);
+    const complete = sendingAdapter(egress);
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await svc.invoke(coachAbout('client-1'));
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0][0].dataSubject).toEqual(clientDataSubject('client-1', 'coach'));
+  });
+
+  it('no grant: 403 ai_consent_required, provider never called, no stub fallback', async () => {
+    const { egress } = egressWithGrants([]);
+    const complete = sendingAdapter(egress);
+    const { svc, prisma } = buildSvc(buildPrisma(), egress, complete);
+    await expect(svc.invoke(coachAbout('client-1'))).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(complete).not.toHaveBeenCalled();
+    expect(prisma.created.audits).toHaveLength(0);
+  });
+
+  it('revoked between pre-flight and send: refusal surfaces (not masked as a stub reply)', async () => {
+    const { egress, reader } = egressWithGrants(['client-1']);
+    const send = sendingAdapter(egress);
+    const complete = jest.fn(async (req: any) => {
+      reader.revoke('client-1');
+      return send(req);
+    });
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await expect(svc.invoke(coachAbout('client-1'))).rejects.toBeInstanceOf(AiConsentRequiredException);
+  });
+
+  it('ledger error: fails closed, provider never called', async () => {
+    const { egress, reader } = egressWithGrants(['client-1']);
+    reader.failWith = new Error('db down');
+    const complete = sendingAdapter(egress);
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await expect(svc.invoke(coachAbout('client-1'))).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('another coach\'s client: 404 before any consent read (no oracle)', async () => {
+    const { egress, reader } = egressWithGrants(['client-9']);
+    const complete = sendingAdapter(egress);
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await expect(svc.invoke(coachAbout('client-9'))).rejects.toThrow('Client not found');
+    expect(reader.calls).toHaveLength(0);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('delegated sub-coach passes tenancy; consent still required', async () => {
+    const { egress } = egressWithGrants([]);
+    const complete = sendingAdapter(egress);
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await expect(
+      svc.invoke({ ...coachAbout('client-3'), requester: { id: 'sub-1', role: 'coach' } }),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+  });
+
+  it('a client id in the proposed payload is gated even with no subjectUserId', async () => {
+    const { egress } = egressWithGrants(['client-1']);
+    const complete = sendingAdapter(egress);
+    const { svc } = buildSvc(buildPrisma(), egress, complete);
+    await expect(
+      svc.invoke({
+        capability: 'client_chat',
+        requester: { id: 'coach-1', role: 'coach' },
+        userMessage: 'draft',
+        systemPrompt: 'x',
+        proposedActionPayload: { clientId: 'client-2' },
+      }),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('stub provider: nothing leaves the server, so no consent read', async () => {
+    process.env.AI_GATEWAY_PROVIDER = 'stub';
+    const { egress, reader } = egressWithGrants([]);
+    const { svc } = buildSvc(buildPrisma(), egress);
+    const out = await svc.invoke(coachAbout('client-1'));
+    expect(out.provider).toBe('stub');
+    expect(reader.calls).toHaveLength(0);
+  });
+});
+
+describe('deriveGatewayDataSubject (R2b)', () => {
+  const base = { capability: 'client_chat', userMessage: 'x', systemPrompt: 'x' };
+  it('coach about own scope -> no client data', () => {
+    expect(
+      deriveGatewayDataSubject({ ...base, requester: { id: 'coach-1', role: 'coach' }, subjectUserId: 'coach-1' }),
+    ).toEqual(noClientDataSubject('coach_own_scope'));
+  });
+  it('client with no subject -> themself, client audience', () => {
+    expect(deriveGatewayDataSubject({ ...base, requester: { id: 'client-1', role: 'student' } })).toEqual(
+      clientDataSubject('client-1', 'client'),
+    );
+  });
+  it('strictest wins: subject + payload ids + declared dataClientIds', () => {
+    expect(
+      deriveGatewayDataSubject({
+        ...base,
+        requester: { id: 'coach-1', role: 'coach' },
+        subjectUserId: 'a',
+        proposedActionPayload: { target_client_id: 'b', client_id: 'a' },
+        dataClientIds: ['c'],
+      }),
+    ).toEqual(clientDataSubject(['a', 'b', 'c'], 'coach'));
   });
 });

@@ -1,7 +1,14 @@
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma.service';
+import {
+  AiEgressService,
+  AnthropicHandle,
+  isRetryableProviderError,
+} from '../../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
+import type { AiDataSubject, AiEgressSurface } from '../../ai-egress/ai-egress.types';
+import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import {
   COACH_AI_MODEL,
   INPUT_USD_PER_MTOK,
@@ -20,6 +27,12 @@ export interface AnthropicCompleteInput {
 }
 
 export interface AnthropicCompleteOptions {
+  // R2b — REQUIRED. Whose data is in the prompt. Client data needs every
+  // listed client's live box-2 grant; checked before EVERY attempt (first
+  // call, retries, the JSON repair pass).
+  dataSubject: AiDataSubject;
+  // R2b — call-site label for egress logs (no user data).
+  surface: AiEgressSurface;
   maxTokens?: number;
   temperature?: number;
   // Logging metadata. Persisted to AICallLog. None of these end up in the
@@ -51,30 +64,30 @@ export interface AnthropicStructuredResult<T> {
 export type RuntimeValidator<T> = (raw: unknown) => T;
 
 const RETRY_DELAYS_MS = [250, 1000, 4000];
-const RETRYABLE_HTTP_STATUSES = new Set([429, 503, 529]);
 
 @Injectable()
 export class AnthropicAdapter {
   private readonly logger = new Logger(AnthropicAdapter.name);
-  private client: Anthropic | null = null;
+  private client: AnthropicHandle | null = null;
 
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
-    @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) injectedClient?: Anthropic,
+    private readonly egress: AiEgressService,
+    @Optional() @Inject(ANTHROPIC_CLIENT_TOKEN) injectedClient?: AnthropicHandle,
   ) {
     if (injectedClient) this.client = injectedClient;
   }
 
   // Lazy client construction. Throws if no key is configured — callers
   // should check CoachAIModuleState before invoking the adapter.
-  private getClient(): Anthropic {
+  private getClient(): AnthropicHandle {
     if (this.client) return this.client;
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY') ?? process.env.ANTHROPIC_API_KEY;
     if (!apiKey || !apiKey.trim()) {
       throw new Error('ANTHROPIC_API_KEY not configured');
     }
-    this.client = new Anthropic({ apiKey });
+    this.client = createAnthropicClient(apiKey);
     return this.client;
   }
 
@@ -84,7 +97,7 @@ export class AnthropicAdapter {
   // published Sonnet pricing.
   async complete(
     prompt: AnthropicCompleteInput,
-    opts: AnthropicCompleteOptions = {},
+    opts: AnthropicCompleteOptions,
   ): Promise<AnthropicCompleteResult> {
     const maxTokens = opts.maxTokens ?? 1024;
     const temperature = opts.temperature ?? 0.7;
@@ -94,13 +107,23 @@ export class AnthropicAdapter {
     for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
       try {
         const client = this.getClient();
-        const resp = await client.messages.create({
-          model: COACH_AI_MODEL,
-          max_tokens: maxTokens,
-          temperature,
-          system: prompt.system,
-          messages: [{ role: 'user', content: prompt.user }],
-        });
+        // R2b — the consent gate runs inside the egress call, per attempt.
+        // This loop owns retries for this path ({ retries: 0 }), and each
+        // attempt re-enters the gate, so a withdrawal stops the next one.
+        const resp = await this.egress.anthropicMessagesCreate(
+          client,
+          opts.dataSubject,
+          opts.surface,
+          {
+            model: COACH_AI_MODEL,
+            max_tokens: maxTokens,
+            temperature,
+            system: prompt.system,
+            messages: [{ role: 'user', content: prompt.user }],
+          },
+          undefined,
+          { retries: 0 },
+        );
         const latencyMs = Date.now() - startedAt;
         const text = extractText(resp);
         const tokensIn = resp.usage?.input_tokens ?? 0;
@@ -116,9 +139,14 @@ export class AnthropicAdapter {
         });
         return { text, tokensIn, tokensOut, modelUsed, latencyMs };
       } catch (err) {
+        // R2b — a consent / egress refusal sent nothing: no retry, no call
+        // log row, surface it unchanged so the caller can show the reason.
+        if (isAiEgressRefusal(err)) throw err;
         lastErr = err;
         const status = pickStatus(err);
-        const isRetryable = status != null && RETRYABLE_HTTP_STATUSES.has(status);
+        // R2b — the gate's transient-error rule (connection errors, 408,
+        // 409, 429, 5xx), since SDK auto-retry is off on every request.
+        const isRetryable = isRetryableProviderError(err);
         if (!isRetryable || attempt >= RETRY_DELAYS_MS.length) break;
         const delay = RETRY_DELAYS_MS[attempt];
         this.logger.warn(
@@ -148,7 +176,7 @@ export class AnthropicAdapter {
   async completeStructured<T>(
     prompt: AnthropicCompleteInput,
     validator: RuntimeValidator<T>,
-    opts: AnthropicCompleteOptions = {},
+    opts: AnthropicCompleteOptions,
   ): Promise<AnthropicStructuredResult<T>> {
     const enforced: AnthropicCompleteInput = {
       system:
