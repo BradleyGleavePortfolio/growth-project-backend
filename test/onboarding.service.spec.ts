@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { OnboardingService } from '../src/onboarding/onboarding.service';
+import { isLockConflict, OnboardingService } from '../src/onboarding/onboarding.service';
 import { parseFixture } from '../src/onboarding/clinic-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
@@ -180,6 +180,33 @@ function makeWorld() {
           : [];
       }
       if (/FROM "UserProfile" WHERE "user_id" = \? FOR UPDATE$/.test(sql)) return [];
+      // A-607-4: the in-transaction membership decision (seat, then delegation).
+      if (
+        /FROM "TeamSubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "archived_at" IS NULL LIMIT 1 FOR SHARE$/.test(
+          sql,
+        )
+      ) {
+        const seat = teamSeats.find(
+          (a) =>
+            a.head_coach_id === values[0] &&
+            a.sub_coach_id === values[1] &&
+            (a.archived_at ?? null) === null,
+        );
+        return seat ? [{ id: seat.id }] : [];
+      }
+      if (
+        /FROM "SubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "unassigned_at" IS NULL LIMIT 1 FOR SHARE$/.test(
+          sql,
+        )
+      ) {
+        const open = subAssignments.find(
+          (a) =>
+            a.head_coach_id === values[0] &&
+            a.sub_coach_id === values[1] &&
+            (a.unassigned_at ?? null) === null,
+        );
+        return open ? [{ id: open.id ?? 'delegation' }] : [];
+      }
       throw new Error(`unexpected raw SQL in double: ${sql}`);
     }),
     user: {
@@ -1099,6 +1126,10 @@ describe('A607-1: consultation read uses CURRENT tenancy only', () => {
   });
 });
 
+/** The double's $transaction (attached with Object.assign, so not in its static type). */
+const txOf = (w: ReturnType<typeof makeWorld>): jest.Mock =>
+  Reflect.get(w.prisma, '$transaction') as jest.Mock;
+
 describe("INT-607-1: the completion clone's tenant follows main's explicit membership rule", () => {
   const user = (w: ReturnType<typeof makeWorld>, uid: string) => w.users.find((u) => u.id === uid)!;
   async function ready() {
@@ -1166,6 +1197,155 @@ describe("INT-607-1: the completion clone's tenant follows main's explicit membe
     // The first attempt rolled back; the re-run sees no membership under
     // third-head, so the only clone is in coach-1's own tenant.
     expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  // ── A-607-4: main retires membership WITHOUT touching User ──────────────
+  const seatUnder = (w: ReturnType<typeof makeWorld>) => {
+    user(w, 'coach-1').coach_id = 'other-coach';
+    const seat: Row = {
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    };
+    w.teamSeats.push(seat);
+    return seat;
+  };
+  const membershipLocks = (w: ReturnType<typeof makeWorld>) =>
+    w.prisma.$queryRaw.mock.calls
+      .map((c: unknown[]) => (c[0] as TemplateStringsArray).join('?').replace(/\s+/g, ' ').trim())
+      .filter((sql: string) => /"(TeamSubCoachAssignment|SubCoachAssignment)"/.test(sql));
+
+  it('A-607-4 (Sol reproduction): a seat archived after the membership read never writes the removed head', async () => {
+    const w = await ready();
+    const seat = seatUnder(w);
+    // Main's multi-head removal archives only the seat; User is unchanged.
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      seat.archived_at = NOW;
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(
+      await new SubCoachScopeService(asPrisma(w.prisma)).getHeadCoachIdForSubCoach('coach-1'),
+    ).toBeNull();
+    expect(user(w, 'coach-1').coach_id).toBe('other-coach');
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('A-607-4: the last delegation closed after the membership read never writes the removed head', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    const delegation: Row = {
+      id: 'deleg-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      client_id: 'someone',
+      unassigned_at: null,
+    };
+    w.subAssignments.push(delegation);
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      delegation.unassigned_at = NOW; // SubCoachReassignService closes it; User unchanged
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('A-607-4: a membership added after an earlier null read re-runs and lands in the head tenant', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach'; // bare pointer: no membership yet
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      w.teamSeats.push({
+        id: 'seat-new',
+        head_coach_id: 'other-coach',
+        sub_coach_id: 'coach-1',
+        archived_at: null,
+      });
+    };
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(w.createdClones).toHaveLength(1);
+  });
+
+  it('A-607-4 control: unchanged membership completes in one transaction, the seat read FOR SHARE in it', async () => {
+    const w = await ready();
+    seatUnder(w);
+    w.prisma.$queryRaw.mockClear();
+    txOf(w).mockClear();
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(txOf(w)).toHaveBeenCalledTimes(1);
+    const locks = membershipLocks(w);
+    expect(locks).toHaveLength(1);
+    expect(locks[0]).toMatch(/"archived_at" IS NULL LIMIT 1 FOR SHARE$/);
+  });
+
+  it('A-607-4 control: a head coach (no coach_id) takes no membership lock', async () => {
+    const w = await ready();
+    w.prisma.$queryRaw.mockClear();
+    await w.svc.complete('client-1', NOW);
+    expect(membershipLocks(w)).toHaveLength(0);
+  });
+});
+
+describe('C-607-3: a lock conflict aborted by Postgres is retried, then a retryable 409', () => {
+  const lockConflict = () =>
+    new Prisma.PrismaClientKnownRequestError(
+      'Transaction failed due to a write conflict or a deadlock',
+      {
+        code: 'P2034',
+        clientVersion: 'test',
+      },
+    );
+
+  it('one deadlock: the attempt rolled back and the re-run completes once', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const real = txOf(w).getMockImplementation()!;
+    txOf(w).mockImplementationOnce(async () => {
+      throw lockConflict();
+    });
+    txOf(w).mockImplementation(real);
+    const out = await w.svc.complete('client-1', NOW);
+    expect(out).toBeTruthy();
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.intakes[0].completion_claim_token ?? null).toBeNull();
+  });
+
+  it('deadlocks on every attempt: 409 completion_in_progress, the claim released, nothing written', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    txOf(w).mockImplementation(async () => {
+      throw lockConflict();
+    });
+    await expect(w.svc.complete('client-1', NOW)).rejects.toMatchObject({
+      response: { code: 'completion_in_progress' },
+    });
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.intakes[0].completion_claim_token ?? null).toBeNull();
+  });
+
+  it('a raw-statement deadlock (P2010 / 40P01) is the same lock conflict; other errors are not', () => {
+    const raw = new Prisma.PrismaClientKnownRequestError(
+      'Raw query failed. Code: `40P01`. Message: `deadlock detected`',
+      {
+        code: 'P2010',
+        clientVersion: 'test',
+        meta: { code: '40P01', message: 'deadlock detected' },
+      },
+    );
+    expect(isLockConflict(raw)).toBe(true);
+    expect(isLockConflict(lockConflict())).toBe(true);
+    expect(
+      isLockConflict(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      ),
+    ).toBe(false);
+    expect(isLockConflict(new Error('deadlock detected'))).toBe(false);
   });
 });
 

@@ -151,12 +151,29 @@ export async function lockUserRow(
   return rows[0] ?? null;
 }
 
+/**
+ * C-607-3: Postgres aborted the transaction to resolve a lock conflict.
+ * P2034 is Prisma's code for a write conflict or deadlock; a raw statement
+ * (the FOR SHARE fences) surfaces the SQLSTATE in P2010's meta or the message.
+ */
+export function isLockConflict(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code === 'P2034') return true;
+  if (err.code !== 'P2010') return false;
+  const meta = err.meta ?? {};
+  const sqlState = typeof meta.code === 'string' ? meta.code : '';
+  return (
+    ['40P01', '40001', '55P03'].includes(sqlState) ||
+    /deadlock detected|could not serialize access/i.test(err.message)
+  );
+}
+
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 const COACH_FLAG_BODY =
-  'A new client finished their consultation and asked for extra care. Please review before their first session.';
+  'A new client finished their consultation and was flagged for extra care. Please review before their first session.';
 
 function conflict(
   code: OnboardingConflictCode,
@@ -593,7 +610,11 @@ export class OnboardingService {
       try {
         return await this.completeOnce(clientId, now);
       } catch (err) {
-        if (!(err instanceof TenancyChangedError)) throw err;
+        // C-607-3: a lock conflict the database resolved by aborting this
+        // attempt (deadlock, serialization failure) rolled everything back;
+        // it is re-run like an attachment change, then answered with the
+        // retryable 409 below, never a bare 500.
+        if (!(err instanceof TenancyChangedError) && !isLockConflict(err)) throw err;
         if (attempt >= COMPLETE_TENANCY_ATTEMPTS) {
           throw conflict(
             'completion_in_progress',
@@ -728,13 +749,22 @@ export class OnboardingService {
             !liveClient ||
             liveClient.deleted_at ||
             liveClient.role !== 'student' ||
-            liveClient.coach_id !== coach.id ||
-            // The membership read above named this head: if the coach row
-            // now points elsewhere, re-run against the current team.
-            (coachTeamHead !== null && liveCoach.coach_id !== coachTeamHead)
+            liveClient.coach_id !== coach.id
           ) {
             throw new TenancyChangedError();
           }
+          // A-607-4: the clone's tenant is decided HERE, from the locked coach
+          // row and the membership row that proves it (also locked FOR SHARE),
+          // never from the read before this transaction: main retires a seat
+          // or the last delegation without touching User. If the decision
+          // differs from the pre-read, the attempt rolls back and re-runs
+          // against the current team (same path as an attachment change).
+          const tenantHead = await this.membership.lockMembershipHeadCoachIdInTx(
+            tx,
+            coach.id,
+            liveCoach,
+          );
+          if (tenantHead !== coachTeamHead) throw new TenancyChangedError();
 
           // CLAIM FENCE: complete the row only while this worker still holds
           // (token, revision). Takes the intake row lock; a second worker
@@ -757,7 +787,7 @@ export class OnboardingService {
 
           const program = await this.materialiseAndAssignInTx(
             tx,
-            { id: coach.id, tenant_id: coachTeamHead ?? coach.id },
+            { id: coach.id, tenant_id: tenantHead ?? coach.id },
             clientId,
             entry.program_id,
             sel,
