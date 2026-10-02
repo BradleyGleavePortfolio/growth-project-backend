@@ -16,18 +16,12 @@
  *     published from the release time.
  *   - Storage not configured: media tiles degrade to url=null rather than 500.
  */
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
-import type {
-  CommunityClassroomMediaAsset,
-  CommunityClassroomPost,
-} from '@prisma/client';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { CommunityClassroomMediaAsset, CommunityClassroomPost } from '@prisma/client';
 import { CommunityClassroomService } from '../../../src/community/classroom/community-classroom.service';
 import type { ClassroomPostWithMedia } from '../../../src/community/classroom/community-classroom.repository';
 import { makeUser } from './test-user.factory';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -123,6 +117,8 @@ describe('CommunityClassroomService', () => {
   let config: ConfigMock;
   let storage: StorageMock;
   let service: CommunityClassroomService;
+  // [blocker, blocked] pairs seen by the real CommunitySafetyService.
+  const blocks: Array<[string, string]> = [];
 
   beforeEach(() => {
     access = {
@@ -146,17 +142,18 @@ describe('CommunityClassroomService', () => {
     config = { get: jest.fn().mockReturnValue(undefined) };
     storage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      createSignedUploadUrl: jest
-        .fn()
-        .mockResolvedValue({ signedUrl: 'https://signed.upload', storageKey: 'k', provider: 'supabase' }),
-      createSignedDownloadUrl: jest
-        .fn()
-        .mockResolvedValue('https://signed.download'),
+      createSignedUploadUrl: jest.fn().mockResolvedValue({
+        signedUrl: 'https://signed.upload',
+        storageKey: 'k',
+        provider: 'supabase',
+      }),
+      createSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed.download'),
     };
     // Structural mocks stub only the methods the service calls; the partials are
     // intentional (R0 permits @ts-expect-error with a one-line justification).
+    const blockSafety = safetyWithBlocks(blocks);
     // @ts-expect-error mocks are partial implementations of the injected deps
-    service = new CommunityClassroomService(access, repo, config, storage);
+    service = new CommunityClassroomService(access, repo, config, storage, blockSafety);
   });
 
   // ── Create / media size cap / workspace-bound key ──────────────────────────
@@ -218,9 +215,7 @@ describe('CommunityClassroomService', () => {
       access.canAccessWorkspace.mockResolvedValue(true);
       access.isWorkspaceCoach.mockResolvedValue(true);
       const asset = mediaAsset();
-      repo.createPostWithMedia.mockResolvedValue(
-        post({ status: 'draft' }, [asset]),
-      );
+      repo.createPostWithMedia.mockResolvedValue(post({ status: 'draft' }, [asset]));
 
       const res = await service.create(coachA, WS_A, {
         title: 'L',
@@ -240,9 +235,7 @@ describe('CommunityClassroomService', () => {
       access.canAccessWorkspace.mockResolvedValue(true);
       access.isWorkspaceCoach.mockResolvedValue(true);
       storage.isConfigured.mockReturnValue(false);
-      repo.createPostWithMedia.mockResolvedValue(
-        post({ status: 'draft' }, [mediaAsset()]),
-      );
+      repo.createPostWithMedia.mockResolvedValue(post({ status: 'draft' }, [mediaAsset()]));
       await expect(
         service.create(coachA, WS_A, {
           title: 'L',
@@ -254,6 +247,42 @@ describe('CommunityClassroomService', () => {
   });
 
   // ── Read / release lock / signed download ──────────────────────────────────
+
+  describe('two-way block (owner-approved copy: they can no longer see your posts)', () => {
+    beforeEach(() => {
+      blocks.length = 0;
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.canAccessWorkspace.mockResolvedValue(true);
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.listAccessibleCohortIds.mockResolvedValue([]);
+      repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: PAST }));
+      repo.listForStudent.mockResolvedValue({ items: [post()], nextCursor: null });
+    });
+    afterEach(() => {
+      blocks.length = 0;
+    });
+
+    it.each([
+      ['the coach blocked the member', [COACH_A_ID, MEMBER_ID]],
+      ['the member blocked the coach (coach messaging block)', [MEMBER_ID, COACH_A_ID]],
+    ] as Array<[string, [string, string]]>)(
+      'when %s, the lesson is gone from the feed and 404s by id; unblock restores',
+      async (_label, pair) => {
+        blocks.push(pair);
+        expect((await service.listFeed(member, WS_A, {})).posts).toEqual([]);
+        await expect(service.getOne(member, POST_A)).rejects.toBeInstanceOf(NotFoundException);
+        blocks.length = 0;
+        expect((await service.listFeed(member, WS_A, {})).posts).toHaveLength(1);
+        await expect(service.getOne(member, POST_A)).resolves.toBeDefined();
+      },
+    );
+
+    it('a block between two other people does not hide the lesson', async () => {
+      blocks.push([STRANGER_ID, MEMBER_ID]);
+      expect((await service.listFeed(member, WS_A, {})).posts).toHaveLength(1);
+      await expect(service.getOne(member, POST_A)).resolves.toBeDefined();
+    });
+  });
 
   describe('getOne', () => {
     it('returns a released lesson to a workspace member with a signed media URL', async () => {
@@ -271,44 +300,30 @@ describe('CommunityClassroomService', () => {
     });
 
     it('404s a student on a published-but-not-yet-released lesson (release lock)', async () => {
-      repo.findPostById.mockResolvedValue(
-        post({ status: 'published', release_at: FUTURE }),
-      );
+      repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: FUTURE }));
       access.isWorkspaceCoach.mockResolvedValue(false);
       access.canAccessWorkspace.mockResolvedValue(true);
-      await expect(service.getOne(member, POST_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(member, POST_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('shows release_locked=true to the coach for a future-release lesson', async () => {
-      repo.findPostById.mockResolvedValue(
-        post({ status: 'scheduled', release_at: FUTURE }),
-      );
+      repo.findPostById.mockResolvedValue(post({ status: 'scheduled', release_at: FUTURE }));
       access.isWorkspaceCoach.mockResolvedValue(true);
       const res = await service.getOne(coachA, POST_A);
       expect(res.post.release_locked).toBe(true);
     });
 
     it('404s a non-member on a released lesson (membership required)', async () => {
-      repo.findPostById.mockResolvedValue(
-        post({ status: 'published', release_at: PAST }),
-      );
+      repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: PAST }));
       access.isWorkspaceCoach.mockResolvedValue(false);
       access.canAccessWorkspace.mockResolvedValue(false);
-      await expect(service.getOne(stranger, POST_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(stranger, POST_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('404s on a soft-deleted lesson', async () => {
-      repo.findPostById.mockResolvedValue(
-        post({ soft_deleted_at: NOW_BASE }),
-      );
+      repo.findPostById.mockResolvedValue(post({ soft_deleted_at: NOW_BASE }));
       access.isWorkspaceCoach.mockResolvedValue(true);
-      await expect(service.getOne(coachA, POST_A)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.getOne(coachA, POST_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('degrades media url to null when storage is unconfigured (no 500)', async () => {
@@ -331,10 +346,9 @@ describe('CommunityClassroomService', () => {
       );
       access.isWorkspaceCoach.mockResolvedValue(true);
       await service.getOne(coachA, POST_A);
-      expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(
-        expect.any(String),
-        { expiresInSeconds: 300 },
-      );
+      expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.any(String), {
+        expiresInSeconds: 300,
+      });
     });
 
     it('clamps an absurd TTL env to the 24h ceiling', async () => {
@@ -346,10 +360,9 @@ describe('CommunityClassroomService', () => {
       );
       access.isWorkspaceCoach.mockResolvedValue(true);
       await service.getOne(coachA, POST_A);
-      expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(
-        expect.any(String),
-        { expiresInSeconds: 60 * 60 * 24 },
-      );
+      expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith(expect.any(String), {
+        expiresInSeconds: 60 * 60 * 24,
+      });
     });
   });
 
@@ -370,9 +383,7 @@ describe('CommunityClassroomService', () => {
     it('schedules (scheduled) when release_at is in the future', async () => {
       repo.findPostById.mockResolvedValue(post({ status: 'draft', published_at: null }));
       access.isWorkspaceCoach.mockResolvedValue(true);
-      repo.updatePost.mockResolvedValue(
-        post({ status: 'scheduled', release_at: FUTURE }),
-      );
+      repo.updatePost.mockResolvedValue(post({ status: 'scheduled', release_at: FUTURE }));
       await service.publish(coachA, POST_A, { release_at: FUTURE.toISOString() });
       expect(repo.updatePost).toHaveBeenCalledWith(
         POST_A,
@@ -383,9 +394,7 @@ describe('CommunityClassroomService', () => {
     it('403s a non-coach attempting to publish a visible lesson', async () => {
       repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: PAST }));
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.publish(member, POST_A, {}),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.publish(member, POST_A, {})).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -419,9 +428,7 @@ describe('CommunityClassroomService', () => {
     it('404s a non-member workspace feed read', async () => {
       access.findWorkspace.mockResolvedValue({ id: WS_A });
       access.canAccessWorkspace.mockResolvedValue(false);
-      await expect(service.listFeed(stranger, WS_A, {})).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(service.listFeed(stranger, WS_A, {})).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
