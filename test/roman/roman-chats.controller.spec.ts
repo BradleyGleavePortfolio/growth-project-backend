@@ -17,6 +17,8 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/node';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { CacheControlInterceptor } from '../../src/common/cache-control.interceptor';
@@ -27,6 +29,27 @@ import { RomanController } from '../../src/roman/roman.controller';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import { RomanService, romanSessionNotFound } from '../../src/roman/roman.service';
+import {
+  ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE,
+  ROMAN_SESSIONS_SURFACE_INVALID_MESSAGE,
+  ROMAN_SESSIONS_UNKNOWN_PARAM_MESSAGE,
+} from '../../src/roman/roman-chats.query';
+import {
+  ROMAN_CURSOR_INVALID_MESSAGE,
+  ROMAN_DELETE_ALL_MAX_BATCHES,
+  ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE,
+  ROMAN_ERASE_INCOMPLETE_MESSAGE,
+  ROMAN_ERASE_UNCONFIRMED_MESSAGE,
+} from '../../src/roman/roman.constants';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
+
+// The service's own sanitized report and the filter's 5xx capture both go
+// through this mock (no network in tests).
+jest.mock('@sentry/node', () => ({
+  captureException: jest.fn(),
+  withScope: (cb: (scope: { setTag: () => void; setExtra: () => void }) => void) =>
+    cb({ setTag: () => undefined, setExtra: () => undefined }),
+}));
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 
@@ -178,14 +201,45 @@ describe('RomanChatsController — list and delete own chats (B-635-2)', () => {
     expect(JSON.stringify(res.body)).not.toContain('user_id');
   });
 
-  it.each([['limit=abc'], ['limit=0'], ['limit=101'], ['surface=web'], ['unknown=1']])(
-    'GET /roman/sessions?%s is a 400 (validated, never reaches the service)',
-    async (q) => {
+  // Sol B-635-5: every known bad query is a coded 400 with a next step,
+  // through the production ValidationPipe + HttpExceptionFilter, and never
+  // reaches the service. Before the fix these were uncoded class-validator
+  // 400s (e.g. message ["limit must not be greater than 100"], no code).
+  it.each([
+    ['limit=abc', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['limit=0', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['limit=101', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['limit=1.5', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['limit=-1', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['limit=5&limit=6', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_LIMIT_INVALID_MESSAGE],
+    ['surface=web', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_SURFACE_INVALID_MESSAGE],
+    [
+      'surface=client&surface=coach',
+      'ROMAN_SESSIONS_QUERY_INVALID',
+      ROMAN_SESSIONS_SURFACE_INVALID_MESSAGE,
+    ],
+    ['unknown=1', 'ROMAN_SESSIONS_QUERY_INVALID', ROMAN_SESSIONS_UNKNOWN_PARAM_MESSAGE],
+    [`cursor=${'c'.repeat(65)}`, 'ROMAN_CURSOR_INVALID', ROMAN_CURSOR_INVALID_MESSAGE],
+    ['cursor=a&cursor=b', 'ROMAN_CURSOR_INVALID', ROMAN_CURSOR_INVALID_MESSAGE],
+  ])(
+    'GET /roman/sessions?%s is a coded 400 (%s) with a next step and never reaches the service',
+    async (q, code, message) => {
       const res = await call('GET', `/roman/sessions?${q}`);
       expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code, message });
+      expect(String((res.body as { message: unknown }).message)).toMatch(/Refresh/);
       expect(roman.listSessions).not.toHaveBeenCalled();
     },
   );
+
+  it('GET /roman/sessions with no query or an empty cursor is the first page (defaults unchanged)', async () => {
+    const res = await call('GET', '/roman/sessions?cursor=');
+    expect(res.status).toBe(200);
+    expect(roman.listSessions).toHaveBeenCalledWith(
+      { id: 'user-A', role: 'student' },
+      { cursor: undefined, limit: undefined, surface: undefined },
+    );
+  });
 
   it('DELETE /roman/sessions erases every chat of the caller: 204 with the chat flag OFF', async () => {
     const res = await call('DELETE', '/roman/sessions');
@@ -218,6 +272,126 @@ describe('RomanChatsController — list and delete own chats (B-635-2)', () => {
     const busy = await call('DELETE', '/roman/sessions');
     expect(busy.status).toBe(503);
     expect(busy.body).toMatchObject({ code: 'ROMAN_ERASE_INCOMPLETE' });
+  });
+
+  // ─── Sol B-635-4: the ACTUAL RomanService failing at every boundary, behind
+  // the production controller + filter. Before the fix both routes answered
+  // 500 {message: "Internal server error"} with no code.
+  describe('real RomanService delete failures are coded and actionable on the wire (B-635-4)', () => {
+    const P2024 = () =>
+      new Prisma.PrismaClientKnownRequestError('synthetic connection timeout secret-detail', {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    const LIVE = { id: 's_today', day_key: '2026-10-02', deleted_at: null };
+    const sentry = jest.mocked(Sentry.captureException);
+
+    function realService(db: Record<string, unknown>): RomanService {
+      // @ts-expect-error deliberately partial Prisma double for the deletion boundary.
+      const prisma: PrismaService = db;
+      return new RomanService(prisma, grantAllEgress());
+    }
+    function routeDeleteOne(db: Record<string, unknown>) {
+      const svc = realService(db);
+      roman.deleteSession.mockImplementationOnce(async (...a: unknown[]) => {
+        await svc.deleteSession({ id: 'user-A', role: 'student' }, String(a[1]));
+        return undefined;
+      });
+    }
+    function routeDeleteAll(db: Record<string, unknown>) {
+      const svc = realService(db);
+      roman.deleteAllSessions.mockImplementationOnce(async () =>
+        svc.deleteAllSessions({ id: 'user-A', role: 'student' }),
+      );
+    }
+    function expectCoded(res: HttpResult, message: string) {
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ code: 'ROMAN_ERASE_INCOMPLETE', message });
+      expect(JSON.stringify(res.body)).not.toMatch(/synthetic|secret-detail|P2024/);
+      // The sanitized diagnostic is reported separately (never the ORM text).
+      const reported = sentry.mock.calls.map((c) => String(c[0]));
+      expect(reported.some((r) => r.includes('Database request failed (P2024)'))).toBe(true);
+      expect(reported.join(' ')).not.toContain('secret-detail');
+    }
+
+    it('single delete: the ownership read fails -> 503, says not changed (nothing was written)', async () => {
+      const db = {
+        romanSession: { findFirst: jest.fn().mockRejectedValue(P2024()) },
+        $transaction: jest.fn(),
+      };
+      routeDeleteOne(db);
+      const res = await call('DELETE', '/roman/sessions/s_today');
+      expectCoded(res, ROMAN_ERASE_INCOMPLETE_MESSAGE);
+      expect(db.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('single delete: the erase transaction fails (or its commit ack is lost) -> 503, says it could not confirm, never "not changed"', async () => {
+      const db = {
+        romanSession: { findFirst: jest.fn(async () => LIVE) },
+        $transaction: jest.fn().mockRejectedValue(P2024()),
+      };
+      routeDeleteOne(db);
+      const res = await call('DELETE', '/roman/sessions/s_today');
+      expectCoded(res, ROMAN_ERASE_UNCONFIRMED_MESSAGE);
+      expect(String((res.body as { message: string }).message)).not.toMatch(/not changed/);
+      expect(db.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('single delete: the foreign/missing 404 and an already-erased 204 are unchanged', async () => {
+      routeDeleteOne({
+        romanSession: { findFirst: jest.fn(async () => null) },
+        $transaction: jest.fn(),
+      });
+      const nf = await call('DELETE', '/roman/sessions/s_other');
+      expect(nf.status).toBe(404);
+      expect(nf.body).toMatchObject({ code: 'ROMAN_SESSION_NOT_FOUND' });
+      routeDeleteOne({
+        romanSession: {
+          findFirst: jest.fn(async () => ({
+            id: 's_today',
+            day_key: 'erased:s_today',
+            deleted_at: NOW,
+          })),
+        },
+        $transaction: jest.fn(),
+      });
+      const again = await call('DELETE', '/roman/sessions/s_today');
+      expect(again.status).toBe(204);
+      expect(sentry).not.toHaveBeenCalled();
+    });
+
+    it('delete all: the first batch read fails -> 503 delete-all copy', async () => {
+      routeDeleteAll({ romanSession: { findMany: jest.fn().mockRejectedValue(P2024()) } });
+      expectCoded(await call('DELETE', '/roman/sessions'), ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE);
+    });
+
+    it('delete all: a later batch read fails after earlier rows committed -> 503, a retry finishes', async () => {
+      const findMany = jest.fn().mockResolvedValueOnce([LIVE]).mockRejectedValueOnce(P2024());
+      const $transaction = jest.fn(async () => true);
+      routeDeleteAll({ romanSession: { findMany }, $transaction });
+      expectCoded(await call('DELETE', '/roman/sessions'), ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE);
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect(findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('delete all: a per-row transaction fails (commit unknown) -> 503 delete-all copy', async () => {
+      routeDeleteAll({
+        romanSession: { findMany: jest.fn().mockResolvedValue([LIVE]) },
+        $transaction: jest.fn().mockRejectedValue(P2024()),
+      });
+      expectCoded(await call('DELETE', '/roman/sessions'), ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE);
+    });
+
+    it('delete all: the final remaining-count read fails -> 503 delete-all copy', async () => {
+      const count = jest.fn().mockRejectedValue(P2024());
+      routeDeleteAll({
+        romanSession: { findMany: jest.fn().mockResolvedValue([LIVE]), count },
+        $transaction: jest.fn(async () => true),
+      });
+      expectCoded(await call('DELETE', '/roman/sessions'), ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE);
+      expect(count).toHaveBeenCalledTimes(1);
+      expect(ROMAN_DELETE_ALL_MAX_BATCHES).toBeGreaterThan(0);
+    });
   });
 
   it('the chat routes stay behind the flag: reading messages is a 404 while Roman chat is OFF', async () => {

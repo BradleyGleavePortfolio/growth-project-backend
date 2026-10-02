@@ -75,14 +75,29 @@ export const ROMAN_ERROR_UNAVAILABLE = 'ROMAN_UNAVAILABLE';
 export const ROMAN_ERROR_SESSION_NOT_FOUND = 'ROMAN_SESSION_NOT_FOUND';
 /** 503: a delete could not finish; nothing of that chat was removed, retry is safe. */
 export const ROMAN_ERROR_ERASE_INCOMPLETE = 'ROMAN_ERASE_INCOMPLETE';
-/** 400: the session-list cursor is not one of the caller's sessions. */
+/** 400: the session-list cursor is not one of the caller's sessions, or is not a session id at all. */
 export const ROMAN_ERROR_CURSOR_INVALID = 'ROMAN_CURSOR_INVALID';
+/**
+ * 400 (Sol B-635-5): GET /roman/sessions was sent a limit, surface or
+ * parameter it does not accept. The message names the parameter and the
+ * accepted values. The app only sends valid queries, so this means an
+ * outdated or modified client: refresh, then update the app.
+ */
+export const ROMAN_ERROR_SESSIONS_QUERY_INVALID = 'ROMAN_SESSIONS_QUERY_INVALID';
 
 /** User-facing copy for the coded Roman errors (plain words, a next step). */
 export const ROMAN_SESSION_NOT_FOUND_MESSAGE =
   'This conversation no longer exists. Open Roman again to start a new one.';
 export const ROMAN_ERASE_INCOMPLETE_MESSAGE =
   'Roman could not finish deleting this conversation, so it was not changed. Try deleting it again in a moment.';
+/**
+ * Sol B-635-4: the erase transaction failed in a way that does not prove a
+ * rollback (connection lost, commit acknowledgement lost), so the chat may or
+ * may not be gone. Never claim "not changed" here; deleting again is safe
+ * (a repeat delete of an erased chat is a quiet 204).
+ */
+export const ROMAN_ERASE_UNCONFIRMED_MESSAGE =
+  'Roman could not confirm that this conversation was deleted. Delete it again in a moment to make sure. Deleting it twice is safe.';
 export const ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE =
   'Roman could not finish deleting your conversations. The ones already deleted stay deleted. Try again in a moment to delete the rest.';
 export const ROMAN_CURSOR_INVALID_MESSAGE =

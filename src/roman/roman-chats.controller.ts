@@ -38,7 +38,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ListSessionsQueryDto } from './roman.dto';
+import { parseListSessionsQuery } from './roman-chats.query';
 import { RomanCaller, RomanService } from './roman.service';
 
 /** Wire view of one chat in the list (no message text). */
@@ -63,8 +63,12 @@ export class RomanChatsController {
   @Roles('student', 'coach', 'owner')
   async listSessions(
     @Req() req: AuthedRequest,
-    @Query() query: ListSessionsQueryDto,
+    // Raw query (plain-object metatype: the global ValidationPipe leaves it
+    // alone) validated by the route-owned parser, so every bad value is a
+    // coded 400 with a next step, never an uncoded DTO error (Sol B-635-5).
+    @Query() rawQuery: Record<string, unknown>,
   ): Promise<{ sessions: RomanSessionListItemView[]; nextCursor: string | null }> {
+    const query = parseListSessionsQuery(rawQuery);
     const page = await this.roman.listSessions(this.callerOf(req), {
       cursor: query.cursor,
       limit: query.limit,

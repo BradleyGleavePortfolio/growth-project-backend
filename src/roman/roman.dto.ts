@@ -58,25 +58,8 @@ export class ListMessagesQueryDto {
 }
 
 /**
- * GET /roman/sessions?cursor=&limit=&surface= — the caller's own live chats,
- * newest first (B-635-2). `cursor` is the id of the last session already
- * shown (it must be one of the caller's sessions); `surface` narrows to one
- * surface, both when absent.
+ * GET /roman/sessions?cursor=&limit=&surface= is NOT validated by a DTO: the
+ * global ValidationPipe would reject a bad value with an uncoded 400 before
+ * any route code runs (Sol B-635-5). `parseListSessionsQuery` in
+ * roman-chats.query.ts is the route-owned validator with coded errors.
  */
-export class ListSessionsQueryDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  cursor?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
-
-  @IsOptional()
-  @IsIn(ROMAN_SURFACES)
-  surface?: RomanSurfaceDto;
-}

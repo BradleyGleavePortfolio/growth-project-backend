@@ -21,8 +21,20 @@ desc). It returns metadata only, never message text.
 
 Query (all optional): `limit` (integer 1..100, default 30), `cursor` (the `id`
 of the last session already shown, at most 64 characters), `surface`
-(`client` or `coach`; when absent, both surfaces are listed). Any other
-parameter, or a value out of range, is a 400.
+(`client` or `coach`; when absent, both surfaces are listed). Each must be
+a single value. Any other parameter, or a value out of range, is a coded 400
+(Sol B-635-5). The route validates its own query (`src/roman/roman-chats.query.ts`)
+instead of a DTO, because the global ValidationPipe would answer a DTO failure
+with an uncoded class-validator 400 before any route code runs:
+
+| Bad input | Status | `code` | `message` |
+|---|---|---|---|
+| `limit` not an integer 1..100 (or repeated) | 400 | `ROMAN_SESSIONS_QUERY_INVALID` | "Your conversations could not be listed because the app asked for a page size the server does not accept (a whole number from 1 to 100). Refresh the list, and update the app if this keeps happening." |
+| `surface` not `client` / `coach` (or repeated) | 400 | `ROMAN_SESSIONS_QUERY_INVALID` | "Your conversations could not be listed because the app asked for a kind of chat the server does not know (client or coach). Refresh the list, and update the app if this keeps happening." |
+| any other parameter | 400 | `ROMAN_SESSIONS_QUERY_INVALID` | "Your conversations could not be listed because the app sent a setting the server does not accept. Refresh the list, and update the app if this keeps happening." |
+| `cursor` longer than 64 characters, or repeated | 400 | `ROMAN_CURSOR_INVALID` | same copy as below |
+
+The service is never called for these. An empty `cursor` is the first page.
 
 ```json
 {
@@ -77,6 +89,31 @@ stay deleted. Try again in a moment to delete the rest."). That happens on a
 database failure, or when more chats remain than one request erases (50
 batches of 100). Chats that were already erased stay erased, the rest are
 untouched, and a retry finishes the job.
+
+## Every delete failure is coded (Sol B-635-4)
+
+Both delete routes translate every failure, not only the per-row erase:
+the ownership read, the erase transaction, a later batch read after earlier
+rows committed, and the final remaining count. Coded errors pass through
+unchanged (404 `ROMAN_SESSION_NOT_FOUND`, the verified-erase 503 below).
+Anything else is a 503 `ROMAN_ERASE_INCOMPLETE`; the original error is logged
+and sent to Sentry only as its sanitized `safeDiagnostic` form (tags
+`op=roman.delete_one|roman.delete_all`, `stage`), never the ORM text.
+
+| Where it failed | `message` |
+|---|---|
+| single delete, before any write (ownership read) | "Roman could not finish deleting this conversation, so it was not changed. Try deleting it again in a moment." |
+| single delete, the erase transaction itself (a lost commit acknowledgement cannot be told apart from a rollback) | "Roman could not confirm that this conversation was deleted. Delete it again in a moment to make sure. Deleting it twice is safe." |
+| delete all, any step | "Roman could not finish deleting your conversations. The ones already deleted stay deleted. Try again in a moment to delete the rest." |
+
+A retry is always safe: a repeat delete of an erased chat is a 204.
+
+### Codes the mobile app maps (S-ROMAN-CHATS)
+
+`ROMAN_SESSION_NOT_FOUND` (404), `ROMAN_ERASE_INCOMPLETE` (503),
+`ROMAN_CURSOR_INVALID` (400), `ROMAN_SESSIONS_QUERY_INVALID` (400, new in fix
+round 3). Map by `code`, not by message text; the messages above are the
+server's fallback copy.
 
 ## Verified erase (C-635-3)
 

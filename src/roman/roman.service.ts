@@ -23,6 +23,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { RomanMessage, RomanSession, RomanSurface } from '@prisma/client';
+import * as Sentry from '@sentry/node';
 import { PrismaService } from '../prisma.service';
 import { safeDiagnostic } from '../observability/orm-diagnostics';
 import { AiEgressService, AnthropicHandle } from '../ai-egress/ai-egress.service';
@@ -42,6 +43,7 @@ import {
   ROMAN_DELETE_ALL_MAX_BATCHES,
   ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE,
   ROMAN_ERASE_INCOMPLETE_MESSAGE,
+  ROMAN_ERASE_UNCONFIRMED_MESSAGE,
   ROMAN_ERROR_CURSOR_INVALID,
   ROMAN_ERROR_ERASE_INCOMPLETE,
   ROMAN_ERROR_RATE_LIMIT,
@@ -317,13 +319,42 @@ export class RomanService {
    * erased now. A session that is not the caller's is a coded 404.
    */
   async deleteSession(caller: RomanCaller, sessionId: string): Promise<void> {
+    // Sol B-635-4: every failure of the whole operation leaves here coded.
+    // Coded HttpExceptions (404 not found, the verified-erase 503 that rolled
+    // its transaction back) pass through unchanged; anything else (a failed
+    // read, a failed or unacknowledged transaction) is reported with a
+    // sanitized diagnostic and answered 503 ROMAN_ERASE_INCOMPLETE. A failure
+    // before any write says the chat was not changed; a failure of the erase
+    // transaction itself cannot prove a rollback, so it says the delete could
+    // not be confirmed. Deleting again is always safe (idempotent).
+    const progress = { stage: 'read' as 'read' | 'erase' };
+    try {
+      await this.deleteSessionOnce(caller, sessionId, progress);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw this.eraseFailure(err, `roman.delete_failed session=${sessionId} stage=${progress.stage}`, {
+        op: 'delete_one',
+        stage: progress.stage,
+        message:
+          progress.stage === 'read' ? ROMAN_ERASE_INCOMPLETE_MESSAGE : ROMAN_ERASE_UNCONFIRMED_MESSAGE,
+      });
+    }
+  }
+
+  private async deleteSessionOnce(
+    caller: RomanCaller,
+    sessionId: string,
+    progress: { stage: 'read' | 'erase' },
+  ): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      progress.stage = 'read';
       const row = await this.prisma.romanSession.findFirst({
         where: { id: sessionId, user_id: caller.id },
         select: { id: true, day_key: true, deleted_at: true },
       });
       if (!row) throw romanSessionNotFound();
       if (isErasedShell(row)) return;
+      progress.stage = 'erase';
       const erased = await this.prisma.$transaction((tx) =>
         this.eraseSessionInTx(
           tx,
@@ -360,6 +391,50 @@ export class RomanService {
     caller: RomanCaller,
     opts: { batch?: number; maxBatches?: number } = {},
   ): Promise<number> {
+    // Sol B-635-4: the batch reads and the final count are covered too, not
+    // only the per-row transactions. Every chat already erased stays erased
+    // (each row commits on its own), so the coded 503 always means "retry to
+    // delete the rest", whatever step failed.
+    const progress = { erased: 0, stage: 'read' as 'read' | 'erase' | 'count' };
+    try {
+      return await this.deleteAllSessionsOnce(caller, opts, progress);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw this.eraseFailure(
+        err,
+        `roman.delete_all_failed stage=${progress.stage} erased_before=${progress.erased}`,
+        { op: 'delete_all', stage: progress.stage, message: ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE },
+      );
+    }
+  }
+
+  /**
+   * Log + report the sanitized diagnostic of an unexpected delete failure
+   * (never message text, never the raw ORM error) and return the coded,
+   * actionable 503. No `cause` is attached: the global filter must send the
+   * coded body, not its generic ORM-boundary envelope.
+   */
+  private eraseFailure(
+    err: unknown,
+    logLine: string,
+    meta: { op: 'delete_one' | 'delete_all'; stage: string; message: string },
+  ): ServiceUnavailableException {
+    const diagnostic = safeDiagnostic(err);
+    this.logger.error(`${logLine}: ${String(diagnostic)}`);
+    Sentry.captureException(diagnostic, {
+      tags: { feature: 'roman', op: `roman.${meta.op}`, stage: meta.stage },
+    });
+    return new ServiceUnavailableException({
+      code: ROMAN_ERROR_ERASE_INCOMPLETE,
+      message: meta.message,
+    });
+  }
+
+  private async deleteAllSessionsOnce(
+    caller: RomanCaller,
+    opts: { batch?: number; maxBatches?: number },
+    progress: { erased: number; stage: 'read' | 'erase' | 'count' },
+  ): Promise<number> {
     const batch = opts.batch ?? ROMAN_DELETE_ALL_BATCH;
     const maxBatches = opts.maxBatches ?? ROMAN_DELETE_ALL_MAX_BATCHES;
     const where: Prisma.RomanSessionWhereInput = {
@@ -368,6 +443,7 @@ export class RomanService {
     };
     let erased = 0;
     for (let b = 0; b < maxBatches; b++) {
+      progress.stage = 'read';
       const rows = await this.prisma.romanSession.findMany({
         where,
         select: { id: true, day_key: true, deleted_at: true },
@@ -375,6 +451,7 @@ export class RomanService {
         take: batch,
       });
       if (rows.length === 0) return erased;
+      progress.stage = 'erase';
       for (const row of rows) {
         try {
           const done = await this.prisma.$transaction((tx) =>
@@ -386,18 +463,23 @@ export class RomanService {
               row.deleted_at === null ? new Date() : null,
             ),
           );
-          if (done) erased++;
+          if (done) {
+            erased++;
+            progress.erased = erased;
+          }
         } catch (err) {
-          this.logger.error(
-            `roman.delete_all_failed session=${row.id} erased_before=${erased}: ${String(safeDiagnostic(err))}`,
+          // Any per-row failure (including the verified-erase 503, whose
+          // single-chat wording does not fit here) becomes the delete-all
+          // copy: earlier rows stay erased, a retry finishes the rest.
+          throw this.eraseFailure(
+            err,
+            `roman.delete_all_failed session=${row.id} erased_before=${erased}`,
+            { op: 'delete_all', stage: 'erase', message: ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE },
           );
-          throw new ServiceUnavailableException({
-            code: ROMAN_ERROR_ERASE_INCOMPLETE,
-            message: ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE,
-          });
         }
       }
     }
+    progress.stage = 'count';
     const left = await this.prisma.romanSession.count({ where });
     if (left === 0) return erased;
     this.logger.error(`roman.delete_all_bound_hit erased=${erased} left=${left}`);
