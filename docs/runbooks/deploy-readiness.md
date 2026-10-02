@@ -111,21 +111,20 @@ How to read it: `Registered but missing` is your fill-in list (check each name's
 
 Requirement: `FLY_API_TOKEN` must be allowed to open an ssh session on the app (an org or app deploy token is enough; a read-only token is not).
 
-### 2. Fly Env Sync: push allowlisted GitHub secrets to Fly
+### 2. Fly Env Sync: reconcile Fly with the desired-state manifest
 
-`.github/workflows/fly-env-sync.yml`. Use it after you have added the values as GitHub Actions secrets with the same names.
+`.github/workflows/fly-env-sync.yml` is the only path that changes launch flags and GitHub-sourced secrets on Fly. It applies `.github/fly-env-desired-state.json`. Full runbook: [launch-flags.md](launch-flags.md).
 
 ```
-gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET
+gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=plan
+gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=apply -f confirm=SET
 ```
 
-What it does: for each name on its allowlist (Google sign-in and calendar OAuth, `METRICS_AUTH_TOKEN`, `DATA_EXPORT_DOWNLOAD_SECRET`, `CONTRACT_PDF_URL_SECRET`, `SCHEDULING_WEBHOOK_SECRET`, `GARMIN_WEBHOOK_SALT`, `WHOOP_WEBHOOK_SALT`, and the eight wearables providers' `*_CLIENT_ID` / `*_CLIENT_SECRET`) it reads the GitHub secret of the same name. Unset or empty secrets are skipped. The rest are staged on Fly in one `fly secrets set --stage` call, which does **not** restart any machine; they take effect at the next deploy. To apply them immediately instead, add `-f deploy_staged=true`: the workflow then runs `fly secrets deploy` after staging, which does a rolling restart. It then confirms the staged names are listed on Fly and prints names only. The Apple sign-in keys are not on this list; their own workflow handles them.
+`plan` is read-only. It prints, for each managed name, the declared state, the Fly status, an in-machine match / differs / absent result and the action. Names, statuses and those words are the only output: no value, no digest. `apply` stages exactly the planned changes (`--stage`, no restart) and proves every managed name is present or absent as declared. Add `-f deploy_staged=true` to apply them now with one rolling restart, which is skipped when nothing changed, then prove the running machine matches. A secret whose manifest entry is `github-secret` is copied from the GitHub Actions secret of the same name; the plan fails with a fix if that secret is empty. The Apple sign-in keys are not in the manifest; their own workflow handles them.
 
-`GOOGLE_CLIENT_IDS` is marked required for launch (`launch: 'required'` in `ENV_RULES`). The Google Calendar names (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_CALENDAR_WEBHOOK_TOKEN` and the calendar flags) are an optional integration, not a launch dependency: leave them unset or false. They stay on the allowlist only so a real value can be pushed later; when their GitHub secrets are unset the sync skips them.
+`GOOGLE_CLIENT_IDS` is marked required for launch (`launch: 'required'` in `ENV_RULES`): flip its manifest entry to `github-secret` to copy it. The Google Calendar OAuth names are declared `present` (they are on Fly today and owned elsewhere); the calendar flags are excluded and stay off.
 
-To add a name to the allowlist, add it to both the `env:` block and the `allowlist=( ... )` array of the staging step, and register it in `ENV_RULES`. `test/ci/fly-env-workflows.spec.ts` fails if the two lists disagree, if a name is not registered, if `--stage` or a guard is removed, or if any step echoes a value.
-
-After a sync, deploy as usual, then run Fly Env Truth again to confirm.
+After an apply without `deploy_staged`, deploy as usual, then run the plan again (every row should read `keep`) and Fly Env Truth to confirm.
 
 ---
 

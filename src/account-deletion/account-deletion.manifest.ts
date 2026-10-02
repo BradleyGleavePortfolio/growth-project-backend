@@ -134,10 +134,15 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // ── Routines / recipes / lessons authored by the user
   { model: 'RoutineExercise', field: 'routine.creator_id', action: del },
   { model: 'WorkoutRoutine', field: 'creator_id', action: del },
-  // Recipes and lessons other people saved or completed stay (frozen content);
-  // the rest are removed.
-  { model: 'Recipe', field: 'created_by_id', action: del, where: { saved_by: { none: {} } } },
-  { model: 'Recipe', field: 'created_by_id', action: retain(FROZEN_PLAN) },
+  // Recipes the user created all go. #630 hides a deleted creator's recipes
+  // from everyone (recipe-access.ts visibleRecipesWhere), so a bookmark of
+  // one points at a recipe nobody can open; keeping the recipe for it would
+  // only retain the content. SavedRecipe.recipe_id is ON DELETE RESTRICT, so
+  // every bookmark of the user's recipes (their own or anyone else's) goes
+  // first (test/account-deletion/recipe-erasure.spec.ts).
+  { model: 'SavedRecipe', field: 'recipe.created_by_id', action: del },
+  { model: 'Recipe', field: 'created_by_id', action: del },
+  // Lessons other people completed stay (frozen content); the rest are removed.
   { model: 'Lesson', field: 'coach_id', action: del, where: { completions: { none: {} } } },
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
 

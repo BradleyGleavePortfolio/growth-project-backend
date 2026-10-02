@@ -15,8 +15,8 @@
  *     WorkoutSession via `user_id`), or
  *   - deleted by a RESTRICT_CHILD_PRE_STEPS raw step (children that are not
  *     Prisma relations, e.g. wearable prompt sources -> WearableSample), or
- *   - excluded by the step's own `where` guard (e.g. a Recipe is only deleted
- *     when `saved_by: { none: {} }`), or
+ *   - excluded by the step's own `where` guard (e.g. a Lesson is only deleted
+ *     when `completions: { none: {} }`), or
  *   - listed in EXEMPT with a reason that explains why no row can exist.
  */
 import { existsSync, readFileSync, readdirSync } from 'fs';

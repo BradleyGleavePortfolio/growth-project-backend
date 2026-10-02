@@ -13,6 +13,11 @@ name: Fly Apple Sign-In Secrets Set (operator)
 # flyctl call. The PEM is passed to `flyctl secrets import` on stdin (never on
 # the command line, never echoed), so it does not appear in the process list
 # or the log.
+#
+# Restart disclosure (C-608-9): `flyctl secrets import` without `--stage`
+# creates a new release and restarts every running machine (rolling). Run it
+# only inside an announced deploy window. The restart is the same one
+# `fly secrets set` causes; no other value changes.
 
 on:
   workflow_dispatch:
@@ -47,6 +52,7 @@ jobs:
             exit 1
           fi
           echo "Operator confirmed."
+          echo "::notice::Setting these secrets restarts every running machine of the app (rolling restart). Run inside a deploy window."
 
       - name: Validate Fly app target
         env:

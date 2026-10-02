@@ -173,9 +173,13 @@ ConnectAccount, ClientPurchase deactivated, SplitLedgerEntry, ConnectTransfer,
 PartialRefundDecision, CoachCreditPackPurchase, CoachAIBudget,
 MarketplaceConnectEvent), coach content a surviving client was assigned
 (WorkoutPlan, WorkoutProgram and revisions, DailyMealPlan, MealTemplate,
-coach MacroTarget, saved Recipes, completed Lessons, contract envelopes and
-templates on the coach side, deactivated CoachPackage), and the Scout
-insert-only import ledgers (digests only; a DB trigger refuses DELETE).
+coach MacroTarget, completed Lessons, contract envelopes and templates on the
+coach side, deactivated CoachPackage), and the Scout insert-only import
+ledgers (digests only; a DB trigger refuses DELETE).
+
+Recipes the user created are always deleted, together with every bookmark of
+them (anyone's), because #630 hides a deleted creator's recipes from everyone
+and a bookmark therefore no longer opens anything.
 
 ## Re-auth (`POST /auth/recent-auth-token`)
 
