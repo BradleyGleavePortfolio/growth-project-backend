@@ -120,3 +120,9 @@ ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "last_error" TEXT
 ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
 ALTER TABLE "NotificationDeliveryLog" ADD CONSTRAINT "NotificationDeliveryLog_status_check"
   CHECK ("status" IN ('sending', 'retry', 'sent', 'gave_up') AND "attempts" >= 1);
+
+-- The reminder sweep reads unfinished delivery work on every tick (S-SCHED-4
+-- B-634-2: retries and dead workers' claims are selected on their own, not
+-- only through the due band).
+CREATE INDEX IF NOT EXISTS "NotificationDeliveryLog_kind_status_idx"
+  ON "NotificationDeliveryLog" ("kind", "status");

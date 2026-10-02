@@ -488,6 +488,16 @@ export class SchedulingFakeDb {
       const row = this.deliveryLogs.find((l) => this.matches(l, args.where, 'other'));
       return row ? { ...row } : null;
     },
+    findMany: async (args: { where?: Row; orderBy?: Row; take?: number }) => {
+      await this.tick();
+      let rows = this.deliveryLogs.filter((l) => this.matches(l, args.where, 'other'));
+      const [key, dir] = Object.entries(args.orderBy ?? { created_at: 'asc' })[0] ?? [];
+      if (key) {
+        rows = rows.slice().sort((a, b) => (dir === 'desc' ? -1 : 1) * compare(a[key], b[key]));
+      }
+      if (typeof args.take === 'number') rows = rows.slice(0, args.take);
+      return rows.map((r) => ({ ...r }));
+    },
     updateMany: async (args: { where?: Row; data: Row }) => {
       await this.tick();
       let count = 0;

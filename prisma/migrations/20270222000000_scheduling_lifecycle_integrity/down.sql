@@ -14,6 +14,7 @@
 -- depend on it; otherwise it stays installed and a NOTICE says why. A
 -- pre-existing, shared extension is never dropped by this file.
 -- The recorded Prisma migration history is not rewritten here.
+DROP INDEX IF EXISTS "NotificationDeliveryLog_kind_status_idx";
 ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "last_error";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "notification_id";

@@ -2126,6 +2126,9 @@ model NotificationDeliveryLog {
   @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
   @@index([session_id])
   @@index([user_id, created_at])
+  // S-SCHED-4 (B-634-2): the reminder sweep reads unfinished work
+  // (kind, status IN ('sending','retry')) every tick.
+  @@index([kind, status])
 }
 
 // ============================================================

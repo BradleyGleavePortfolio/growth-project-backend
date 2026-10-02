@@ -49,8 +49,16 @@ function buildPrismaFake(sessions: FakeSession[]) {
     coachingSession: {
       findMany: jest.fn(
         async (args: {
-          where: { status: string | { in: string[] }; start_at: { gte: Date; lte: Date } };
+          where: {
+            id?: { in: string[] };
+            status?: string | { in: string[] };
+            start_at?: { gte: Date; lte: Date };
+          };
         }) => {
+          // S-SCHED-4: the recovery pass loads sessions by id.
+          const ids = args.where.id?.in;
+          if (ids) return sessions.filter((s) => ids.includes(s.id));
+          if (!args.where.start_at || !args.where.status) return [];
           const lower = args.where.start_at.gte;
           const upper = args.where.start_at.lte;
           const wanted = args.where.status;
@@ -84,6 +92,16 @@ function buildPrismaFake(sessions: FakeSession[]) {
         logs.push(row);
         return row;
       }),
+      // S-SCHED-4: the recovery pass reads unfinished rows ('retry', or
+      // 'sending' with an expired lease) of the sweep's kind.
+      findMany: jest.fn(async (args: { where: { kind: string } }) =>
+        logs.filter((l) => {
+          if (l.kind !== args.where.kind) return false;
+          if (l.status === 'retry') return true;
+          const lease = (l as { lease_until?: Date | null }).lease_until ?? null;
+          return l.status === 'sending' && (lease === null || lease.getTime() <= Date.now());
+        }),
+      ),
       findFirst: jest.fn(
         async (args: { where: { session_id: string; user_id: string; kind: string } }) =>
           logs.find(
@@ -178,10 +196,12 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
 
     // The client should see "Coach K" and the coach should see "Jamie".
-    const recipients = emitter.emitReminder1h.mock.calls.map((c: [{ recipientUserId: string; otherPartyDisplayName: string }]) => ({
-      r: c[0].recipientUserId,
-      other: c[0].otherPartyDisplayName,
-    }));
+    const recipients = emitter.emitReminder1h.mock.calls.map(
+      (c: [{ recipientUserId: string; otherPartyDisplayName: string }]) => ({
+        r: c[0].recipientUserId,
+        other: c[0].otherPartyDisplayName,
+      }),
+    );
     expect(recipients).toEqual(
       expect.arrayContaining([
         { r: 'client-1', other: 'Coach K' },
@@ -250,9 +270,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
   });
 
   it('handles a coach-only session (client_id null) without crashing', async () => {
-    const sessions = [
-      session({ id: 'sess-solo', startsInMinutes: 60, client_id: null }),
-    ];
+    const sessions = [session({ id: 'sess-solo', startsInMinutes: 60, client_id: null })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
     const job = new SessionReminderJob(prisma as never, emitter as never);
@@ -332,9 +350,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
     expect(result.dispatched).toBe(1);
     expect(result.skipped).toBe(1);
     expect(emitter.emitReminder24h).toHaveBeenCalledTimes(1);
-    expect(
-      emitter.emitReminder24h.mock.calls[0][0].recipientUserId,
-    ).toBe('coach-1');
+    expect(emitter.emitReminder24h.mock.calls[0][0].recipientUserId).toBe('coach-1');
   });
 });
 

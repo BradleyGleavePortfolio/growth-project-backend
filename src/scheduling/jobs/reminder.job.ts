@@ -35,6 +35,14 @@ export interface ReminderSweepResult {
   retrying: number;
   /** Claim could not be written, or attempts ran out. */
   failed: number;
+  /**
+   * S-SCHED-4 (B-634-2): sessions picked up from unfinished delivery work
+   * after they left this sweep's due band (a retry or a dead worker's claim
+   * from an earlier tick).
+   */
+  recovered: number;
+  /** Unfinished delivery rows closed as gave_up because they can never be sent. */
+  retired: number;
 }
 
 // S-SCHED-3 (B-634-2) delivery-claim tuning. The lease is shorter than the
@@ -42,6 +50,14 @@ export interface ReminderSweepResult {
 // next sweep, and far longer than one delivery (push has its own timeout).
 export const REMINDER_CLAIM_LEASE_MS = 4 * 60_000;
 export const REMINDER_MAX_ATTEMPTS = 3;
+// S-SCHED-4 (B-634-2): unfinished delivery rows read per sweep for
+// recovery. Unfinished rows are only those whose last attempt failed or
+// whose worker died, so this bounds the read, not the work: a larger
+// backlog drains over the following ticks (oldest first).
+export const REMINDER_RECOVERY_BATCH = 200;
+// The 24h reminder says "tomorrow at <time>". Once the 1h reminder band has
+// been reached, the 24h reminder is superseded and is retired, not sent late.
+export const REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES = 65;
 const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_provider'];
 
 interface ReminderClaim {
@@ -51,10 +67,22 @@ interface ReminderClaim {
   inappDone: boolean;
   pushDone: boolean;
   notificationId: string | null;
+  /** True when this claim inserted the row (nothing recorded before it). */
+  fresh: boolean;
 }
+
+// Why an unfinished delivery row was closed without sending (last_error).
+type RetireReason =
+  | 'session_cancelled'
+  | 'session_started'
+  | 'superseded'
+  | 'recipient_changed'
+  | 'attempts_exhausted';
 
 interface DeliveryLogRow {
   id: string;
+  session_id?: string;
+  user_id?: string;
   status: string;
   attempts: number;
   lease_until: Date | null;
@@ -63,6 +91,10 @@ interface DeliveryLogRow {
   inapp_done_at: Date | null;
   push_done_at: Date | null;
   notification_id: string | null;
+}
+
+function isString(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -103,6 +135,12 @@ function reminderContext(ctx: ReminderRecipientContext | undefined): {
 //
 // The sweeps are deliberately wider than the cron interval so a missed
 // tick from a redeploy still catches every session.
+//
+// Recovery is not tied to the band (S-SCHED-4 B-634-2): each sweep also
+// reads its kind's unfinished rows ('retry', or 'sending' with an expired
+// lease) directly, so work claimed at the band's last tick is retried after
+// the session has left the band, while it is still upcoming. Rows that can
+// never be sent correctly are closed as 'gave_up' with a retired:<reason>.
 //
 // Status filter: confirmed sessions only (`scheduled`, and
 // `pending_provider` which is confirmed but waiting on a call link).
@@ -181,6 +219,7 @@ export class SessionReminderJob {
     await this.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
       upperOffsetMinutes: 60 * 24 + 15,
+      recoverMinLeadMinutes: REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES,
       kind: NotificationKind.BOOKING_REMINDER_24H,
       emit: (recipient, otherName, session, ctx) =>
         this.bookingEmitter.emitReminder24h({
@@ -198,6 +237,11 @@ export class SessionReminderJob {
   async dispatchWindow(args: {
     lowerOffsetMinutes: number;
     upperOffsetMinutes: number;
+    /**
+     * S-SCHED-4: unfinished work is recovered only while the session starts
+     * more than this many minutes from now (default 0: until it starts).
+     */
+    recoverMinLeadMinutes?: number;
     kind: string;
     emit: (
       recipientUserId: string,
@@ -226,8 +270,31 @@ export class SessionReminderJob {
       skipped: 0,
       retrying: 0,
       failed: 0,
+      recovered: 0,
+      retired: 0,
     };
-    for (const session of due) {
+
+    // S-SCHED-4 (B-634-2): unfinished delivery work is selected on its own,
+    // not only through the due band. A session claimed at the last tick of
+    // its band (a channel failed, or the worker died holding the lease) has
+    // left the band by the next tick; without this its retry would never run.
+    const recovery = await this.collectRecoverableWork({
+      kind: args.kind,
+      now,
+      lower,
+      upper,
+      minLeadMs: (args.recoverMinLeadMinutes ?? 0) * 60 * 1000,
+      dueIds: new Set(due.map((d) => d.id)),
+    });
+    result.retired += recovery.retired;
+    result.recovered = recovery.sessions.length;
+    result.scanned += recovery.sessions.length;
+
+    const work: Array<{ session: CoachingSession; onlyUsers: Set<string> | null }> = [
+      ...due.map((session) => ({ session, onlyUsers: null })),
+      ...recovery.sessions,
+    ];
+    for (const { session, onlyUsers } of work) {
       const participants: Array<{
         userId: string;
         otherUserId: string | null;
@@ -248,6 +315,9 @@ export class SessionReminderJob {
       const sessionTypeName = await this.resolveTypeName(session.session_type_id);
 
       for (const p of participants) {
+        // A recovered session re-sends only to recipients with unfinished
+        // work; nobody else is newly claimed outside the band.
+        if (onlyUsers && !onlyUsers.has(p.userId)) continue;
         const claim = await this.claimDelivery(session, p.userId, args.kind);
         if (claim === 'duplicate') {
           result.skipped += 1;
@@ -266,9 +336,13 @@ export class SessionReminderJob {
         if (
           !current ||
           !REMINDABLE_STATUSES.includes(current.status) ||
-          current.start_at.getTime() !== session.start_at.getTime()
+          current.start_at.getTime() !== session.start_at.getTime() ||
+          current.start_at.getTime() <= Date.now()
         ) {
-          await this.releaseClaim(claim);
+          // A claim this sweep inserted is simply released. A taken-over row
+          // keeps its per-channel receipts and is closed instead.
+          if (claim.fresh) await this.releaseClaim(claim);
+          else await this.retireClaim(claim, current);
           result.skipped += 1;
           continue;
         }
@@ -296,12 +370,155 @@ export class SessionReminderJob {
       }
     }
 
-    if (due.length > 0) {
+    if (result.scanned > 0 || result.retired > 0) {
       this.logger.log(
-        `reminder sweep kind=${args.kind} scanned=${result.scanned} dispatched=${result.dispatched} skipped=${result.skipped} retrying=${result.retrying} failed=${result.failed}`,
+        `reminder sweep kind=${args.kind} scanned=${result.scanned} recovered=${result.recovered} dispatched=${result.dispatched} skipped=${result.skipped} retrying=${result.retrying} failed=${result.failed} retired=${result.retired}`,
       );
     }
     return result;
+  }
+
+  // S-SCHED-4 (B-634-2): read this kind's unfinished delivery rows ('retry',
+  // or 'sending' whose lease has expired) and sort each into:
+  //  - recover: the session is still confirmed, at the same start the row
+  //    was claimed for, still ahead of the recovery cutoff, the recipient is
+  //    still one of its two participants, and attempts remain. Sessions that
+  //    are back in the due band are left to the band pass (no double claim).
+  //  - retire: it can never be sent correctly (cancelled or finished
+  //    session, started / past the cutoff, superseded by a move the band
+  //    pass will not reach, recipient no longer on the session, attempts
+  //    exhausted). It is closed as 'gave_up' with the reason in last_error
+  //    by a compare-and-set, so a concurrent owner keeps it. Per-channel
+  //    receipts are left untouched.
+  //  - leave: a live lease (another worker owns it) or a claim whose session
+  //    was moved to a time that is still ahead of its band (the band pass
+  //    re-arms it there).
+  private async collectRecoverableWork(args: {
+    kind: string;
+    now: Date;
+    lower: Date;
+    upper: Date;
+    minLeadMs: number;
+    dueIds: Set<string>;
+  }): Promise<{
+    sessions: Array<{ session: CoachingSession; onlyUsers: Set<string> }>;
+    retired: number;
+  }> {
+    const empty = { sessions: [], retired: 0 };
+    let rows: DeliveryLogRow[];
+    try {
+      rows = await this.prisma.notificationDeliveryLog.findMany({
+        where: {
+          kind: args.kind,
+          OR: [
+            { status: 'retry' },
+            {
+              status: 'sending',
+              OR: [{ lease_until: null }, { lease_until: { lte: args.now } }],
+            },
+          ],
+        },
+        orderBy: { created_at: 'asc' },
+        take: REMINDER_RECOVERY_BATCH,
+      });
+    } catch (err) {
+      this.logger.error(
+        `reminder recovery read failed: kind=${args.kind} err=${(err as Error).message}`,
+      );
+      return empty;
+    }
+    if (rows.length === 0) return empty;
+
+    const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(isString))];
+    const sessions = await this.prisma.coachingSession.findMany({
+      where: { id: { in: sessionIds } },
+    });
+    const byId = new Map(sessions.map((s) => [s.id, s]));
+    const cutoff = args.now.getTime() + args.minLeadMs;
+    const recover = new Map<string, { session: CoachingSession; onlyUsers: Set<string> }>();
+    let retired = 0;
+
+    for (const row of rows) {
+      const session = row.session_id ? byId.get(row.session_id) : undefined;
+      const reason = this.retireReason(
+        row,
+        session,
+        args.now.getTime(),
+        cutoff,
+        args.lower.getTime(),
+      );
+      if (reason) {
+        if (await this.retireRow(row, reason)) retired += 1;
+        continue;
+      }
+      if (!session || !row.user_id) continue;
+      const forStart = row.session_start_at ?? null;
+      if (forStart !== null && forStart.getTime() !== session.start_at.getTime()) {
+        // Moved to a later time: the band pass re-arms this row when the new
+        // time enters the band (claimDelivery resets a stale revision).
+        continue;
+      }
+      if (args.dueIds.has(session.id)) continue;
+      // Claimed inside this band earlier, so the start is at most the band's
+      // upper edge; anything later is not this sweep's work.
+      if (session.start_at.getTime() > args.upper.getTime()) continue;
+      const entry = recover.get(session.id) ?? { session, onlyUsers: new Set<string>() };
+      entry.onlyUsers.add(row.user_id);
+      recover.set(session.id, entry);
+    }
+    return {
+      sessions: [...recover.values()].sort(
+        (a, b) => a.session.start_at.getTime() - b.session.start_at.getTime(),
+      ),
+      retired,
+    };
+  }
+
+  private retireReason(
+    row: DeliveryLogRow,
+    session: CoachingSession | undefined,
+    nowMs: number,
+    cutoffMs: number,
+    lowerMs: number,
+  ): RetireReason | null {
+    if (!session || !REMINDABLE_STATUSES.includes(session.status)) return 'session_cancelled';
+    if (row.user_id !== session.client_id && row.user_id !== session.coach_id) {
+      return 'recipient_changed';
+    }
+    if ((row.attempts ?? 1) >= REMINDER_MAX_ATTEMPTS) return 'attempts_exhausted';
+    const startMs = session.start_at.getTime();
+    if (startMs <= nowMs) return 'session_started';
+    // Ahead of now but inside the recovery cutoff: a 24h reminder the 1h
+    // reminder has taken over, or a claim for an older start whose new time
+    // has already passed its band. Either way it can never be sent correctly.
+    if (startMs <= cutoffMs) return 'superseded';
+    const forStart = row.session_start_at ?? null;
+    if (forStart !== null && forStart.getTime() !== startMs && startMs < lowerMs) {
+      return 'superseded';
+    }
+    return null;
+  }
+
+  private async retireRow(row: DeliveryLogRow, reason: RetireReason): Promise<boolean> {
+    try {
+      const res = await this.prisma.notificationDeliveryLog.updateMany({
+        where: {
+          id: row.id,
+          status: row.status,
+          attempts: row.attempts,
+          claim_token: row.claim_token ?? null,
+        },
+        data: { status: 'gave_up', lease_until: null, last_error: `retired:${reason}` },
+      });
+      if (res.count !== 1) return false;
+    } catch (err) {
+      this.logger.warn(`reminder claim ${row.id} retire failed: ${(err as Error).message}`);
+      return false;
+    }
+    const log = `reminder retired: claim=${row.id} session=${row.session_id ?? 'unknown'} reason=${reason} attempts=${row.attempts}`;
+    if (reason === 'attempts_exhausted') this.logger.error(log);
+    else this.logger.log(log);
+    return true;
   }
 
   // S-SCHED-3 (B-634-2): durable, recoverable delivery claim per
@@ -343,6 +560,7 @@ export class SessionReminderJob {
         inappDone: false,
         pushDone: false,
         notificationId: null,
+        fresh: true,
       };
     } catch (err) {
       if (!isUniqueViolation(err)) {
@@ -406,6 +624,7 @@ export class SessionReminderJob {
       inappDone: !staleRevision && (existing.inapp_done_at ?? null) !== null,
       pushDone: !staleRevision && (existing.push_done_at ?? null) !== null,
       notificationId: staleRevision ? null : (existing.notification_id ?? null),
+      fresh: false,
     };
   }
 
@@ -456,6 +675,26 @@ export class SessionReminderJob {
       );
     }
     return state;
+  }
+
+  private async retireClaim(claim: ReminderClaim, current: CoachingSession | null): Promise<void> {
+    const reason: RetireReason =
+      !current || !REMINDABLE_STATUSES.includes(current.status)
+        ? 'session_cancelled'
+        : current.start_at.getTime() <= Date.now()
+          ? 'session_started'
+          : 'superseded';
+    try {
+      // A moved session's row was already removed by the reschedule (and a
+      // stale revision is re-armed by the band pass), so this only matches
+      // while this sweep still owns the claim.
+      await this.prisma.notificationDeliveryLog.updateMany({
+        where: { id: claim.id, claim_token: claim.token },
+        data: { status: 'gave_up', lease_until: null, last_error: `retired:${reason}` },
+      });
+    } catch (err) {
+      this.logger.warn(`reminder claim ${claim.id} retire failed: ${(err as Error).message}`);
+    }
   }
 
   private async releaseClaim(claim: ReminderClaim): Promise<void> {

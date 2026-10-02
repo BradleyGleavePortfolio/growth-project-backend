@@ -1634,3 +1634,327 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
     expect(String(db.deliveryLogs[0].last_error)).toContain('push');
   });
 });
+
+describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band', () => {
+  const MIN = 60_000;
+  function confirmed(
+    db: SchedulingFakeDb,
+    id: string,
+    startMinutes: number,
+    clientId = 'client-1',
+    status = 'scheduled',
+  ): { id: string; start_at: Date } {
+    const start_at = new Date(NOW.getTime() + startMinutes * MIN);
+    db.addSession({
+      id,
+      coach_id: 'coach-1',
+      client_id: clientId,
+      session_type_id: 'st-q',
+      status,
+      start_at,
+      end_at: new Date(NOW.getTime() + (startMinutes + 15) * MIN),
+      video_url: 'https://meet.example.com/kim',
+    });
+    return { id, start_at };
+  }
+  function logRow(
+    over: Partial<Record<string, unknown>> & { id: string; session_id: string; user_id: string },
+  ) {
+    return {
+      kind: NotificationKind.BOOKING_REMINDER_1H,
+      status: 'retry',
+      attempts: 1,
+      lease_until: null,
+      claim_token: `tok-${over.id}`,
+      session_start_at: null,
+      inapp_done_at: null,
+      push_done_at: null,
+      notification_id: null,
+      last_error: null,
+      created_at: NOW,
+      ...over,
+    };
+  }
+  // Run at a later wall clock (the real cron cadence), then restore NOW.
+  async function at<T>(offsetMinutes: number, fn: () => Promise<T>): Promise<T> {
+    jest.setSystemTime(new Date(NOW.getTime() + offsetMinutes * MIN));
+    try {
+      return await withReminders(fn);
+    } finally {
+      jest.setSystemTime(NOW);
+    }
+  }
+  const ofKind = (n: FakeNotifications, kind: string) => n.rows.filter((r) => r.kind === kind);
+
+  it('1h: both recipients fail at the final tick (start in 55m); the +5m tick delivers both (Sol counterexample)', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'edge-1h', 55);
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    await at(0, () => reminder.runOneHourReminderSweep());
+    expect(db.deliveryLogs.map((l) => [l.status, l.attempts])).toEqual([
+      ['retry', 1],
+      ['retry', 1],
+    ]);
+    // +5m: the session (now 50m away) has left [55m, 65m].
+    await at(5, () => reminder.runOneHourReminderSweep());
+    expect(
+      ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H)
+        .map((r) => r.user_id)
+        .sort(),
+    ).toEqual(['client-1', 'coach-1']);
+    expect(notifications.pushes).toHaveLength(2);
+    expect(db.deliveryLogs.map((l) => [l.status, l.attempts])).toEqual([
+      ['sent', 2],
+      ['sent', 2],
+    ]);
+    // Settled: later ticks do nothing more.
+    await at(10, () => reminder.runOneHourReminderSweep());
+    expect(ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H)).toHaveLength(2);
+    expect(notifications.pushes).toHaveLength(2);
+  });
+
+  it('24h: both recipients fail at the final tick (start in 23h45m); the +15m tick delivers both', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'edge-24h', 24 * 60 - 15);
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    await at(0, () => reminder.runTwentyFourHourReminderSweep());
+    expect(db.deliveryLogs.map((l) => l.status)).toEqual(['retry', 'retry']);
+    await at(15, () => reminder.runTwentyFourHourReminderSweep());
+    const sent = ofKind(notifications, NotificationKind.BOOKING_REMINDER_24H);
+    expect(sent.map((r) => r.user_id).sort()).toEqual(['client-1', 'coach-1']);
+    expect(db.deliveryLogs.map((l) => [l.status, l.attempts])).toEqual([
+      ['sent', 2],
+      ['sent', 2],
+    ]);
+  });
+
+  it('partial failure at the final tick: the next tick re-sends only the push, linked to the first in-app row', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'edge-push', 55);
+    notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'transport-error' });
+    await at(0, () => reminder.runOneHourReminderSweep());
+    const failed = db.deliveryLogs.find((l) => l.status === 'retry');
+    expect(failed).toBeDefined();
+    const firstInApp = failed?.notification_id;
+    expect(firstInApp).toBeTruthy();
+    await at(5, () => reminder.runOneHourReminderSweep());
+    expect(ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H)).toHaveLength(2);
+    const retried = db.deliveryLogs.find((l) => l.id === failed?.id);
+    expect(retried).toMatchObject({ status: 'sent', attempts: 2, notification_id: firstInApp });
+    const pushes = notifications.pushes.filter((p) => p.userId === failed?.user_id);
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].data.notificationId).toBe(firstInApp);
+  });
+
+  it('worker crash at the final tick: a live lease is left alone, the expired lease is taken over on the next tick', async () => {
+    const { db, notifications, reminder } = harness();
+    const s = confirmed(db, 'edge-crash', 55);
+    db.deliveryLogs.push(
+      logRow({
+        id: 'dead',
+        session_id: s.id,
+        user_id: 'client-1',
+        status: 'sending',
+        lease_until: new Date(NOW.getTime() + 4 * MIN),
+        claim_token: 'dead-worker',
+        session_start_at: s.start_at,
+      }),
+      logRow({
+        id: 'done',
+        session_id: s.id,
+        user_id: 'coach-1',
+        status: 'sent',
+        session_start_at: s.start_at,
+        inapp_done_at: NOW,
+        push_done_at: NOW,
+      }),
+    );
+    // +3m: the dead worker's lease is still live; nothing is sent.
+    await at(3, () => reminder.runOneHourReminderSweep());
+    expect(ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H)).toHaveLength(0);
+    expect(db.deliveryLogs.find((l) => l.id === 'dead')).toMatchObject({
+      status: 'sending',
+      claim_token: 'dead-worker',
+    });
+    // +5m: lease expired, session 50m away (outside the band): recovered,
+    // and only for the recipient whose work was unfinished.
+    await at(5, () => reminder.runOneHourReminderSweep());
+    expect(
+      ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H).map((r) => r.user_id),
+    ).toEqual(['client-1']);
+    expect(db.deliveryLogs.find((l) => l.id === 'dead')).toMatchObject({
+      status: 'sent',
+      attempts: 2,
+    });
+    expect(db.deliveryLogs.find((l) => l.id === 'done')).toMatchObject({
+      status: 'sent',
+      attempts: 1,
+    });
+  });
+
+  it('a recovered session never claims a recipient that had no unfinished work', async () => {
+    const { db, notifications, reminder } = harness();
+    const s = confirmed(db, 'edge-one', 50);
+    db.deliveryLogs.push(
+      logRow({
+        id: 'r-client',
+        session_id: s.id,
+        user_id: 'client-1',
+        session_start_at: s.start_at,
+      }),
+    );
+    const result = await at(0, () =>
+      reminder.dispatchWindow({
+        lowerOffsetMinutes: 55,
+        upperOffsetMinutes: 65,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        emit: async () => ({ inapp: 'written', push: 'delivered' }),
+      }),
+    );
+    expect(result).toMatchObject({ scanned: 1, recovered: 1, dispatched: 1, retired: 0 });
+    expect(db.deliveryLogs.map((l) => l.user_id)).toEqual(['client-1']);
+    expect(notifications.rows).toHaveLength(0);
+  });
+
+  it('retires work that can never be sent, keeps its receipts, and sends nothing', async () => {
+    const { db, notifications, reminder } = harness();
+    const cancelled = confirmed(db, 'gone-cancelled', 40, 'client-1', 'canceled');
+    const started = confirmed(db, 'gone-started', -5, 'client-2');
+    const exhausted = confirmed(db, 'gone-exhausted', 45, 'client-3');
+    const reassigned = confirmed(db, 'gone-recipient', 48, 'client-4');
+    const superseded = confirmed(db, 'gone-superseded', 30, 'client-5');
+    const later = confirmed(db, 'moved-later', 300, 'client-6');
+    db.deliveryLogs.push(
+      logRow({
+        id: 'x-cancelled',
+        session_id: cancelled.id,
+        user_id: 'client-1',
+        session_start_at: cancelled.start_at,
+        inapp_done_at: NOW,
+        notification_id: 'n-kept',
+      }),
+      logRow({
+        id: 'x-started',
+        session_id: started.id,
+        user_id: 'client-2',
+        session_start_at: started.start_at,
+      }),
+      logRow({
+        id: 'x-exhausted',
+        session_id: exhausted.id,
+        user_id: 'client-3',
+        status: 'sending',
+        attempts: 3,
+        lease_until: new Date(NOW.getTime() - MIN),
+        session_start_at: exhausted.start_at,
+      }),
+      logRow({
+        id: 'x-recipient',
+        session_id: reassigned.id,
+        user_id: 'client-1',
+        session_start_at: reassigned.start_at,
+      }),
+      // Claimed for an older start; the new start (30m) is past its band.
+      logRow({
+        id: 'x-superseded',
+        session_id: superseded.id,
+        user_id: 'client-5',
+        session_start_at: new Date(NOW.getTime() + 24 * 60 * MIN),
+      }),
+      // Claimed for an older start; the new start is still ahead of its
+      // band, so the band pass re-arms it later: left alone.
+      logRow({
+        id: 'x-later',
+        session_id: later.id,
+        user_id: 'client-6',
+        session_start_at: new Date(NOW.getTime() + 55 * MIN),
+      }),
+    );
+    const result = await at(0, () => reminder.runOneHourReminderSweep().then(() => null));
+    expect(result).toBeNull();
+    expect(notifications.rows).toHaveLength(0);
+    expect(notifications.pushes).toHaveLength(0);
+    const byId = (id: string) => db.deliveryLogs.find((l) => l.id === id);
+    expect(byId('x-cancelled')).toMatchObject({
+      status: 'gave_up',
+      last_error: 'retired:session_cancelled',
+      inapp_done_at: NOW,
+      notification_id: 'n-kept',
+    });
+    expect(byId('x-started')).toMatchObject({
+      status: 'gave_up',
+      last_error: 'retired:session_started',
+    });
+    expect(byId('x-exhausted')).toMatchObject({
+      status: 'gave_up',
+      attempts: 3,
+      lease_until: null,
+      last_error: 'retired:attempts_exhausted',
+    });
+    expect(byId('x-recipient')).toMatchObject({
+      status: 'gave_up',
+      last_error: 'retired:recipient_changed',
+    });
+    expect(byId('x-superseded')).toMatchObject({
+      status: 'gave_up',
+      last_error: 'retired:superseded',
+    });
+    expect(byId('x-later')).toMatchObject({ status: 'retry', last_error: null });
+  });
+
+  it('a 24h reminder still unfinished when the 1h band is reached is retired, never sent as "tomorrow"', async () => {
+    const { db, notifications, reminder } = harness();
+    const s = confirmed(db, 'late-24h', 50);
+    db.deliveryLogs.push(
+      logRow({
+        id: 'late',
+        session_id: s.id,
+        user_id: 'client-1',
+        kind: NotificationKind.BOOKING_REMINDER_24H,
+        session_start_at: s.start_at,
+      }),
+    );
+    await at(0, () => reminder.runTwentyFourHourReminderSweep());
+    expect(ofKind(notifications, NotificationKind.BOOKING_REMINDER_24H)).toHaveLength(0);
+    expect(db.deliveryLogs[0]).toMatchObject({
+      status: 'gave_up',
+      last_error: 'retired:superseded',
+    });
+  });
+
+  it('a taken-over row whose session is cancelled mid-claim keeps its receipts (closed, not deleted)', async () => {
+    const { db, notifications, reminder, svc } = harness();
+    const s = confirmed(db, 'mid-cancel', 50);
+    db.deliveryLogs.push(
+      logRow({
+        id: 'mid',
+        session_id: s.id,
+        user_id: 'client-1',
+        session_start_at: s.start_at,
+        inapp_done_at: NOW,
+        notification_id: 'n-first',
+      }),
+    );
+    const findFirst = db.notificationDeliveryLog.findFirst;
+    db.notificationDeliveryLog.findFirst = async (args) => {
+      const row = await findFirst(args);
+      await svc.cancelSession(COACH, s.id, { reason: 'sick' });
+      db.notificationDeliveryLog.findFirst = findFirst;
+      return row;
+    };
+    await at(0, () => reminder.runOneHourReminderSweep());
+    expect(ofKind(notifications, NotificationKind.BOOKING_REMINDER_1H)).toHaveLength(0);
+    expect(db.deliveryLogs.find((l) => l.id === 'mid')).toMatchObject({
+      status: 'gave_up',
+      inapp_done_at: NOW,
+      notification_id: 'n-first',
+      last_error: 'retired:session_cancelled',
+    });
+  });
+});

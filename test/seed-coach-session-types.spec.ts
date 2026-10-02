@@ -71,4 +71,49 @@ describe('C04 appointment type seed', () => {
     tx.user.findUnique.mockResolvedValueOnce({ role: 'student' });
     await expect(seedCoachTypes(client, coachId, true)).rejects.toThrow('Complete coach signup');
   });
+
+  it('creates Quick initialization as the welcome type unless the coach already has an active one', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const rows: Array<Record<string, unknown>> = [];
+    const tx = {
+      user: { findUnique: jest.fn().mockResolvedValue({ role: 'coach' }) },
+      sessionType: {
+        findMany: jest.fn(async () => rows),
+        create: jest.fn(async (args: { data: Record<string, unknown> }) => {
+          created.push(args.data);
+          return args.data;
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (db: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    // @ts-expect-error R0 partial Prisma test double supplies the transaction and all delegates the seed uses; no database is opened.
+    const client: PrismaClient = prisma;
+    await seedCoachTypes(client, coachId, true);
+    expect(created.map((d) => [d.name, d.is_welcome])).toEqual([
+      ['Quick initialization', true],
+      ['Quick Q/A Call', false],
+      ['Tele-Health Dietary/Fitness Check-in', false],
+    ]);
+
+    created.length = 0;
+    rows.push({
+      id: 'own-welcome',
+      name: 'Hello call',
+      description: null,
+      duration_minutes: 10,
+      auto_approve: true,
+      archived_at: null,
+      is_welcome: true,
+    });
+    await seedCoachTypes(client, coachId, true);
+    expect(created.every((d) => d.is_welcome === false)).toBe(true);
+
+    // An archived welcome type does not hold the marker.
+    created.length = 0;
+    rows[0] = { ...rows[0], archived_at: new Date('2026-09-01T00:00:00Z') };
+    await seedCoachTypes(client, coachId, true);
+    expect(created.find((d) => d.name === 'Quick initialization')?.is_welcome).toBe(true);
+  });
 });
