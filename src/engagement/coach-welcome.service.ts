@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { renderWelcomeMessage, WELCOME_DELAY_MS } from './welcome-template';
+import { isCoachWelcomeSchedulerEnabled } from './engagement.flags';
 
 // C05 item 6 — coach welcome message, 13 minutes after onboarding completes.
 //
@@ -40,6 +41,24 @@ import { renderWelcomeMessage, WELCOME_DELAY_MS } from './welcome-template';
 // client with that exact body created since the dead worker's claim; if one
 // exists the job is marked sent with that message id and nothing is re-sent.
 // CoachWelcomeMessageJob.message_id is @unique as a final backstop.
+//
+// CONSENT / AI: the job runs only for intakes with completed_at, and
+// OnboardingService.complete() writes completed_at only after the D2 box-1
+// consent (waiver + collection/use for coaching) is on file with its exact
+// text. The message is the coach's own text (or the generic default) with
+// two name placeholders filled in by string replacement: no AI provider is
+// called and no client data leaves the platform, so the box-2 AI consent is
+// not involved. Any later AI use of the thread goes through the #626 egress
+// gate like every other coach message.
+//
+// DATA MINIMISATION: rendered_body (it carries the client's first name) is
+// needed only while a send can still be retried or reconciled. Every
+// terminal transition (sent, cancelled, failed) clears it. Account deletion
+// tombstones the User row (deleted_at) instead of deleting it, so the FK
+// cascades never fire; purgeErased() removes this module's rows for
+// tombstoned clients and coaches on every tick, including while the kill
+// switch is off. The account-deletion erasure manifest (backend #608) should
+// also list these tables so they go inside the finalisation transaction.
 
 const TICK_BATCH_SIZE = 100;
 const MAX_ATTEMPTS = 5;
@@ -85,10 +104,15 @@ export class CoachWelcomeService {
   @Cron(CronExpression.EVERY_MINUTE, { name: 'coach-welcome-message' })
   async tick(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    if (process.env.COACH_WELCOME_SCHEDULER_ENABLED === 'false') return;
     if (this.running) return;
     this.running = true;
     try {
+      // The kill switch stops sends, never erasure: with the job off, the
+      // tick still runs the erasure sweep and nothing else.
+      if (!isCoachWelcomeSchedulerEnabled()) {
+        await this.purgeErasedSafely();
+        return;
+      }
       const stats = await this.runOnce();
       if (stats.scheduled + stats.sent + stats.cancelled + stats.failed > 0) {
         this.logger.log(
@@ -113,9 +137,43 @@ export class CoachWelcomeService {
       retried: 0,
       failed: 0,
     };
+    await this.purgeErasedSafely();
     await this.schedule(now, stats);
     await this.dispatch(now, stats);
     return stats;
+  }
+
+  /**
+   * purgeErased() that never throws: a failed sweep is logged and retried on
+   * the next tick, and never blocks scheduling or sending for live clients.
+   */
+  async purgeErasedSafely(): Promise<number> {
+    try {
+      const n = await this.purgeErased();
+      if (n > 0) this.logger.log(`coach-welcome erasure sweep removed ${n} row(s)`);
+      return n;
+    } catch (err) {
+      this.logger.warn(
+        `coach-welcome erasure sweep failed (${err instanceof Error ? err.name : 'unknown'}); retrying next tick`,
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Erasure backstop (see header): delete welcome jobs whose client or coach
+   * is tombstoned, and the welcome setting (the coach's welcome text) of a
+   * tombstoned coach. Returns the number of rows removed.
+   */
+  async purgeErased(): Promise<number> {
+    const erased = { deleted_at: { not: null } };
+    const jobs = await this.prisma.coachWelcomeMessageJob.deleteMany({
+      where: { OR: [{ client: erased }, { coach: erased }] },
+    });
+    const settings = await this.prisma.coachWelcomeMessageSetting.deleteMany({
+      where: { coach: erased },
+    });
+    return jobs.count + settings.count;
   }
 
   // ── 1) schedule ─────────────────────────────────────────────────────────
@@ -125,7 +183,9 @@ export class CoachWelcomeService {
     const intakes = await this.prisma.clientOnboardingIntake.findMany({
       where: {
         completed_at: { gte: since, not: null },
-        client: { coach_welcome_job: { is: null } },
+        // A tombstoned client is never scheduled (purgeErased removed its
+        // job; without this filter it would be re-created every tick).
+        client: { coach_welcome_job: { is: null }, deleted_at: null },
       },
       select: { client_id: true, completed_at: true },
       orderBy: { completed_at: 'asc' },
@@ -223,7 +283,7 @@ export class CoachWelcomeService {
   ): Promise<'cancelled'> {
     await this.prisma.coachWelcomeMessageJob.updateMany({
       where: { id: job.id, status: 'sending' },
-      data: { status: 'cancelled', reason, locked_at: null },
+      data: { status: 'cancelled', reason, locked_at: null, rendered_body: null },
     });
     this.logger.log(`coach-welcome job=${job.id} cancelled reason=${reason}`);
     return 'cancelled';
@@ -311,6 +371,7 @@ export class CoachWelcomeService {
         locked_at: null,
         next_retry_at: null,
         reason: null,
+        rendered_body: null,
       },
     });
     return 'sent';
@@ -326,7 +387,13 @@ export class CoachWelcomeService {
     if (attempt >= MAX_ATTEMPTS) {
       await this.prisma.coachWelcomeMessageJob.updateMany({
         where: { id: job.id, status: 'sending' },
-        data: { status: 'failed', reason, attempt_count: { increment: 1 }, locked_at: null },
+        data: {
+          status: 'failed',
+          reason,
+          attempt_count: { increment: 1 },
+          locked_at: null,
+          rendered_body: null,
+        },
       });
       this.logger.error(`coach-welcome job=${job.id} failed permanently (${reason})`);
       return 'failed';

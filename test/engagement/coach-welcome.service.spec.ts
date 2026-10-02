@@ -7,7 +7,7 @@ import { DEFAULT_WELCOME_TEMPLATE, WELCOME_DELAY_MS } from '../../src/engagement
 import type { PrismaService } from '../../src/prisma.service';
 import type { MessagingService } from '../../src/messaging/messaging.service';
 import type { MessagesSafetyService } from '../../src/messages-safety/messages-safety.service';
-import { cast, FakeTable } from './_fake-db';
+import { cast, FakeTable, matches } from './_fake-db';
 
 // C05 item 6 — durable, idempotent coach welcome message.
 
@@ -35,11 +35,20 @@ function harness() {
     sent_at: null,
   }));
   const messages = new FakeTable();
-  intakes.relations.client = (row, f) => {
-    const filter = f as { coach_welcome_job?: { is: null } };
-    if (filter.coach_welcome_job) return !jobs.rows.some((j) => j.client_id === row.client_id);
-    return true;
+  const userMatches = (id: unknown, filter: unknown): boolean => {
+    const u = users.rows.find((x) => x.id === id);
+    return !!u && matches(u, filter as Record<string, unknown>);
   };
+  intakes.relations.client = (row, f) => {
+    const { coach_welcome_job, ...userFilter } = f as {
+      coach_welcome_job?: { is: null };
+    } & Record<string, unknown>;
+    if (coach_welcome_job && jobs.rows.some((j) => j.client_id === row.client_id)) return false;
+    return userMatches(row.client_id, userFilter);
+  };
+  jobs.relations.client = (row, f) => userMatches(row.client_id, f);
+  jobs.relations.coach = (row, f) => userMatches(row.coach_id, f);
+  settings.relations.coach = (row, f) => userMatches(row.coach_id, f);
   const blocks = new Set<string>();
   const prisma = {
     user: users,
@@ -219,12 +228,26 @@ describe('CoachWelcomeService — cancellation', () => {
   }
   const FIRE = new Date(T0.getTime() + 13 * MIN);
 
-  it('client deleted -> cancelled', async () => {
+  it('client deleted (account tombstoned) -> the job is erased before dispatch and nothing is sent', async () => {
     const { h, svc } = await scheduled();
     h.users.rows[1].deleted_at = new Date(T0.getTime() + 5 * MIN);
     const s = await svc.runOnce(FIRE);
+    expect(s.sent).toBe(0);
+    expect(h.jobs.rows).toHaveLength(0);
+    expect(h.sendAsCoach).not.toHaveBeenCalled();
+  });
+
+  it('client deleted while the erasure sweep is down -> the send-time check still cancels (and clears the body)', async () => {
+    const { h, svc } = await scheduled();
+    h.users.rows[1].deleted_at = new Date(T0.getTime() + 5 * MIN);
+    jest.spyOn(h.jobs, 'deleteMany').mockRejectedValue(new Error('db unavailable'));
+    const s = await svc.runOnce(FIRE);
     expect(s.cancelled).toBe(1);
-    expect(h.jobs.rows[0]).toMatchObject({ status: 'cancelled', reason: 'client_deleted' });
+    expect(h.jobs.rows[0]).toMatchObject({
+      status: 'cancelled',
+      reason: 'client_deleted',
+      rendered_body: null,
+    });
     expect(h.sendAsCoach).not.toHaveBeenCalled();
   });
 
@@ -388,5 +411,158 @@ describe('CoachWelcomeService — retries without duplicates', () => {
     await seed(h);
     await h.make().tick();
     expect(h.jobs.rows).toHaveLength(0);
+  });
+});
+
+describe('CoachWelcomeService — data minimisation and erasure (B-JOURNEY fix round)', () => {
+  const DUE = () => new Date(T0.getTime() + 13 * MIN);
+
+  it('clears rendered_body once the job is sent', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    await svc.runOnce(DUE());
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', rendered_body: null });
+    // the delivered message itself is untouched
+    expect(h.messages.rows[0].body).toContain('Dana');
+  });
+
+  it('clears rendered_body when a stamped job is cancelled (403 block race after the stamp)', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    h.sendAsCoach.mockRejectedValueOnce(new ForbiddenException({ error: 'BLOCKED' }));
+    await svc.runOnce(DUE());
+    expect(h.jobs.rows[0]).toMatchObject({
+      status: 'cancelled',
+      reason: 'blocked',
+      rendered_body: null,
+    });
+  });
+
+  it('keeps rendered_body while a retry is pending, clears it when the job fails for good', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    h.sendAsCoach.mockRejectedValue(new Error('down'));
+    await svc.runOnce(DUE());
+    expect(h.jobs.rows[0].status).toBe('pending');
+    expect(h.jobs.rows[0].rendered_body).toEqual(expect.stringContaining('Dana'));
+    let t = DUE().getTime() + 2 * 60 * MIN;
+    for (let i = 1; i < __coachWelcomeConsts.MAX_ATTEMPTS; i += 1) {
+      await svc.runOnce(new Date(t));
+      t += 2 * 60 * MIN;
+    }
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'failed', rendered_body: null });
+  });
+
+  it('erasure: a tombstoned client loses its welcome job and is never scheduled again', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    expect(h.jobs.rows).toHaveLength(1);
+    // account deletion finalised: the User row is tombstoned, not deleted
+    Object.assign(h.users.rows.find((u) => u.id === CLIENT) ?? {}, {
+      deleted_at: new Date(T0.getTime() + 2 * MIN),
+      name: 'Deleted user',
+    });
+    const s = await svc.runOnce(new Date(T0.getTime() + 3 * MIN));
+    expect(h.jobs.rows).toHaveLength(0);
+    expect(s.scheduled + s.skipped).toBe(0);
+    await svc.runOnce(DUE());
+    await svc.runOnce(new Date(T0.getTime() + 60 * MIN));
+    expect(h.jobs.rows).toHaveLength(0);
+    expect(h.sendAsCoach).not.toHaveBeenCalled();
+  });
+
+  it("erasure: a tombstoned coach loses its welcome setting (the coach's welcome text) and its jobs", async () => {
+    const h = harness();
+    await seed(h, { template: 'Hi {first_name}. {coach_first_name} here.' });
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    expect(h.settings.rows).toHaveLength(1);
+    Object.assign(h.users.rows.find((u) => u.id === COACH) ?? {}, {
+      deleted_at: new Date(T0.getTime() + 2 * MIN),
+    });
+    expect(await svc.purgeErased()).toBe(2);
+    expect(h.settings.rows).toHaveLength(0);
+    expect(h.jobs.rows).toHaveLength(0);
+  });
+
+  it('erasure: live users keep their rows', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    expect(await svc.purgeErased()).toBe(0);
+    expect(h.jobs.rows).toHaveLength(1);
+    expect(h.settings.rows).toHaveLength(1);
+  });
+
+  it('kill switch off (COACH_WELCOME_SCHEDULER_ENABLED=false): the cron still runs the erasure sweep and nothing else', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    // a second, live client with a pending job must be left untouched
+    await h.users.create({
+      data: {
+        id: 'client-2',
+        name: 'Sam Park',
+        role: 'student',
+        coach_id: COACH,
+        deleted_at: null,
+      },
+    });
+    await h.intakes.create({ data: { client_id: 'client-2', completed_at: T0 } });
+    await svc.runOnce(new Date(T0.getTime() + 2 * MIN));
+    expect(h.jobs.rows).toHaveLength(2);
+    Object.assign(h.users.rows.find((u) => u.id === CLIENT) ?? {}, {
+      deleted_at: new Date(T0.getTime() + 3 * MIN),
+    });
+    const schedule = jest.spyOn(svc, 'schedule');
+    const dispatch = jest.spyOn(svc, 'dispatch');
+    const prev = { env: process.env.NODE_ENV, flag: process.env.COACH_WELCOME_SCHEDULER_ENABLED };
+    process.env.NODE_ENV = 'production';
+    process.env.COACH_WELCOME_SCHEDULER_ENABLED = 'false';
+    try {
+      await svc.tick();
+    } finally {
+      process.env.NODE_ENV = prev.env;
+      if (prev.flag === undefined) delete process.env.COACH_WELCOME_SCHEDULER_ENABLED;
+      else process.env.COACH_WELCOME_SCHEDULER_ENABLED = prev.flag;
+    }
+    expect(h.jobs.rows.map((j) => j.client_id)).toEqual(['client-2']);
+    expect(h.jobs.rows[0].status).toBe('pending');
+    expect(schedule).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(h.sendAsCoach).not.toHaveBeenCalled();
+  });
+
+  it('a failed erasure sweep is logged and never blocks scheduling or sending', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    jest.spyOn(h.jobs, 'deleteMany').mockRejectedValue(new Error('db unavailable'));
+    expect(await svc.purgeErasedSafely()).toBe(0);
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    const s = await svc.runOnce(DUE());
+    expect(s.sent).toBe(1);
+    expect(h.sendAsCoach).toHaveBeenCalledTimes(1);
+  });
+
+  it('consent: an intake that is saved but not completed (box-1 consent not yet on file) is never scheduled', async () => {
+    const h = harness();
+    await seed(h);
+    h.intakes.rows[0].completed_at = null;
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    await svc.runOnce(DUE());
+    expect(h.jobs.rows).toHaveLength(0);
+    expect(h.sendAsCoach).not.toHaveBeenCalled();
   });
 });

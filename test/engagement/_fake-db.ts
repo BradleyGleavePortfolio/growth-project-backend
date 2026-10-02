@@ -1,6 +1,6 @@
 // Minimal in-memory stand-in for the Prisma calls the engagement jobs make.
-// Supports equality, { lt, lte, gt, gte, in, not }, OR/AND arrays and
-// { increment } updates — exactly what the services use. Unique keys are
+// Supports equality, { lt, lte, gt, gte, in, not }, OR/AND arrays (relation
+// filters too, through FakeTable.relations), deleteMany and { increment } updates — exactly what the services use. Unique keys are
 // enforced so the idempotency boundaries (P2002) behave like Postgres.
 
 type Row = Record<string, unknown>;
@@ -95,17 +95,35 @@ export class FakeTable {
   /** Relation filters (e.g. intake.client) resolved by the test harness. */
   relations: Record<string, (row: Row, filter: unknown) => boolean> = {};
 
+  /** Like matches(), but relation keys (also inside OR / AND) use `relations`. */
+  private rowMatches(r: Row, where: Where): boolean {
+    for (const [k, v] of Object.entries(where)) {
+      if (k === 'OR') {
+        if (!(v as Where[]).some((w) => this.rowMatches(r, w))) return false;
+        continue;
+      }
+      if (k === 'AND') {
+        if (!(v as Where[]).every((w) => this.rowMatches(r, w))) return false;
+        continue;
+      }
+      if (k in this.relations) {
+        if (!this.relations[k](r, v)) return false;
+        continue;
+      }
+      if (!matches(r, { [k]: v })) return false;
+    }
+    return true;
+  }
+
   private filter(where?: Where): Row[] {
     if (!where) return [...this.rows];
-    const plain: Where = {};
-    const rel: Array<[string, unknown]> = [];
-    for (const [k, v] of Object.entries(where)) {
-      if (k in this.relations) rel.push([k, v]);
-      else plain[k] = v;
-    }
-    return this.rows.filter(
-      (r) => matches(r, plain) && rel.every(([k, f]) => this.relations[k](r, f)),
-    );
+    return this.rows.filter((r) => this.rowMatches(r, where));
+  }
+
+  async deleteMany(args: { where?: Where } = {}): Promise<{ count: number }> {
+    const hit = new Set(this.filter(args.where));
+    this.rows = this.rows.filter((r) => !hit.has(r));
+    return { count: hit.size };
   }
   constructor(
     private readonly uniques: string[][] = [],

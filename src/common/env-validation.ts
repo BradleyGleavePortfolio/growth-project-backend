@@ -1101,6 +1101,22 @@ export const ENV_RULES: EnvRule[] = [
       'Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 the sweeps need an explicit "on"; unset now means off. Must be set to "on" for launch through the audited prod-switch manifest, after notification delivery/device QA.',
   },
   {
+    name: 'COACH_WELCOME_SCHEDULER_ENABLED',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
+    reason:
+      "Clinic C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
+  },
+  {
+    name: 'WORKOUT_REMINDERS_ENABLED',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
+    reason:
+      "Clinic C05 item 7 kill switch for the workout-reminder cron (src/engagement/engagement.flags.ts, read by workout-reminder.service.ts every 5 minutes, fixed schedule). Ships on: reminders are launch scope from the client's first-session day; clients opt out in Settings > Notifications. Emergency kill: set 'false' (unsetting turns it back on); every workout reminder stops without a deploy, the erasure sweep keeps running.",
+  },
+  {
     name: 'DELETION_FINALIZE_CRON',
     tier: 'optional',
     default: "'0 3 * * *'",

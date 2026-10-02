@@ -3,6 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
+import { isWorkoutRemindersEnabled } from './engagement.flags';
 import {
   dateFromKey,
   dateKey,
@@ -23,18 +25,36 @@ import {
 //      and local time is inside [slot, slot + 3h] for their S2 answer;
 //   3. skip when that day's session is already logged (assignment completed
 //      or a WorkoutSession on that date);
-//   4. claim WorkoutReminderDelivery (client_id, local_date) @unique, THEN
+//   4. skip while the client is in the Day-10 dunning lockout (only when
+//      FEATURE_DUNNING_V2 is on): workouts answer 403 LOCKED_DUNNING then, so
+//      a reminder would open a locked screen;
+//   5. claim WorkoutReminderDelivery (client_id, local_date) @unique, THEN
 //      send. A lost claim (another replica, a retry, a restart) sends nothing,
 //      so a client gets at most one reminder per local day. A crash between
 //      claim and push loses that day's reminder rather than risk a second one.
+//
+// CONSENT / AI: only clients whose onboarding is complete (D2 box-1 consent on
+// file) are considered. The copy is fixed text in workout-reminder.policy.ts;
+// no AI provider is called and no client data leaves the platform.
+//
+// ERASURE: account deletion tombstones the User row, so the FK cascade never
+// fires; purgeErased() deletes the ledger rows of tombstoned clients on every
+// tick, including while the kill switch is off.
 
 const PAGE_SIZE = 200;
+/**
+ * Every five minutes, fixed. The send window in workout-reminder.policy.ts
+ * (slot + REMINDER_SEND_WINDOW_MINUTES) assumes this cadence, so the schedule
+ * is deliberately not an env override.
+ */
+export const WORKOUT_REMINDER_CRON = '*/5 * * * *';
 const DAY_MS = 86_400_000;
 
 export interface ReminderTickStats {
   considered: number;
   sent: number;
   opted_out: number;
+  locked_out: number;
   already_logged: number;
   already_sent: number;
   not_due: number;
@@ -60,20 +80,25 @@ export class WorkoutReminderService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  @Cron(process.env.WORKOUT_REMINDER_CRON ?? '*/5 * * * *', {
+  @Cron(WORKOUT_REMINDER_CRON, {
     name: 'workout-reminders',
     timeZone: 'UTC',
   })
   async tick(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    if (process.env.WORKOUT_REMINDERS_ENABLED === 'false') return;
     if (this.running) return;
     this.running = true;
     try {
+      // The kill switch stops reminders, never erasure: with the job off, the
+      // tick still runs the erasure sweep and nothing else.
+      if (!isWorkoutRemindersEnabled()) {
+        await this.purgeErasedSafely();
+        return;
+      }
       const s = await this.runOnce();
       if (s.sent + s.failed > 0) {
         this.logger.log(
-          `workout-reminders tick: considered=${s.considered} sent=${s.sent} failed=${s.failed} opted_out=${s.opted_out} already_logged=${s.already_logged}`,
+          `workout-reminders tick: considered=${s.considered} sent=${s.sent} failed=${s.failed} opted_out=${s.opted_out} locked_out=${s.locked_out} already_logged=${s.already_logged}`,
         );
       }
     } catch (err) {
@@ -90,11 +115,13 @@ export class WorkoutReminderService {
       considered: 0,
       sent: 0,
       opted_out: 0,
+      locked_out: 0,
       already_logged: 0,
       already_sent: 0,
       not_due: 0,
       failed: 0,
     };
+    await this.purgeErasedSafely();
     let cursor: string | undefined;
     for (;;) {
       const page = await this.prisma.clientOnboardingIntake.findMany({
@@ -178,6 +205,8 @@ export class WorkoutReminderService {
     });
     if (logged) return 'already_logged';
 
+    if (isDunningV2Enabled() && (await this.isDunningLockedOut(clientId))) return 'locked_out';
+
     // Claim the day before anything goes out.
     let deliveryId: string;
     try {
@@ -229,5 +258,47 @@ export class WorkoutReminderService {
       data: push.delivered ? { status: 'sent', sent_at: now } : { status: 'failed' },
     });
     return push.delivered ? 'sent' : 'failed';
+  }
+
+  /**
+   * Same predicate as DunningLockoutGuard.isClientLockedOut (Day-10 hard
+   * lockout): any active DunningState with locked_out_at set on one of the
+   * client's purchases whose entitlement is off.
+   */
+  private async isDunningLockedOut(clientId: string): Promise<boolean> {
+    const row = await this.prisma.dunningState.findFirst({
+      where: {
+        locked_out_at: { not: null },
+        status: 'active',
+        purchase: { client_user_id: clientId, entitlement_active: false },
+      },
+      select: { id: true },
+    });
+    return row != null;
+  }
+
+  /**
+   * purgeErased() that never throws: a failed sweep is logged and retried on
+   * the next tick, and never blocks reminders for live clients.
+   */
+  async purgeErasedSafely(): Promise<number> {
+    try {
+      const n = await this.purgeErased();
+      if (n > 0) this.logger.log(`workout-reminders erasure sweep removed ${n} row(s)`);
+      return n;
+    } catch (err) {
+      this.logger.warn(
+        `workout-reminders erasure sweep failed (${err instanceof Error ? err.name : 'unknown'}); retrying next tick`,
+      );
+      return 0;
+    }
+  }
+
+  /** Erasure backstop (see header). Returns the number of rows removed. */
+  async purgeErased(): Promise<number> {
+    const res = await this.prisma.workoutReminderDelivery.deleteMany({
+      where: { client: { deleted_at: { not: null } } },
+    });
+    return res.count;
   }
 }

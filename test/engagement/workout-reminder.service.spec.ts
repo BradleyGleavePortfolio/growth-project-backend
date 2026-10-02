@@ -1,8 +1,11 @@
-import { WorkoutReminderService } from '../../src/engagement/workout-reminder.service';
+import {
+  WORKOUT_REMINDER_CRON,
+  WorkoutReminderService,
+} from '../../src/engagement/workout-reminder.service';
 import { FIRST_DAY_BODY, REMINDER_TITLE } from '../../src/engagement/workout-reminder.policy';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import type { PrismaService } from '../../src/prisma.service';
-import { cast, FakeTable } from './_fake-db';
+import { cast, FakeTable, matches } from './_fake-db';
 
 // C05 item 7 — workout reminders: once per local day, skip if logged,
 // client opt-out, client-local timezone.
@@ -18,6 +21,16 @@ function harness(prefs: Record<string, unknown> | null = null) {
   const deliveries = new FakeTable([['client_id', 'local_date']]);
   const notifRows = new FakeTable();
   const prefRows = new FakeTable([['user_id']]);
+  const dunning = new FakeTable();
+  const purchases = new FakeTable([['id']]);
+  deliveries.relations.client = (row, f) => {
+    const u = users.rows.find((x) => x.id === row.client_id);
+    return !!u && matches(u, f as Record<string, unknown>);
+  };
+  dunning.relations.purchase = (row, f) => {
+    const p = purchases.rows.find((x) => x.id === row.purchase_id);
+    return !!p && matches(p, f as Record<string, unknown>);
+  };
   intakes.relations.client = (row, f) => {
     const u = users.rows.find((x) => x.id === row.client_id);
     const filter = f as { deleted_at?: null; deletion_scheduled_at?: null; role?: string };
@@ -31,6 +44,7 @@ function harness(prefs: Record<string, unknown> | null = null) {
     workoutReminderDelivery: deliveries,
     notification: notifRows,
     notificationPreferences: prefRows,
+    dunningState: dunning,
   };
   // Real NotificationsService on the fake DB, so preference gating and the
   // workout_reminder prefs prefix are exercised for real; only the Expo
@@ -49,6 +63,8 @@ function harness(prefs: Record<string, unknown> | null = null) {
     deliveries,
     notifRows,
     prefRows,
+    dunning,
+    purchases,
     pushToUser,
     svc,
   };
@@ -222,5 +238,113 @@ describe('WorkoutReminderService', () => {
     await h.svc.runOnce(new Date('2026-10-05T14:00:00Z'));
     expect(h.notifRows.rows).toHaveLength(0);
     expect(h.pushToUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WorkoutReminderService — dunning lockout and erasure (B-JOURNEY fix round)', () => {
+  const C1_0700 = new Date('2026-10-05T14:00:00Z'); // 07:00 PDT on C1
+  const prevDunning = process.env.FEATURE_DUNNING_V2;
+  afterEach(() => {
+    if (prevDunning === undefined) delete process.env.FEATURE_DUNNING_V2;
+    else process.env.FEATURE_DUNNING_V2 = prevDunning;
+  });
+
+  async function lockOut(h: ReturnType<typeof harness>) {
+    await h.purchases.create({
+      data: { id: 'purchase-1', client_user_id: CLIENT, entitlement_active: false },
+    });
+    await h.dunning.create({
+      data: { purchase_id: 'purchase-1', status: 'active', locked_out_at: new Date('2026-10-04') },
+    });
+  }
+
+  it('Day-10 dunning lockout (FEATURE_DUNNING_V2 on): no reminder, no ledger row, so it can go out once the card is fixed', async () => {
+    process.env.FEATURE_DUNNING_V2 = 'true';
+    const h = harness();
+    await seed(h);
+    await lockOut(h);
+    const s = await h.svc.runOnce(C1_0700);
+    expect(s.locked_out).toBe(1);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+    expect(h.deliveries.rows).toHaveLength(0);
+    // card updated: entitlement back on -> the same day's reminder goes out
+    h.purchases.rows[0].entitlement_active = true;
+    const s2 = await h.svc.runOnce(new Date('2026-10-05T14:05:00Z'));
+    expect(s2.sent).toBe(1);
+  });
+
+  it('a lockout row is ignored while FEATURE_DUNNING_V2 is off (the guard is a no-op then)', async () => {
+    delete process.env.FEATURE_DUNNING_V2;
+    const h = harness();
+    await seed(h);
+    await lockOut(h);
+    const s = await h.svc.runOnce(C1_0700);
+    expect(s.sent).toBe(1);
+  });
+
+  it('an inactive or not-yet-locked dunning state does not block the reminder', async () => {
+    process.env.FEATURE_DUNNING_V2 = 'true';
+    const h = harness();
+    await seed(h);
+    await h.purchases.create({
+      data: { id: 'purchase-1', client_user_id: CLIENT, entitlement_active: false },
+    });
+    await h.dunning.create({
+      data: { purchase_id: 'purchase-1', status: 'active', locked_out_at: null },
+    });
+    expect((await h.svc.runOnce(C1_0700)).sent).toBe(1);
+  });
+
+  it('erasure: the reminder ledger of a tombstoned client is deleted on the next tick', async () => {
+    const h = harness();
+    await seed(h);
+    await h.svc.runOnce(C1_0700);
+    expect(h.deliveries.rows).toHaveLength(1);
+    h.users.rows[0].deleted_at = new Date('2026-10-06T00:00:00Z');
+    await h.svc.runOnce(new Date('2026-10-07T14:00:00Z'));
+    expect(h.deliveries.rows).toHaveLength(0);
+    expect(h.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('erasure: live clients keep their ledger', async () => {
+    const h = harness();
+    await seed(h);
+    await h.svc.runOnce(C1_0700);
+    expect(await h.svc.purgeErased()).toBe(0);
+    expect(h.deliveries.rows).toHaveLength(1);
+  });
+
+  it('kill switch off (WORKOUT_REMINDERS_ENABLED=false): the cron still runs the erasure sweep and sends nothing', async () => {
+    const h = harness();
+    await seed(h);
+    await h.svc.runOnce(C1_0700);
+    expect(h.deliveries.rows).toHaveLength(1);
+    h.users.rows[0].deleted_at = new Date('2026-10-06T00:00:00Z');
+    const run = jest.spyOn(h.svc, 'runOnce');
+    const prev = { env: process.env.NODE_ENV, flag: process.env.WORKOUT_REMINDERS_ENABLED };
+    process.env.NODE_ENV = 'production';
+    process.env.WORKOUT_REMINDERS_ENABLED = 'false';
+    try {
+      await h.svc.tick();
+    } finally {
+      process.env.NODE_ENV = prev.env;
+      if (prev.flag === undefined) delete process.env.WORKOUT_REMINDERS_ENABLED;
+      else process.env.WORKOUT_REMINDERS_ENABLED = prev.flag;
+    }
+    expect(h.deliveries.rows).toHaveLength(0);
+    expect(run).not.toHaveBeenCalled();
+    expect(h.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed erasure sweep is logged and never blocks reminders', async () => {
+    const h = harness();
+    await seed(h);
+    jest.spyOn(h.deliveries, 'deleteMany').mockRejectedValue(new Error('db unavailable'));
+    expect(await h.svc.purgeErasedSafely()).toBe(0);
+    expect((await h.svc.runOnce(C1_0700)).sent).toBe(1);
+  });
+
+  it('the cadence is fixed at every 5 minutes (no env override)', () => {
+    expect(WORKOUT_REMINDER_CRON).toBe('*/5 * * * *');
   });
 });

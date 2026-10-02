@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  InternalServerErrorException,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -101,10 +102,47 @@ export class WelcomeSettingsController {
   }
 }
 
-function mapError(err: unknown): Error {
+const INVALID_TEMPLATE_MESSAGES: Record<string, string> = {
+  empty: 'The welcome text is empty. Send the text, or null to use the default.',
+  too_long: `The welcome text is longer than ${WELCOME_TEMPLATE_MAX_LENGTH} characters. Shorten it and send it again.`,
+  unknown_placeholder:
+    'The welcome text uses a placeholder that is not supported. Use only {first_name} and {coach_first_name}.',
+  unbalanced_braces:
+    'The welcome text has a brace that is not part of a placeholder. Remove it, or use {first_name} or {coach_first_name}.',
+};
+
+/**
+ * Every failure carries a stable machine `code` and a message that says what
+ * happened and what to do next. Unknown errors are rethrown unchanged so the
+ * global filter reports them (request id + Sentry).
+ */
+export function mapError(err: unknown): Error {
   if (err instanceof WelcomeSettingsError) {
-    if (err.code === 'coach_not_found') return new NotFoundException({ code: err.code });
-    return new BadRequestException({ code: err.code, detail: err.detail });
+    if (err.code === 'coach_not_found') {
+      return new NotFoundException({
+        code: err.code,
+        message: 'No active coach account has this id. Check the coach id and try again.',
+      });
+    }
+    if (err.code === 'nothing_to_update') {
+      return new BadRequestException({
+        code: err.code,
+        message: 'Nothing to change. Send enabled, template, or both.',
+      });
+    }
+    const reason = (err.detail ?? '').split(':')[0];
+    return new BadRequestException({
+      code: err.code,
+      message:
+        INVALID_TEMPLATE_MESSAGES[reason] ??
+        'The welcome text could not be saved. Check the text and send it again.',
+      detail: err.detail,
+    });
   }
-  return err instanceof Error ? err : new BadRequestException();
+  if (err instanceof Error) return err;
+  return new InternalServerErrorException({
+    code: 'welcome_settings_failed',
+    message:
+      'The welcome setting could not be read or saved. Try again, and contact support if it keeps failing.',
+  });
 }

@@ -36,7 +36,7 @@ Inputs come from onboarding PR-B (`ClientOnboardingIntake.completed_at`, `first_
 
 > Hi {first_name}, it's {coach_first_name}. Welcome in. Your plan and targets are ready. Message me here anytime.
 
-A coach's real template is runtime data in `CoachWelcomeMessageSetting.template`. It is never committed to the repository. Validation rules:
+The coach's welcome text is runtime data in `CoachWelcomeMessageSetting.template`, set at C04. It is never committed to the repository (code, tests, docs and PR text say "the coach's welcome text"). Validation rules:
 
 - 1 to 1000 characters.
 - Only the two placeholders are allowed.
@@ -58,10 +58,14 @@ Option B: the owner-only endpoints. They require a JWT with the `owner` role; an
 
 - `GET /api/admin/coaches/:coachId/welcome-message` returns `{ coach_id, enabled, template, effective_template, default_template, placeholders, enabled_at, updated_at }`.
 - `PUT /api/admin/coaches/:coachId/welcome-message` takes `{ enabled?: boolean, template?: string | null }`. Sending `null` restores the default.
-- Errors: 400 `invalid_template` or `nothing_to_update`; 404 `coach_not_found`.
+- Errors carry a stable `code` and a message that says what to do next: 400 `invalid_template` (with `detail` = `empty`, `too_long`, `unknown_placeholder:<name>` or `unbalanced_braces`) or `nothing_to_update`; 404 `coach_not_found`.
 - The audit entry records only `enabled`, `custom_template` and `template_length`, never the text.
 
-Turn the flag on **before** the first client finishes onboarding. Clients who completed earlier are deliberately not welcomed. To stop the job without a deploy, set `COACH_WELCOME_SCHEDULER_ENABLED=false`.
+Turn the flag on **before** the first client finishes onboarding. Clients who completed earlier are deliberately not welcomed. To stop the job without a deploy, set `COACH_WELCOME_SCHEDULER_ENABLED=false` (`0` and `off` also work; unset = on).
+
+**Consent and AI.** Only intakes with `completed_at` are scheduled, and onboarding completion requires the D2 box-1 consent on file with its exact text. The message is the coach's welcome text (or the generic default) with the two name placeholders filled in by string replacement. No AI provider is called and no client data leaves the platform, so box 2 (AI processing) is not involved; any later AI use of the thread goes through the #626 egress gate like every other coach message.
+
+**Data minimisation and erasure.** `rendered_body` (it contains the client's first name) is kept only while a send can still be retried or reconciled; every terminal state (`sent`, `cancelled`, `failed`) clears it. Account deletion tombstones the `User` row instead of deleting it, so the FK cascades never fire: every tick (also while `COACH_WELCOME_SCHEDULER_ENABLED` is off: the kill switch stops sends, never erasure), `purgeErased()` deletes the welcome jobs of tombstoned clients and coaches and the welcome setting of a tombstoned coach, and a tombstoned client is never scheduled. A failed sweep is logged and retried on the next tick; it never blocks sends for live clients.
 
 ## 2. Workout reminders (`WorkoutReminderService`, every 5 minutes)
 
@@ -90,7 +94,8 @@ Turn the flag on **before** the first client finishes onboarding. Clients who co
 - that day's assignment is completed, or a `WorkoutSession` exists on that date;
 - the client turned reminders off (`workout_reminder_push = false`; default true; the mobile toggle is Settings > Notifications > Workout reminders);
 - the client is muted (`muted`);
-- the client is deleted or scheduled for deletion.
+- the client is deleted or scheduled for deletion;
+- the client is in the Day-10 dunning lockout (only while `FEATURE_DUNNING_V2` is on), because workouts answer 403 `LOCKED_DUNNING` then.
 
 `workout_reminder_inapp` controls only the in-app inbox row.
 
@@ -99,7 +104,9 @@ Turn the flag on **before** the first client finishes onboarding. Clients who co
 - First day: "Your first session is today. Everything is laid out and ready when you are."
 - Plan days rotate deterministically by date (see `workout-reminder.policy.ts`).
 
-To stop the job without a deploy, set `WORKOUT_REMINDERS_ENABLED=false`. The schedule can be overridden with `WORKOUT_REMINDER_CRON`.
+To stop the job without a deploy, set `WORKOUT_REMINDERS_ENABLED=false` (`0` and `off` also work; unset = on). The cadence is fixed at every 5 minutes: the 3-hour send window assumes it, so it is not an env override.
+
+Every tick also deletes the reminder ledger rows of tombstoned clients (erasure backstop, same reason as above), including while `WORKOUT_REMINDERS_ENABLED` is off.
 
 ## Data and RLS
 
@@ -112,6 +119,8 @@ Migration `20270213000000_clinic_engagement` is additive and has a `down.sql`. T
 | `WorkoutReminderDelivery`    | the owner, and the client for their own rows |
 
 No table has a public write policy. `NotificationPreferences` gains `workout_reminder_push` and `workout_reminder_inapp`, both default true.
+
+`test/rls/clinic-engagement-rls.spec.ts` proves these policies on a real Postgres in the `rls-live-tests` CI job: RLS enabled and forced, the exact policy set, who reads which rows, anon denied, and no INSERT, UPDATE or DELETE for any non-service principal.
 
 ## Tests
 
