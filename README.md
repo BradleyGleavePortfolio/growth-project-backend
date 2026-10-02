@@ -839,7 +839,7 @@ matter for that decision today are:
 
 | Column | Purpose | Notes |
 |---|---|---|
-| `height_cm`, `current_weight_lbs`, `date_of_birth`, `sex` | Mifflin-St Jeor TDEE — without these the macro target falls back to a 30-year-old default. | Set by lean onboarding (`LeanQ4MetricsScreen`) and editable on `ProfileScreen`. |
+| `height_cm`, `current_weight_lbs`, `date_of_birth`, `sex` | Mifflin-St Jeor TDEE via the single calculator (`src/macros/macro-calculator.ts`). Without these no target is computed (no silent defaults); see [docs/profile-contract.md](docs/profile-contract.md). | Set by lean onboarding (`LeanQ4MetricsScreen`) and editable on `ProfileScreen`. |
 | `goal_type`, `activity_level`, `workout_experience` | Macro split + intensity heuristics. | Set by lean onboarding Q1–Q3. |
 | `target_weight_lbs` | Aggressiveness gauge for fat-loss / muscle-gain plans. | Editable on `ProfileScreen`. |
 | `has_gym_membership` | Coarse "gym vs not" signal kept for legacy clients that still write only the boolean. | Editable on `ProfileScreen`. New clients should also set `equipment_access`. |
@@ -1638,6 +1638,15 @@ to render today's prescribed workout.
 Mifflin-St Jeor TDEE preset calculator (`computePreset`). The "current"
 target for a client is the most recent row whose `effective_from <=
 now`; history is preserved.
+
+C06: `src/macros/macro-calculator.ts` is the single macro calculator used by
+`PUT /profile`, the coach preset and onboarding complete (floors 1,500 male,
+1,200 female, 1,500 prefer not to say; prefer not to say uses the male
+equation; protein 1 g/lb goal weight capped at 35% of calories; no default
+inputs). `GET /me/macros/current` falls back to the
+profile targets with `source: "profile"`. `PUT /profile` accepts the legacy
+mobile field names (`dob`, `current_weight`, `primary_goal`, `fitness_level`,
+`*_target`, ...). Full mapping: [docs/profile-contract.md](docs/profile-contract.md).
 
 ### Real meal plans
 

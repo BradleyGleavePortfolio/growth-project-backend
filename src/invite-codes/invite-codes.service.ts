@@ -65,9 +65,10 @@ export function generateInviteCodeCandidate(): string {
 }
 
 // Clinic C13 fix round — shared with AuthService.selectRole and the C03 attach
-// error table (#599 folds this into INVITE_ATTACH_ERROR on rebase; keep the
-// string identical in both PRs). Returned as `{ code, message }` (ErrorEnvelope
-// shape) so mobile can branch without parsing prose.
+// error table: INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM is this constant and the
+// attach path throws coachCannotRedeemBody(), so select-role and attach return
+// the same `{ code, message }` (ErrorEnvelope shape) and mobile can branch
+// without parsing prose.
 export const INVITE_ATTACH_COACH_CANNOT_REDEEM = 'coach_cannot_redeem' as const;
 
 /** Roles that own a tenant (or a seat in one) and must never be re-parented
@@ -119,8 +120,8 @@ export const INVITE_ATTACH_ERROR = {
   INVITE_INTENDED_EMAIL_MISMATCH: 'invite_intended_email_mismatch',
   /** Owners are never coached. */
   OWNER_CANNOT_REDEEM: 'owner_cannot_redeem',
-  /** Coach / sub_coach accounts are never coached and are NEVER demoted (same code as #597). */
-  COACH_CANNOT_REDEEM: 'coach_cannot_redeem',
+  /** Coach / sub_coach accounts are never coached and are NEVER demoted (the C13 constant, not a copy). */
+  COACH_CANNOT_REDEEM: INVITE_ATTACH_COACH_CANNOT_REDEEM,
   /** Redeemer row not found. */
   USER_NOT_FOUND: 'user_not_found',
   /** Anything else (DB error, timeout). */
@@ -165,10 +166,8 @@ function assertRedeemerIsStudent(me: { role: string }): void {
       message: 'Owners cannot redeem a coach invite',
     });
   }
-  throw new ForbiddenException({
-    code: INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM,
-    message: 'Coach accounts cannot redeem a client invite',
-  });
+  // Same body as /auth/select-role (C13): says what happened and what to do next.
+  throw new ForbiddenException(coachCannotRedeemBody());
 }
 
 function invalidInviteCode(): BadRequestException {
@@ -717,6 +716,11 @@ export class InviteCodesService {
       });
     }
     // Owner / coach / sub_coach are refused, never demoted or re-parented.
+    if (me.role !== 'student') {
+      this.logger.warn(
+        `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (not a student)`,
+      );
+    }
     assertRedeemerIsStudent(me);
 
     // 2. Already a client of some coach?

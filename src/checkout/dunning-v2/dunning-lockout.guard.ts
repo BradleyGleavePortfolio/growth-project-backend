@@ -37,6 +37,13 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     provider-routing surface is never a client explanation route. (Roman chat
  *     is itself dark behind FEATURE_ROMAN_CHAT_ENABLED — a 404 while OFF — so
  *     allow-listing it is only meaningful once that flag is also ON.)
+ *   - AI processing consent (AiConsentController, R2a): exactly
+ *     GET /me/ai-consent, POST /me/ai-consent/roman and
+ *     DELETE /me/ai-consent/roman. Reading, granting and withdrawing the box-2
+ *     AI consent is a privacy control, never a paid value surface, so billing
+ *     state must never block it (operator ruling on #622). Matched as exact
+ *     METHOD + PATH pairs (Sol B-622-1): no descendant path, no other method,
+ *     and the rest of /me/* stays locked.
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -83,6 +90,20 @@ const ALLOWED_ROUTE_PREFIXES: readonly string[] = [
  */
 const ROMAN_CHAT_PREFIXES: readonly string[] = ['roman'] as const;
 
+/**
+ * Privacy operations a locked client must always reach (operator ruling on
+ * #622): reading, granting and withdrawing AI processing consent cannot depend
+ * on billing state. Exact METHOD + normalized PATH pairs, compared by equality
+ * (Sol B-622-1 / Opus C-622-1): `GET me/ai-consent/export`,
+ * `POST me/ai-consent`, `PUT me/ai-consent/roman` and every other descendant
+ * or method stay locked.
+ */
+const PRIVACY_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
+  ['GET', 'me/ai-consent'], // AiConsentController.get — read status
+  ['POST', 'me/ai-consent/roman'], // AiConsentController.grant
+  ['DELETE', 'me/ai-consent/roman'], // AiConsentController.withdraw
+] as const;
+
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
   private readonly logger = new Logger(DunningLockoutGuard.name);
@@ -102,6 +123,7 @@ export class DunningLockoutGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<
       AuthedRequest & {
+        method?: string;
         path?: string;
         originalUrl?: string;
         url?: string;
@@ -110,6 +132,7 @@ export class DunningLockoutGuard implements CanActivate {
 
     const path = normalizePath(req.path ?? req.originalUrl ?? req.url ?? '');
     if (isAllowedWhileLocked(path)) return true;
+    if (isPrivacyOperationWhileLocked(req.method, path)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards
@@ -190,4 +213,15 @@ export function isAllowedWhileLocked(path: string): boolean {
     if (matchesRoutePrefix(path, chat)) return true;
   }
   return false;
+}
+
+/**
+ * True only for the exact privacy operations in PRIVACY_OPERATIONS. `path` is
+ * normalized (see normalizePath); `method` is the raw request method, compared
+ * case-insensitively. A missing method never matches.
+ */
+export function isPrivacyOperationWhileLocked(method: string | undefined, path: string): boolean {
+  if (typeof method !== 'string' || method.length === 0) return false;
+  const m = method.toUpperCase();
+  return PRIVACY_OPERATIONS.some(([pm, pp]) => pm === m && pp === path);
 }

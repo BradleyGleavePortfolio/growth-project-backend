@@ -1,0 +1,176 @@
+name: Schema parity
+
+# Blocking gate: the database the migration chain builds must match
+# prisma/schema.prisma.
+#
+# Why this exists: in 2026-10 production failed every User read with
+# "column User.archived_at does not exist". Fields had been added to
+# schema.prisma in April without a migration, and the only parity check
+# (migration-dry-run.yml) was informational, path-filtered to
+# prisma/migrations/** (so a schema-only change never ran it) and
+# grandfathered failures. This workflow replaces that job.
+#
+# What it does, on EVERY pull request and every push to main (no path filter, so
+# it always reports and can be a required check):
+#   1. Start a disposable Postgres 15.18, apply the Supabase-equivalent
+#      bootstrap (prisma/migrations/_supabase_bootstrap.sql: auth schema, API
+#      roles), then `prisma migrate deploy`: the same command the Fly release
+#      runs against production. Any failure fails the job; there is no
+#      grandfather clause.
+#   2. `prisma migrate diff --from-url <that database> --to-schema-datamodel
+#      prisma/schema.prisma --script`: the DDL that would turn the chain's
+#      database into the declared one. This is the comparison
+#      `migrate diff --from-migrations prisma/migrations --to-schema-datamodel
+#      prisma/schema.prisma` makes, with the chain applied by `migrate deploy`
+#      onto a database that has the Supabase objects the migrations reference.
+#   3. scripts/ci/schema-parity-gate.js fails the job if the schema declares any
+#      table, enum, enum value or column that no migration creates (never
+#      baselinable), if there is any drift not listed in
+#      prisma/schema-parity-baseline.sql, or if the baseline lists drift that no
+#      longer exists. The baseline holds the pre-existing drift tracked as
+#      BL-MIGRATION-REBASELINE; full parity is reached by deleting its lines.
+#   4. The baseline only shrinks: the candidate baseline is compared with the
+#      APPROVED baseline, i.e. the file at the base commit (PR base SHA, the
+#      previous main for pushes, origin/main for manual runs), and any added line
+#      fails the job, so a change cannot accept its own new drift by listing it
+#      (Sol B-625-1). Bootstrap mode applies only when the base commit has no
+#      baseline file at all: the single change that creates it.
+#
+# Required-check name: "Schema parity (migrations match schema.prisma)".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schema-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema-parity:
+    name: Schema parity (migrations match schema.prisma)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: schema_parity
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/schema_parity?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/schema_parity?schema=public
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+          # Full history so the base commit's baseline (the approved one) is readable.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # psql does not accept Prisma's ?schema= query parameter; strip it.
+        run: |
+          set -euo pipefail
+          PSQL_URL="${DATABASE_URL%%\?*}"
+          psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply all migrations forward (fails closed)
+        run: npx prisma migrate deploy
+
+      - name: Compute drift (migration chain vs schema.prisma)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script > schema_parity_drift.sql
+          echo "--- human-readable summary ---"
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma
+          echo "--- reconciliation script (schema_parity_drift.sql) ---"
+          cat schema_parity_drift.sql
+
+      - name: Resolve the approved baseline (base commit)
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) BASE_SHA="$PR_BASE_SHA" ;;
+            push) BASE_SHA="$PUSH_BEFORE_SHA" ;;
+            *) BASE_SHA="$(git rev-parse origin/main)" ;;
+          esac
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "::error::schema-parity: no base commit for event $EVENT_NAME, so the baseline cannot be proven to only shrink."
+            exit 1
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::schema-parity: base commit $BASE_SHA is not in the checkout."
+            exit 1
+          fi
+          if git cat-file -e "${BASE_SHA}:prisma/schema-parity-baseline.sql" 2>/dev/null; then
+            git show "${BASE_SHA}:prisma/schema-parity-baseline.sql" > approved_baseline.sql
+            echo "Approved baseline: prisma/schema-parity-baseline.sql at $BASE_SHA"
+            echo "PARITY_MODE=approved" >> "$GITHUB_ENV"
+          else
+            echo "::notice::schema-parity: base commit $BASE_SHA has no baseline file; this change creates it (bootstrap, allowed only while the base has none)."
+            echo "PARITY_MODE=bootstrap" >> "$GITHUB_ENV"
+          fi
+
+      - name: Gate on drift (missing objects never pass; baseline only shrinks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${PARITY_MODE:-}" in
+            approved) set -- --approved-baseline approved_baseline.sql ;;
+            bootstrap) set -- --bootstrap-baseline ;;
+            *)
+              echo "::error::schema-parity: PARITY_MODE is '${PARITY_MODE:-}' (expected approved or bootstrap); the approved-baseline step did not run or failed."
+              exit 1
+              ;;
+          esac
+          node scripts/ci/schema-parity-gate.js --drift schema_parity_drift.sql --baseline prisma/schema-parity-baseline.sql "$@"
+
+      - name: Upload drift script
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        with:
+          name: schema-parity-drift
+          path: schema_parity_drift.sql
+          if-no-files-found: ignore
+          retention-days: 14

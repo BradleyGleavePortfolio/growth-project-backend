@@ -1,4 +1,5 @@
--- Reverse of 20270125000000_invite_grant_bindings (clinic C01).
+-- Reverse of 20270205000000_invite_grant_bindings (clinic C01; renamed from
+-- 20270125000000_ in the merge train so it sorts after every main migration).
 -- Drops only what the forward migration added.
 --
 -- Grant rows in ClientPurchase (source IS NOT NULL) would otherwise lose their
