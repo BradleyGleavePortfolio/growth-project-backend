@@ -258,9 +258,24 @@ honoured **only** on the branch that inserts a brand-new `User` row
   ceiling **fails closed**: a throttler-storage error returns 503
   `coach_signup_temporarily_unavailable` instead of minting a coach
   (`withFailOpenStorage(...).incrementStrict`). Proven against the real
-  in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. A successful OAuth call that **created** an
-  account no longer resets the login-throttle counters — only a
-  returning user's success does.
+  in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. No successful sign-in (password, Google
+  or Apple, new or returning) resets any per-IP counter (C14 fix round).
+- **Login throttling (C14).** `POST /auth/login` has never-reset per-IP
+  windows (`AUTH_LOGIN_PER_MIN` 20, `AUTH_LOGIN_PER_HOUR` 200) plus a
+  **per-account failure lock**: `AUTH_LOGIN_ACCOUNT_FAILURES` (default 10)
+  failed passwords for one email within 15 min lock that email for 15 min
+  from any IP — the lock is checked *before* the password, so even the right
+  password is refused while locked. Only that account's own success clears
+  its counter. The lock covers **every** password sign-in endpoint
+  (`/auth/login` and `/auth/extension/login` share one counter per account):
+  it runs in `AuthService._passwordLogin` through
+  `LoginThrottleResetService.guardPasswordLogin`, not in the controller.
+  `/auth/extension/login` also declares the hourly per-IP brake
+  (`auth-login-per-hour`) next to its 5/min. `/auth/google` and `/auth/apple` use their own per-IP buckets
+  (`AUTH_OAUTH_PER_MIN` 60, `AUTH_OAUTH_PER_HOUR` 400) sized for a 40-person
+  room on one Wi-Fi. Lock check / failure record fail closed (503
+  `login_temporarily_unavailable`) on a storage error. Tests:
+  `test/login-account-lock.spec.ts`, `test/throttler-isolation.spec.ts`.
 - A coach can never be demoted or re-parented by a client invite code.
   `InviteCodesService.attachUserToCoachByCode` refuses `coach`,
   `sub_coach` (and, as before, `owner`) with

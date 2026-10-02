@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Request,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -23,6 +24,7 @@ import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlem
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
+import { PackageValidationFilter } from './package-validation.filter';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
 // can list / create / update / archive their own rows. OWNER (platform
@@ -39,6 +41,9 @@ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 @ApiTags('packages')
 @Controller('v1/coach/packages')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+// S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
+// with the field and the next action, never a code-less validation array.
+@UseFilters(PackageValidationFilter)
 export class CoachPackagesController {
   constructor(private packages: PackagesService) {}
 
@@ -47,10 +52,7 @@ export class CoachPackagesController {
   // included for platform support and to mirror the class-level CoachOrOwnerGuard.
   @Roles('coach', 'owner')
   @Get()
-  async list(
-    @Request() req: AuthedRequest,
-    @Query('include_archived') includeArchived?: string,
-  ) {
+  async list(@Request() req: AuthedRequest, @Query('include_archived') includeArchived?: string) {
     // Sub-coaches act on the head-coach's catalog (the package model
     // lives on the head coach id). Resolve before query.
     const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
@@ -101,21 +103,11 @@ export class CoachPackagesController {
       amount_cents: body.amount_cents,
       currency: body.currency,
       billing_type: body.billing_type as 'one_time' | 'recurring',
-      interval: body.billing_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null
-        | undefined,
+      interval: body.billing_interval as 'week' | 'month' | 'year' | null | undefined,
       interval_count: body.billing_interval_count,
       duration_periods: body.duration_periods,
       recurring_amount_cents: body.recurring_amount_cents,
-      recurring_interval: body.recurring_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null
-        | undefined,
+      recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
     });
   }
@@ -136,21 +128,11 @@ export class CoachPackagesController {
       amount_cents: body.amount_cents,
       currency: body.currency,
       billing_type: body.billing_type as 'one_time' | 'recurring' | undefined,
-      interval: body.billing_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null
-        | undefined,
+      interval: body.billing_interval as 'week' | 'month' | 'year' | null | undefined,
       interval_count: body.billing_interval_count,
       duration_periods: body.duration_periods,
       recurring_amount_cents: body.recurring_amount_cents,
-      recurring_interval: body.recurring_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null
-        | undefined,
+      recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
       is_active: body.is_active,
     });

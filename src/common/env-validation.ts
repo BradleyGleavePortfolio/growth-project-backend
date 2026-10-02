@@ -92,6 +92,23 @@ export interface EnvRule {
   //   'optional-integration' an integration that is NOT a launch dependency;
   //                          its flags must be explicitly false or unset
   launch?: 'required' | 'switch' | 'optional-integration';
+  // S-FLAGS (B-FLAGS-2) — the closed set of values this switch's code reads
+  // with a distinct meaning, written exactly as they must be set on Fly. The
+  // desired-state manifest (.github/fly-env-desired-state.json) may declare
+  // only one of these, or leave the name unset; the fly-env-sync loader
+  // (scripts/fly-env/fly-env-manifest.js) reads this field from this file and
+  // test/ci/fly-env-manifest.spec.ts proves the two agree. Descriptive only;
+  // never read at runtime and never changes boot behaviour. Keep it on ONE
+  // line as `values: ['a', 'b'],` (the loader parses that exact shape).
+  values?: readonly string[];
+  // S-FLAGS (B-FLAGS-2, B-637-2) — what this switch's code does when the name
+  // is absent: 'on' (defaults on; only its off value disables it) or 'off'.
+  // Required with `values`. It decides the emergency kill: a defaults-on
+  // switch is killed by SETTING its off value ('false' / 'off'), never by
+  // unsetting it (that turns it back on); a defaults-off switch is killed by
+  // unsetting it. Descriptive only; never read at runtime. One line, as
+  // `unsetIs: 'on',` directly after the `values` line.
+  unsetIs?: 'on' | 'off';
 }
 
 export const ENV_RULES: EnvRule[] = [
@@ -586,6 +603,12 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Phase 10 — global default: max requests per minute per user-id (authenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 300; clamped to [1, 10000].',
   },
   {
+    name: 'PUBLIC_READS_PER_MIN',
+    tier: 'optional',
+    default: '240 per IP per minute (unset, empty or unparseable fall back to 240; clamped to [10, 5000])',
+    reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000].',
+  },
+  {
     name: 'RATELIMIT_ANON_PER_MIN',
     tier: 'optional',
     reason: 'Phase 10 — global default: max requests per minute per IP (unauthenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 100; clamped to [1, 10000].',
@@ -593,12 +616,30 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_LOGIN_PER_MIN',
     tier: 'optional',
-    reason: 'Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful login resets this counter.',
+    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 20 (a room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
   },
   {
     name: 'AUTH_LOGIN_PER_HOUR',
     tier: 'optional',
-    reason: 'Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000].',
+    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per hour. Never reset by a successful login. Defaults to 200; clamped to [1, 5000].',
+  },
+  {
+    name: 'AUTH_OAUTH_PER_MIN',
+    tier: 'optional',
+    default: '60 per IP per minute (unset, empty or unparseable fall back to 60; clamped to [5, 5000])',
+    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per minute (own bucket, never reset). Defaults to 60 (a 40-person room on one Wi-Fi); clamped to [5, 5000].',
+  },
+  {
+    name: 'AUTH_OAUTH_PER_HOUR',
+    tier: 'optional',
+    default: '400 per IP per hour (unset, empty or unparseable fall back to 400; clamped to [20, 20000])',
+    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000].',
+  },
+  {
+    name: 'AUTH_LOGIN_ACCOUNT_FAILURES',
+    tier: 'optional',
+    default: '10 failed sign-ins per account per 15 minutes (unset, unparseable or below 3 fall back to 10; capped at 100)',
+    reason: 'Clinic C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; values below 3 fall back to 10; capped at 100.',
   },
   {
     name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
@@ -608,6 +649,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'SIGNUP_ROLE_CHOICE_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
@@ -1070,11 +1113,13 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'BOOKING_REMINDERS_ENABLED',
+    values: ['on', 'off'],
+    unsetIs: 'off',
     tier: 'optional',
     launch: 'switch',
-    default: '\'on\' (only "off" disables)',
+    default: 'off (only "on" enables; unset/off/other disable)',
     reason:
-      'Launch switch (operator 2026-10-01): kill switch for the booking reminder crons. Ships on; only "off" disables. Must stay on (unset or "on") for launch.',
+      'Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 the sweeps need an explicit "on"; unset now means off. Must be set to "on" for launch through the audited prod-switch manifest, after notification delivery/device QA.',
   },
   {
     name: 'DELETION_FINALIZE_CRON',
@@ -1234,7 +1279,16 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
   },
   {
+    name: 'CONSULT_CONSENT_COPY_VERSIONS',
+    tier: 'optional',
+    default: "consult-consent-v3 (unset, empty, or no known name -> ['consult-consent-v3'])",
+    reason:
+      "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
+  },
+  {
     name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: "off (on only when exactly 'true', case-insensitive)",
     reason:
@@ -1768,18 +1822,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_DUNNING_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Dunning v2 flag.',
   },
   {
     name: 'FEATURE_COMMUNITY_SCHEMA',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: 'unset → on (only "false" disables)',
     reason: 'Community schema presence flag; downstream community mounts back off when "false".',
   },
   {
     name: 'FEATURE_COMMUNITY_API',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true"; FEATURE_COMMUNITY_API_ALLOWLIST can open it per user)',
     reason: 'Community API master flag. Set at the Wave-1 launch deploy.',
@@ -1793,96 +1853,128 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COMMUNITY_MESSAGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community message writes. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_POSTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community post writes. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_DM',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community DMs. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_PUSH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community push notifications. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_REALTIME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community realtime. Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_TELEMETRY',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community telemetry (no user text). Set at the Wave-1 launch deploy.',
   },
   {
     name: 'FEATURE_COMMUNITY_PLAN_TAGS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community plan-context tags.',
   },
   {
     name: 'FEATURE_COMMUNITY_ACKS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community acknowledgements.',
   },
   {
     name: 'FEATURE_COMMUNITY_AI_TRIAGE',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community AI triage.',
   },
   {
     name: 'FEATURE_COMMUNITY_CHALLENGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community challenges.',
   },
   {
     name: 'FEATURE_COMMUNITY_CLASSROOM_POSTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community classroom posts.',
   },
   {
     name: 'FEATURE_COMMUNITY_EVENTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community events.',
   },
   {
     name: 'FEATURE_COMMUNITY_SEARCH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community search.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community voice notes.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Require an entitlement for community voice notes.',
   },
   {
     name: 'FEATURE_COMMUNITY_WEARABLE_PROMPTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community wearable prompts.',
@@ -1895,18 +1987,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_MWB_AUTOSAVE_UNDO',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder autosave + undo (needs MWB_AUTOSAVE_LOCK_TOKEN_SECRET when on).',
   },
   {
     name: 'FEATURE_MWB_TEMPLATES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder templates.',
   },
   {
     name: 'FEATURE_NAMED_REGIMES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Named regimes.',
@@ -1967,6 +2065,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_WEARABLES_INGEST_POST',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → POST wearable samples returns disabled (only "true")',
     reason: 'Wearable samples ingest endpoint. Set at the launch deploy.',
