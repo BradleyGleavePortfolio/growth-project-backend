@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { RecipeViewer, toRecipeView, visibleRecipesWhere } from '../recipes/recipe-access';
 
 export interface AggregatedIngredient {
   name: string;
@@ -37,7 +38,8 @@ const PREP_SUGGESTIONS = ['Sunday', 'Wednesday'];
 export class PrepGuideService {
   constructor(private prisma: PrismaService) {}
 
-  async getWeeklyPrepGuide(userId: string, weekStart: string): Promise<PrepGuideResult> {
+  async getWeeklyPrepGuide(viewer: RecipeViewer, weekStart: string): Promise<PrepGuideResult> {
+    const userId = viewer.id;
     // Derive week range.
     const startDate = new Date(weekStart);
     startDate.setHours(0, 0, 0, 0);
@@ -74,17 +76,20 @@ export class PrepGuideService {
       }
     }
 
-    // Also include any public recipes if no meal plans have recipe references
-    // — gives the screen content even before a coach assigns recipes.
+    // Every recipe read goes through the shared visibility policy
+    // (src/recipes/recipe-access.ts): a meal-plan item can only surface a
+    // recipe this client could open in Recipes (their own, or one their coach
+    // shares with clients). There is no platform-wide fallback: with no
+    // referenced recipe, the guide shows the latest visible ones (up to 6).
+    const visible = visibleRecipesWhere(viewer);
     let recipes;
     if (referencedRecipeIds.size > 0) {
       recipes = await this.prisma.recipe.findMany({
-        where: { id: { in: Array.from(referencedRecipeIds) } },
+        where: { AND: [{ id: { in: Array.from(referencedRecipeIds) } }, visible] },
       });
     } else {
-      // Fall back to recent public recipes (up to 6)
       recipes = await this.prisma.recipe.findMany({
-        where: { is_public: true },
+        where: visible,
         orderBy: { created_at: 'desc' },
         take: 6,
       });
@@ -139,7 +144,7 @@ export class PrepGuideService {
 
     return {
       week_start: startDate.toISOString().split('T')[0],
-      recipes: recipes.map((r) => ({
+      recipes: recipes.map(toRecipeView).map((r) => ({
         id: r.id,
         title: r.title,
         image_url: r.image_url,
