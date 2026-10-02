@@ -20,6 +20,7 @@
  * test/scheduling-booking-concurrency.live.spec.ts.
  */
 import { HttpException } from '@nestjs/common';
+import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
 import { AuditService } from '../src/audit/audit.service';
 import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
@@ -225,8 +226,10 @@ function harness() {
       auditWrites.push(input);
     }),
   });
-  const svc = new SchedulingService(asPrisma(db), audit, registry(), emitter);
-  return { db, notifications, svc, auditWrites };
+  const providers = registry();
+  const svc = new SchedulingService(asPrisma(db), audit, providers, emitter);
+  const reminder = new SessionReminderJob(asPrisma(db), emitter);
+  return { db, notifications, svc, auditWrites, providers, reminder, emitter };
 }
 
 interface Failure {
@@ -1004,7 +1007,7 @@ describe('lifecycle rules', () => {
     expect(
       (await failure(svc.listSessionsForActor(CLIENT, { scope: 'past', before: 'yesterday' })))
         .code,
-    ).toBe('INVALID_TIME');
+    ).toBe('INVALID_LIST_QUERY');
   });
 
   it('welcome marker: one active welcome type per coach, moved transactionally', async () => {
@@ -1047,5 +1050,587 @@ describe('lifecycle rules', () => {
       expect(p.title).not.toMatch(/!/);
       expect(p.data.actionParams).toBeDefined();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// S-SCHED-3 fix round: every audit repro on #634 @ dbc10b7b as a regression
+// test (Sol 5955780870 B-634-1..4, Opus 5956298627 B-634-5 and C-634-*).
+// Each failed on dbc10b7b; the comment on each names the finding.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A pause point: the code under test calls hit() and waits until release(). */
+function pausePoint() {
+  let entered!: () => void;
+  let resume!: () => void;
+  const reached = new Promise<void>((r) => {
+    entered = r;
+  });
+  const released = new Promise<void>((r) => {
+    resume = r;
+  });
+  return {
+    reached,
+    release: () => resume(),
+    hit: async () => {
+      entered();
+      await released;
+    },
+  };
+}
+
+/** Pause the first coachingSession.updateMany whose data matches `when`. */
+function pauseSessionWrite(db: SchedulingFakeDb, when: (data: Record<string, unknown>) => boolean) {
+  const gate = pausePoint();
+  const original = db.coachingSession.updateMany;
+  let armed = true;
+  db.coachingSession.updateMany = async (args) => {
+    if (armed && when(args.data)) {
+      armed = false;
+      await gate.hit();
+    }
+    return original(args);
+  };
+  return gate;
+}
+
+function withReminders<T>(fn: () => Promise<T>): Promise<T> {
+  const old = process.env.BOOKING_REMINDERS_ENABLED;
+  process.env.BOOKING_REMINDERS_ENABLED = 'on';
+  return fn().finally(() => {
+    if (old === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+    else process.env.BOOKING_REMINDERS_ENABLED = old;
+  });
+}
+
+describe('S-SCHED-3 B-634-1: transitions are fenced on the booking revision, not only status', () => {
+  it('a paused approval loses to a client move: SESSION_MOVED, the new request time stands, no stale confirmation', async () => {
+    const { svc, db, notifications } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const gate = pauseSessionWrite(db, (d) => d.status === 'scheduled' && !!d.approved_at);
+    const approving = Promise.allSettled([svc.approveSession(COACH, s.id)]);
+    await gate.reached;
+    await svc.rescheduleSession(CLIENT, s.id, { start_at: TUE_1100, end_at: TUE_1115 });
+    gate.release();
+    const [result] = await approving;
+    expect(rejectionCode(result)).toBe('SESSION_MOVED');
+    const row = db.sessions.find((r) => r.id === s.id);
+    expect(row?.status).toBe('requested');
+    expect((row?.start_at as Date).toISOString()).toBe(TUE_1100);
+    expect(notifications.kindsFor('client-1')).not.toContain(NotificationKind.BOOKING_CONFIRMED);
+
+    // The coach refreshes and approves the time they now see; the
+    // confirmation names that committed time.
+    const ok = await svc.approveSession(COACH, s.id, { expectedStartAt: TUE_1100 });
+    expect(ok.status).toBe('scheduled');
+    const confirm = notifications.pushes.find(
+      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
+    );
+    expect(confirm?.body).toContain('11:00 AM');
+    expect(confirm?.body).not.toContain('10:00 AM');
+  });
+
+  it('a paused decline loses to a client move: SESSION_MOVED and the moved request stays in the inbox', async () => {
+    const { svc, db, notifications } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const gate = pauseSessionWrite(db, (d) => d.status === 'declined');
+    const declining = Promise.allSettled([svc.declineSession(COACH, s.id, 'busy')]);
+    await gate.reached;
+    await svc.rescheduleSession(CLIENT, s.id, { start_at: TUE_1100, end_at: TUE_1115 });
+    gate.release();
+    expect(rejectionCode((await declining)[0])).toBe('SESSION_MOVED');
+    expect(db.sessions.find((r) => r.id === s.id)?.status).toBe('requested');
+    expect(notifications.kindsFor('client-1')).not.toContain(NotificationKind.BOOKING_DECLINED);
+  });
+
+  it('a paused coach cancel loses to a client move of the same request', async () => {
+    const { svc, db } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const gate = pauseSessionWrite(db, (d) => d.status === 'canceled');
+    const cancelling = Promise.allSettled([svc.cancelSession(COACH, s.id, {})]);
+    await gate.reached;
+    await svc.rescheduleSession(CLIENT, s.id, { start_at: TUE_1100, end_at: TUE_1115 });
+    gate.release();
+    expect(rejectionCode((await cancelling)[0])).toBe('SESSION_MOVED');
+    expect(db.sessions.find((r) => r.id === s.id)?.status).toBe('requested');
+  });
+
+  it('a stale inbox card (expected_start_at) is refused before any write, for approve, decline and cancel', async () => {
+    const { svc, db } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    await svc.rescheduleSession(CLIENT, s.id, { start_at: TUE_1100, end_at: TUE_1115 });
+    const approve = await failure(svc.approveSession(COACH, s.id, { expectedStartAt: TUE_1000 }));
+    expect(approve).toMatchObject({ status: 409, code: 'SESSION_MOVED' });
+    expect(approve.message).toMatch(/new time/);
+    expect(
+      (await failure(svc.declineSession(COACH, s.id, undefined, { expectedStartAt: TUE_1000 })))
+        .code,
+    ).toBe('SESSION_MOVED');
+    expect(
+      (await failure(svc.cancelSession(COACH, s.id, { expected_start_at: TUE_1000 }))).code,
+    ).toBe('SESSION_MOVED');
+    expect(
+      (await failure(svc.approveSession(COACH, s.id, { expectedStartAt: 'not-a-time' }))).code,
+    ).toBe('INVALID_TIME');
+    expect(db.sessions.find((r) => r.id === s.id)?.status).toBe('requested');
+  });
+});
+
+describe('S-SCHED-3 B-634-3: provisioning never overwrites a newer change', () => {
+  function pauseCalendar(
+    providers: SchedulingProviderRegistry,
+    result?: { id: string; provider: string },
+  ) {
+    const adapter = providers.resolveCalendar('stub');
+    const original = adapter.createEvent.bind(adapter);
+    const gate = pausePoint();
+    adapter.createEvent = async (input) => {
+      await gate.hit();
+      const r = await original(input);
+      return result
+        ? {
+            externalEventId: result.id,
+            resolvedProvider: result.provider as typeof r.resolvedProvider,
+          }
+        : r;
+    };
+    return gate;
+  }
+
+  it('a manual link saved while provisioning runs is kept (Sol probe), and the coach is not asked for a link', async () => {
+    const { svc, db, providers, notifications } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const gate = pauseCalendar(providers);
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.attachManualVideoLink(COACH, s.id, {
+      video_url: 'https://meet.example.com/new-room',
+    });
+    gate.release();
+    const final = await approving;
+    expect(final.video_url).toBe('https://meet.example.com/new-room');
+    const row = db.sessions.find((r) => r.id === s.id);
+    expect(row?.video_url).toBe('https://meet.example.com/new-room');
+    expect(row?.video_provider).toBe('manual');
+    expect(row?.calendar_event_id).toMatch(/^stub-cal-/);
+    expect(notifications.kindsFor('coach-1')).not.toContain(NotificationKind.BOOKING_LINK_NEEDED);
+  });
+
+  it('a cancel during provisioning stands: no overwrite, no confirmation, the new calendar event is cancelled', async () => {
+    const { svc, db, providers, notifications, auditWrites } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    // The adapter reports a real (non-stub) calendar event, as Google would.
+    const gate = pauseCalendar(providers, { id: 'gcal-evt-1', provider: 'google_calendar' });
+    const cancelEvent = jest.fn(async (_id: string) => undefined);
+    providers.resolveCalendar('google_calendar').cancelEvent = cancelEvent;
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.cancelSession(CLIENT, s.id, { reason: 'plans changed' });
+    gate.release();
+    const final = await approving;
+    expect(final.status).toBe('canceled');
+    const row = db.sessions.find((r) => r.id === s.id);
+    expect(row?.status).toBe('canceled');
+    expect(row?.calendar_event_id).toBeNull();
+    expect(cancelEvent).toHaveBeenCalledWith('gcal-evt-1');
+    expect(notifications.kindsFor('client-1')).not.toContain(NotificationKind.BOOKING_CONFIRMED);
+    expect(notifications.kindsFor('coach-1')).not.toContain(NotificationKind.BOOKING_LINK_NEEDED);
+    expect(JSON.stringify(auditWrites)).toContain('superseded_revision');
+  });
+
+  it('a move during instant-confirm provisioning keeps the new time and the confirmation names it', async () => {
+    const { svc, db, providers, notifications } = harness();
+    const gate = pauseCalendar(providers);
+    const booking = svc.requestSession(CLIENT, request(CLIENT, 'st-open', TUE_1000, TUE_1030));
+    await gate.reached;
+    const created = db.sessions.find((r) => r.client_id === 'client-1' && r.status === 'scheduled');
+    expect(created).toBeDefined();
+    await svc.rescheduleSession(COACH, String(created?.id), {
+      start_at: TUE_1100,
+      end_at: TUE_1130,
+    });
+    gate.release();
+    const final = await booking;
+    expect(new Date(final.start_at).toISOString()).toBe(TUE_1100);
+    const row = db.sessions.find((r) => r.id === created?.id);
+    expect((row?.start_at as Date).toISOString()).toBe(TUE_1100);
+    const confirm = notifications.pushes.find(
+      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
+    );
+    expect(confirm?.body).toContain('11:00 AM');
+  });
+});
+
+describe('S-SCHED-3 B-634-4 / C-634-3: keyset pages on (start_at, id); status filter', () => {
+  it('21 past rows sharing one start time page as 20 + 1 with no repeats (Sol probe)', async () => {
+    const { svc, db } = harness();
+    for (let i = 0; i < 21; i++) {
+      db.addSession({
+        id: `past-tie-${String(i).padStart(2, '0')}`,
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        session_type_id: 'st-q',
+        status: 'canceled',
+        start_at: new Date('2026-09-30T17:00:00.000Z'),
+        end_at: new Date('2026-09-30T17:15:00.000Z'),
+      });
+    }
+    const first = await svc.listSessionsForActor(CLIENT, { scope: 'past', limit: 20 });
+    const last = first[first.length - 1];
+    const next = await svc.listSessionsForActor(CLIENT, {
+      scope: 'past',
+      limit: 20,
+      before: new Date(last.start_at).toISOString(),
+      before_id: last.id,
+    });
+    expect(first).toHaveLength(20);
+    expect(next).toHaveLength(1);
+    const ids = [...first, ...next].map((s) => s.id);
+    expect(new Set(ids).size).toBe(21);
+  });
+
+  it('limit 1 walks a tie and the row after it in order (Opus probe)', async () => {
+    const { svc, db } = harness();
+    const T = new Date('2026-09-30T17:00:00.000Z');
+    const end = new Date(T.getTime() + 15 * 60_000);
+    db.addSession({
+      id: 'tie-a',
+      coach_id: 'coach-1',
+      client_id: 'client-2',
+      status: 'declined',
+      start_at: T,
+      end_at: end,
+    });
+    db.addSession({
+      id: 'tie-b',
+      coach_id: 'coach-1',
+      client_id: 'client-2',
+      status: 'completed',
+      start_at: T,
+      end_at: end,
+    });
+    db.addSession({
+      id: 'early',
+      coach_id: 'coach-1',
+      client_id: 'client-2',
+      status: 'completed',
+      start_at: new Date('2026-09-29T17:00:00.000Z'),
+      end_at: new Date('2026-09-29T17:15:00.000Z'),
+    });
+    const seen: string[] = [];
+    let cursor: { before: string; before_id: string } | null = null;
+    for (let i = 0; i < 5; i++) {
+      const page = await svc.listSessionsForActor(CLIENT_2, {
+        scope: 'past',
+        limit: 1,
+        ...(cursor ?? {}),
+      });
+      if (page.length === 0) break;
+      seen.push(page[0].id);
+      cursor = { before: new Date(page[0].start_at).toISOString(), before_id: page[0].id };
+    }
+    expect(seen).toEqual(['tie-b', 'tie-a', 'early']);
+  });
+
+  it('upcoming pages with after/after_id and the inbox filter returns only requests', async () => {
+    const { svc, db } = harness();
+    const T = new Date(TUE_1000);
+    const end = new Date(T.getTime() + 15 * 60_000);
+    for (let i = 0; i < 5; i++) {
+      db.addSession({
+        id: `c-${i}`,
+        coach_id: 'coach-1',
+        client_id: 'client-2',
+        status: 'canceled',
+        start_at: T,
+        end_at: end,
+      });
+    }
+    db.addSession({
+      id: 'r-1',
+      coach_id: 'coach-1',
+      client_id: 'client-2',
+      status: 'requested',
+      start_at: new Date(TUE_1100),
+      end_at: new Date(TUE_1115),
+    });
+    const inbox = await svc.listSessionsForActor(COACH, {
+      scope: 'upcoming',
+      limit: 2,
+      statuses: ['requested'],
+    });
+    expect(inbox.map((s) => s.id)).toEqual(['r-1']);
+    const p1 = await svc.listSessionsForActor(COACH, { scope: 'upcoming', limit: 3 });
+    const tail = p1[p1.length - 1];
+    const p2 = await svc.listSessionsForActor(COACH, {
+      scope: 'upcoming',
+      limit: 10,
+      after: new Date(tail.start_at).toISOString(),
+      after_id: tail.id,
+    });
+    expect([...p1, ...p2].map((s) => s.id)).toEqual(['c-0', 'c-1', 'c-2', 'c-3', 'c-4', 'r-1']);
+  });
+
+  it('unreadable cursors are a coded 400 with a next step', async () => {
+    const { svc } = harness();
+    for (const args of [
+      { scope: 'past' as const, before: 'yesterday' },
+      { scope: 'past' as const, before_id: 'abc' },
+      { scope: 'past' as const, before: TUE_1000, before_id: "x' OR 1=1" },
+      { scope: 'upcoming' as const, after: 'soon' },
+    ]) {
+      const f = await failure(svc.listSessionsForActor(CLIENT, args));
+      expect(f).toMatchObject({ status: 400, code: 'INVALID_LIST_QUERY' });
+      expect(f.message).toMatch(/Reload the list/);
+    }
+  });
+});
+
+describe('S-SCHED-3 B-634-5: restoring an archived former welcome type', () => {
+  it('restores as a regular type when another welcome type is active; explicit is_welcome moves the marker', async () => {
+    const { svc, db } = harness();
+    await svc.updateSessionType(COACH, 'st-w', { archived: true });
+    const fresh = await svc.createSessionType(COACH, {
+      name: 'New welcome',
+      duration_minutes: 15,
+      auto_approve: true,
+      is_welcome: true,
+    });
+    const restored = await svc.updateSessionType(COACH, 'st-w', { archived: false });
+    expect(restored.archived_at).toBeNull();
+    expect(restored.is_welcome).toBe(false);
+    expect(db.sessionTypes.find((t) => t.id === fresh.id)?.is_welcome).toBe(true);
+
+    const moved = await svc.updateSessionType(COACH, 'st-w', { is_welcome: true });
+    expect(moved.is_welcome).toBe(true);
+    expect(db.sessionTypes.find((t) => t.id === fresh.id)?.is_welcome).toBe(false);
+  });
+
+  it('restores as the welcome type when no other welcome type is active', async () => {
+    const { svc } = harness();
+    await svc.updateSessionType(COACH, 'st-w', { archived: true });
+    const restored = await svc.updateSessionType(COACH, 'st-w', { archived: false });
+    expect(restored).toMatchObject({ archived_at: null, is_welcome: true });
+  });
+});
+
+describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware', () => {
+  function dueSession(db: SchedulingFakeDb, id = 'rem-1', minutes = 60) {
+    return db.addSession({
+      id,
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: new Date(NOW.getTime() + minutes * 60_000),
+      end_at: new Date(NOW.getTime() + (minutes + 15) * 60_000),
+      video_url: 'https://meet.example.com/kim',
+    });
+  }
+  const remindersFor = (n: FakeNotifications) =>
+    n.rows.filter((r) => r.kind === NotificationKind.BOOKING_REMINDER_1H);
+
+  it('both channels fail, then recover: the next sweep delivers to both recipients (Sol probe)', async () => {
+    const { db, notifications, reminder } = harness();
+    dueSession(db);
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    await withReminders(async () => {
+      await reminder.runOneHourReminderSweep();
+      expect(remindersFor(notifications)).toHaveLength(0);
+      expect(db.deliveryLogs.map((l) => l.status)).toEqual(['retry', 'retry']);
+      await reminder.runOneHourReminderSweep();
+      expect(remindersFor(notifications)).toHaveLength(2);
+      expect(notifications.pushes).toHaveLength(2);
+      expect(db.deliveryLogs.map((l) => l.status)).toEqual(['sent', 'sent']);
+      await reminder.runOneHourReminderSweep();
+      expect(remindersFor(notifications)).toHaveLength(2);
+    });
+  });
+
+  it('partial failure retries only the failed channel; the retried push links the first in-app row', async () => {
+    const { db, notifications, reminder, emitter } = harness();
+    dueSession(db);
+    notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'transport-error' });
+    await withReminders(async () => {
+      const first = await reminder.dispatchWindow({
+        lowerOffsetMinutes: 55,
+        upperOffsetMinutes: 65,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        emit: (r, o, s, ctx) =>
+          emitter.emitReminder1h({
+            recipientUserId: r,
+            otherPartyDisplayName: o,
+            sessionId: s.id,
+            scheduledAt: s.start_at,
+            ...ctx,
+          }),
+      });
+      expect(first).toMatchObject({ dispatched: 1, retrying: 1, failed: 0 });
+      expect(remindersFor(notifications)).toHaveLength(2);
+      await reminder.runOneHourReminderSweep();
+      expect(remindersFor(notifications)).toHaveLength(2);
+      const clientPushes = notifications.pushes.filter((p) => p.userId === 'client-1');
+      expect(clientPushes).toHaveLength(1);
+      const clientRow = db.deliveryLogs.find((l) => l.user_id === 'client-1');
+      expect(clientRow).toMatchObject({ status: 'sent', attempts: 2 });
+      expect(clientPushes[0].data.notificationId).toBe(clientRow?.notification_id);
+    });
+  });
+
+  it('a worker that died after claiming is taken over once its lease expires; a live lease is left alone', async () => {
+    const { db, notifications, reminder } = harness();
+    const s = dueSession(db);
+    db.deliveryLogs.push(
+      {
+        id: 'stuck',
+        session_id: s.id,
+        user_id: 'client-1',
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        status: 'sending',
+        attempts: 1,
+        lease_until: new Date(NOW.getTime() - 60_000),
+        claim_token: 'dead-worker',
+        session_start_at: s.start_at,
+        inapp_done_at: null,
+        push_done_at: null,
+        notification_id: null,
+      },
+      {
+        id: 'live',
+        session_id: s.id,
+        user_id: 'coach-1',
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        status: 'sending',
+        attempts: 1,
+        lease_until: new Date(NOW.getTime() + 60_000),
+        claim_token: 'other-replica',
+        session_start_at: s.start_at,
+        inapp_done_at: null,
+        push_done_at: null,
+        notification_id: null,
+      },
+    );
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(remindersFor(notifications).map((r) => r.user_id)).toEqual(['client-1']);
+    expect(db.deliveryLogs.find((l) => l.id === 'stuck')).toMatchObject({
+      status: 'sent',
+      attempts: 2,
+    });
+    expect(db.deliveryLogs.find((l) => l.id === 'live')).toMatchObject({
+      status: 'sending',
+      claim_token: 'other-replica',
+    });
+  });
+
+  it('a database error on claim is a failure, not a duplicate; the next sweep delivers', async () => {
+    const { db, notifications, reminder } = harness();
+    dueSession(db);
+    const create = db.notificationDeliveryLog.create;
+    let failNext = 2;
+    db.notificationDeliveryLog.create = async (args) => {
+      if (failNext-- > 0) throw Object.assign(new TypeError('connection reset'), { code: 'P1017' });
+      return create(args);
+    };
+    await withReminders(async () => {
+      const r1 = await reminder.dispatchWindow({
+        lowerOffsetMinutes: 55,
+        upperOffsetMinutes: 65,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        emit: async () => ({ inapp: 'written', push: 'delivered' }),
+      });
+      expect(r1).toMatchObject({ dispatched: 0, skipped: 0, failed: 2 });
+      await reminder.runOneHourReminderSweep();
+      expect(remindersFor(notifications)).toHaveLength(2);
+    });
+  });
+
+  it('preference suppression and no device are settled answers, never retried', async () => {
+    const { db, notifications, reminder } = harness();
+    dueSession(db);
+    notifications.prefs.set('client-1', { muted: true });
+    notifications.pushResult = { delivered: false, code: 'no-token' };
+    await withReminders(async () => {
+      await reminder.runOneHourReminderSweep();
+      await reminder.runOneHourReminderSweep();
+    });
+    expect(remindersFor(notifications).map((r) => r.user_id)).toEqual(['coach-1']);
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(db.deliveryLogs.map((l) => [l.user_id, l.status, l.attempts])).toEqual([
+      ['client-1', 'sent', 1],
+      ['coach-1', 'sent', 1],
+    ]);
+  });
+
+  it('two replicas sweeping at once deliver exactly once per recipient', async () => {
+    const { db, notifications, reminder, emitter } = harness();
+    const replica = new SessionReminderJob(asPrisma(db), emitter);
+    dueSession(db);
+    await withReminders(() =>
+      Promise.all([reminder.runOneHourReminderSweep(), replica.runOneHourReminderSweep()]),
+    );
+    expect(remindersFor(notifications)).toHaveLength(2);
+    expect(notifications.pushes).toHaveLength(2);
+  });
+
+  it('a claim for an older start time is a new revision: the moved session is reminded for its new time', async () => {
+    const { db, notifications, reminder } = harness();
+    const s = dueSession(db);
+    db.deliveryLogs.push({
+      id: 'old-time',
+      session_id: s.id,
+      user_id: 'client-1',
+      kind: NotificationKind.BOOKING_REMINDER_1H,
+      status: 'sent',
+      attempts: 1,
+      lease_until: null,
+      claim_token: 'old',
+      session_start_at: new Date(NOW.getTime() + 24 * 60 * 60_000),
+      inapp_done_at: NOW,
+      push_done_at: NOW,
+      notification_id: 'n-old',
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(
+      remindersFor(notifications)
+        .map((r) => r.user_id)
+        .sort(),
+    ).toEqual(['client-1', 'coach-1']);
+    expect(db.deliveryLogs.find((l) => l.id === 'old-time')).toMatchObject({
+      status: 'sent',
+      session_start_at: s.start_at,
+    });
+  });
+
+  it('a session cancelled after the sweep read it is not reminded, and its claim is released', async () => {
+    const { db, notifications, reminder, svc } = harness();
+    dueSession(db);
+    const findMany = db.coachingSession.findMany;
+    db.coachingSession.findMany = async (args) => {
+      const rows = await findMany(args);
+      await svc.cancelSession(COACH, 'rem-1', { reason: 'sick' });
+      return rows;
+    };
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(remindersFor(notifications)).toHaveLength(0);
+    expect(db.deliveryLogs).toHaveLength(0);
+  });
+
+  it('gives up after the attempt limit and says so', async () => {
+    const { db, notifications, reminder } = harness();
+    dueSession(db);
+    notifications.pushResult = { delivered: false, code: 'transport-error' };
+    await withReminders(async () => {
+      for (let i = 0; i < 5; i++) await reminder.runOneHourReminderSweep();
+    });
+    expect(db.deliveryLogs.map((l) => [l.status, l.attempts])).toEqual([
+      ['gave_up', 3],
+      ['gave_up', 3],
+    ]);
+    expect(notifications.pushToUser).toHaveBeenCalledTimes(6);
+    expect(remindersFor(notifications)).toHaveLength(2);
+    expect(String(db.deliveryLogs[0].last_error)).toContain('push');
   });
 });

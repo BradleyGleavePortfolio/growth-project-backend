@@ -37,6 +37,17 @@ function toMs(v: unknown): number {
   return Number.NaN;
 }
 
+// Ordering for range operators: dates by instant, plain strings (ids) by
+// code unit, the same total order the fake's ORDER BY uses.
+function compare(a: unknown, b: unknown): number {
+  if (typeof a === 'string' && typeof b === 'string') {
+    const da = Date.parse(a);
+    const db = Date.parse(b);
+    if (Number.isNaN(da) || Number.isNaN(db)) return a < b ? -1 : a > b ? 1 : 0;
+  }
+  return toMs(a) - toMs(b);
+}
+
 function matchValue(value: unknown, cond: unknown): boolean {
   if (cond === undefined) return true;
   if (cond === null) return value === null || value === undefined;
@@ -44,6 +55,9 @@ function matchValue(value: unknown, cond: unknown): boolean {
   if (typeof cond === 'object' && !Array.isArray(cond)) {
     for (const [op, arg] of Object.entries(cond as Row)) {
       switch (op) {
+        case 'equals':
+          if (!matchValue(value, arg)) return false;
+          break;
         case 'in':
           if (!Array.isArray(arg) || !arg.includes(value)) return false;
           break;
@@ -51,16 +65,16 @@ function matchValue(value: unknown, cond: unknown): boolean {
           if (matchValue(value, arg)) return false;
           break;
         case 'lt':
-          if (!(toMs(value) < toMs(arg))) return false;
+          if (!(compare(value, arg) < 0)) return false;
           break;
         case 'lte':
-          if (!(toMs(value) <= toMs(arg))) return false;
+          if (!(compare(value, arg) <= 0)) return false;
           break;
         case 'gt':
-          if (!(toMs(value) > toMs(arg))) return false;
+          if (!(compare(value, arg) > 0)) return false;
           break;
         case 'gte':
-          if (!(toMs(value) >= toMs(arg))) return false;
+          if (!(compare(value, arg) >= 0)) return false;
           break;
         default:
           throw new TypeError(`scheduling-fake-db: unsupported operator ${op}`);
@@ -169,6 +183,14 @@ export class SchedulingFakeDb {
   private matches(row: Row, where: Row | undefined, table: 'session' | 'other'): boolean {
     if (!where) return true;
     for (const [key, cond] of Object.entries(where)) {
+      if (key === 'OR') {
+        if (!(cond as Row[]).some((w) => this.matches(row, w, table))) return false;
+        continue;
+      }
+      if (key === 'AND') {
+        if (!(cond as Row[]).every((w) => this.matches(row, w, table))) return false;
+        continue;
+      }
       if (table === 'session' && key === 'session_type') {
         const is = (cond as { is?: Row }).is;
         const type = this.sessionTypes.find((t) => t.id === row.session_type_id);
@@ -281,6 +303,11 @@ export class SchedulingFakeDb {
         .filter((t) => this.matches(t, args.where, 'other'))
         .map((t) => ({ ...t }));
     },
+    findFirst: async (args: { where?: Row }) => {
+      await this.tick();
+      const row = this.sessionTypes.find((t) => this.matches(t, args.where, 'other'));
+      return row ? { ...row } : null;
+    },
     create: async (args: { data: Row }) => {
       await this.tick();
       const row: Row = {
@@ -379,10 +406,18 @@ export class SchedulingFakeDb {
     }) => {
       await this.tick();
       let rows = this.sessions.filter((s) => this.matches(s, args.where, 'session'));
-      const order = Array.isArray(args.orderBy) ? args.orderBy[0] : args.orderBy;
-      const key = order && 'end_at' in order ? 'end_at' : 'start_at';
-      const dir = order && order[key] === 'desc' ? -1 : 1;
-      rows = rows.slice().sort((a, b) => dir * (toMs(a[key]) - toMs(b[key])));
+      // Lexicographic multi-key ORDER BY, e.g. [{ start_at: 'desc' }, { id: 'desc' }].
+      const keys = (Array.isArray(args.orderBy) ? args.orderBy : args.orderBy ? [args.orderBy] : [])
+        .flatMap((o) => Object.entries(o))
+        .map(([k, d]) => ({ k, dir: d === 'desc' ? -1 : 1 }));
+      if (keys.length === 0) keys.push({ k: 'start_at', dir: 1 });
+      rows = rows.slice().sort((a, b) => {
+        for (const { k, dir } of keys) {
+          const c = compare(a[k], b[k]);
+          if (c !== 0) return dir * c;
+        }
+        return 0;
+      });
       if (typeof args.take === 'number') rows = rows.slice(0, args.take);
       return rows.map((r) => (args.include ? this.withSessionRelations(r) : { ...r }));
     },
@@ -430,9 +465,38 @@ export class SchedulingFakeDb {
           l.kind === args.data.kind,
       );
       if (dup) throw Object.assign(new TypeError('Unique constraint failed'), { code: 'P2002' });
-      const row = { id: `log-${++this.seq}`, ...args.data };
+      // Column defaults of migration 20270222000000.
+      const row = {
+        id: `log-${++this.seq}`,
+        status: 'sent',
+        attempts: 1,
+        lease_until: null,
+        claim_token: null,
+        session_start_at: null,
+        inapp_done_at: null,
+        push_done_at: null,
+        notification_id: null,
+        last_error: null,
+        created_at: new Date(),
+        ...args.data,
+      };
       this.deliveryLogs.push(row);
-      return row;
+      return { ...row };
+    },
+    findFirst: async (args: { where?: Row }) => {
+      await this.tick();
+      const row = this.deliveryLogs.find((l) => this.matches(l, args.where, 'other'));
+      return row ? { ...row } : null;
+    },
+    updateMany: async (args: { where?: Row; data: Row }) => {
+      await this.tick();
+      let count = 0;
+      this.deliveryLogs.forEach((l, i) => {
+        if (!this.matches(l, args.where, 'other')) return;
+        this.deliveryLogs[i] = { ...l, ...args.data };
+        count += 1;
+      });
+      return { count };
     },
     deleteMany: async (args: { where?: Row }) => {
       await this.tick();

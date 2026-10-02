@@ -78,7 +78,7 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT,
       notes: null,
     });
-    expect(outcome).toEqual({ inapp: 'written', push: 'delivered' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
     expect(fake.rows).toHaveLength(1);
     const [row] = fake.rows;
     expect(row).toMatchObject({
@@ -182,7 +182,7 @@ describe('BookingEmitter delivery', () => {
       sessionTypeName: 'Quick initialization',
       scheduledAt: SCHEDULED_AT,
     });
-    expect(outcome).toEqual({ inapp: 'written', push: 'disabled' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'disabled', notificationId: 'notif-1' });
     expect(fake.pushToUser).not.toHaveBeenCalled();
   });
 
@@ -197,7 +197,7 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT,
       cancelReason: null,
     });
-    expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled' });
+    expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled', notificationId: null });
     expect(fake.rows).toHaveLength(0);
     expect(fake.pushToUser).not.toHaveBeenCalled();
   });
@@ -214,7 +214,7 @@ describe('BookingEmitter delivery', () => {
       sessionTypeName: 'Quick Q/A Call',
       hasMeetingLink: true,
     });
-    expect(outcome).toEqual({ inapp: 'written', push: 'no-token' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'no-token', notificationId: 'notif-1' });
   });
 
   it('never throws when storage or transport fail', async () => {
@@ -230,7 +230,7 @@ describe('BookingEmitter delivery', () => {
         oldScheduledAt: SCHEDULED_AT,
         newScheduledAt: NEW_SCHEDULED_AT,
       }),
-    ).resolves.toEqual({ inapp: 'failed', push: 'failed' });
+    ).resolves.toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
   });
 
   it('reminders name the other party and handle a missing call link per side', async () => {

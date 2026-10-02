@@ -15,6 +15,9 @@
  *     waiting on it (pg_stat_activity wait_event = 'advisory'); after release
  *     exactly one commits.
  *  5. Approve vs cancel on one request: exactly one transition wins.
+ *  6. S-SCHED-3: delivery-state columns, the range preflight, welcome
+ *     restore against the real partial unique index, and keyset paging over
+ *     tied start times with the database's own collation.
  *
  * Gated on MWB3_TEST_DATABASE_URL (the mwb-3-live-tests CI job); skipped with a
  * logged reason elsewhere.
@@ -396,5 +399,122 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
     expect(results.map(codeOf).filter((c) => c !== null)).toEqual(['SESSION_STATE_CHANGED']);
     const row = await prisma.coachingSession.findUniqueOrThrow({ where: { id: s.id } });
     expect(['scheduled', 'canceled']).toContain(row.status);
+  });
+  // ── S-SCHED-3 fix round, against the real schema ──────────────────────
+
+  it('S-SCHED-3: migration added the reminder delivery-state columns and their status check', async () => {
+    const cols = await prisma.$queryRaw<Array<{ column_name: string }>>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'NotificationDeliveryLog'
+        AND column_name IN ('status', 'attempts', 'lease_until', 'claim_token', 'session_start_at',
+                            'inapp_done_at', 'push_done_at', 'notification_id', 'last_error')
+      ORDER BY column_name`;
+    expect(cols.map((c) => c.column_name)).toEqual([
+      'attempts',
+      'claim_token',
+      'inapp_done_at',
+      'last_error',
+      'lease_until',
+      'notification_id',
+      'push_done_at',
+      'session_start_at',
+      'status',
+    ]);
+    const check = await prisma.$queryRaw<Array<{ conname: string }>>`
+      SELECT conname FROM pg_constraint WHERE conname = 'NotificationDeliveryLog_status_check'`;
+    expect(check).toHaveLength(1);
+  });
+
+  it('S-SCHED-3 C-634-2: the range preflight names active rows that end before they start', async () => {
+    const rangePreflight = statements.find((st) => st.includes('S-SCHED-2 range preflight'));
+    expect(rangePreflight).toBeDefined();
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "CoachingSession" DROP CONSTRAINT "CoachingSession_no_overlapping_active_booking"',
+    );
+    try {
+      const { start } = slot(9);
+      await prisma.coachingSession.create({
+        data: {
+          id: 'ssched3-inverted',
+          coach_id: COACH_ID,
+          status: 'scheduled',
+          start_at: start,
+          end_at: new Date(start.getTime() - 60_000),
+          title: 'inverted',
+        },
+      });
+      await expect(prisma.$executeRawUnsafe(rangePreflight ?? '')).rejects.toThrow(
+        /range preflight: 1 active CoachingSession row/,
+      );
+    } finally {
+      await prisma.coachingSession.deleteMany({ where: { id: 'ssched3-inverted' } });
+      for (const stmt of statements) await prisma.$executeRawUnsafe(stmt);
+    }
+  });
+
+  it('S-SCHED-3 B-634-5: restoring an archived former welcome type passes the real one-welcome index', async () => {
+    const oldId = '5a5c6e2d-0000-4000-8000-0000000000a1';
+    await prisma.sessionType.create({
+      data: {
+        id: oldId,
+        coach_id: COACH_ID,
+        name: 'Quick initialization',
+        duration_minutes: 15,
+        auto_approve: true,
+        is_welcome: true,
+      },
+    });
+    try {
+      await svc.updateSessionType(COACH, oldId, { archived: true });
+      const fresh = await svc.createSessionType(COACH, {
+        name: 'New welcome',
+        duration_minutes: 15,
+        auto_approve: true,
+        is_welcome: true,
+      });
+      const restored = await svc.updateSessionType(COACH, oldId, { archived: false });
+      expect(restored).toMatchObject({ archived_at: null, is_welcome: false });
+      const welcome = await prisma.sessionType.findMany({
+        where: { coach_id: COACH_ID, is_welcome: true, archived_at: null },
+        select: { id: true },
+      });
+      expect(welcome.map((w) => w.id)).toEqual([fresh.id]);
+    } finally {
+      await prisma.sessionType.deleteMany({ where: { coach_id: COACH_ID, id: { not: TYPE_ID } } });
+    }
+  });
+
+  it('S-SCHED-3 B-634-4: past pages walk rows that share a start time with no gaps or repeats', async () => {
+    const who = actor(CLIENT_IDS[3]);
+    const start = new Date(Date.now() - 3 * 24 * 60 * 60_000);
+    start.setUTCSeconds(0, 0);
+    const ids = ['ssched3-tie-1', 'ssched3-tie-2', 'ssched3-tie-3'];
+    for (const id of ids) {
+      await prisma.coachingSession.create({
+        data: {
+          id,
+          coach_id: COACH_ID,
+          client_id: who.id,
+          status: 'canceled',
+          start_at: start,
+          end_at: new Date(start.getTime() + 30 * 60_000),
+          title: id,
+        },
+      });
+    }
+    const seen: string[] = [];
+    let cursor: { before: string; before_id: string } | null = null;
+    for (let i = 0; i < 6; i++) {
+      const page = await svc.listSessionsForActor(who, {
+        scope: 'past',
+        limit: 1,
+        ...(cursor ?? {}),
+      });
+      if (page.length === 0) break;
+      seen.push(page[0].id);
+      cursor = { before: new Date(page[0].start_at).toISOString(), before_id: page[0].id };
+    }
+    expect(seen.slice().sort()).toEqual(ids);
+    expect(new Set(seen).size).toBe(3);
   });
 });

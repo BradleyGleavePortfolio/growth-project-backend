@@ -26,9 +26,13 @@ interface FakeSession {
 }
 
 interface FakeLog {
+  id?: string;
   session_id: string;
   user_id: string;
   kind: string;
+  status?: string;
+  attempts?: number;
+  claim_token?: string | null;
 }
 
 function buildPrismaFake(sessions: FakeSession[]) {
@@ -56,6 +60,11 @@ function buildPrismaFake(sessions: FakeSession[]) {
           );
         },
       ),
+      // S-SCHED-3: the sweep re-reads each session before sending (fence).
+      findUnique: jest.fn(
+        async (args: { where: { id: string } }) =>
+          sessions.find((s) => s.id === args.where.id) ?? null,
+      ),
     },
     notificationDeliveryLog: {
       create: jest.fn(async (args: { data: FakeLog }) => {
@@ -66,11 +75,34 @@ function buildPrismaFake(sessions: FakeSession[]) {
             l.kind === args.data.kind,
         );
         if (dup) {
-          throw new Error('unique violation');
+          // Real Prisma reports the unique-key violation as P2002.
+          throw Object.assign(new Error('unique violation'), { code: 'P2002' });
         }
-        logs.push(args.data);
-        return { id: `log-${logs.length}` };
+        const row = { id: `log-${logs.length + 1}`, ...args.data };
+        logs.push(row);
+        return row;
       }),
+      findFirst: jest.fn(
+        async (args: { where: { session_id: string; user_id: string; kind: string } }) =>
+          logs.find(
+            (l) =>
+              l.session_id === args.where.session_id &&
+              l.user_id === args.where.user_id &&
+              l.kind === args.where.kind,
+          ) ?? null,
+      ),
+      updateMany: jest.fn(async (args: { where: Partial<FakeLog>; data: Partial<FakeLog> }) => {
+        let count = 0;
+        for (const l of logs) {
+          const keys = Object.keys(args.where) as Array<keyof FakeLog>;
+          if (keys.every((k) => l[k] === args.where[k])) {
+            Object.assign(l, args.data);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
+      deleteMany: jest.fn(async () => ({ count: 0 })),
     },
     user: {
       findUnique: jest.fn(async (args: { where: { id: string } }) => {
