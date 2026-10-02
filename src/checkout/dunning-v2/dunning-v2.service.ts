@@ -129,6 +129,10 @@ const CLASSIFIER = new DunningEscalationClassifier();
 
 /** Dispute statuses that end a dispute cycle in the client's favour. */
 const DISPUTE_WON_STATUSES = new Set(['won', 'warning_closed']);
+/** Dispute statuses that are final (a later read never moves them back). */
+const DISPUTE_TERMINAL_STATUSES = new Set(['won', 'warning_closed', 'lost', 'charge_refunded']);
+/** Status a dispute obligation is recorded with when its dispute opens. */
+const DISPUTE_OPEN_STATUS = 'open';
 
 /** A delivery row this worker holds (B-628-6). */
 interface ClaimedDelivery {
@@ -163,9 +167,58 @@ export function outstandingDisputes<
       ? d.stripe_dispute_id === closing.disputeId
       : closing.chargeId != null && d.stripe_charge_id === closing.chargeId);
   return disputes.filter((d) => {
-    const status = isClosing(d) ? (closing?.status ?? d.status) : d.status;
+    // The event decides the closing dispute unless a record already holds
+    // its final status (a final status is never outvoted by an event).
+    const status =
+      isClosing(d) && !DISPUTE_TERMINAL_STATUSES.has(d.status)
+        ? (closing?.status ?? d.status)
+        : d.status;
     return !DISPUTE_WON_STATUSES.has(status);
   });
+}
+
+/** One dispute obligation on a purchase, from either record. */
+export interface DisputeObligation {
+  stripe_dispute_id: string;
+  stripe_charge_id: string;
+  status: string;
+}
+
+/**
+ * S-DUNNING-R5 (B-628-8): merge the refund / dispute ledger (ChargeDispute)
+ * with the dunning path's own obligation record (DunningDisputeObligation)
+ * into one obligation per Stripe dispute. Either record may be behind the
+ * other (both webhooks are processed independently), so a final status on
+ * either side wins; when both are final and disagree, the one NOT in the
+ * client's favour wins (a lock is never lifted on a conflicting record).
+ */
+export function mergeDisputeObligations(
+  ledger: Array<{ stripe_dispute_id: string; stripe_charge_id: string; status: string }>,
+  recorded: Array<{ stripe_dispute_id: string; stripe_charge_id: string | null; status: string }>,
+): DisputeObligation[] {
+  const byId = new Map<string, DisputeObligation>();
+  for (const d of ledger) byId.set(d.stripe_dispute_id, { ...d });
+  for (const r of recorded) {
+    const prior = byId.get(r.stripe_dispute_id);
+    if (!prior) {
+      byId.set(r.stripe_dispute_id, {
+        stripe_dispute_id: r.stripe_dispute_id,
+        stripe_charge_id: r.stripe_charge_id ?? '',
+        status: r.status,
+      });
+      continue;
+    }
+    const a = DISPUTE_TERMINAL_STATUSES.has(prior.status);
+    const b = DISPUTE_TERMINAL_STATUSES.has(r.status);
+    if (
+      b &&
+      (!a || (DISPUTE_WON_STATUSES.has(prior.status) && !DISPUTE_WON_STATUSES.has(r.status)))
+    ) {
+      prior.status = r.status;
+    }
+    if (!prior.stripe_charge_id && r.stripe_charge_id) prior.stripe_charge_id = r.stripe_charge_id;
+  }
+  return [...byId.values()];
 }
 
 /** What the client app reads to render the Day 0-9 banner or the lockout. */
@@ -767,12 +820,10 @@ export class DunningV2Service {
       // subscription (which stays active and keeps renewing). A won dispute
       // resolves the cycle instead of locking.
       if (purchase.status === 'canceled') return 'skipped';
-      // S-DUNNING-R4 (B-628-8): the cycle is settled only when EVERY dispute
-      // on the purchase is closed in the client's favour, not the latest one.
-      const disputes = await this.prisma.chargeDispute.findMany({
-        where: { purchase_id: purchase.id },
-        select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
-      });
+      // S-DUNNING-R4/R5 (B-628-8): the cycle is settled only when EVERY
+      // dispute on the purchase (ledger + dunning obligation record) is
+      // closed in the client's favour, not the latest one.
+      const disputes = await this.disputeObligations(this.prisma, purchase.id);
       if (disputes.length > 0 && outstandingDisputes(disputes, null).length === 0) {
         await this.resolveDisputeCycle(row.purchase_id, now, null);
         return 'skipped';
@@ -932,6 +983,9 @@ export class DunningV2Service {
   async handleLateReversal(input: {
     purchaseId: string;
     reversedChargeAt: Date;
+    /** The opening Stripe dispute (`dp_...`) and its charge (B-628-8). */
+    disputeId?: string | null;
+    chargeId?: string | null;
     now?: Date;
   }): Promise<{ opened: boolean; reason: string; claim?: DunningV2StepClaim }> {
     if (!this.enabled()) return { opened: false, reason: 'flag_off' };
@@ -943,18 +997,48 @@ export class DunningV2Service {
     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
       return { opened: false, reason: 'not_eligible' };
     }
+    // S-DUNNING-R5 (B-628-8): record this dispute as an open obligation
+    // under the DunningState row lock BEFORE reading the cycle. A won
+    // dispute's resolution takes the same lock, so it either sees this
+    // obligation (and keeps the lock), or it committed first and this
+    // dispute reopens the cycle below. A dispute already closed in the
+    // client's favour (closed webhook first) opens nothing.
+    let newObligation = false;
+    if (input.disputeId) {
+      const recorded = await this.recordDisputeObligation({
+        purchaseId: input.purchaseId,
+        disputeId: input.disputeId,
+        chargeId: input.chargeId ?? null,
+        status: DISPUTE_OPEN_STATUS,
+        now,
+      });
+      if (recorded.priorStatus && DISPUTE_WON_STATUSES.has(recorded.priorStatus)) {
+        return { opened: false, reason: 'dispute_already_won' };
+      }
+      newObligation = recorded.priorStatus == null;
+    }
     const state = await this.prisma.dunningState.findUnique({
       where: { purchase_id: input.purchaseId },
-      select: { id: true, status: true, resolved_at: true, purchase_id: true },
+      select: {
+        id: true,
+        status: true,
+        resolved_at: true,
+        purchase_id: true,
+        last_failure_reason: true,
+      },
     });
     if (!state) return { opened: false, reason: 'no_state' };
     if (state.status === 'active') {
       return { opened: false, reason: 'cycle_already_active' };
     }
+    // A new dispute that a concurrent won dispute's resolution did not see
+    // (it was created before that resolution) reopens the reversal cycle.
+    const reopensReversal =
+      newObligation && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
     const previouslyCleared =
       state.status === 'resolved' &&
       state.resolved_at != null &&
-      input.reversedChargeAt.getTime() >= state.resolved_at.getTime();
+      (input.reversedChargeAt.getTime() >= state.resolved_at.getTime() || reopensReversal);
     if (!previouslyCleared) {
       return { opened: false, reason: 'not_a_cleared_payment_reversal' };
     }
@@ -1015,6 +1099,8 @@ export class DunningV2Service {
   async detectAndHandleLateReversal(input: {
     chargeId: string | null;
     paymentIntentId?: string | null;
+    /** The opening Stripe dispute (`dp_...`), recorded as an obligation. */
+    disputeId?: string | null;
     reversedChargeAt: Date;
     now?: Date;
   }): Promise<{ opened: boolean; reason: string }> {
@@ -1027,6 +1113,8 @@ export class DunningV2Service {
     const res = await this.handleLateReversal({
       purchaseId,
       reversedChargeAt: input.reversedChargeAt,
+      disputeId: input.disputeId ?? null,
+      chargeId: input.chargeId,
       now: input.now,
     });
     return { opened: res.opened, reason: res.reason };
@@ -1058,13 +1146,24 @@ export class DunningV2Service {
     now?: Date;
   }): Promise<{ resolved: boolean; reason: string }> {
     if (!this.enabled()) return { resolved: false, reason: 'flag_off' };
-    if (!input.status || !DISPUTE_WON_STATUSES.has(input.status)) {
-      return { resolved: false, reason: 'not_won' };
-    }
     const purchaseId = await this.resolvePurchaseFromCharge(
       input.chargeId,
       input.paymentIntentId ?? null,
     );
+    if (!input.status || !DISPUTE_WON_STATUSES.has(input.status)) {
+      // A lost (or otherwise closed) dispute stays an outstanding obligation;
+      // record its final status so no later won event can outvote it.
+      if (purchaseId && input.disputeId && input.status) {
+        await this.recordDisputeObligation({
+          purchaseId,
+          disputeId: input.disputeId,
+          chargeId: input.chargeId ?? null,
+          status: input.status,
+          now: input.now ?? new Date(),
+        });
+      }
+      return { resolved: false, reason: 'not_won' };
+    }
     if (!purchaseId) return { resolved: false, reason: 'purchase_unresolved' };
     const closing: ClosingDispute = {
       disputeId: input.disputeId ?? null,
@@ -1076,6 +1175,99 @@ export class DunningV2Service {
     return out
       ? { resolved: true, reason: 'dispute_won' }
       : { resolved: false, reason: 'no_open_dispute_cycle' };
+  }
+
+  /**
+   * S-DUNNING-R5 (B-628-8): every dispute obligation on a purchase, merged
+   * from the refund / dispute ledger and the dunning obligation record.
+   */
+  private async disputeObligations(
+    db: DunningV2Db,
+    purchaseId: string,
+  ): Promise<DisputeObligation[]> {
+    const ledger = await db.chargeDispute.findMany({
+      where: { purchase_id: purchaseId },
+      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+    });
+    const recorded = await db.dunningDisputeObligation.findMany({
+      where: { purchase_id: purchaseId },
+      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+    });
+    return mergeDisputeObligations(ledger, recorded);
+  }
+
+  /** Row lock on the purchase's DunningState (no-op when none exists). */
+  private async lockDunningState(tx: Prisma.TransactionClient, purchaseId: string): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
+  }
+
+  /**
+   * Record a dispute obligation under the DunningState row lock. Returns the
+   * status it had before (null when this call created it).
+   */
+  private async recordDisputeObligation(input: {
+    purchaseId: string;
+    disputeId: string;
+    chargeId: string | null;
+    status: string;
+    now: Date;
+  }): Promise<{ priorStatus: string | null }> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockDunningState(tx, input.purchaseId);
+      return this.upsertDisputeObligation(tx, input);
+    });
+  }
+
+  /**
+   * Insert or advance one obligation. An 'open' write never moves a final
+   * status back (a closed webhook may land before the created one); a final
+   * status overwrites a non-final one, and a not-in-favour final status
+   * overwrites a won one (never the other way round).
+   */
+  private async upsertDisputeObligation(
+    tx: Prisma.TransactionClient,
+    input: {
+      purchaseId: string;
+      disputeId: string;
+      chargeId: string | null;
+      status: string;
+      now: Date;
+    },
+  ): Promise<{ priorStatus: string | null }> {
+    const prior = await tx.dunningDisputeObligation.findUnique({
+      where: { stripe_dispute_id: input.disputeId },
+      select: { status: true, stripe_charge_id: true },
+    });
+    const terminal = DISPUTE_TERMINAL_STATUSES.has(input.status);
+    if (!prior) {
+      await tx.dunningDisputeObligation.create({
+        data: {
+          stripe_dispute_id: input.disputeId,
+          purchase_id: input.purchaseId,
+          stripe_charge_id: input.chargeId,
+          status: input.status,
+          closed_at: terminal ? input.now : null,
+        },
+      });
+      return { priorStatus: null };
+    }
+    const priorTerminal = DISPUTE_TERMINAL_STATUSES.has(prior.status);
+    const advance =
+      terminal &&
+      (!priorTerminal ||
+        (DISPUTE_WON_STATUSES.has(prior.status) && !DISPUTE_WON_STATUSES.has(input.status)));
+    if (advance || (!prior.stripe_charge_id && input.chargeId)) {
+      await tx.dunningDisputeObligation.update({
+        where: { stripe_dispute_id: input.disputeId },
+        data: {
+          ...(advance ? { status: input.status, closed_at: input.now } : {}),
+          ...(!prior.stripe_charge_id && input.chargeId
+            ? { stripe_charge_id: input.chargeId }
+            : {}),
+        },
+      });
+    }
+    return { priorStatus: prior.status };
   }
 
   /**
@@ -1095,6 +1287,17 @@ export class DunningV2Service {
     let wasLocked = false;
     let stateId = '';
     await this.prisma.$transaction(async (tx) => {
+      // R5: serialize with dispute-created recording on the same row.
+      await this.lockDunningState(tx, purchaseId);
+      if (closing?.disputeId && closing.status) {
+        await this.upsertDisputeObligation(tx, {
+          purchaseId,
+          disputeId: closing.disputeId,
+          chargeId: closing.chargeId,
+          status: closing.status,
+          now,
+        });
+      }
       const state = await tx.dunningState.findUnique({
         where: { purchase_id: purchaseId },
         include: { purchase: true },
@@ -1106,10 +1309,7 @@ export class DunningV2Service {
       ) {
         return;
       }
-      const disputes = await tx.chargeDispute.findMany({
-        where: { purchase_id: purchaseId },
-        select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
-      });
+      const disputes = await this.disputeObligations(tx, purchaseId);
       const open = outstandingDisputes(disputes, closing);
       if (open.length > 0) {
         blocked = true;
@@ -1307,12 +1507,52 @@ export class DunningV2Service {
         });
         if (transfer?.purchase_id) return transfer.purchase_id;
       }
+      if (chargeId) {
+        // The refund / dispute ledger already resolved this charge.
+        const ledger = await this.prisma.chargeDispute.findFirst({
+          where: { stripe_charge_id: chargeId },
+          select: { purchase_id: true },
+        });
+        if (ledger?.purchase_id) return ledger.purchase_id;
+      }
       if (paymentIntentId) {
         const purchase = await this.prisma.clientPurchase.findFirst({
           where: { stripe_payment_intent_id: paymentIntentId },
           select: { id: true },
         });
         if (purchase) return purchase.id;
+      }
+      // S-DUNNING-R5: a renewal charge of a subscription (however it was
+      // created: hosted Checkout or the native subscription route) whose
+      // settlement transfer is not written yet resolves through Stripe:
+      // charge -> invoice -> subscription -> purchase.
+      if (chargeId && this.stripe) {
+        const charge = await this.stripe.retrieveCharge(chargeId);
+        const invoiceRef = charge['invoice'];
+        const invoiceId =
+          typeof invoiceRef === 'string'
+            ? invoiceRef
+            : invoiceRef && typeof invoiceRef === 'object' && 'id' in invoiceRef
+              ? String(invoiceRef.id)
+              : null;
+        if (invoiceId) {
+          const invoice = await this.stripe.retrieveInvoice(invoiceId);
+          if (invoice.subscription) {
+            const bySub = await this.prisma.clientPurchase.findFirst({
+              where: { stripe_subscription_id: invoice.subscription },
+              select: { id: true },
+            });
+            if (bySub) return bySub.id;
+          }
+        }
+        const pi = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
+        if (pi && pi !== paymentIntentId) {
+          const byPi = await this.prisma.clientPurchase.findFirst({
+            where: { stripe_payment_intent_id: pi },
+            select: { id: true },
+          });
+          if (byPi) return byPi.id;
+        }
       }
     } catch (err) {
       this.logger.warn(`dunning v2 dispute purchase resolution failed: ${(err as Error).message}`);

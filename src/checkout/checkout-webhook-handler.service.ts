@@ -285,6 +285,7 @@ export class CheckoutWebhookHandlerService {
     void this.dunningV2
       .detectAndHandleLateReversal({
         chargeId,
+        disputeId: obj.id ?? null,
         paymentIntentId: obj.payment_intent ?? null,
         reversedChargeAt: reversedAt,
       })
@@ -1216,6 +1217,7 @@ export class CheckoutWebhookHandlerService {
       subscription?: string | null;
       amount_due?: number | null;
       attempt_count?: number | null;
+      billing_reason?: string | null;
       last_payment_error?: { message?: string };
     };
     if (!inv?.subscription) return { claimed: false };
@@ -1223,6 +1225,27 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_subscription_id: inv.subscription },
     });
     if (!purchase) return { claimed: false };
+    // S-DUNNING-R5 (B-RECUR seam): the FIRST invoice of a subscription
+    // created natively (payment_behavior=default_incomplete; the client pays
+    // it in the in-app PaymentSheet) can fail before the plan ever started.
+    // That is a checkout failure the sheet explains on the spot, not a missed
+    // renewal: no past_due flip, no dunning cycle, no Day 0-9 banner or
+    // lockout. Dunning starts only for a plan that was running (renewals and
+    // any later invoice), however its subscription was created.
+    if (inv.billing_reason === 'subscription_create' || purchase.status === 'pending') {
+      await this.prisma.clientPurchase.update({
+        where: { id: purchase.id },
+        data: { last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed' },
+      });
+      this.logger.log(
+        JSON.stringify({
+          event: 'checkout.first_invoice_payment_failed',
+          purchase_id: purchase.id,
+          billing_reason: inv.billing_reason ?? null,
+        }),
+      );
+      return { claimed: true, purchase_id: purchase.id };
+    }
     const updated = await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
       data: {

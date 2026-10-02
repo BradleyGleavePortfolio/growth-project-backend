@@ -3725,6 +3725,7 @@ model ClientPurchase {
   // journal of the client's own billing operations (1A pay, 2A cancel).
   billing_lease          ClientBillingLease?
   billing_operations     ClientBillingOperation[]
+  dispute_obligations    DunningDisputeObligation[]
   reminders              PaymentReminder[]
   refunds                ChargeRefund[]
   disputes               ChargeDispute[]
@@ -4071,6 +4072,27 @@ model DunningNoticeDelivery {
 
   @@index([status, next_attempt_at])
   @@index([dunning_state_id, cycle_key])
+}
+
+/// S-DUNNING-R5 (B-628-8) — one Stripe dispute obligation on one purchase,
+/// as the dunning v2 path saw it. Written under the purchase's DunningState
+/// row lock by BOTH charge.dispute.created (status 'open') and
+/// charge.dispute.closed (the closing status), so a won dispute can never
+/// lift a purchase-wide reversal lock while another dispute on that purchase
+/// is open or lost, whichever webhook lands first. ChargeDispute (refund /
+/// dispute ledger) is read alongside it; a terminal status on either wins.
+model DunningDisputeObligation {
+  stripe_dispute_id String         @id
+  purchase_id       String
+  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  stripe_charge_id  String?
+  /// open | won | warning_closed | lost | <other Stripe dispute status>
+  status            String
+  closed_at         DateTime?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  @@index([purchase_id])
 }
 
 // DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK

@@ -60,6 +60,7 @@ const MODELS = [
   'clientBillingOperation',
   'dunningNoticeDelivery',
   'chargeDispute',
+  'dunningDisputeObligation',
 ] as const;
 
 export type FakeModelName = (typeof MODELS)[number];
@@ -69,6 +70,7 @@ const UPDATED_AT_MODELS = new Set<string>([
   'clientBillingLease',
   'clientBillingOperation',
   'dunningNoticeDelivery',
+  'dunningDisputeObligation',
 ]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

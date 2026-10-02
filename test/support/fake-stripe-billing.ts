@@ -191,6 +191,34 @@ export class FakeStripeBilling {
       .map((i) => this.copy(i));
   }
 
+  /**
+   * S-DUNNING-R5: Stripe Charge objects a spec seeds (pinned API
+   * 2024-09-30.acacia still carries `charge.invoice`).
+   */
+  readonly chargeObjects = new Map<
+    string,
+    { id: string; amount: number; invoice: string | null; payment_intent: string | null }
+  >();
+
+  async retrieveCharge(id: string): Promise<{
+    id: string;
+    amount: number;
+    invoice: string | null;
+    payment_intent: string | null;
+  }> {
+    this.calls.push({ op: 'retrieveCharge', args: id });
+    const ch = this.chargeObjects.get(id);
+    if (!ch) {
+      throw new StripeConnectApiError(
+        `No such charge: '${id}'`,
+        404,
+        'resource_missing',
+        'invalid_request_error',
+      );
+    }
+    return { ...ch };
+  }
+
   async retrieveInvoice(id: string): Promise<FakeInvoice> {
     this.calls.push({ op: 'retrieveInvoice', args: id });
     const inv = this.invoices.get(id);

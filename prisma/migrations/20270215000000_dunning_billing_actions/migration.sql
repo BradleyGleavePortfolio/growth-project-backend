@@ -1,5 +1,5 @@
 -- S-DUNNING-R2/R3 (owner rulings 1A / 2A, 2026-10-01 16:30 PDT; fix round 3).
--- Additive only: one nullable column on "DunningState" and three new
+-- Additive only: one nullable column on "DunningState" and four new
 -- server-only tables. No backfill, no shipped migration altered. Reverse:
 -- down.sql (drops only what this file creates).
 --   "DunningState"."client_canceled_at": the client ended the plan during the
@@ -14,7 +14,11 @@
 --     'sending' with a claim_token; next_attempt_at is then the claim's
 --     expiry) before its transport is called; receipts are written only by
 --     the holder of that claim (R4).
--- RLS: the three tables are server-only (service_role full access; anon and
+--   "DunningDisputeObligation": one Stripe dispute per purchase as the
+--     dunning path saw it (created -> 'open', closed -> its status), written
+--     under the DunningState row lock, so one won dispute never lifts a
+--     reversal lock while another dispute is open or lost (R5).
+-- RLS: the four tables are server-only (service_role full access; anon and
 -- authenticated get nothing). No client ever reads them directly.
 
 SET lock_timeout = '5s';
@@ -71,6 +75,19 @@ CREATE TABLE "DunningNoticeDelivery" (
     CONSTRAINT "DunningNoticeDelivery_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "DunningDisputeObligation" (
+    "stripe_dispute_id" TEXT NOT NULL,
+    "purchase_id" TEXT NOT NULL,
+    "stripe_charge_id" TEXT,
+    "status" TEXT NOT NULL,
+    "closed_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DunningDisputeObligation_pkey" PRIMARY KEY ("stripe_dispute_id")
+);
+
 -- CreateIndex
 CREATE INDEX "ClientBillingOperation_purchase_id_kind_completed_at_idx" ON "ClientBillingOperation"("purchase_id", "kind", "completed_at");
 
@@ -86,6 +103,9 @@ CREATE INDEX "DunningNoticeDelivery_status_next_attempt_at_idx" ON "DunningNotic
 -- CreateIndex
 CREATE INDEX "DunningNoticeDelivery_dunning_state_id_cycle_key_idx" ON "DunningNoticeDelivery"("dunning_state_id", "cycle_key");
 
+-- CreateIndex
+CREATE INDEX "DunningDisputeObligation_purchase_id_idx" ON "DunningDisputeObligation"("purchase_id");
+
 -- AddForeignKey
 ALTER TABLE "ClientBillingLease" ADD CONSTRAINT "ClientBillingLease_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -95,6 +115,9 @@ ALTER TABLE "ClientBillingOperation" ADD CONSTRAINT "ClientBillingOperation_purc
 -- AddForeignKey
 ALTER TABLE "DunningNoticeDelivery" ADD CONSTRAINT "DunningNoticeDelivery_dunning_state_id_fkey" FOREIGN KEY ("dunning_state_id") REFERENCES "DunningState"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE "DunningDisputeObligation" ADD CONSTRAINT "DunningDisputeObligation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 
 -- RLS: server-only tables.
 ALTER TABLE "ClientBillingLease" ENABLE ROW LEVEL SECURITY;
@@ -103,10 +126,13 @@ ALTER TABLE "ClientBillingOperation" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ClientBillingOperation" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "DunningNoticeDelivery" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "DunningNoticeDelivery" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "DunningDisputeObligation" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "DunningDisputeObligation" FORCE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE "ClientBillingLease" FROM anon;
 REVOKE ALL ON TABLE "ClientBillingOperation" FROM anon;
 REVOKE ALL ON TABLE "DunningNoticeDelivery" FROM anon;
+REVOKE ALL ON TABLE "DunningDisputeObligation" FROM anon;
 
 CREATE POLICY "p_clientbillinglease_service_role_all" ON "ClientBillingLease"
     AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
@@ -121,6 +147,11 @@ CREATE POLICY "deny_all_anon_clientbillingoperation" ON "ClientBillingOperation"
 CREATE POLICY "p_dunningnoticedelivery_service_role_all" ON "DunningNoticeDelivery"
     AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "deny_all_anon_dunningnoticedelivery" ON "DunningNoticeDelivery"
+    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+
+CREATE POLICY "p_dunningdisputeobligation_service_role_all" ON "DunningDisputeObligation"
+    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "deny_all_anon_dunningdisputeobligation" ON "DunningDisputeObligation"
     AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
 
 RESET lock_timeout;
