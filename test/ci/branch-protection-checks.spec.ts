@@ -7,8 +7,12 @@
 // Actions), in the order GitHub returns them. "Schema parity (migrations
 // match schema.prisma)" is the 10th (operator ruling OR-110-3).
 //
+// The payload (strict, admins, reviews, linear history ON, conversation
+// resolution OFF, ...) is pinned to the live read-back of 2026-10-02 13:27 PDT.
+//
 // The script is never executed here. Only its REQUIRED_CHECKS=( ... ) array
-// block is evaluated by bash (so comments and quoting are read exactly as the
+// block (and, for the payload, the block from the array through the jq PAYLOAD
+// assignment, which runs no network command) is evaluated by bash (so comments and quoting are read exactly as the
 // script would read them); nothing else in the script runs and no network
 // call is made.
 
@@ -53,6 +57,51 @@ function scriptRequiredChecks(script: string): string[] {
   return r.stdout.split('\n').filter((l) => l.length > 0);
 }
 
+/**
+ * Evaluate the script from its REQUIRED_CHECKS block through the PAYLOAD
+ * assignment (array, input checks, CHECKS_JSON, code-owner switch, jq payload)
+ * and print PAYLOAD. Only bash builtins, grep and jq run: the backup GET and
+ * the PUT come after this block and are never reached.
+ */
+function scriptPayload(script: string, reviewCount: string): Record<string, unknown> {
+  const start = script.indexOf('\nREQUIRED_CHECKS=(\n');
+  const marker = "\n  }')\n";
+  const end = script.indexOf(marker, script.indexOf('\nPAYLOAD=$(jq -n', start));
+  if (start < 0 || end < 0) throw new Error('payload block not found');
+  const block = script.slice(start + 1, end + marker.length);
+  expect(block).not.toMatch(/curl|GH_TOKEN|PROTECTION_URL/);
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-c', `set -euo pipefail\n${block}\nprintf '%s' "$PAYLOAD"`], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', REQUIRED_APPROVING_REVIEW_COUNT: reviewCount, CHECKS_APP_ID: '15368' },
+  });
+  if (r.status !== 0) throw new Error(`bash failed: ${r.stderr}`);
+  return JSON.parse(r.stdout) as Record<string, unknown>;
+}
+
+// Live protection on main, read back 2026-10-02 13:27 PDT after the operator
+// enabled linear history (conversation resolution stays off).
+const LIVE_MIRROR_PAYLOAD = {
+  required_status_checks: {
+    strict: true,
+    checks: EXPECTED_REQUIRED_CHECKS.map((context) => ({ context, app_id: 15368 })),
+  },
+  enforce_admins: true,
+  required_pull_request_reviews: {
+    dismiss_stale_reviews: true,
+    require_code_owner_reviews: false,
+    required_approving_review_count: 0,
+    require_last_push_approval: false,
+  },
+  restrictions: null,
+  required_linear_history: true,
+  allow_force_pushes: false,
+  allow_deletions: false,
+  block_creations: false,
+  required_conversation_resolution: false,
+  lock_branch: false,
+  allow_fork_syncing: false,
+};
+
 type Workflow = {
   on?: unknown;
   true?: unknown; // js-yaml (YAML 1.1) may read a bare `on:` key as boolean true
@@ -85,7 +134,7 @@ function runsOnEveryPrToMain(wf: Workflow): boolean {
   return !branches || branches.includes('main');
 }
 
-describe('setup-branch-protection.sh — required checks equal live branch protection (10 checks)', () => {
+describe('setup-branch-protection.sh — required checks and payload equal live branch protection', () => {
   const script = read(SCRIPT);
   const checks = scriptRequiredChecks(script);
 
@@ -142,5 +191,32 @@ describe('setup-branch-protection.sh — required checks equal live branch prote
     // A commented-out line is not a check.
     const commented = script.replace(/^(\s*)"danger"$/m, '$1# "danger"');
     expect(scriptRequiredChecks(commented)).not.toContain('danger');
+  });
+
+  it('the payload mirrors live protection exactly (linear history ON, conversation resolution OFF)', () => {
+    const payload = scriptPayload(script, '0');
+    expect(payload).toEqual(LIVE_MIRROR_PAYLOAD);
+    expect(payload.required_linear_history).toBe(true);
+    expect(payload.required_conversation_resolution).toBe(false);
+  });
+
+  it('with a second maintainer (count 1) only the review fields change', () => {
+    const payload = scriptPayload(script, '1');
+    expect(payload).toEqual({
+      ...LIVE_MIRROR_PAYLOAD,
+      required_pull_request_reviews: {
+        dismiss_stale_reviews: true,
+        require_code_owner_reviews: true,
+        required_approving_review_count: 1,
+        require_last_push_approval: true,
+      },
+    });
+  });
+
+  it('negative control: the payload evaluator sees a flipped linear-history or conversation-resolution flag', () => {
+    const noLinear = script.replace('required_linear_history: true,', 'required_linear_history: false,');
+    expect(scriptPayload(noLinear, '0').required_linear_history).toBe(false);
+    const conv = script.replace('required_conversation_resolution: false,', 'required_conversation_resolution: true,');
+    expect(scriptPayload(conv, '0').required_conversation_resolution).toBe(true);
   });
 });

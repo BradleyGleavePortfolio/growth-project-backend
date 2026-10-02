@@ -8,7 +8,7 @@ it in `docs/deploy-runbook.md` is stale and should be fixed there.
 
 | Authorization | Mechanism | Who/what decides |
 | --- | --- | --- |
-| **Merge to `main`** | Branch protection / ruleset: 10 required checks (exactly the live list, read back 2026-10-02) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, all bound to the GitHub Actions app; strict up-to-date; linear history; conversation resolution. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
+| **Merge to `main`** | Branch protection / ruleset: 10 required checks (exactly the live list, read back 2026-10-02) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history ON; conversation resolution OFF (audits are issue comments; operator 2026-10-02). | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
 | **Deploy to Fly** | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`. | A human dispatch **and** the environment's required reviewers (once configured). |
 
 A green merge is **not** a deploy authorization. Nothing deploys on `push`.

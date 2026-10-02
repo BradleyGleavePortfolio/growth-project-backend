@@ -16,6 +16,13 @@
 # branches are short-lived feature/audit/agent branches that are merged or
 # deleted within hours. Protection on `main` alone covers the security model.
 #
+# Live mirror (operator 112, 2026-10-02 13:27): the payload below matches live
+# protection on main exactly. required_linear_history=true (enabled live in both
+# repos that day). required_conversation_resolution=false: audits are posted
+# as issue comments, so resolution gating would stall merges without adding a
+# control. test/ci/branch-protection-checks.spec.ts evaluates the payload (jq
+# only, no network) and pins every field.
+#
 # Q4 decision: enforce_admins=true. Owner is included; admins cannot bypass the
 # protection itself. The required review still needs a second approver — see the
 # single-maintainer bypass note below for how a solo owner satisfies that.
@@ -191,7 +198,7 @@ PAYLOAD=$(jq -n \
     allow_force_pushes: false,
     allow_deletions: false,
     block_creations: false,
-    required_conversation_resolution: true,
+    required_conversation_resolution: false,
     lock_branch: false,
     allow_fork_syncing: false
   }')
