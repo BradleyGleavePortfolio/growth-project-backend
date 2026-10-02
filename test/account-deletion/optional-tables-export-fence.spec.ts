@@ -179,7 +179,14 @@ describe('B-608-3 export archive cannot outlive the account', () => {
           if (args.data.status === 'READY' && opts.failReady) throw new Error('db blip');
           return { count: args.data.status === 'READY' ? opts.readyCount : 1 };
         }),
-        findMany: jest.fn(async () => (opts.rows ?? []).map((id) => ({ id }))),
+        // Known rows own their archive (READY with this archive's file_url).
+        findMany: jest.fn(async () =>
+          (opts.rows ?? []).map((id) => ({
+            id,
+            status: 'READY',
+            file_url: `local://${exportArchivePath(id)}`,
+          })),
+        ),
       },
     };
     const svc = new DataExportService(stub<PrismaService>(prisma));

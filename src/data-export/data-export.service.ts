@@ -1,42 +1,65 @@
 import {
   Injectable,
+  Inject,
+  Optional,
   ConflictException,
   NotFoundException,
   UnauthorizedException,
   GoneException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
+import { exportArchivePath, isExportId } from './data-export.paths';
 import {
-  exportArchiveDir,
-  exportArchivePath,
-  EXPORT_ARCHIVE_NAME,
-  isExportId,
-} from './data-export.paths';
+  ArchiveRead,
+  ArchiveStorageError,
+  DATA_EXPORT_ARCHIVE_STORE,
+  DataExportArchiveStore,
+  LOCAL_ARCHIVE_SCHEME,
+  LocalArchiveStore,
+} from './data-export-archive.store';
 import { PrismaService } from '../prisma.service';
-import { DataExportStatus, Prisma } from '@prisma/client';
+import { DataExportRequest, DataExportStatus, Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import * as crypto from 'crypto';
-import { hostname } from 'os';
 import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
+export { archiveMachine } from './data-export-archive.store';
+
 // ─── Environment variables ──────────────────────────────────────────────────
-// DATA_EXPORT_TOKEN_SECRET   — signs the download JWT. Required. Min 32 chars.
-// DATA_EXPORT_FS_DIR         — local dir for export files. Defaults to /tmp/exports.
-// DATA_EXPORT_EXPIRY_DAYS    — file lifetime in days. Defaults to 7.
+// DATA_EXPORT_TOKEN_SECRET   — signs the download link token. Required. Min 32 chars.
+// DATA_EXPORT_STORAGE        — `supabase` (private bucket `data-exports`; the only
+//                              production store) or `local` (DATA_EXPORT_FS_DIR, dev/test).
+// DATA_EXPORT_FS_DIR         — local dir for dev/test archives. Defaults to /tmp/exports.
+// DATA_EXPORT_EXPIRY_DAYS    — archive lifetime in days. Defaults to 7.
 // DATA_EXPORT_RATE_LIMIT_HRS — hours between requests per user. Defaults to 24.
-// PUBLIC_WEB_SIGNUP_URL      — base URL for the download link in logs/email.
-//
-// Future work (not yet supported — install packages first):
-//   DATA_EXPORT_BUCKET         — S3 bucket name. Requires @aws-sdk/client-s3.
-//   DATA_EXPORT_S3_ENDPOINT    — custom S3 endpoint (Fly / MinIO). Optional.
-//   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION — S3 credentials.
-//   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM — email delivery.
-//     Requires nodemailer. Until installed, download URL is logged to console.
+// DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS — download link lifetime, clamped to
+//                              [60, 900]. Defaults to 300 (5 minutes).
+// DATA_EXPORT_STALE_RUN_MINUTES — a PENDING/RUNNING export older than this is
+//                              treated as a crashed run. Defaults to 30.
 
 const EXPIRY_DAYS = Number(process.env.DATA_EXPORT_EXPIRY_DAYS ?? '7');
 const RATE_LIMIT_HRS = Number(process.env.DATA_EXPORT_RATE_LIMIT_HRS ?? '24');
 const TOKEN_SECRET_STR =
   process.env.DATA_EXPORT_TOKEN_SECRET ?? 'change-me-in-production-min32chars!';
+
+/** Download links live 5 minutes by default; never under 1 or over 15 minutes. */
+export function downloadLinkTtlSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS ?? '300');
+  const ttl = Number.isFinite(raw) ? Math.round(raw) : 300;
+  return Math.min(900, Math.max(60, ttl));
+}
+
+/** A PENDING/RUNNING export older than this is a crashed run (default 30 min). */
+export function staleRunMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.DATA_EXPORT_STALE_RUN_MINUTES ?? '30');
+  const minutes = Number.isFinite(raw) && raw >= 5 ? raw : 30;
+  return minutes * 60 * 1000;
+}
+
+/** Token `type` and audience; a token minted for anything else never opens an archive. */
+const DOWNLOAD_TOKEN_TYPE = 'data_export_download';
+const DOWNLOAD_TOKEN_AUDIENCE = 'tgp:data-export-download';
 
 // jose requires a KeyLike or Uint8Array — derive a symmetric key from the secret string.
 function getTokenKey(): Uint8Array {
@@ -49,6 +72,36 @@ interface DownloadTokenClaims extends JWTPayload {
   type: string; // 'data_export_download'
 }
 
+/**
+ * Stable machine codes for every data-export failure a client can see. Each
+ * is thrown with a human message that says what happened and what to do.
+ */
+export const DATA_EXPORT_CODES = {
+  NOT_FOUND: 'DATA_EXPORT_NOT_FOUND',
+  IN_PROGRESS: 'DATA_EXPORT_IN_PROGRESS',
+  RATE_LIMITED: 'DATA_EXPORT_RATE_LIMITED',
+  NOT_READY: 'DATA_EXPORT_NOT_READY',
+  EXPIRED: 'DATA_EXPORT_EXPIRED',
+  FILE_MISSING: 'DATA_EXPORT_FILE_MISSING',
+  STORAGE_UNAVAILABLE: 'DATA_EXPORT_STORAGE_UNAVAILABLE',
+  LINK_INVALID: 'DATA_EXPORT_LINK_INVALID',
+  LINK_EXPIRED: 'DATA_EXPORT_LINK_EXPIRED',
+} as const;
+
+const C = DATA_EXPORT_CODES;
+
+const EXPIRED_MESSAGE =
+  `This export has expired (exports are kept for ${EXPIRY_DAYS} days). ` +
+  'Request a new export from the Request my data screen.';
+const FILE_MISSING_MESSAGE =
+  'This export file is no longer available. Request a new export from the Request my data screen.';
+const STORAGE_UNAVAILABLE_MESSAGE =
+  'We could not reach file storage just now. Your data is safe. Wait a minute and try again.';
+const LINK_INVALID_MESSAGE =
+  'This download link is not valid. Go back to the app, open Request my data and tap Download file.';
+const LINK_EXPIRED_MESSAGE =
+  'This download link has expired. Go back to the app, open Request my data and tap Download file again.';
+
 /** Why an archive must go although no request row owns it (B-608-11). */
 export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
 
@@ -56,23 +109,17 @@ export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
 const ARCHIVE_CLEANUP_BATCH = 500;
 /** A cleanup record another machine has not drained within this window is reported. */
 const ARCHIVE_CLEANUP_STALE_MS = 48 * 60 * 60 * 1000;
+/** Stored archives younger than this are never swept (an export may be finishing). */
+const ORPHAN_MIN_AGE_MS = 60 * 60 * 1000;
 
-/**
- * The machine whose local disk holds an archive. On Fly the hostname is the
- * machine id; every machine runs the nightly cleanup for its own records.
- */
-export function archiveMachine(): string {
-  return hostname().slice(0, 255) || 'unknown-host';
-}
-
-/** A stable, value-free code for a storage error (errno like EACCES / EIO). */
+/** A stable, value-free code for a storage error (errno like EACCES / EIO, or STORAGE_*). */
 export function storageErrorCode(err: unknown): string {
   const code = (err as NodeJS.ErrnoException | null)?.code;
   return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : 'UNKNOWN';
 }
 
 /**
- * Removing an export archive failed with something other than ENOENT
+ * Removing an export archive failed with something other than "already gone"
  * (B-608-11). `recorded` says whether a durable cleanup record now owns the
  * retry; when it is false the nightly orphan sweep is the only remaining path.
  */
@@ -87,18 +134,63 @@ export class DataExportArchiveCleanupError extends Error {
     super(
       `Deleting the archive of export ${exportId} failed (${storageCode}); ` +
         (recorded
-          ? 'a cleanup record keeps it queued for the nightly data-export cleanup on this machine.'
+          ? 'a cleanup record keeps it queued for the nightly data-export cleanup.'
           : 'recording the cleanup also failed, so only the nightly orphan sweep can remove it.'),
     );
     this.name = 'DataExportArchiveCleanupError';
   }
 }
 
+/** What a client may know about one export. Never carries a storage URL. */
+export interface DataExportStatusView {
+  id: string;
+  status: DataExportStatus;
+  created_at: Date;
+  completed_at: Date | null;
+  expires_at: Date | null;
+  file_size_bytes: number | null;
+  /** True only when the archive is stored durably, unexpired and downloadable. */
+  download_available: boolean;
+  /**
+   * Short-lived download token (same lifetime as a download link). Kept for
+   * app builds that open `/download?token=` straight from the status; new
+   * builds call POST /v1/me/data-export/download-link when the user taps.
+   */
+  download_token: string | null;
+  /** When the user may request a new export (null: now). */
+  next_request_at: Date | null;
+}
+
+export interface DataExportDownloadLink {
+  /** Append to the API base URL (the app's EXPO_PUBLIC_API_URL). */
+  download_path: string;
+  token: string;
+  expires_at: Date;
+  file_name: string;
+  file_size_bytes: number | null;
+}
+
+export interface DataExportDownload {
+  exportId: string;
+  fileName: string;
+  size: number | null;
+  chunks: ArchiveRead['chunks'];
+}
+
+function archiveFileName(record: Pick<DataExportRequest, 'completed_at' | 'created_at'>): string {
+  const day = (record.completed_at ?? record.created_at).toISOString().slice(0, 10);
+  return `tgp-data-export-${day}.json`;
+}
+
 @Injectable()
 export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
+  private readonly store: DataExportArchiveStore;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(DATA_EXPORT_ARCHIVE_STORE) store?: DataExportArchiveStore,
+  ) {
     // Fail closed in production: if the secret is missing or is the hardcoded
     // default, the entire service is unusable and we must not silently mint
     // tokens with a known-value secret.
@@ -113,6 +205,14 @@ export class DataExportService {
             'Set this value in Fly secrets before deploying.',
         );
       }
+      // The module always binds the private Supabase store in production; a
+      // missing binding must never fall back to the machine disk.
+      if (!store || store.kind !== 'supabase') {
+        throw new Error(
+          'Data export storage in production must be the private Supabase bucket (data-exports). ' +
+            'Fix: keep DATA_EXPORT_ARCHIVE_STORE bound in DataExportModule and unset DATA_EXPORT_STORAGE.',
+        );
+      }
     } else if (
       !process.env.DATA_EXPORT_TOKEN_SECRET ||
       process.env.DATA_EXPORT_TOKEN_SECRET === 'change-me-in-production-min32chars!'
@@ -122,62 +222,77 @@ export class DataExportService {
           'Set DATA_EXPORT_TOKEN_SECRET before going to production.',
       );
     }
+    this.store = store ?? new LocalArchiveStore();
+  }
+
+  /** The archive store in use (supabase in production). */
+  archiveStore(): DataExportArchiveStore {
+    return this.store;
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────
 
   /**
    * Enqueue a new export for the user. Enforces the per-user rate limit
-   * (one non-terminal request — PENDING, RUNNING, or READY — within
-   * RATE_LIMIT_HRS). If a previous FAILED or EXPIRED request exists it is
-   * superseded — the user can always retry after a terminal outcome.
+   * (one export with a downloadable archive within RATE_LIMIT_HRS) and the
+   * one-active-export index:
+   *   - a PENDING/RUNNING export still within the stale-run window → 409
+   *     DATA_EXPORT_IN_PROGRESS; an older one is a crashed run and is failed
+   *     (its archive removed) before the new request;
+   *   - a READY export created within the window whose archive is stored →
+   *     409 DATA_EXPORT_RATE_LIMITED (the user downloads that one);
+   *   - any other READY export (older than the window, past expiry, legacy
+   *     rows without a stored archive) is superseded: its archive is deleted
+   *     first (a storage failure answers 503 and changes nothing), then the
+   *     row is marked EXPIRED.
    *
    * The actual file generation runs async via _runExport() after this method
    * returns so the HTTP response comes back immediately (202 Accepted).
    */
   async requestExport(userId: string) {
-    // Rate-limit check — block creation if any non-terminal export exists in
-    // the window. Non-terminal = PENDING | RUNNING | READY.
-    //
-    // Audit A1-C5-INF-2: RUNNING was previously omitted, which allowed a user
-    // to spam concurrent GDPR exports while a long-running export was in
-    // progress (each new request created another row that _runExport()
-    // immediately set to RUNNING, never matching the PENDING|READY predicate).
-    //
-    // We list the non-terminal states positively (rather than negating
-    // terminals) so the legal/GDPR-facing 1-per-24h promise is auditable from
-    // a single line. If DataExportStatus ever gains a new non-terminal value,
-    // both this list and DataExportStatus's terminal-set comment must be
-    // updated in the same PR.
-    const NON_TERMINAL_STATUSES = [
-      DataExportStatus.PENDING,
-      DataExportStatus.RUNNING,
-      DataExportStatus.READY,
-    ] as const;
-    const windowStart = new Date(Date.now() - RATE_LIMIT_HRS * 60 * 60 * 1000);
-    const existing = await this.prisma.dataExportRequest.findFirst({
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - RATE_LIMIT_HRS * 60 * 60 * 1000);
+    // Non-terminal = PENDING | RUNNING | READY (the partial unique index
+    // data_export_request_one_active_per_user allows one per user).
+    const active = await this.prisma.dataExportRequest.findMany({
       where: {
         user_id: userId,
-        status: { in: [...NON_TERMINAL_STATUSES] },
-        created_at: { gte: windowStart },
+        status: {
+          in: [DataExportStatus.PENDING, DataExportStatus.RUNNING, DataExportStatus.READY],
+        },
       },
       orderBy: { created_at: 'desc' },
     });
 
-    if (existing) {
-      throw new ConflictException(
-        `An export is already ${existing.status.toLowerCase()} for your account. ` +
-          `You can request a new export after ${RATE_LIMIT_HRS} hours.`,
-      );
+    for (const existing of active) {
+      if (existing.status !== DataExportStatus.READY) {
+        if (now.getTime() - existing.created_at.getTime() < staleRunMs()) {
+          throw new ConflictException({
+            code: C.IN_PROGRESS,
+            message:
+              'Your export is already being prepared. The Request my data screen updates when it is ready.',
+          });
+        }
+        await this._reapStaleRun(existing);
+        continue;
+      }
+      if (this._isDownloadable(existing, now) && existing.created_at >= windowStart) {
+        const next = new Date(existing.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
+        throw new ConflictException({
+          code: C.RATE_LIMITED,
+          message:
+            `You already have an export from the last ${RATE_LIMIT_HRS} hours. Download it from the ` +
+            `Request my data screen, or request a new one after ${next.toISOString()}.`,
+        });
+      }
+      await this._supersede(existing);
     }
 
     // Authoritative DB-level duplicate guard (A1-C5-P1-2): even if two
-    // parallel requests both pass the findFirst check above (TOCTOU window),
-    // the partial unique index `data_export_request_one_active_per_user`
-    // (migration 20260525170000_data_export_one_active_per_user) ensures at
-    // most one non-terminal row per user. The second concurrent create will
-    // receive a Prisma P2002 (unique constraint violation) and is converted to
-    // a ConflictException here.
+    // parallel requests both pass the checks above (TOCTOU window), the
+    // partial unique index `data_export_request_one_active_per_user` ensures
+    // at most one non-terminal row per user. The second concurrent create
+    // gets a Prisma P2002 and is converted to a 409 here.
     let record: Awaited<ReturnType<typeof this.prisma.dataExportRequest.create>>;
     try {
       record = await this.prisma.dataExportRequest.create({
@@ -189,8 +304,9 @@ export class DataExportService {
     } catch (e: unknown) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({
-          error: 'EXPORT_ALREADY_IN_PROGRESS',
-          message: 'An export request is already in progress.',
+          code: C.IN_PROGRESS,
+          message:
+            'Your export is already being prepared. The Request my data screen updates when it is ready.',
         });
       }
       throw e;
@@ -212,25 +328,39 @@ export class DataExportService {
   /**
    * Return the most recent export request for the user. Used for status
    * polling from the mobile app. Returns 404 if no export has ever been
-   * requested.
+   * requested. A crashed run (PENDING/RUNNING past the stale window) is
+   * reported FAILED so the app never polls forever.
    */
-  async getLatestStatus(userId: string) {
-    const record = await this.prisma.dataExportRequest.findFirst({
+  async getLatestStatus(userId: string): Promise<DataExportStatusView> {
+    let record = await this.prisma.dataExportRequest.findFirst({
       where: { user_id: userId },
       orderBy: { created_at: 'desc' },
     });
 
     if (!record) {
-      throw new NotFoundException('No data export has been requested yet.');
+      throw new NotFoundException({
+        code: C.NOT_FOUND,
+        message: 'No data export has been requested yet. Tap Request my data to start one.',
+      });
     }
 
-    // A download is only servable via HTTPS redirect when the file is stored
-    // in a remote location (S3/CDN). Local filesystem files (local://) cannot
-    // be opened by a browser and must not show a download button on the client.
-    const isLocalFile =
-      record.status === DataExportStatus.READY &&
-      typeof record.file_url === 'string' &&
-      record.file_url.startsWith('local://');
+    const now = new Date();
+    if (
+      (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) &&
+      now.getTime() - record.created_at.getTime() >= staleRunMs()
+    ) {
+      await this._reapStaleRun(record);
+      record = { ...record, status: DataExportStatus.FAILED, file_url: null };
+    }
+
+    const downloadable = this._isDownloadable(record, now);
+    let nextRequestAt: Date | null = null;
+    if (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) {
+      nextRequestAt = new Date(record.created_at.getTime() + staleRunMs());
+    } else if (downloadable) {
+      const next = new Date(record.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
+      nextRequestAt = next > now ? next : null;
+    }
 
     return {
       id: record.id,
@@ -239,83 +369,95 @@ export class DataExportService {
       completed_at: record.completed_at,
       expires_at: record.expires_at,
       file_size_bytes: record.file_size_bytes,
-      // download_available: false when file is stored locally (S3 not yet configured).
-      // The mobile uses this to show "contact support" instead of a broken download button.
-      download_available: record.status === DataExportStatus.READY && !isLocalFile,
-      // Never return the raw file_url — clients receive a short-lived download
-      // token and use the /download?token= endpoint.
-      download_token:
-        record.status === DataExportStatus.READY && !isLocalFile
-          ? await this._mintDownloadToken(record.user_id, record.id)
-          : null,
+      download_available: downloadable,
+      // Never return the raw file_url. The token is short-lived and bound to
+      // this user and this export; see createDownloadLink.
+      download_token: downloadable
+        ? (await this._mintDownloadToken(record.user_id, record.id)).token
+        : null,
+      next_request_at: nextRequestAt,
     };
   }
 
   /**
-   * Validate the download token, check the export has not expired, and
-   * return the filesystem URL for the redirect.
+   * Mint a short-lived download link for the caller's latest export. Only
+   * the authenticated owner reaches this (the export is looked up by
+   * `user_id`, never by a client-supplied id), so a link can only ever be
+   * issued for the caller's own archive.
    */
-  async resolveDownloadUrl(token: string): Promise<string> {
-    let payload: DownloadTokenClaims;
-
-    try {
-      const result = await jwtVerify(token, getTokenKey());
-      payload = result.payload as DownloadTokenClaims;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired download token.');
-    }
-
-    if (payload.type !== 'data_export_download') {
-      throw new UnauthorizedException('Invalid token type.');
-    }
-
-    const record = await this.prisma.dataExportRequest.findUnique({
-      where: { id: payload.eid },
+  async createDownloadLink(userId: string): Promise<DataExportDownloadLink> {
+    const record = await this.prisma.dataExportRequest.findFirst({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
     });
-
-    if (!record || record.user_id !== payload.sub) {
-      throw new UnauthorizedException('Token is not bound to this account.');
-    }
-
-    if (record.status === DataExportStatus.EXPIRED) {
-      throw new GoneException(
-        'This export has expired. Request a new export from the Settings screen.',
-      );
-    }
-
-    if (record.status !== DataExportStatus.READY || !record.file_url) {
-      throw new GoneException('Export is not ready yet.');
-    }
-
-    // Check wall-clock expiry
-    if (record.expires_at && record.expires_at < new Date()) {
-      // Mark expired lazily
-      await this.prisma.dataExportRequest.update({
-        where: { id: record.id },
-        data: { status: DataExportStatus.EXPIRED },
+    if (!record) {
+      throw new NotFoundException({
+        code: C.NOT_FOUND,
+        message: 'No data export has been requested yet. Tap Request my data to start one.',
       });
-      throw new GoneException(
-        'This export has expired. Request a new export from the Settings screen.',
-      );
     }
-
-    // Audit download event
-    this._tryAudit(record.user_id, record.user_id, 'data_export_downloaded', {
-      export_id: record.id,
-    });
-
-    return record.file_url;
+    const ready = await this._assertDownloadable(record);
+    const { token, expiresAt } = await this._mintDownloadToken(userId, ready.id);
+    this._tryAudit(userId, userId, 'data_export_link_issued', { export_id: ready.id });
+    return {
+      download_path: `/v1/me/data-export/download?token=${encodeURIComponent(token)}`,
+      token,
+      expires_at: expiresAt,
+      file_name: archiveFileName(ready),
+      file_size_bytes: ready.file_size_bytes,
+    };
   }
 
   /**
-   * Nightly cleanup: find READY requests past their expiry, delete the file
-   * from storage, and mark the row EXPIRED.
+   * Validate a download token and open the archive for streaming. The token
+   * must be ours (HS256, audience, type), unexpired, and its subject must own
+   * the export; the export must be READY, unexpired and stored in this
+   * service's store. Bytes are read only after every check passes.
    */
-  async expireOldExports(): Promise<void> {
+  async openDownload(token: string | undefined): Promise<DataExportDownload> {
+    const claims = await this._verifyDownloadToken(token);
+    const record = await this.prisma.dataExportRequest.findUnique({
+      where: { id: claims.eid },
+    });
+    // Same answer for "no such export" and "not yours": no existence oracle.
+    if (!record || record.user_id !== claims.sub) {
+      throw new UnauthorizedException({ code: C.LINK_INVALID, message: LINK_INVALID_MESSAGE });
+    }
+    const owner = await this.prisma.user.findUnique({
+      where: { id: record.user_id },
+      select: { deleted_at: true },
+    });
+    if (!owner || owner.deleted_at) {
+      throw new UnauthorizedException({ code: C.LINK_INVALID, message: LINK_INVALID_MESSAGE });
+    }
+    const ready = await this._assertDownloadable(record);
+    let read: ArchiveRead;
+    try {
+      read = await this.store.read(ready.id);
+    } catch (err) {
+      throw this._storageHttpError(err, ready.id, 'download');
+    }
+    this._tryAudit(ready.user_id, ready.user_id, 'data_export_downloaded', {
+      export_id: ready.id,
+    });
+    return {
+      exportId: ready.id,
+      fileName: archiveFileName(ready),
+      size: read.size ?? ready.file_size_bytes,
+      chunks: read.chunks,
+    };
+  }
+
+  /**
+   * Nightly cleanup: drain archive cleanup records, fail crashed runs, sweep
+   * orphan archives, then delete expired archives and mark their rows
+   * EXPIRED (file first, row second).
+   */
+  async expireOldExports(now: Date = new Date()): Promise<void> {
     // B-608-11: archives whose deletion failed earlier come first. A drain
     // failure is reported and never blocks the rest of the cleanup.
     try {
-      await this.drainArchiveCleanups();
+      await this.drainArchiveCleanups(now);
     } catch (err) {
       this.logger.error(
         `Data export archive cleanup drain failed (${storageErrorCode(err)}): ${(err as Error).message}. ` +
@@ -326,24 +468,40 @@ export class DataExportService {
         tags: { code: storageErrorCode(err) },
       });
     }
-    await this.sweepOrphanArchives();
+    try {
+      await this.reapStaleRuns(now);
+    } catch (err) {
+      this.logger.error(
+        `Data export stale-run reaping failed (${storageErrorCode(err)}): ${(err as Error).message}.`,
+      );
+    }
+    try {
+      await this.sweepOrphanArchives(now);
+    } catch (err) {
+      this.logger.error(
+        `Data export orphan sweep failed (${storageErrorCode(err)}): ${(err as Error).message}. ` +
+          'The next nightly run retries.',
+      );
+      Sentry.captureMessage('data export orphan sweep failed', {
+        level: 'error',
+        tags: { code: storageErrorCode(err) },
+      });
+    }
     // READY rows past expiry, plus rows already marked EXPIRED lazily by a
     // download attempt that still carry a file (their bytes must go too).
     const expired = await this.prisma.dataExportRequest.findMany({
       where: {
         status: { in: [DataExportStatus.READY, DataExportStatus.EXPIRED] },
         file_url: { not: null },
-        expires_at: { lte: new Date() },
+        expires_at: { lte: now },
       },
     });
 
     for (const record of expired) {
       try {
-        if (record.file_url) {
-          // Throws on anything but ENOENT; the row then stays as it is and
-          // the next nightly run retries (B-608-11).
-          await this._deleteStoredFile(record.file_url);
-        }
+        // Throws on anything but "already gone"; the row then stays as it is
+        // and the next nightly run retries (B-608-11).
+        await this._deleteArchiveOf(record);
         await this.prisma.dataExportRequest.update({
           where: { id: record.id },
           data: { status: DataExportStatus.EXPIRED, file_url: null },
@@ -359,17 +517,45 @@ export class DataExportService {
   }
 
   /**
-   * B-608-11: retry every archive cleanup this machine recorded. A record is
-   * deleted only once its archive is confirmed gone (unlink succeeded, or
-   * ENOENT on the machine that wrote it); any other error bumps `attempts`
-   * and keeps it queued. The path is always derived from the export id, so a
-   * record can never point the unlink at another file. Records written by
-   * other machines are left to them; ones older than 48 hours are reported.
+   * Fail every PENDING/RUNNING export older than the stale-run window (the
+   * worker is fire-and-forget, so a machine restart can leave a row RUNNING
+   * forever and block the user's next export), and remove whatever archive
+   * that run may have written.
+   */
+  async reapStaleRuns(now: Date = new Date()): Promise<number> {
+    const stale = await this.prisma.dataExportRequest.findMany({
+      where: {
+        status: { in: [DataExportStatus.PENDING, DataExportStatus.RUNNING] },
+        created_at: { lt: new Date(now.getTime() - staleRunMs()) },
+      },
+      take: ARCHIVE_CLEANUP_BATCH,
+    });
+    let reaped = 0;
+    for (const row of stale) {
+      try {
+        if (await this._reapStaleRun(row)) reaped += 1;
+      } catch (err) {
+        this.logger.error(
+          `Failing stale export ${row.id} left its archive queued (${storageErrorCode(err)}).`,
+        );
+      }
+    }
+    if (reaped > 0) this.logger.warn(`Failed ${reaped} stale data export run(s)`);
+    return reaped;
+  }
+
+  /**
+   * B-608-11: retry every archive cleanup recorded for this store's authority
+   * (the bucket for Supabase, so any machine drains it; the machine for local
+   * disk). A record is deleted only once its archive is confirmed gone; any
+   * other error bumps `attempts` and keeps it queued. The key is always
+   * derived from the export id, so a record can never point the delete at
+   * another object. Records of other authorities older than 48 h are reported.
    */
   async drainArchiveCleanups(
     now: Date = new Date(),
   ): Promise<{ removed: number; pending: number }> {
-    const machine = archiveMachine();
+    const machine = this.store.authority();
     const records = await this.prisma.dataExportArchiveCleanup.findMany({
       where: { machine },
       orderBy: { created_at: 'asc' },
@@ -379,7 +565,7 @@ export class DataExportService {
     let pending = 0;
     for (const r of records) {
       if (!isExportId(r.export_id)) {
-        // The table CHECK constraint makes this unreachable; never unlink it.
+        // The table CHECK constraint makes this unreachable; never delete it.
         this.logger.error(
           'Data export archive cleanup skipped a record whose export id is not a safe file name.',
         );
@@ -392,13 +578,13 @@ export class DataExportService {
         where: {
           id: r.export_id,
           status: DataExportStatus.READY,
-          file_url: `local://${exportArchivePath(r.export_id)}`,
+          file_url: this.store.urlFor(r.export_id),
         },
         select: { id: true },
       });
       if (!owner) {
         try {
-          await this._unlinkArchive(r.export_id);
+          await this.store.remove(r.export_id);
         } catch (err) {
           const code = storageErrorCode(err);
           await this.prisma.dataExportArchiveCleanup.update({
@@ -407,8 +593,11 @@ export class DataExportService {
           });
           this.logger.error(
             `Deleting the archive of export ${r.export_id} failed again (${code}, attempt ${r.attempts + 1}); ` +
-              `it stays queued for the next nightly run. Fix: check the permissions and disk health of ` +
-              `DATA_EXPORT_FS_DIR on machine ${machine}.`,
+              `it stays queued for the next nightly run. Fix: ${
+                this.store.kind === 'supabase'
+                  ? 'check Supabase Storage health and the service-role key for the data-exports bucket.'
+                  : `check the permissions and disk health of DATA_EXPORT_FS_DIR on machine ${machine}.`
+              }`,
           );
           Sentry.captureMessage('data export archive cleanup failed', {
             level: 'error',
@@ -455,41 +644,41 @@ export class DataExportService {
   }
 
   /**
-   * Remove archive files that no request row points to (B-608-3): an export
-   * that finished after its account was deleted, or a worker that stopped
-   * between writing the file and recording it. Files younger than an hour
-   * are left alone so an export in progress is never touched.
+   * Remove stored archives that no request row owns (B-608-3): an export
+   * that finished after its account was deleted, a worker that stopped
+   * between writing the archive and recording it, or a superseded/expired
+   * row whose delete was lost. An archive is kept when its row is still
+   * PENDING/RUNNING or READY with exactly this archive. Archives younger
+   * than an hour are left alone so an export in progress is never touched.
    */
   async sweepOrphanArchives(now: Date = new Date()): Promise<number> {
-    const { readdir, stat, unlink } = await import('fs/promises');
-    let names: string[];
-    try {
-      names = await readdir(exportArchiveDir());
-    } catch {
-      return 0;
-    }
-    const ids = names
-      .map((n) => EXPORT_ARCHIVE_NAME.exec(n)?.[1])
-      .filter((id): id is string => typeof id === 'string');
-    if (ids.length === 0) return 0;
+    const stored = await this.store.list();
+    if (stored.length === 0) return 0;
+    const ids = stored.map((s) => s.exportId);
     const known = await this.prisma.dataExportRequest.findMany({
       where: { id: { in: ids } },
-      select: { id: true },
+      select: { id: true, status: true, file_url: true },
     });
-    const keep = new Set(known.map((k) => k.id));
+    const rows = new Map(known.map((k) => [k.id, k]));
     let removed = 0;
-    for (const id of ids) {
-      if (keep.has(id)) continue;
-      const path = exportArchivePath(id);
+    for (const s of stored) {
+      const row = rows.get(s.exportId);
+      if (
+        row &&
+        (row.status === DataExportStatus.PENDING ||
+          row.status === DataExportStatus.RUNNING ||
+          (row.status === DataExportStatus.READY && this.store.owns(row.file_url, s.exportId)))
+      ) {
+        continue;
+      }
+      if (!s.createdAt || now.getTime() - s.createdAt.getTime() < ORPHAN_MIN_AGE_MS) continue;
       try {
-        const info = await stat(path);
-        if (now.getTime() - info.mtimeMs < 60 * 60 * 1000) continue;
-        await unlink(path);
+        await this.store.remove(s.exportId);
         removed += 1;
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          this.logger.error(`Orphan export sweep failed for ${id}: ${(err as Error).message}`);
-        }
+        this.logger.error(
+          `Orphan export sweep failed for ${s.exportId} (${storageErrorCode(err)}): ${(err as Error).message}`,
+        );
       }
     }
     if (removed > 0) this.logger.log(`Removed ${removed} orphan export archive(s)`);
@@ -498,11 +687,121 @@ export class DataExportService {
 
   // ─── Private helpers ─────────────────────────────────────────────────────
 
+  /** READY, unexpired, and stored in this service's store. */
+  private _isDownloadable(record: DataExportRequest, now: Date = new Date()): boolean {
+    return (
+      record.status === DataExportStatus.READY &&
+      this.store.owns(record.file_url, record.id) &&
+      (!record.expires_at || record.expires_at > now)
+    );
+  }
+
+  /** Throws the specific error a client sees when the export cannot be downloaded. */
+  private async _assertDownloadable(record: DataExportRequest): Promise<DataExportRequest> {
+    const now = new Date();
+    if (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) {
+      throw new ConflictException({
+        code: C.NOT_READY,
+        message:
+          'Your export is still being prepared. The Request my data screen updates when it is ready.',
+      });
+    }
+    if (record.status === DataExportStatus.FAILED) {
+      throw new GoneException({
+        code: C.FILE_MISSING,
+        message:
+          'This export did not finish. Request a new export from the Request my data screen.',
+      });
+    }
+    if (record.status === DataExportStatus.EXPIRED) {
+      throw new GoneException({ code: C.EXPIRED, message: EXPIRED_MESSAGE });
+    }
+    if (record.expires_at && record.expires_at <= now) {
+      // Mark expired lazily; the nightly cleanup deletes the archive.
+      await this.prisma.dataExportRequest.updateMany({
+        where: { id: record.id, status: DataExportStatus.READY },
+        data: { status: DataExportStatus.EXPIRED },
+      });
+      throw new GoneException({ code: C.EXPIRED, message: EXPIRED_MESSAGE });
+    }
+    if (!this.store.owns(record.file_url, record.id)) {
+      // Legacy rows without an archive, or archives written to a machine
+      // disk before durable storage (gone with that machine).
+      throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
+    }
+    return record;
+  }
+
+  /** Map a storage failure during a user request to a specific HTTP error. */
+  private _storageHttpError(err: unknown, exportId: string, stage: string): Error {
+    const code = storageErrorCode(err);
+    if (code === 'STORAGE_NOT_FOUND') {
+      this.logger.error(`Export ${exportId}: READY row but no stored archive (${stage}).`);
+      Sentry.captureMessage('data export archive missing for READY row', {
+        level: 'error',
+        tags: { stage },
+        extra: { export_id: exportId },
+      });
+      return new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
+    }
+    this.logger.error(`Export ${exportId}: storage failed during ${stage} (${code}).`);
+    Sentry.captureMessage('data export storage unavailable', {
+      level: 'error',
+      tags: { code, stage },
+      extra: { export_id: exportId },
+    });
+    return new ServiceUnavailableException({
+      code: C.STORAGE_UNAVAILABLE,
+      message: STORAGE_UNAVAILABLE_MESSAGE,
+    });
+  }
+
   /**
-   * Build the full JSON archive for a user, upload to storage, and update
-   * the database row. Streams each model independently so memory usage stays
-   * proportional to the largest single model's page size (500 rows), not the
-   * total dataset.
+   * Fail one crashed run (conditional on it still being PENDING/RUNNING, so a
+   * run that just finished keeps its READY state) and remove the archive it
+   * may have written. Returns false when the row had already moved on.
+   */
+  private async _reapStaleRun(row: DataExportRequest): Promise<boolean> {
+    const done = await this.prisma.dataExportRequest.updateMany({
+      where: {
+        id: row.id,
+        status: { in: [DataExportStatus.PENDING, DataExportStatus.RUNNING] },
+      },
+      data: { status: DataExportStatus.FAILED, file_url: null },
+    });
+    if (done.count === 0) return false;
+    this.logger.warn(`Export ${row.id} did not finish within the stale-run window; marked FAILED.`);
+    try {
+      await this._discardArchive(row.id, 'failed_run');
+    } catch (err) {
+      // A durable cleanup record (or the orphan sweep) owns the retry.
+      this.logger.error((err as Error).message);
+    }
+    return true;
+  }
+
+  /**
+   * Retire a READY export before a new request: delete its archive first,
+   * then mark it EXPIRED. A storage failure answers 503 and leaves the row
+   * (and the user's current file) as it was.
+   */
+  private async _supersede(row: DataExportRequest): Promise<void> {
+    try {
+      await this._deleteArchiveOf(row);
+    } catch (err) {
+      throw this._storageHttpError(err, row.id, 'supersede');
+    }
+    await this.prisma.dataExportRequest.updateMany({
+      where: { id: row.id, status: DataExportStatus.READY },
+      data: { status: DataExportStatus.EXPIRED, file_url: null },
+    });
+    this.logger.log(`Export ${row.id} superseded by a new request; archive deleted.`);
+  }
+
+  /**
+   * Build the full JSON archive for a user, store it durably, and update the
+   * database row. READY is recorded only after the store confirmed the
+   * archive is retrievable at the expected size.
    */
   private async _runExport(exportId: string, userId: string): Promise<void> {
     // Mark RUNNING
@@ -511,12 +810,15 @@ export class DataExportService {
       data: { status: DataExportStatus.RUNNING },
     });
 
-    let fileUrl: string | null = null;
+    // True from the moment a write was attempted: a failed or timed-out
+    // upload may still have landed, so the failure path must remove it.
+    let mayHaveArchive = false;
     try {
       const { buffer, sha256 } = await this._buildArchive(userId, exportId);
 
       const expiresAt = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-      fileUrl = await this._uploadFile(exportId, buffer);
+      mayHaveArchive = true;
+      const fileUrl = await this._uploadFile(exportId, buffer);
 
       // B-608-3: the account may have been deleted while the archive was
       // built. The request row goes in the same erasure transaction, so a
@@ -535,9 +837,9 @@ export class DataExportService {
       if (done.count === 0) {
         // From here this path owns the cleanup; the catch below must not
         // retry it. _discardArchive throws (after recording a durable cleanup)
-        // on anything but ENOENT, so the runner rejects instead of claiming
-        // the archive is gone (B-608-11).
-        fileUrl = null;
+        // on anything but "already gone", so the runner rejects instead of
+        // claiming the archive is gone (B-608-11).
+        mayHaveArchive = false;
         await this._discardArchive(exportId, 'request_removed');
         this.logger.warn(
           `Export ${exportId} finished after its request was removed; archive deleted`,
@@ -545,7 +847,7 @@ export class DataExportService {
         return;
       }
       // Recorded: from here the row owns the archive (download, expiry, erasure).
-      fileUrl = null;
+      mayHaveArchive = false;
 
       this._tryAudit(userId, userId, 'data_export_completed', {
         export_id: exportId,
@@ -553,19 +855,24 @@ export class DataExportService {
         sha256,
       });
 
-      // Log download URL (email delivery is a future enhancement — see README)
-      const downloadToken = await this._mintDownloadToken(userId, exportId);
-      this._logReadyNotification(userId, exportId, downloadToken, expiresAt);
+      this._logReadyNotification(userId, exportId, expiresAt);
     } catch (err) {
       this.logger.error(
-        `Export ${exportId} failed: ${(err as Error).message}`,
+        `Export ${exportId} failed (${storageErrorCode(err)}): ${(err as Error).message}`,
         (err as Error).stack,
       );
+      if (err instanceof ArchiveStorageError) {
+        Sentry.captureMessage('data export storage write failed', {
+          level: 'error',
+          tags: { code: err.code },
+          extra: { export_id: exportId },
+        });
+      }
       // Never leave an archive behind on a failed run (B-608-3). If deleting
       // it fails, _discardArchive has recorded a durable cleanup; the run
       // still rejects with its original error (B-608-11).
-      if (fileUrl) {
-        fileUrl = null;
+      if (mayHaveArchive) {
+        mayHaveArchive = false;
         try {
           await this._discardArchive(exportId, 'failed_run');
         } catch (cleanupErr) {
@@ -817,74 +1124,64 @@ export class DataExportService {
   }
 
   /**
-   * Store the export archive on the local filesystem.
-   *
-   * S3 support is a future enhancement — install @aws-sdk/client-s3 and
-   * @aws-sdk/s3-request-presigner, then set DATA_EXPORT_BUCKET. See README.
-   *
-   * NEVER serves files through the API process — always returns a URL the
-   * client is redirected to.
+   * Store the export archive in this service's store (the private Supabase
+   * bucket in production) and return the `file_url` to record. The store
+   * confirms the archive is readable before this resolves.
    */
   private async _uploadFile(exportId: string, buffer: Buffer): Promise<string> {
-    const { mkdir, writeFile } = await import('fs/promises');
-    // Owner-only permissions: the archive holds the person's full data.
-    await mkdir(exportArchiveDir(), { recursive: true, mode: 0o700 });
-    const filePath = exportArchivePath(exportId);
-    await writeFile(filePath, buffer, { mode: 0o600 });
-    this.logger.log(
-      `Export ${exportId} stored at ${filePath} (${buffer.length} bytes). ` +
-        'Configure DATA_EXPORT_BUCKET for S3 storage in production — see src/data-export/README.md.',
-    );
-    return `local://${filePath}`;
+    await this.store.put(exportId, buffer);
+    this.logger.log(`Export ${exportId} stored (${this.store.kind}, ${buffer.length} bytes).`);
+    return this.store.urlFor(exportId);
   }
 
   /**
-   * Delete a stored archive. Only ENOENT (already gone) counts as success;
-   * every other unlink error propagates (B-608-11). A URL this service cannot
-   * delete is an error too, never a silent success.
+   * Delete the archive a row points at. "Already gone" counts as deleted;
+   * every other failure propagates (B-608-11). The object is always derived
+   * from the export id: a `file_url` this store does not own is either the
+   * legacy machine-disk path of the same export or an error, never a
+   * delete of some other object.
    */
-  private async _deleteStoredFile(fileUrl: string): Promise<void> {
-    if (!fileUrl.startsWith('local://')) {
-      // S3 deletion is a future enhancement — requires @aws-sdk/client-s3.
-      throw Object.assign(
-        new Error('The export archive has a storage URL this server cannot delete (not local://).'),
-        { code: 'UNSUPPORTED_STORAGE_URL' },
-      );
+  private async _deleteArchiveOf(
+    record: Pick<DataExportRequest, 'id' | 'file_url'>,
+  ): Promise<void> {
+    const url = record.file_url;
+    if (url === null || this.store.owns(url, record.id)) {
+      await this.store.remove(record.id);
+      return;
     }
-    const { unlink } = await import('fs/promises');
-    try {
-      await unlink(fileUrl.slice('local://'.length));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    if (isExportId(record.id) && url === `${LOCAL_ARCHIVE_SCHEME}${exportArchivePath(record.id)}`) {
+      // Written to a machine disk before durable storage (or by the dev
+      // store while another store is active).
+      const { unlink } = await import('fs/promises');
+      try {
+        await unlink(exportArchivePath(record.id));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+      return;
     }
-  }
-
-  /** Delete `<DATA_EXPORT_FS_DIR>/<exportId>.json`; ENOENT counts as deleted. */
-  private async _unlinkArchive(exportId: string): Promise<void> {
-    if (!isExportId(exportId)) {
-      throw Object.assign(new Error('Refusing to delete an archive for an unsafe export id.'), {
-        code: 'INVALID_EXPORT_ID',
-      });
-    }
-    await this._deleteStoredFile(`local://${exportArchivePath(exportId)}`);
+    throw Object.assign(
+      new Error('The export archive has a storage URL this server cannot delete.'),
+      { code: 'UNSUPPORTED_STORAGE_URL' },
+    );
   }
 
   /**
    * Remove the archive of an export that no request row owns (B-608-11).
    * Resolves only when the archive is confirmed gone. On any other error it
-   * writes (or bumps) a durable cleanup record for this machine, reports to
-   * Sentry, and throws DataExportArchiveCleanupError.
+   * writes (or bumps) a durable cleanup record for this store's authority,
+   * reports to Sentry, and throws DataExportArchiveCleanupError.
    */
   private async _discardArchive(exportId: string, reason: ArchiveCleanupReason): Promise<void> {
     try {
-      await this._unlinkArchive(exportId);
+      await this.store.remove(exportId);
       return;
     } catch (err) {
       const code = storageErrorCode(err);
       let recorded = false;
       if (isExportId(exportId)) {
         try {
-          const machine = archiveMachine();
+          const machine = this.store.authority();
           await this.prisma.dataExportArchiveCleanup.upsert({
             where: { export_id: exportId },
             create: { export_id: exportId, machine, reason, last_error_code: code },
@@ -913,49 +1210,72 @@ export class DataExportService {
   }
 
   /**
-   * Mint a short-lived, user-bound JWT for the download endpoint using jose.
-   * Expires in EXPIRY_DAYS days so it stays valid for the full lifetime of
-   * the export file.
+   * Mint a short-lived download token bound to the user (`sub`) and the
+   * export (`eid`), with its own audience and type, a random `jti`, and a
+   * lifetime of DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS (5 minutes by default).
    */
-  private async _mintDownloadToken(userId: string, exportId: string): Promise<string> {
-    return new SignJWT({
-      eid: exportId,
-      type: 'data_export_download',
-    })
-      .setProtectedHeader({ alg: 'HS256' })
+  private async _mintDownloadToken(
+    userId: string,
+    exportId: string,
+  ): Promise<{ token: string; expiresAt: Date }> {
+    const ttl = downloadLinkTtlSeconds();
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT({ eid: exportId, type: DOWNLOAD_TOKEN_TYPE })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setSubject(userId)
-      .setIssuedAt()
-      .setExpirationTime(`${EXPIRY_DAYS}d`)
+      .setAudience(DOWNLOAD_TOKEN_AUDIENCE)
+      .setJti(crypto.randomUUID())
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(issuedAt + ttl)
       .sign(getTokenKey());
+    return { token, expiresAt: new Date((issuedAt + ttl) * 1000) };
+  }
+
+  private async _verifyDownloadToken(
+    token: string | undefined,
+  ): Promise<{ sub: string; eid: string }> {
+    if (!token || typeof token !== 'string') {
+      throw new UnauthorizedException({ code: C.LINK_INVALID, message: LINK_INVALID_MESSAGE });
+    }
+    let payload: DownloadTokenClaims;
+    try {
+      const result = await jwtVerify<DownloadTokenClaims>(token, getTokenKey(), {
+        algorithms: ['HS256'],
+        audience: DOWNLOAD_TOKEN_AUDIENCE,
+        requiredClaims: ['sub', 'exp', 'iat', 'jti'],
+      });
+      payload = result.payload;
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === 'ERR_JWT_EXPIRED') {
+        throw new UnauthorizedException({ code: C.LINK_EXPIRED, message: LINK_EXPIRED_MESSAGE });
+      }
+      throw new UnauthorizedException({ code: C.LINK_INVALID, message: LINK_INVALID_MESSAGE });
+    }
+    // A token can never outlive the configured link lifetime, whatever its exp says.
+    const lifetime = (payload.exp ?? 0) - (payload.iat ?? 0);
+    if (
+      payload.type !== DOWNLOAD_TOKEN_TYPE ||
+      typeof payload.eid !== 'string' ||
+      !isExportId(payload.eid) ||
+      typeof payload.sub !== 'string' ||
+      lifetime <= 0 ||
+      lifetime > 900
+    ) {
+      throw new UnauthorizedException({ code: C.LINK_INVALID, message: LINK_INVALID_MESSAGE });
+    }
+    return { sub: payload.sub, eid: payload.eid };
   }
 
   /**
-   * Log that an export is ready — without logging the download token or URL.
-   *
-   * The download token is short-lived and user-bound; logging it would expose
-   * it to anyone with access to the log aggregator. The mobile client polls
-   * /status to retrieve a fresh token via the authenticated API instead.
-   *
-   * Email delivery is a future enhancement. Install nodemailer and set
-   * SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM to enable it.
-   * See src/data-export/README.md for the installation steps.
+   * Log that an export is ready — without logging any token or storage URL.
+   * The app polls /status and asks for a short-lived download link when the
+   * user taps Download file.
    */
-  private _logReadyNotification(
-    userId: string,
-    exportId: string,
-    _downloadToken: string, // intentionally unused — never log tokens
-    expiresAt: Date,
-  ): void {
-    const expiryDate = expiresAt.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-
-    // Log only non-sensitive identifiers. Never log the download token or URL.
+  private _logReadyNotification(userId: string, exportId: string, expiresAt: Date): void {
     this.logger.log(
-      `[Export ready] exportId=${exportId} userId=${userId} expires=${expiryDate}. ` +
-        'Client will retrieve a fresh download token via GET /v1/me/data-export/status.',
+      `[Export ready] exportId=${exportId} userId=${userId} expires=${expiresAt.toISOString()}. ` +
+        'The app requests a short-lived link via POST /v1/me/data-export/download-link.',
     );
   }
 
