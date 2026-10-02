@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
@@ -42,6 +43,13 @@ import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
+import {
+  AiDataSubject,
+  clientDataSubject,
+  noClientDataSubject,
+} from '../../ai-egress/ai-egress.types';
 import {
   COACH_AI_BUDGET_EXHAUSTED_CODE,
   COACH_AI_METERED_CAPABILITIES,
@@ -63,6 +71,11 @@ export interface AiGatewayRequest {
   // The client/student whose data the call concerns. Optional for
   // capabilities that operate on the requester's own scope.
   subjectUserId?: string;
+  // R2b — callers that put SEVERAL clients' data into one prompt (community
+  // triage) list every one of them here, already scoped to the requester.
+  // The gateway unions these with subjectUserId and any client id in
+  // proposedActionPayload, and every one needs a live box-2 grant.
+  dataClientIds?: readonly string[];
   // Coach tenant the call is bound to (for owner-impersonation paths).
   tenantCoachId?: string;
   // Free-text user input (chat message, note). Will be redacted before
@@ -106,6 +119,8 @@ export class AiGatewayService {
     private config: AiGatewayConfig,
     private redaction: AiRedactionService,
     private providers: AiProviderRegistry,
+    // R2b — box-2 consent gate on every real provider request.
+    private egress: AiEgressService,
     // Stream 1 — combined coach+client AI budget. @Optional() so legacy
     // unit tests that construct AiGatewayService without the credits
     // module still boot. When present, every metered capability is gated
@@ -206,6 +221,22 @@ export class AiGatewayService {
 
     const adapter = this.providers.resolve(resolved.provider);
 
+    // R2b — whose data is in this request, derived from every client id the
+    // gateway can see (never only the caller's declaration). When the
+    // request would leave the server (any adapter except the stub), the
+    // requester's access to each named client is verified FIRST (404, so the
+    // consent answer is never an oracle for someone else's client), then
+    // every client's live box-2 grant (403 ai_consent_required).
+    const dataSubject = deriveGatewayDataSubject(req);
+    if (adapter.name !== 'stub') {
+      await this.assertRequesterMayActOn(req);
+      await this.egress.assertMaySend(
+        dataSubject,
+        adapter.name === 'anthropic' ? 'anthropic' : 'perplexity',
+        'gateway',
+      );
+    }
+
     // Stream 1 — pre-call budget gate. Skip for capabilities not in the
     // metered set (e.g. internal admin probes) and when the gateway is
     // disabled (no real provider call will happen, so no Anthropic cost).
@@ -278,6 +309,7 @@ export class AiGatewayService {
     try {
       response = await adapter.complete({
         capability: req.capability,
+        dataSubject,
         systemPrompt: req.systemPrompt,
         turns,
         maxTokens: req.maxTokens ?? 600,
@@ -285,12 +317,16 @@ export class AiGatewayService {
         requestId,
       });
     } catch (e) {
+      // R2b — a consent / egress refusal at send time (grant withdrawn after
+      // the pre-flight) sent nothing; never mask it as a stub reply.
+      if (isAiEgressRefusal(e)) throw e;
       errorMsg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`Gateway provider call failed (${resolved.provider}): ${errorMsg}`);
       // Fail closed — return the stub even if a real provider blew up,
       // so the caller never sees a 500 from the AI surface.
       response = await this.providers.resolve('stub').complete({
         capability: req.capability,
+        dataSubject,
         systemPrompt: req.systemPrompt,
         turns,
         maxTokens: req.maxTokens ?? 600,
@@ -479,6 +515,36 @@ export class AiGatewayService {
    * structured log on the audit row still captures the requester so
    * out-of-band reconciliation is possible.
    */
+  /**
+   * R2b — the requester must be allowed to act on every client the gateway
+   * derived from `subjectUserId` / the proposed payload before any consent
+   * state is consulted. Owners: allowed. Coaches: direct roster
+   * (User.coach_id) or an open SubCoachAssignment. A client: only itself.
+   * Anything else is the same opaque 404 the /coach/* routes use.
+   * `dataClientIds` are excluded: those callers scope them (cohort-bounded).
+   */
+  private async assertRequesterMayActOn(req: AiGatewayRequest): Promise<void> {
+    const named = namedClientIds(req).filter((id) => id !== req.requester.id);
+    if (named.length === 0 || req.requester.role === 'owner') return;
+    const notFound = () =>
+      new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
+    if (req.requester.role !== 'coach') throw notFound();
+    const direct = await this.prisma.user.findMany({
+      where: { id: { in: named }, coach_id: req.requester.id },
+      select: { id: true },
+    });
+    const allowed = new Set(direct.map((u) => u.id));
+    const rest = named.filter((id) => !allowed.has(id));
+    if (rest.length > 0) {
+      const delegated = await this.prisma.subCoachAssignment.findMany({
+        where: { sub_coach_id: req.requester.id, client_id: { in: rest }, unassigned_at: null },
+        select: { client_id: true },
+      });
+      for (const d of delegated) allowed.add(d.client_id);
+    }
+    if (named.some((id) => !allowed.has(id))) throw notFound();
+  }
+
   private async resolveBudgetCoachId(
     req: AiGatewayRequest,
   ): Promise<string | null> {
@@ -539,6 +605,46 @@ export interface AiGatewayStatus {
   provider: string;
   capabilities: string[];
   degraded_reason: string | null;
+}
+
+// R2b — payload keys that name the client an approved draft would act on
+// (coach_message, assign_*, send_notification: clientId; MWB-5
+// create_workout_plan: target_client_id).
+const PAYLOAD_CLIENT_ID_KEYS = ['clientId', 'client_id', 'target_client_id'] as const;
+
+/** Client ids named by subjectUserId or the proposed payload. */
+function namedClientIds(req: AiGatewayRequest): string[] {
+  const ids: string[] = [];
+  const isStaff = req.requester.role === 'coach' || req.requester.role === 'owner';
+  if (req.subjectUserId) {
+    // A coach/owner asking about their own scope is not client data.
+    if (!(isStaff && req.subjectUserId === req.requester.id)) ids.push(req.subjectUserId);
+  } else if (!isStaff) {
+    // A client with no explicit subject is asking about themself.
+    ids.push(req.requester.id);
+  }
+  const payload = req.proposedActionPayload;
+  if (payload && typeof payload === 'object') {
+    for (const key of PAYLOAD_CLIENT_ID_KEYS) {
+      const v = (payload as Record<string, unknown>)[key];
+      if (typeof v === 'string' && v.length > 0) ids.push(v);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+/**
+ * R2b — the gateway's data subject: every named client plus the caller's
+ * declared `dataClientIds`. Strictest wins: any client id makes it client
+ * data. Exported for the gateway spec.
+ */
+export function deriveGatewayDataSubject(req: AiGatewayRequest): AiDataSubject {
+  const ids = [...new Set([...namedClientIds(req), ...(req.dataClientIds ?? [])])].filter(
+    (id) => typeof id === 'string' && id.length > 0,
+  );
+  if (ids.length === 0) return noClientDataSubject('coach_own_scope');
+  const audience = req.requester.role === 'coach' || req.requester.role === 'owner' ? 'coach' : 'client';
+  return clientDataSubject(ids, audience);
 }
 
 function sha256(s: string): string {
