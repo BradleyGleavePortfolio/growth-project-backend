@@ -1,7 +1,14 @@
-import { Injectable, Optional, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Optional,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectThrottlerStorage, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
-import { THROTTLER_NAMES, strictIncrementFor } from './throttler.config';
+import { createHash } from 'crypto';
+import { blockedCheckFor, resetFor, strictIncrementFor } from './throttler.config';
 
 // Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
 // minted through /auth/google and /auth/apple. Those routes carry login
@@ -40,30 +47,40 @@ export function oauthCoachSignupKey(ip: string | null | undefined): string {
 }
 
 
+// ---------------------------------------------------------------------------
+// C14 fix round — per-ACCOUNT password-failure lock (Opus C14-A1, Sol C14-A2).
+//
+// Per-IP login limits are NEVER reset (a success by one identity must not
+// clear anybody else's attack budget). Password guessing against one account
+// is bounded by a failure counter keyed on that account alone, regardless of
+// IP; only that account's own successful sign-in may clear it.
+// ---------------------------------------------------------------------------
+export const AUTH_LOGIN_ACCOUNT_FAILURES_DEFAULT = 10;
+export const AUTH_LOGIN_ACCOUNT_WINDOW_MS = 15 * 60_000;
+export const AUTH_LOGIN_ACCOUNT_LOCK_MS = 15 * 60_000;
+export function resolveAccountFailureLimit(): number {
+  const raw = process.env.AUTH_LOGIN_ACCOUNT_FAILURES;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < 3) return AUTH_LOGIN_ACCOUNT_FAILURES_DEFAULT;
+  return Math.min(n, 100);
+}
 /**
- * LoginThrottleResetService — clears the per-IP auth-login rate-limit
- * counters on a successful authentication.
- *
- * Why this exists: a user on a bad Wi-Fi connection may retry login 3–4
- * times before the password goes through. Without a reset, those retries
- * exhaust the per-IP limit (5/min, 30/hr) and lock the user out for up to
- * an hour even though they authenticated successfully on the last attempt.
- * The reset erases the counter in both windows so the next retry (e.g. an
- * automatic session refresh) sees a clean slate.
- *
- * Security note: we only reset the counter AFTER the Supabase call returns
- * a valid session. A failed login never resets anything — an attacker
- * cannot use this to bypass the rate limit by occasionally guessing right.
- *
- * Implementation: @nestjs/throttler v6 exposes ThrottlerStorage via the
- * THROTTLER_STORAGE token. The storage contract (`increment`) is how the
- * throttler writes records; the complementary read contract (`getRecord`)
- * lets us inspect them. There is no first-class "delete" API, so we use
- * increment(key, 0, 0, ...) to effectively invalidate the window by
- * setting the total count to 0 with a zero TTL. If the storage backend
- * does not support this (e.g. an older Redis adapter), the call no-ops
- * and we fall through silently — the safety posture degrades to
- * "no reset", which is the original behaviour.
+ * Storage key + throttler name for one account. The name is per account on
+ * purpose: the in-memory adapter keeps expiry timers per NAME and its reset
+ * clears every timer for that name, so a shared name would let one account's
+ * reset disturb other accounts' counters.
+ */
+export function accountFailureBucket(email: string): { key: string; name: string } {
+  const digest = createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 32);
+  return { key: `auth-login-account:${digest}`, name: `auth-login-account:${digest}` };
+}
+
+/**
+ * LoginThrottleResetService — auth-specific throttling that the route guard
+ * cannot express: the OAuth coach-signup ceiling (C13) and the per-account
+ * password-failure lock (C14). Every operation goes through the production
+ * storage wrapper's STRICT operations, so a storage outage fails CLOSED
+ * (503) instead of silently allowing or silently not resetting.
  */
 @Injectable()
 export class LoginThrottleResetService {
@@ -118,50 +135,86 @@ export class LoginThrottleResetService {
     }
   }
 
-  /**
-   * Reset both auth-login windows for the given IP address.
-   * Must be called only after a successful login / OAuth exchange.
-   *
-   * @param ip — client IP as returned by UserThrottlerGuard.getTracker()
-   *             (e.g. the first hop of X-Forwarded-For or Fly-Client-IP).
-   */
-  async resetLoginCounters(ip: string): Promise<void> {
-    if (!this.storage) {
-      // Storage not injected (test environments with throttling disabled).
-      return;
+  private unavailable(op: string, err: unknown): ServiceUnavailableException {
+    this.logger.warn(
+      `login throttle ${op} unavailable (fail closed): ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return new ServiceUnavailableException({
+      code: 'login_temporarily_unavailable',
+      message: 'Sign-in is temporarily unavailable. Please try again shortly.',
+    });
+  }
+
+  /** 429 when this account is locked by repeated password failures (checked BEFORE the password). */
+  async assertAccountNotLocked(email: string): Promise<void> {
+    if (!this.storage) return;
+    const { key, name } = accountFailureBucket(email);
+    let blocked: boolean;
+    try {
+      blocked = await blockedCheckFor(this.storage)(key, name);
+    } catch (err) {
+      throw this.unavailable('lock check', err);
     }
+    if (blocked) throw new ThrottlerException();
+  }
 
-    const trackerKey = `ip:${ip}`;
+  /** Count one failed password attempt for this account; locks it at the limit. */
+  async recordAccountFailure(email: string): Promise<void> {
+    if (!this.storage) return;
+    const { key, name } = accountFailureBucket(email);
+    try {
+      await strictIncrementFor(this.storage)(
+        key,
+        AUTH_LOGIN_ACCOUNT_WINDOW_MS,
+        // Both adapters block when hits EXCEED the limit; limit-1 makes the
+        // Nth failure the one that locks, so attempt N+1 is refused up front.
+        resolveAccountFailureLimit() - 1,
+        AUTH_LOGIN_ACCOUNT_LOCK_MS,
+        name,
+      );
+    } catch (err) {
+      throw this.unavailable('failure record', err);
+    }
+  }
 
-    const resetThrottler = async (name: string, ttlMs: number) => {
-      try {
-        // ThrottlerStorage.increment signature:
-        //   increment(key, ttl, limit, blockDuration, throttlerName) → Record<...>
-        // Passing limit=0 resets usage because the stored total can never
-        // exceed the limit of 0 — subsequent increments start fresh.
-        // The built-in in-memory storage uses a Map keyed by
-        // `${throttlerName}:${key}`, so we must include the name.
-        await (this.storage as any).increment(
-          trackerKey,
-          ttlMs,
-          0,           // limit=0 means "reset" in both built-in and redis adapters
-          0,           // blockDuration — not used for the reset path
-          name,
-        );
-      } catch (err) {
-        // Never throw — login already succeeded. Log so an operator can see
-        // if the reset is consistently failing (e.g. Redis permission error).
-        this.logger.warn(
-          `Could not reset ${name} counter for ${trackerKey}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-    };
+  /**
+   * THE password sign-in lock flow (C14 #604 Opus A1). Every email+password
+   * sign-in endpoint runs through this one method, via
+   * `AuthService._passwordLogin` (`/auth/login` and `/auth/extension/login`
+   * today), so a new password endpoint cannot ship without the lock:
+   *   1. refuse a locked account BEFORE the password is checked (429);
+   *   2. a 401 from the attempt counts one failure for this account;
+   *   3. a success clears this account's own counter, nothing else.
+   * Storage errors on 1 and 2 fail closed (503); see the methods below.
+   */
+  async guardPasswordLogin<T>(email: string, attempt: () => Promise<T>): Promise<T> {
+    await this.assertAccountNotLocked(email);
+    let result: T;
+    try {
+      result = await attempt();
+    } catch (err) {
+      if (err instanceof UnauthorizedException) await this.recordAccountFailure(email);
+      throw err;
+    }
+    await this.clearAccountFailures(email);
+    return result;
+  }
 
-    await Promise.all([
-      resetThrottler(THROTTLER_NAMES.AUTH_LOGIN_PER_MIN,  60_000),
-      resetThrottler(THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR, 3_600_000),
-    ]);
+  /**
+   * After a SUCCESSFUL password sign-in: clear that account's own failure
+   * counter — nothing else. Per-IP limits and other accounts are untouched.
+   * A reset error is logged and swallowed (sign-in already succeeded; the
+   * counter simply decays) — it never falls back to an increment.
+   */
+  async clearAccountFailures(email: string): Promise<void> {
+    if (!this.storage) return;
+    const { key, name } = accountFailureBucket(email);
+    try {
+      await resetFor(this.storage)(key, name);
+    } catch (err) {
+      this.logger.warn(
+        `could not clear account failure counter (left to decay): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

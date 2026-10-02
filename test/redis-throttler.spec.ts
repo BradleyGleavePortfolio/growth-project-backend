@@ -23,11 +23,11 @@ describe('throttler.config -- named limits', () => {
     const byName = Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toMatchObject({
       ttl: 60_000,
-      limit: 5,
+      limit: 20,
     });
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toMatchObject({
       ttl: 3_600_000,
-      limit: 30,
+      limit: 200,
     });
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({
       ttl: 3_600_000,
@@ -68,16 +68,16 @@ describe('AuthController @Throttle metadata routes through named throttlers', ()
     return out;
   };
 
-  it('uses auth-login-per-min (5/min) on POST /auth/login', () => {
+  it('uses auth-login-per-min (20/min) on POST /auth/login', () => {
     const meta = readThrottle(AuthController.prototype.login);
     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_LOGIN_PER_MIN);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 20 });
   });
 
-  it('uses auth-login-per-hour (30/hr) on POST /auth/login', () => {
+  it('uses auth-login-per-hour (200/hr) on POST /auth/login', () => {
     const meta = readThrottle(AuthController.prototype.login);
     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 30 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 200 });
   });
 
   it('uses auth-signup (5/hour) on POST /auth/register', () => {
