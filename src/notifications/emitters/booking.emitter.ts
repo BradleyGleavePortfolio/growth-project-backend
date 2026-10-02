@@ -94,6 +94,14 @@ export interface BookingReminderPayload extends BaseBookingPayload {
   scheduledAt: Date;
   /** false when the confirmed session still has no call link. */
   hasMeetingLink?: boolean;
+  /**
+   * S-SCHED-3 (B-634-2) retry of a partly delivered reminder: the channel
+   * that already landed is skipped so the recipient never gets it twice.
+   */
+  skipInApp?: boolean;
+  skipPush?: boolean;
+  /** In-app row written by an earlier attempt; the retried push links to it. */
+  notificationId?: string | null;
 }
 
 export interface BookingLinkNeededPayload extends BaseBookingPayload {
@@ -109,8 +117,26 @@ export interface BookingLinkReadyPayload extends BaseBookingPayload {
 }
 
 export interface BookingDeliveryOutcome {
-  inapp: 'written' | 'suppressed' | 'failed';
-  push: PushDeliveryCode | 'disabled' | 'failed';
+  inapp: 'written' | 'suppressed' | 'failed' | 'skipped';
+  push: PushDeliveryCode | 'disabled' | 'failed' | 'skipped';
+  /** Id of the in-app row this call wrote (or was handed), when there is one. */
+  notificationId?: string | null;
+}
+
+// S-SCHED-3 (B-634-2): which outcomes are final for a channel. A retry can
+// only help transient failures; no device token or a muted preference is a
+// settled answer, not a failure to retry.
+export function inAppSettled(o: BookingDeliveryOutcome['inapp']): boolean {
+  return o === 'written' || o === 'suppressed' || o === 'skipped';
+}
+export function pushSettled(o: BookingDeliveryOutcome['push']): boolean {
+  return (
+    o === 'delivered' ||
+    o === 'no-token' ||
+    o === 'invalid-token' ||
+    o === 'disabled' ||
+    o === 'skipped'
+  );
 }
 
 export const BOOKING_PUSH_SCREEN: Record<BookingRecipientRole, string> = {
@@ -367,6 +393,9 @@ export class BookingEmitter {
         sessionTypeName: p.sessionTypeName ?? null,
         hasMeetingLink: p.hasMeetingLink ?? null,
       },
+      skipInApp: p.skipInApp === true,
+      skipPush: p.skipPush === true,
+      notificationId: p.notificationId ?? null,
     });
   }
 
@@ -379,38 +408,54 @@ export class BookingEmitter {
     sessionId: string;
     deepLink: string;
     payload: Record<string, unknown>;
+    skipInApp?: boolean;
+    skipPush?: boolean;
+    notificationId?: string | null;
   }): Promise<BookingDeliveryOutcome> {
     const body = args.body.slice(0, 160);
     const actionScreen = BOOKING_PUSH_SCREEN[args.role];
     const actionParams = { sessionId: args.sessionId };
-    const outcome: BookingDeliveryOutcome = { inapp: 'failed', push: 'failed' };
-    let notificationId: string | null = null;
+    const outcome: BookingDeliveryOutcome = {
+      inapp: 'failed',
+      push: 'failed',
+      notificationId: args.notificationId ?? null,
+    };
+    let notificationId: string | null = args.notificationId ?? null;
 
-    try {
-      const row = await this.notifications.createNotification({
-        user_id: args.userId,
-        kind: args.kind,
-        body,
-        payload: {
-          ...args.payload,
-          sessionId: args.sessionId,
-          title: args.title,
-          recipientRole: args.role,
-          actionScreen,
-          actionParams,
-          category: NotificationCategory.COACH_DIRECT,
-        },
-        deep_link: args.deepLink,
-        channel: 'inapp',
-      });
-      outcome.inapp = row ? 'written' : 'suppressed';
-      notificationId = row && typeof row.id === 'string' ? row.id : null;
-    } catch (err) {
-      this.logger.warn(
-        `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${(err as Error).message}`,
-      );
+    if (args.skipInApp) {
+      outcome.inapp = 'skipped';
+    } else {
+      try {
+        const row = await this.notifications.createNotification({
+          user_id: args.userId,
+          kind: args.kind,
+          body,
+          payload: {
+            ...args.payload,
+            sessionId: args.sessionId,
+            title: args.title,
+            recipientRole: args.role,
+            actionScreen,
+            actionParams,
+            category: NotificationCategory.COACH_DIRECT,
+          },
+          deep_link: args.deepLink,
+          channel: 'inapp',
+        });
+        outcome.inapp = row ? 'written' : 'suppressed';
+        notificationId = row && typeof row.id === 'string' ? row.id : null;
+        outcome.notificationId = notificationId;
+      } catch (err) {
+        this.logger.warn(
+          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${(err as Error).message}`,
+        );
+      }
     }
 
+    if (args.skipPush) {
+      outcome.push = 'skipped';
+      return outcome;
+    }
     try {
       if (!(await this.pushAllowed(args.userId))) {
         outcome.push = 'disabled';

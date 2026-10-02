@@ -11,6 +11,12 @@
 --    transaction; this constraint makes the guarantee independent of the
 --    application path and of the transaction isolation level.
 --
+-- 3. NotificationDeliveryLog gets recoverable delivery state (S-SCHED-3
+--    B-634-2): status / attempts / lease / claim token / session revision /
+--    per-channel done markers. Additive and defaulted: rows written before
+--    this migration read status = 'sent', attempts = 1 (they were attempted
+--    once and are never re-sent), so no reminder is repeated by the deploy.
+--
 -- RLS: no new table. SessionType and CoachingSession keep their existing
 -- enabled + forced RLS policies (PR-RLS-03); new columns inherit them.
 --
@@ -50,6 +56,10 @@ BEGIN
     ELSE
       CREATE EXTENSION btree_gist;
     END IF;
+    -- Ownership marker (S-SCHED-3 C-634-1): down.sql removes the extension
+    -- only when this migration installed it. A pre-existing btree_gist is
+    -- reused and left alone.
+    COMMENT ON EXTENSION btree_gist IS 'installed by 20270222000000_scheduling_lifecycle_integrity';
   END IF;
 END $$;
 
@@ -72,6 +82,22 @@ BEGIN
   END IF;
 END $$;
 
+-- Range preflight (S-SCHED-3 C-634-2): tsrange() below raises a bare
+-- "range lower bound must be less than or equal to range upper bound" on an
+-- active row whose end is before its start. Name the problem instead.
+DO $$
+DECLARE
+  inverted integer;
+BEGIN
+  SELECT count(*) INTO inverted
+  FROM "CoachingSession"
+  WHERE "status" IN ('requested', 'scheduled', 'pending_provider')
+    AND "end_at" < "start_at";
+  IF inverted > 0 THEN
+    RAISE EXCEPTION 'S-SCHED-2 range preflight: % active CoachingSession row(s) end before they start; fix their end_at (or cancel them) before applying 20270222000000', inverted;
+  END IF;
+END $$;
+
 ALTER TABLE "CoachingSession" DROP CONSTRAINT IF EXISTS "CoachingSession_no_overlapping_active_booking";
 ALTER TABLE "CoachingSession" ADD CONSTRAINT "CoachingSession_no_overlapping_active_booking"
   EXCLUDE USING gist (
@@ -79,3 +105,18 @@ ALTER TABLE "CoachingSession" ADD CONSTRAINT "CoachingSession_no_overlapping_act
     tsrange("start_at", "end_at", '[)') WITH &&
   )
   WHERE ("status" IN ('requested', 'scheduled', 'pending_provider'));
+
+-- 3. NotificationDeliveryLog: recoverable reminder delivery ----------------
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'sent';
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "attempts" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "lease_until" TIMESTAMP(3);
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "claim_token" TEXT;
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "session_start_at" TIMESTAMP(3);
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "inapp_done_at" TIMESTAMP(3);
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "push_done_at" TIMESTAMP(3);
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "notification_id" TEXT;
+ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "last_error" TEXT;
+
+ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
+ALTER TABLE "NotificationDeliveryLog" ADD CONSTRAINT "NotificationDeliveryLog_status_check"
+  CHECK ("status" IN ('sending', 'retry', 'sent', 'gave_up') AND "attempts" >= 1);
