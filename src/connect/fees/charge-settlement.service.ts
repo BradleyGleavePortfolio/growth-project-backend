@@ -339,7 +339,15 @@ export function payeePositionCents(
 ): number {
   let position = 0;
   for (const t of transfers) {
-    if (t.status === 'failed') continue;
+    // C-627-6 (round 6): netted cents settled a debt on another charge when
+    // the transfer was written; that is bookkeeping, not a Stripe move, so it
+    // stays paid for this charge even when the transfer itself finally fails.
+    // Only the transfer's own amount is missing (and is the gap to repay), so
+    // the payee is never credited twice for the netted cents.
+    if (t.status === 'failed') {
+      position += t.netted_recovery_cents;
+      continue;
+    }
     // Netted cents settled a debt on another charge: still paid for this one.
     position += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
   }

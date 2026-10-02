@@ -58,6 +58,10 @@ export function formatMoney(cents: number, currency: string): string {
   return cur === 'usd' ? `${sign}$${text}` : `${sign}${text} ${cur.toUpperCase()}`;
 }
 
+// B-627-7 / C-627-5 (round 6): the forward-looking sentence always uses the
+// amount still open (held_open_cents), never the charge's historical total
+// (held_cents also counts cents a later sale already paid). The email and the
+// Money page show the total, the part already taken and the part still open.
 function heldSentence(a: PayoutNoticeAmounts, cents: number): string {
   return cents > 0
     ? `We will hold ${formatMoney(cents, a.currency)} from your next sale.`
@@ -78,11 +82,11 @@ export function payoutNoticeCopy(
   switch (event) {
     case 'refund':
       title = 'A client was refunded';
-      body = `A client got ${m(a.customer_refunded_cents)} back.${took} ${heldSentence(a, a.held_cents)}`;
+      body = `A client got ${m(a.customer_refunded_cents)} back.${took} ${heldSentence(a, a.held_open_cents)}`;
       break;
     case 'chargeback':
       title = 'A client disputed a charge';
-      body = `A client's bank took back ${m(a.customer_refunded_cents)} in a dispute.${took} ${heldSentence(a, a.held_cents)}`;
+      body = `A client's bank took back ${m(a.customer_refunded_cents)} in a dispute.${took} ${heldSentence(a, a.held_open_cents)}`;
       break;
     case 'dispute_won': {
       title = 'Dispute won';

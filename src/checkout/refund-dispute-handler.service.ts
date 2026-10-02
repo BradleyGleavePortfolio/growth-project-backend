@@ -117,30 +117,41 @@ export class RefundDisputeHandlerService {
       data: { object: Record<string, unknown> };
     },
     tx?: WebhookTx,
-  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  ): Promise<{
+    claimed: boolean;
+    reason?: string;
+    purchase_id?: string;
+    deferredPayoutNoticeChargeId?: string;
+  }> {
     const result = await this.route(event, tx);
-    await this.deliverPayoutNotices(event);
+    const chargeId = this.payoutNoticeChargeId(event);
+    if (!chargeId) return result;
+    // C-627-7 (round 6): inside BillingService's webhook $transaction the
+    // push / email HTTP calls must not run; the caller delivers after commit
+    // (deliverPayoutNotices) and the sweeper is the backstop. Without an
+    // outer transaction (direct callers) delivery runs here.
+    if (tx) return { ...result, deferredPayoutNoticeChargeId: chargeId };
+    await this.deliverPayoutNotices(chargeId);
     return result;
   }
 
-  // OR-111-1: deliver the payout notices the settlement recorded for this
-  // event's charge once the money step (and its lock) is done. Best effort:
-  // the notices are durable rows and the sweeper re-delivers undelivered ones.
-  private async deliverPayoutNotices(event: {
+  // The charge whose payout notices this event may have recorded.
+  private payoutNoticeChargeId(event: {
     type: string;
     data: { object: Record<string, unknown> };
-  }): Promise<void> {
-    if (!this.payoutNotices || !event.type.startsWith('charge.')) return;
+  }): string | null {
+    if (!this.payoutNotices || !event.type.startsWith('charge.')) return null;
     const obj = event.data.object as { id?: unknown; charge?: unknown };
-    const chargeId =
-      event.type === 'charge.refunded'
-        ? typeof obj.id === 'string'
-          ? obj.id
-          : null
-        : typeof obj.charge === 'string'
-          ? obj.charge
-          : null;
-    if (!chargeId) return;
+    if (event.type === 'charge.refunded') return typeof obj.id === 'string' ? obj.id : null;
+    return typeof obj.charge === 'string' ? obj.charge : null;
+  }
+
+  // OR-111-1: deliver the payout notices the settlement recorded for this
+  // charge once the money step (and its lock) is done and no transaction is
+  // open. Best effort, never throws: the notices are durable rows and the
+  // sweeper re-delivers undelivered ones.
+  async deliverPayoutNotices(chargeId: string): Promise<void> {
+    if (!this.payoutNotices) return;
     try {
       await this.payoutNotices.dispatchForCharge(chargeId);
     } catch (err) {
@@ -527,9 +538,10 @@ export class RefundDisputeHandlerService {
       // payout notice (what the client got back, what came back from that
       // sale's payout, what is held from the next sale). Deliver it and skip
       // this generic line so the coach gets one alert, with the real numbers.
-      if (this.payoutNotices) {
-        const notices = await this.payoutNotices.dispatchForCharge(args.stripe_charge_id);
-        if (notices.recorded > 0) return;
+      // Delivery itself runs after the webhook commits (handle() and
+      // deliverPayoutNotices, C-627-7); this only checks that one exists.
+      if (this.payoutNotices && (await this.payoutNotices.hasNotices(args.stripe_charge_id))) {
+        return;
       }
       // Determine whether this refund is full (purchase fully refunded)
       // or partial — affects the message body and entitlement_revoked

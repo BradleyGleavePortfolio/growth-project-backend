@@ -33,6 +33,21 @@ export const PAYOUT_NOTICE_CLAIM_TTL_MS = 5 * 60_000;
 export const PAYOUT_NOTICE_MAX_ATTEMPTS = 6;
 export const PAYOUT_NOTICE_PAGE_MAX = 50;
 
+// Channel outcomes that are final: a retry never repeats them (B-627-6).
+const INAPP_DONE = new Set(['sent', 'off']);
+const PUSH_DONE = new Set(['sent', 'off', 'no_token', 'invalid_token']);
+const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
+
+interface ChannelResult {
+  status: string;
+  notification_id?: string;
+}
+
+/** The EmailService idempotency key of one email attempt of a notice. */
+export function payoutNoticeEmailKey(noticeKey: string, attempt: number): string {
+  return attempt <= 1 ? noticeKey : `${noticeKey}:e${attempt}`;
+}
+
 export interface PayoutNoticeView {
   id: string;
   event: string;
@@ -107,6 +122,17 @@ export class PayoutNoticeService {
     return { recorded: rows.length, sent };
   }
 
+  /**
+   * Whether a charge has exact-amount notices (a settlement charge). Sends
+   * nothing, so it is safe inside the webhook transaction (C-627-7).
+   */
+  async hasNotices(chargeId: string): Promise<boolean> {
+    const n = await this.prisma.payoutAdjustmentNotice.count({
+      where: { stripe_charge_id: chargeId },
+    });
+    return n > 0;
+  }
+
   /** Sweeper: notices still undelivered a minute after they were written. */
   async dispatchPending(now: Date = new Date(), limit = 25): Promise<number> {
     const rows = await this.prisma.payoutAdjustmentNotice.findMany({
@@ -137,27 +163,91 @@ export class PayoutNoticeService {
       data: { dispatch_claimed_at: now, dispatch_attempts: { increment: 1 } },
     });
     if (claim.count !== 1) return false;
-    const amounts = amountsOf(n);
+    // Re-read under the claim: the channels a previous attempt finished are
+    // never repeated (B-627-6, round 6).
+    const row = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
+    if (!row || row.dispatched_at) return false;
     const payload = {
       event: 'payout_adjustment',
-      notice_id: n.id,
-      notice_event: n.event,
-      purchase_id: n.purchase_id,
-      stripe_charge_id: n.stripe_charge_id,
-      currency: n.currency,
-      customer_refunded_cents: n.customer_refunded_cents,
-      reversed_cents: n.reversed_cents,
-      held_cents: n.held_cents,
-      held_tgp_fee_cents: n.held_tgp_fee_cents,
-      held_stripe_fee_cents: n.held_stripe_fee_cents,
-      held_dispute_fee_cents: n.held_dispute_fee_cents,
-      held_not_reversed_cents: n.held_not_reversed_cents,
+      notice_id: row.id,
+      notice_event: row.event,
+      purchase_id: row.purchase_id,
+      stripe_charge_id: row.stripe_charge_id,
+      currency: row.currency,
+      customer_refunded_cents: row.customer_refunded_cents,
+      reversed_cents: row.reversed_cents,
+      held_cents: row.held_cents,
+      held_open_cents: row.held_open_cents,
+      held_tgp_fee_cents: row.held_tgp_fee_cents,
+      held_stripe_fee_cents: row.held_stripe_fee_cents,
+      held_dispute_fee_cents: row.held_dispute_fee_cents,
+      held_not_reversed_cents: row.held_not_reversed_cents,
     };
-    let push = 'skipped';
-    let email = 'skipped';
-    let failed = false;
+    // Each channel's outcome is written as soon as it is known, so a crash
+    // or a failed write later in this attempt never repeats a finished one.
+    const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
+      ? { status: row.inapp_status }
+      : await this.deliverInApp(row, payload);
+    if (inapp.status !== row.inapp_status || inapp.notification_id) {
+      await this.saveChannel(row.id, {
+        inapp_status: inapp.status,
+        ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
+      });
+    }
+    const push: ChannelResult = PUSH_DONE.has(row.push_status)
+      ? { status: row.push_status }
+      : await this.deliverPush(row, payload);
+    if (push.status !== row.push_status || push.notification_id) {
+      await this.saveChannel(row.id, {
+        push_status: push.status,
+        ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
+      });
+    }
+    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+      ? { status: row.email_status }
+      : await this.deliverEmail(row, now);
+    if (email.status !== row.email_status) {
+      await this.saveChannel(row.id, { email_status: email.status });
+    }
+    const failed =
+      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
+    // A channel that is not done leaves the notice undelivered (the claim
+    // expires and the sweeper retries only that channel, up to
+    // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
+    const finalAttempt = row.dispatch_attempts >= PAYOUT_NOTICE_MAX_ATTEMPTS;
+    if (!failed || finalAttempt) {
+      await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: row.id, dispatched_at: null },
+        data: { dispatched_at: new Date() },
+      });
+    }
+    if (failed && finalAttempt) {
+      this.logger.error(
+        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
+      );
+    }
+    return !failed;
+  }
+
+  private async saveChannel(
+    id: string,
+    data: {
+      inapp_status?: string;
+      inapp_notification_id?: string;
+      push_status?: string;
+      push_notification_id?: string;
+      email_status?: string;
+    },
+  ): Promise<void> {
+    await this.prisma.payoutAdjustmentNotice.updateMany({ where: { id }, data });
+  }
+
+  private async deliverInApp(
+    n: PayoutAdjustmentNotice,
+    payload: Record<string, unknown>,
+  ): Promise<ChannelResult> {
     try {
-      await this.notifications.createNotification({
+      const created = await this.notifications.createNotification({
         user_id: n.payee_user_id,
         kind: NotificationKind.COACH_ALERT,
         body: n.body,
@@ -165,71 +255,144 @@ export class PayoutNoticeService {
         deep_link: PAYOUT_NOTICE_DEEP_LINK,
         channel: 'inapp',
       });
-      // The push row honours the payee's coach-alert push preference and mute.
-      const pushRow = await this.notifications.createNotification({
-        user_id: n.payee_user_id,
-        kind: NotificationKind.COACH_ALERT,
-        body: n.body,
-        payload,
-        deep_link: PAYOUT_NOTICE_DEEP_LINK,
-        channel: 'push',
-      });
-      if (pushRow) {
-        const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
-          type: 'payout_adjustment',
-          notice_id: n.id,
-          deep_link: PAYOUT_NOTICE_DEEP_LINK,
-        });
-        push = res.delivered ? 'sent' : res.code === 'no-token' ? 'skipped' : 'failed';
-      }
+      return created ? { status: 'sent', notification_id: created.id } : { status: 'off' };
     } catch (err) {
-      failed = true;
-      push = 'failed';
+      this.logger.warn(
+        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+      );
+      return { status: 'failed' };
+    }
+  }
+
+  // The push honours the payee's coach-alert push preference and mute ('off',
+  // done). The 60 s limiter is keyed by the notice (C-627-7), so a second
+  // notice to the same coach is never suppressed; a suppressed push of the
+  // same notice is 'rate_limited' and retried, never mistaken for a mute.
+  private async deliverPush(
+    n: PayoutAdjustmentNotice,
+    payload: Record<string, unknown>,
+  ): Promise<ChannelResult> {
+    try {
+      let rowId = n.push_notification_id;
+      if (!rowId) {
+        // Hand-built wiring without channelGate falls back to
+        // createNotification's own gate (a null then reads as rate_limited).
+        const gate =
+          typeof this.notifications.channelGate === 'function'
+            ? await this.notifications.channelGate(
+                n.payee_user_id,
+                NotificationKind.COACH_ALERT,
+                'push',
+              )
+            : 'enabled';
+        if (gate !== 'enabled') return { status: 'off' };
+        const pushRow = await this.notifications.createNotification({
+          user_id: n.payee_user_id,
+          kind: NotificationKind.COACH_ALERT,
+          body: n.body,
+          payload,
+          deep_link: PAYOUT_NOTICE_DEEP_LINK,
+          channel: 'push',
+          throttle_key: n.id,
+        });
+        if (!pushRow) {
+          this.logger.warn(
+            `SFEE_NOTICE_PUSH_DEFERRED notice=${n.id} payee=${n.payee_user_id}: push suppressed by the rate limit; the sweeper retries`,
+          );
+          return { status: 'rate_limited' };
+        }
+        rowId = pushRow.id;
+      }
+      const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
+        type: 'payout_adjustment',
+        notice_id: n.id,
+        deep_link: PAYOUT_NOTICE_DEEP_LINK,
+      });
+      if (res.delivered) return { status: 'sent', notification_id: rowId };
+      if (res.code === 'no-token') return { status: 'no_token', notification_id: rowId };
+      // The device token is dead: a retry cannot reach it (done, not failed).
+      if (res.code === 'invalid-token') return { status: 'invalid_token', notification_id: rowId };
+      // A returned provider failure is a failure (B-627-6): retried.
+      this.logger.warn(
+        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.code}`,
+      );
+      return { status: 'failed', notification_id: rowId };
+    } catch (err) {
       this.logger.warn(
         `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
       );
+      return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
     }
+  }
+
+  /**
+   * Email retry protocol (B-627-6, round 6). EmailService keys every send
+   * and never re-sends a key, even one whose log row ended 'failed' (a reuse
+   * answers 'skipped'). So attempt k uses its own key (attempt 1 the notice
+   * key, attempt k > 1 `${key}:e${k}`), and before a new attempt the previous
+   * attempt's EmailSendLog row decides: sent / logged = done (nothing is
+   * sent again); sending and younger than the claim TTL = still in flight
+   * (wait); failed, missing or a stale sending row = send the next attempt.
+   */
+  private async deliverEmail(n: PayoutAdjustmentNotice, now: Date): Promise<ChannelResult> {
+    if (!this.email) return { status: 'disabled' };
     try {
-      email = await this.sendEmail(n, amounts);
-      if (email === 'failed') failed = true;
+      const user = await this.prisma.user.findUnique({
+        where: { id: n.payee_user_id },
+        select: { email: true, name: true },
+      });
+      if (!user?.email) return { status: 'no_address' };
+      if (n.email_attempts > 0) {
+        const prev = await this.prisma.emailSendLog.findUnique({
+          where: { idempotency_key: payoutNoticeEmailKey(n.idempotency_key, n.email_attempts) },
+          select: { status: true, created_at: true },
+        });
+        if (prev && (prev.status === 'sent' || prev.status === 'logged')) {
+          return { status: prev.status };
+        }
+        if (
+          prev &&
+          prev.status === 'sending' &&
+          prev.created_at.getTime() > now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS
+        ) {
+          return { status: 'pending' };
+        }
+      }
+      const attempt = n.email_attempts + 1;
+      // Recorded before the send: a crash after it never reuses this key.
+      await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: n.id, email_attempts: n.email_attempts },
+        data: { email_attempts: attempt },
+      });
+      const status = await this.sendEmail(
+        n,
+        user,
+        payoutNoticeEmailKey(n.idempotency_key, attempt),
+      );
+      // 'skipped' means the key is already in the log (another sender):
+      // the next attempt reads that row instead of sending.
+      return { status: status === 'skipped' ? 'pending' : status };
     } catch (err) {
-      failed = true;
-      email = 'failed';
       this.logger.warn(
         `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
       );
+      return { status: 'failed' };
     }
-    // A failure leaves the notice undelivered (claim expires, sweeper retries
-    // up to PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
-    const finalAttempt = n.dispatch_attempts + 1 >= PAYOUT_NOTICE_MAX_ATTEMPTS;
-    await this.prisma.payoutAdjustmentNotice.updateMany({
-      where: { id: n.id },
-      data: {
-        push_status: push,
-        email_status: email,
-        dispatched_at: failed && !finalAttempt ? null : new Date(),
-      },
-    });
-    if (failed && finalAttempt) {
-      this.logger.error(
-        `SFEE_NOTICE_UNDELIVERED alert=true notice=${n.id} payee=${n.payee_user_id} push=${push} email=${email}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
-      );
-    }
-    return !failed;
   }
 
-  private async sendEmail(n: PayoutAdjustmentNotice, a: PayoutNoticeAmounts): Promise<string> {
-    if (!this.email) return 'skipped';
-    const user = await this.prisma.user.findUnique({
-      where: { id: n.payee_user_id },
-      select: { email: true, name: true },
-    });
-    if (!user?.email) return 'skipped';
+  private async sendEmail(
+    n: PayoutAdjustmentNotice,
+    user: { email: string; name: string | null },
+    idempotencyKey: string,
+  ): Promise<string> {
+    if (!this.email) return 'disabled';
+    const a = amountsOf(n);
     const m = (cents: number) => formatMoney(cents, n.currency);
+    const collected = Math.max(0, n.held_cents - n.held_open_cents);
     const res = await this.email.send({
       to: user.email,
       template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
-      idempotencyKey: n.idempotency_key,
+      idempotencyKey,
       data: {
         subject: n.title,
         title: n.title,
@@ -241,6 +404,7 @@ export class PayoutNoticeService {
         reinstated_display: n.reinstated_cents > 0 ? m(n.reinstated_cents) : null,
         held_display: m(n.held_cents),
         held_open_display: m(n.held_open_cents),
+        held_collected_display: collected > 0 ? m(collected) : null,
         held_lines: heldBreakdownLines(a),
         has_hold: n.held_cents > 0,
       },

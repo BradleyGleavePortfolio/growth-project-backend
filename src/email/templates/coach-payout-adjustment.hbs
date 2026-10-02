@@ -11,11 +11,13 @@
       {{#if reinstated_display}}<tr><td style="padding: 6px 0;">Paid back to you after the dispute</td><td style="padding: 6px 0; text-align: right;">{{reinstated_display}}</td></tr>{{/if}}
     </table>
     {{#if has_hold}}
-    <p><strong>Held from your next sale: {{held_display}}</strong>, on top of that sale's usual fees. It is made up of:</p>
+    <p>Held for this sale in total: {{held_display}}. It is made up of:</p>
     <table style="width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 15px;">
       {{#each held_lines}}<tr><td style="padding: 4px 0;">{{label}}</td><td style="padding: 4px 0; text-align: right;">{{display}}</td></tr>{{/each}}
     </table>
-    <p style="font-size: 14px; color: #555;">We take it out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales you were already paid for. Still to be taken: {{held_open_display}}.</p>
+    {{#if held_collected_display}}<p style="font-size: 14px; color: #555;">Already taken from a later sale: {{held_collected_display}}.</p>{{/if}}
+    <p><strong>Still to be held from your next sale: {{held_open_display}}</strong>, on top of that sale's usual fees.</p>
+    <p style="font-size: 14px; color: #555;">We take it out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales you were already paid for.</p>
     {{else}}
     <p style="font-size: 14px; color: #555;">Nothing is held from your next sale.</p>
     {{/if}}

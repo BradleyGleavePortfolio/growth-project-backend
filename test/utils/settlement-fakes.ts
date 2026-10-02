@@ -365,8 +365,12 @@ export function settlementTables(db: SettlementDb) {
       defaults: () => ({
         currency: 'usd',
         reinstated_cents: 0,
+        inapp_status: 'pending',
+        inapp_notification_id: null,
         push_status: 'pending',
+        push_notification_id: null,
         email_status: 'pending',
+        email_attempts: 0,
         dispatch_attempts: 0,
         dispatch_claimed_at: null,
         dispatched_at: null,
@@ -456,6 +460,14 @@ export function makeCharge(args: {
   };
 }
 
+export interface FakeReversal {
+  [k: string]: unknown;
+  id: string;
+  transfer: string;
+  amount: number;
+  metadata?: Record<string, string>;
+}
+
 /**
  * Stripe client fake: charges are looked up from `charges`; transfers and
  * reversals are recorded and collapse on the idempotency key like Stripe.
@@ -466,10 +478,26 @@ export class FakeStripe extends StripeConnectApiService {
     string,
     { id: string; amount: number; destination: string; source_transaction?: string }
   >();
-  reversalsByKey = new Map<
-    string,
-    { id: string; transfer: string; amount: number; metadata?: Record<string, string> }
-  >();
+  /**
+   * B-627-5 (round 6): Stripe's durable reversal objects (never forgotten)
+   * are kept apart from its idempotency-key cache, which expires (Stripe
+   * keeps keys for 24 h). `expireIdempotencyKeys()` ages every key out, so a
+   * re-send with the same key after that creates a second reversal, like
+   * Stripe would.
+   */
+  reversals: FakeReversal[] = [];
+  reversalKeyCache = new Map<string, FakeReversal>();
+  /** Every reversal Stripe holds (keyed by position; values() for totals). */
+  get reversalsByKey(): Map<string, FakeReversal> {
+    return new Map(this.reversals.map((r) => [r.id, r]));
+  }
+  expireIdempotencyKeys(): void {
+    this.reversalKeyCache.clear();
+  }
+  /** Listing pages hold this many reversals (Stripe's limit, or smaller). */
+  reversalListPageSize = 100;
+  /** Listing always says has_more (an endless / incomplete listing). */
+  reversalListAlwaysHasMore = false;
   /** Definitive refusal (Stripe 400 balance_insufficient): nothing is reversed. */
   failReversals = false;
   /** Network failure BEFORE Stripe executes the next N reversal requests. */
@@ -565,11 +593,11 @@ export class FakeStripe extends StripeConnectApiService {
           'api_connection_error',
         );
       }
-      const existing = this.reversalsByKey.get(args.idempotencyKey);
+      const existing = this.reversalKeyCache.get(args.idempotencyKey);
       if (existing) return existing;
       // Like Stripe: a transfer can never be reversed past its amount.
       const transfer = [...this.transfersByKey.values()].find((t) => t.id === args.transfer_id);
-      const already = [...this.reversalsByKey.values()]
+      const already = this.reversals
         .filter((r) => r.transfer === args.transfer_id)
         .reduce((n, r) => n + r.amount, 0);
       if (transfer && already + (args.amount ?? transfer.amount - already) > transfer.amount) {
@@ -580,13 +608,14 @@ export class FakeStripe extends StripeConnectApiService {
           'invalid_request_error',
         );
       }
-      const r = {
-        id: `trr_${this.reversalsByKey.size + 1}`,
+      const r: FakeReversal = {
+        id: `trr_${this.reversals.length + 1}`,
         transfer: args.transfer_id,
         amount: args.amount ?? 0,
         metadata: (args as { metadata?: Record<string, string> }).metadata,
       };
-      this.reversalsByKey.set(args.idempotencyKey, r);
+      this.reversals.push(r);
+      this.reversalKeyCache.set(args.idempotencyKey, r);
       if (this.reversalResponsesLost > 0) {
         this.reversalResponsesLost -= 1;
         throw new Error('socket hang up');
@@ -595,19 +624,25 @@ export class FakeStripe extends StripeConnectApiService {
     },
   );
 
-  listTransferReversals = jest.fn(async (transferId: string) => {
-    if (this.failListReversals) {
-      throw new StripeConnectApiError('Stripe API 500', 500, null, 'api_error');
-    }
-    const data = [...this.reversalsByKey.values()]
-      .filter((r) => r.transfer === transferId)
-      .reverse();
-    return { data, has_more: false };
-  });
+  listTransferReversals = jest.fn(
+    async (transferId: string, opts: { limit?: number; starting_after?: string | null } = {}) => {
+      if (this.failListReversals) {
+        throw new StripeConnectApiError('Stripe API 500', 500, null, 'api_error');
+      }
+      // Newest first, paginated by starting_after, like Stripe.
+      const all = this.reversals.filter((r) => r.transfer === transferId).reverse();
+      const start = opts.starting_after
+        ? all.findIndex((r) => r.id === opts.starting_after) + 1
+        : 0;
+      const size = Math.min(opts.limit ?? 100, this.reversalListPageSize);
+      const data = all.slice(start, start + size);
+      return { data, has_more: this.reversalListAlwaysHasMore || start + size < all.length };
+    },
+  );
 
   /** Total Stripe reversed on one Stripe transfer id. */
   reversedOn(transferId: string): number {
-    return [...this.reversalsByKey.values()]
+    return this.reversals
       .filter((r) => r.transfer === transferId)
       .reduce((n, r) => n + r.amount, 0);
   }
@@ -620,7 +655,7 @@ export class FakeStripe extends StripeConnectApiService {
       byId.set(t.id, t.destination);
       if (t.destination === destination) total += t.amount;
     }
-    for (const r of this.reversalsByKey.values()) {
+    for (const r of this.reversals) {
       if (byId.get(r.transfer) === destination) total -= r.amount;
     }
     return total;

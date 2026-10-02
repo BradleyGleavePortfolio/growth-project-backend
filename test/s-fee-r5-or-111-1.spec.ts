@@ -22,12 +22,15 @@ import type {
   SplitLedgerEntry,
 } from '@prisma/client';
 import { Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
 import {
   ChargeSettlementService,
   adjustmentNoticeAmounts,
   noticeEventFor,
+  payeePositionCents,
 } from '../src/connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { formatMoney, payoutNoticeCopy } from '../src/connect/fees/payout-notice-copy';
@@ -35,9 +38,14 @@ import type { PayoutReadinessService } from '../src/connect/fees/payout-readines
 import { settlementIdentityDrift } from '../src/connect/fees/reconciliation.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
-import type { EmailService } from '../src/email/email.service';
+import { EmailService } from '../src/email/email.service';
+import type { PrismaService } from '../src/prisma.service';
 import { EmailTemplateKey } from '../src/email/email.types';
-import type { NotificationsService } from '../src/notifications/notifications.service';
+import { NotificationKind } from '../src/notifications/notification-kind';
+import {
+  NotificationsService as NotificationsServiceReal,
+  type NotificationsService,
+} from '../src/notifications/notifications.service';
 import {
   FakeStripe,
   Table,
@@ -72,14 +80,36 @@ function purchaseRow(id: string, amount: number): ClientPurchase {
   return row as ClientPurchase;
 }
 
-function setup() {
+// EmailSendLog like Postgres + Prisma: a reused idempotency key is a real
+// PrismaClientKnownRequestError P2002 (what EmailService.send checks).
+function emailSendLogTable(rows: Row[]) {
+  const table = new Table(rows, { prefix: 'esl', defaults: () => ({ status: 'sending' }) });
+  const create = table.create.getMockImplementation()!;
+  table.create.mockImplementation(async (args: { data: Row }) => {
+    if (rows.some((r) => r.idempotency_key === args.data.idempotency_key)) {
+      throw new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on idempotency_key',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+        },
+      );
+    }
+    return create(args);
+  });
+  return table;
+}
+
+function setup(opts: { realEmail?: (prisma: PrismaService) => EmailService } = {}) {
   const { prisma, db } = makeSettlementPrisma();
   const users: Row[] = [
     { id: COACH, email: 'coach@example.com', name: 'Sam' },
     { id: OTHER_COACH, email: 'other@example.com', name: 'Lee' },
   ];
+  const emailLog: Row[] = [];
   const withUsers = Object.assign(prisma, {
     user: new Table(users, { prefix: 'u', unique: ['email'] }),
+    emailSendLog: emailSendLogTable(emailLog),
   });
   const stripe = new FakeStripe();
   const feePolicy = new FeePolicyService(asPrisma(withUsers));
@@ -103,7 +133,11 @@ function setup() {
         id: `n-${input.channel ?? 'inapp'}`,
       }),
     ),
-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' as const })),
+    pushToUser: jest.fn(async (): Promise<{ delivered: boolean; code: string }> => ({
+      delivered: true,
+      code: 'delivered',
+    })),
+    channelGate: jest.fn(async (): Promise<'enabled' | 'muted' | 'off'> => 'enabled'),
   };
   const emails: Array<Record<string, unknown>> = [];
   const email = {
@@ -124,7 +158,7 @@ function setup() {
   const notices = new PayoutNoticeService(
     asPrisma(withUsers),
     asNotifications(notifications),
-    asEmail(email),
+    opts.realEmail ? opts.realEmail(asPrisma(withUsers)) : asEmail(email),
   );
   const handler = new RefundDisputeHandlerService(
     asPrisma(withUsers),
@@ -215,6 +249,7 @@ function setup() {
     notifications,
     email,
     emails,
+    emailLog,
     p100,
     p49,
     p100b,
@@ -571,15 +606,18 @@ describe('OR-111-1 won dispute, Money API and delivery', () => {
     expect(await ctx.notices.dispatchForCharge('ch_100')).toEqual({ recorded: 1, sent: 0 });
   });
 
-  it('a push muted by the coach is skipped; the Money record and email still exist', async () => {
+  it('a push muted by the coach is off (done, not retried); the Money record and email still exist', async () => {
     const ctx = setup();
-    ctx.notifications.createNotification.mockImplementation(async (input: { channel?: string }) =>
-      input.channel === 'push' ? null : { id: 'n-inapp' },
-    );
+    ctx.notifications.channelGate.mockImplementation(async () => 'off');
     await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
     await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
     expect(ctx.notifications.pushToUser).not.toHaveBeenCalled();
-    expect(ctx.db.notices![0]).toMatchObject({ push_status: 'skipped', email_status: 'logged' });
+    expect(ctx.db.notices![0]).toMatchObject({
+      inapp_status: 'sent',
+      push_status: 'off',
+      email_status: 'logged',
+    });
+    expect(ctx.db.notices![0].dispatched_at).toBeInstanceOf(Date);
   });
 });
 
@@ -670,5 +708,298 @@ describe('OR-111-1 pure rules', () => {
     expect(formatMoney(123_456_78, 'usd')).toBe('$123,456.78');
     expect(formatMoney(2_020, 'eur')).toBe('20.20 EUR');
     expect(formatMoney(1_500, 'jpy')).toBe('1,500 JPY');
+  });
+});
+
+// S-FEE round 6 — audit findings at 9d6351b0 (Opus B-627-6 / C-627-5 /
+// C-627-6 / C-627-7, Sol B-627-6 / B-627-7). Each test fails at 9d6351b0.
+describe('round 6 B-627-6: per-channel delivery against the real EmailService', () => {
+  // The real EmailService over the test's EmailSendLog: resend transport whose
+  // provider call fails the first `failures` times.
+  function realEmail(failures: number) {
+    const sent: Array<{ to: string; subject: string }> = [];
+    let left = failures;
+    const make = (prisma: PrismaService) => {
+      const svc = new EmailService(
+        prisma,
+        new ConfigService({
+          EMAIL_TRANSPORT: 'resend',
+          RESEND_API_KEY: 're_test_key',
+          EMAIL_FROM_ADDRESS: 'noreply@example.com',
+        }),
+      );
+      Reflect.set(svc, 'transport', {
+        send: async (args: { to: string; subject: string }) => {
+          if (left > 0) {
+            left -= 1;
+            throw new Error('provider 503');
+          }
+          sent.push({ to: args.to, subject: args.subject });
+          return { providerMessageId: `msg_${sent.length}` };
+        },
+      });
+      return svc;
+    };
+    return { make, sent };
+  }
+
+  it('the real EmailService answers skipped for a reused failed key, so the retry uses a fresh attempt key', async () => {
+    const mail = realEmail(1);
+    const ctx = setup({ realEmail: mail.make });
+    const raw = mail.make(asPrisma(ctx.prisma));
+    // The behaviour the dispatcher must not rely on: a key whose row failed
+    // is never re-sent by EmailService.
+    mail.sent.length = 0;
+    const probe = {
+      to: 'coach@example.com',
+      template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
+      idempotencyKey: 'probe-key',
+      data: { title: 't', summary: 's', held_lines: [] },
+    };
+    await raw.send(probe);
+    expect((await raw.send(probe)).status).toBe('skipped');
+  });
+
+  it('a failed first email: one in-app row, one push, one delivered email, and the notice is done', async () => {
+    const mail = realEmail(1);
+    const ctx = setup({ realEmail: mail.make });
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+    const n = ctx.db.notices![0];
+    expect(n).toMatchObject({
+      inapp_status: 'sent',
+      push_status: 'sent',
+      email_status: 'failed',
+      email_attempts: 1,
+      dispatched_at: null,
+    });
+    expect(mail.sent).toHaveLength(0);
+    expect(await ctx.notices.dispatchPending(new Date(Date.now() + 10 * 60_000))).toBe(1);
+    const done = ctx.db.notices![0];
+    expect(done).toMatchObject({ email_status: 'sent', email_attempts: 2 });
+    expect(done.dispatched_at).toBeInstanceOf(Date);
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0]).toMatchObject({
+      to: 'coach@example.com',
+      subject: 'A client was refunded',
+    });
+    // Exactly one in-app row and one push row, and one push sent.
+    const channels = ctx.notifications.createNotification.mock.calls.map(
+      (c) => (c[0] as { channel?: string }).channel,
+    );
+    expect(channels).toEqual(['inapp', 'push']);
+    expect(ctx.notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(ctx.emailLog.map((r) => [r.idempotency_key, r.status])).toEqual([
+      [n.idempotency_key, 'failed'],
+      [`${n.idempotency_key}:e2`, 'sent'],
+    ]);
+    // Nothing more is ever sent for it.
+    expect(await ctx.notices.dispatchPending(new Date(Date.now() + 30 * 60_000))).toBe(0);
+    expect(mail.sent).toHaveLength(1);
+  });
+
+  it('an email whose previous attempt was delivered is recorded, never sent again', async () => {
+    const mail = realEmail(0);
+    const ctx = setup({ realEmail: mail.make });
+    // The receipt write fails after the provider accepted the email.
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    const realUpdateMany = ctx.prisma.payoutAdjustmentNotice.updateMany.getMockImplementation()!;
+    let failFinal = true;
+    ctx.prisma.payoutAdjustmentNotice.updateMany.mockImplementation(async (args) => {
+      if (failFinal && 'email_status' in (args.data ?? {})) {
+        failFinal = false;
+        throw new Error('connection reset');
+      }
+      return realUpdateMany(args);
+    });
+    await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+    expect(mail.sent).toHaveLength(1);
+    expect(ctx.db.notices![0]).toMatchObject({ email_attempts: 1, dispatched_at: null });
+    expect(await ctx.notices.dispatchPending(new Date(Date.now() + 10 * 60_000))).toBe(1);
+    expect(ctx.db.notices![0]).toMatchObject({ email_status: 'sent', email_attempts: 1 });
+    expect(mail.sent).toHaveLength(1);
+    // In-app and push were recorded before the failed write: not repeated.
+    expect(ctx.notifications.createNotification).toHaveBeenCalledTimes(2);
+    expect(ctx.notifications.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('a returned push failure is failed and retried alone; in-app and email are not repeated', async () => {
+    const ctx = setup();
+    ctx.notifications.pushToUser.mockResolvedValueOnce({
+      delivered: false,
+      code: 'transport-error',
+    });
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+    expect(ctx.db.notices![0]).toMatchObject({
+      inapp_status: 'sent',
+      push_status: 'failed',
+      email_status: 'logged',
+      dispatched_at: null,
+    });
+    expect(await ctx.notices.dispatchPending(new Date(Date.now() + 10 * 60_000))).toBe(1);
+    expect(ctx.db.notices![0]).toMatchObject({ push_status: 'sent' });
+    expect(ctx.db.notices![0].dispatched_at).toBeInstanceOf(Date);
+    expect(ctx.notifications.pushToUser).toHaveBeenCalledTimes(2);
+    // One in-app row, one push row (the retry re-sends the same push row).
+    expect(ctx.notifications.createNotification).toHaveBeenCalledTimes(2);
+    expect(ctx.emails).toHaveLength(1);
+  });
+
+  it('a push the limiter suppressed is rate_limited and retried, not reported as muted', async () => {
+    const ctx = setup();
+    ctx.notifications.createNotification.mockImplementation(async (input: { channel?: string }) =>
+      input.channel === 'push' ? null : { id: 'n-inapp' },
+    );
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+    expect(ctx.db.notices![0]).toMatchObject({ push_status: 'rate_limited', dispatched_at: null });
+    // Each notice has its own limiter key.
+    const pushCall = ctx.notifications.createNotification.mock.calls.find(
+      (c) => (c[0] as { channel?: string }).channel === 'push',
+    );
+    expect(pushCall?.[0]).toMatchObject({ throttle_key: ctx.db.notices![0].id });
+  });
+});
+
+describe('round 6 C-627-7: the payout notice limiter key and the post-commit delivery', () => {
+  it('two different payout notices to one coach within a minute both get a push row', async () => {
+    const rows: Row[] = [];
+    const prismaLike = {
+      notificationPreferences: { findUnique: jest.fn(async () => null) },
+      notification: new Table(rows, { prefix: 'n' }),
+    };
+    const svc = new NotificationsServiceReal(asPrisma(prismaLike));
+    const base = {
+      user_id: 'coach-limiter',
+      kind: NotificationKind.COACH_ALERT,
+      body: 'b',
+      channel: 'push' as const,
+    };
+    expect(await svc.createNotification({ ...base, throttle_key: 'pan-1' })).not.toBeNull();
+    expect(await svc.createNotification({ ...base, throttle_key: 'pan-2' })).not.toBeNull();
+    // The same notice again inside the minute is suppressed.
+    expect(await svc.createNotification({ ...base, throttle_key: 'pan-2' })).toBeNull();
+    expect(await svc.channelGate('coach-limiter', NotificationKind.COACH_ALERT, 'push')).toBe(
+      'enabled',
+    );
+  });
+
+  it('inside the webhook transaction the handler defers delivery to after commit', async () => {
+    const ctx = setup();
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    ctx.stripe.charges.set(
+      'ch_100',
+      makeCharge({ id: 'ch_100', amount: 10_000, fee: 320, amount_refunded: 10_000 }),
+    );
+    const tx = asPrisma(ctx.prisma);
+    const res = await ctx.handler.handle(
+      {
+        id: 'evt_tx_refund',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_100',
+            amount: 10_000,
+            amount_refunded: 10_000,
+            refunded: true,
+            refunds: { data: [{ id: 're_tx_1', amount: 10_000, status: 'succeeded' }] },
+          },
+        },
+      },
+      tx,
+    );
+    expect(res).toMatchObject({ deferredPayoutNoticeChargeId: 'ch_100' });
+    expect(ctx.db.notices![0]).toMatchObject({ dispatched_at: null, dispatch_attempts: 0 });
+    expect(ctx.notifications.pushToUser).not.toHaveBeenCalled();
+    await ctx.handler.deliverPayoutNotices('ch_100');
+    expect(ctx.db.notices![0].dispatched_at).toBeInstanceOf(Date);
+  });
+});
+
+describe('round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amount still open', () => {
+  it('$99 refund holds 4.20; a later sale nets it; a $1 refund tells the coach $1.00, not $5.20', async () => {
+    const ctx = setup();
+    await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    // $99 of $100 refunded: 94.80 reversed, 4.20 held (TGP 2.00 + Stripe 3.20 - 1.00 kept).
+    await ctx.refundViaWebhook('ch_100', 10_000, 9_900);
+    expect(ctx.openHeld()).toBe(420);
+    expect(ctx.db.notices![0].body).toContain('We will hold $4.20 from your next sale.');
+    // The next sale nets the 4.20.
+    await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
+    expect(ctx.openHeld()).toBe(0);
+    // The last $1 is refunded: only 1.00 is newly held.
+    await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+    expect(ctx.openHeld()).toBe(100);
+    const notices = ctx.db.notices!.filter((n) => n.stripe_charge_id === 'ch_100');
+    const last = notices[notices.length - 1];
+    expect(last).toMatchObject({ held_cents: 520, held_open_cents: 100 });
+    expect(last.body).toContain('We will hold $1.00 from your next sale.');
+    expect(last.body).not.toContain('$5.20');
+    // The Money read model agrees with what the coach is told.
+    const view = await ctx.notices.listForPayee(COACH);
+    expect(view.open_balance).toEqual([
+      { currency: 'usd', held_cents: 100, display: '$1.00', charges: 1 },
+    ]);
+  });
+
+  it('copy: refund and chargeback sentences use held_open_cents', () => {
+    const a = {
+      currency: 'usd',
+      charge_gross_cents: 9_900,
+      customer_refunded_cents: 9_900,
+      reversed_cents: 0,
+      reinstated_cents: 0,
+      released_cents: 0,
+      held_cents: 520,
+      held_tgp_fee_cents: 198,
+      held_stripe_fee_cents: 317,
+      held_dispute_fee_cents: 0,
+      held_not_reversed_cents: 5,
+      held_open_cents: 100,
+    };
+    expect(payoutNoticeCopy('refund', 'coach', a).body).toContain(
+      'We will hold $1.00 from your next sale.',
+    );
+    expect(payoutNoticeCopy('chargeback', 'coach', a).body).toContain(
+      'We will hold $1.00 from your next sale.',
+    );
+    expect(payoutNoticeCopy('refund', 'coach', { ...a, held_open_cents: 0 }).body).toContain(
+      'Nothing is held from your next sale.',
+    );
+  });
+
+  it('the email shows the total, the part already taken and the part still open', async () => {
+    const svc = new EmailService(asPrisma({}), new ConfigService({ EMAIL_TRANSPORT: 'log' }));
+    const out = svc.render(EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT, {
+      title: 'A client was refunded',
+      summary: 's',
+      charge_display: '$99.00',
+      customer_refunded_display: '$99.00',
+      reversed_display: '$0.00',
+      held_display: '$5.20',
+      held_open_display: '$1.00',
+      held_collected_display: '$4.20',
+      held_lines: [],
+      has_hold: true,
+    });
+    expect(out.html).toContain('Held for this sale in total: $5.20');
+    expect(out.html).toContain('Already taken from a later sale: $4.20');
+    expect(out.html).toContain('Still to be held from your next sale: $1.00');
+    expect(out.html).not.toContain('Held from your next sale: $5.20');
+  });
+});
+
+describe('round 6 C-627-6: a finally failed transfer keeps its netted cents collected', () => {
+  it('the gap to repay is the transfer amount only; no double credit for the netted cents', () => {
+    const failed = {
+      status: 'failed',
+      amount_cents: 4_160,
+      netted_recovery_cents: 5_000,
+      reversed_amount_cents: 0,
+    };
+    // Target 9160 for this sale: 5000 settled an earlier hold, 4160 never moved.
+    expect(payeePositionCents([failed], [])).toBe(5_000);
+    expect(9_160 - payeePositionCents([failed], [])).toBe(4_160);
   });
 });

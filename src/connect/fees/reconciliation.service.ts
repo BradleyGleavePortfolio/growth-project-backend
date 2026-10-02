@@ -79,10 +79,11 @@ export function settlementIdentityDrift(input: SettlementIdentityInput): {
   let transferred = 0;
   let nettedIn = 0;
   for (const t of input.transfers) {
+    // Netting on this charge's transfers paid other charges' debts; it stands
+    // even when the transfer finally failed (C-627-6, round 6).
+    nettedIn += t.netted_recovery_cents;
     if (t.status === 'failed') continue;
     transferred += t.amount_cents - t.reversed_amount_cents;
-    // Netting on this charge's transfers paid other charges' debts.
-    nettedIn += t.netted_recovery_cents;
   }
   const live = input.recoveries.filter((r) => r.status !== 'released');
   const owed = live.reduce((n, r) => n + r.amount_cents, 0);

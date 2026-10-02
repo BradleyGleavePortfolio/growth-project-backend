@@ -138,6 +138,12 @@ export type MoneyFence = (db?: Prisma.TransactionClient) => Promise<void>;
 // is recovered by forward netting only.
 export type ReversalPurpose = 'adjust' | 'legacy';
 
+// B-627-5 (round 6): the reconciliation lookup of one reversal operation.
+export type ReversalLookup =
+  | { kind: 'found'; id: string; amount: number }
+  | { kind: 'absent' }
+  | { kind: 'unknown'; reason: string };
+
 export type ReverseOutcome =
   | { status: 'succeeded'; transfer: ConnectTransfer; op_id: string | null }
   | { status: 'refused'; transfer: ConnectTransfer; op_id: string; error: string };
@@ -163,6 +169,8 @@ export class TransferOrchestratorService {
   // current attempt count (0 = first retry). Caps at the last value;
   // max_attempts on the row bounds total retries.
   private static readonly BACKOFF_MINUTES = [1, 5, 15, 60, 240, 1440];
+  // Reversal listing pages (100 each) read before the lookup is 'unknown'.
+  static readonly REVERSAL_LIST_MAX_PAGES = 10;
 
   constructor(
     private prisma: PrismaService,
@@ -481,9 +489,24 @@ export class TransferOrchestratorService {
     // Sent before and still pending: the response (or our receipt) was lost.
     // Reconcile by the Stripe object first; re-sending is safe only when
     // Stripe shows no reversal for this key (Stripe keys expire after 24 h).
+    // B-627-5 / C-627-4 (round 6): only a complete listing that proves the
+    // reversal absent allows a re-send. A failed or incomplete listing is
+    // unknown: the op stays pending, nothing is sent, and the caller gets
+    // SFEE_REVERSAL_UNCERTAIN until Stripe can be read again.
     if (op.attempts > 0) {
-      const found = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
-      if (found) return this.completeReversal(op, found.id);
+      const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+      if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
+      if (lookup.kind === 'unknown') {
+        const message = `reversal lookup unavailable: ${lookup.reason}`;
+        await this.prisma.transferReversalOp.updateMany({
+          where: { id: op.id, status: 'pending' },
+          data: { last_error: message.slice(0, 500) },
+        });
+        this.logger.error(
+          `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}; not re-sent`,
+        );
+        throw new ReversalUncertainError(row.id, op.idempotency_key, message);
+      }
     }
     if (fence) await fence();
     await this.prisma.transferReversalOp.update({
@@ -507,8 +530,8 @@ export class TransferOrchestratorService {
     } catch (err) {
       const message = (err as Error)?.message ?? 'unknown reversal error';
       if (isDefinitiveStripeRefusal(err)) return this.refuseReversal(op, message);
-      const found = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
-      if (found) return this.completeReversal(op, found.id);
+      const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+      if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
       await this.prisma.transferReversalOp.updateMany({
         where: { id: op.id, status: 'pending' },
         data: { last_error: message.slice(0, 500) },
@@ -525,29 +548,40 @@ export class TransferOrchestratorService {
   }
 
   // Stripe's reversals on the transfer, matched by our operation key.
-  private async findStripeReversal(
-    stripeTransferId: string,
-    key: string,
-  ): Promise<{ id: string; amount: number } | null> {
+  // B-627-5 (round 6): three answers. 'absent' only when the full list was
+  // read (has_more false); a list error or a list longer than the page
+  // budget is 'unknown', never proof that the reversal does not exist.
+  private async findStripeReversal(stripeTransferId: string, key: string): Promise<ReversalLookup> {
     try {
       let startingAfter: string | null = null;
-      for (let page = 0; page < 5; page += 1) {
+      for (let page = 0; page < TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES; page += 1) {
         const res = await this.stripe.listTransferReversals(stripeTransferId, {
           limit: 100,
           starting_after: startingAfter,
         });
         const data = res.data ?? [];
         const hit = data.find((r) => r.metadata?.tgp_reversal_op === key);
-        if (hit) return { id: hit.id, amount: hit.amount };
-        if (!res.has_more || data.length === 0) return null;
+        if (hit) return { kind: 'found', id: hit.id, amount: hit.amount };
+        if (!res.has_more) return { kind: 'absent' };
+        if (data.length === 0) {
+          return {
+            kind: 'unknown',
+            reason: 'Stripe reported more reversals but sent an empty page',
+          };
+        }
         startingAfter = data[data.length - 1].id;
       }
+      return {
+        kind: 'unknown',
+        reason: `more than ${TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES * 100} reversals listed without a match`,
+      };
     } catch (err) {
+      const reason = (err as Error)?.message ?? 'unknown listing error';
       this.logger.warn(
-        `listing reversals of ${stripeTransferId} failed while reconciling op=${key}: ${(err as Error).message}`,
+        `listing reversals of ${stripeTransferId} failed while reconciling op=${key}: ${reason}`,
       );
+      return { kind: 'unknown', reason: `listing failed: ${reason}` };
     }
-    return null;
   }
 
   private async completeReversal(
@@ -625,6 +659,14 @@ export class TransferOrchestratorService {
     });
     if (finalFailure && row.ledger_entry_id) {
       await this.ledger.markFailed(row.ledger_entry_id, message);
+    }
+    if (finalFailure && row.settlement_id) {
+      // C-627-6 (round 6): exact amounts for the operator. Netted cents stay
+      // collected (they settled another charge's debt); only amount_cents is
+      // owed to the payee, and the reconciliation gap on the charge is that.
+      this.logger.error(
+        `SFEE_TRANSFER_FAILED alert=true transfer=${row.id} settlement=${row.settlement_id} payee=${row.destination_user_id ?? 'unknown'} owed_cents=${row.amount_cents} netted_cents=${row.netted_recovery_cents} currency=${row.currency}: repay owed_cents only; the netted cents already settled an earlier hold`,
+      );
     }
     return updated;
   }

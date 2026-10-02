@@ -4024,9 +4024,18 @@ model PayoutAdjustmentNotice {
   idempotency_key         String           @unique
   title                   String
   body                    String
-  // pending | sent | skipped | failed (push); pending | sent | logged | skipped | failed (email)
+  // Round 6 (B-627-6): each channel's outcome is kept, and a retry only
+  // re-runs the channels that are not done.
+  //   inapp: pending | sent | off | failed
+  //   push:  pending | sent | off | no_token | invalid_token | rate_limited | failed
+  //   email: pending | sent | logged | no_address | disabled | failed
+  inapp_status            String           @default("pending")
+  inapp_notification_id   String?
+  push_notification_id    String?
   push_status             String           @default("pending")
   email_status            String           @default("pending")
+  // Email attempts made; attempt k > 1 uses the key `${idempotency_key}:e${k}`.
+  email_attempts          Int              @default(0)
   dispatch_attempts       Int              @default(0)
   dispatch_claimed_at     DateTime?
   dispatched_at           DateTime?

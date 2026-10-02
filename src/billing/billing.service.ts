@@ -233,6 +233,9 @@ export class BillingService {
     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
     // is captured but never executed) and Stripe's redelivery reconciles.
     let deferredSplit: DeferredSplitTask | null = null;
+    // S-FEE round 6 (#627 C-627-7) — payout notices recorded inside the tx
+    // are delivered after it commits (no push / email HTTP inside the tx).
+    let deferredPayoutNoticeChargeId: string | null = null;
 
     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
     // PI-succeeded route is the primary trigger for converting a guest
@@ -290,6 +293,9 @@ export class BillingService {
           // post-commit (below) so no Stripe HTTP fires inside this tx.
           if (result.deferredSplit) {
             deferredSplit = result.deferredSplit;
+          }
+          if (result.deferredPayoutNoticeChargeId) {
+            deferredPayoutNoticeChargeId = result.deferredPayoutNoticeChargeId;
           }
         }
 
@@ -679,6 +685,17 @@ export class BillingService {
           );
         }
       }
+    }
+
+    // S-FEE round 6 (C-627-7) — deliver the refund / chargeback payout
+    // notices now that the webhook tx committed. Never throws; the notice
+    // sweeper re-delivers anything undelivered.
+    if (
+      deferredPayoutNoticeChargeId &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.deliverPayoutNotices === 'function'
+    ) {
+      await this.checkoutWebhooks.deliverPayoutNotices(deferredPayoutNoticeChargeId);
     }
 
     // S-FEE — settle the guest purchase's charge(s) now that the conversion

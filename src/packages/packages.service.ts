@@ -657,9 +657,13 @@ export class PackagesService {
       throw new BadRequestException({
         error: 'PACKAGE_PRICE_BELOW_MINIMUM',
         code: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        // #321 C-321-7 / #627 round 6: free is exactly $0 on a one-time
+        // package only, so a recurring package is never offered $0.
         message: hasRecurringCompanion
           ? 'Paid packages start at $19.99. Set the one-time price to $19.99 or more.'
-          : 'Paid packages start at $19.99, or make it free.',
+          : input.billing_type === 'recurring'
+            ? 'Recurring packages start at $19.99.'
+            : 'Paid packages start at $19.99, or make it free.',
         minimum_cents: PAID_PACKAGE_MIN_CENTS,
       });
     }

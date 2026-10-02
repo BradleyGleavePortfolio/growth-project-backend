@@ -715,3 +715,122 @@ describe('B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivabl
     expect(ctx.openRecoveries()).toBe(4_900 - 3_130);
   });
 });
+
+// S-FEE round 6 (Sol B-627-5 at 9d6351b0, Opus C-627-4): an aged pending
+// reversal op whose Stripe lookup is unknown (listing outage, incomplete
+// listing) must not be re-sent. The fake keeps Stripe's durable reversal
+// objects apart from its expiring idempotency-key cache, so a re-send after
+// the key expired would create a second reversal (a second debit).
+describe('B-627-5 round 6: an unknown reversal lookup never re-sends', () => {
+  async function lostResponse(ctx: Ctx) {
+    await settle(ctx);
+    ctx.stripe.charges.set(
+      'ch_1',
+      makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 2_000 }),
+    );
+    // Stripe executes the $20 reversal; the response is lost and the
+    // listing is down, so the op stays pending (attempts 1).
+    ctx.stripe.reversalResponsesLost = 1;
+    ctx.stripe.failListReversals = true;
+    await expect(
+      ctx.svc.applyAdjustments({
+        purchase: ctx.purchase,
+        charge_id: 'ch_1',
+        refunded_cents: 2_000,
+      }),
+    ).rejects.toBeInstanceOf(ReversalUncertainError);
+    expect(ctx.stripe.reversals).toHaveLength(1);
+    expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', attempts: 1 });
+    // A day later Stripe has forgotten the request key.
+    ctx.stripe.expireIdempotencyKeys();
+  }
+
+  it('listing outage after key expiry: stays uncertain, sends nothing, reverses once', async () => {
+    const ctx = setup();
+    await lostResponse(ctx);
+    const sentBefore = ctx.stripe.reverseTransfer.mock.calls.length;
+    await expect(
+      ctx.svc.applyAdjustments({
+        purchase: ctx.purchase,
+        charge_id: 'ch_1',
+        refunded_cents: 2_000,
+      }),
+    ).rejects.toBeInstanceOf(ReversalUncertainError);
+    await expect(
+      ctx.transfers.resolvePendingReversals(ctx.db.transfers[0].id as string),
+    ).rejects.toBeInstanceOf(ReversalUncertainError);
+    expect(ctx.stripe.reverseTransfer.mock.calls.length).toBe(sentBefore);
+    expect(ctx.stripe.reversals).toHaveLength(1);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+    expect(ctx.db.recoveries).toHaveLength(0);
+    expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending' });
+    expect(String(ctx.db.reversalOps![0].last_error)).toMatch(/reversal lookup unavailable/);
+  });
+
+  it('incomplete listing (has_more never ends) is unknown, not absent', async () => {
+    const ctx = setup();
+    await lostResponse(ctx);
+    ctx.stripe.failListReversals = false;
+    ctx.stripe.reversalListAlwaysHasMore = true;
+    ctx.stripe.reversalListPageSize = 0;
+    const sentBefore = ctx.stripe.reverseTransfer.mock.calls.length;
+    await expect(
+      ctx.svc.applyAdjustments({
+        purchase: ctx.purchase,
+        charge_id: 'ch_1',
+        refunded_cents: 2_000,
+      }),
+    ).rejects.toBeInstanceOf(ReversalUncertainError);
+    expect(ctx.stripe.reverseTransfer.mock.calls.length).toBe(sentBefore);
+    expect(ctx.stripe.reversals).toHaveLength(1);
+  });
+
+  it('listing recovers: the existing reversal is found on a later page, recorded once, nothing re-sent', async () => {
+    const ctx = setup();
+    await lostResponse(ctx);
+    ctx.stripe.failListReversals = false;
+    ctx.stripe.reversalListPageSize = 1;
+    const sentBefore = ctx.stripe.reverseTransfer.mock.calls.length;
+    await ctx.svc.applyAdjustments({
+      purchase: ctx.purchase,
+      charge_id: 'ch_1',
+      refunded_cents: 2_000,
+    });
+    expect(ctx.stripe.reverseTransfer.mock.calls.length).toBe(sentBefore);
+    expect(ctx.stripe.reversals).toHaveLength(1);
+    expect(ctx.db.reversalOps![0]).toMatchObject({
+      status: 'succeeded',
+      stripe_reversal_id: 'trr_1',
+    });
+    expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_000);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+    expect(ctx.openRecoveries()).toBe(0);
+  });
+
+  it('proven absent (request never reached Stripe, full listing read): re-sent once after key expiry', async () => {
+    const ctx = setup();
+    await settle(ctx);
+    ctx.stripe.charges.set(
+      'ch_1',
+      makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 2_000 }),
+    );
+    ctx.stripe.reversalNetworkFailures = 1; // fails before Stripe executes
+    await expect(
+      ctx.svc.applyAdjustments({
+        purchase: ctx.purchase,
+        charge_id: 'ch_1',
+        refunded_cents: 2_000,
+      }),
+    ).rejects.toBeInstanceOf(ReversalUncertainError);
+    expect(ctx.stripe.reversals).toHaveLength(0);
+    ctx.stripe.expireIdempotencyKeys();
+    await ctx.svc.applyAdjustments({
+      purchase: ctx.purchase,
+      charge_id: 'ch_1',
+      refunded_cents: 2_000,
+    });
+    expect(ctx.stripe.reversals).toHaveLength(1);
+    expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+    expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'succeeded' });
+  });
+});
