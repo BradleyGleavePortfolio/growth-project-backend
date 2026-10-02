@@ -1,7 +1,13 @@
+import type { AiDataSubject } from '../../../ai-egress/ai-egress.types';
+
 // Provider-adapter contract. Each adapter (stub, perplexity, openai,
 // anthropic, …) implements this interface. The gateway picks one based
 // on AiGatewayConfig.resolve() and never lets controllers/services hold
 // a direct reference to a provider client.
+//
+// R2b — every request carries `dataSubject` (whose data is in the prompt),
+// derived by AiGatewayService. Real adapters hand it to AiEgressService,
+// which re-reads the box-2 grant immediately before the provider request.
 //
 // Inputs are intentionally narrow: a system message + a sequence of
 // chat turns + the redaction-summary so the adapter can attach it to
@@ -14,6 +20,7 @@ export interface AiChatTurn {
 
 export interface AiProviderRequest {
   capability: string;
+  dataSubject: AiDataSubject;
   systemPrompt: string;
   turns: AiChatTurn[];
   maxTokens?: number;

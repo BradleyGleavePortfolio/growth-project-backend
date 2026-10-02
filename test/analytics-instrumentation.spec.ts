@@ -13,6 +13,7 @@ import { AiService } from '../src/ai/ai.service';
 import { AIGuardrailsService } from '../src/ai/ai-guardrails.service';
 import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import type { ClientAIContext } from '../src/ai/client-ai-context.types';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 const makeAnalytics = () => ({ capture: jest.fn(), identify: jest.fn() });
 
@@ -289,6 +290,7 @@ describe('analytics instrumentation — AI chat', () => {
       ctxSvc as ClientAIContextService,
       new AIGuardrailsService(),
       analytics as any,
+      grantAllEgress(),
     );
     await svc.chat('user-1', 'how am I doing today', []);
     process.env.PERPLEXITY_API_KEY = prevKey;

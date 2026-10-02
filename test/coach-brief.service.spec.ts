@@ -43,6 +43,25 @@ import {
   MockPrisma,
   wireSoloDefaults,
 } from './_fixtures/coach-brief-mocks';
+import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import type { BriefAiInput } from '../src/coach/brief/coach-brief.service';
+import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
+
+// R2b — callClaude now takes the AI input explicitly. Legacy cases model
+// "every client allowed AI help": the AI sees the same context.
+function callClaudeAllAllowed(
+  svc: CoachBriefService,
+  ctx: Parameters<CoachBriefService['callClaude']>[0],
+) {
+  const ai: BriefAiInput = {
+    ctx,
+    subject:
+      ctx.brief_mode === 'head_coach'
+        ? noClientDataSubject('coach_business_metrics')
+        : clientDataSubject(['client-1'], 'coach'),
+  };
+  return svc.callClaude(ctx, ai);
+}
 
 // ─── Mode detection ────────────────────────────────────────────────────
 
@@ -51,7 +70,7 @@ describe('CoachBriefService.detectBriefMode', () => {
     const prisma = makeMockPrisma();
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'a1' });
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     expect(await svc.detectBriefMode('coach1')).toBe('sub_coach');
     expect(prisma.teamSubCoachAssignment.count).not.toHaveBeenCalled();
   });
@@ -61,7 +80,7 @@ describe('CoachBriefService.detectBriefMode', () => {
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
     prisma.teamSubCoachAssignment.count.mockResolvedValue(2);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     expect(await svc.detectBriefMode('coach1')).toBe('head_coach');
   });
 
@@ -70,7 +89,7 @@ describe('CoachBriefService.detectBriefMode', () => {
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
     prisma.teamSubCoachAssignment.count.mockResolvedValue(0);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     expect(await svc.detectBriefMode('coach1')).toBe('solo_coach');
   });
 
@@ -79,7 +98,7 @@ describe('CoachBriefService.detectBriefMode', () => {
     prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'a1' });
     prisma.teamSubCoachAssignment.count.mockResolvedValue(3);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     expect(await svc.detectBriefMode('coach1')).toBe('sub_coach');
   });
 });
@@ -91,7 +110,7 @@ describe('CoachBriefService.resolveClientScope', () => {
     const prisma = makeMockPrisma();
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.resolveClientScope('coach1', 'solo_coach');
     expect(result).toEqual(['c1', 'c2']);
     expect(prisma.clientWorkoutAssignment.findMany).not.toHaveBeenCalled();
@@ -101,7 +120,7 @@ describe('CoachBriefService.resolveClientScope', () => {
     const prisma = makeMockPrisma();
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }]);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.resolveClientScope('coach1', 'head_coach');
     expect(result).toEqual(['c1']);
   });
@@ -114,7 +133,7 @@ describe('CoachBriefService.resolveClientScope', () => {
     ]);
     prisma.user.findMany.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.resolveClientScope('subCoach1', 'sub_coach');
     expect(result).toEqual(['c1', 'c2']);
     expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith({
@@ -127,7 +146,7 @@ describe('CoachBriefService.resolveClientScope', () => {
     const prisma = makeMockPrisma();
     prisma.subCoachAssignment.findMany.mockResolvedValue([]);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     expect(await svc.resolveClientScope('subCoach1', 'sub_coach')).toEqual([]);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
@@ -156,7 +175,7 @@ describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () =
 
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
     const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
@@ -203,7 +222,7 @@ describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () =
       created_at: staleStarted,
     });
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
     expect(res.status).toBe('generated');
     expect(prisma.coachBrief.updateMany).toHaveBeenCalled();
@@ -248,7 +267,7 @@ describe('CoachBriefService.generateBrief — stale lease recovery (P1-1)', () =
 
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
     const res = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
@@ -277,7 +296,7 @@ describe('CoachBriefService.generateBrief — idempotent generated path', () => 
     };
     prisma.coachBrief.findUnique.mockResolvedValue(existing);
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
 
     expect(result.summary?.narrative).toBe('cached');
@@ -303,7 +322,7 @@ describe('CoachBriefService.generateBrief — idempotent generated path', () => 
       created_at: new Date(),
     });
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.generateBrief(
       'coach1',
       'America/Los_Angeles',
@@ -344,7 +363,7 @@ describe('CoachBriefService.generateBrief — idempotent generated path', () => 
     const loserAnthropic = makeMockAnthropic('should not be called');
     const loserSvc = new CoachBriefService(
       asPrismaService(loserPrisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(loserAnthropic),
     );
     const res = await loserSvc.generateBrief(
@@ -453,11 +472,11 @@ describe('CoachBriefService.callClaude', () => {
     const anthropic = makeMockAnthropic(valid);
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
 
-    const result = await svc.callClaude(
+    const result = await callClaudeAllAllowed(svc, 
       makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
     );
     expect(result.generated_by).toBe('ai');
@@ -475,11 +494,11 @@ describe('CoachBriefService.callClaude', () => {
     const anthropic = makeMockAnthropic([tooFew, tooFew]);
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
 
-    const result = await svc.callClaude(
+    const result = await callClaudeAllAllowed(svc, 
       makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
     );
     expect(result.generated_by).toBe('fallback');
@@ -491,11 +510,11 @@ describe('CoachBriefService.callClaude', () => {
     const anthropic = makeMockAnthropic(new Error('boom'));
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
 
-    const result = await svc.callClaude(
+    const result = await callClaudeAllAllowed(svc, 
       makeBriefContext({ workouts_pending_approval: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
@@ -507,11 +526,11 @@ describe('CoachBriefService.callClaude', () => {
     const anthropic = makeMockAnthropic('should not be called');
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
 
-    const result = await svc.callClaude(
+    const result = await callClaudeAllAllowed(svc, 
       makeBriefContext({
         checked_in_today: 5,
         missed_checkin: 0,
@@ -526,8 +545,8 @@ describe('CoachBriefService.callClaude', () => {
 
   it('falls back when ANTHROPIC_API_KEY is missing', async () => {
     const prisma = makeMockPrisma();
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
-    const result = await svc.callClaude(
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+    const result = await callClaudeAllAllowed(svc, 
       makeBriefContext({ workouts_pending_approval: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
@@ -540,7 +559,7 @@ describe('CoachBriefService.callClaude', () => {
     const anthropic = makeMockAnthropic(valid);
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
       asAnthropic(anthropic),
     );
 
@@ -549,7 +568,7 @@ describe('CoachBriefService.callClaude', () => {
       coach_first_name: 'Marcus',
       total_revenue_today_cents: 420000,
     });
-    await svc.callClaude(ctx);
+    await callClaudeAllAllowed(svc, ctx);
 
     expect(anthropic.messages.create).toHaveBeenCalled();
     const call = anthropic.messages.create.mock.calls[0][0] as {
@@ -656,7 +675,7 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
       });
     });
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
 
     expect(result.summary?.brief_mode).toBe('head_coach');
@@ -780,7 +799,7 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
 
     const svc = new CoachBriefService(
       asPrismaService(prisma),
-      asConfig(makeMockConfig()),
+      asConfig(makeMockConfig()), grantAllEgress(),
     );
     await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
 
@@ -866,7 +885,7 @@ describe('CoachBriefService sub-coach unread messages — P1-5', () => {
       });
     });
 
-    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()));
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     await svc.generateBrief(subCoachId, 'America/Los_Angeles', '2026-05-25');
 
     const call = prisma.coachMessage.findMany.mock.calls[0]?.[0] as {
@@ -1621,5 +1640,127 @@ describe('CoachBriefPreferencesService', () => {
     const result = await svc.upsert('coach1', { notification_time: '09:30' });
     expect(result.notification_time).toBe('09:30');
     expect(prisma.coachBriefPreferences.upsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── R2b — box-2 consent ───────────────────────────────────────────────────
+describe('CoachBriefService — R2b box-2 consent', () => {
+  const VALID =
+    "Sarah, we ran your roster and pulled the highlights together. Three of seven clients have already checked in today. We're chasing one failed payment in the background. Two workouts need your eyes before noon. Here's what to tackle: workouts and one message.";
+  const ACTIVE_CTX = () => makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 });
+
+  function build(granted: string[]) {
+    const anthropic = makeMockAnthropic(VALID);
+    const { egress, reader } = egressWithGrants(granted);
+    const svc = new CoachBriefService(
+      asPrismaService(makeMockPrisma()),
+      asConfig(makeMockConfig()),
+      egress,
+      asAnthropic(anthropic),
+    );
+    return { svc, anthropic, reader };
+  }
+  const soloAi = (ids: string[]): BriefAiInput => ({
+    ctx: ACTIVE_CTX(),
+    subject: clientDataSubject(ids, 'coach'),
+  });
+
+  it('grant: the AI narrative is generated', async () => {
+    const { svc, anthropic } = build(['c1', 'c2']);
+    const out = await svc.callClaude(ACTIVE_CTX(), soloAi(['c1', 'c2']));
+    expect(out.generated_by).toBe('ai');
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('no consenting client (ai=null): deterministic narrative, nothing sent', async () => {
+    const { svc, anthropic } = build([]);
+    const out = await svc.callClaude(ACTIVE_CTX(), null);
+    expect(out.generated_by).toBe('fallback');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('revoked after the scope was computed: refused at send -> fallback, nothing sent', async () => {
+    const { svc, anthropic, reader } = build(['c1']);
+    reader.revoke('c1');
+    const out = await svc.callClaude(ACTIVE_CTX(), soloAi(['c1']));
+    expect(out.generated_by).toBe('fallback');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('ledger error at send: fails closed -> fallback, nothing sent', async () => {
+    const { svc, anthropic, reader } = build(['c1']);
+    reader.failWith = new Error('db down');
+    const out = await svc.callClaude(ACTIVE_CTX(), soloAi(['c1']));
+    expect(out.generated_by).toBe('fallback');
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+  });
+
+  describe('buildSoloAiInput (who the AI may see)', () => {
+    const args = (svc: CoachBriefService, ids: string[]) =>
+      svc['buildSoloAiInput']('coach1', ids, ACTIVE_CTX(), 'America/Los_Angeles', '2026-05-25', 'solo_coach');
+
+    it('every client allowed: the full context, all ids as subject', async () => {
+      const { svc } = build(['c1', 'c2']);
+      const out = await args(svc, ['c1', 'c2']);
+      expect(out?.subject).toEqual(clientDataSubject(['c1', 'c2'], 'coach'));
+      expect(out?.scope).toBeUndefined();
+    });
+
+    it('no client allowed: null (no AI call)', async () => {
+      const { svc } = build([]);
+      await expect(args(svc, ['c1', 'c2'])).resolves.toBeNull();
+    });
+
+    it('ledger error: null (fail closed)', async () => {
+      const { svc, reader } = build(['c1', 'c2']);
+      reader.failWith = new Error('db down');
+      await expect(args(svc, ['c1', 'c2'])).resolves.toBeNull();
+    });
+
+    it('some allowed: counts re-aggregated over ONLY the consenting clients', async () => {
+      const { svc } = build(['c2']);
+      const restricted = makeBriefContext({ roster_size: 1, workouts_pending_approval: 1 });
+      const aggregate = jest.fn(async () => ({
+        context: restricted,
+        pendingWorkouts: [],
+        unreadThreads: [],
+        flaggedWeightLogs: [],
+        missingCheckinClients: [],
+      }));
+      svc['aggregateSoloContext'] = aggregate;
+      const out = await args(svc, ['c1', 'c2', 'c3']);
+      expect(aggregate).toHaveBeenCalledWith('coach1', ['c2'], 'America/Los_Angeles', '2026-05-25', 'solo_coach');
+      expect(out?.subject).toEqual(clientDataSubject(['c2'], 'coach'));
+      expect(out?.scope).toEqual({ consented: 1, roster: 3 });
+      expect(buildBriefPrompt(restricted, out?.scope)).toContain('cover only the 1 of 3 clients who allowed AI help');
+    });
+  });
+
+  it('head-coach context carries business metrics only (no client identifier or health field)', () => {
+    const ctx: BriefContextHeadCoach = makeHeadCoachContext();
+    // Pin the shape: adding a client-level field must revisit the
+    // coach_business_metrics exemption.
+    expect(Object.keys(ctx).sort()).toEqual(
+      [
+        'brief_mode',
+        'coach_first_name',
+        'coach_name',
+        'date',
+        'dunning_amount_cents',
+        'dunning_in_progress',
+        'mrr_projected_cents',
+        'new_clients_last_24h',
+        'paid_today_count',
+        'sub_coach_highlights',
+        'team_clients_total',
+        'team_revenue_30d_cents',
+        'team_size',
+        'total_revenue_today_cents',
+      ].sort(),
+    );
+    for (const h of ctx.sub_coach_highlights) {
+      expect(Object.keys(h).sort()).toEqual(['active_clients', 'coach_name', 'new_clients_24h']);
+    }
+    expect(noClientDataSubject('coach_business_metrics').kind).toBe('no_client_data');
   });
 });

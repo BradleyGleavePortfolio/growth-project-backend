@@ -6,6 +6,14 @@ import {
 } from '../../../src/community/ai-triage/ai-triage.service';
 import { TriageCacheService } from '../../../src/community/ai-triage/triage-cache.service';
 import type { AiGatewayService } from '../../../src/ai/gateway/ai-gateway.service';
+import {
+  AiConsentRequiredException,
+  AiEgressPolicyException,
+} from '../../../src/ai-egress/ai-consent-required.exception';
+import {
+  AI_TRIAGE_UNAVAILABLE_CODE,
+  AiTriageUnavailableException,
+} from '../../../src/community/ai-triage/ai-triage-unavailable.exception';
 import type { CommunityCoachInboxRepository } from '../../../src/community/inbox/community-coach-inbox.repository';
 import type { CommunityAccessService } from '../../../src/community/community-access.service';
 import { COACH_AI_METERED_CAPABILITIES } from '../../../src/ai-credits/ai-credits.constants';
@@ -13,6 +21,7 @@ import {
   TRIAGE_CATEGORIES,
   TriageResponseSchema,
 } from '../../../src/community/ai-triage/triage-output.schema';
+import { egressWithGrants, grantAllEgress } from '../../ai-egress/ai-egress.fakes';
 
 // v2-4 — AiTriageService orchestration contract tests.
 //
@@ -76,12 +85,17 @@ function makeMocks(): Mocks {
   };
 }
 
-function build(mocks: Mocks, cache = new TriageCacheService()): AiTriageService {
+function build(
+  mocks: Mocks,
+  cache = new TriageCacheService(),
+  egress = grantAllEgress(),
+): AiTriageService {
   return new AiTriageService(
     mocks.gateway as unknown as AiGatewayService,
     mocks.repo as unknown as CommunityCoachInboxRepository,
     mocks.access as unknown as CommunityAccessService,
     cache,
+    egress,
   );
 }
 
@@ -350,21 +364,32 @@ describe('AiTriageService', () => {
       expect(mocks.gateway.invoke).not.toHaveBeenCalled();
     });
 
-    it('degrades to a typed empty triage when the LLM throws (no silent swallow into fake data)', async () => {
+    it('C-626-4: an LLM failure is an explicit 503 ai_triage_unavailable, not an empty inbox (and is not cached)', async () => {
       const mocks = makeMocks();
       const now = new Date('2026-06-10T12:00:00Z');
       mocks.repo.unansweredMessages.mockResolvedValue([
         messageRow(MSG_1, COHORT_A, 'A question.', now),
       ]);
-      mocks.gateway.invoke.mockRejectedValue(new Error('provider down'));
+      mocks.gateway.invoke.mockRejectedValueOnce(new Error('provider down'));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
-      expect(out.source_item_ids).toEqual([]);
+      const err = await svc.generateForCoach(coach()).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AiTriageUnavailableException);
+      expect((err as AiTriageUnavailableException).getStatus()).toBe(503);
+      expect((err as AiTriageUnavailableException).getResponse()).toMatchObject({
+        code: AI_TRIAGE_UNAVAILABLE_CODE,
+        message: expect.stringContaining('Try again'),
+      });
+      // The retry is not served a cached failure: it runs the pipeline again.
+      mocks.gateway.invoke.mockResolvedValueOnce(gatewayReply(JSON.stringify({
+        buckets: TRIAGE_CATEGORIES.map((category) => ({ category, items: [] })),
+      })));
+      const retry = await svc.generateForCoach(coach());
+      expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+      expect(retry.buckets).toHaveLength(TRIAGE_CATEGORIES.length);
     });
 
-    it('degrades to empty when the model output is invalid even after one repair', async () => {
+    it('C-626-4: invalid model output even after one repair is 503 ai_triage_unavailable', async () => {
       const mocks = makeMocks();
       const now = new Date('2026-06-10T12:00:00Z');
       mocks.repo.unansweredMessages.mockResolvedValue([
@@ -373,10 +398,35 @@ describe('AiTriageService', () => {
       mocks.gateway.invoke.mockResolvedValue(gatewayReply('not json at all'));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
-      // Two invokes: original + single repair attempt, then fail-empty.
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
+      // Two invokes: original + single repair attempt, then unavailable.
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('C-626-4: a failed repair call is 503 ai_triage_unavailable', async () => {
+      const mocks = makeMocks();
+      const now = new Date('2026-06-10T12:00:00Z');
+      mocks.repo.unansweredMessages.mockResolvedValue([
+        messageRow(MSG_1, COHORT_A, 'A question.', now),
+      ]);
+      mocks.gateway.invoke
+        .mockResolvedValueOnce(gatewayReply('not json at all'))
+        .mockRejectedValueOnce(new Error('timeout'));
+      await expect(build(mocks).generateForCoach(coach())).rejects.toBeInstanceOf(
+        AiTriageUnavailableException,
+      );
+    });
+
+    it('C-626-4: an egress policy refusal keeps its own 503 ai_egress_blocked code', async () => {
+      const mocks = makeMocks();
+      const now = new Date('2026-06-10T12:00:00Z');
+      mocks.repo.unansweredMessages.mockResolvedValue([
+        messageRow(MSG_1, COHORT_A, 'A question.', now),
+      ]);
+      mocks.gateway.invoke.mockRejectedValue(new AiEgressPolicyException());
+      await expect(build(mocks).generateForCoach(coach())).rejects.toBeInstanceOf(
+        AiEgressPolicyException,
+      );
     });
   });
 
@@ -503,8 +553,7 @@ describe('AiTriageService', () => {
       mocks.gateway.invoke.mockResolvedValue(gatewayReply(bad));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
     });
 
@@ -536,9 +585,8 @@ describe('AiTriageService', () => {
       );
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
       // The smuggled draft_reply field fails .strict() on both attempts.
-      expect(out.is_empty).toBe(true);
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
     });
   });
 
@@ -588,5 +636,104 @@ describe('AiTriageService', () => {
       expect(mocks.access.findCohortsByIds).not.toHaveBeenCalled();
       expect(mocks.access.findCohort).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('AiTriageService — R2b box-2 consent', () => {
+  function seed(mocks: ReturnType<typeof makeMocks>) {
+    const now = new Date('2026-06-10T12:00:00Z');
+    // MSG_1 by sender-1, POST_1 by author-1 (see messageRow / postRow).
+    mocks.repo.unansweredMessages.mockResolvedValue([
+      messageRow(MSG_1, COHORT_A, 'When is my next check-in call?', now),
+    ]);
+    mocks.repo.unansweredPosts.mockResolvedValue([postRow(POST_1, COHORT_A, 'New squat PB today!', now)]);
+    mocks.gateway.invoke.mockResolvedValue(gatewayReply(validModelJson({ msg: MSG_1, post: POST_1 })));
+  }
+  const promptOf = (mocks: ReturnType<typeof makeMocks>): string =>
+    mocks.gateway.invoke.mock.calls
+      .map((c: Array<{ userMessage: string }>) => c[0].userMessage)
+      .join('\n');
+
+  it('grant (both authors): both items reach the prompt; both authors declared to the gateway', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['sender-1', 'author-1']);
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(promptOf(mocks)).toContain(MSG_1);
+    expect(promptOf(mocks)).toContain(POST_1);
+    expect([...mocks.gateway.invoke.mock.calls[0][0].dataClientIds].sort()).toEqual(['author-1', 'sender-1']);
+  });
+
+  it('no grant for one author: their words never enter the prompt', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['author-1']);
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(promptOf(mocks)).not.toContain(MSG_1);
+    expect(promptOf(mocks)).not.toContain('When is my next check-in call?');
+    expect(mocks.gateway.invoke.mock.calls[0][0].dataClientIds).toEqual(['author-1']);
+  });
+
+  it('no grant for anyone: no AI call at all', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants([]);
+    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(out.is_empty).toBe(true);
+    expect(mocks.gateway.invoke).not.toHaveBeenCalled();
+  });
+
+  it('revoked: a cached triage built from that author is not served again', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    const svc = build(mocks, new TriageCacheService(), egress);
+    await svc.generateForCoach(coach());
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(1);
+    reader.revoke('sender-1');
+    const out = await svc.generateForCoach(coach());
+    // Cache key changed with the consented set: rebuilt without MSG_1.
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.gateway.invoke.mock.calls[1][0].userMessage).not.toContain(MSG_1);
+    expect(out.source_item_ids).not.toContain(MSG_1);
+  });
+
+  it('C-626-3: an author withdraws between the filter and the send -> re-filtered once, the rest still triaged', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    // The gateway's send-time check sees the withdrawal and refuses the prompt.
+    mocks.gateway.invoke.mockImplementationOnce(async () => {
+      reader.revoke('sender-1');
+      throw new AiConsentRequiredException('coach');
+    });
+    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.gateway.invoke.mock.calls[1][0].dataClientIds).toEqual(['author-1']);
+    expect(mocks.gateway.invoke.mock.calls[1][0].userMessage).not.toContain(MSG_1);
+    expect(out.is_empty).toBe(false);
+    expect(out.source_item_ids).toEqual([POST_1]);
+  });
+
+  it('C-626-3: a second refusal is not retried again (bounded to one re-filter)', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress } = egressWithGrants(['sender-1', 'author-1']);
+    mocks.gateway.invoke.mockRejectedValue(new AiConsentRequiredException('coach'));
+    const err = await build(mocks, new TriageCacheService(), egress)
+      .generateForCoach(coach())
+      .catch((e: unknown) => e);
+    expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    // C-626-4: explicit "triage unavailable", never an empty inbox.
+    expect(err).toBeInstanceOf(AiTriageUnavailableException);
+  });
+
+  it('ledger error: fails closed, no AI call', async () => {
+    const mocks = makeMocks();
+    seed(mocks);
+    const { egress, reader } = egressWithGrants(['sender-1', 'author-1']);
+    reader.failWith = new Error('db down');
+    await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    expect(mocks.gateway.invoke).not.toHaveBeenCalled();
   });
 });

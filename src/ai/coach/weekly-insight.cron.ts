@@ -3,6 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import { DormancyGuardService } from '../../ai-credits/dormancy-guard.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 
 // Weekly insight digest cron.
 //
@@ -26,6 +28,9 @@ export class WeeklyInsightCron {
     // to short-circuit per-coach iteration when the coach has 3+
     // consecutive unread briefs (cost protection).
     private readonly dormancy: DormancyGuardService,
+    // R2b — skip clients without a live box-2 grant before building any
+    // context. generateClientInsight re-checks at send time regardless.
+    private readonly egress: AiEgressService,
   ) {}
 
   @Cron(CronExpression.EVERY_WEEK)
@@ -54,11 +59,25 @@ export class WeeklyInsightCron {
         );
         continue;
       }
-      const clientIds = await this.svc.listActiveClientsForCoach(coachId);
+      const rosterIds = await this.svc.listActiveClientsForCoach(coachId);
+      const consented = await this.egress.consentedClients(rosterIds);
+      const clientIds = rosterIds.filter((id) => consented.has(id));
+      if (clientIds.length < rosterIds.length) {
+        this.logger.log(
+          {
+            event: 'WEEKLY_INSIGHT_SKIPPED_NO_AI_CONSENT',
+            coachId,
+            skipped: rosterIds.length - clientIds.length,
+          },
+          `coach=${coachId} skipped ${rosterIds.length - clientIds.length} client(s) without AI consent`,
+        );
+      }
       for (const clientId of clientIds) {
         try {
           await this.svc.generateClientInsight(coachId, { clientId, windowDays: 7 });
         } catch (err) {
+          // R2b — withdrawn between the filter and the send: expected, quiet.
+          if (isAiEgressRefusal(err)) continue;
           // One failed client must not abort the rest of the coach's
           // digest. We log + continue.
           this.logger.warn(

@@ -15,6 +15,7 @@ import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service'
 import { CoachAiCreditPackService } from '../src/ai-credits/coach-ai-credit-pack.service';
 import { DormancyGuardService } from '../src/ai-credits/dormancy-guard.service';
 import { CoachBriefService } from '../src/coach/brief/coach-brief.service';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 // ---------------------------------------------------------------------------
 // Shared mini-mock — fresh per describe to avoid cross-test bleed.
@@ -635,7 +636,7 @@ describe('Round-2 NEW-P2-1 — markBriefRead flips dormancy state', () => {
     // CoachBriefService takes (prisma, config, ?anthropic). For the
     // mark-read path it only touches prisma; the ConfigService stub
     // is enough — no Anthropic calls are made.
-    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any, grantAllEgress());
 
     // Seed: three briefs, all unread, in date-descending order.
     seedBriefs(store, 'coach-chain', [
@@ -663,7 +664,7 @@ describe('Round-2 NEW-P2-1 — markBriefRead flips dormancy state', () => {
     const store = newStore();
     const prisma = makePrismaMock(store);
     const dormancy = new DormancyGuardService(prisma);
-    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any, grantAllEgress());
 
     seedBriefs(store, 'coach-idem', [
       { id: 'b-1', brief_date: '2026-05-26', read_at: null },
@@ -685,7 +686,7 @@ describe('Round-2 NEW-P2-1 — markBriefRead flips dormancy state', () => {
   it('tenant scope: markBriefRead on another coach\'s brief throws BriefNotFoundError', async () => {
     const store = newStore();
     const prisma = makePrismaMock(store);
-    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any);
+    const briefSvc = new CoachBriefService(prisma, { get: () => undefined } as any, grantAllEgress());
 
     seedBriefs(store, 'coach-A', [
       { id: 'b-A-1', brief_date: '2026-05-28', read_at: null },
