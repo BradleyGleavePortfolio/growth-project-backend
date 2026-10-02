@@ -588,6 +588,7 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'PUBLIC_READS_PER_MIN',
     tier: 'optional',
+    default: '240 per IP per minute (unset, empty or unparseable fall back to 240; clamped to [10, 5000])',
     reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000].',
   },
   {
@@ -608,17 +609,20 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_OAUTH_PER_MIN',
     tier: 'optional',
+    default: '60 per IP per minute (unset, empty or unparseable fall back to 60; clamped to [5, 5000])',
     reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per minute (own bucket, never reset). Defaults to 60 (a 40-person room on one Wi-Fi); clamped to [5, 5000].',
   },
   {
     name: 'AUTH_OAUTH_PER_HOUR',
     tier: 'optional',
+    default: '400 per IP per hour (unset, empty or unparseable fall back to 400; clamped to [20, 20000])',
     reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000].',
   },
   {
     name: 'AUTH_LOGIN_ACCOUNT_FAILURES',
     tier: 'optional',
-    reason: 'Clinic C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; clamped to [3, 100].',
+    default: '10 failed sign-ins per account per 15 minutes (unset, unparseable or below 3 fall back to 10; capped at 100)',
+    reason: 'Clinic C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; values below 3 fall back to 10; capped at 100.',
   },
   {
     name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
