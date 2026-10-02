@@ -17,6 +17,17 @@ import {
   StartOauthResult,
   WearableConnectionStatus,
 } from './types';
+import { ON_DEVICE_LANE_PROVIDERS, type OnDeviceLaneProvider } from './dto/register-on-device.dto';
+
+/**
+ * S14 — fixed `external_account_id` for on-device connections. A device source
+ * has no provider account id, and a NULL account id would defeat the
+ * (user_id, provider, external_account_id) unique key (NULLs are distinct), so
+ * concurrent registrations could create duplicate rows. A constant sentinel
+ * makes registration a single race-safe upsert: one row per user per device
+ * provider.
+ */
+export const ON_DEVICE_ACCOUNT_ID = 'on-device';
 
 /**
  * PR-HK-1 — generic OAuth connect/callback + connection management service.
@@ -97,10 +108,7 @@ export class ConnectionsService {
    * @throws BadRequestException on invalid/expired/replayed state or a failed
    *   exchange — with a GENERIC message (no token/secret leak).
    */
-  async handleCallback(input: {
-    code: string;
-    state: string;
-  }): Promise<OauthCallbackResult> {
+  async handleCallback(input: { code: string; state: string }): Promise<OauthCallbackResult> {
     // 1) Validate + consume state BEFORE touching the provider. A bad state
     //    must never trigger a token exchange.
     let stateRecord;
@@ -186,6 +194,47 @@ export class ConnectionsService {
     }
 
     return { success: true, provider };
+  }
+
+  /**
+   * S14 — register (or re-activate) the caller's on-device connection for
+   * Apple Health or Health Connect, after the user granted read access in the
+   * platform permission UI. Returns the token-free connection, whose `id` the
+   * device uses as `connectionId` on `POST /v1/wearables/samples/ingest`.
+   *
+   * Idempotent and race-safe: a single upsert on the compound unique key with
+   * the {@link ON_DEVICE_ACCOUNT_ID} sentinel. Re-registering after a
+   * disconnect flips the same row back to `connected` (the audit row survives).
+   * The owning user is always the JWT user (`userId` from the controller).
+   */
+  async registerOnDevice(
+    userId: string,
+    provider: OnDeviceLaneProvider,
+  ): Promise<SafeWearableConnection> {
+    if (!(ON_DEVICE_LANE_PROVIDERS as readonly WearableProvider[]).includes(provider)) {
+      throw new BadRequestException(`Provider ${provider} is not an on-device source.`);
+    }
+    return this.prisma.wearableConnection.upsert({
+      where: {
+        WearableConnection_user_provider_account_key: {
+          user_id: userId,
+          provider,
+          external_account_id: ON_DEVICE_ACCOUNT_ID,
+        },
+      },
+      create: {
+        user_id: userId,
+        provider,
+        external_account_id: ON_DEVICE_ACCOUNT_ID,
+        status: WearableConnectionStatus.CONNECTED,
+      },
+      update: {
+        status: WearableConnectionStatus.CONNECTED,
+        last_error: null,
+        disconnected_at: null,
+      },
+      select: SAFE_CONNECTION_SELECT,
+    });
   }
 
   /**

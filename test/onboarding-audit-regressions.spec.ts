@@ -20,7 +20,8 @@ import type { AuditService } from '../src/audit/audit.service';
 // covered by test/onboarding.service.spec.ts:
 //   A607-1  the audit's exact reproduction with the REAL SubCoachScopeService
 //           (stale head-A assignment, client now under head B) -> 404;
-//           and the attach-code transfer retires open sub-coach assignments.
+//           and a code-entry coach change is refused (409), so no stale
+//           sub-coach access can survive it.
 //   Opus    every signed-in role reaches the coach consultation route's
 //           tenancy check (404), none is stopped by RolesGuard (403).
 
@@ -72,6 +73,10 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
           ),
         ),
       },
+      // Main's SubCoachScopeService (#597 C13 Opus A1) needs an explicit
+      // membership row before it treats a coach as a sub-coach: no Team Mode
+      // seat here, so the open SubCoachAssignment below is the membership.
+      teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
       subCoachAssignment: {
         findMany: jest.fn(async () => assignments),
         findFirst: jest.fn(
@@ -102,15 +107,20 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
   });
 });
 
-describe('A607-1: attach-code transfer retires open sub-coach assignments', () => {
+describe('A607-1: a client cannot change coach by code entry (nothing to retire)', () => {
+  // Forward merge onto main (#599 canonical attach writer): code entry never
+  // re-parents a client. A student who already has a coach is refused with
+  // 409 already_attached_to_different_coach before any write, and the
+  // attach itself only writes `where coach_id IS NULL`. So the old team can
+  // never keep sub-coach access through a code-entry transfer; #607's
+  // retire-on-transfer branch has no reachable caller and is not carried.
   function make(me: { id: string; role: string; coach_id: string | null; email: string }) {
     const assignmentUpdate = jest.fn(async () => ({ count: 1 }));
+    const userUpdateMany = jest.fn(async () => ({ count: 1 }));
     const tx = {
       user: {
-        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-          ...me,
-          ...data,
-        })),
+        findUnique: jest.fn(async () => me),
+        updateMany: userUpdateMany,
       },
       subCoachAssignment: { updateMany: assignmentUpdate },
       inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
@@ -121,6 +131,7 @@ describe('A607-1: attach-code transfer retires open sub-coach assignments', () =
       },
       coachSubscription: { findUnique: jest.fn(async () => ({ status: 'active' })) },
       user: { findUnique: jest.fn(async () => me) },
+      subCoachAssignment: { updateMany: assignmentUpdate },
       $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
     };
     const analytics: object = { capture: jest.fn() };
@@ -130,16 +141,18 @@ describe('A607-1: attach-code transfer retires open sub-coach assignments', () =
       {} as EmailService,
       {} as AuditService,
     );
-    return { svc, assignmentUpdate };
+    return { svc, assignmentUpdate, userUpdateMany, transaction: prisma.$transaction };
   }
 
-  it('moving a client from head A to head B closes every open assignment in the same transaction', async () => {
+  it('a client of head A entering head B code is refused with 409; no write, no assignment touched', async () => {
     const h = make({ id: 'client', role: 'student', coach_id: 'head-A', email: 'c@example.test' });
-    await h.svc.attachUserToCoachByCode('client', 'GP-TEST01');
-    expect(h.assignmentUpdate).toHaveBeenCalledWith({
-      where: { client_id: 'client', unassigned_at: null },
-      data: { unassigned_at: expect.any(Date), reason: 'client_transferred' },
+    await expect(h.svc.attachUserToCoachByCode('client', 'GP-TEST01')).rejects.toMatchObject({
+      status: 409,
+      response: { code: 'already_attached_to_different_coach' },
     });
+    expect(h.transaction).not.toHaveBeenCalled();
+    expect(h.userUpdateMany).not.toHaveBeenCalled();
+    expect(h.assignmentUpdate).not.toHaveBeenCalled();
   });
 
   it('re-attaching to the same coach or a first attach does not touch assignments', async () => {
@@ -149,10 +162,21 @@ describe('A607-1: attach-code transfer retires open sub-coach assignments', () =
       coach_id: 'head-B',
       email: 'c@example.test',
     });
-    await same.svc.attachUserToCoachByCode('client', 'GP-TEST01');
+    await expect(same.svc.attachUserToCoachByCode('client', 'GP-TEST01')).resolves.toMatchObject({
+      coach_id: 'head-B',
+      already_attached: true,
+    });
+    expect(same.userUpdateMany).not.toHaveBeenCalled();
     expect(same.assignmentUpdate).not.toHaveBeenCalled();
     const first = make({ id: 'client', role: 'student', coach_id: null, email: 'c@example.test' });
-    await first.svc.attachUserToCoachByCode('client', 'GP-TEST01');
+    await expect(first.svc.attachUserToCoachByCode('client', 'GP-TEST01')).resolves.toMatchObject({
+      coach_id: 'head-B',
+      already_attached: false,
+    });
+    expect(first.userUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'client', role: 'student', coach_id: null },
+      data: { coach_id: 'head-B' },
+    });
     expect(first.assignmentUpdate).not.toHaveBeenCalled();
   });
 });

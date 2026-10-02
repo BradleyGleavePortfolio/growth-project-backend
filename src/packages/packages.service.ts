@@ -540,7 +540,19 @@ export class PackagesService {
       input.recurring_amount_cents != null ||
       input.recurring_interval != null ||
       input.recurring_interval_count != null;
-    if (!Number.isInteger(input.amount_cents) || input.amount_cents < 50) {
+    // Clinic C01 — a FREE package is exactly amount_cents 0, one_time (or
+    // unset) and without a recurring companion; it never touches Stripe
+    // (checkout refuses it with PACKAGE_IS_FREE; clients claim it via
+    // POST /v1/packages/:id/claim-free). Every paid leg keeps the 50¢ floor.
+    // The ≥ $20 recommendation is an owner decision and deliberately NOT
+    // enforced here.
+    const isFree =
+      input.amount_cents === 0 &&
+      (input.billing_type ?? 'one_time') === 'one_time' &&
+      !hasRecurringCompanion;
+    if (isFree) {
+      // fall through to the shared currency / duration checks below
+    } else if (!Number.isInteger(input.amount_cents) || input.amount_cents < 50) {
       // Stripe minimum charge for USD is 50 cents; under that the API rejects.
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',

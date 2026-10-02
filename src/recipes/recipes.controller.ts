@@ -16,6 +16,12 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateRecipeDto } from './recipes.dto';
+import type { RecipeViewer } from './recipe-access';
+
+/** The policy reads only id, role and coach_id from the per-request User row. */
+function viewerOf(req: AuthedRequest): RecipeViewer {
+  return { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id };
+}
 
 @ApiTags('recipes')
 @Controller('recipes')
@@ -24,40 +30,40 @@ import { CreateRecipeDto } from './recipes.dto';
 export class RecipesController {
   constructor(private recipesService: RecipesService) {}
 
-  /** GET /recipes — list public + user's own + saved */
+  /** GET /recipes — the caller's own recipes plus the ones their coach shares with clients. */
   @Get()
   async list(@Request() req: AuthedRequest) {
-    return this.recipesService.list(req.user.id);
+    return this.recipesService.list(viewerOf(req));
   }
 
-  /** GET /recipes/saved — list this user's saved recipes */
+  /** GET /recipes/saved — the caller's saved recipes they can still see. */
   @Get('saved')
   async listSaved(@Request() req: AuthedRequest) {
-    return this.recipesService.listSaved(req.user.id);
+    return this.recipesService.listSaved(viewerOf(req));
   }
 
-  /** GET /recipes/:id — single recipe detail */
+  /** GET /recipes/:id — single recipe detail; 404 RECIPE_NOT_FOUND when not visible. */
   @Get(':id')
   async getById(@Request() req: AuthedRequest, @Param('id') id: string) {
-    return this.recipesService.getById(id, req.user.id);
+    return this.recipesService.getById(id, viewerOf(req));
   }
 
-  /** POST /recipes — coach creates a recipe */
+  /** POST /recipes — create a private recipe; coaches may share it with their own clients. */
   @Post()
   async create(@Request() req: AuthedRequest, @Body() body: CreateRecipeDto) {
-    return this.recipesService.create(req.user.id, body);
+    return this.recipesService.create(viewerOf(req), body);
   }
 
-  /** POST /recipes/:id/save — user saves a recipe */
+  /** POST /recipes/:id/save — save a recipe the caller can see. */
   @Post(':id/save')
   async save(@Request() req: AuthedRequest, @Param('id') id: string) {
-    return this.recipesService.saveRecipe(id, req.user.id);
+    return this.recipesService.saveRecipe(id, viewerOf(req));
   }
 
-  /** DELETE /recipes/:id/save — user unsaves a recipe */
+  /** DELETE /recipes/:id/save — remove the caller's own bookmark. */
   @Delete(':id/save')
   @HttpCode(204)
   async unsave(@Request() req: AuthedRequest, @Param('id') id: string) {
-    return this.recipesService.unsaveRecipe(id, req.user.id);
+    return this.recipesService.unsaveRecipe(id, viewerOf(req));
   }
 }

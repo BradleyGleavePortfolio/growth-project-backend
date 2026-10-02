@@ -92,7 +92,14 @@ import { computeFireAt, type CadenceKind } from './drip-fire-at';
 //   injected) so an out-of-tx step can pick them up after the outer
 //   $transaction commits.
 
-export type FanoutEntrypoint = 'in_app_hosted' | 'in_app_ps' | 'storefront_guest';
+export type FanoutEntrypoint =
+  | 'in_app_hosted'
+  | 'in_app_ps'
+  | 'storefront_guest'
+  // C01 — $0 grants (invite-code binding / free package claim) are delivered
+  // through the same fan-out as paid purchases.
+  | 'invite_grant'
+  | 'free_package_claim';
 
 export interface FanoutContext {
   entrypoint: FanoutEntrypoint;
@@ -551,7 +558,9 @@ export class PurchaseFanoutService {
       | 'subscription_canceled'
       | 'payment_failed'
       // F2 — coach chose "Unassign drops" on a partial-refund decision card.
-      | 'partial_refund_decision',
+      | 'partial_refund_decision'
+      // C01 — coach/owner revoked a $0 grant.
+      | 'grant_revoked',
     tx?: TxOrPrisma | Prisma.TransactionClient,
   ): Promise<number> {
     const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =

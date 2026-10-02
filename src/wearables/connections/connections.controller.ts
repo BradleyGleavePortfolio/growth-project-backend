@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { WearableProvider } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -22,6 +22,13 @@ import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
+import { RegisterOnDeviceDto } from './dto/register-on-device.dto';
+import { assertOnDeviceIngestEnabled } from '../on-device-ingest.feature';
+import {
+  WEARABLES_CONNECTIONS_LIST_PER_MIN,
+  WEARABLES_ON_DEVICE_REGISTER_PER_MIN,
+  WEARABLES_SKIP_THROTTLERS,
+} from '../wearables-throttle';
 import {
   DisconnectResult,
   OauthCallbackResult,
@@ -40,10 +47,12 @@ import {
  * `:provider` path param is validated against the `WearableProvider` enum by
  * `ParseEnumPipe`. No token material is ever returned or logged (#12).
  *
- * On-device providers (HealthKit / Health Connect / Samsung Health) are NOT
- * served here — they have no server OAuth flow; their samples arrive via
- * `POST /v1/wearables/ingest` (PR-HK-2.a). The service rejects connect/callback
- * for on-device providers with a 400.
+ * On-device providers (Apple Health / Health Connect) have no server OAuth
+ * flow. After the user grants access on the device, the app registers the
+ * source with `POST /v1/wearables/connections/on-device` (S14) and then posts
+ * samples to `POST /v1/wearables/samples/ingest` with the returned connection
+ * id. The service rejects OAuth connect/callback for on-device providers with
+ * a 400.
  */
 @ApiTags('wearables-connections')
 @Controller('v1/wearables/connections')
@@ -90,12 +99,37 @@ export class ConnectionsController {
   }
 
   /**
+   * S14 — register the caller's Apple Health or Health Connect source after the
+   * device permission grant. Idempotent upsert; returns the token-free
+   * connection (its `id` is the `connectionId` for sample ingest). Gated by the
+   * same kill switch as ingest (`FEATURE_WEARABLES_INGEST_POST`): when off it
+   * returns the typed 503 `wearables_ingest_disabled`, before any DB access.
+   */
+  @Post('on-device')
+  @Roles('student')
+  @HttpCode(HttpStatus.OK)
+  // S14 (B-623-1): own per-user default bucket only; auth throttlers skipped.
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ default: { ttl: 60_000, limit: WEARABLES_ON_DEVICE_REGISTER_PER_MIN } })
+  async registerOnDevice(
+    @Request() req: AuthedRequest,
+    @Body() body: RegisterOnDeviceDto,
+  ): Promise<SafeWearableConnection> {
+    assertOnDeviceIngestEnabled();
+    return this.connections.registerOnDevice(req.user.id, body.provider);
+  }
+
+  /**
    * List the authenticated user's wearable connections, projected to a
    * token-free shape (mirrors the `WearableConnectionSafe` view). A user only
    * ever sees their own connections.
    */
   @Get()
   @Roles('student', 'coach')
+  // S14 (B-623-1): read on every Connect / Health screen open; own per-user
+  // default bucket only, auth throttlers skipped.
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ default: { ttl: 60_000, limit: WEARABLES_CONNECTIONS_LIST_PER_MIN } })
   async list(
     @Request() req: AuthedRequest,
   ): Promise<SafeWearableConnection[]> {
