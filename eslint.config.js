@@ -83,4 +83,34 @@ module.exports = [
       'preserve-caught-error': 'off',
     },
   },
+
+  // R2b (C-626-1) — AI provider boundary. Only src/ai-egress may import an
+  // AI SDK as a value (and so build a client). Everything else sends through
+  // AiEgressService, which checks the live box-2 grant before every request.
+  // Type-only imports stay allowed. Pinned by test/ai-egress/ai-egress-guard.spec.ts.
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['src/ai-egress/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: ['@anthropic-ai/sdk', 'openai'].map((name) => ({
+            name,
+            allowTypeImports: true,
+            message:
+              'AI provider SDKs are used only inside src/ai-egress; send through AiEgressService.',
+          })),
+          patterns: [
+            {
+              group: ['@anthropic-ai/sdk/*', 'openai/*'],
+              allowTypeImports: true,
+              message:
+                'AI provider SDKs are used only inside src/ai-egress; send through AiEgressService.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

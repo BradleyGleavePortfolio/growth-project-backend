@@ -24,6 +24,7 @@ import {
   isMwbAiLiveCreateEnabled,
   isMwbLiveCreateCapability,
 } from '../src/ai/gateway/mwb-live-create.feature';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 const CREATE_CAP = 'draft.create_workout_plan';
 const CLIENT = '22222222-2222-2222-2222-222222222222';
@@ -55,7 +56,7 @@ function buildSvc(prisma = buildPrisma()) {
   const stub = new StubProviderAdapter();
   const fakeAnthropicAdapter = { name: 'anthropic', complete: jest.fn() } as any;
   const registry = new AiProviderRegistry(stub, fakeAnthropicAdapter);
-  const svc = new AiGatewayService(prisma, config, redaction, registry);
+  const svc = new AiGatewayService(prisma, config, redaction, registry, grantAllEgress());
   return { svc, prisma };
 }
 

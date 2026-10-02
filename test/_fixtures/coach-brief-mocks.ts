@@ -11,7 +11,11 @@
 // cast in this file rather than in every individual test.
 
 import type { PrismaService } from '../../src/prisma.service';
-import type Anthropic from '@anthropic-ai/sdk';
+import {
+  AnthropicHandle,
+  type AnthropicMessagesClient,
+} from '../../src/ai-egress/ai-egress.service';
+import { fakeOf } from '../ai-egress/ai-egress.fakes';
 import type { ConfigService } from '@nestjs/config';
 import type {
   BriefContext,
@@ -193,8 +197,10 @@ export function makeMockAnthropic(
   };
 }
 
-export function asAnthropic(a: MockAnthropic): Anthropic {
-  return a as unknown as Anthropic;
+// R2b (C-626-1) — services hold an opaque handle; only the egress gate can
+// reach the client behind it.
+export function asAnthropic(a: MockAnthropic): AnthropicHandle {
+  return AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(a));
 }
 
 // ─── Config mock ───────────────────────────────────────────────────────
