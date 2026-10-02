@@ -357,8 +357,21 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).not.toMatch(/We keep only the payment records the law requires\./);
     expect(text).toContain('We keep only what we must: the payment records the law requires; security and audit logs;');
     expect(text).toContain('one deletion record with a random reference, the date and the result');
-    expect(text).toContain('for 30 days, a minimal closed-account record and a one-way code used to check the deletion’s status');
-    expect(text).toContain('your sign-in provider’s account ID while removing it there is still being retried');
+    // Sol B-611-2 (round 5): three different periods, never one combined
+    // 30-day promise. #608 keeps the tombstone User row (no expiry), keeps the
+    // auth provider id only while removal retries, and replaces the 30-day
+    // receipt hash with `deleted-<id>` (an UPDATE, not a row delete).
+    expect(text).toContain(
+      'a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account.',
+    );
+    expect(text).toContain(
+      'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID.',
+    );
+    expect(text).toContain(
+      'Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded.',
+    );
+    expect(text).not.toMatch(/for 30 days, a minimal closed-account record/);
+    expect(text).not.toMatch(/closed-account record[^.]*for 30 days/);
   });
 
   it('covers retention, deletion, rights, no sale and children 16+', () => {

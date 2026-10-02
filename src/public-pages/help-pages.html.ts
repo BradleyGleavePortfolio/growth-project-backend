@@ -449,7 +449,7 @@ function faqContent(): HelpPageContent {
           {
             question: 'A client deleted their account. Where did they go?',
             answer:
-              'They are gone from your roster. A client who deletes their account in the app has a 14-day grace period in which they can cancel it in the app. When it ends, their data is permanently deleted and cannot be recovered.',
+              'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
           },
         ],
       },

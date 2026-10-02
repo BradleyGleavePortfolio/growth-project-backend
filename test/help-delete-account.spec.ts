@@ -147,6 +147,19 @@ describe('/help/delete-account is linked', () => {
   });
 });
 
+describe('coach FAQ: a deleting client during the grace period (Opus/Sol C-611-8)', () => {
+  // #608: roster queries filter on deleted_at null, and deleted_at and
+  // coach_id are cleared only at the purge after the 14-day grace period.
+  const faq = visibleText(renderHelpPage('faq'));
+
+  it('says the client stays on the roster during the grace period, then leaves', () => {
+    expect(faq).toContain(
+      'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
+    );
+    expect(faq).not.toContain('They are gone from your roster.');
+  });
+});
+
 describe('/help/delete-account content', () => {
   const html = renderHelpPage('delete-account');
   const text = visibleText(html);
@@ -262,7 +275,7 @@ describe('/help/delete-account content', () => {
       );
     }
     const faq = visibleText(renderHelpPage('faq'));
-    expect(faq).toContain('has a 14-day grace period in which they can cancel it in the app');
+    expect(faq).toContain('During the 14-day grace period they stay on your roster and can cancel the deletion in the app');
     expect(faq).toContain('permanently deleted and cannot be recovered');
     const support = visibleText(renderHelpPage('support'));
     expect(support).toContain(
