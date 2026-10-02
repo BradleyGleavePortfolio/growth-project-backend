@@ -11,7 +11,11 @@ export type DownloadPlatform = 'ios' | 'android';
 // We do NOT publish placeholder Apple/Google IDs that don't resolve —
 // that's the failure mode the operator asked us to avoid.
 
-const SUPPORT_EMAIL = 'hello@trygrowthproject.com';
+// One support address for every public page (owner ruling 2026-10-01): the
+// constant lives in trust-pages.html.ts. Imported here, in place of the old
+// local constant, so the change does not collide with open edits to the
+// top of this file.
+import { SUPPORT_EMAIL } from './trust-pages.html';
 
 // Invite codes follow `GP-XXXXXX`-style minting (see InviteCodesService) and
 // are validated via ValidateInviteCodeDto at 3–32 chars. We mirror that here

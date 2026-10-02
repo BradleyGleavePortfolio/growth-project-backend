@@ -37,6 +37,16 @@ enum Role {
 // Phase 1A: subscription state for a coach's $300/mo seat. Stored as
 // strings on CoachProfile so the column reads naturally in raw SQL and
 // admin tooling without a Prisma-only enum mapping.
+// Clinic launch C01 — what an invite code grants on successful attach when it
+// is bound to a coach package. `prepaid` = the client paid the coach outside
+// the app (clinic intake); `free` = a genuinely free offer. Both create a $0
+// ClientPurchase grant row (source 'invite_grant:<mode>').
+enum InviteGrantMode {
+  none
+  free
+  prepaid
+}
+
 enum SubscriptionStatus {
   active
   trialing
@@ -538,6 +548,11 @@ model CoachProfile {
   branding_accent_color      String?
   branding_logo_url          String?
   invite_code                String              @unique
+  // C01 — optional package binding for the PERMANENT coach link code
+  // (/join/<invite_code>). Mirrors InviteCode.package_id / grant_mode.
+  invite_code_package_id     String?
+  invite_code_package        CoachPackage?       @relation("CoachProfileInviteCodePackage", fields: [invite_code_package_id], references: [id], onDelete: SetNull)
+  invite_code_grant_mode     InviteGrantMode     @default(none)
   stripe_customer_id         String?
   stripe_subscription_id     String?
   subscription_status        SubscriptionStatus?
@@ -750,10 +765,16 @@ model InviteCode {
   intended_email      String?   @db.Text
   accepted_by_user_id String?
   accepted_at         DateTime?
+  // C01 — optional package binding: on successful attach via this code the
+  // redeemer receives a $0 grant for `package` according to `grant_mode`.
+  package_id          String?
+  package             CoachPackage? @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
+  grant_mode          InviteGrantMode @default(none)
 
   @@index([coach_id])
   @@index([code])
   @@index([invited_by_user_id])
+  @@index([package_id])
 }
 
 model UserProfile {
@@ -1421,9 +1442,15 @@ model UserPreferences {
 // WAVE 3 MODELS
 // ============================================================
 
-// F12 — Recipes: coach-created recipe library with save/bookmark support.
-// ingredients and instructions stored as String[] (mapped to jsonb in Postgres).
+// F12 — Recipes: personal and coach-curated recipes with save/bookmark support.
+// ingredients and instructions stored as String[] (text[] in Postgres).
 // tags drive filter chips in the mobile UI.
+//
+// Visibility (src/recipes/recipe-access.ts, B-RECIPES): private to the creator
+// by default. `is_public = true` means "shared with the creator coach's own
+// clients" and only has that effect when the creator is a coach or the owner
+// account; there is no platform-wide recipe feed. `image_url` is never served
+// (no recipe-photo storage exists; the API refuses links on create).
 model Recipe {
   id            String        @id @default(uuid())
   title         String
@@ -1439,7 +1466,7 @@ model Recipe {
   ingredients   String[]
   instructions  String[]
   tags          String[]
-  is_public     Boolean       @default(true)
+  is_public     Boolean       @default(false)
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
   saved_by      SavedRecipe[]
@@ -3270,6 +3297,9 @@ model CoachPackage {
   updated_at        DateTime  @updatedAt
 
   purchases ClientPurchase[]
+  // C01 — invite codes / permanent coach codes bound to this package.
+  bound_invite_codes    InviteCode[]   @relation("InviteCodePackage")
+  bound_coach_profiles  CoachProfile[] @relation("CoachProfileInviteCodePackage")
 
   // R43 Storefront Phase 1 — guest-checkout share links.
   // share_token is minted on demand via POST /packages/:id/share-link and
@@ -3611,6 +3641,15 @@ model ClientPurchase {
   contract_envelope_id String?           @unique
   contract_envelope    ContractEnvelope? @relation("PurchaseContractEnvelope", fields: [contract_envelope_id], references: [id])
 
+  // C01 — non-Stripe grants. NULL = a real Stripe purchase (every row that
+  // existed before this column). 'invite_grant:free' | 'invite_grant:prepaid'
+  // | 'free_package_claim' = a $0 entitlement row created by InviteGrantService;
+  // such rows carry a synthetic `grant_<uuid>` stripe_checkout_session_id and
+  // must never be sent to Stripe. grant_metadata records who/what/why
+  // (invite_code_id, invite code string, package_id, grant_mode, revocation).
+  source         String?
+  grant_metadata Json?
+
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
   @@index([package_id])
@@ -3618,6 +3657,7 @@ model ClientPurchase {
   @@index([entitlement_active, access_expires_at])
   @@index([landing_page_id])
   @@index([contract_envelope_id])
+  @@index([source])
 }
 
 // Phase 4 Connect — Per-coach fee policy override.

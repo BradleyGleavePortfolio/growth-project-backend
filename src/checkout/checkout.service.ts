@@ -143,6 +143,15 @@ export class CheckoutService {
         message: 'Package not available',
       });
     }
+    // Clinic C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
+    // there is nothing to charge). Clients claim them via
+    // POST /v1/packages/:id/claim-free instead. Checked before any Stripe call.
+    if (pkg.amount_cents === 0) {
+      throw new BadRequestException({
+        error: 'PACKAGE_IS_FREE',
+        message: 'This package is free; claim it via /v1/packages/:id/claim-free',
+      });
+    }
 
     const client = await this.prisma.user.findUnique({
       where: { id: clientUserId },
@@ -456,6 +465,15 @@ export class CheckoutService {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
+      });
+    }
+    // Clinic C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
+    // there is nothing to charge). Clients claim them via
+    // POST /v1/packages/:id/claim-free instead. Checked before any Stripe call.
+    if (pkg.amount_cents === 0) {
+      throw new BadRequestException({
+        error: 'PACKAGE_IS_FREE',
+        message: 'This package is free; claim it via /v1/packages/:id/claim-free',
       });
     }
 
