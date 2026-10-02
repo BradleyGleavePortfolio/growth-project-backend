@@ -264,7 +264,8 @@ export class DataExportService {
       orderBy: { created_at: 'desc' },
     });
 
-    for (const existing of active) {
+    for (const candidate of active) {
+      let existing: DataExportRequest = candidate;
       if (existing.status !== DataExportStatus.READY) {
         if (now.getTime() - existing.created_at.getTime() < staleRunMs()) {
           throw new ConflictException({
@@ -273,8 +274,14 @@ export class DataExportService {
               'Your export is already being prepared. The Request my data screen updates when it is ready.',
           });
         }
-        await this._reapStaleRun(existing);
-        continue;
+        if (await this._reapStaleRun(existing)) continue;
+        // B-636-3: the run finished (or was erased) between our read and the
+        // reap. Decide on the row as it is now, never on the stale snapshot.
+        const current = await this.prisma.dataExportRequest.findUnique({
+          where: { id: existing.id },
+        });
+        if (!current || current.status !== DataExportStatus.READY) continue;
+        existing = current;
       }
       if (this._isDownloadable(existing, now) && existing.created_at >= windowStart) {
         const next = new Date(existing.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
@@ -350,7 +357,18 @@ export class DataExportService {
       now.getTime() - record.created_at.getTime() >= staleRunMs()
     ) {
       await this._reapStaleRun(record);
-      record = { ...record, status: DataExportStatus.FAILED, file_url: null };
+      // B-636-3: report the row as the database now holds it. When the worker
+      // committed READY between our read and the reap, the reap lost its
+      // conditional update and the export is READY, not FAILED.
+      const current = await this.prisma.dataExportRequest.findUnique({ where: { id: record.id } });
+      if (!current) {
+        // Erased concurrently (account deletion): there is no export to report.
+        throw new NotFoundException({
+          code: C.NOT_FOUND,
+          message: 'No data export has been requested yet. Tap Request my data to start one.',
+        });
+      }
+      record = current;
     }
 
     const downloadable = this._isDownloadable(record, now);
@@ -397,6 +415,14 @@ export class DataExportService {
       });
     }
     const ready = await this._assertDownloadable(record);
+    // Confirm the archive is really stored before handing out a link, so a
+    // lost file shows in the app (with the replacement action) instead of on
+    // a browser error page.
+    try {
+      await this.store.stat(ready.id);
+    } catch (err) {
+      throw await this._storageFailure(err, ready, 'download-link');
+    }
     const { token, expiresAt } = await this._mintDownloadToken(userId, ready.id);
     this._tryAudit(userId, userId, 'data_export_link_issued', { export_id: ready.id });
     return {
@@ -435,7 +461,7 @@ export class DataExportService {
     try {
       read = await this.store.read(ready.id);
     } catch (err) {
-      throw this._storageHttpError(err, ready.id, 'download');
+      throw await this._storageFailure(err, ready, 'download');
     }
     this._tryAudit(ready.user_id, ready.user_id, 'data_export_downloaded', {
       export_id: ready.id,
@@ -707,11 +733,9 @@ export class DataExportService {
       });
     }
     if (record.status === DataExportStatus.FAILED) {
-      throw new GoneException({
-        code: C.FILE_MISSING,
-        message:
-          'This export did not finish. Request a new export from the Request my data screen.',
-      });
+      // FAILED covers a run that did not finish and an archive storage
+      // confirmed lost (B-636-1); either way there is no file to give.
+      throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
     }
     if (record.status === DataExportStatus.EXPIRED) {
       throw new GoneException({ code: C.EXPIRED, message: EXPIRED_MESSAGE });
@@ -730,6 +754,47 @@ export class DataExportService {
       throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
     }
     return record;
+  }
+
+  /**
+   * A storage failure while serving a READY export. A confirmed permanent
+   * not-found (B-636-1) retires exactly that READY row first, so status stops
+   * offering a download and the 24 h limit no longer blocks a replacement.
+   * A transient failure changes nothing.
+   */
+  private async _storageFailure(
+    err: unknown,
+    record: DataExportRequest,
+    stage: string,
+  ): Promise<Error> {
+    if (storageErrorCode(err) === 'STORAGE_NOT_FOUND') {
+      await this._retireLostArchive(record);
+    }
+    return this._storageHttpError(err, record.id, stage);
+  }
+
+  /**
+   * Mark a READY export whose archive storage confirmed gone as FAILED with
+   * no file. Conditional on the row still being READY with exactly this
+   * archive, so a concurrent supersede, expiry or erasure is never undone.
+   */
+  private async _retireLostArchive(record: DataExportRequest): Promise<void> {
+    try {
+      const done = await this.prisma.dataExportRequest.updateMany({
+        where: { id: record.id, status: DataExportStatus.READY, file_url: record.file_url },
+        data: { status: DataExportStatus.FAILED, file_url: null },
+      });
+      if (done.count > 0) {
+        this.logger.warn(
+          `Export ${record.id}: archive confirmed missing; marked FAILED so the user can request a new export.`,
+        );
+      }
+    } catch (dbErr) {
+      // The 410 still goes out; the next attempt retries the retirement.
+      this.logger.error(
+        `Export ${record.id}: retiring the missing archive failed: ${(dbErr as Error).message}`,
+      );
+    }
   }
 
   /** Map a storage failure during a user request to a specific HTTP error. */

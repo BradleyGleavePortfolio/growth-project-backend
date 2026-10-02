@@ -150,14 +150,24 @@ export class DataExportController {
     setPrivateHeaders(res);
     if (download.size !== null) res.setHeader('Content-Length', String(download.size));
     try {
+      // pipeline destroys the source when the browser disconnects, which ends
+      // the archive iterator and cancels the upstream storage read (C-636-1).
       await pipeline(Readable.from(download.chunks), res);
     } catch (err) {
-      // Headers are gone; the only honest signal left is a broken transfer.
-      this.logger.error(`Streaming export ${download.exportId} failed: ${(err as Error).message}`);
-      Sentry.captureMessage('data export download stream failed', {
-        level: 'error',
-        extra: { export_id: download.exportId },
-      });
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code === 'ERR_STREAM_PREMATURE_CLOSE') {
+        // The person closed the page or lost signal; nothing is wrong on our side.
+        this.logger.warn(`Download of export ${download.exportId} ended early (client closed).`);
+      } else {
+        // Headers are gone; the only honest signal left is a broken transfer.
+        this.logger.error(
+          `Streaming export ${download.exportId} failed: ${(err as Error).message}`,
+        );
+        Sentry.captureMessage('data export download stream failed', {
+          level: 'error',
+          extra: { export_id: download.exportId },
+        });
+      }
       res.destroy();
     }
   }

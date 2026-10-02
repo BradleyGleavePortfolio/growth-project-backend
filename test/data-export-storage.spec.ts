@@ -26,9 +26,11 @@ import type { Request, Response } from 'express';
 import {
   ArchiveStorageError,
   DATA_EXPORT_BUCKET,
+  STORAGE_CALL_TIMEOUT_MS,
   SupabaseArchiveStore,
   archiveStoreKind,
   classifyStorageError,
+  confirmedSize,
   selectArchiveStore,
   withStorageRetry,
 } from '../src/data-export/data-export-archive.store';
@@ -42,6 +44,7 @@ import {
   renderDownloadErrorPage,
 } from '../src/data-export/data-export.controller';
 import { AccountDeletionStorageService } from '../src/account-deletion/account-deletion.storage';
+import { SUPPORT_EMAIL } from '../src/public-pages/trust-pages.html';
 import { AccountService } from '../src/users/account.service';
 import type { AuditService } from '../src/audit/audit.service';
 import type { PrismaService } from '../src/prisma.service';
@@ -201,8 +204,12 @@ function fakeStorage() {
       }
       return { data: { signedUrl: `https://storage.test/sign/${key}?token=t` }, error: null };
     },
-    list: async (prefix: string, opts: { limit: number; offset: number }) => {
-      calls.push(`list:${prefix}:${opts.offset}`);
+    list: async (
+      prefix: string,
+      opts: { limit: number; offset: number },
+      params?: { signal?: AbortSignal },
+    ) => {
+      calls.push(`list:${prefix}:${opts.offset}:signal=${params?.signal instanceof AbortSignal}`);
       const f = faults.list.shift();
       if (f) return { data: null, error: storageErr(f) };
       if (prefix !== '') return { data: [], error: null };
@@ -523,6 +530,168 @@ describe('SupabaseArchiveStore', () => {
     });
     expect(await codeOf(store.put(ID, ARCHIVE))).toBe('STORAGE_SIZE_MISMATCH');
     Object.assign(st.supabase.getClient().storage.from(DATA_EXPORT_BUCKET), { info: realInfo });
+  });
+
+  // B-636-4: before, `{}` (no size) passed the check and the row went READY.
+  it.each([
+    ['{}', {}],
+    ['null', null],
+    ['a string size', { size: String(ARCHIVE.length) }],
+    ['NaN', { size: Number.NaN }],
+    ['a negative size', { size: -1 }],
+    ['a fractional size', { size: ARCHIVE.length + 0.5 }],
+    ['Infinity', { size: Number.POSITIVE_INFINITY }],
+  ])('an upload check answering %s is not a confirmation (never READY)', async (_label, data) => {
+    const st = fakeStorage();
+    Object.assign(st.supabase.getClient().storage.from(DATA_EXPORT_BUCKET), {
+      info: async () => ({ data, error: null }),
+    });
+    const err = await st
+      .store()
+      .put(ID, ARCHIVE)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(ArchiveStorageError);
+    expect(err).toMatchObject({ code: 'STORAGE_SIZE_UNCONFIRMED', retryable: false });
+    expect(confirmedSize(data)).toBeNull();
+  });
+
+  it('confirmedSize accepts only a whole, non-negative byte count', () => {
+    expect(confirmedSize({ size: 0 })).toBe(0);
+    expect(confirmedSize({ size: 42 })).toBe(42);
+    expect(confirmedSize({ size: '42' })).toBeNull();
+    expect(confirmedSize(undefined)).toBeNull();
+  });
+
+  // B-636-4: before, only a truthy `public` refused the write.
+  it.each([
+    ['public: undefined', { id: DATA_EXPORT_BUCKET }],
+    ['public: null', { id: DATA_EXPORT_BUCKET, public: null }],
+    ["public: 'false'", { id: DATA_EXPORT_BUCKET, public: 'false' }],
+    ['no data', null],
+  ])('a bucket answer with %s refuses the write (privacy not confirmed)', async (_label, data) => {
+    const st = fakeStorage();
+    Object.assign(st.supabase.getClient().storage, {
+      getBucket: async () => ({ data, error: null }),
+    });
+    expect(await codeOf(st.store().put(ID, ARCHIVE))).toBe('STORAGE_BUCKET_UNCONFIRMED');
+    expect(st.calls.some((c) => c.startsWith('upload:'))).toBe(false);
+  });
+
+  it('stat confirms a stored archive and its size; a missing one is STORAGE_NOT_FOUND', async () => {
+    const st = fakeStorage();
+    await st.store().put(ID, ARCHIVE);
+    expect(await st.store().stat(ID)).toEqual({ size: ARCHIVE.length });
+    expect(await codeOf(st.store().stat('00000000-0000-4000-8000-0000000000bb'))).toBe(
+      'STORAGE_NOT_FOUND',
+    );
+  });
+
+  // C-636-1: before, a provider that never answered held the call forever.
+  it('a storage call that never answers fails with the retryable STORAGE_TIMEOUT after its deadline', async () => {
+    expect(STORAGE_CALL_TIMEOUT_MS).toBeGreaterThan(0);
+    const st = fakeStorage();
+    let infoCalls = 0;
+    Object.assign(st.supabase.getClient().storage.from(DATA_EXPORT_BUCKET), {
+      info: () => {
+        infoCalls += 1;
+        return new Promise(() => undefined);
+      },
+    });
+    const store = new SupabaseArchiveStore(st.supabase, {
+      sleep: async () => undefined,
+      timeoutMs: 20,
+    });
+    const err = await store.stat(ID).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ code: 'STORAGE_TIMEOUT', retryable: true });
+    expect(infoCalls).toBe(3);
+  });
+
+  it('withStorageRetry aborts the signal of an attempt that passed its deadline, and ignores its late failure', async () => {
+    const signals: AbortSignal[] = [];
+    const lateRejections: Array<(e: Error) => void> = [];
+    const err = await withStorageRetry(
+      'op',
+      (signal) => {
+        signals.push(signal);
+        return new Promise((_, reject) => lateRejections.push(reject));
+      },
+      { sleep: async () => undefined, timeoutMs: 10, attempts: 2 },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ code: 'STORAGE_TIMEOUT' });
+    expect(signals).toHaveLength(2);
+    expect(signals.every((sg) => sg.aborted)).toBe(true);
+    // A late rejection of an abandoned call must not become an unhandled rejection.
+    lateRejections.forEach((reject) => reject(new Error('late')));
+    await new Promise((r) => setImmediate(r));
+  });
+
+  it('list hands the deadline signal to Storage', async () => {
+    const st = fakeStorage();
+    await st.store().put(ID, ARCHIVE);
+    await st.store().list();
+    expect(st.calls.filter((c) => c.startsWith('list:'))).toEqual(['list::0:signal=true']);
+  });
+
+  it('a read whose response headers never come fails with STORAGE_TIMEOUT and aborts the fetch', async () => {
+    const st = fakeStorage();
+    await st.store().put(ID, ARCHIVE);
+    const signals: AbortSignal[] = [];
+    const fetchImpl = jest.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_, reject) => {
+          if (init?.signal) signals.push(init.signal);
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const store = new SupabaseArchiveStore(st.supabase, {
+      sleep: async () => undefined,
+      timeoutMs: 20,
+      fetchImpl: stub<typeof fetch>(fetchImpl),
+    });
+    expect(await codeOf(store.read(ID))).toBe('STORAGE_TIMEOUT');
+    expect(signals).toHaveLength(3);
+    expect(signals.every((sg) => sg.aborted)).toBe(true);
+  });
+
+  it('a download that stops early cancels the upstream stream instead of draining it', async () => {
+    const st = fakeStorage();
+    await st.store().put(ID, ARCHIVE);
+    let cancelled = false;
+    let pulls = 0;
+    let fetchSignal: AbortSignal | undefined;
+    const fetchImpl = jest.fn(async (_url: string, init?: { signal?: AbortSignal }) => {
+      fetchSignal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-length': '999999' } });
+    });
+    const store = new SupabaseArchiveStore(st.supabase, {
+      sleep: async () => undefined,
+      fetchImpl: stub<typeof fetch>(fetchImpl),
+    });
+    const read = await store.read(ID);
+    const it = read.chunks[Symbol.asyncIterator]();
+    expect((await it.next()).done).toBe(false);
+    await it.return?.();
+    expect(cancelled).toBe(true);
+    expect(fetchSignal?.aborted).toBe(true);
+    expect(pulls).toBeLessThan(5);
   });
 
   it('remove of an archive that is already gone succeeds; keys are derived, unsafe ids refused', async () => {
@@ -1072,6 +1241,101 @@ describe('export lifecycle', () => {
     expect(fresh.status).toBe(DataExportStatus.PENDING);
   });
 
+  /** Make the row READY at the moment the reap runs (the worker commit wins the race). */
+  function commitReadyDuringReap(
+    svc: DataExportService,
+    db: ReturnType<typeof fakeDb>,
+    st: ReturnType<typeof fakeStorage>,
+    id: string,
+  ) {
+    const reap: unknown = Reflect.get(svc, '_reapStaleRun');
+    if (typeof reap !== 'function') throw new Error('no _reapStaleRun');
+    Object.assign(svc, {
+      _reapStaleRun: async (record: unknown) => {
+        const row = db.rows.get(id);
+        if (!row) throw new Error('row');
+        st.objects.set(`${id}.json`, { body: ARCHIVE, created_at: new Date().toISOString() });
+        Object.assign(row, {
+          status: DataExportStatus.READY,
+          file_url: `supabase-storage://data-exports/${id}.json`,
+          completed_at: new Date(),
+          expires_at: new Date(Date.now() + 7 * 86_400_000),
+          file_size_bytes: ARCHIVE.length,
+          sha256: 'a'.repeat(64),
+        });
+        return reap.call(svc, record);
+      },
+    });
+  }
+
+  // B-636-3: before, a stale RUNNING snapshot was rewritten to FAILED in the
+  // answer even though the worker had just committed READY.
+  it('a stale RUNNING read racing the READY commit reports READY with a download, and keeps the archive', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const rec = await requestOnly(instance(db, st), A);
+    const row = db.rows.get(rec.id);
+    if (!row) throw new Error('row');
+    row.status = DataExportStatus.RUNNING;
+    row.created_at = new Date(Date.now() - 31 * 60_000);
+    const svc = instance(db, st);
+    commitReadyDuringReap(svc, db, st, rec.id);
+    const status = await svc.getLatestStatus(A);
+    expect(status.status).toBe(DataExportStatus.READY);
+    expect(status.download_available).toBe(true);
+    expect(row.status).toBe(DataExportStatus.READY);
+    expect(st.objects.has(`${rec.id}.json`)).toBe(true);
+  });
+
+  it('a new request racing the READY commit of a stale run answers DATA_EXPORT_RATE_LIMITED, not a second export', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const rec = await requestOnly(instance(db, st), A);
+    const row = db.rows.get(rec.id);
+    if (!row) throw new Error('row');
+    row.status = DataExportStatus.RUNNING;
+    row.created_at = new Date(Date.now() - 31 * 60_000);
+    const svc = instance(db, st);
+    commitReadyDuringReap(svc, db, st, rec.id);
+    expect(await codeOf(requestOnly(svc, A))).toBe('DATA_EXPORT_RATE_LIMITED');
+    expect(row.status).toBe(DataExportStatus.READY);
+    expect([...db.rows.values()]).toHaveLength(1);
+  });
+
+  it('a stale run erased while its status is read answers DATA_EXPORT_NOT_FOUND', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const rec = await requestOnly(instance(db, st), A);
+    const row = db.rows.get(rec.id);
+    if (!row) throw new Error('row');
+    row.status = DataExportStatus.RUNNING;
+    row.created_at = new Date(Date.now() - 31 * 60_000);
+    const svc = instance(db, st);
+    Object.assign(svc, {
+      _reapStaleRun: async () => {
+        db.rows.delete(rec.id);
+        return false;
+      },
+    });
+    expect(await codeOf(svc.getLatestStatus(A))).toBe('DATA_EXPORT_NOT_FOUND');
+  });
+
+  it('an upload check without a usable size fails the run and removes the bytes that landed', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    Object.assign(st.supabase.getClient().storage.from(DATA_EXPORT_BUCKET), {
+      info: async () => ({ data: {}, error: null }),
+    });
+    const rec = await requestOnly(instance(db, st), A);
+    await runOn(instance(db, st), rec.id, A).then(
+      () => 'resolved',
+      (e: unknown) => e,
+    );
+    expect(db.rows.get(rec.id)).toMatchObject({ status: DataExportStatus.FAILED, file_url: null });
+    expect(st.objects.has(`${rec.id}.json`)).toBe(false);
+    expect((await instance(db, st).getLatestStatus(A)).download_available).toBe(false);
+  });
+
   it('the legacy POST /users/me/data-export answers DATA_EXPORT_IN_PROGRESS (not a 500) while an export is active', async () => {
     const db = fakeDb();
     const st = fakeStorage();
@@ -1133,18 +1397,82 @@ describe('export lifecycle', () => {
     expect([...st.objects.keys()].sort()).toEqual([`${owned}.json`, `${fresh}.json`].sort());
   });
 
-  it('a READY row whose archive vanished answers DATA_EXPORT_FILE_MISSING and is reported', async () => {
+  // B-636-1: before, the row stayed READY / download_available=true and the
+  // 24 h limit refused the replacement, so the person was stuck for a day.
+  it('an archive lost after the link was issued: 410, the row is retired, status is truthful and a replacement works', async () => {
     const db = fakeDb();
     const st = fakeStorage();
     const id = await readyExport(db, st);
-    st.objects.delete(`${id}.json`);
     const svc = instance(db, st);
     const token = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    st.objects.delete(`${id}.json`);
     expect(await codeOf(svc.openDownload(token))).toBe('DATA_EXPORT_FILE_MISSING');
     expect(mockCaptureMessage).toHaveBeenCalledWith(
       'data export archive missing for READY row',
       expect.anything(),
     );
+    expect(db.rows.get(id)).toMatchObject({ status: DataExportStatus.FAILED, file_url: null });
+    const status = await svc.getLatestStatus(A);
+    expect(status.status).toBe(DataExportStatus.FAILED);
+    expect(status.download_available).toBe(false);
+    // The old link now answers the same truthful 410, never a download.
+    expect(await codeOf(svc.openDownload(token))).toBe('DATA_EXPORT_FILE_MISSING');
+    // The 24 h limit does not block the replacement, and it downloads.
+    const next = await requestOnly(svc, A);
+    expect(next.status).toBe(DataExportStatus.PENDING);
+    await runOn(instance(db, st), next.id, A);
+    const fresh = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    const dl = await svc.openDownload(fresh);
+    expect((await readAll(dl.chunks)).equals(ARCHIVE)).toBe(true);
+  });
+
+  it('an archive lost before the link is asked for: the link request answers 410 in the app and retires the row', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const id = await readyExport(db, st);
+    st.objects.delete(`${id}.json`);
+    const svc = instance(db, st);
+    expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_FILE_MISSING');
+    expect(db.rows.get(id)?.status).toBe(DataExportStatus.FAILED);
+    expect((await requestOnly(svc, A)).status).toBe(DataExportStatus.PENDING);
+  });
+
+  it('a transient Storage failure never retires a READY export', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const id = await readyExport(db, st);
+    const svc = instance(db, st);
+    st.faults.info.push(
+      { status: 503, message: 'x' },
+      { status: 503, message: 'x' },
+      { status: 503, message: 'x' },
+    );
+    expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_STORAGE_UNAVAILABLE');
+    expect(db.rows.get(id)?.status).toBe(DataExportStatus.READY);
+    expect(await codeOf(requestOnly(svc, A))).toBe('DATA_EXPORT_RATE_LIMITED');
+  });
+
+  it('retiring a lost archive never undoes a concurrent supersede (conditional on READY + the same file)', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const id = await readyExport(db, st);
+    const svc = instance(db, st);
+    const token = tokenFrom((await svc.createDownloadLink(A)).download_path);
+    st.objects.delete(`${id}.json`);
+    const row = db.rows.get(id);
+    if (!row) throw new Error('row');
+    // Between the token check and the retirement another request expired it.
+    const realRead = st.store().read.bind(st.store());
+    Object.assign(svc, {
+      store: Object.assign(Object.create(Reflect.get(svc, 'store')), {
+        read: async (exportId: string) => {
+          row.status = DataExportStatus.EXPIRED;
+          return realRead(exportId);
+        },
+      }),
+    });
+    expect(await codeOf(svc.openDownload(token))).toBe('DATA_EXPORT_FILE_MISSING');
+    expect(row.status).toBe(DataExportStatus.EXPIRED);
   });
 
   it('Storage being down during a download answers DATA_EXPORT_STORAGE_UNAVAILABLE', async () => {
@@ -1237,6 +1565,52 @@ describe('GET /v1/me/data-export/download (controller)', () => {
         stub<Response>(new FakeRes()),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // B-636-2: the page must name the one support address the product uses.
+  it('the error page gives the single support address', () => {
+    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+    const html = renderDownloadErrorPage(null, 'Reference: x', 'req-1');
+    expect(html).toContain('Bradleyapple1031@gmail.com');
+    expect(html).not.toContain('Bradley@Bradleytgpcoaching.com');
+    expect(html).not.toContain('hello@thegrowthproject.app');
+  });
+
+  // C-636-1: a person closing the page is not an incident.
+  it('a browser that disconnects mid-download ends the archive stream without a Sentry report', async () => {
+    const db = fakeDb();
+    const st = fakeStorage();
+    const svc = instance(db, st);
+    let ended = false;
+    async function* chunks(): AsyncIterable<Uint8Array> {
+      try {
+        for (;;) yield new Uint8Array(1024);
+      } finally {
+        ended = true;
+      }
+    }
+    Object.assign(svc, {
+      openDownload: async () => ({
+        exportId: 'e1',
+        fileName: 'tgp-data-export-2026-01-01.json',
+        size: null,
+        chunks: chunks(),
+      }),
+    });
+    const ctrl = new DataExportController(svc);
+    class ClosingRes extends FakeRes {
+      _write(chunk: Buffer, enc: BufferEncoding, cb: () => void) {
+        super._write(chunk, enc, cb);
+        if (this.body.length >= 4096) this.destroy();
+      }
+    }
+    const res = new ClosingRes();
+    await ctrl.download('t', stub<Request>({ headers: {} }), stub<Response>(res));
+    expect(ended).toBe(true);
+    expect(mockCaptureMessage).not.toHaveBeenCalledWith(
+      'data export download stream failed',
+      expect.anything(),
+    );
   });
 
   it('the error page escapes everything it prints', () => {

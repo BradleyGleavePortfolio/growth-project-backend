@@ -34,6 +34,16 @@ export const LOCAL_ARCHIVE_SCHEME = 'local://';
 /** Attempts per storage call (1 + 2 retries) for transient failures. */
 export const STORAGE_ATTEMPTS = 3;
 
+/**
+ * Deadline for one storage call attempt (C-636-1). A provider that never
+ * answers fails the attempt with the retryable STORAGE_TIMEOUT instead of
+ * holding a request, a worker or the nightly cleanup open. The signal handed
+ * to the call is aborted at the deadline, so calls that accept a signal (our
+ * own read fetch, list) are really cancelled; for the SDK calls that take no
+ * signal the wait is bounded and the late result is ignored.
+ */
+export const STORAGE_CALL_TIMEOUT_MS = 30_000;
+
 export type ArchiveStoreKind = 'supabase' | 'local';
 
 /**
@@ -64,6 +74,11 @@ export interface ArchiveRead {
   chunks: AsyncIterable<Uint8Array>;
 }
 
+/** What the store confirmed about a stored archive. */
+export interface ArchiveStat {
+  size: number;
+}
+
 export interface DataExportArchiveStore {
   readonly kind: ArchiveStoreKind;
   /**
@@ -80,6 +95,13 @@ export interface DataExportArchiveStore {
   put(exportId: string, body: Buffer): Promise<void>;
   /** Delete the archive. An archive that is already gone counts as deleted. */
   remove(exportId: string): Promise<void>;
+  /**
+   * Confirm the archive is stored and report its size. Throws
+   * `STORAGE_NOT_FOUND` when it is confirmed gone, a retryable code on a
+   * transient failure, and `STORAGE_SIZE_UNCONFIRMED` when the provider
+   * answers without a usable size (never treated as present).
+   */
+  stat(exportId: string): Promise<ArchiveStat>;
   /** Read the archive for a download. Throws `STORAGE_NOT_FOUND` when gone. */
   read(exportId: string): Promise<ArchiveRead>;
   /** Every archive currently stored (for the orphan sweep). */
@@ -113,6 +135,73 @@ export function supabaseArchiveUrl(exportId: string): string {
 
 type Sleep = (ms: number) => Promise<void>;
 const defaultSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A finite, non-negative whole byte count; anything else is not a confirmed size. */
+export function confirmedSize(info: unknown): number | null {
+  if (typeof info !== 'object' || info === null) return null;
+  const size: unknown = Reflect.get(info, 'size');
+  return typeof size === 'number' && Number.isSafeInteger(size) && size >= 0 ? size : null;
+}
+
+const deadlineLogger = new Logger('DataExportStorageDeadline');
+
+/**
+ * Record what an abandoned or cancelled storage operation did after we
+ * stopped waiting for it. It cannot change the outcome any more (the caller
+ * already has its answer), so it is logged for diagnosis, not rethrown.
+ */
+function noteLateSettle(op: string, err: unknown): void {
+  deadlineLogger.debug(
+    `${op}: settled after it was abandoned or cancelled: ${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
+/** Cancel a response body we will not read; a failure to cancel is only logged. */
+async function cancelBody(
+  op: string,
+  body: { cancel(): Promise<void> } | null | undefined,
+): Promise<void> {
+  if (!body) return;
+  try {
+    await body.cancel();
+  } catch (err) {
+    noteLateSettle(op, err);
+  }
+}
+
+/**
+ * Run one attempt with a deadline. Resolves or rejects with the call, or
+ * rejects with a retryable STORAGE_TIMEOUT when the deadline passes first; the
+ * signal is aborted then so a signal-aware call stops its network work.
+ */
+export async function withDeadline<T>(
+  op: string,
+  ms: number,
+  fn: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new ArchiveStorageError('STORAGE_TIMEOUT', `${op}: no answer within ${ms} ms`, true));
+    }, ms);
+    timer.unref?.();
+  });
+  // async wrapper: a synchronous throw becomes a rejection of this attempt.
+  const call = (async () => fn(controller.signal))();
+  // A call abandoned at the deadline may still settle later; never let that
+  // late rejection surface as an unhandled rejection.
+  call.catch((lateErr: unknown) => {
+    // Before the deadline the race below reports this failure to the caller.
+    if (controller.signal.aborted) noteLateSettle(op, lateErr);
+  });
+  try {
+    return await Promise.race([call, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /** 250 ms, 1 s between the three attempts. */
 export function storageBackoffMs(attempt: number): number {
@@ -156,14 +245,15 @@ export function classifyStorageError(err: unknown, op: string): ArchiveStorageEr
  */
 export async function withStorageRetry<T>(
   op: string,
-  fn: () => Promise<T>,
-  opts: { attempts?: number; sleep?: Sleep; logger?: Logger } = {},
+  fn: (signal: AbortSignal) => Promise<T>,
+  opts: { attempts?: number; sleep?: Sleep; logger?: Logger; timeoutMs?: number } = {},
 ): Promise<T> {
   const attempts = opts.attempts ?? STORAGE_ATTEMPTS;
   const sleep = opts.sleep ?? defaultSleep;
+  const timeoutMs = opts.timeoutMs ?? STORAGE_CALL_TIMEOUT_MS;
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await fn();
+      return await withDeadline(op, timeoutMs, fn);
     } catch (err) {
       const e = classifyStorageError(err, op);
       if (!e.retryable || attempt >= attempts) throw e;
@@ -180,7 +270,12 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
 
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly opts: { attempts?: number; sleep?: Sleep; fetchImpl?: typeof fetch } = {},
+    private readonly opts: {
+      attempts?: number;
+      sleep?: Sleep;
+      fetchImpl?: typeof fetch;
+      timeoutMs?: number;
+    } = {},
   ) {}
 
   authority(): string {
@@ -199,7 +294,7 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
     return this.supabase.getClient().storage.from(DATA_EXPORT_BUCKET);
   }
 
-  private retry<T>(op: string, fn: () => Promise<T>): Promise<T> {
+  private retry<T>(op: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     return withStorageRetry(op, fn, { ...this.opts, logger: this.logger });
   }
 
@@ -213,10 +308,21 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
       if (error) throw error;
       return data;
     });
-    if (bucket.public) {
+    // B-636-4: only an explicit `public: false` counts as private. A public
+    // bucket, or an answer that does not say, refuses the write.
+    const isPublic: unknown =
+      typeof bucket === 'object' && bucket !== null ? Reflect.get(bucket, 'public') : undefined;
+    if (isPublic === true) {
       throw new ArchiveStorageError(
         'STORAGE_BUCKET_PUBLIC',
         `The ${DATA_EXPORT_BUCKET} bucket is public. Data exports are refused until it is private again.`,
+        false,
+      );
+    }
+    if (isPublic !== false) {
+      throw new ArchiveStorageError(
+        'STORAGE_BUCKET_UNCONFIRMED',
+        `Storage did not confirm that the ${DATA_EXPORT_BUCKET} bucket is private. Data exports are refused until it does.`,
         false,
       );
     }
@@ -235,19 +341,34 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
       });
       if (error) throw error;
     });
-    // READY only when the archive is really retrievable at the right size.
-    const info = await this.retry('data export upload check', async () => {
+    // READY only when the archive is really retrievable at the right size:
+    // a missing, non-numeric or fractional size is not a confirmation (B-636-4).
+    const { size } = await this.stat(exportId);
+    if (size !== body.length) {
+      throw new ArchiveStorageError(
+        'STORAGE_SIZE_MISMATCH',
+        `data export upload check: stored ${size} bytes, expected ${body.length}`,
+        false,
+      );
+    }
+  }
+
+  async stat(exportId: string): Promise<ArchiveStat> {
+    const key = archiveObjectKey(exportId);
+    const info = await this.retry('data export archive check', async () => {
       const { data, error } = await this.bucket().info(key);
       if (error) throw error;
       return data;
     });
-    if (typeof info.size === 'number' && info.size !== body.length) {
+    const size = confirmedSize(info);
+    if (size === null) {
       throw new ArchiveStorageError(
-        'STORAGE_SIZE_MISMATCH',
-        `data export upload check: stored ${info.size} bytes, expected ${body.length}`,
+        'STORAGE_SIZE_UNCONFIRMED',
+        'data export archive check: storage answered without a usable object size',
         false,
       );
     }
+    return { size };
   }
 
   async remove(exportId: string): Promise<void> {
@@ -270,21 +391,52 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
       return data.signedUrl;
     });
     const fetchImpl = this.opts.fetchImpl ?? fetch;
-    const res = await this.retry('data export read', async () => {
-      const r = await fetchImpl(signedUrl, { headers: { 'cache-control': 'no-store' } });
-      if (!r.ok) {
-        throw Object.assign(new Error(`storage answered ${r.status}`), { status: r.status });
+    // The body stream outlives the attempt deadline (a large archive to a slow
+    // phone takes as long as it takes), so it gets its own controller: the
+    // deadline covers the wait for response headers, and the stream is
+    // cancelled when the download ends early (C-636-1).
+    let stream = new AbortController();
+    const res = await this.retry('data export read', async (signal) => {
+      const attempt = new AbortController();
+      const onDeadline = () => attempt.abort();
+      signal.addEventListener('abort', onDeadline, { once: true });
+      try {
+        const r = await fetchImpl(signedUrl, {
+          headers: { 'cache-control': 'no-store' },
+          signal: attempt.signal,
+        });
+        if (!r.ok) {
+          await cancelBody('data export read', r.body);
+          throw Object.assign(new Error(`storage answered ${r.status}`), { status: r.status });
+        }
+        stream = attempt;
+        return r;
+      } finally {
+        signal.removeEventListener('abort', onDeadline);
       }
-      return r;
     });
     const length = Number(res.headers.get('content-length'));
     const reader = res.body?.getReader();
     async function* chunks(): AsyncIterable<Uint8Array> {
       if (!reader) return;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) return;
-        if (value) yield value;
+      let finished = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            finished = true;
+            return;
+          }
+          if (value) yield value;
+        }
+      } finally {
+        // The browser went away or the pipe failed: stop the upstream
+        // transfer and release the connection instead of draining it.
+        if (!finished) {
+          stream.abort();
+          await cancelBody('data export read', reader);
+        }
+        reader.releaseLock();
       }
     }
     return { size: Number.isFinite(length) && length > 0 ? length : null, chunks: chunks() };
@@ -294,12 +446,12 @@ export class SupabaseArchiveStore implements DataExportArchiveStore {
     const PAGE = 1000;
     const out: StoredArchive[] = [];
     for (let offset = 0; ; offset += PAGE) {
-      const page = await this.retry('data export archive list', async () => {
-        const { data, error } = await this.bucket().list('', {
-          limit: PAGE,
-          offset,
-          sortBy: { column: 'name', order: 'asc' },
-        });
+      const page = await this.retry('data export archive list', async (signal) => {
+        const { data, error } = await this.bucket().list(
+          '',
+          { limit: PAGE, offset, sortBy: { column: 'name', order: 'asc' } },
+          { signal },
+        );
         if (error) throw error;
         return data ?? [];
       });
@@ -351,6 +503,23 @@ export class LocalArchiveStore implements DataExportArchiveStore {
       await unlink(exportArchivePath(exportId));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
+
+  async stat(exportId: string): Promise<ArchiveStat> {
+    assertExportId(exportId);
+    const { stat } = await import('fs/promises');
+    try {
+      return { size: (await stat(exportArchivePath(exportId))).size };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new ArchiveStorageError(
+          'STORAGE_NOT_FOUND',
+          'data export archive check: archive not found',
+          false,
+        );
+      }
+      throw err;
     }
   }
 

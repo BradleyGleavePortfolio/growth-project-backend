@@ -336,6 +336,19 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run data-exports bucket fence + verifier live suite (A-636-1)
+        # Builds a Supabase-like storage schema (RLS on, broad API-role grants),
+        # applies prisma/migrations/20270221000000_data_export_storage_bucket
+        # {migration,verify,down}.sql verbatim and proves anon/authenticated/
+        # custom roles see zero data-exports objects even under `OR true`
+        # policies, and that the release verifier fails on every exposing
+        # state (fence dropped/altered, RLS off, public bucket, RLS-escaping
+        # roles or views, service_role without BYPASSRLS). Refuses to skip
+        # under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/data-export-storage-bucket-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization

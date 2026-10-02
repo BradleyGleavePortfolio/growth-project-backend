@@ -1,6 +1,7 @@
 -- Reverse of 20270221000000_data_export_storage_bucket.
 --
--- Removes the `data-exports` bucket only while it holds no object. While any
+-- Removes the `data-exports` bucket and its restrictive fence policy only
+-- while the bucket holds no object. While any
 -- archive is stored the bucket is kept and this script fails loudly: deleting
 -- user archives is never a side effect of a rollback. To retire the bucket,
 -- first let the nightly data-export cleanup expire every archive (or remove
@@ -25,6 +26,9 @@ BEGIN
     RAISE EXCEPTION 'data-exports bucket still holds archives; refusing to drop it. Fix: let the nightly data-export cleanup expire them (or remove them through the Storage API), then re-run down.sql.';
   END IF;
   DELETE FROM storage.buckets WHERE id = 'data-exports';
+  IF to_regclass('storage.objects') IS NOT NULL THEN
+    DROP POLICY IF EXISTS data_exports_api_roles_fence ON storage.objects;
+  END IF;
 END
 $data_export_bucket_down$;
 

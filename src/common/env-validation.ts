@@ -1182,7 +1182,30 @@ export const ENV_RULES: EnvRule[] = [
     name: 'DATA_EXPORT_FS_DIR',
     tier: 'optional',
     default: "'/tmp/exports'",
-    reason: 'Local directory export files are written to (ephemeral, per machine).',
+    reason:
+      'Local directory for data-export archives in development and tests only (DATA_EXPORT_STORAGE=local). Production stores archives in the private Supabase bucket data-exports and never reads this for new archives.',
+  },
+  {
+    name: 'DATA_EXPORT_STORAGE',
+    tier: 'optional',
+    default:
+      "unset → 'supabase' (private bucket data-exports) in production, 'local' (DATA_EXPORT_FS_DIR) elsewhere; 'local' in production is a boot error",
+    reason:
+      'Where data-export archives are stored (data-export-archive.store.ts). Keep unset in production; any value other than supabase or local is a boot error.',
+  },
+  {
+    name: 'DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS',
+    tier: 'optional',
+    default: '300 (clamped to 60..900; unparseable falls back to 300)',
+    reason:
+      'Lifetime of the user-bound data-export download token minted by POST /v1/me/data-export/download-link and GET /status.',
+  },
+  {
+    name: 'DATA_EXPORT_STALE_RUN_MINUTES',
+    tier: 'optional',
+    default: '30 (values under 5 or unparseable fall back to 30)',
+    reason:
+      'A PENDING/RUNNING data export older than this is a crashed run: it is marked FAILED, its planned archive removed, and a new request is allowed.',
   },
   {
     name: 'DATA_EXPORT_TOKEN_SECRET',
@@ -1203,7 +1226,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → contract PDFs stay on local disk',
     reason:
-      'Read only as the CONTRACT_PDF_BUCKET fallback. Contracts are not used in v1 and the data-export cloud storage path is not built, so setting it changes nothing for "download my data".',
+      'Read only as the CONTRACT_PDF_BUCKET fallback. Contracts are not used in v1. Data export does not read it: its archives always go to the private bucket data-exports created by migration 20270221000000.',
   },
   {
     name: 'DELETION_GRACE_DAYS',
