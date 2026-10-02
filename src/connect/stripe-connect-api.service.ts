@@ -165,9 +165,7 @@ export class StripeConnectApiService {
   protected fetchImpl: typeof fetch = (input, init) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.stripeTimeoutMs);
-    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
-      clearTimeout(timer),
-    );
+    return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
   };
 
   isConfigured(): boolean {
@@ -216,8 +214,7 @@ export class StripeConnectApiService {
         : null;
     const code = (errEnvelope?.code as string | undefined) ?? null;
     const type = (errEnvelope?.type as string | undefined) ?? null;
-    const messageFromStripe =
-      (errEnvelope?.message as string | undefined) ?? null;
+    const messageFromStripe = (errEnvelope?.message as string | undefined) ?? null;
     // Stripe returns 400 with code "account_invalid" or similar when
     // Connect isn't enabled. Map every non-2xx to a 503 from our side so
     // the controller renders the owner-action message.
@@ -269,18 +266,11 @@ export class StripeConnectApiService {
       return_url: args.returnUrl,
       type: 'account_onboarding',
     };
-    return this.post<StripeAccountLink>(
-      '/account_links',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeAccountLink>('/account_links', form, args.idempotencyKey);
   }
 
   async createLoginLink(accountId: string): Promise<StripeLoginLink> {
-    return this.post<StripeLoginLink>(
-      `/accounts/${encodeURIComponent(accountId)}/login_links`,
-      {},
-    );
+    return this.post<StripeLoginLink>(`/accounts/${encodeURIComponent(accountId)}/login_links`, {});
   }
 
   // --- Phase 2-3 — Product / Price / Customer / Checkout ---
@@ -305,17 +295,11 @@ export class StripeConnectApiService {
         form[`metadata[${k}]`] = v;
       }
     }
-    return this.post<StripeCustomerObject>(
-      '/customers',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeCustomerObject>('/customers', form, args.idempotencyKey);
   }
 
   async retrieveCustomer(customerId: string): Promise<StripeCustomerObject> {
-    return this.get<StripeCustomerObject>(
-      `/customers/${encodeURIComponent(customerId)}`,
-    );
+    return this.get<StripeCustomerObject>(`/customers/${encodeURIComponent(customerId)}`);
   }
 
   async retrievePaymentMethod(paymentMethodId: string): Promise<{
@@ -328,14 +312,10 @@ export class StripeConnectApiService {
     };
     [k: string]: unknown;
   }> {
-    return this.get(
-      `/payment_methods/${encodeURIComponent(paymentMethodId)}`,
-    );
+    return this.get(`/payment_methods/${encodeURIComponent(paymentMethodId)}`);
   }
 
-  async retrieveSubscription(
-    subscriptionId: string,
-  ): Promise<StripeSubscriptionObject> {
+  async retrieveSubscription(subscriptionId: string): Promise<StripeSubscriptionObject> {
     return this.get<StripeSubscriptionObject>(
       `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
@@ -433,16 +413,21 @@ export class StripeConnectApiService {
     onBehalfOf: string;
     metadata?: Record<string, string>;
     idempotencyKey: string;
-  }): Promise<StripeSubscriptionObject & {
-    latest_invoice?: {
-      id?: string;
-      payment_intent?: {
+  }): Promise<
+    StripeSubscriptionObject & {
+      latest_invoice?: {
         id?: string;
-        client_secret?: string;
-        status?: string;
-      } | string | null;
-    } | null;
-  }> {
+        payment_intent?:
+          | {
+              id?: string;
+              client_secret?: string;
+              status?: string;
+            }
+          | string
+          | null;
+      } | null;
+    }
+  > {
     const form: Record<string, string> = {
       customer: args.customer,
       'items[0][price]': args.recurringPriceId,
@@ -531,11 +516,7 @@ export class StripeConnectApiService {
     // Collected tax is remitted by TGP as the Merchant of Record.
     form['automatic_tax[enabled]'] = 'true';
 
-    return this.post<StripeCheckoutSessionObject>(
-      '/checkout/sessions',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeCheckoutSessionObject>('/checkout/sessions', form, args.idempotencyKey);
   }
 
   // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
@@ -588,11 +569,7 @@ export class StripeConnectApiService {
     for (const [k, v] of Object.entries(params.metadata)) {
       form[`metadata[${k}]`] = v;
     }
-    return this.post<StripePaymentIntentObject>(
-      '/payment_intents',
-      form,
-      params.idempotencyKey,
-    );
+    return this.post<StripePaymentIntentObject>('/payment_intents', form, params.idempotencyKey);
   }
 
   // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
@@ -627,9 +604,7 @@ export class StripeConnectApiService {
     return { secret: parsed.secret };
   }
 
-  async retrieveCheckoutSession(
-    sessionId: string,
-  ): Promise<StripeCheckoutSessionObject> {
+  async retrieveCheckoutSession(sessionId: string): Promise<StripeCheckoutSessionObject> {
     return this.get<StripeCheckoutSessionObject>(
       `/checkout/sessions/${encodeURIComponent(sessionId)}`,
     );
@@ -786,6 +761,28 @@ export class StripeConnectApiService {
     );
   }
 
+  // S-FEE round 4 (B-627-5) — the reversals Stripe recorded on a transfer,
+  // newest first. Used to reconcile a reversal whose response was lost: every
+  // TGP reversal carries metadata[tgp_reversal_op] = its idempotency key.
+  async listTransferReversals(
+    transferId: string,
+    args: { limit?: number; starting_after?: string | null } = {},
+  ): Promise<{
+    data: Array<{
+      id: string;
+      amount: number;
+      transfer?: string;
+      metadata?: Record<string, string> | null;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams();
+    params.set('limit', String(Math.min(Math.max(args.limit ?? 100, 1), 100)));
+    if (args.starting_after) params.set('starting_after', args.starting_after);
+    return this.get(`/transfers/${encodeURIComponent(transferId)}/reversals?${params.toString()}`);
+  }
+
   // Phase 5: cancel a subscription (used by the dunning sweeper when
   // grace period elapses).
   async cancelSubscription(subId: string): Promise<{
@@ -849,10 +846,7 @@ export class StripeConnectApiService {
     const params = new URLSearchParams();
     params.set('limit', String(Math.min(args.limit ?? 10, 100)));
     if (args.status) params.set('status', args.status);
-    return this.getOnAccount(
-      `/payouts?${params.toString()}`,
-      args.connectedAccountId,
-    );
+    return this.getOnAccount(`/payouts?${params.toString()}`, args.connectedAccountId);
   }
 
   // List balance transactions for a connected account — needed for the
@@ -882,10 +876,7 @@ export class StripeConnectApiService {
     params.set('limit', String(Math.min(args.limit ?? 25, 100)));
     if (args.type) params.set('type', args.type);
     if (args.payout) params.set('payout', args.payout);
-    return this.getOnAccount(
-      `/balance_transactions?${params.toString()}`,
-      args.connectedAccountId,
-    );
+    return this.getOnAccount(`/balance_transactions?${params.toString()}`, args.connectedAccountId);
   }
 
   // Retrieve a single Refund (used for webhook handlers + admin lookup).
@@ -964,10 +955,7 @@ export class StripeConnectApiService {
 
   // GET that adds the Stripe-Account header so the request is scoped to a
   // connected account (used for balance, payouts, balance transactions).
-  protected async getOnAccount<T>(
-    path: string,
-    connectedAccountId: string,
-  ): Promise<T> {
+  protected async getOnAccount<T>(path: string, connectedAccountId: string): Promise<T> {
     const secret = this.requireSecret();
     try {
       const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
@@ -1044,8 +1032,7 @@ export class StripeConnectApiService {
   // DOMException bubbling up through NestJS.
   private handleFetchError(err: unknown, path: string): never {
     const isAbort =
-      err instanceof Error &&
-      (err.name === 'AbortError' || err.name === 'TimeoutError');
+      err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
     if (isAbort) {
       throw new StripeConnectApiError(
         `Stripe API timed out after ${this.stripeTimeoutMs}ms on ${path}`,
@@ -1065,8 +1052,7 @@ export class StripeConnectApiService {
           ? (parsed as { error: Record<string, unknown> }).error
           : null;
       const message =
-        (errEnvelope?.message as string | undefined) ??
-        `Stripe API ${res.status} on ${path}`;
+        (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
       throw new StripeConnectApiError(message, res.status, code, type);

@@ -208,7 +208,13 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
     expect(ctx.dbReversed()).toBe(2_940);
     expect(ctx.ledgerReversed('destination')).toBe(2_940);
     expect(ctx.openRecoveries()).toBe(0);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 38, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 38,
+      platform_cash_cents: 38,
+      receivable_open_cents: 0,
+      notes: [],
+    });
     // The probe's failure mode: never more reversed than was transferred.
     expect(ctx.reversalTotal()).toBeLessThanOrEqual(4_630);
   });
@@ -238,7 +244,13 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
     expect(ctx.dbReversed()).toBe(1_960);
     // Probe at 606b4760: 3920 here.
     expect(ctx.ledgerReversed('destination')).toBe(1_960);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 58, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 58,
+      platform_cash_cents: 58,
+      receivable_open_cents: 0,
+      notes: [],
+    });
   });
 
   it('three refund states racing in any order end at the cumulative target', async () => {
@@ -259,7 +271,14 @@ describe('B-627-2 probe, now a regression test: concurrent adjustments on one ch
     expect(ctx.stripe.netTo('acct_coach')).toBe(0);
     expect(ctx.openRecoveries()).toBe(172);
     expect(ctx.ledgerReversed('destination')).toBe(4_630);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 0, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 0,
+      platform_cash_cents: -172,
+      receivable_open_cents: 172,
+      // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
+      notes: ['platform_cash_negative: -172 (receivable_open 172)'],
+    });
   });
 
   it('head-coach sale: both legs reverse exactly once under concurrent refunds', async () => {
@@ -350,7 +369,13 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
     expect(ctx.reversalTotal()).toBe(2_940);
     expect(ctx.stripe.netTo('acct_coach')).toBe(1_690);
     expect(ctx.ledgerReversed('destination')).toBe(2_940);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 38, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 38,
+      platform_cash_cents: 38,
+      receivable_open_cents: 0,
+      notes: [],
+    });
     // One coach alert per refund id, never per delivery.
     expect(ctx.notifications.createNotification).toHaveBeenCalledTimes(2);
   });
@@ -407,7 +432,13 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
     });
     expect(redelivered.ledger_just_reversed).toBe(true);
     expect(ctx.reversalTotal()).toBe(2_940);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 38, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 38,
+      platform_cash_cents: 38,
+      receivable_open_cents: 0,
+      notes: [],
+    });
     // The lock row is gone after release.
     expect(ctx.db.leases?.filter((l) => String(l.name).startsWith(CHARGE_LOCK_PREFIX))).toEqual([]);
   });
@@ -431,7 +462,13 @@ describe('B-627-2 through the refund handler (refund ids)', () => {
     expect(ctx.reversalTotal()).toBe(0);
     // The slice records the target, so the reported net is $26.70, not $46.30.
     expect(ctx.ledgerReversed('destination')).toBe(1_960);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 58, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 58,
+      platform_cash_cents: 58,
+      receivable_open_cents: 0,
+      notes: [],
+    });
   });
 });
 
@@ -471,7 +508,13 @@ describe('B-627-2 disputes: an older event processed late cannot undo a newer ou
     expect(ctx.stripe.netTo('acct_coach')).toBe(3_130);
     // Ledger slice: 4630 paid, 1500 (the kept dispute fee) reversed net.
     expect(ctx.ledgerReversed('destination')).toBe(1_500);
-    expect(ctx.identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 98, notes: [] });
+    expect(ctx.identity('ch_1')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 98,
+      platform_cash_cents: 98,
+      receivable_open_cents: 0,
+      notes: [],
+    });
   });
 });
 

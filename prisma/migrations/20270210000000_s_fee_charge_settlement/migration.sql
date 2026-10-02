@@ -1,7 +1,8 @@
 -- S-FEE — per-charge settlement ledger for coach-package payments.
 --
 -- Additive except for one index swap on SplitLedgerEntry:
---   * new tables ChargeSettlement, PayeeRecovery, CronLease (RLS enabled + forced);
+--   * new tables ChargeSettlement, PayeeRecovery, TransferReversalOp, CronLease
+--     (RLS enabled + forced);
 --   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents
 --     (defaults keep every existing row valid: kind='head_coach_split');
 --   * SplitLedgerEntry's (purchase_id, kind, payee_user_id) unique is replaced
@@ -21,6 +22,9 @@ BEGIN;
 ALTER TABLE "ConnectTransfer" ADD COLUMN "settlement_id" TEXT;
 ALTER TABLE "ConnectTransfer" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'head_coach_split';
 ALTER TABLE "ConnectTransfer" ADD COLUMN "netted_recovery_cents" INTEGER NOT NULL DEFAULT 0;
+-- Round 4: reversal operation slot and clawback share (B-627-3 / B-627-5).
+ALTER TABLE "ConnectTransfer" ADD COLUMN "reversal_seq" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "ConnectTransfer" ADD COLUMN "recovery_clawback_cents" INTEGER NOT NULL DEFAULT 0;
 
 -- SplitLedgerEntry: per-charge uniqueness. The old 3-column unique is named
 -- "SplitLedgerEntry_purchase_kind_payee_idx" by the migration chain
@@ -62,6 +66,9 @@ CREATE TABLE "ChargeSettlement" (
     "settled_at" TIMESTAMP(3),
     "adjusted_at" TIMESTAMP(3),
     "last_error" TEXT,
+    "reconcile_requested_at" TIMESTAMP(3),
+    "reconcile_dispute_id" TEXT,
+    "reconcile_reason" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "ChargeSettlement_pkey" PRIMARY KEY ("id"),
@@ -79,6 +86,7 @@ CREATE UNIQUE INDEX "ChargeSettlement_stripe_charge_id_key" ON "ChargeSettlement
 CREATE INDEX "ChargeSettlement_purchase_id_idx" ON "ChargeSettlement"("purchase_id");
 CREATE INDEX "ChargeSettlement_coach_user_id_created_at_idx" ON "ChargeSettlement"("coach_user_id", "created_at");
 CREATE INDEX "ChargeSettlement_status_idx" ON "ChargeSettlement"("status");
+CREATE INDEX "ChargeSettlement_reconcile_requested_at_idx" ON "ChargeSettlement"("reconcile_requested_at");
 ALTER TABLE "ChargeSettlement" ADD CONSTRAINT "ChargeSettlement_purchase_id_fkey"
   FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -110,6 +118,35 @@ CREATE INDEX "ConnectTransfer_settlement_id_idx" ON "ConnectTransfer"("settlemen
 ALTER TABLE "ConnectTransfer" ADD CONSTRAINT "ConnectTransfer_settlement_id_fkey"
   FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- TransferReversalOp: durable keyed Stripe transfer reversals (round 4, B-627-5).
+CREATE TABLE "TransferReversalOp" (
+    "id" TEXT NOT NULL,
+    "transfer_id" TEXT NOT NULL,
+    "seq" INTEGER NOT NULL,
+    "idempotency_key" TEXT NOT NULL,
+    "amount_cents" INTEGER NOT NULL,
+    "base_reversed_cents" INTEGER NOT NULL,
+    "purpose" TEXT NOT NULL DEFAULT 'adjust',
+    "recovery_id" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "stripe_reversal_id" TEXT,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "last_attempt_at" TIMESTAMP(3),
+    "last_error" TEXT,
+    "resolved_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "TransferReversalOp_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "TransferReversalOp_amount_positive" CHECK ("amount_cents" > 0),
+    CONSTRAINT "TransferReversalOp_base_nonneg" CHECK ("base_reversed_cents" >= 0)
+);
+CREATE UNIQUE INDEX "TransferReversalOp_idempotency_key_key" ON "TransferReversalOp"("idempotency_key");
+CREATE UNIQUE INDEX "TransferReversalOp_stripe_reversal_id_key" ON "TransferReversalOp"("stripe_reversal_id");
+CREATE UNIQUE INDEX "TransferReversalOp_transfer_id_seq_key" ON "TransferReversalOp"("transfer_id", "seq");
+CREATE INDEX "TransferReversalOp_status_created_at_idx" ON "TransferReversalOp"("status", "created_at");
+ALTER TABLE "TransferReversalOp" ADD CONSTRAINT "TransferReversalOp_transfer_id_fkey"
+  FOREIGN KEY ("transfer_id") REFERENCES "ConnectTransfer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 -- CronLease: single-runner lease for the scheduled settlement sweep, the
 -- per-charge money lock (name 'sfee-charge:<charge id>', deleted on release)
 -- and the paid-invoice backfill cursor.
@@ -136,6 +173,14 @@ ALTER TABLE "ChargeSettlement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ChargeSettlement" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "PayeeRecovery" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PayeeRecovery" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "TransferReversalOp" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "TransferReversalOp" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "transfer_reversal_op_service_role_all" ON "TransferReversalOp";
+CREATE POLICY "transfer_reversal_op_service_role_all" ON "TransferReversalOp"
+  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "transfer_reversal_op_owner_all" ON "TransferReversalOp";
+CREATE POLICY "transfer_reversal_op_owner_all" ON "TransferReversalOp"
+  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
 
 DROP POLICY IF EXISTS "charge_settlement_service_role_all" ON "ChargeSettlement";
 CREATE POLICY "charge_settlement_service_role_all" ON "ChargeSettlement"

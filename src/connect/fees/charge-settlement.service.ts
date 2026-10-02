@@ -21,9 +21,11 @@ import {
 } from '../stripe-connect-api.service';
 import { ChargeLock, isChargeLockBusy } from './charge-lock';
 import { FeePolicyService } from './fee-policy.service';
+import { DisputeStateUnavailableError, isRetryableMoneyError } from './money-errors';
 import { SplitLedgerService } from './split-ledger.service';
 import {
   TransferOrchestratorService,
+  type MoneyFence,
   type SettlementTransferKind,
 } from './transfer-orchestrator.service';
 
@@ -88,6 +90,10 @@ export const BACKFILL_WINDOW_DAYS = 35;
 export const INVOICE_BACKFILL_CURSOR = 'sfee-invoice-backfill-cursor';
 export const INVOICE_BACKFILL_PAGES_PER_RUN = 4;
 export const STALE_AFTER_MS = 60 * 60_000;
+// B-627-3: open recoveries older than this raise an alert with the payee's
+// total open exposure; clawback looks back this far for reversible transfers.
+export const RECOVERY_ALERT_AFTER_MS = 24 * 60 * 60_000;
+export const CLAWBACK_LOOKBACK_DAYS = 90;
 
 export const SETTLEMENT_LOG_CODES = {
   stripeUnavailable: 'SFEE_SETTLEMENT_STRIPE_UNAVAILABLE',
@@ -96,6 +102,10 @@ export const SETTLEMENT_LOG_CODES = {
   staleTransfers: 'SFEE_TRANSFER_STALE',
   invoiceBackfill: 'SFEE_INVOICE_BACKFILL',
   invoiceBackfillFailed: 'SFEE_INVOICE_BACKFILL_FAILED',
+  reconcilePending: 'SFEE_RECONCILE_PENDING',
+  reversalPending: 'SFEE_REVERSAL_PENDING',
+  recoveryOpen: 'SFEE_RECOVERY_OPEN',
+  recoveryClawback: 'SFEE_RECOVERY_CLAWBACK',
 } as const;
 
 export interface SweepSummary {
@@ -106,6 +116,10 @@ export interface SweepSummary {
   invoices_backfilled: number;
   stale_awaiting: number;
   stale_transfers: number;
+  reversals_resolved: number;
+  reconciled: number;
+  clawback_cents: number;
+  open_recovery_payees: number;
 }
 
 export type SettleStatus =
@@ -134,8 +148,10 @@ export interface AdjustmentInput {
   // Dispute position on the charge as the caller saw it (disputeAmountsFrom).
   dispute?: { withdrawn_cents: number; fee_cents: number };
   // When set, the dispute's CURRENT balance transactions are read from Stripe
-  // inside the lock (falls back to `dispute` if Stripe is unavailable), so an
-  // older event processed late cannot undo a newer outcome.
+  // inside the lock, so an older event processed late cannot undo a newer
+  // outcome. Round 4 (B-627-4): if that read fails or is malformed nothing
+  // moves (DisputeStateUnavailableError; the settlement is flagged for the
+  // sweeper) — the event's own position is never used in its place.
   dispute_id?: string | null;
 }
 
@@ -218,14 +234,20 @@ export function payeePositionCents(
     Pick<
       ConnectTransfer,
       'status' | 'amount_cents' | 'netted_recovery_cents' | 'reversed_amount_cents'
-    >
+    > & { recovery_clawback_cents?: number }
   >,
   recoveries: Array<Pick<PayeeRecovery, 'status' | 'amount_cents'>>,
 ): number {
   let position = 0;
   for (const t of transfers) {
     if (t.status === 'failed') continue;
-    position += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
+    // A clawback reversal moved cents off this transfer to settle a debt on
+    // another charge: still paid for this charge (like netting).
+    position +=
+      t.amount_cents +
+      t.netted_recovery_cents -
+      t.reversed_amount_cents +
+      (t.recovery_clawback_cents ?? 0);
   }
   for (const r of recoveries) {
     if (r.status === 'released') continue;
@@ -261,6 +283,11 @@ export class ChargeSettlementService {
    */
   withChargeLock<T>(chargeId: string, fn: () => Promise<T>): Promise<T> {
     return this.chargeLock.run(chargeId, fn);
+  }
+
+  // B-627-2: the fence for money steps on one charge (see ChargeLock.fence).
+  private fenceFor(chargeId: string): MoneyFence {
+    return (db?: Tx) => this.chargeLock.fence(chargeId, db);
   }
 
   /**
@@ -315,7 +342,7 @@ export class ChargeSettlementService {
       where: { stripe_charge_id: chargeId },
     });
     if (existing && existing.status !== 'awaiting_fee') {
-      await this.attemptPendingTransfers(existing.id);
+      await this.attemptPendingTransfers(existing.id, chargeId);
       return this.outcome(
         existing.status === 'legacy_destination' ? 'legacy_destination' : 'already_settled',
         chargeId,
@@ -461,6 +488,9 @@ export class ChargeSettlementService {
     const currency = bt.currency.toLowerCase();
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // B-627-2: a holder whose lease was taken over cannot claim (the fence
+      // statement also locks the lease row until this transaction commits).
+      await this.chargeLock.fence(chargeId, tx);
       // Compare-and-set on the adjustment columns too: an adjustment recorded
       // on the awaiting row after we read it makes this claim miss, and the
       // next pass settles with it (belt and braces; the charge lock already
@@ -638,7 +668,7 @@ export class ChargeSettlementService {
     if (!result) {
       return this.outcome('already_settled', chargeId, row.id);
     }
-    for (const id of result.transferIds) await this.safeAttempt(id);
+    for (const id of result.transferIds) await this.safeAttempt(id, chargeId);
     return {
       status: 'settled',
       charge_id: chargeId,
@@ -684,9 +714,7 @@ export class ChargeSettlementService {
         if (chargeId) outcomes.push(await this.settleCharge({ purchase, charge_id: chargeId }));
       }
     } catch (err) {
-      this.logger.warn(
-        `SFEE_SETTLEMENT_FAILED purchase=${purchase.id}: ${(err as Error).message}`,
-      );
+      this.logger.warn(`SFEE_SETTLEMENT_FAILED purchase=${purchase.id}: ${(err as Error).message}`);
     }
     return outcomes;
   }
@@ -768,6 +796,13 @@ export class ChargeSettlementService {
       ? { scanned: 0, backfilled: 0, settled: 0 }
       : await this.backfillPaidInvoices(now, limit, pastDeadline);
     settled += invoices.settled;
+    const reversalsResolved = pastDeadline()
+      ? 0
+      : await this.resolveStuckReversals(now, limit, pastDeadline);
+    const reconciled = pastDeadline() ? 0 : await this.rerunFlagged(now, limit, pastDeadline);
+    const clawbackCents = pastDeadline()
+      ? 0
+      : await this.collectRecoveriesByClawback(now, limit, pastDeadline);
     const stale = await this.reportStale(now);
     return {
       retried: waiting.length,
@@ -777,7 +812,170 @@ export class ChargeSettlementService {
       invoices_backfilled: invoices.backfilled,
       stale_awaiting: stale.awaiting,
       stale_transfers: stale.transfers,
+      reversals_resolved: reversalsResolved,
+      reconciled,
+      clawback_cents: clawbackCents,
+      open_recovery_payees: stale.recoveryPayees,
     };
+  }
+
+  /**
+   * B-627-5 — re-drive reversal operations left pending (lost response,
+   * crash after Stripe committed, lock lost mid-flight). A settlement
+   * transfer is re-converged under its charge's lock (applyAdjustments
+   * resolves the op first); a legacy transfer's op is resolved on its own.
+   */
+  private async resolveStuckReversals(
+    now: Date,
+    limit: number,
+    pastDeadline: () => boolean,
+  ): Promise<number> {
+    const ops = await this.transfers.findPendingReversals(new Date(now.getTime() - 60_000), limit);
+    let resolved = 0;
+    for (const op of ops) {
+      if (pastDeadline()) break;
+      try {
+        const t = await this.prisma.connectTransfer.findUnique({ where: { id: op.transfer_id } });
+        if (!t) continue;
+        const settlement = t.settlement_id
+          ? await this.prisma.chargeSettlement.findUnique({ where: { id: t.settlement_id } })
+          : null;
+        const purchase = settlement
+          ? await this.prisma.clientPurchase.findUnique({ where: { id: settlement.purchase_id } })
+          : null;
+        if (settlement && purchase) {
+          await this.applyAdjustments({ purchase, charge_id: settlement.stripe_charge_id });
+        } else {
+          await this.transfers.resolvePendingReversals(op.transfer_id);
+        }
+        resolved += 1;
+      } catch (err) {
+        this.logger.warn(
+          `${SETTLEMENT_LOG_CODES.reversalPending} op=${op.idempotency_key}: still unresolved (${(err as Error).message})`,
+        );
+      }
+    }
+    return resolved;
+  }
+
+  /** B-627-4 — re-run adjustments that could not finish on canonical state. */
+  private async rerunFlagged(
+    now: Date,
+    limit: number,
+    pastDeadline: () => boolean,
+  ): Promise<number> {
+    const flagged = await this.prisma.chargeSettlement.findMany({
+      where: { reconcile_requested_at: { lte: new Date(now.getTime() - 60_000) } },
+      orderBy: { reconcile_requested_at: 'asc' },
+      take: limit,
+    });
+    let done = 0;
+    for (const s of flagged) {
+      if (pastDeadline()) break;
+      const purchase = await this.prisma.clientPurchase.findUnique({
+        where: { id: s.purchase_id },
+      });
+      if (!purchase) continue;
+      try {
+        await this.applyAdjustments({
+          purchase,
+          charge_id: s.stripe_charge_id,
+          dispute_id: s.reconcile_dispute_id,
+        });
+        done += 1;
+      } catch (err) {
+        this.logger.warn(
+          `${SETTLEMENT_LOG_CODES.reconcilePending} charge=${s.stripe_charge_id}: retry failed (${(err as Error).message})`,
+        );
+      }
+    }
+    return done;
+  }
+
+  /**
+   * B-627-3 — collect open recoveries now instead of waiting for the payee's
+   * next sale: reverse the reversible remainder of the payee's other recent
+   * transfers (funds still in their Stripe balance), oldest debt first. Each
+   * reversal runs under the SOURCE charge's lock with the keyed reversal
+   * protocol; the recovery's cents are reserved before Stripe is called and
+   * released again if Stripe refuses. Returns the cents collected.
+   */
+  private async collectRecoveriesByClawback(
+    now: Date,
+    limit: number,
+    pastDeadline: () => boolean,
+  ): Promise<number> {
+    const open = await this.prisma.payeeRecovery.findMany({
+      where: { status: 'open' },
+      orderBy: { created_at: 'asc' },
+      take: limit,
+    });
+    const since = new Date(now.getTime() - CLAWBACK_LOOKBACK_DAYS * 86_400_000);
+    const refusedPayees = new Set<string>();
+    let collectedTotal = 0;
+    for (const r of open) {
+      if (pastDeadline()) break;
+      if (refusedPayees.has(r.payee_user_id)) continue;
+      const candidates = await this.prisma.connectTransfer.findMany({
+        where: {
+          destination_user_id: r.payee_user_id,
+          currency: r.currency,
+          status: 'succeeded',
+          stripe_transfer_id: { not: null },
+          settlement_id: { not: null },
+          created_at: { gte: since },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+      for (const c of candidates) {
+        if (pastDeadline() || refusedPayees.has(r.payee_user_id)) break;
+        if (c.settlement_id === r.settlement_id) continue;
+        if (c.amount_cents - c.reversed_amount_cents <= 0) continue;
+        const source = await this.prisma.chargeSettlement.findUnique({
+          where: { id: c.settlement_id ?? '' },
+          select: { stripe_charge_id: true },
+        });
+        if (!source) continue;
+        try {
+          const got = await this.chargeLock.run(source.stripe_charge_id, async () => {
+            const fence = this.fenceFor(source.stripe_charge_id);
+            await this.transfers.resolvePendingReversals(c.id, fence);
+            const [t, rec] = await Promise.all([
+              this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: c.id } }),
+              this.prisma.payeeRecovery.findUniqueOrThrow({ where: { id: r.id } }),
+            ]);
+            const owed = rec.status === 'open' ? rec.amount_cents - rec.collected_cents : 0;
+            const take = Math.min(owed, t.amount_cents - t.reversed_amount_cents);
+            if (take <= 0 || t.status !== 'succeeded') {
+              return { cents: 0, done: owed <= 0, refused: false };
+            }
+            const res = await this.transfers.reverse({
+              transfer_row_id: t.id,
+              amount_cents: take,
+              purpose: 'clawback',
+              recovery_id: rec.id,
+              fence,
+            });
+            if (res.status === 'refused') return { cents: 0, done: false, refused: true };
+            return { cents: take, done: take >= owed, refused: false };
+          });
+          if (got.refused) refusedPayees.add(r.payee_user_id);
+          if (got.cents > 0) {
+            collectedTotal += got.cents;
+            this.logger.warn(
+              `${SETTLEMENT_LOG_CODES.recoveryClawback} recovery=${r.id} payee=${r.payee_user_id} transfer=${c.id} collected=${got.cents}`,
+            );
+          }
+          if (got.done) break;
+        } catch (err) {
+          this.logger.warn(
+            `${SETTLEMENT_LOG_CODES.recoveryClawback} recovery=${r.id} transfer=${c.id}: skipped (${(err as Error).message})`,
+          );
+          break;
+        }
+      }
+    }
+    return collectedTotal;
   }
 
   /**
@@ -927,17 +1125,66 @@ export class ChargeSettlementService {
     }
   }
 
-  // Alert (error level, alert=true) on money that has waited over an hour.
-  private async reportStale(now: Date): Promise<{ awaiting: number; transfers: number }> {
+  // Alert (error level, alert=true) on money that has waited over an hour,
+  // and (B-627-3, C-627-3) on recoveries open for more than a day, with each
+  // payee's total open exposure: TGP is fronting that money until it is
+  // collected (netting, clawback, or the owner's debit setting).
+  private async reportStale(
+    now: Date,
+  ): Promise<{ awaiting: number; transfers: number; recoveryPayees: number }> {
     const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
-    const [awaiting, transfers] = await Promise.all([
+    const [awaiting, transfers, reversals, flagged, openRecoveries] = await Promise.all([
       this.prisma.chargeSettlement.count({
         where: { status: 'awaiting_fee', created_at: { lte: cutoff } },
       }),
       this.prisma.connectTransfer.count({
         where: { status: 'pending', settlement_id: { not: null }, created_at: { lte: cutoff } },
       }),
+      this.prisma.transferReversalOp.count({
+        where: { status: 'pending', created_at: { lte: cutoff } },
+      }),
+      this.prisma.chargeSettlement.count({
+        where: { reconcile_requested_at: { lte: cutoff } },
+      }),
+      this.prisma.payeeRecovery.findMany({
+        where: {
+          status: 'open',
+          created_at: { lte: new Date(now.getTime() - RECOVERY_ALERT_AFTER_MS) },
+        },
+        select: {
+          payee_user_id: true,
+          currency: true,
+          amount_cents: true,
+          collected_cents: true,
+          created_at: true,
+        },
+      }),
     ]);
+    if (reversals > 0) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.reversalPending} alert=true ${reversals} transfer reversal(s) have had an unknown outcome for over an hour (see TransferReversalOp.last_error); no recovery is opened for them until they resolve`,
+      );
+    }
+    if (flagged > 0) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.reconcilePending} alert=true ${flagged} settlement adjustment(s) have waited over an hour for canonical Stripe state (see ChargeSettlement.reconcile_reason)`,
+      );
+    }
+    const exposure = new Map<string, { cents: number; count: number; oldest: Date }>();
+    for (const r of openRecoveries) {
+      const k = `${r.payee_user_id}|${r.currency}`;
+      const e = exposure.get(k) ?? { cents: 0, count: 0, oldest: r.created_at };
+      e.cents += Math.max(0, r.amount_cents - r.collected_cents);
+      e.count += 1;
+      if (r.created_at < e.oldest) e.oldest = r.created_at;
+      exposure.set(k, e);
+    }
+    for (const [k, e] of exposure) {
+      const [payee, currency] = k.split('|');
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.recoveryOpen} alert=true payee=${payee} currency=${currency} open_cents=${e.cents} recoveries=${e.count} oldest=${e.oldest.toISOString()}: TGP is fronting this until it is collected from the payee`,
+      );
+    }
     if (awaiting > 0) {
       this.logger.error(
         `${SETTLEMENT_LOG_CODES.staleAwaiting} alert=true ${awaiting} charge settlement(s) have waited over an hour (see ChargeSettlement.last_error); coaches are not paid for them yet`,
@@ -948,7 +1195,7 @@ export class ChargeSettlementService {
         `${SETTLEMENT_LOG_CODES.staleTransfers} alert=true ${transfers} coach transfer(s) have been pending over an hour (see ConnectTransfer.last_error)`,
       );
     }
-    return { awaiting, transfers };
+    return { awaiting, transfers, recoveryPayees: exposure.size };
   }
 
   // ---------------------------------------------------------------------
@@ -969,7 +1216,56 @@ export class ChargeSettlementService {
    */
   async applyAdjustments(input: AdjustmentInput): Promise<AdjustOutcome> {
     if (!(input.purchase.amount_cents > 0)) return 'skipped_free';
-    return this.chargeLock.run(input.charge_id, () => this.applyAdjustmentsLocked(input));
+    const startedAt = new Date();
+    try {
+      const outcome = await this.chargeLock.run(input.charge_id, () =>
+        this.applyAdjustmentsLocked(input),
+      );
+      await this.clearReconcileFlag(input.charge_id, startedAt);
+      return outcome;
+    } catch (err) {
+      // Round 4 (B-627-4 / B-627-5): an adjustment that did not finish (no
+      // canonical dispute state, unknown reversal outcome, lock lost, or any
+      // other failure such as a lost DB receipt) is remembered durably, so the
+      // sweeper re-runs it even if Stripe stops redelivering; the error still
+      // propagates (the webhook answers non-2xx and Stripe redelivers).
+      await this.flagForReconcile(input.charge_id, input.dispute_id ?? null, err);
+      throw err;
+    }
+  }
+
+  private async flagForReconcile(
+    chargeId: string,
+    disputeId: string | null,
+    err: unknown,
+  ): Promise<void> {
+    try {
+      const row = await this.prisma.chargeSettlement.findUnique({
+        where: { stripe_charge_id: chargeId },
+        select: { id: true, reconcile_dispute_id: true },
+      });
+      if (!row) return;
+      await this.prisma.chargeSettlement.updateMany({
+        where: { id: row.id },
+        data: {
+          reconcile_requested_at: new Date(),
+          reconcile_dispute_id: disputeId ?? row.reconcile_dispute_id ?? null,
+          reconcile_reason: String((err as Error)?.message ?? err).slice(0, 500),
+        },
+      });
+    } catch (flagErr) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.reconcilePending} alert=true charge=${chargeId}: could not flag the settlement for the sweeper (${(flagErr as Error).message}); relying on Stripe redelivery`,
+      );
+    }
+  }
+
+  // Only clears a flag raised before this run started (a newer failure stays).
+  private async clearReconcileFlag(chargeId: string, startedAt: Date): Promise<void> {
+    await this.prisma.chargeSettlement.updateMany({
+      where: { stripe_charge_id: chargeId, reconcile_requested_at: { lte: startedAt } },
+      data: { reconcile_requested_at: null, reconcile_reason: null },
+    });
   }
 
   private async applyAdjustmentsLocked(input: AdjustmentInput): Promise<AdjustOutcome> {
@@ -991,7 +1287,12 @@ export class ChargeSettlementService {
     }
     if (!row) return 'no_settlement';
     if (row.status === 'legacy_destination') return 'legacy';
-    const dispute = await this.currentDispute(input);
+    // A flagged settlement re-reads its dispute even when this caller only
+    // knows about refunds (the sweeper, a transfer.reversed sync).
+    const dispute = await this.currentDispute({
+      ...input,
+      dispute_id: input.dispute_id ?? row.reconcile_dispute_id ?? null,
+    });
     let current: ChargeSettlement = row;
     let adjusted = false;
 
@@ -1009,9 +1310,13 @@ export class ChargeSettlementService {
       if (current.status === 'awaiting_fee') {
         // Still no fee from Stripe: remember the adjustment; settleCharge
         // applies it when it computes the split.
-        await this.prisma.chargeSettlement.updateMany({
-          where: { id: current.id, status: 'awaiting_fee' },
-          data: { ...next, adjusted_at: new Date() },
+        const awaitingId = current.id;
+        await this.prisma.$transaction(async (tx) => {
+          await this.chargeLock.fence(input.charge_id, tx);
+          await tx.chargeSettlement.updateMany({
+            where: { id: awaitingId, status: 'awaiting_fee' },
+            data: { ...next, adjusted_at: new Date() },
+          });
         });
         return 'deferred';
       }
@@ -1023,20 +1328,26 @@ export class ChargeSettlementService {
         next.dispute_withdrawn_cents === current.dispute_withdrawn_cents &&
         next.dispute_fee_cents === current.dispute_fee_cents;
       if (!unchanged) {
-        const claim = await this.prisma.chargeSettlement.updateMany({
-          where: {
-            id: current.id,
-            refunded_cents: current.refunded_cents,
-            dispute_withdrawn_cents: current.dispute_withdrawn_cents,
-            dispute_fee_cents: current.dispute_fee_cents,
-          },
-          data: {
-            ...next,
-            target_platform_fee_cents: targets.platform_fee_cents,
-            target_head_coach_cents: targets.head_coach_split_cents,
-            target_coach_net_cents: targets.coach_net_cents,
-            adjusted_at: new Date(),
-          },
+        // B-627-2: the adjustment claim is fenced like every money step, so a
+        // holder whose lease was taken over cannot rewrite the targets.
+        const from = current;
+        const claim = await this.prisma.$transaction(async (tx) => {
+          await this.chargeLock.fence(input.charge_id, tx);
+          return tx.chargeSettlement.updateMany({
+            where: {
+              id: from.id,
+              refunded_cents: from.refunded_cents,
+              dispute_withdrawn_cents: from.dispute_withdrawn_cents,
+              dispute_fee_cents: from.dispute_fee_cents,
+            },
+            data: {
+              ...next,
+              target_platform_fee_cents: targets.platform_fee_cents,
+              target_head_coach_cents: targets.head_coach_split_cents,
+              target_coach_net_cents: targets.coach_net_cents,
+              adjusted_at: new Date(),
+            },
+          });
         });
         if (claim.count !== 1) {
           const reread: ChargeSettlement | null = await this.prisma.chargeSettlement.findUnique({
@@ -1109,22 +1420,52 @@ export class ChargeSettlementService {
     return rows.reduce((n, r) => n + (r.amount_cents > 0 ? r.amount_cents : 0), 0);
   }
 
-  /** The dispute's current position, read from Stripe under the lock when possible. */
+  /**
+   * The dispute's current position, read from Stripe under the lock. With a
+   * dispute id the canonical read is mandatory (B-627-4): a failed request, a
+   * response for another charge or one without balance_transactions throws
+   * DisputeStateUnavailableError and nothing moves — the event's own position
+   * may be older than what has already been applied (a late `created` after a
+   * `won`). Without a dispute id (legacy callers) the caller's position is used.
+   */
   private async currentDispute(
     input: AdjustmentInput,
   ): Promise<{ withdrawn_cents: number; fee_cents: number } | null> {
     if (!input.dispute_id) return input.dispute ?? null;
+    let fresh: Awaited<ReturnType<StripeConnectApiService['retrieveDispute']>>;
     try {
-      const fresh = await this.stripe.retrieveDispute(input.dispute_id);
-      if (Array.isArray(fresh.balance_transactions)) {
-        return disputeAmountsFrom(fresh.balance_transactions);
-      }
+      fresh = await this.stripe.retrieveDispute(input.dispute_id);
     } catch (err) {
-      this.logger.warn(
-        `applyAdjustments: reading dispute ${input.dispute_id} from Stripe failed; using the event's position: ${(err as Error).message}`,
+      throw new DisputeStateUnavailableError(
+        input.dispute_id,
+        input.charge_id,
+        (err as Error)?.message ?? 'request failed',
       );
     }
-    return input.dispute ?? null;
+    if (!fresh || !Array.isArray(fresh.balance_transactions)) {
+      throw new DisputeStateUnavailableError(
+        input.dispute_id,
+        input.charge_id,
+        'the response has no balance_transactions',
+      );
+    }
+    if (typeof fresh.charge === 'string' && fresh.charge !== input.charge_id) {
+      throw new DisputeStateUnavailableError(
+        input.dispute_id,
+        input.charge_id,
+        `the dispute belongs to charge ${fresh.charge}`,
+      );
+    }
+    for (const bt of fresh.balance_transactions) {
+      if (typeof bt?.amount !== 'number' || (bt.fee !== undefined && typeof bt.fee !== 'number')) {
+        throw new DisputeStateUnavailableError(
+          input.dispute_id,
+          input.charge_id,
+          'a balance transaction has no numeric amount or fee',
+        );
+      }
+    }
+    return disputeAmountsFrom(fresh.balance_transactions);
   }
 
   /** True when the charge settled through S-FEE (not a legacy destination charge). */
@@ -1178,11 +1519,22 @@ export class ChargeSettlementService {
     adj: ChargeAdjustments,
     reason: 'refund' | 'dispute',
   ): Promise<void> {
+    const fence = this.fenceFor(row.stripe_charge_id);
     // Post anything still pending first so reversals act on real transfers.
     const pending = await this.prisma.connectTransfer.findMany({
       where: { settlement_id: row.id, destination_user_id: leg.payee_user_id, status: 'pending' },
     });
-    for (const t of pending) await this.safeAttempt(t.id);
+    for (const t of pending) await this.safeAttempt(t.id, row.stripe_charge_id);
+
+    // B-627-5: resolve every in-flight reversal first (re-driven with its own
+    // key, reconciled against Stripe's reversal list). Still unknown ->
+    // ReversalUncertainError propagates: no position is computed from a
+    // reversal that may or may not have happened, and no recovery is opened.
+    const legTransfers = await this.prisma.connectTransfer.findMany({
+      where: { settlement_id: row.id, destination_user_id: leg.payee_user_id },
+      select: { id: true },
+    });
+    for (const t of legTransfers) await this.transfers.resolvePendingReversals(t.id, fence);
 
     const transfers = await this.prisma.connectTransfer.findMany({
       where: { settlement_id: row.id, destination_user_id: leg.payee_user_id },
@@ -1203,59 +1555,73 @@ export class ChargeSettlementService {
         const reversible = t.amount_cents - t.reversed_amount_cents;
         const take = Math.min(need, reversible);
         if (take <= 0) continue;
-        try {
-          await this.transfers.reverse({ transfer_row_id: t.id, amount_cents: take });
+        const res = await this.transfers.reverse({
+          transfer_row_id: t.id,
+          amount_cents: take,
+          purpose: 'adjust',
+          fence,
+        });
+        if (res.status === 'succeeded') {
           need -= take;
-        } catch (err) {
-          this.logger.warn(
-            `transfer reversal failed transfer=${t.id} charge=${row.stripe_charge_id}: ${(err as Error).message}; recording a recovery to net from future payouts`,
-          );
-          break;
+          continue;
         }
+        // Definitive refusal only (insufficient balance, invalid request):
+        // the rest is owed by the payee.
+        this.logger.warn(
+          `transfer reversal refused transfer=${t.id} charge=${row.stripe_charge_id}: ${res.error}; recording a recovery to collect`,
+        );
+        break;
       }
       if (need > 0) {
-        await this.createRecovery(this.prisma, {
-          settlementId: row.id,
-          chargeId: row.stripe_charge_id,
-          payee: leg.payee_user_id,
-          amountCents: need,
-          currency: row.currency,
-          reason,
-          key: `${leg.leg}-${key}`,
+        await this.prisma.$transaction(async (tx) => {
+          await fence(tx);
+          await this.createRecovery(tx, {
+            settlementId: row.id,
+            chargeId: row.stripe_charge_id,
+            payee: leg.payee_user_id,
+            amountCents: need,
+            currency: row.currency,
+            reason,
+            key: `${leg.leg}-${key}`,
+          });
         });
       }
       return;
     }
 
     if (delta > 0) {
-      let give = delta;
       // Cancel what the payee still owes on this charge first.
-      for (const r of recoveries) {
-        if (give <= 0) break;
-        if (r.status !== 'open') continue;
-        const releasable = r.amount_cents - r.collected_cents;
-        const x = Math.min(give, releasable);
-        if (x <= 0) continue;
-        const remaining = r.amount_cents - x;
-        const res = await this.prisma.payeeRecovery.updateMany({
-          where: {
-            id: r.id,
-            amount_cents: r.amount_cents,
-            collected_cents: r.collected_cents,
-            status: 'open',
-          },
-          data: {
-            amount_cents: remaining,
-            status:
-              remaining === r.collected_cents
-                ? r.collected_cents > 0
-                  ? 'collected'
-                  : 'released'
-                : 'open',
-          },
-        });
-        if (res.count === 1) give -= x;
-      }
+      const give = await this.prisma.$transaction(async (tx) => {
+        await fence(tx);
+        let left = delta;
+        for (const r of recoveries) {
+          if (left <= 0) break;
+          if (r.status !== 'open') continue;
+          const releasable = r.amount_cents - r.collected_cents;
+          const x = Math.min(left, releasable);
+          if (x <= 0) continue;
+          const remaining = r.amount_cents - x;
+          const res = await tx.payeeRecovery.updateMany({
+            where: {
+              id: r.id,
+              amount_cents: r.amount_cents,
+              collected_cents: r.collected_cents,
+              status: 'open',
+            },
+            data: {
+              amount_cents: remaining,
+              status:
+                remaining === r.collected_cents
+                  ? r.collected_cents > 0
+                    ? 'collected'
+                    : 'released'
+                  : 'open',
+            },
+          });
+          if (res.count === 1) left -= x;
+        }
+        return left;
+      });
       if (give <= 0) return;
       // Then pay the rest back (won dispute). No source_transaction: the
       // charge's funds were already transferred once.
@@ -1268,20 +1634,40 @@ export class ChargeSettlementService {
         );
         return;
       }
-      const reinstate = await this.transfers.enqueueSettlementTransfer({
-        settlement_id: row.id,
-        purchase_id: row.purchase_id,
-        kind: leg.leg === 'coach' ? 'coach_reinstate' : 'head_coach_reinstate',
-        ledger_entry_id: null,
-        destination_stripe_account_id: account.stripe_account_id,
-        destination_user_id: leg.payee_user_id,
-        amount_cents: give,
-        netted_recovery_cents: 0,
-        currency: row.currency,
-        source_stripe_charge_id: null,
-        idempotency_key: `tgp-settle-${row.stripe_charge_id}-${leg.leg}-reinstate-${key}`,
+      const reinstateKey = `tgp-settle-${row.stripe_charge_id}-${leg.leg}-reinstate-${key}`;
+      const reinstate = await this.prisma.$transaction(async (tx) => {
+        await fence(tx);
+        const prior = await tx.connectTransfer.findUnique({
+          where: { idempotency_key: reinstateKey },
+        });
+        if (prior) return prior;
+        // B-627-3: money owed on the payee's other charges is netted out of a
+        // reinstatement before anything is paid back.
+        const netted = await this.netOpenRecoveries(
+          tx,
+          leg.payee_user_id,
+          row.currency,
+          give,
+          row.id,
+        );
+        return this.transfers.enqueueSettlementTransfer(
+          {
+            settlement_id: row.id,
+            purchase_id: row.purchase_id,
+            kind: leg.leg === 'coach' ? 'coach_reinstate' : 'head_coach_reinstate',
+            ledger_entry_id: null,
+            destination_stripe_account_id: account.stripe_account_id,
+            destination_user_id: leg.payee_user_id,
+            amount_cents: give - netted,
+            netted_recovery_cents: netted,
+            currency: row.currency,
+            source_stripe_charge_id: null,
+            idempotency_key: reinstateKey,
+          },
+          tx,
+        );
       });
-      await this.safeAttempt(reinstate.id);
+      await this.safeAttempt(reinstate.id, row.stripe_charge_id);
     }
   }
 
@@ -1303,11 +1689,7 @@ export class ChargeSettlementService {
     const transfers = await this.prisma.connectTransfer.findMany({
       where: { settlement_id: row.id, destination_user_id: leg.payee_user_id },
     });
-    let position = 0;
-    for (const t of transfers) {
-      if (t.status === 'failed') continue;
-      position += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
-    }
+    const position = payeePositionCents(transfers, []);
     await this.ledger.setLegPosition({ entry_id: entry.id, position_cents: position });
   }
 
@@ -1453,17 +1835,20 @@ export class ChargeSettlementService {
     return this.outcome('awaiting_fee', chargeId, row.id, message);
   }
 
-  private async attemptPendingTransfers(settlementId: string): Promise<void> {
+  private async attemptPendingTransfers(settlementId: string, chargeId: string): Promise<void> {
     const pending = await this.prisma.connectTransfer.findMany({
       where: { settlement_id: settlementId, status: 'pending' },
     });
-    for (const t of pending) await this.safeAttempt(t.id);
+    for (const t of pending) await this.safeAttempt(t.id, chargeId);
   }
 
-  private async safeAttempt(transferId: string): Promise<ConnectTransfer | null> {
+  // Caller holds the charge lock: the attempt is fenced (B-627-2). A lost
+  // lock propagates; any other failure leaves the row pending for the sweeper.
+  private async safeAttempt(transferId: string, chargeId: string): Promise<ConnectTransfer | null> {
     try {
-      return await this.transfers.attempt(transferId);
+      return await this.transfers.attempt(transferId, { beforeStripe: this.fenceFor(chargeId) });
     } catch (err) {
+      if (isRetryableMoneyError(err)) throw err;
       this.logger.warn(
         `transfer attempt failed inline transfer=${transferId}: ${(err as Error).message}`,
       );

@@ -74,6 +74,8 @@ function applyData(row: Row, data: Row): void {
     if (v === undefined) continue;
     if (v && typeof v === 'object' && !(v instanceof Date) && 'increment' in (v as Row)) {
       row[k] = (row[k] ?? 0) + (v as Row).increment;
+    } else if (v && typeof v === 'object' && !(v instanceof Date) && 'decrement' in (v as Row)) {
+      row[k] = (row[k] ?? 0) - (v as Row).decrement;
     } else {
       row[k] = v;
     }
@@ -227,6 +229,10 @@ export interface SettlementDb {
   refunds: Row[];
   // CronLease rows (sweep lease, per-charge money locks, backfill cursor).
   leases?: Row[];
+  // TransferReversalOp rows (round 4 keyed reversal operations).
+  reversalOps?: Row[];
+  // ChargeDispute rows (dispute webhook path).
+  disputes?: Row[];
 }
 
 export function makeSettlementDb(): SettlementDb {
@@ -241,6 +247,7 @@ export function makeSettlementDb(): SettlementDb {
     transfers: [],
     refunds: [],
     leases: [],
+    reversalOps: [],
   };
 }
 
@@ -281,6 +288,9 @@ export function settlementTables(db: SettlementDb) {
         settled_at: null,
         adjusted_at: null,
         last_error: null,
+        reconcile_requested_at: null,
+        reconcile_dispute_id: null,
+        reconcile_reason: null,
       }),
     }),
     payeeRecovery: new Table(db.recoveries, {
@@ -309,6 +319,8 @@ export function settlementTables(db: SettlementDb) {
         max_attempts: 6,
         reversed_amount_cents: 0,
         netted_recovery_cents: 0,
+        reversal_seq: 0,
+        recovery_clawback_cents: 0,
         kind: 'head_coach_split',
         settlement_id: null,
         stripe_transfer_id: null,
@@ -321,6 +333,25 @@ export function settlementTables(db: SettlementDb) {
       prefix: 'lease',
       unique: ['name'],
       defaults: () => ({ cursor: null }),
+    }),
+    chargeDispute: new Table(db.disputes ?? (db.disputes = []), {
+      prefix: 'cd',
+      unique: ['stripe_dispute_id'],
+      defaults: () => ({ ledger_reversed: false, closed_at: null, balance_transaction_id: null }),
+    }),
+    transferReversalOp: new Table(db.reversalOps ?? (db.reversalOps = []), {
+      prefix: 'rop',
+      unique: ['idempotency_key', 'stripe_reversal_id'],
+      defaults: () => ({
+        purpose: 'adjust',
+        recovery_id: null,
+        status: 'pending',
+        stripe_reversal_id: null,
+        attempts: 0,
+        last_attempt_at: null,
+        last_error: null,
+        resolved_at: null,
+      }),
     }),
   };
 }
@@ -402,8 +433,18 @@ export class FakeStripe extends StripeConnectApiService {
     string,
     { id: string; amount: number; destination: string; source_transaction?: string }
   >();
-  reversalsByKey = new Map<string, { id: string; transfer: string; amount: number }>();
+  reversalsByKey = new Map<
+    string,
+    { id: string; transfer: string; amount: number; metadata?: Record<string, string> }
+  >();
+  /** Definitive refusal (Stripe 400 balance_insufficient): nothing is reversed. */
   failReversals = false;
+  /** Network failure BEFORE Stripe executes the next N reversal requests. */
+  reversalNetworkFailures = 0;
+  /** Stripe EXECUTES the next N reversals, then the response is lost. */
+  reversalResponsesLost = 0;
+  /** Listing a transfer's reversals fails (Stripe unavailable). */
+  failListReversals = false;
   /** Paid-invoice pages for listPaidInvoices, newest first (like Stripe). */
   paidInvoices: Array<{
     id: string;
@@ -475,7 +516,21 @@ export class FakeStripe extends StripeConnectApiService {
   reverseTransfer = jest.fn(
     async (args: { transfer_id: string; amount?: number; idempotencyKey: string }) => {
       if (this.failReversals) {
-        throw new Error('Insufficient funds in the connected account to reverse this transfer');
+        throw new StripeConnectApiError(
+          'Insufficient funds in the connected account to reverse this transfer',
+          400,
+          'balance_insufficient',
+          'invalid_request_error',
+        );
+      }
+      if (this.reversalNetworkFailures > 0) {
+        this.reversalNetworkFailures -= 1;
+        throw new StripeConnectApiError(
+          'Stripe API timed out after 10000ms on /transfers/reversals',
+          503,
+          'request_timeout',
+          'api_connection_error',
+        );
       }
       const existing = this.reversalsByKey.get(args.idempotencyKey);
       if (existing) return existing;
@@ -496,11 +551,33 @@ export class FakeStripe extends StripeConnectApiService {
         id: `trr_${this.reversalsByKey.size + 1}`,
         transfer: args.transfer_id,
         amount: args.amount ?? 0,
+        metadata: (args as { metadata?: Record<string, string> }).metadata,
       };
       this.reversalsByKey.set(args.idempotencyKey, r);
+      if (this.reversalResponsesLost > 0) {
+        this.reversalResponsesLost -= 1;
+        throw new Error('socket hang up');
+      }
       return r;
     },
   );
+
+  listTransferReversals = jest.fn(async (transferId: string) => {
+    if (this.failListReversals) {
+      throw new StripeConnectApiError('Stripe API 500', 500, null, 'api_error');
+    }
+    const data = [...this.reversalsByKey.values()]
+      .filter((r) => r.transfer === transferId)
+      .reverse();
+    return { data, has_more: false };
+  });
+
+  /** Total Stripe reversed on one Stripe transfer id. */
+  reversedOn(transferId: string): number {
+    return [...this.reversalsByKey.values()]
+      .filter((r) => r.transfer === transferId)
+      .reduce((n, r) => n + r.amount, 0);
+  }
 
   /** Net money Stripe moved to `destination` (transfers - reversals). */
   netTo(destination: string): number {

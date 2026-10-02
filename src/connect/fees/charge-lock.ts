@@ -23,6 +23,26 @@ import type { PrismaService } from '../../prisma.service';
 // The holder deletes its row when done (only its own token matches), so rows
 // do not accumulate. A crashed holder blocks the charge for at most TTL_MS.
 //
+// Fencing (round 4, B-627-2). A lease alone is not a mutex for a holder that
+// pauses past the TTL: a second worker may take the expired lease while the
+// first is still running. So every money step re-proves ownership first:
+// fence(chargeId) is one compare-and-set statement
+//   UPDATE "CronLease" SET lease_until = now + TTL WHERE name = $n AND holder = $token
+// and throws ChargeLockLostError when it matches no row (another worker took
+// the lease, or this holder ran past its wall-clock budget). The fence runs
+//   - inside the DB transaction that records a money step (settlement claim,
+//     reversal operation, recovery write), so a stale holder's write rolls
+//     back; while that transaction is open it also holds the lease row's
+//     lock, so nobody can take the lease until it commits; and
+//   - immediately before every Stripe money call (transfer create, transfer
+//     reversal), so a stale holder never starts a new external movement.
+// A holder paused between its fence and the Stripe call is covered by the
+// operation protocol, not by the lock: the reversal operation is durable and
+// keyed before the call (TransferReversalOp), and a new holder first re-drives
+// that same keyed operation, so both calls collapse onto one Stripe reversal.
+// ChargeLockLostError is retryable: nothing moves after it, the webhook
+// returns non-2xx (Stripe redelivers) and the sweeper re-converges.
+//
 // Re-entrant within one async call chain (AsyncLocalStorage): a caller that
 // already holds a charge's lock (for example the refund handler, which wraps
 // "check the refund id, apply, mark applied" in one critical section) can call
@@ -31,6 +51,7 @@ import type { PrismaService } from '../../prisma.service';
 
 export const CHARGE_LOCK_PREFIX = 'sfee-charge:';
 export const CHARGE_LOCK_BUSY_CODE = 'SFEE_CHARGE_LOCK_BUSY';
+export const CHARGE_LOCK_LOST_CODE = 'SFEE_CHARGE_LOCK_LOST';
 
 // Longest critical section: a handful of Stripe calls at 10 s timeout each.
 export const CHARGE_LOCK_TTL_MS = 120_000;
@@ -39,6 +60,10 @@ export const CHARGE_LOCK_TTL_MS = 120_000;
 // redelivers a webhook that failed with CHARGE_LOCK_BUSY, and the holder
 // re-reads the cumulative refunds before it releases (see applyAdjustments).
 export const CHARGE_LOCK_WAIT_MS = 3_000;
+// Wall-clock budget for one critical section, well under the TTL: past it the
+// holder's next fence refuses (it stops and the work is retried), so a slow
+// holder gives up before anyone else can take its lease.
+export const CHARGE_LOCK_MAX_HOLD_MS = 60_000;
 const POLL_DELAYS_MS = [20, 40, 80, 160, 320, 500];
 
 export class ChargeLockBusyError extends Error {
@@ -60,11 +85,37 @@ export function isChargeLockBusy(err: unknown): err is ChargeLockBusyError {
   return err instanceof ChargeLockBusyError;
 }
 
+export class ChargeLockLostError extends Error {
+  readonly code = CHARGE_LOCK_LOST_CODE;
+
+  constructor(
+    readonly chargeId: string,
+    readonly why: 'taken_over' | 'budget_exceeded' | 'not_held',
+  ) {
+    super(
+      `${CHARGE_LOCK_LOST_CODE} charge=${chargeId} (${why}): this worker no longer owns the charge's money lock, ` +
+        'so it stopped before moving money. The webhook is retried by Stripe and the sweeper re-converges.',
+    );
+    this.name = 'ChargeLockLostError';
+  }
+}
+
+export function isChargeLockLost(err: unknown): err is ChargeLockLostError {
+  return err instanceof ChargeLockLostError;
+}
+
 type LeaseDb = Pick<PrismaService, 'cronLease'>;
+
+interface Held {
+  name: string;
+  token: string;
+  acquiredAt: number;
+}
 
 export interface ChargeLockOptions {
   ttlMs?: number;
   waitMs?: number;
+  maxHoldMs?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
 }
@@ -73,10 +124,11 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 
 export class ChargeLock {
   private readonly logger = new Logger(ChargeLock.name);
-  private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
+  private readonly held = new AsyncLocalStorage<ReadonlyMap<string, Held>>();
   private readonly holderPrefix = `${process.env.FLY_MACHINE_ID ?? hostname()}:${process.pid}`;
   ttlMs: number;
   waitMs: number;
+  maxHoldMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => Date;
 
@@ -86,6 +138,7 @@ export class ChargeLock {
   ) {
     this.ttlMs = opts.ttlMs ?? CHARGE_LOCK_TTL_MS;
     this.waitMs = opts.waitMs ?? CHARGE_LOCK_WAIT_MS;
+    this.maxHoldMs = opts.maxHoldMs ?? CHARGE_LOCK_MAX_HOLD_MS;
     this.sleep = opts.sleep ?? defaultSleep;
     this.now = opts.now ?? (() => new Date());
   }
@@ -113,12 +166,38 @@ export class ChargeLock {
       await this.sleep(Math.min(delay, Math.max(1, waitMs - waited)));
     }
     const outer = this.held.getStore();
-    const next = new Set(outer ?? []);
-    next.add(chargeId);
+    const next = new Map(outer ?? []);
+    next.set(chargeId, { name, token, acquiredAt: this.now().getTime() });
     try {
       return await this.held.run(next, fn);
     } finally {
       await this.release(name, token);
+    }
+  }
+
+  /**
+   * Re-prove ownership of the charge's lease and extend it (one CAS
+   * statement). Pass the transaction client to make the proof atomic with the
+   * write it guards. Throws ChargeLockLostError when another worker owns the
+   * lease, the critical section ran past maxHoldMs, or the caller does not
+   * hold the lock at all; the caller must stop without moving money.
+   */
+  async fence(chargeId: string, db: LeaseDb = this.db): Promise<void> {
+    const held = this.held.getStore()?.get(chargeId);
+    if (!held) throw new ChargeLockLostError(chargeId, 'not_held');
+    const now = this.now();
+    if (now.getTime() - held.acquiredAt > this.maxHoldMs) {
+      throw new ChargeLockLostError(chargeId, 'budget_exceeded');
+    }
+    const renewed = await db.cronLease.updateMany({
+      where: { name: held.name, holder: held.token },
+      data: { lease_until: new Date(now.getTime() + this.ttlMs) },
+    });
+    if (renewed.count !== 1) {
+      this.logger.error(
+        `${CHARGE_LOCK_LOST_CODE} alert=true lock=${held.name}: the lease was taken over while this worker held it; it stopped before moving money`,
+      );
+      throw new ChargeLockLostError(chargeId, 'taken_over');
     }
   }
 

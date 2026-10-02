@@ -244,7 +244,13 @@ describe('ChargeSettlementService', () => {
         ['destination', 4_630],
         ['stripe_fee', 172],
       ]);
-      expect(identity(ch)).toEqual({ drift_cents: 0, platform_net_cents: 98, notes: [] });
+      expect(identity(ch)).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 98,
+        platform_cash_cents: 98,
+        receivable_open_cents: 0,
+        notes: [],
+      });
     }
     expect(stripe.netTo('acct_coach')).toBe(9_260);
   });
@@ -352,7 +358,13 @@ describe('ChargeSettlementService', () => {
     expect(stripe.netTo('acct_head')).toBe(500);
     const keys = stripe.createTransfer.mock.calls.map((c) => c[0].idempotencyKey).sort();
     expect(keys).toEqual(['tgp-settle-ch_team-coach', 'tgp-settle-ch_team-head_coach']);
-    expect(identity('ch_team')).toEqual({ drift_cents: 0, platform_net_cents: 200, notes: [] });
+    expect(identity('ch_team')).toEqual({
+      drift_cents: 0,
+      platform_net_cents: 200,
+      platform_cash_cents: 200,
+      receivable_open_cents: 0,
+      notes: [],
+    });
   });
 
   it('head coach without a connected account: the sub-coach keeps the split', async () => {
@@ -397,7 +409,14 @@ describe('ChargeSettlementService', () => {
         target_platform_fee_cents: 0,
         target_coach_net_cents: -172,
       });
-      expect(identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 0, notes: [] });
+      expect(identity('ch_1')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 0,
+        platform_cash_cents: -172,
+        receivable_open_cents: 172,
+        // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
+        notes: ['platform_cash_negative: -172 (receivable_open 172)'],
+      });
 
       // Re-delivered refund webhook: nothing moves twice.
       expect(
@@ -416,7 +435,13 @@ describe('ChargeSettlementService', () => {
         status: 'succeeded',
       });
       expect(db.recoveries[0]).toMatchObject({ status: 'collected', collected_cents: 172 });
-      expect(identity('ch_2')).toEqual({ drift_cents: 0, platform_net_cents: 98, notes: [] });
+      expect(identity('ch_2')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 98,
+        platform_cash_cents: 98,
+        receivable_open_cents: 0,
+        notes: [],
+      });
       expect(identity('ch_1').drift_cents).toBe(0);
     });
 
@@ -433,7 +458,13 @@ describe('ChargeSettlementService', () => {
         expect.objectContaining({ amount: 1_960 }),
       );
       expect(stripe.netTo('acct_coach')).toBe(2_670);
-      expect(identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 58, notes: [] });
+      expect(identity('ch_1')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 58,
+        platform_cash_cents: 58,
+        receivable_open_cents: 0,
+        notes: [],
+      });
     });
 
     it('reversal refused (coach already paid out): the full amount becomes a recovery', async () => {
@@ -447,7 +478,14 @@ describe('ChargeSettlementService', () => {
       );
       await svc.applyAdjustments({ purchase, charge_id: 'ch_1', refunded_cents: 4_900 });
       expect(db.recoveries[0]).toMatchObject({ amount_cents: 4_802, status: 'open' });
-      expect(identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 0, notes: [] });
+      expect(identity('ch_1')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 0,
+        platform_cash_cents: -4802,
+        receivable_open_cents: 4802,
+        // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
+        notes: ['platform_cash_negative: -4802 (receivable_open 4802)'],
+      });
     });
 
     it('refund on a head-coach sale reverses both legs', async () => {
@@ -462,7 +500,14 @@ describe('ChargeSettlementService', () => {
       await svc.applyAdjustments({ purchase: p, charge_id: 'ch_team', refunded_cents: 10_000 });
       expect(stripe.netTo('acct_head')).toBe(0);
       expect(stripe.netTo('acct_coach')).toBe(0);
-      expect(identity('ch_team')).toEqual({ drift_cents: 0, platform_net_cents: 0, notes: [] });
+      expect(identity('ch_team')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 0,
+        platform_cash_cents: -320,
+        receivable_open_cents: 320,
+        // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
+        notes: ['platform_cash_negative: -320 (receivable_open 320)'],
+      });
     });
   });
 
@@ -499,7 +544,14 @@ describe('ChargeSettlementService', () => {
         status: 'open',
         reason: 'dispute',
       });
-      expect(identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 0, notes: [] });
+      expect(identity('ch_1')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 0,
+        platform_cash_cents: -1672,
+        receivable_open_cents: 1672,
+        // Round 4 (B-627-3): TGP fronts the open recovery; it is not cash.
+        notes: ['platform_cash_negative: -1672 (receivable_open 1672)'],
+      });
     });
 
     it('won: release the recovery and pay the coach back, net of the kept fee', async () => {
@@ -512,7 +564,13 @@ describe('ChargeSettlementService', () => {
         source_stripe_charge_id: null,
       });
       expect(stripe.netTo('acct_coach')).toBe(3_130);
-      expect(identity('ch_1')).toEqual({ drift_cents: 0, platform_net_cents: 98, notes: [] });
+      expect(identity('ch_1')).toEqual({
+        drift_cents: 0,
+        platform_net_cents: 98,
+        platform_cash_cents: 98,
+        receivable_open_cents: 0,
+        notes: [],
+      });
     });
   });
 

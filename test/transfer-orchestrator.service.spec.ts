@@ -8,20 +8,54 @@ import {
 function makePrismaStub() {
   const transfers: any[] = [];
   const ledger: any[] = [];
+  // Round 4 (B-627-5): keyed reversal operations.
+  const ops: any[] = [];
   let n = 0;
-  return {
+  const matches = (row: any, where: any) => Object.entries(where).every(([k, v]) => row[k] === v);
+  const stub: any = {
     _transfers: transfers,
     _ledger: ledger,
+    _ops: ops,
+    $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) => fn(stub)),
+    transferReversalOp: {
+      findUnique: jest.fn(
+        async ({ where }: any) =>
+          ops.find((o) => o.idempotency_key === where.idempotency_key) ?? null,
+      ),
+      findMany: jest.fn(async ({ where }: any) =>
+        ops.filter((o) => matches(o, where)).sort((a, b) => a.seq - b.seq),
+      ),
+      create: jest.fn(async ({ data }: any) => {
+        const row = { id: 'op-' + ++n, attempts: 0, last_error: null, ...data };
+        ops.push(row);
+        return { ...row };
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = ops.find((o) => o.id === where.id);
+        for (const [k, v] of Object.entries<any>(data)) {
+          row[k] = v && typeof v === 'object' && 'increment' in v ? row[k] + v.increment : v;
+        }
+        return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hit = ops.filter((o) => matches(o, where));
+        for (const row of hit) Object.assign(row, data);
+        return { count: hit.length };
+      }),
+    },
     connectTransfer: {
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hit = transfers.filter((t) => matches({ reversal_seq: 0, ...t }, where));
+        for (const row of hit) Object.assign(row, data);
+        return { count: hit.length };
+      }),
       findUniqueOrThrow: jest.fn(async ({ where }: any) => {
         const row = transfers.find((t) => t.id === where.id);
         if (!row) throw new Error('not found');
         return { ...row };
       }),
       upsert: jest.fn(async ({ where, create, update }: any) => {
-        const existing = transfers.find(
-          (t) => t.idempotency_key === where.idempotency_key,
-        );
+        const existing = transfers.find((t) => t.idempotency_key === where.idempotency_key);
         if (existing) {
           Object.assign(existing, update);
           return { ...existing };
@@ -31,6 +65,7 @@ function makePrismaStub() {
           attempts: 0,
           max_attempts: 6,
           reversed_amount_cents: 0,
+          reversal_seq: 0,
           ...create,
         };
         transfers.push(row);
@@ -56,6 +91,7 @@ function makePrismaStub() {
       }),
     },
   };
+  return stub;
 }
 
 class StripeStub extends StripeConnectApiService {
@@ -70,6 +106,7 @@ class StripeStub extends StripeConnectApiService {
     transfer: args.transfer_id,
     amount: args.amount ?? 0,
   }));
+  listTransferReversals = jest.fn(async () => ({ data: [], has_more: false }));
 }
 
 describe('TransferOrchestratorService', () => {
@@ -147,7 +184,12 @@ describe('TransferOrchestratorService', () => {
     });
     // First attempt: simulate Stripe error.
     stripe.createTransfer.mockRejectedValueOnce(
-      new StripeConnectApiError('balance not available', 400, 'balance_insufficient', 'invalid_request_error'),
+      new StripeConnectApiError(
+        'balance not available',
+        400,
+        'balance_insufficient',
+        'invalid_request_error',
+      ),
     );
     let attempt = await svc.attempt(row.id);
     expect(attempt.status).toBe('pending');
@@ -210,5 +252,52 @@ describe('TransferOrchestratorService', () => {
     await svc.reverse({ transfer_row_id: row.id, amount_cents: 300 });
     expect(prisma._ledger[0].reversed_cents).toBe(500);
     expect(prisma._ledger[0].status).toBe('reversed');
+    // Round 4: one durable keyed operation per reversal, both completed.
+    expect(prisma._ops.map((o: any) => [o.idempotency_key, o.amount_cents, o.status])).toEqual([
+      [`tgp-tr-rev-${row.id}-op1`, 200, 'succeeded'],
+      [`tgp-tr-rev-${row.id}-op2`, 300, 'succeeded'],
+    ]);
+  });
+
+  it('a definitive Stripe refusal is reported as refused, an unknown outcome throws (never refused)', async () => {
+    prisma._ledger.push({
+      id: 'le1',
+      purchase_id: 'p1',
+      kind: 'head_coach_split',
+      amount_cents: 500,
+      reversed_cents: 0,
+      status: 'posted',
+    });
+    const row = await svc.enqueueHeadCoachTransfer({
+      purchase_id: 'p1',
+      ledger_entry_id: 'le1',
+      destination_stripe_account_id: 'acct_head',
+      destination_user_id: 'head-1',
+      amount_cents: 500,
+      currency: 'usd',
+      source_stripe_charge_id: 'ch_abc',
+    });
+    await svc.attempt(row.id);
+    stripe.reverseTransfer.mockRejectedValueOnce(
+      new StripeConnectApiError(
+        'Insufficient funds',
+        400,
+        'balance_insufficient',
+        'invalid_request_error',
+      ),
+    );
+    await expect(
+      svc.reverse({ transfer_row_id: row.id, amount_cents: 200 }),
+    ).resolves.toMatchObject({
+      status: 'refused',
+    });
+    stripe.reverseTransfer.mockRejectedValueOnce(new Error('socket hang up'));
+    await expect(svc.reverse({ transfer_row_id: row.id, amount_cents: 200 })).rejects.toMatchObject(
+      {
+        code: 'SFEE_REVERSAL_UNCERTAIN',
+      },
+    );
+    expect(prisma._ops.map((o: any) => o.status)).toEqual(['refused', 'pending']);
+    expect(prisma._ledger[0].reversed_cents).toBe(0);
   });
 });

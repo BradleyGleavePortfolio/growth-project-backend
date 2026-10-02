@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ConnectTransfer } from '@prisma/client';
+import type { ConnectTransfer, Prisma, TransferReversalOp } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import {
-  StripeConnectApiError,
-  StripeConnectApiService,
-} from '../stripe-connect-api.service';
+import { StripeConnectApiError, StripeConnectApiService } from '../stripe-connect-api.service';
+import { ReversalUncertainError } from './money-errors';
 import { SplitLedgerService } from './split-ledger.service';
 
 // TransferOrchestratorService — mints Stripe Transfers from the platform
@@ -127,6 +125,32 @@ export interface PlanTransferInput {
   source_stripe_charge_id: string | null;
 }
 
+// S-FEE round 4 (B-627-2 / B-627-5) — a fence proves the caller still owns the
+// charge's money lock (ChargeLock.fence). Called with the transaction client
+// inside the transaction that records a money step, and with no argument right
+// before a Stripe money call. Throws (ChargeLockLostError) when ownership is
+// lost; the caller stops without moving money.
+export type MoneyFence = (db?: Prisma.TransactionClient) => Promise<void>;
+
+export type ReversalPurpose = 'adjust' | 'clawback' | 'legacy';
+
+export type ReverseOutcome =
+  | { status: 'succeeded'; transfer: ConnectTransfer; op_id: string | null }
+  | { status: 'refused'; transfer: ConnectTransfer; op_id: string; error: string };
+
+// A Stripe answer that proves the reversal was NOT applied and never will be
+// for this key: a 4xx request / card / not-found error. Everything else
+// (timeout, network, 5xx, 429 rate limit, 409 or idempotency conflicts, auth)
+// leaves the outcome unknown.
+export function isDefinitiveStripeRefusal(err: unknown): boolean {
+  if (!(err instanceof StripeConnectApiError)) return false;
+  if (![400, 402, 404].includes(err.httpStatus)) return false;
+  if (err.stripeType === 'idempotency_error' || err.stripeType === 'api_connection_error') {
+    return false;
+  }
+  return err.stripeCode !== 'idempotency_key_in_use' && err.stripeCode !== 'lock_timeout';
+}
+
 @Injectable()
 export class TransferOrchestratorService {
   private readonly logger = new Logger(TransferOrchestratorService.name);
@@ -144,9 +168,7 @@ export class TransferOrchestratorService {
 
   // Idempotently create a ConnectTransfer row for the head-coach split.
   // Safe to call on every webhook firing — collapses on idempotency_key.
-  async enqueueHeadCoachTransfer(
-    input: PlanTransferInput,
-  ): Promise<ConnectTransfer> {
+  async enqueueHeadCoachTransfer(input: PlanTransferInput): Promise<ConnectTransfer> {
     const idempotencyKey = `tgp-tr-${input.purchase_id}-headcoach`;
     return this.prisma.connectTransfer.upsert({
       where: { idempotency_key: idempotencyKey },
@@ -163,12 +185,9 @@ export class TransferOrchestratorService {
         next_attempt_at: new Date(),
       },
       update: {
-        source_stripe_charge_id:
-          input.source_stripe_charge_id ?? undefined,
+        source_stripe_charge_id: input.source_stripe_charge_id ?? undefined,
         // Resurrect a failed transfer when a new attempt is enqueued.
-        ...(input.source_stripe_charge_id
-          ? { next_attempt_at: new Date() }
-          : {}),
+        ...(input.source_stripe_charge_id ? { next_attempt_at: new Date() } : {}),
       },
     });
   }
@@ -211,7 +230,10 @@ export class TransferOrchestratorService {
   // Try to post a pending transfer to Stripe. Updates the
   // ConnectTransfer row + corresponding ledger entry on success or
   // failure. Returns the updated transfer row.
-  async attempt(transferId: string): Promise<ConnectTransfer> {
+  async attempt(
+    transferId: string,
+    opts: { beforeStripe?: MoneyFence } = {},
+  ): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: transferId },
     });
@@ -228,6 +250,10 @@ export class TransferOrchestratorService {
       return this.markFailed(row, 'max_attempts_exhausted', /*final=*/ true);
     }
 
+    // B-627-2: a stale lock holder never starts a Stripe transfer. (The
+    // transfer itself is keyed per row, so a holder paused past this point
+    // collapses onto the same Stripe transfer.)
+    if (opts.beforeStripe) await opts.beforeStripe();
     const attemptCount = row.attempts + 1;
     await this.prisma.connectTransfer.update({
       where: { id: row.id },
@@ -273,15 +299,12 @@ export class TransferOrchestratorService {
       return posted;
     } catch (err) {
       const isStripe = err instanceof StripeConnectApiError;
-      const message =
-        (err as Error)?.message ?? 'unknown transfer error';
+      const message = (err as Error)?.message ?? 'unknown transfer error';
       const code = transferFailureCode(err);
       const finalFailure = attemptCount >= row.max_attempts;
       const final =
         finalFailure ||
-        (isStripe &&
-          (err as StripeConnectApiError).httpStatus === 400 &&
-          /no such/i.test(message));
+        (isStripe && (err as StripeConnectApiError).httpStatus === 400 && /no such/i.test(message));
       // S-FEE — every failure is logged with a specific code. Codes that need
       // a person (platform balance, restricted account) and final failures
       // are logged at error level with alert=true for the log-based alerts.
@@ -292,11 +315,7 @@ export class TransferOrchestratorService {
         `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
       if (needsPerson) this.logger.error(line);
       else this.logger.warn(line);
-      return this.markFailed(
-        { ...row, attempts: attemptCount },
-        `${code}: ${message}`,
-        final,
-      );
+      return this.markFailed({ ...row, attempts: attemptCount }, `${code}: ${message}`, final);
     }
   }
 
@@ -323,20 +342,46 @@ export class TransferOrchestratorService {
     });
   }
 
-  // Reverse a posted transfer (partial or full). Used by the refund
-  // webhook handler when a payment is refunded.
+  // Reverse a posted transfer (partial or full).
   //
-  // S-FEE round 3 (B-627-2): callers serialize per charge (ChargeLock), so
-  // `row` is read under the lock and the default key names the transfer's new
-  // cumulative reversed total. The legacy refund path passes a key with the
-  // Stripe refund id instead (one reversal per refund). The ledger mirror is
-  // absolute: settlement transfers are synced by ChargeSettlementService
-  // (syncLegLedger); a legacy transfer's slice takes the transfer's total.
+  // S-FEE round 4 (B-627-5) — durable, keyed reversal operations. The
+  // operation (TransferReversalOp: amount, the transfer's reversed total
+  // before it, idempotency key) is written BEFORE Stripe is called, in a
+  // fenced transaction that also bumps ConnectTransfer.reversal_seq (CAS), so
+  // only one operation per transfer is ever in flight. Then:
+  //   - Stripe succeeds            -> the op is completed (reversed total =
+  //                                   max(current, base + amount); absolute, so
+  //                                   a transfer.reversed sync or a second
+  //                                   completer never counts it twice);
+  //   - Stripe refuses (4xx)       -> the op is refused; the caller may record
+  //                                   that amount as a recovery;
+  //   - the outcome is unknown     -> the transfer's reversals at Stripe are
+  //                                   listed and matched by
+  //                                   metadata.tgp_reversal_op; found -> complete,
+  //                                   otherwise the op stays pending and
+  //                                   ReversalUncertainError is thrown (never a
+  //                                   recovery).
+  // Before any new reversal, pending ops on the transfer are re-driven with
+  // their own key (reconcile by Stripe object first when the op was already
+  // sent once), so a lost response, a crash after Stripe committed, or a
+  // stale holder resuming all collapse onto one Stripe reversal.
   async reverse(args: {
     transfer_row_id: string;
     amount_cents?: number; // omit = full reversal
+    // Caller-chosen operation key (legacy path: one reversal per refund id).
     idempotency_key?: string;
-  }): Promise<ConnectTransfer> {
+    purpose?: ReversalPurpose;
+    // clawback: the PayeeRecovery this reversal collects.
+    recovery_id?: string | null;
+    fence?: MoneyFence;
+  }): Promise<ReverseOutcome> {
+    if (args.idempotency_key) {
+      const prior = await this.prisma.transferReversalOp.findUnique({
+        where: { idempotency_key: args.idempotency_key },
+      });
+      if (prior) return this.outcomeOf(prior, args.fence);
+    }
+    await this.resolvePendingReversals(args.transfer_row_id, args.fence);
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
     });
@@ -347,33 +392,247 @@ export class TransferOrchestratorService {
       args.amount_cents ?? row.amount_cents - row.reversed_amount_cents,
       row.amount_cents - row.reversed_amount_cents,
     );
-    if (amount <= 0) return row;
-    const idempotencyKey =
-      args.idempotency_key ?? `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
-    await this.stripe.reverseTransfer({
-      transfer_id: row.stripe_transfer_id,
-      amount,
-      metadata: { tgp_purchase_id: row.purchase_id, tgp_kind: row.kind },
-      idempotencyKey,
+    if (amount <= 0) return { status: 'succeeded', transfer: row, op_id: null };
+    const op = await this.startReversal(row, amount, args);
+    return this.drive(op, args.fence);
+  }
+
+  /**
+   * Re-drive every pending reversal operation of a transfer (oldest first).
+   * Throws ReversalUncertainError when one is still unresolved.
+   */
+  async resolvePendingReversals(transferRowId: string, fence?: MoneyFence): Promise<void> {
+    const pending = await this.prisma.transferReversalOp.findMany({
+      where: { transfer_id: transferRowId, status: 'pending' },
+      orderBy: { seq: 'asc' },
     });
-    const newReversed = row.reversed_amount_cents + amount;
-    const fullyReversed = newReversed >= row.amount_cents;
-    const updated = await this.prisma.connectTransfer.update({
-      where: { id: row.id },
-      data: {
-        status: fullyReversed ? 'reversed' : row.status,
-        reversed_amount_cents: newReversed,
-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
-      },
+    for (const op of pending) await this.drive(op, fence);
+  }
+
+  /** Pending reversal operations older than `before` (sweeper). */
+  async findPendingReversals(before: Date, limit = 25): Promise<TransferReversalOp[]> {
+    return this.prisma.transferReversalOp.findMany({
+      where: { status: 'pending', created_at: { lte: before } },
+      orderBy: { created_at: 'asc' },
+      take: limit,
     });
-    if (row.ledger_entry_id && !row.settlement_id) {
+  }
+
+  private async outcomeOf(op: TransferReversalOp, fence?: MoneyFence): Promise<ReverseOutcome> {
+    if (op.status === 'pending') return this.drive(op, fence);
+    const transfer = await this.prisma.connectTransfer.findUniqueOrThrow({
+      where: { id: op.transfer_id },
+    });
+    if (op.status === 'succeeded') return { status: 'succeeded', transfer, op_id: op.id };
+    return {
+      status: 'refused',
+      transfer,
+      op_id: op.id,
+      error: op.last_error ?? 'refused by Stripe',
+    };
+  }
+
+  private async startReversal(
+    row: ConnectTransfer,
+    amount: number,
+    args: {
+      idempotency_key?: string;
+      purpose?: ReversalPurpose;
+      recovery_id?: string | null;
+      fence?: MoneyFence;
+    },
+  ): Promise<TransferReversalOp> {
+    const seq = row.reversal_seq + 1;
+    const key = args.idempotency_key ?? `tgp-tr-rev-${row.id}-op${seq}`;
+    const purpose = args.purpose ?? 'adjust';
+    return this.prisma.$transaction(async (tx) => {
+      if (args.fence) await args.fence(tx);
+      const slot = await tx.connectTransfer.updateMany({
+        where: { id: row.id, reversal_seq: row.reversal_seq },
+        data: { reversal_seq: seq },
+      });
+      if (slot.count !== 1) {
+        throw new ReversalUncertainError(
+          row.id,
+          key,
+          'another worker started a reversal on this transfer at the same time',
+        );
+      }
+      if (purpose === 'clawback' && args.recovery_id) {
+        // Reserve the cents on the recovery before Stripe moves them, so
+        // netting cannot collect the same cents concurrently.
+        const rec = await tx.payeeRecovery.findUniqueOrThrow({ where: { id: args.recovery_id } });
+        const collected = rec.collected_cents + amount;
+        const reserved = await tx.payeeRecovery.updateMany({
+          where: { id: rec.id, collected_cents: rec.collected_cents, status: 'open' },
+          data: {
+            collected_cents: collected,
+            status: collected >= rec.amount_cents ? 'collected' : 'open',
+            collected_at: collected >= rec.amount_cents ? new Date() : null,
+          },
+        });
+        if (reserved.count !== 1 || collected > rec.amount_cents) {
+          throw new ReversalUncertainError(row.id, key, 'the recovery changed while reserving it');
+        }
+      }
+      return tx.transferReversalOp.create({
+        data: {
+          transfer_id: row.id,
+          seq,
+          idempotency_key: key,
+          amount_cents: amount,
+          base_reversed_cents: row.reversed_amount_cents,
+          purpose,
+          recovery_id: args.recovery_id ?? null,
+          status: 'pending',
+        },
+      });
+    });
+  }
+
+  private async drive(op: TransferReversalOp, fence?: MoneyFence): Promise<ReverseOutcome> {
+    const row = await this.prisma.connectTransfer.findUniqueOrThrow({
+      where: { id: op.transfer_id },
+    });
+    if (!row.stripe_transfer_id) throw new Error('cannot reverse transfer with no Stripe id');
+    // Sent before and still pending: the response (or our receipt) was lost.
+    // Reconcile by the Stripe object first; re-sending is safe only when
+    // Stripe shows no reversal for this key (Stripe keys expire after 24 h).
+    if (op.attempts > 0) {
+      const found = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+      if (found) return this.completeReversal(op, found.id);
+    }
+    if (fence) await fence();
+    await this.prisma.transferReversalOp.update({
+      where: { id: op.id },
+      data: { attempts: { increment: 1 }, last_attempt_at: new Date() },
+    });
+    let stripeReversalId: string;
+    try {
+      const rev = await this.stripe.reverseTransfer({
+        transfer_id: row.stripe_transfer_id,
+        amount: op.amount_cents,
+        metadata: {
+          tgp_purchase_id: row.purchase_id,
+          tgp_kind: row.kind,
+          tgp_reversal_op: op.idempotency_key,
+          tgp_purpose: op.purpose,
+        },
+        idempotencyKey: op.idempotency_key,
+      });
+      stripeReversalId = rev.id;
+    } catch (err) {
+      const message = (err as Error)?.message ?? 'unknown reversal error';
+      if (isDefinitiveStripeRefusal(err)) return this.refuseReversal(op, message);
+      const found = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+      if (found) return this.completeReversal(op, found.id);
+      await this.prisma.transferReversalOp.updateMany({
+        where: { id: op.id, status: 'pending' },
+        data: { last_error: message.slice(0, 500) },
+      });
+      this.logger.error(
+        `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
+      );
+      throw new ReversalUncertainError(row.id, op.idempotency_key, message);
+    }
+    // Stripe moved the money. If this receipt write fails the op stays
+    // pending with attempts > 0, and every retry reconciles by the Stripe
+    // object before it may send again.
+    return this.completeReversal(op, stripeReversalId);
+  }
+
+  // Stripe's reversals on the transfer, matched by our operation key.
+  private async findStripeReversal(
+    stripeTransferId: string,
+    key: string,
+  ): Promise<{ id: string; amount: number } | null> {
+    try {
+      let startingAfter: string | null = null;
+      for (let page = 0; page < 5; page += 1) {
+        const res = await this.stripe.listTransferReversals(stripeTransferId, {
+          limit: 100,
+          starting_after: startingAfter,
+        });
+        const data = res.data ?? [];
+        const hit = data.find((r) => r.metadata?.tgp_reversal_op === key);
+        if (hit) return { id: hit.id, amount: hit.amount };
+        if (!res.has_more || data.length === 0) return null;
+        startingAfter = data[data.length - 1].id;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `listing reversals of ${stripeTransferId} failed while reconciling op=${key}: ${(err as Error).message}`,
+      );
+    }
+    return null;
+  }
+
+  private async completeReversal(
+    op: TransferReversalOp,
+    stripeReversalId: string,
+  ): Promise<ReverseOutcome> {
+    const transfer = await this.prisma.$transaction(async (tx) => {
+      const done = await tx.transferReversalOp.updateMany({
+        where: { id: op.id, status: 'pending' },
+        data: {
+          status: 'succeeded',
+          stripe_reversal_id: stripeReversalId,
+          resolved_at: new Date(),
+          last_error: null,
+        },
+      });
+      const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
+      if (done.count !== 1) return t; // another completer recorded it
+      const reversed = Math.min(
+        t.amount_cents,
+        Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
+      );
+      const full = reversed >= t.amount_cents;
+      return tx.connectTransfer.update({
+        where: { id: t.id },
+        data: {
+          reversed_amount_cents: reversed,
+          status: full ? 'reversed' : t.status,
+          reversed_at: full ? new Date() : t.reversed_at,
+          ...(op.purpose === 'clawback'
+            ? { recovery_clawback_cents: { increment: op.amount_cents } }
+            : {}),
+        },
+      });
+    });
+    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
       await this.ledger.setReversedTotal({
-        entry_id: row.ledger_entry_id,
-        reversed_total_cents: newReversed,
-        stripe_transfer_id: row.stripe_transfer_id,
+        entry_id: transfer.ledger_entry_id,
+        reversed_total_cents: transfer.reversed_amount_cents,
+        stripe_transfer_id: transfer.stripe_transfer_id,
       });
     }
-    return updated;
+    return { status: 'succeeded', transfer, op_id: op.id };
+  }
+
+  private async refuseReversal(op: TransferReversalOp, message: string): Promise<ReverseOutcome> {
+    const transfer = await this.prisma.$transaction(async (tx) => {
+      const done = await tx.transferReversalOp.updateMany({
+        where: { id: op.id, status: 'pending' },
+        data: { status: 'refused', last_error: message.slice(0, 500), resolved_at: new Date() },
+      });
+      if (done.count === 1 && op.purpose === 'clawback' && op.recovery_id) {
+        // Give the reserved cents back to the open recovery.
+        await tx.payeeRecovery.updateMany({
+          where: { id: op.recovery_id, collected_cents: { gte: op.amount_cents } },
+          data: {
+            collected_cents: { decrement: op.amount_cents },
+            status: 'open',
+            collected_at: null,
+          },
+        });
+      }
+      return tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
+    });
+    this.logger.warn(
+      `SFEE_REVERSAL_REFUSED transfer=${op.transfer_id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
+    );
+    return { status: 'refused', transfer, op_id: op.id, error: message };
   }
 
   private async markFailed(
@@ -384,14 +643,9 @@ export class TransferOrchestratorService {
     const status = finalFailure ? 'failed' : 'pending';
     const nextDelay =
       TransferOrchestratorService.BACKOFF_MINUTES[
-        Math.min(
-          row.attempts,
-          TransferOrchestratorService.BACKOFF_MINUTES.length - 1,
-        )
+        Math.min(row.attempts, TransferOrchestratorService.BACKOFF_MINUTES.length - 1)
       ];
-    const nextAttempt = finalFailure
-      ? null
-      : new Date(Date.now() + nextDelay * 60_000);
+    const nextAttempt = finalFailure ? null : new Date(Date.now() + nextDelay * 60_000);
     const updated = await this.prisma.connectTransfer.update({
       where: { id: row.id },
       data: {

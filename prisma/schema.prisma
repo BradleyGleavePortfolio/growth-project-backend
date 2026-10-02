@@ -3818,13 +3818,54 @@ model ConnectTransfer {
   posted_at                     DateTime?
   reversed_at                   DateTime?
   reversed_amount_cents         Int            @default(0)
+  // S-FEE round 4 — reversal operations started on this transfer (CAS slot:
+  // at most one TransferReversalOp in flight per transfer).
+  reversal_seq                  Int            @default(0)
+  // Part of reversed_amount_cents that collected another charge's
+  // PayeeRecovery from this payee (clawback). It still counts toward this
+  // charge's payee position: the payee was paid for this charge and the cents
+  // settled a debt on another one.
+  recovery_clawback_cents       Int            @default(0)
   created_at                    DateTime       @default(now())
   updated_at                    DateTime       @updatedAt
+
+  reversal_ops TransferReversalOp[]
 
   @@index([status, next_attempt_at])
   @@index([destination_user_id])
   @@index([purchase_id])
   @@index([settlement_id])
+}
+
+// S-FEE round 4 (B-627-5) — one durable, keyed Stripe transfer reversal. It is
+// written before Stripe is called and resolved from Stripe's answer (or, when
+// the answer was lost, from the transfer's reversal list matched by
+// metadata.tgp_reversal_op = idempotency_key), so an uncertain outcome is
+// re-driven with the same key and never becomes a second recovery.
+model TransferReversalOp {
+  id                  String          @id @default(uuid())
+  transfer_id         String
+  transfer            ConnectTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
+  seq                 Int
+  idempotency_key     String          @unique
+  amount_cents        Int
+  // The transfer's reversed_amount_cents when the operation started.
+  base_reversed_cents Int
+  // adjust (refund / dispute convergence) | clawback (collects recovery_id) | legacy
+  purpose             String          @default("adjust")
+  recovery_id         String?
+  // pending | succeeded | refused
+  status              String          @default("pending")
+  stripe_reversal_id  String?         @unique
+  attempts            Int             @default(0)
+  last_attempt_at     DateTime?
+  last_error          String?
+  resolved_at         DateTime?
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+
+  @@unique([transfer_id, seq])
+  @@index([status, created_at])
 }
 
 // S-FEE — Charge settlement (one row per Stripe charge on a coach package).
@@ -3897,6 +3938,12 @@ model ChargeSettlement {
   settled_at                    DateTime?
   adjusted_at                   DateTime?
   last_error                    String?
+  // S-FEE round 4 (B-627-4) — an adjustment that could not establish
+  // canonical state (dispute unreadable, reversal outcome unknown, lock lost)
+  // flags the settlement; the sweeper re-runs it until it converges.
+  reconcile_requested_at        DateTime?
+  reconcile_dispute_id          String?
+  reconcile_reason              String?
   created_at                    DateTime       @default(now())
   updated_at                    DateTime       @updatedAt
 
@@ -3906,6 +3953,7 @@ model ChargeSettlement {
   @@index([purchase_id])
   @@index([coach_user_id, created_at])
   @@index([status])
+  @@index([reconcile_requested_at])
 }
 
 // S-FEE — Money a payee owes TGP for one charge that a transfer reversal could
