@@ -80,16 +80,13 @@ export class FakeStripeBilling {
   /** Number of upcoming cancelSubscription calls that fail with a 503. */
   cancelFailures = 0;
 
-  addCard(
-    id: string,
-    behavior: CardBehavior,
-    last4: string,
-    brand = 'visa',
-  ): void {
+  addCard(id: string, behavior: CardBehavior, last4: string, brand = 'visa'): void {
     this.cards.set(id, { behavior, brand, last4, exp_month: 12, exp_year: 2030 });
   }
 
-  addInvoice(inv: Partial<FakeInvoice> & { id: string; subscription: string; amount_due: number }): FakeInvoice {
+  addInvoice(
+    inv: Partial<FakeInvoice> & { id: string; subscription: string; amount_due: number },
+  ): FakeInvoice {
     const full: FakeInvoice = {
       object: 'invoice',
       status: 'open',
@@ -139,12 +136,20 @@ export class FakeStripeBilling {
     this.calls.push({ op: 'retrieveSetupIntent', args: id });
     const si = this.setupIntents.get(id);
     if (!si) {
-      throw new StripeConnectApiError(`No such setupintent: '${id}'`, 404, 'resource_missing', 'invalid_request_error');
+      throw new StripeConnectApiError(
+        `No such setupintent: '${id}'`,
+        404,
+        'resource_missing',
+        'invalid_request_error',
+      );
     }
     return { ...si, metadata: { ...si.metadata } };
   }
 
-  async createEphemeralKey(customerId: string, idempotencyKey: string): Promise<{ secret: string }> {
+  async createEphemeralKey(
+    customerId: string,
+    idempotencyKey: string,
+  ): Promise<{ secret: string }> {
     this.calls.push({ op: 'createEphemeralKey', key: idempotencyKey, args: customerId });
     return { secret: `ek_test_${customerId}` };
   }
@@ -183,7 +188,12 @@ export class FakeStripeBilling {
     this.calls.push({ op: 'retrieveInvoice', args: id });
     const inv = this.invoices.get(id);
     if (!inv) {
-      throw new StripeConnectApiError(`No such invoice: '${id}'`, 404, 'resource_missing', 'invalid_request_error');
+      throw new StripeConnectApiError(
+        `No such invoice: '${id}'`,
+        404,
+        'resource_missing',
+        'invalid_request_error',
+      );
     }
     return this.copy(inv);
   }
@@ -198,7 +208,12 @@ export class FakeStripeBilling {
     return this.once(`pay:${args.idempotencyKey}`, () => {
       const inv = this.invoices.get(args.invoiceId);
       if (!inv) {
-        throw new StripeConnectApiError('No such invoice', 404, 'resource_missing', 'invalid_request_error');
+        throw new StripeConnectApiError(
+          'No such invoice',
+          404,
+          'resource_missing',
+          'invalid_request_error',
+        );
       }
       if (inv.status !== 'open') {
         throw new StripeConnectApiError(
@@ -269,7 +284,12 @@ export class FakeStripeBilling {
     this.calls.push({ op: 'cancelSubscription', args: subId });
     if (this.cancelFailures > 0) {
       this.cancelFailures -= 1;
-      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_connection_error');
+      throw new StripeConnectApiError(
+        'Stripe API timed out',
+        503,
+        'request_timeout',
+        'api_connection_error',
+      );
     }
     const sub = this.mustSub(subId);
     sub.status = 'canceled';
@@ -315,7 +335,9 @@ export class FakeStripeBilling {
     if (!inv || inv.status !== 'open') return 'not_open';
     const sub = this.mustSub(inv.subscription);
     const pm =
-      sub.default_payment_method ?? this.customers.get(sub.customer)?.default_payment_method ?? null;
+      sub.default_payment_method ??
+      this.customers.get(sub.customer)?.default_payment_method ??
+      null;
     const card = pm ? this.cards.get(pm) : undefined;
     if (!pm || !card || card.behavior !== 'ok') return 'failed';
     this.settle(inv, pm, 'stripe_retry');
@@ -361,7 +383,12 @@ export class FakeStripeBilling {
   private mustSub(id: string): FakeSubscription {
     const sub = this.subs.get(id);
     if (!sub) {
-      throw new StripeConnectApiError(`No such subscription: '${id}'`, 404, 'resource_missing', 'invalid_request_error');
+      throw new StripeConnectApiError(
+        `No such subscription: '${id}'`,
+        404,
+        'resource_missing',
+        'invalid_request_error',
+      );
     }
     return sub;
   }

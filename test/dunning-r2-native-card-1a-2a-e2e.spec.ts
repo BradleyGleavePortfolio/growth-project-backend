@@ -3,10 +3,7 @@ import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
-import {
-  CardUpdateResult,
-  ClientBillingService,
-} from '../src/checkout/client-billing.service';
+import { CardUpdateResult, ClientBillingService } from '../src/checkout/client-billing.service';
 import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
@@ -107,7 +104,10 @@ function buildWorld(): World {
   const fake = new FakePrisma();
   const prisma = fake.client();
   const stripe = new FakeStripeBilling();
-  stripe.customers.set('cus_dv2_client', { id: 'cus_dv2_client', default_payment_method: 'pm_old' });
+  stripe.customers.set('cus_dv2_client', {
+    id: 'cus_dv2_client',
+    default_payment_method: 'pm_old',
+  });
   stripe.subs.set('sub_dv2_client', {
     id: 'sub_dv2_client',
     status: 'active',
@@ -154,9 +154,24 @@ function buildWorld(): World {
   );
   const billing = new ClientBillingService(prisma, stub(stripe), v1, v2, undefined);
 
-  fake.seed('user', { id: 'coach-1', name: 'Morgan Coach', email: 'coach@tgp.invalid', role: 'coach' });
-  fake.seed('user', { id: 'client-1', name: 'Avery Client', email: 'client@tgp.invalid', role: 'student' });
-  fake.seed('user', { id: 'client-2', name: 'Other Tenant', email: 'other@tgp.invalid', role: 'student' });
+  fake.seed('user', {
+    id: 'coach-1',
+    name: 'Morgan Coach',
+    email: 'coach@tgp.invalid',
+    role: 'coach',
+  });
+  fake.seed('user', {
+    id: 'client-1',
+    name: 'Avery Client',
+    email: 'client@tgp.invalid',
+    role: 'student',
+  });
+  fake.seed('user', {
+    id: 'client-2',
+    name: 'Other Tenant',
+    email: 'other@tgp.invalid',
+    role: 'student',
+  });
   fake.seed('coachPackage', {
     id: 'pkg-1',
     coach_user_id: 'coach-1',
@@ -178,7 +193,11 @@ function buildWorld(): World {
     client_user_id: 'client-2',
     stripe_customer_id: 'cus_other',
   });
-  fake.seed('notificationPreferences', { id: 'np-1', user_id: 'client-1', timezone: 'America/Los_Angeles' });
+  fake.seed('notificationPreferences', {
+    id: 'np-1',
+    user_id: 'client-1',
+    timezone: 'America/Los_Angeles',
+  });
   fake.seed('clientPurchase', {
     id: 'purchase-1',
     client_user_id: 'client-1',
@@ -291,7 +310,9 @@ function expectIntegerCents(...values: Array<number | null | undefined>): void {
   }
 }
 
-async function errorOf(p: Promise<unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+async function errorOf(
+  p: Promise<unknown>,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   try {
     await p;
   } catch (err) {
@@ -439,7 +460,11 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(w.stripe.subs.get('sub_dv2_client')?.default_payment_method).toBe('pm_new_ok');
 
       // Unlocked BEFORE any webhook arrives.
-      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null, billing_action: null });
+      expect(stateRow(w)).toMatchObject({
+        status: 'resolved',
+        locked_out_at: null,
+        billing_action: null,
+      });
       expect(purchaseRow(w)).toMatchObject({ status: 'active', entitlement_active: true });
       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
       expect(await entitlementVerdict(w)).toBe('allowed');
@@ -512,7 +537,12 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       const after = await w.billing.confirmCardUpdate('client-1', setupId);
       expect(after).toMatchObject({ outcome: 'paid', amount_paid_cents: 0, access_restored: true });
       expect(w.stripe.charges).toEqual([
-        { invoice: 'in_dv2_renewal_1', payment_method: 'pm_new_3ds', amount: 15000, by: 'client_3ds' },
+        {
+          invoice: 'in_dv2_renewal_1',
+          payment_method: 'pm_new_3ds',
+          amount: 15000,
+          by: 'client_3ds',
+        },
       ]);
       expect(stateRow(w)?.status).toBe('resolved');
       expect((await w.v2.getClientStatus('client-1')).state).toBe('none');
@@ -529,7 +559,12 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       const res = await updateCardInApp(w, 'pm_new_ok');
       expect(res).toMatchObject({ outcome: 'paid', amount_paid_cents: 0, access_restored: true });
       expect(w.stripe.charges).toEqual([
-        { invoice: 'in_dv2_renewal_1', payment_method: 'pm_new_ok', amount: 15000, by: 'stripe_retry' },
+        {
+          invoice: 'in_dv2_renewal_1',
+          payment_method: 'pm_new_ok',
+          amount: 15000,
+          by: 'stripe_retry',
+        },
       ]);
       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
       await w.handler.handle(fixture('invoice.paid'));
@@ -573,7 +608,12 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       row.status = 'active';
       row.billing_action = 'canceling:dead';
       row.billing_action_until = new Date(Date.now() - 1);
-      w.stripe.addInvoice({ id: 'in_next', subscription: 'sub_dv2_client', amount_due: 15000, created: sec(at(DAY)) });
+      w.stripe.addInvoice({
+        id: 'in_next',
+        subscription: 'sub_dv2_client',
+        amount_due: 15000,
+        created: sec(at(DAY)),
+      });
       w.stripe.subs.get('sub_dv2_client')!.status = 'past_due';
       purchaseRow(w)!.status = 'past_due';
       const next = await updateCardInApp(w, 'pm_new_ok', 10);
@@ -614,7 +654,11 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         entitlement_active: false,
         cancel_at_period_end: false,
       });
-      expect(stateRow(w)).toMatchObject({ status: 'abandoned', locked_out_at: null, billing_action: null });
+      expect(stateRow(w)).toMatchObject({
+        status: 'abandoned',
+        locked_out_at: null,
+        billing_action: null,
+      });
       expect(stateRow(w)?.client_canceled_at).toEqual(at(4 * DAY));
       // Access ends immediately (paywall), and it is not a dunning lockout.
       expect(await entitlementVerdict(w)).toBe(402);
@@ -630,8 +674,12 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         }),
       );
       expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
-      await w.handler.handle(fixture('customer.subscription.deleted', { canceled_at: sec(at(4 * DAY)) }));
-      await w.handler.handle(fixture('customer.subscription.deleted', { canceled_at: sec(at(4 * DAY)) }));
+      await w.handler.handle(
+        fixture('customer.subscription.deleted', { canceled_at: sec(at(4 * DAY)) }),
+      );
+      await w.handler.handle(
+        fixture('customer.subscription.deleted', { canceled_at: sec(at(4 * DAY)) }),
+      );
       expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
       expect(stateRow(w)?.status).toBe('abandoned');
 
@@ -678,7 +726,10 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         voided_amount_cents: 0,
         access_ends_at: at(30 * DAY).toISOString(),
       });
-      expect(w.stripe.subs.get('sub_dv2_client')).toMatchObject({ status: 'active', cancel_at_period_end: true });
+      expect(w.stripe.subs.get('sub_dv2_client')).toMatchObject({
+        status: 'active',
+        cancel_at_period_end: true,
+      });
       expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);
       expect(w.stripe.charges).toHaveLength(1); // the retry's own charge; no refund
       expect(purchaseRow(w)?.cancel_at_period_end).toBe(true);
@@ -693,14 +744,22 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(e.body).toMatchObject({ code: 'CANCEL_INCOMPLETE' });
       expect(String(e.body.message)).toMatch(/unpaid invoice is canceled/);
       expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('void');
-      expect(stateRow(w)).toMatchObject({ status: 'active', client_canceled_at: at(5 * DAY), billing_action: null });
+      expect(stateRow(w)).toMatchObject({
+        status: 'active',
+        client_canceled_at: at(5 * DAY),
+        billing_action: null,
+      });
       // In between: no banner, no Day-10 lock, no notices.
       expect((await w.v2.getClientStatus('client-1')).state).toBe('none');
       jest.setSystemTime(at(10 * DAY + 7 * MIN));
       expect((await w.v2.runSweep(at(10 * DAY + 7 * MIN))).locked).toBe(0);
       // The reconciler (hourly) finishes the cancel.
       w.stripe.cancelFailures = 0;
-      expect(await w.billing.reconcile(at(10 * DAY + 37 * MIN))).toEqual({ finished: 1, applied: 0, failed: 0 });
+      expect(await w.billing.reconcile(at(10 * DAY + 37 * MIN))).toEqual({
+        finished: 1,
+        applied: 0,
+        failed: 0,
+      });
       expect(w.stripe.subs.get('sub_dv2_client')?.status).toBe('canceled');
       expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
       expect(stateRow(w)?.status).toBe('abandoned');

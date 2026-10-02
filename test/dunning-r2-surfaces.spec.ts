@@ -86,8 +86,16 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
 
   it('defaults: customer invoice_settings AND subscription default_payment_method', async () => {
     const s = new RecordingStripe();
-    await s.setCustomerDefaultPaymentMethod({ customerId: 'cus_1', paymentMethodId: 'pm_1', idempotencyKey: 'a' });
-    await s.setSubscriptionDefaultPaymentMethod({ subscriptionId: 'sub_1', paymentMethodId: 'pm_1', idempotencyKey: 'b' });
+    await s.setCustomerDefaultPaymentMethod({
+      customerId: 'cus_1',
+      paymentMethodId: 'pm_1',
+      idempotencyKey: 'a',
+    });
+    await s.setSubscriptionDefaultPaymentMethod({
+      subscriptionId: 'sub_1',
+      paymentMethodId: 'pm_1',
+      idempotencyKey: 'b',
+    });
     expect(s.requests[0].url).toBe('https://api.stripe.com/v1/customers/cus_1');
     expect(Object.fromEntries(s.requests[0].body)).toEqual({
       'invoice_settings[default_payment_method]': 'pm_1',
@@ -103,7 +111,10 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
     await s.voidInvoice({ invoiceId: 'in_1', idempotencyKey: 'v' });
     await s.setCancelAtPeriodEnd({ subscriptionId: 'sub_1', idempotencyKey: 'c' });
     expect(s.requests[0].url).toBe('https://api.stripe.com/v1/invoices/in_1/pay');
-    expect(Object.fromEntries(s.requests[0].body)).toEqual({ payment_method: 'pm_1', off_session: 'false' });
+    expect(Object.fromEntries(s.requests[0].body)).toEqual({
+      payment_method: 'pm_1',
+      off_session: 'false',
+    });
     expect(s.requests[1].url).toBe('https://api.stripe.com/v1/invoices/in_1/void');
     expect(Object.fromEntries(s.requests[2].body)).toEqual({
       cancel_at_period_end: 'true',
@@ -256,19 +267,28 @@ describe('S-DUNNING-R2 DTOs and schedule', () => {
 
   it('setup-intent requires a UUID idempotency_key', async () => {
     await expect(
-      pipe.transform({ idempotency_key: '00000000-0000-4000-8000-000000000001' }, meta(CreateCardSetupDto)),
+      pipe.transform(
+        { idempotency_key: '00000000-0000-4000-8000-000000000001' },
+        meta(CreateCardSetupDto),
+      ),
     ).resolves.toBeInstanceOf(CreateCardSetupDto);
-    await expect(pipe.transform({ idempotency_key: 'nope' }, meta(CreateCardSetupDto))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      pipe.transform({ idempotency_key: 'nope' }, meta(CreateCardSetupDto)),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('confirm accepts only a Stripe SetupIntent id and no extra fields', async () => {
-    await expect(pipe.transform({ setup_intent_id: 'seti_123abc' }, meta(ConfirmCardUpdateDto))).resolves.toEqual(
-      expect.objectContaining({ setup_intent_id: 'seti_123abc' }),
-    );
-    for (const bad of [{ setup_intent_id: 'pi_123' }, { setup_intent_id: 'seti_1', amount: 1 }, {}]) {
-      await expect(pipe.transform(bad, meta(ConfirmCardUpdateDto))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      pipe.transform({ setup_intent_id: 'seti_123abc' }, meta(ConfirmCardUpdateDto)),
+    ).resolves.toEqual(expect.objectContaining({ setup_intent_id: 'seti_123abc' }));
+    for (const bad of [
+      { setup_intent_id: 'pi_123' },
+      { setup_intent_id: 'seti_1', amount: 1 },
+      {},
+    ]) {
+      await expect(pipe.transform(bad, meta(ConfirmCardUpdateDto))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     }
   });
 

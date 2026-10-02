@@ -251,17 +251,40 @@ export class ClientBillingService {
       paidCents += res.amountPaidCents;
       currency = res.currency ?? currency;
       if (res.kind === 'requires_action') {
-        return this.cardResult('requires_action', card, paidCents, res.amountDueCents, currency, restored, {
-          clientSecret: res.clientSecret ?? null,
-        });
+        return this.cardResult(
+          'requires_action',
+          card,
+          paidCents,
+          res.amountDueCents,
+          currency,
+          restored,
+          {
+            clientSecret: res.clientSecret ?? null,
+          },
+        );
       }
       if (res.kind === 'declined') {
-        return this.cardResult('declined', card, paidCents, res.amountDueCents, currency, restored, {
-          declineCode: res.declineCode ?? null,
-        });
+        return this.cardResult(
+          'declined',
+          card,
+          paidCents,
+          res.amountDueCents,
+          currency,
+          restored,
+          {
+            declineCode: res.declineCode ?? null,
+          },
+        );
       }
       if (res.kind === 'processing') {
-        return this.cardResult('processing', card, paidCents, res.amountDueCents, currency, restored);
+        return this.cardResult(
+          'processing',
+          card,
+          paidCents,
+          res.amountDueCents,
+          currency,
+          restored,
+        );
       }
       if (res.kind === 'paid') {
         await this.restoreAfterPayment(purchase, true);
@@ -313,9 +336,7 @@ export class ClientBillingService {
         paid += out.amountPaidCents;
         currency = inv.currency ?? currency;
         if (out.kind !== 'paid') {
-          const due = invoices
-            .slice(i)
-            .reduce((sum, x) => sum + this.dueCents(x), 0);
+          const due = invoices.slice(i).reduce((sum, x) => sum + this.dueCents(x), 0);
           return { ...out, amountPaidCents: paid, amountDueCents: due, currency };
         }
       }
@@ -390,7 +411,10 @@ export class ClientBillingService {
    * active again (never on a guess). Status and period come from Stripe.
    * Returns whether access was restored.
    */
-  private async restoreAfterPayment(purchase: ClientPurchase, knownPaid: boolean): Promise<boolean> {
+  private async restoreAfterPayment(
+    purchase: ClientPurchase,
+    knownPaid: boolean,
+  ): Promise<boolean> {
     let subPaid = false;
     try {
       const sub = await this.stripe.retrieveSubscription(purchase.stripe_subscription_id as string);
@@ -501,7 +525,10 @@ export class ClientBillingService {
       }
       await this.prisma.clientPurchase.update({
         where: { id: purchase.id },
-        data: { cancel_at_period_end: true, ...(periodEnd ? { current_period_end: periodEnd } : {}) },
+        data: {
+          cancel_at_period_end: true,
+          ...(periodEnd ? { current_period_end: periodEnd } : {}),
+        },
       });
       this.logEvent('billing.client_cancel_scheduled', {
         purchase_id: purchase.id,
@@ -605,7 +632,9 @@ export class ClientBillingService {
     } catch (err) {
       let canceled = false;
       try {
-        const sub = await this.stripe.retrieveSubscription(purchase.stripe_subscription_id as string);
+        const sub = await this.stripe.retrieveSubscription(
+          purchase.stripe_subscription_id as string,
+        );
         canceled = String(sub.status) === 'canceled';
       } catch {
         canceled = false;
@@ -705,7 +734,9 @@ export class ClientBillingService {
    *      subscription was set to cancel at period end outside the app (e.g.
    *      a Stripe-hosted page), so every cancel in dunning ends the same way.
    */
-  async reconcile(now: Date = new Date()): Promise<{ finished: number; applied: number; failed: number }> {
+  async reconcile(
+    now: Date = new Date(),
+  ): Promise<{ finished: number; applied: number; failed: number }> {
     let finished = 0;
     let applied = 0;
     let failed = 0;
@@ -724,7 +755,9 @@ export class ClientBillingService {
         finished += 1;
       } catch (err) {
         failed += 1;
-        this.logger.warn(`reconcile: finish cancel failed purchase=${row.purchase_id}: ${(err as Error).message}`);
+        this.logger.warn(
+          `reconcile: finish cancel failed purchase=${row.purchase_id}: ${(err as Error).message}`,
+        );
       }
     }
     if (isDunningV2Enabled()) {
@@ -744,7 +777,9 @@ export class ClientBillingService {
           applied += 1;
         } catch (err) {
           failed += 1;
-          this.logger.warn(`reconcile: 2A failed purchase=${row.purchase_id}: ${(err as Error).message}`);
+          this.logger.warn(
+            `reconcile: 2A failed purchase=${row.purchase_id}: ${(err as Error).message}`,
+          );
         }
       }
     }
@@ -809,11 +844,16 @@ export class ClientBillingService {
       });
     } catch (err) {
       // An unreleased lease expires on its own after BILLING_ACTION_LEASE_MS.
-      this.logger.warn(`billing lease release failed state=${lease.stateId}: ${(err as Error).message}`);
+      this.logger.warn(
+        `billing lease release failed state=${lease.stateId}: ${(err as Error).message}`,
+      );
     }
   }
 
-  private async mirrorCard(customerRowId: string, paymentMethodId: string): Promise<SavedCard | null> {
+  private async mirrorCard(
+    customerRowId: string,
+    paymentMethodId: string,
+  ): Promise<SavedCard | null> {
     try {
       const pm = await this.stripe.retrievePaymentMethod(paymentMethodId);
       const card: SavedCard = {
@@ -919,7 +959,8 @@ export class ClientBillingService {
       return new ServiceUnavailableException({
         code: 'PAYMENTS_NOT_CONFIGURED',
         error: 'PAYMENTS_NOT_CONFIGURED',
-        message: 'Card payments are not available right now. Contact support with the reference below.',
+        message:
+          'Card payments are not available right now. Contact support with the reference below.',
         step,
       });
     }
