@@ -3336,6 +3336,12 @@ model CoachPackage {
   // backfills published_at = NOW() for pre-existing rows so
   // already-selling packages stay live with no behavior change.
   published_at DateTime?
+  // S-FEE (B-629-2) — when the package was FIRST put on sale. Set by the first
+  // publish and never cleared (unpublish clears published_at only), so a
+  // previously sold offer is told apart from a never-published draft: an
+  // unchanged grandfathered price can be republished, while a new price or a
+  // first publication must meet the $19.99 floor.
+  first_published_at DateTime?
 
   // PR-6 — operator decision #1 second-price config. A package can
   // have a one-time price (the existing amount_cents/billing_type

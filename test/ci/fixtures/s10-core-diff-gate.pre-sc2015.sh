@@ -55,9 +55,7 @@ fail() {
 pass() { printf 's10-core-diff-gate: ok   [%s] %s\n' "$1" "$2"; }
 
 # ── arguments ────────────────────────────────────────────────────────────────────────────
-if ! { [ "$#" -ge 1 ] && [ "$#" -le 2 ]; }; then
-  fail args 'usage: s10-core-diff-gate.sh <B-40-hex> [<HEAD>]'
-fi
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || fail args 'usage: s10-core-diff-gate.sh <B-40-hex> [<HEAD>]'
 BASE_ARG="$1"
 HEAD_ARG="${2:-HEAD}"
 [[ "$BASE_ARG" =~ ^[0-9a-f]{40}$ ]] || fail args "B must be a full 40-hex commit id: $BASE_ARG"
@@ -76,9 +74,7 @@ BASE="$(git rev-parse --verify --quiet "${BASE_ARG}^{commit}")"; rc_b=$?
 HEAD_COMMIT="$(git rev-parse --verify --quiet "${HEAD_ARG}^{commit}")"; rc_h=$?
 CHECKED_OUT="$(git rev-parse --verify --quiet 'HEAD^{commit}')"; rc_c=$?
 set -e
-if ! { [ "$rc_b" -eq 0 ] && [ "$BASE" = "$BASE_ARG" ]; }; then
-  fail args "B is not a commit: $BASE_ARG"
-fi
+[ "$rc_b" -eq 0 ] && [ "$BASE" = "$BASE_ARG" ] || fail args "B is not a commit: $BASE_ARG"
 [ "$rc_h" -eq 0 ] || fail args "HEAD is not a commit: $HEAD_ARG"
 [ "$rc_c" -eq 0 ] || fail args 'no checked-out HEAD'
 [ "$HEAD_COMMIT" = "$CHECKED_OUT" ] ||
@@ -133,9 +129,8 @@ $ENTRY" ;;
   MODE="${META%% *}"
   REST="${META#* }"
   TYPE="${REST%% *}"
-  if ! { [ "$MODE" = '100644' ] && [ "$TYPE" = 'blob' ]; }; then
+  [ "$MODE" = '100644' ] && [ "$TYPE" = 'blob' ] ||
     fail 3 "allowed path is not a regular 100644 blob at HEAD (mode $MODE, type $TYPE): $path"
-  fi
 done
 pass 3 "changed paths == allowed set (${#ALLOWED[@]} paths, all present as 100644 blobs)"
 

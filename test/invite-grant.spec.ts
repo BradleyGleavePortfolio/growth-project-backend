@@ -938,7 +938,10 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
     expect(prisma._purchases).toHaveLength(0);
   });
 
-  it('package DTOs accept amount_cents 0 and still enforce the 50¢ floor for paid packages', async () => {
+  // S-FEE (#629): the DTOs check shape only (whole, non-negative cents); the
+  // paid floor ($19.99) is PackagesService's, so its refusal carries the
+  // machine code PACKAGE_PRICE_BELOW_MINIMUM (see test/packages-pricing-http.spec.ts).
+  it('package DTOs accept amount_cents 0, refuse negative / fractional cents, leave the paid floor to the service', async () => {
     const pipe = new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
@@ -950,15 +953,21 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
     ).resolves.toMatchObject({ amount_cents: 0 });
     await expect(
       pipe.transform({ ...base, amount_cents: 10 }, { type: 'body', metatype: CreatePackageDto }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).resolves.toMatchObject({ amount_cents: 10 });
     await expect(
       pipe.transform({ ...base, amount_cents: -1 }, { type: 'body', metatype: CreatePackageDto }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      pipe.transform(
+        { ...base, amount_cents: 19.99 },
+        { type: 'body', metatype: CreatePackageDto },
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       pipe.transform({ amount_cents: 0 }, { type: 'body', metatype: UpdatePackageDto }),
     ).resolves.toMatchObject({ amount_cents: 0 });
     await expect(
-      pipe.transform({ amount_cents: 49 }, { type: 'body', metatype: UpdatePackageDto }),
+      pipe.transform({ amount_cents: -49 }, { type: 'body', metatype: UpdatePackageDto }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
