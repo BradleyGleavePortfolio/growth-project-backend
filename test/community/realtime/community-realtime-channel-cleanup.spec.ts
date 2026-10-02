@@ -19,17 +19,23 @@ import type { MessageCreatedPayload } from '../../../src/community/realtime/comm
 
 type SubscribeCb = (status: string) => void | Promise<void>;
 
+/** The two RealtimeChannel members the service calls. */
+interface FakeChannel {
+  subscribe(cb: SubscribeCb): FakeChannel;
+  send(): Promise<unknown>;
+}
+
 function makeHarness(opts: {
   subscribe: (cb: SubscribeCb) => void;
   send?: () => Promise<unknown>;
   removeChannel?: () => Promise<unknown>;
 }) {
-  const channel = {
-    subscribe: jest.fn((cb: SubscribeCb) => {
+  const channel: FakeChannel = {
+    subscribe: jest.fn((cb: SubscribeCb): FakeChannel => {
       opts.subscribe(cb);
       return channel;
     }),
-    send: jest.fn(opts.send ?? (async () => 'ok')),
+    send: jest.fn(opts.send ?? (async (): Promise<unknown> => 'ok')),
   };
   const client = {
     channel: jest.fn(() => channel),
