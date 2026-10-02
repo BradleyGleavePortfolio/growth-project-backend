@@ -20,6 +20,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { FirstWinService } from '../src/first-win/first-win.service';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 // ── Source guard ────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ function buildPrisma(initialFirstWinCompletedAt: Date | null = null) {
 describe('FirstWinService — complete()', () => {
   it('sets first_win_completed_at on first call and returns { completedAt, aiMessage }', async () => {
     const prisma = buildPrisma(null);
-    const service = new FirstWinService(prisma as any);
+    const service = new FirstWinService(prisma as any, grantAllEgress());
 
     const before = new Date();
     const result = await service.complete('user-1', 'logged_first_weight');
@@ -91,7 +92,7 @@ describe('FirstWinService — complete()', () => {
   it('is idempotent — returns original timestamp on second call, no DB write', async () => {
     const originalDate = new Date('2026-05-06T05:00:00Z');
     const prisma = buildPrisma(originalDate);
-    const service = new FirstWinService(prisma as any);
+    const service = new FirstWinService(prisma as any, grantAllEgress());
 
     const first = await service.complete('user-1', 'logged_first_weight');
     const second = await service.complete('user-1', 'first_meal');
@@ -106,7 +107,7 @@ describe('FirstWinService — complete()', () => {
     const winTypes = ['logged_first_weight', 'set_first_goal', 'first_checkin', 'first_meal'] as const;
     for (const winType of winTypes) {
       const prisma = buildPrisma(null);
-      const service = new FirstWinService(prisma as any);
+      const service = new FirstWinService(prisma as any, grantAllEgress());
       const result = await service.complete('user-1', winType);
       expect(result.completedAt).toBeInstanceOf(Date);
       expect(typeof result.aiMessage).toBe('string');
@@ -118,7 +119,7 @@ describe('FirstWinService — complete()', () => {
 describe('FirstWinService — getStatus()', () => {
   it('returns { completed: false, completedAt: null } before any win', async () => {
     const prisma = buildPrisma(null);
-    const service = new FirstWinService(prisma as any);
+    const service = new FirstWinService(prisma as any, grantAllEgress());
 
     const status = await service.getStatus('user-1');
     expect(status).toEqual({ completed: false, completedAt: null });
@@ -127,7 +128,7 @@ describe('FirstWinService — getStatus()', () => {
   it('returns { completed: true, completedAt: ISO string } after win', async () => {
     const date = new Date('2026-05-06T09:30:00.000Z');
     const prisma = buildPrisma(date);
-    const service = new FirstWinService(prisma as any);
+    const service = new FirstWinService(prisma as any, grantAllEgress());
 
     const status = await service.getStatus('user-1');
     expect(status.completed).toBe(true);

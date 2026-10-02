@@ -19,21 +19,77 @@ limit, `ThrottlerExceptionFilter` returns `429 Too Many Requests` with a
 `Retry-After` header (integer seconds) and a sanitized JSON body that does
 not reveal which bucket fired or what the internal limit is.
 
+**Isolation rule (C14).** Upstream `@nestjs/throttler` evaluates *every* named
+throttler on *every* route at its module-level baseline unless the route opts
+out per name with `@SkipThrottle`. With ~25 named buckets that capped an
+anonymous `GET /auth/signup-policy` at 3 requests (auth-password-reset's 3/h
+baseline). `UserThrottlerGuard.handleRequest` therefore applies a named
+throttler **only to routes that declare it** via `@Throttle({ [name]: … })` on
+the handler or controller; `default` still applies everywhere. Public reads
+the app hits on launch / from a `/join` link use the dedicated `public-reads`
+bucket (`PUBLIC_READS_PER_MIN`, 240/min/IP). Named rows that no route declares
+(e.g. the community-* and bloodwork-write rows, whose routes use `default`
+with route limits) are inert until a route opts in.
+
+**Login throttling (C14 fix round).** Per-IP counters are **never reset** —
+the earlier "reset on success" let one identity's success clear everybody's
+attack budget behind that IP (and on the production Redis wrapper it was a
+silent no-op that *added* hits). Instead:
+
+- `/auth/login` per-IP windows are sized for a room on one network
+  (`AUTH_LOGIN_PER_MIN` 20, `AUTH_LOGIN_PER_HOUR` 200).
+- Password guessing is bounded per **account**: `LoginThrottleResetService`
+  counts failures under `auth-login-account:<sha256(email)>`
+  (`AUTH_LOGIN_ACCOUNT_FAILURES`, default 10 / 15 min → 15-min lock, any IP),
+  checks the lock before the password, and on that account's own success
+  clears **only that key**. One code path for every password endpoint:
+  `AuthService._passwordLogin` → `guardPasswordLogin`, so `/auth/login` and
+  `/auth/extension/login` share the lock and the counter.
+- `/auth/google` and `/auth/apple` have their own per-IP buckets
+  (`auth-oauth-per-min` 60, `auth-oauth-per-hour` 400): 40 people signing up
+  with Apple on one Wi-Fi all get through, no reset needed.
+- Typed backend ops (`backendIsBlocked` / `backendReset` in
+  `throttler.config.ts`, exposed as `isBlockedStrict` / `resetStrict` on the
+  `withFailOpenStorage` wrapper) talk to the real adapter layouts: the
+  in-memory record Map (`resetBlockdRequest`) and Redis
+  `{key:name}:hits` / `{key:name}:blocked` (`EXISTS` / `DEL`). Unknown
+  backends and storage errors throw, and the lock fails closed (503).
+- The tracker never decodes an unverified Bearer token: only `req.user`
+  (set by `JwtAuthGuard` after verification) selects a user bucket.
+- **Redis outage behaviour.** The per-IP guard limits fail **open**
+  (`withFailOpenStorage`, unchanged since R2 P1), so during an outage
+  forgot-password, register and signup-with-code are bounded only by
+  application checks. The per-account password lock and the OAuth coach
+  ceiling fail **closed** (503), so password sign-in is unavailable rather
+  than unthrottled until Redis is back.
+- **Known tradeoff.** Anyone can lock an account's password sign-in for
+  15 minutes with 10 wrong passwords (the usual lockout tradeoff). Google and
+  Apple sign-in are not affected by the lock.
+
+Tests: `test/login-account-lock.spec.ts` (real memory adapter, the
+production wrapper, a Redis-layout regression of the audit probe, and live
+Redis in CI), `test/throttler-isolation.spec.ts` (40-person room).
+
 ---
 
 ## Route → limit → window → tracker-key table
 
 | Route                                     | Method | Throttler name          | Limit | Window | Tracker key            |
 |-------------------------------------------|--------|-------------------------|-------|--------|------------------------|
-| `POST /auth/login`                        | POST   | `auth-login-per-min`    | 5     | 1 min  | IP (unauthenticated)   |
-| `POST /auth/login`                        | POST   | `auth-login-per-hour`   | 30    | 1 hr   | IP (unauthenticated)   |
-| `POST /auth/apple`                        | POST   | `auth-login-per-min`    | 5     | 1 min  | IP (unauthenticated)   |
-| `POST /auth/apple`                        | POST   | `auth-login-per-hour`   | 30    | 1 hr   | IP (unauthenticated)   |
-| `POST /auth/google`                       | POST   | `auth-login-per-min`    | 5     | 1 min  | IP (unauthenticated)   |
-| `POST /auth/google`                       | POST   | `auth-login-per-hour`   | 30    | 1 hr   | IP (unauthenticated)   |
+| `POST /auth/login`                        | POST   | `auth-login-per-min`    | 20    | 1 min  | IP (never reset)       |
+| `POST /auth/login`                        | POST   | `auth-login-per-hour`   | 200   | 1 hr   | IP (never reset)       |
+| `POST /auth/login` (failures)             | POST   | `auth-login-account:*`  | 10    | 15 min | account (sha256 email) |
+| `POST /auth/extension/login`              | POST   | `auth-login-per-min`    | 5     | 1 min  | IP (never reset)       |
+| `POST /auth/extension/login`              | POST   | `auth-login-per-hour`   | 200   | 1 hr   | IP (never reset)       |
+| `POST /auth/extension/login` (failures)   | POST   | `auth-login-account:*`  | 10 (shared with `/auth/login`) | 15 min | account (sha256 email) |
+| `POST /auth/apple`                        | POST   | `auth-oauth-per-min`    | 60    | 1 min  | IP (never reset)       |
+| `POST /auth/apple`                        | POST   | `auth-oauth-per-hour`   | 400   | 1 hr   | IP (never reset)       |
+| `POST /auth/google`                       | POST   | `auth-oauth-per-min`    | 60    | 1 min  | IP (never reset)       |
+| `POST /auth/google`                       | POST   | `auth-oauth-per-hour`   | 400   | 1 hr   | IP (never reset)       |
 | `POST /auth/forgot-password`              | POST   | `auth-password-reset`   | 3     | 1 hr   | IP (unauthenticated)   |
 | `POST /auth/register`                     | POST   | `auth-signup`           | 5     | 1 hr   | IP (unauthenticated)   |
-| `POST /auth/signup-with-code`             | POST   | `auth-signup`           | 5     | 1 hr   | IP (unauthenticated)   |
+| `POST /auth/signup-with-code` (no well-formed code) | POST | `auth-signup`   | 5     | 1 hr   | IP (unauthenticated)   |
+| `POST /auth/signup-with-code` (well-formed `invite_code`) | POST | `auth-signup-with-code` | 100 (`AUTH_SIGNUP_WITH_CODE_PER_HOUR`) | 1 hr | IP (unauthenticated) |
 | `POST /coach/clients/:id/messages`        | POST   | `coach-messages`        | 30    | 1 min  | user-id (authenticated)|
 | `POST /coach/clients/:id/messages/voice-upload` | POST | `coach-messages`   | 20    | 1 min  | user-id (authenticated)|
 | `PUT /notifications/preferences`          | PUT    | `notifications-prefs`   | 30    | 1 min  | user-id (authenticated)|
@@ -48,12 +104,8 @@ circuits before any bucket is consulted for these paths. This is critical for
 Fly.io liveness probes — the edge pings `/health` every few seconds and
 consuming a quota per probe would cause false-positive rate limiting.
 
-**Successful login resets the counter.** When `POST /auth/login`,
-`POST /auth/apple`, or `POST /auth/google` returns a valid session, the auth
-controller calls `LoginThrottleResetService.resetLoginCounters(ip)` to clear
-both `auth-login-per-min` and `auth-login-per-hour` for that IP. A user who
-typed the wrong password twice on a bad Wi-Fi connection is not locked out
-for the rest of the hour after they eventually succeed.
+**Successful login resets nothing per-IP.** A success clears only that
+account's own failure counter (see "Login throttling" above).
 
 ---
 
@@ -86,9 +138,11 @@ restart. Every var has a safe default that is production-appropriate.
 | `RATELIMIT_ENABLED`           | `on`    | —   | —      | Set to `off` to disable all throttling (load-test use only).|
 | `RATELIMIT_AUTHED_PER_MIN`    | `300`   | 1   | 10 000 | Default limit for authenticated requests per user per minute. |
 | `RATELIMIT_ANON_PER_MIN`      | `100`   | 1   | 10 000 | Default limit for unauthenticated requests per IP per minute. |
+| `PUBLIC_READS_PER_MIN`        | `240`   | 10  | 5 000  | Per-IP limit on public reads (`GET /auth/signup-policy`, `GET /invite/:code/preview`) via `public-reads`. |
 | `AUTH_LOGIN_PER_MIN`          | `5`     | 1   | 1 000  | Per-IP login attempts per minute (all login endpoints share this). |
 | `AUTH_LOGIN_PER_HOUR`         | `30`    | 1   | 5 000  | Per-IP login attempts per hour (sustained-attack brake). |
 | `AUTH_PWD_RESET_PER_HOUR`     | `3`     | 1   | 1 000  | Per-IP password-reset emails per hour.                      |
+| `AUTH_SIGNUP_WITH_CODE_PER_HOUR` | `100` | 5 | 500    | Per-IP `POST /auth/signup-with-code` requests per hour that carry a well-formed invite code. Sized for a 40+ patient clinic event on one Wi-Fi IP (retries included). Codeless signups keep the 5/hour `auth-signup` baseline; `previewCode` still gates account creation. |
 | `COACH_MESSAGES_PER_MIN`      | `30`    | 1   | 1 000  | Per-user coach message sends per minute.                    |
 | `NOTIF_PREFS_PER_MIN`         | `30`    | 1   | 1 000  | Per-user notification preference writes per minute.         |
 | `BLOODWORK_WRITE_PER_MIN`     | `30`    | 1   | 1 000  | Per-user bloodwork POST writes per minute.                  |

@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
   // Phase 1C imports retained when previewCode/attachUserToCoachByCode are
   // exercised below.
 } from '@nestjs/common';
@@ -17,6 +19,7 @@ import { Events } from '../analytics/events';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
+import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
 
 type ValidationSuccess = {
   valid: true;
@@ -62,9 +65,10 @@ export function generateInviteCodeCandidate(): string {
 }
 
 // Clinic C13 fix round — shared with AuthService.selectRole and the C03 attach
-// error table (#599 folds this into INVITE_ATTACH_ERROR on rebase; keep the
-// string identical in both PRs). Returned as `{ code, message }` (ErrorEnvelope
-// shape) so mobile can branch without parsing prose.
+// error table: INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM is this constant and the
+// attach path throws coachCannotRedeemBody(), so select-role and attach return
+// the same `{ code, message }` (ErrorEnvelope shape) and mobile can branch
+// without parsing prose.
 export const INVITE_ATTACH_COACH_CANNOT_REDEEM = 'coach_cannot_redeem' as const;
 
 /** Roles that own a tenant (or a seat in one) and must never be re-parented
@@ -83,8 +87,109 @@ export function coachCannotRedeemBody(): { code: typeof INVITE_ATTACH_COACH_CANN
   };
 }
 
-/** Rolls back a seat bump when a sibling request attached the same user to the same coach first. */
-class SameCoachAttachRace extends Error {}
+
+/**
+ * True when `value` is a well-formed invite code (shape only — no DB lookup).
+ * Shared by the DTO validators, the signup throttler burst rule and the attach
+ * path so "looks like a code" means the same thing everywhere.
+ */
+export function isWellFormedInviteCode(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return (
+    trimmed.length >= INVITE_CODE_MIN_LENGTH &&
+    trimmed.length <= INVITE_CODE_MAX_LENGTH &&
+    INVITE_CODE_PATTERN.test(trimmed)
+  );
+}
+
+// Clinic launch C03 — machine-readable reasons for a failed invite attach.
+// Every exception thrown by attachUserToCoachByCode carries one of these in
+// its response body (`{ code, message }`, the ErrorEnvelope convention) so the
+// auth flows can surface `invite_attach_error` to mobile instead of silently
+// swallowing the failure. Codes are safe to show a client: they never echo
+// the code string, the coach id or the intended email.
+export const INVITE_ATTACH_ERROR = {
+  /** Code unknown, revoked, expired, exhausted, or failed the seat race. */
+  INVITE_CODE_INVALID: 'invite_code_invalid',
+  /** Coach subscription not active/trialing/grandfathered. */
+  COACH_NOT_ACCEPTING_CLIENTS: 'coach_not_accepting_clients',
+  /** Redeemer is already a client of a DIFFERENT coach; refuse to re-parent. */
+  ALREADY_ATTACHED_TO_DIFFERENT_COACH: 'already_attached_to_different_coach',
+  /** Single-recipient invite redeemed by a different email. */
+  INVITE_INTENDED_EMAIL_MISMATCH: 'invite_intended_email_mismatch',
+  /** Owners are never coached. */
+  OWNER_CANNOT_REDEEM: 'owner_cannot_redeem',
+  /** Coach / sub_coach accounts are never coached and are NEVER demoted (the C13 constant, not a copy). */
+  COACH_CANNOT_REDEEM: INVITE_ATTACH_COACH_CANNOT_REDEEM,
+  /** Redeemer row not found. */
+  USER_NOT_FOUND: 'user_not_found',
+  /** Anything else (DB error, timeout). */
+  ATTACH_FAILED: 'attach_failed',
+} as const;
+export type InviteAttachErrorCode = (typeof INVITE_ATTACH_ERROR)[keyof typeof INVITE_ATTACH_ERROR];
+
+const INVITE_ATTACH_ERROR_CODES: ReadonlySet<string> = new Set(Object.values(INVITE_ATTACH_ERROR));
+
+/** Extract the safe reason code from an attach failure; unknown → attach_failed. */
+export function inviteAttachErrorCode(err: unknown): InviteAttachErrorCode {
+  if (err instanceof HttpException) {
+    const body = err.getResponse();
+    if (body && typeof body === 'object') {
+      const code = (body as { code?: unknown }).code;
+      if (typeof code === 'string' && INVITE_ATTACH_ERROR_CODES.has(code)) {
+        return code as InviteAttachErrorCode;
+      }
+    }
+  }
+  return INVITE_ATTACH_ERROR.ATTACH_FAILED;
+}
+
+/**
+ * Thrown INSIDE the attach transaction when the conditional user update
+ * (coach_id IS NULL AND role = 'student') lost a race to a sibling request
+ * that attached the same user to the SAME coach. Rolls the seat bump back
+ * and is converted to an idempotent `already_attached: true` result.
+ */
+class AttachRaceSameCoach extends Error {
+  constructor(readonly coachId: string) {
+    super('attach race: same coach');
+  }
+}
+
+/** Only students can be attached to a coach; every other role is refused, never rewritten. */
+function assertRedeemerIsStudent(me: { role: string }): void {
+  if (me.role === 'student') return;
+  if (me.role === 'owner') {
+    throw new ForbiddenException({
+      code: INVITE_ATTACH_ERROR.OWNER_CANNOT_REDEEM,
+      message: 'Owners cannot redeem a coach invite',
+    });
+  }
+  // Same body as /auth/select-role (C13): says what happened and what to do next.
+  throw new ForbiddenException(coachCannotRedeemBody());
+}
+
+function invalidInviteCode(): BadRequestException {
+  return new BadRequestException({
+    code: INVITE_ATTACH_ERROR.INVITE_CODE_INVALID,
+    message: 'Invalid or expired invite code',
+  });
+}
+
+/** Grant outcome attached to an attach result (C01). */
+export type AttachGrant = Omit<GrantOutcome, 'purchase_id'> & {
+  purchase_id: string | null;
+  package_id: string | null;
+};
+
+/** Result of the canonical attach. `grant` is absent when the code carries no package. */
+export type AttachResult = {
+  role: string;
+  coach_id: string | null;
+  already_attached: boolean;
+  grant?: AttachGrant | null;
+};
 
 @Injectable()
 export class InviteCodesService {
@@ -95,6 +200,9 @@ export class InviteCodesService {
     private analytics: AnalyticsService,
     private email: EmailService,
     private audit: AuditService,
+    // Clinic C01 — optional so existing 4-arg constructions (tests, scripts)
+    // keep working; when absent, codes never grant packages.
+    @Optional() private readonly grants?: InviteGrantService,
   ) {}
 
   /**
@@ -111,9 +219,10 @@ export class InviteCodesService {
     const allowed =
       sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
     if (!allowed) {
-      throw new BadRequestException(
-        'Coach is not currently accepting clients',
-      );
+      throw new BadRequestException({
+        code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
+        message: 'Coach is not currently accepting clients',
+      });
     }
   }
 
@@ -579,128 +688,256 @@ export class InviteCodesService {
   // still pointed at them) and leave their CoachSubscription + invite code
   // live. The role is fixed at account creation (R-ROLE-CHOICE-1); a change
   // is an OWNER action, never a side effect of typing a code.
+  // Clinic launch C03 — contract:
+  //   * every failure carries a machine-readable `code` (INVITE_ATTACH_ERROR);
+  //   * a student already attached to the SAME coach gets an idempotent
+  //     success (`already_attached: true`, no seat consumed, no re-write);
+  //   * a student already attached to a DIFFERENT coach is refused with
+  //     409 `already_attached_to_different_coach` — re-parenting is an
+  //     explicit coach/owner action, never a side effect of typing a code.
   async attachUserToCoachByCode(
     userId: string,
-    code: string,
-  ): Promise<{ role: string; coach_id: string | null; already_attached: boolean }> {
-    // Resolve to a coach_id, regardless of whether the code is a
-    // CoachProfile default code or a legacy InviteCode row.
-    const profile = await this.prisma.coachProfile.findUnique({
-      where: { invite_code: code },
-      include: { user: { select: { id: true, role: true } } },
-    });
+    rawCode: string,
+  ): Promise<AttachResult> {
+    // The throttler predicate and the mobile client both trim; do the same
+    // here so a pasted code with stray whitespace resolves (case is preserved).
+    const code = rawCode.trim();
 
-    let resolvedCoachId: string | null = null;
-    let inviteCodeRowId: string | null = null;
+    // 1. Resolve the code to its coach WITHOUT lifecycle checks, so the
+    //    redeemer's own state can be classified first (Sol SOL-C03-B1).
+    const target = await this.resolveAttachTarget(code);
+    if (!target) throw invalidInviteCode();
 
-    if (profile && profile.user?.role === 'coach') {
-      await this.assertCoachCanAcceptClients(profile.user.id);
-      resolvedCoachId = profile.user.id;
-    } else {
-      const v = await this.validate(code);
-      if (!v.valid) throw new BadRequestException('Invalid or expired invite code');
-      resolvedCoachId = v.coach_id;
-      inviteCodeRowId = v.invite_code_id;
-      // Enforce subscription check on per-row InviteCode path too.
-      if (resolvedCoachId) {
-        await this.assertCoachCanAcceptClients(resolvedCoachId);
-      }
-    }
-
-    // OWNERs do not get coached.
     const me = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!me) throw new NotFoundException('User not found');
-    if (me.role === 'owner') {
-      throw new ForbiddenException('Owners cannot redeem a coach invite');
+    if (!me) {
+      throw new NotFoundException({
+        code: INVITE_ATTACH_ERROR.USER_NOT_FOUND,
+        message: 'User not found',
+      });
     }
-    if (isCoachLikeRole(me.role)) {
+    // Owner / coach / sub_coach are refused, never demoted or re-parented.
+    if (me.role !== 'student') {
       this.logger.warn(
-        `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (coach_cannot_redeem)`,
+        `attach refused: user=${userId} role=${me.role} tried to redeem a client invite code (not a student)`,
       );
-      throw new ForbiddenException(coachCannotRedeemBody());
     }
+    assertRedeemerIsStudent(me);
 
-    // Sol SOL-C13-A1 — tenancy: an existing client is never re-parented by
-    // typing a code. Same coach → idempotent no-op (no seat consumed, role
-    // untouched); different coach → 409. The C03 slice (#599) builds the full
-    // canonical attach contract on top of this guard.
-    if (me.coach_id && resolvedCoachId) {
-      if (me.coach_id === resolvedCoachId) {
-        return { role: me.role, coach_id: me.coach_id, already_attached: true };
+    // 2. Already a client of some coach?
+    if (me.coach_id) {
+      if (me.coach_id === target.coachId) {
+        // Sol SOL-C03-B1 — idempotent replay. A retried request (network
+        // retry, cached OAuth code, the same single-use invite submitted
+        // twice) succeeds as `already_attached: true` even though that
+        // invite is now exhausted, expired or revoked: nothing is written,
+        // no seat is consumed, the role is untouched, and INVITE_REDEEMED is
+        // not re-emitted. Attach state cannot change here, so there is
+        // nothing for the lifecycle rules to protect; any GRANT attached to
+        // the code is authorised separately and strictly (C01).
+        this.logger.debug(`attach no-op: user=${userId} already attached to coach=${target.coachId}`);
+        const grant = await this.grantAfterAttach(userId, me.coach_id, code, 'replay');
+        return { role: me.role, coach_id: me.coach_id, already_attached: true, ...(grant ? { grant } : {}) };
       }
+      this.logger.warn(
+        `attach refused: user=${userId} already attached to a different coach (re-parent is not a side effect of code entry)`,
+      );
       throw new ConflictException({
-        code: 'already_attached_to_different_coach',
+        code: INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH,
         message: 'You are already attached to a different coach',
       });
     }
 
-    // Atomic linkage + (if applicable) used_count bump.
-    return this.prisma.$transaction(async (tx) => {
-      if (inviteCodeRowId) {
-        const current = await tx.inviteCode.findUnique({ where: { id: inviteCodeRowId } });
-        if (!current || current.revoked) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        if (current.max_uses !== null && current.used_count >= current.max_uses) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-        // Validate intended recipient — prevents forwarded-code abuse.
-        if (current.intended_email) {
-          const redeemerEmail = (me?.email ?? '').toLowerCase().trim();
-          const intendedEmail = current.intended_email.toLowerCase().trim();
-          if (redeemerEmail !== intendedEmail) {
-            throw new BadRequestException(
-              'This invite was sent to a different email address',
-            );
-          }
-        }
-        const bumped = await tx.inviteCode.updateMany({
-          where: {
-            id: inviteCodeRowId,
-            revoked: false,
-            used_count: current.used_count,
-          },
-          data: { used_count: { increment: 1 } },
-        });
-        if (bumped.count !== 1) {
-          throw new BadRequestException('Invalid or expired invite code');
-        }
-      }
+    // 3. A NEW redemption: every lifecycle rule applies.
+    if (target.kind === 'row') {
+      const v = await this.validate(code);
+      if (!v.valid || v.coach_id !== target.coachId) throw invalidInviteCode();
+    } else if (target.coachRole !== 'coach') {
+      throw invalidInviteCode();
+    }
+    await this.assertCoachCanAcceptClients(target.coachId);
 
-      // Conditional write: only a student with NO coach is attached, and only
-      // coach_id changes. A concurrent attach to another coach or a concurrent
-      // promotion makes count 0 and rolls the seat bump back.
-      const updated = await tx.user.updateMany({
-        where: { id: userId, role: 'student', coach_id: null },
-        data: { coach_id: resolvedCoachId },
-      });
-      if (updated.count !== 1) {
-        const now = await tx.user.findUnique({ where: { id: userId } });
-        if (now && now.role === 'student' && now.coach_id === resolvedCoachId) {
-          // Lost a race to a sibling attach to the SAME coach. Throw to roll
-          // back this request's seat bump; converted to a no-op below.
-          throw new SameCoachAttachRace();
+    const coachId = target.coachId;
+    const inviteCodeRowId = target.kind === 'row' ? target.rowId : null;
+    let result: { role: string; coach_id: string | null; already_attached: boolean };
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        // Everything that can refuse runs on a fresh in-transaction read
+        // BEFORE the seat is consumed; a stale pre-read cannot slip through.
+        const fresh = await tx.user.findUnique({ where: { id: userId } });
+        if (!fresh) {
+          throw new NotFoundException({
+            code: INVITE_ATTACH_ERROR.USER_NOT_FOUND,
+            message: 'User not found',
+          });
         }
-        throw new ConflictException({
-          code: 'already_attached_to_different_coach',
-          message: 'You are already attached to a different coach',
+        assertRedeemerIsStudent(fresh);
+        if (fresh.coach_id) {
+          if (fresh.coach_id === coachId) throw new AttachRaceSameCoach(coachId);
+          throw new ConflictException({
+            code: INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH,
+            message: 'You are already attached to a different coach',
+          });
+        }
+
+        if (inviteCodeRowId) {
+          await this.consumeInviteSeat(tx, inviteCodeRowId, fresh.email, userId);
+        }
+
+        // Conditional attach: only a student with NO coach is written, and
+        // ONLY coach_id changes — role is never rewritten by code entry.
+        const attached = await tx.user.updateMany({
+          where: { id: userId, role: 'student', coach_id: null },
+          data: { coach_id: coachId },
         });
-      }
-      this.analytics.capture(userId, Events.INVITE_REDEEMED, {
-        via: 'attach_code',
-        coach_id: resolvedCoachId,
-        legacy_invite_row: !!inviteCodeRowId,
+        if (attached.count !== 1) {
+          // Lost the race between the read above and this write. Throwing
+          // rolls the seat bump back; classify from a fresh read.
+          const now = await tx.user.findUnique({ where: { id: userId } });
+          if (now && now.role === 'student' && now.coach_id === coachId) {
+            throw new AttachRaceSameCoach(coachId);
+          }
+          if (now) assertRedeemerIsStudent(now);
+          throw new ConflictException({
+            code: INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH,
+            message: 'You are already attached to a different coach',
+          });
+        }
+        return { role: 'student', coach_id: coachId, already_attached: false };
       });
-      return { role: 'student', coach_id: resolvedCoachId, already_attached: false };
-    }).catch((err: unknown) => {
-      if (err instanceof SameCoachAttachRace) {
-        return { role: 'student', coach_id: resolvedCoachId, already_attached: true };
+    } catch (err) {
+      if (err instanceof AttachRaceSameCoach) {
+        this.logger.debug(`attach race resolved as no-op: user=${userId} coach=${err.coachId}`);
+        const grant = await this.grantAfterAttach(userId, err.coachId, code, 'replay');
+        return { role: 'student', coach_id: err.coachId, already_attached: true, ...(grant ? { grant } : {}) };
       }
       throw err;
+    }
+
+    // Clinic C01 — a bound code grants its package AFTER the attach
+    // committed. Only on success (never after a refusal); the grant can
+    // never undo the attach.
+    const grant = await this.grantAfterAttach(userId, coachId, code, 'new');
+    this.analytics.capture(userId, Events.INVITE_REDEEMED, {
+      via: 'attach_code',
+      coach_id: coachId,
+      legacy_invite_row: !!inviteCodeRowId,
+      already_attached: false,
+      grant_status: grant?.status ?? null,
     });
+    return { ...result, ...(grant ? { grant } : {}) };
+  }
+
+  /** C01 — post-commit, never-throwing grant for a bound code. */
+  private async grantAfterAttach(
+    userId: string,
+    coachId: string | null,
+    code: string,
+    redemption: 'new' | 'replay',
+  ): Promise<AttachGrant | null> {
+    if (!this.grants || !coachId) return null;
+    try {
+      const binding = await this.grants.resolveBinding(code);
+      if (!binding || !binding.package_id || binding.grant_mode === 'none') return null;
+      const outcome = await this.grants.grantForAttachedCode({
+        clientUserId: userId,
+        coachUserId: coachId,
+        binding,
+        redemption,
+      });
+      return outcome ? { ...outcome, package_id: binding.package_id } : null;
+    } catch (err) {
+      this.logger.warn(
+        `grant lookup failed after attach: user=${userId} coach=${coachId} — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return { purchase_id: null, status: 'failed', package_id: null };
+    }
+  }
+
+  /**
+   * Resolve a code string to the coach it belongs to, with NO lifecycle
+   * checks (revoked / expired / exhausted are judged later, and only for a
+   * new redemption). Permanent coach code first, then per-row InviteCode.
+   */
+  private async resolveAttachTarget(
+    code: string,
+  ): Promise<
+    | { kind: 'profile'; coachId: string; coachRole: string | null }
+    | { kind: 'row'; coachId: string; rowId: string }
+    | null
+  > {
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { invite_code: code },
+      include: { user: { select: { id: true, role: true } } },
+    });
+    if (profile?.user) {
+      return { kind: 'profile', coachId: profile.user.id, coachRole: profile.user.role ?? null };
+    }
+    const row = await this.prisma.inviteCode.findUnique({
+      where: { code },
+      select: { id: true, coach_id: true },
+    });
+    if (row) return { kind: 'row', coachId: row.coach_id, rowId: row.id };
+    return null;
+  }
+
+  /**
+   * Validate a per-row InviteCode and consume ONE seat atomically inside the
+   * caller's transaction. The increment is conditional on capacity
+   * (`used_count < max_uses`), not on an optimistic equality snapshot, so two
+   * clients redeeming the same code at the same moment both succeed instead
+   * of the loser seeing a false "invalid code". Only a revoked / exhausted /
+   * expired code, or an intended-email mismatch, fails. The first redeemer is
+   * recorded in `accepted_by_user_id` / `accepted_at` (attribution for a
+   * single-recipient invite; never overwritten).
+   */
+  private async consumeInviteSeat(
+    tx: Prisma.TransactionClient,
+    inviteCodeRowId: string,
+    redeemerEmailRaw: string | null | undefined,
+    redeemerUserId: string,
+  ): Promise<void> {
+    const current = await tx.inviteCode.findUnique({ where: { id: inviteCodeRowId } });
+    if (!current || current.revoked) {
+      throw invalidInviteCode();
+    }
+    if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
+      throw invalidInviteCode();
+    }
+    if (current.max_uses !== null && current.used_count >= current.max_uses) {
+      throw invalidInviteCode();
+    }
+    // Validate intended recipient — prevents forwarded-code abuse.
+    if (current.intended_email) {
+      const redeemerEmail = (redeemerEmailRaw ?? '').toLowerCase().trim();
+      const intendedEmail = current.intended_email.toLowerCase().trim();
+      if (redeemerEmail !== intendedEmail) {
+        throw new BadRequestException({
+          code: INVITE_ATTACH_ERROR.INVITE_INTENDED_EMAIL_MISMATCH,
+          message: 'This invite was sent to a different email address',
+        });
+      }
+    }
+    const bumped = await tx.inviteCode.updateMany({
+      where: {
+        id: inviteCodeRowId,
+        revoked: false,
+        // Conditional on capacity, NOT on an equality snapshot: two
+        // concurrent redemptions both succeed; only exhaustion fails.
+        ...(current.max_uses !== null ? { used_count: { lt: current.max_uses } } : {}),
+      },
+      data: { used_count: { increment: 1 } },
+    });
+    if (bumped.count !== 1) {
+      throw invalidInviteCode();
+    }
+    if (!current.accepted_by_user_id) {
+      await tx.inviteCode.updateMany({
+        where: { id: inviteCodeRowId, accepted_by_user_id: null },
+        data: { accepted_by_user_id: redeemerUserId, accepted_at: new Date() },
+      });
+    }
   }
 
   // Sprint B — Bulk invite. For each row we generate a single-use code

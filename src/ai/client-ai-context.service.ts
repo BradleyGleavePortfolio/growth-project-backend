@@ -221,19 +221,23 @@ export class ClientAIContextService {
         where: { user_id: userId, end_time: { not: null } },
         orderBy: { end_time: 'desc' },
       }),
-      // M1: next upcoming coaching session
+      // M1: next upcoming coaching session. R2b (A-626-2) — date and the
+      // client-visible title only: `coach_notes_md` is the coach's internal
+      // note and never enters a client's AI context.
       user.coach_id
         ? this.prisma.coachingSession.findFirst({
             where: { client_id: userId, start_at: { gte: new Date() } },
             orderBy: { start_at: 'asc' },
-            select: { start_at: true, title: true, coach_notes_md: true },
+            select: { start_at: true, title: true },
           })
         : Promise.resolve(null),
-      // M1: last 3 community wins in the past 7 days (roster-scoped)
+      // M1: the client's OWN community wins in the past 7 days. R2b
+      // (A-626-2) — self-only: other roster members' wins are their data
+      // and are never sent under this client's consent.
       user.coach_id
         ? this.prisma.communityWin.findMany({
             where: {
-              coach_id: user.coach_id,
+              user_id: userId,
               created_at: { gte: sevenDaysAgoFromNow },
             },
             orderBy: { created_at: 'desc' },
@@ -318,7 +322,6 @@ export class ClientAIContextService {
         ? {
             date: nextSession.start_at.toISOString(),
             title: nextSession.title,
-            coach_note: clampStr(nextSession.coach_notes_md, 200),
           }
         : null,
       recent_wins: (recentWins ?? []).map<CommunityWinSummary>((w) => ({
@@ -456,15 +459,13 @@ export class ClientAIContextService {
     // M1: next session
     if (ctx.next_session) {
       const ns = ctx.next_session;
-      lines.push(
-        `- next_session: ${ns.date} "${sanitizePromptInput(ns.title)}"${ns.coach_note ? ` (note: ${sanitizePromptInput(ns.coach_note)})` : ''}`,
-      );
+      lines.push(`- next_session: ${ns.date} "${sanitizePromptInput(ns.title)}"`);
     }
 
     // M1: community wins
     if (ctx.recent_wins.length) {
       const winsStr = ctx.recent_wins.map((w) => `"${sanitizePromptInput(w.title)}"`).join(', ');
-      lines.push(`- recent_roster_wins: ${winsStr}`);
+      lines.push(`- my_recent_wins: ${winsStr}`);
     }
 
     // M1: leaderboard

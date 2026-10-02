@@ -870,16 +870,16 @@ listing:
    point the EULA URL at `/terms`.
 3. **Marketing / support URL** — paste
    `https://app.trygrowthproject.com/signup` (App Store Connect →
-   App Information → Marketing URL) and `Bradley@Bradleytgpcoaching.com`
+   App Information → Marketing URL) and `Bradleyapple1031@gmail.com`
    as the support email.
 4. **Stripe Customer Portal** — under Business Information, set
    privacy policy URL to `/privacy`, terms of service URL to `/terms`,
-   and support email to `Bradley@Bradleytgpcoaching.com`.
+   and support email to `Bradleyapple1031@gmail.com`.
 
 Editorial guard rails (enforced by `test/trust-pages.spec.ts`):
 
-- The pages name the **operator-confirmed** support contact
-  (`Bradley@Bradleytgpcoaching.com`) on every page so a reviewer or
+- The pages name the **owner-confirmed** support contact
+  (`Bradleyapple1031@gmail.com`) on every page so a reviewer or
   customer always has a real human to email.
 - The Security page lists transport, storage, auth, logging, vendor
   posture, and incident response in concrete terms. It explicitly

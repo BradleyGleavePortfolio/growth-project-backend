@@ -45,7 +45,7 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
       googleAuth: jest.fn(async () => result),
       appleAuth: jest.fn(async () => result),
     };
-    const loginThrottleReset: any = { resetLoginCounters: jest.fn() };
+    const loginThrottleReset: any = { resetLoginCounters: jest.fn(), clearAccountFailures: jest.fn() };
     const inviteCodes: any = {};
     const controller = new AuthController(auth, inviteCodes, loginThrottleReset);
     const req: any = {
@@ -56,7 +56,7 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
     return { controller, auth, loginThrottleReset, req };
   }
 
-  it('passes IP/user-agent into AuthService.googleAuth and skips the login-throttle reset for a NEW user', async () => {
+  it('passes IP/user-agent into AuthService.googleAuth and never resets a login counter', async () => {
     const { controller, auth, loginThrottleReset, req } = build({ is_new_user: true, user: {} });
     const body: any = { token: 't', intended_role: 'coach' };
     await controller.googleAuth(body, req);
@@ -69,12 +69,13 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
     expect(loginThrottleReset.resetLoginCounters).not.toHaveBeenCalled();
   });
 
-  it('still resets the login counters for a RETURNING user (google and apple)', async () => {
+  it('C14 fix round (Opus C14-A1): a RETURNING user success resets nothing either (google and apple)', async () => {
     const { controller, loginThrottleReset, req } = build({ is_new_user: false, user: {} });
     const body: any = { token: 't' };
     await controller.googleAuth(body, req);
     await controller.appleAuth(body, req);
-    expect(loginThrottleReset.resetLoginCounters).toHaveBeenCalledTimes(2);
+    expect(loginThrottleReset.resetLoginCounters).not.toHaveBeenCalled();
+    expect(loginThrottleReset.clearAccountFailures).not.toHaveBeenCalled();
   });
 
   it('apple: no reset for a NEW user either', async () => {

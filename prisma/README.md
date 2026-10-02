@@ -79,7 +79,7 @@ been `Restrict` so a misuse blocks the migration.
 
 ## Seed
 
-`npx ts-node prisma/seed-recipes.ts` populates the recipe library.
+`SEED_RECIPES_COACH_ID=<coach user id> npx ts-node prisma/seed-recipes.ts` populates one coach's recipe library, shared with that coach's own clients only.
 Idempotent — re-running skips rows that already exist by canonical
 name + slug.
 

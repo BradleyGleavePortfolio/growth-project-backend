@@ -23,10 +23,12 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare
 // paths under app.trygrowthproject.com.
 
-// Source of truth for the official support contact. Confirmed by the
-// operator. Used in every trust page so a customer or reviewer always has
-// a real human to email.
-export const SUPPORT_EMAIL = 'Bradley@Bradleytgpcoaching.com';
+// Source of truth for the official support contact (owner ruling
+// 2026-10-01 14:19 PDT: one support email everywhere). Used in every trust,
+// help and download page so a customer or reviewer always has a real human
+// to email. test/support-email.guard.spec.ts fails if any other address is
+// published as a support contact.
+export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.

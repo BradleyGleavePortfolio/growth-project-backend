@@ -160,7 +160,7 @@ the Stripe Customer Portal. They live in `trust-pages.html.ts`.
 
 Editorial guard rails (see `test/trust-pages.spec.ts`):
 
-- The official support contact (`Bradley@Bradleytgpcoaching.com`,
+- The official support contact (`Bradleyapple1031@gmail.com`,
   exported as `SUPPORT_EMAIL`) appears on every page so a reviewer or
   customer always has a real human to email.
 - The Security page describes practical controls and explicitly states
