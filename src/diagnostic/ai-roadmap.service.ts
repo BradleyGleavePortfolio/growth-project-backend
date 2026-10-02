@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import OpenAI from 'openai';
 import { PrismaService } from '../prisma.service';
+import { AiEgressService, PerplexityHandle } from '../ai-egress/ai-egress.service';
+import { noClientDataSubject } from '../ai-egress/ai-egress.types';
+import { createPerplexityClient } from '../ai-egress/provider-clients';
 import {
   DiagnosticBuckets,
   DiagnosticScores,
@@ -63,8 +65,8 @@ export class AiRoadmapService {
   // Lazy-init: OpenAI SDK v5+ throws synchronously when apiKey is empty,
   // so the client cannot be built at provider construction (env var is
   // unset in test boots and any environment without diagnostic AI).
-  private _client: OpenAI | null = null;
-  private getClient(): OpenAI {
+  private _client: PerplexityHandle | null = null;
+  private getClient(): PerplexityHandle {
     if (!this._client) {
       const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
       if (!apiKey) {
@@ -73,15 +75,18 @@ export class AiRoadmapService {
       // Same Perplexity-OpenAI compatibility shim used by AiService. Kept
       // local so the diagnostic module does not depend on AiService's
       // user-context plumbing (which is for authed clients only).
-      this._client = new OpenAI({
-        apiKey,
-        baseURL: 'https://api.perplexity.ai',
-      });
+      this._client = createPerplexityClient(apiKey);
     }
     return this._client;
   }
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // R2b — egress gate. Exemption deidentified_prospect_scores: the public
+    // pre-signup diagnostic sends section scores, buckets and fixed question
+    // text with numeric answers only (no email, name or user id).
+    private readonly egress: AiEgressService,
+  ) {}
 
   buildUserPrompt(body: SubmitDiagnosticDto, scores: DiagnosticScores, buckets: DiagnosticBuckets): string {
     const catalog = loadCatalog();
@@ -143,15 +148,20 @@ export class AiRoadmapService {
 
     const userPrompt = this.buildUserPrompt(body, scores, buckets);
     try {
-      const response = await this.getClient().chat.completions.create({
-        model: 'sonar-pro',
-        messages: [
-          { role: 'system', content: ROADMAP_SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.4,
-        max_tokens: 700,
-      });
+      const response = await this.egress.perplexityChatCreate(
+        this.getClient(),
+        noClientDataSubject('deidentified_prospect_scores'),
+        'diagnostic.roadmap',
+        {
+          model: 'sonar-pro',
+          messages: [
+            { role: 'system', content: ROADMAP_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.4,
+          max_tokens: 700,
+        },
+      );
       const text = response.choices[0]?.message?.content?.trim();
       if (!text) {
         await this.persistFailure(submissionId, 'empty_response_from_provider');

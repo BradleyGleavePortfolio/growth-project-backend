@@ -170,8 +170,8 @@ switches:
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: jobs
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Launch switch (operator 2026-10-01): booking reminder crons. Code default is on (only \"off\" disables); must stay unset or on for launch."
   - name: BOOKING_REMINDER_1H_CRON
     tier: optional
     prod_default: STUB_ALLOWED
@@ -562,10 +562,10 @@ switches:
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: FEATURE_GOOGLE_CALENDAR_SYNC
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: OFF
     auto_flip_on_in_prod: false
-    owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Flag. Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: FEATURE_ROMAN_FIRST_PAYMENT
     tier: optional
     prod_default: STUB_ALLOWED
@@ -577,7 +577,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    description: "S14 on-device wearables lane (Apple Health, Health Connect). 'true' enables POST /v1/wearables/connections/on-device and POST /v1/wearables/samples/ingest; anything else returns a typed 503 wearables_ingest_disabled. Owner flips it after the backend deploy."
   - name: FINANCE_API_BASE_URL
     tier: optional
     prod_default: STUB_ALLOWED
@@ -664,16 +664,16 @@ switches:
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
   - name: GOOGLE_CALENDAR_ENABLED
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: OFF
     auto_flip_on_in_prod: false
-    owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Flag. Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_CALENDAR_WEBHOOK_TOKEN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_CLIENT_ID
     tier: feature
     prod_default: ON
@@ -685,37 +685,37 @@ switches:
     prod_default: ON
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_"
+    description: "Required for launch (operator 2026-10-01): Google sign-in audience allow-list for the Supabase Google provider web client. Pushed to Fly by fly-env-sync.yml."
   - name: GOOGLE_MEET_ENABLED
     tier: optional
-    prod_default: STUB_ALLOWED
+    prod_default: OFF
     auto_flip_on_in_prod: false
-    owner: unowned
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Flag. Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_OAUTH_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: auth
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_OAUTH_CLIENT_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: auth
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_OAUTH_REDIRECT_URI
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: auth
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GOOGLE_OAUTH_SCOPES
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
-    owner: auth
-    description: "Used in code but not in ENV_RULES yet. Owner please claim."
+    owner: scheduling
+    description: "Optional integration, not a launch dependency (owner 2026-10-01; TGP native scheduling is the product). Leave unset or explicitly false; shared-placeholder Fly values are cleanup candidates."
   - name: GUEST_CHECKOUT_PII_SALT
     tier: feature
     prod_default: ON

@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
-import OpenAI from 'openai';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from './client-ai-context.service';
@@ -11,6 +10,9 @@ import { Events } from '../analytics/events';
 import { AnthropicAdapter } from './adapters/anthropic.adapter';
 import { CoachAIStateService } from './coach/coach-ai-state.service';
 import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
+import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
+import { clientDataSubject } from '../ai-egress/ai-egress.types';
 
 // Legacy payload kept exported because other code (e.g. /ai/context for the
 // mobile debug screen) still types against this shape. Internally the
@@ -166,31 +168,19 @@ export interface ChatResult {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
-  // Perplexity uses the OpenAI-compatible HTTP surface, so we reuse the
-  // OpenAI SDK against the Perplexity baseURL. In SDK v5+ the constructor
-  // throws synchronously when no apiKey is provided, so we lazy-init on
-  // first use rather than at module load (which would break tests that
-  // boot the AI module without PERPLEXITY_API_KEY set).
-  private _perplexity: OpenAI | null = null;
-  private getPerplexityClient(): OpenAI {
-    if (!this._perplexity) {
-      const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
-      if (!apiKey) {
-        throw new Error('PERPLEXITY_API_KEY is required for this operation');
-      }
-      this._perplexity = new OpenAI({
-        apiKey,
-        baseURL: 'https://api.perplexity.ai',
-      });
-    }
-    return this._perplexity;
-  }
+  // R2b — the client chat carries the client's full context, so it may only
+  // reach Anthropic (the processor named in the box-2 consent copy) and only
+  // with the client's live grant. The former Perplexity branch was removed:
+  // no consent covers sending client data to Perplexity.
 
   constructor(
     private prisma: PrismaService,
     private contextSvc: ClientAIContextService,
     private guardrails: AIGuardrailsService,
     private analytics: AnalyticsService,
+    // R2b — consent gate for the Anthropic branch (checked before quota is
+    // reserved, and again by the adapter immediately before the request).
+    private egress: AiEgressService,
     // Coach AI v1 — when ANTHROPIC_API_KEY is set and the engine is
     // ready, we prefer Claude over the deterministic responder for the
     // client-facing /ai/chat fallback path (food audit §7). Optional so
@@ -395,7 +385,18 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // billable tokens) so we can assemble + clamp the prompt and reserve the
     // best-effort worst-case TOTAL-token estimate before any model call.
     const ctx = await this.contextSvc.build(userId);
-    let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'perplexity';
+    // R2b — starts as 'fallback' so a refusal thrown mid-call refunds the
+    // reservation in the finally block below.
+    let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'fallback';
+    const anthropicReady = Boolean(
+      this.anthropic && this.coachAIState && this.coachAIState.isReady(),
+    );
+    const dataSubject = clientDataSubject(userId, 'client');
+    if (anthropicReady) {
+      // R2b — refuse BEFORE any quota is reserved when the client has not
+      // allowed AI help (403 ai_consent_required, Settings > Privacy).
+      await this.egress.assertMaySend(dataSubject, 'anthropic', 'ai.client_chat');
+    }
 
     // A1 (P1) — ENFORCE the hard input ceiling. Build the system prompt once,
     // take the last 10 history turns, then CLAMP the user-controllable prompt
@@ -469,20 +470,10 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // refunded in full (P1-b) since no billable tokens were spent.
     let actualTokens: number | null = null;
     let rawReply = '';
-    const perplexityKey = process.env.PERPLEXITY_API_KEY?.trim();
-    const anthropicReady =
-      this.anthropic && this.coachAIState && this.coachAIState.isReady();
-
-    // A1 (P1-b) — reconcile/refund the reservation in a finally path so a
-    // failed or fallback call never permanently leaks reserved quota. When the
-    // provider reported real usage we reconcile the reservation to that TOTAL;
-    // otherwise (exception, empty completion, or fallback) we refund the entire
-    // reservation because no billable provider tokens were consumed.
     try {
-    if (!perplexityKey && anthropicReady && this.anthropic) {
-      // Coach AI v1 — Claude Sonnet fallback for the client chat surface.
-      // We hand it the same system prompt the Perplexity branch would
-      // see so guardrails / APP_PRESCRIBED defense apply identically.
+    if (anthropicReady && this.anthropic) {
+      // Coach AI v1 — Claude Sonnet for the client chat surface. Guardrails /
+      // APP_PRESCRIBED defense apply through the shared system prompt.
       try {
         // A1 (P1) — send the CLAMPED history + user message so the provider
         // input is the same bounded text the reservation was sized against.
@@ -503,6 +494,8 @@ Now answer the user's next message using the rules above. Keep the answer under 
             temperature: 0.7,
             capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
             clientId: userId,
+            dataSubject,
+            surface: 'ai.client_chat',
           },
         );
         // P2 — the provider may report billable usage even when it returns no
@@ -527,6 +520,9 @@ Now answer the user's next message using the rules above. Keep the answer under 
           modelUsed = 'fallback';
         }
       } catch (error) {
+        // R2b — consent withdrawn between the pre-check and the send: the
+        // request was not sent; surface the refusal (reservation refunded).
+        if (isAiEgressRefusal(error)) throw error;
         this.logger.warn(
           `Anthropic chat fallback failed; using deterministic: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -534,57 +530,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
         rawReply = fb.text;
         modelUsed = 'fallback';
       }
-    } else if (!perplexityKey) {
+    } else {
+      // No Anthropic engine: deterministic responder, nothing leaves the
+      // server, so no consent is needed.
       const fb = this.generateFallbackResponse(userMessage, ctx);
       rawReply = fb.text;
       modelUsed = 'fallback';
-    } else {
-      // A1 (P1) — send the CLAMPED history + user message so the provider input
-      // is the same bounded text the reservation was sized against.
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
-        ...clampedHistory.map((m) => {
-          // A9 defense-in-depth: the role is already validated to
-          // 'user'|'assistant' by ChatRequestDto, but we still narrow here so
-          // any non-'assistant' value collapses to 'user' — a 'system' role
-          // can never reach Perplexity even if this method is called directly.
-          const role: 'assistant' | 'user' = m.role === 'assistant' ? 'assistant' : 'user';
-          return { role, content: m.content };
-        }),
-        { role: 'user', content: clampedUserMessage },
-      ];
-      try {
-        const response = await this.getPerplexityClient().chat.completions.create({
-          model: 'sonar-pro',
-          messages,
-          temperature: 0.7,
-          max_tokens: MAX_TOKENS_PER_CALL,
-        });
-        // P2 — capture the reported TOTAL usage REGARDLESS of whether the
-        // provider returned text. A response with empty content but a real
-        // usage figure still billed those tokens, so we reconcile to the true
-        // usage rather than refunding the reservation in full. Only a response
-        // with no usage figure leaves actualTokens null (full refund).
-        if (typeof response.usage?.total_tokens === 'number') {
-          actualTokens = response.usage.total_tokens;
-        }
-        if (response.choices[0]?.message?.content) {
-          rawReply = response.choices[0].message.content;
-        } else {
-          // No text — serve the deterministic fallback, but keep the real usage
-          // (captured above) charged to the daily ledger (P2), not refunded.
-          const fb = this.generateFallbackResponse(userMessage, ctx);
-          rawReply = fb.text;
-          modelUsed = 'fallback';
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Perplexity chat failed; falling back: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        const fb = this.generateFallbackResponse(userMessage, ctx);
-        rawReply = fb.text;
-        modelUsed = 'fallback';
-      }
     }
 
     } finally {
@@ -636,7 +587,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
           requester_id: userId,
           subject_user_id: userId,
           provider: isFallback ? 'stub' : modelUsed,
-          model: modelUsed === 'perplexity' ? 'sonar-pro' : modelUsed === 'anthropic' ? 'claude-sonnet' : 'disabled',
+          model: modelUsed === 'anthropic' ? 'claude-sonnet' : 'disabled',
           enabled: !isFallback,
         },
       });

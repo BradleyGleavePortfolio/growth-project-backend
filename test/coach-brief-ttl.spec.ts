@@ -21,6 +21,7 @@ import {
   makeMockConfig,
   MockPrisma,
 } from './_fixtures/coach-brief-mocks';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ function makeService(prisma: MockPrisma, configValues: Record<string, string | u
   return new CoachBriefService(
     asPrismaService(prisma),
     asConfig(makeMockConfig(configValues)),
+    grantAllEgress(),
   );
 }
 
