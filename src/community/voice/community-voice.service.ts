@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
@@ -30,18 +32,73 @@ import {
   type VoiceUploadTarget,
   VoiceUploadTargetSchema,
 } from './community-voice.dto';
-import {
-  CommunityVoiceRepository,
-  type VoiceNoteSeed,
-} from './community-voice.repository';
-import {
-  resolveVoiceEntitlementRequired,
-} from './community-voice-flag.guard';
+import { CommunityVoiceRepository, type VoiceNoteSeed } from './community-voice.repository';
+import { resolveVoiceEntitlementRequired } from './community-voice-flag.guard';
 import { VoiceUploadProvider } from './voice-upload.provider';
+import { verifyPublishableVoiceKey } from './voice-storage-key';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const NOT_FOUND = {
   error: 'not_found',
   code: 'community.voice.not_found',
+  message:
+    'This voice note could not be found. It may have been deleted or removed. Refresh and try again.',
+} as const;
+
+/**
+ * Voice notes in direct messages are not offered: a DM thread is keyed by the
+ * pair of members (dm_key), not by a conversation id, so a DM voice note
+ * could never reach its recipient, and it would sit outside the DM block and
+ * report rules. Channel (cohort) and hall voice notes are the product.
+ */
+export const VOICE_DM_NOT_SUPPORTED = {
+  error: 'bad_request',
+  code: 'community.voice.dm_not_supported',
+  message:
+    'Voice notes can be shared in your community spaces, not in direct messages. Send a text message instead, or share the voice note in a space.',
+} as const;
+
+/** A-610-1: a key the server did not mint for this caller (or a stale one). */
+export const VOICE_STORAGE_KEY_REJECTED = {
+  error: 'bad_request',
+  code: 'community.voice.storage_key_rejected',
+  message:
+    'This recording could not be attached. Record the voice note again in the app, then send it.',
+} as const;
+
+/** A-610-1: nothing was uploaded at the minted key (or it does not match). */
+export const VOICE_UPLOAD_MISSING = {
+  error: 'bad_request',
+  code: 'community.voice.upload_missing',
+  message:
+    'We could not find the uploaded recording. Check your connection, record the voice note again, then send it.',
+} as const;
+
+export const VOICE_UPLOAD_MISMATCH = {
+  error: 'bad_request',
+  code: 'community.voice.upload_mismatch',
+  message:
+    'The uploaded recording does not match what was recorded. Record the voice note again in the app, then send it.',
+} as const;
+
+export const VOICE_KEY_ALREADY_USED = {
+  error: 'conflict',
+  code: 'community.voice.already_posted',
+  message: 'This recording was already posted. Refresh to see it, or record a new voice note.',
+} as const;
+
+export const VOICE_STORAGE_UNAVAILABLE = {
+  error: 'service_unavailable',
+  code: 'community.voice.storage_unavailable',
+  message:
+    'Voice notes cannot be checked right now. Your recording was not posted. Try sending it again in a minute.',
+} as const;
+
+export const VOICE_NOT_AUTHOR = {
+  error: 'forbidden',
+  code: 'community.voice.not_author',
+  message:
+    'Only the person who recorded this voice note, or your coach, can delete it. You can report it instead.',
 } as const;
 
 /**
@@ -81,6 +138,7 @@ export class CommunityVoiceService {
     private readonly upload: VoiceUploadProvider,
     private readonly realtime: CommunityRealtimeService,
     private readonly analytics: AnalyticsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   // ── Config ─────────────────────────────────────────────────────────────────
@@ -99,11 +157,7 @@ export class CommunityVoiceService {
     return process.env.FEATURE_COMMUNITY_TELEMETRY === 'true';
   }
 
-  private track(
-    distinctId: string,
-    event: string,
-    props: Record<string, unknown>,
-  ): void {
+  private track(distinctId: string, event: string, props: Record<string, unknown>): void {
     if (!this.telemetryEnabled()) return;
     this.analytics.capture(distinctId, event, props);
   }
@@ -122,14 +176,12 @@ export class CommunityVoiceService {
     bytes: number;
     mime_type: string;
   }): void {
-    if (
-      !(VOICE_NOTE_MIME_ALLOWLIST as readonly string[]).includes(
-        input.mime_type,
-      )
-    ) {
+    if (!(VOICE_NOTE_MIME_ALLOWLIST as readonly string[]).includes(input.mime_type)) {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.mime_rejected',
+        message:
+          'This recording format is not supported. Record the voice note again in the app, then send it.',
         allowed: [...VOICE_NOTE_MIME_ALLOWLIST],
       });
     }
@@ -138,6 +190,7 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.duration_out_of_range',
+        message: `Voice notes can be up to ${Math.floor(maxDuration / 1000)} seconds long. Record a shorter one, then send it.`,
         max_duration_ms: maxDuration,
       });
     }
@@ -146,6 +199,7 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.size_out_of_range',
+        message: 'This recording is too large to send. Record a shorter voice note, then send it.',
         max_bytes: maxBytes,
       });
     }
@@ -153,12 +207,13 @@ export class CommunityVoiceService {
     // duration for a huge upload (or vice-versa). Enforce a coarse time-based
     // size budget — at most ~512 KB per second of audio, which comfortably
     // covers high-bitrate AAC/Opus while rejecting obviously-mismatched pairs.
-    const maxBytesForDuration =
-      Math.ceil(input.duration_ms / 1000) * 512 * 1024 + 256 * 1024;
+    const maxBytesForDuration = Math.ceil(input.duration_ms / 1000) * 512 * 1024 + 256 * 1024;
     if (input.bytes > maxBytesForDuration) {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.size_duration_mismatch',
+        message:
+          'This recording could not be checked. Record the voice note again in the app, then send it.',
         max_bytes_for_duration: maxBytesForDuration,
       });
     }
@@ -173,10 +228,7 @@ export class CommunityVoiceService {
    * check reads only the already-loaded User + a single workspace-coach lookup,
    * so it adds no dependency on the checkout module (R77 scope).
    */
-  private async assertEntitled(
-    workspaceId: string,
-    user: User,
-  ): Promise<void> {
+  private async assertEntitled(workspaceId: string, user: User): Promise<void> {
     if (!resolveVoiceEntitlementRequired()) return;
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
@@ -184,10 +236,7 @@ export class CommunityVoiceService {
     // that workspace's members. Resolve the owning coach's tier.
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(NOT_FOUND);
-    const entitled = await this.access.membershipInWorkspace(
-      workspaceId,
-      user.id,
-    );
+    const entitled = await this.access.membershipInWorkspace(workspaceId, user.id);
     if (!entitled) throw new NotFoundException(NOT_FOUND);
     // Default-deny: require an explicit paid entitlement signal on the member.
     const tier = (user as { plan_tier?: string }).plan_tier ?? 'flat_300';
@@ -196,6 +245,8 @@ export class CommunityVoiceService {
       throw new ForbiddenException({
         error: 'forbidden',
         code: 'community.voice.not_entitled',
+        message:
+          'Voice notes are not included in your current plan. You can post a text message instead, or ask your coach about your plan.',
       });
     }
   }
@@ -203,10 +254,7 @@ export class CommunityVoiceService {
   // ── Authorization ────────────────────────────────────────────────────────────
 
   private async isCoach(workspaceId: string, user: User): Promise<boolean> {
-    return (
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id))
-    );
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
   /**
@@ -227,13 +275,14 @@ export class CommunityVoiceService {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.ambiguous_target',
+        message:
+          'A voice note can go to one space at a time. Choose one space, then send it again.',
       });
     }
     if (conversationId) {
-      // DM note — scoped to the author's thread. The author is always a
-      // participant of their own DM; cross-participant posting is mediated by
-      // the messaging domain, not this lane.
-      return { cohortId: null, conversationId };
+      // DM voice notes are not offered (VOICE_DM_NOT_SUPPORTED): refuse before
+      // any row is written.
+      throw new BadRequestException(VOICE_DM_NOT_SUPPORTED);
     }
     if (cohortId) {
       const cohort = await this.access.findCohort(cohortId);
@@ -255,7 +304,8 @@ export class CommunityVoiceService {
   // ── Views ──────────────────────────────────────────────────────────────────
 
   private async noteView(row: CommunityVoiceNote): Promise<VoiceNoteView> {
-    const url = await this.upload.createSignedDownload(row.storage_key);
+    // A-610-1: signed only for a canonical key inside the AUTHOR's folder.
+    const url = await this.upload.createSignedDownload(row.storage_key, undefined, row.author_id);
     return {
       id: row.id,
       workspace_id: row.workspace_id,
@@ -286,25 +336,22 @@ export class CommunityVoiceService {
     dto: IssueVoiceUploadDto,
   ): Promise<VoiceUploadTarget> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
     await this.assertEntitled(workspaceId, user);
     this.assertWithinLimits(dto);
 
     const mime: VoiceNoteMimeType = dto.mime_type;
-    const signed = await this.upload.createSignedUpload(user.id, {
+    const signed = await this.upload.createSignedUploadWithKey(user.id, {
       duration_sec: Math.ceil(dto.duration_ms / 1000),
       size_bytes: dto.bytes,
       content_type: mime,
     });
-    // The provider's public_url embeds the object path; we derive the storage
-    // key (the path within the bucket) from it so the client persists the same
-    // key the server minted. The key is `${authorId}/<ts>-<rand>.<ext>`.
-    const storageKey = this.deriveStorageKey(signed.public_url, user.id);
+    // The exact key the server minted (`<authorId>/<ms>-<nonce>-<mac>.<ext>`,
+    // voice-storage-key.ts). The client echoes it on create(), where the MAC
+    // proves it was issued to this caller.
+    const storageKey = signed.storage_key;
 
     this.track(user.id, COMMUNITY_TELEMETRY_EVENTS.voiceUploadIssued, {
       workspace_id: workspaceId,
@@ -323,25 +370,6 @@ export class CommunityVoiceService {
     });
   }
 
-  /**
-   * Extract the bucket-relative storage key from the provider's public URL,
-   * asserting the author-id namespace prefix (bucket-binding). The public URL
-   * shape is `.../object/public/<bucket>/<authorId>/<file>`; we take everything
-   * after the bucket segment. Falls back to re-minting a key if the URL shape
-   * is unexpected so we never return a key outside the author's namespace.
-   */
-  private deriveStorageKey(publicUrl: string, authorId: string): string {
-    const bucket = this.upload.bucket();
-    const marker = `/${bucket}/`;
-    const idx = publicUrl.indexOf(marker);
-    if (idx >= 0) {
-      const key = publicUrl.slice(idx + marker.length);
-      if (key.startsWith(`${authorId}/`)) return key;
-    }
-    // Unexpected shape — mint a fresh namespaced key rather than trust the URL.
-    return `${authorId}/${Date.now()}-fallback`;
-  }
-
   // ── Create (durable insert after upload confirmed) ───────────────────────────
 
   async create(
@@ -350,24 +378,11 @@ export class CommunityVoiceService {
     dto: CreateVoiceNoteDto,
   ): Promise<VoiceNoteResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
     await this.assertEntitled(workspaceId, user);
     this.assertWithinLimits(dto);
-
-    // Bucket binding: the storage key MUST live in the caller's namespace. A
-    // forged key for another principal's path is rejected — the server never
-    // trusts a client-supplied key outside `${authorId}/`.
-    if (!dto.storage_key.startsWith(`${user.id}/`)) {
-      throw new BadRequestException({
-        error: 'bad_request',
-        code: 'community.voice.storage_key_rejected',
-      });
-    }
 
     const scope = await this.resolveWriteScope(
       workspaceId,
@@ -376,6 +391,41 @@ export class CommunityVoiceService {
       dto.conversation_id,
     );
 
+    // A-610-1 bucket binding: only a key the server minted for THIS caller
+    // (valid issuance MAC, canonical shape, recent) is accepted, checked after
+    // the same normalization the storage SDK + fetch apply, so a dot-segment,
+    // encoded, foreign-owner or other-bucket key never gets a row or a
+    // signing request.
+    const keyCheck = verifyPublishableVoiceKey(this.upload.bucket(), dto.storage_key, user.id);
+    if (!keyCheck.ok) {
+      this.logger.warn(`voice publish refused: storage key ${keyCheck.reason}`);
+      throw new BadRequestException(VOICE_STORAGE_KEY_REJECTED);
+    }
+
+    // One row per recording: a key already published (even one a moderator
+    // later hid or the author deleted) can never be re-published.
+    if (await this.repo.findByStorageKey(dto.storage_key)) {
+      throw new ConflictException(VOICE_KEY_ALREADY_USED);
+    }
+
+    // Upload confirmed: the object must exist at the exact minted key, be
+    // audio, and fit the declared limits (the stored size is authoritative).
+    const stat = await this.upload.statObject(dto.storage_key, user.id);
+    if (stat.state === 'unavailable') {
+      throw new ServiceUnavailableException(VOICE_STORAGE_UNAVAILABLE);
+    }
+    if (stat.state === 'missing') {
+      throw new BadRequestException(VOICE_UPLOAD_MISSING);
+    }
+    const storedBytes = stat.size ?? dto.bytes;
+    if (
+      (stat.contentType !== null && !stat.contentType.toLowerCase().startsWith('audio/')) ||
+      storedBytes <= 0
+    ) {
+      throw new BadRequestException(VOICE_UPLOAD_MISMATCH);
+    }
+    this.assertWithinLimits({ ...dto, bytes: storedBytes });
+
     const seed: VoiceNoteSeed = {
       workspaceId,
       cohortId: scope.cohortId,
@@ -383,7 +433,7 @@ export class CommunityVoiceService {
       authorId: user.id,
       storageKey: dto.storage_key,
       durationMs: dto.duration_ms,
-      bytes: dto.bytes,
+      bytes: storedBytes,
       mimeType: dto.mime_type,
       waveformPeaks: null,
     };
@@ -443,6 +493,8 @@ export class CommunityVoiceService {
 
   async getOne(user: User, voiceNoteId: string): Promise<VoiceNoteResponse> {
     const row = await this.readableNote(user, voiceNoteId);
+    // Two-way block: a direct id read cannot go around the list filter.
+    await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
     return VoiceNoteResponseSchema.parse({
       voice_note: await this.noteView(row),
     });
@@ -454,10 +506,7 @@ export class CommunityVoiceService {
    * cohort/workspace they belong to, or a DM note they authored. Anything else
    * is an identical 404 so existence never leaks.
    */
-  private async readableNote(
-    user: User,
-    voiceNoteId: string,
-  ): Promise<CommunityVoiceNote> {
+  private async readableNote(user: User, voiceNoteId: string): Promise<CommunityVoiceNote> {
     const row = await this.repo.findById(voiceNoteId);
     if (!row || row.soft_deleted_at !== null) {
       throw new NotFoundException(NOT_FOUND);
@@ -488,10 +537,7 @@ export class CommunityVoiceService {
     query: ListVoiceNotesQueryDto,
   ): Promise<VoiceNoteFeedResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
-    if (
-      !workspace ||
-      !(await this.access.canAccessWorkspace(workspaceId, user))
-    ) {
+    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
 
@@ -522,31 +568,84 @@ export class CommunityVoiceService {
       cursor: query.cursor,
     });
 
-    const voiceNotes = await Promise.all(
-      page.items.map((row) => this.noteView(row)),
+    const visibleRows = await this.safety.filterBlocked(
+      user.id,
+      page.items,
+      (row) => row.author_id,
     );
+    const voiceNotes = await Promise.all(visibleRows.map((row) => this.noteView(row)));
     return VoiceNoteFeedResponseSchema.parse({
       voice_notes: voiceNotes,
       next_cursor: page.nextCursor,
     });
   }
 
+  /**
+   * Author delete (and workspace coach / platform owner).
+   *
+   * B-610-3: the author can always delete their own note, checked BEFORE any
+   * read/membership rule, so a member who was removed, banned or lost their
+   * plan can still take their own recording down. Anyone else who cannot
+   * read the note gets the same 404 as a missing note (no existence leak); a
+   * member who can read it but did not record it gets 403 VOICE_NOT_AUTHOR.
+   *
+   * B-610-5: the erasure of the recording is recorded durably first
+   * (community_voice_erasures), then the note and its search row are
+   * soft-deleted (no read path, queue or search shows it and nothing signs it
+   * again), then the object is erased and the removal verified. A storage
+   * outage leaves the erasure open and VoiceErasureService retries it until
+   * verified, so "deleted" is never a recording left behind.
+   */
   async delete(user: User, voiceNoteId: string): Promise<{ deleted: true }> {
-    const row = await this.repo.findById(voiceNoteId);
-    if (!row || row.soft_deleted_at !== null) {
-      throw new NotFoundException(NOT_FOUND);
+    const own = await this.repo.findById(voiceNoteId);
+    if (own && own.author_id === user.id) {
+      if (own.soft_deleted_at !== null) {
+        // Already deleted: re-open and retry the erasure (idempotent), then
+        // answer like a missing note (unchanged contract).
+        await this.eraseRecording(own);
+        throw new NotFoundException(NOT_FOUND);
+      }
+      await this.deleteAndErase(own);
+      return { deleted: true };
     }
-    // Author or workspace coach/owner may soft-delete.
-    if (
-      row.author_id !== user.id &&
-      !(await this.isCoach(row.workspace_id, user))
-    ) {
-      throw new ForbiddenException({
-        error: 'forbidden',
-        code: 'community.voice.not_author',
-      });
+    const row = await this.readableNote(user, voiceNoteId);
+    if (!(await this.isCoach(row.workspace_id, user))) {
+      // Blocked either way reads as missing, like every other voice read.
+      await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
+      throw new ForbiddenException(VOICE_NOT_AUTHOR);
     }
-    await this.repo.softDelete(voiceNoteId, new Date());
+    await this.deleteAndErase(row);
     return { deleted: true };
+  }
+
+  /** Record the erasure durably, soft-delete the rows, then erase + verify. */
+  private async deleteAndErase(row: CommunityVoiceNote): Promise<void> {
+    const work = await this.repo.recordErasure([row.storage_key], 'author_delete');
+    await this.softDeleteNote(row);
+    await this.runErasure(row, work);
+  }
+
+  private async softDeleteNote(row: CommunityVoiceNote): Promise<void> {
+    const at = new Date();
+    await this.repo.softDelete(row.id, at);
+    await this.repo.softDeleteSearchEntries(row.id, at);
+  }
+
+  /** Re-open (or create) the durable erasure for an already-deleted note and try it. */
+  private async eraseRecording(row: CommunityVoiceNote): Promise<void> {
+    const work = await this.repo.recordErasure([row.storage_key], 'author_delete');
+    await this.runErasure(row, work);
+  }
+
+  private async runErasure(
+    row: CommunityVoiceNote,
+    work: Awaited<ReturnType<CommunityVoiceRepository['recordErasure']>>,
+  ): Promise<void> {
+    const outcome = await this.repo.attemptErasure(this.upload, work);
+    if (outcome.pending > 0) {
+      this.logger.warn(
+        `voice note ${row.id}: recording removal not yet verified; erasure recorded and retried by VoiceErasureService`,
+      );
+    }
   }
 }

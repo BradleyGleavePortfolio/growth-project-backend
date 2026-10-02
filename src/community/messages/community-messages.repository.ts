@@ -85,8 +85,12 @@ export class CommunityMessagesRepository {
    * are included in the result and the service can build the ack envelope when
    * FEATURE_COMMUNITY_ACKS is on. No new columns are introduced (R69).
    */
-  async findById(messageId: string): Promise<CommunityMessage | null> {
-    return this.prisma.communityMessage.findFirst({
+  /** `tx`: run inside the caller's transaction (moderation act, B-610-13). */
+  async findById(
+    messageId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<CommunityMessage | null> {
+    return (tx ?? this.prisma).communityMessage.findFirst({
       where: { id: messageId },
     });
   }
@@ -138,8 +142,9 @@ export class CommunityMessagesRepository {
 
   async softDelete(
     message: Pick<CommunityMessage, 'id' | 'created_at'>,
+    tx?: Prisma.TransactionClient,
   ): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.update({
+    return (tx ?? this.prisma).communityMessage.update({
       where: {
         id_created_at: { id: message.id, created_at: message.created_at },
       },

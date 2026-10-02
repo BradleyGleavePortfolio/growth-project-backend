@@ -8,7 +8,10 @@
  * `ai-consent.reader.ts`).
  *
  * The copy below is server-authoritative and must match the D2 contract
- * (DRAFT v2) byte for byte. The version is a code constant, not an env
+ * (DRAFT v2) byte for byte, except the retention sentence, which follows the
+ * owner's 2026-10-01 20:32 decision ("I want to keep past AI chats forever")
+ * and operator ruling OR-110-1 (a client delete and account deletion still
+ * erase them). The version is a code constant, not an env
  * override: the text and its version always ship together. Every recorded
  * decision stores the sha256 of the copy it refers to, and consent counts only
  * while the stored version AND sha256 equal the current ones, so an in-place
@@ -18,21 +21,33 @@
  */
 import { createHash } from 'node:crypto';
 
-/** Copy version of the box-2 text. Bump with any change to the text below. */
-export const CLIENT_AI_CONSENT_VERSION = 'client-ai-v3';
+/**
+ * Copy version of the box-2 text. Bump with any change to the text below.
+ *
+ * client-ai-v4 (2026-10-01): the retention sentence. v3 said Roman chats are
+ * "kept for 180 days"; no purge exists and the owner decided to keep them
+ * until the client deletes them or their account, so v3 misstated retention.
+ * Older grants follow the existing exact-match rule unchanged: a v3 (or older)
+ * grant stays in the append-only history but no longer counts as consent
+ * (GET shows state `needs_reconsent`, `hasClientAiConsent` is false, every AI
+ * path refuses with ai_consent_required) until the client allows the v4 text;
+ * a POST that still names v3 gets 409 CONSENT_VERSION_MISMATCH with the v4
+ * version and sha256; a withdrawal of a v3 grant is recorded against v3.
+ */
+export const CLIENT_AI_CONSENT_VERSION = 'client-ai-v4';
 
 /** Processor + purpose keys stored on every ledger row. */
 export const CLIENT_AI_CONSENT_PROCESSOR = 'anthropic';
 export const CLIENT_AI_CONSENT_PURPOSE = 'client_ai_processing';
 
-/** D2 contract, "Paragraph 4" (shown above box 2). Exact text. */
+/** D2 contract, "Paragraph 4" (shown above box 2), v4 retention sentence. Exact text. */
 export const CLIENT_AI_CONSENT_PARAGRAPH =
   'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
   'If you allow it, your information is sent to Anthropic so Roman can answer your questions ' +
   'and your coach can use AI drafts about your training. ' +
   "Only your own data is used, never another client's, and never your coach's private notes. " +
-  'Your conversations with Roman are private from your coach, kept for 180 days, ' +
-  'and you can delete them at any time.';
+  'Your conversations with Roman are private from your coach and are kept until you delete ' +
+  'them or delete your account.';
 
 /** D2 contract, "Box 2 label (optional)". Exact text. */
 export const CLIENT_AI_CONSENT_BOX_LABEL =

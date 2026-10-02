@@ -1,4 +1,5 @@
 import { CommunityService } from '../src/community/community.service';
+import { safetyWithBlocks } from './community/safety/safety-test-helpers';
 
 /**
  * N+1 characterization for round-2 fix. getLeaderboard currently fires
@@ -43,7 +44,7 @@ describe('CommunityService.getLeaderboard (N+1 characterization)', () => {
     };
     // getLeaderboard does not touch CommunityRepository; an empty stub suffices.
     const repoStub = {} as any;
-    service = new CommunityService(prismaMock as any, repoStub);
+    service = new CommunityService(prismaMock as any, repoStub, safetyWithBlocks());
   });
 
   it('returns a leaderboard and records query count for 3 students', async () => {

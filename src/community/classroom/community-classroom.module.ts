@@ -6,6 +6,7 @@ import { CommunityClassroomController } from './community-classroom.controller';
 import { CommunityClassroomEnabledGuard } from './community-classroom-flag.guard';
 import { CommunityClassroomRepository } from './community-classroom.repository';
 import { CommunityClassroomService } from './community-classroom.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 /**
  * v3-2 community classroom-posts module — media-backed lessons.
@@ -46,6 +47,7 @@ import { CommunityClassroomService } from './community-classroom.service';
     CommunityClassroomEnabledGuard,
     CommunityAccessService,
     CommunityFeatureFlagGuard,
+    CommunitySafetyService,
   ],
   exports: [CommunityClassroomService],
 })

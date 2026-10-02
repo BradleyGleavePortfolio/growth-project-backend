@@ -107,9 +107,7 @@ describe('VoiceUploadProvider — createSignedDownload degradation', () => {
 
   it('returns null when signing errors', async () => {
     const provider = makeProvider({
-      createSignedUrl: jest
-        .fn()
-        .mockResolvedValue({ data: null, error: { message: 'nope' } }),
+      createSignedUrl: jest.fn().mockResolvedValue({ data: null, error: { message: 'nope' } }),
     });
     expect(await provider.createSignedDownload('key')).toBeNull();
   });
@@ -120,6 +118,8 @@ describe('VoiceUploadProvider — createSignedDownload degradation', () => {
         .fn()
         .mockResolvedValue({ data: { signedUrl: 'https://dl' }, error: null }),
     });
-    expect(await provider.createSignedDownload('key')).toBe('https://dl');
+    // A-610-1: only canonical `<owner>/<name>.<ext>` keys are ever signed.
+    expect(await provider.createSignedDownload('owner-1/1700000000000-abc.m4a')).toBe('https://dl');
+    expect(await provider.createSignedDownload('owner-1/../x.m4a')).toBeNull();
   });
 });
