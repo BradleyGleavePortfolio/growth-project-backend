@@ -1,0 +1,146 @@
+// scripts/setup-branch-protection.sh — the required-check list is exactly the
+// 10 contexts live branch protection on main requires.
+//
+// EXPECTED_REQUIRED_CHECKS was read back from
+//   gh api repos/BradleyGleavePortfolio/growth-project-backend/branches/main/protection
+// on 2026-10-02 (required_status_checks.checks, all app_id 15368 = GitHub
+// Actions), in the order GitHub returns them. "Schema parity (migrations
+// match schema.prisma)" is the 10th (operator ruling OR-110-3).
+//
+// The script is never executed here. Only its REQUIRED_CHECKS=( ... ) array
+// block is evaluated by bash (so comments and quoting are read exactly as the
+// script would read them); nothing else in the script runs and no network
+// call is made.
+
+import { spawnSync } from 'child_process';
+import { readdirSync, readFileSync } from 'fs';
+import { load as parseYaml } from 'js-yaml';
+import { join } from 'path';
+
+const ROOT = join(__dirname, '..', '..');
+const SCRIPT = 'scripts/setup-branch-protection.sh';
+const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+
+const EXPECTED_REQUIRED_CHECKS = [
+  'build-and-test',
+  'rls-floor-guard',
+  'rls-live-tests',
+  'mwb-3-live-tests',
+  'npm audit (high+critical, whole graph)',
+  'CodeQL JS/TS (javascript-typescript)',
+  'Banned cast tokens (R75 / R100.A2)',
+  'build-sbom',
+  'danger',
+  'Schema parity (migrations match schema.prisma)',
+];
+
+function arrayBlock(script: string): string {
+  const start = script.indexOf('\nREQUIRED_CHECKS=(\n');
+  if (start < 0) throw new Error('REQUIRED_CHECKS=( block not found');
+  const end = script.indexOf('\n)\n', start);
+  if (end < 0) throw new Error('REQUIRED_CHECKS block is not closed');
+  return script.slice(start + 1, end + 2);
+}
+
+/** Evaluate ONLY the array block with bash and return its elements. */
+function scriptRequiredChecks(script: string): string[] {
+  const block = arrayBlock(script);
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-c', `set -euo pipefail\n${block}\nprintf '%s\\n' "\${REQUIRED_CHECKS[@]}"`], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+  });
+  if (r.status !== 0) throw new Error(`bash failed: ${r.stderr}`);
+  return r.stdout.split('\n').filter((l) => l.length > 0);
+}
+
+type Workflow = {
+  on?: unknown;
+  true?: unknown; // js-yaml (YAML 1.1) may read a bare `on:` key as boolean true
+  jobs?: Record<string, { name?: string; strategy?: { matrix?: Record<string, unknown> } }>;
+};
+
+/** The check-run names a workflow's jobs report (name, or job id; plus matrix values). */
+function reportedNames(wf: Workflow): string[] {
+  return Object.entries(wf.jobs ?? {}).flatMap(([id, job]) => {
+    const base = job.name ?? id;
+    const matrix = job.strategy?.matrix;
+    if (!matrix || /\$\{\{/.test(base)) return [base];
+    const dims = Object.entries(matrix).filter(([k]) => k !== 'include' && k !== 'exclude');
+    if (dims.length !== 1 || !Array.isArray(dims[0][1])) return [base];
+    return (dims[0][1] as unknown[]).map((v) => `${base} (${String(v)})`);
+  });
+}
+
+/** True when the workflow runs on every pull request to main (no paths filter). */
+function runsOnEveryPrToMain(wf: Workflow): boolean {
+  const on = wf.on ?? wf.true;
+  if (on === 'pull_request') return true;
+  if (Array.isArray(on)) return on.includes('pull_request');
+  if (!on || typeof on !== 'object' || !('pull_request' in on)) return false;
+  const pr = (on as Record<string, unknown>).pull_request as Record<string, unknown> | null;
+  if (!pr) return true;
+  if ('paths' in pr || 'paths-ignore' in pr) return false;
+  if ('branches-ignore' in pr) return false;
+  const branches = pr.branches as string[] | undefined;
+  return !branches || branches.includes('main');
+}
+
+describe('setup-branch-protection.sh — required checks equal live branch protection (10 checks)', () => {
+  const script = read(SCRIPT);
+  const checks = scriptRequiredChecks(script);
+
+  it('lists exactly the 10 live required checks, in the live order', () => {
+    expect(checks).toEqual(EXPECTED_REQUIRED_CHECKS);
+    expect(checks).toHaveLength(10);
+    expect(new Set(checks).size).toBe(checks.length);
+  });
+
+  it('includes the schema-parity gate under its exact job name', () => {
+    expect(checks).toContain('Schema parity (migrations match schema.prisma)');
+    const wf = parseYaml(read('.github/workflows/schema-parity.yml')) as Workflow;
+    expect(reportedNames(wf)).toContain('Schema parity (migrations match schema.prisma)');
+    expect(runsOnEveryPrToMain(wf)).toBe(true);
+  });
+
+  it('does not list checks that are informational, never run on a PR, retired, or path-filtered', () => {
+    for (const notRequired of [
+      'test-deploy-readiness',
+      'deploy-readiness-gate',
+      'LOC budget',
+      'Test density',
+      'shellcheck (scripts/*.sh)',
+      'actionlint (.github/workflows/*.yml)',
+      'danger dry-run (dangerfile.js)',
+    ]) {
+      expect(checks).not.toContain(notRequired);
+    }
+  });
+
+  it('every listed check is reported by a workflow job that runs on every pull request to main', () => {
+    const dir = join(ROOT, '.github', 'workflows');
+    const workflows = readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => ({ f, wf: parseYaml(readFileSync(join(dir, f), 'utf8')) as Workflow }));
+    const missing = checks.filter(
+      (c) => !workflows.some(({ wf }) => runsOnEveryPrToMain(wf) && reportedNames(wf).includes(c)),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('the evaluated block is the one the script uses (count echo and app-bound payload read the same array)', () => {
+    expect(script).toMatch(/printf '%s\\n' "\$\{REQUIRED_CHECKS\[@\]\}" \| jq -R \. \| jq -s --argjson app "\$CHECKS_APP_ID"/);
+    expect(script).toContain('echo "Required checks (${#REQUIRED_CHECKS[@]}):"');
+    expect(script.match(/^REQUIRED_CHECKS=\(/gm)).toHaveLength(1);
+    expect(script).not.toMatch(/REQUIRED_CHECKS\+=/);
+  });
+
+  it('negative control: the evaluator sees a removed or added check', () => {
+    const minusParity = script.replace(/^\s*"Schema parity \(migrations match schema\.prisma\)"\n/m, '');
+    expect(scriptRequiredChecks(minusParity)).not.toContain('Schema parity (migrations match schema.prisma)');
+    const plusExtra = script.replace('\nREQUIRED_CHECKS=(\n', '\nREQUIRED_CHECKS=(\n  "test-deploy-readiness"\n');
+    expect(scriptRequiredChecks(plusExtra)).toHaveLength(11);
+    // A commented-out line is not a check.
+    const commented = script.replace(/^(\s*)"danger"$/m, '$1# "danger"');
+    expect(scriptRequiredChecks(commented)).not.toContain('danger');
+  });
+});
