@@ -35,7 +35,7 @@ import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
-const COPY_SHA = 'd8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f';
+const COPY_SHA = 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4';
 const H_USER = 'x-test-user';
 const H_ROLE = 'x-test-role';
 
@@ -158,10 +158,10 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
       version: null,
       granted_at: null,
       withdrawn_at: null,
-      current_version: 'client-ai-v3',
+      current_version: 'client-ai-v4',
       needs_reconsent: false,
       copy: {
-        version: 'client-ai-v3',
+        version: 'client-ai-v4',
         processor: 'anthropic',
         sha256: COPY_SHA,
         paragraph: { text: expect.stringContaining('Roman, the assistant in this app') },
@@ -171,11 +171,11 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it('POST grant -> 200 granted; repeat is idempotent (one row)', async () => {
-    const body = { version: 'client-ai-v3', copy_sha256: COPY_SHA, platform: 'ios', app_version: '1.0.0', locale: 'en-US' };
+    const body = { version: 'client-ai-v4', copy_sha256: COPY_SHA, platform: 'ios', app_version: '1.0.0', locale: 'en-US' };
     const a = await call('POST', '/me/ai-consent/roman', 'u_a', body);
     expect(a.status).toBe(200);
     expect(a.headers['cache-control']).toBe('no-store');
-    expect(a.body).toMatchObject({ granted: true, state: 'granted', version: 'client-ai-v3' });
+    expect(a.body).toMatchObject({ granted: true, state: 'granted', version: 'client-ai-v4' });
     const b = await call('POST', '/me/ai-consent/roman', 'u_a', body);
     expect(b.status).toBe(200);
     expect(b.body).toMatchObject({ granted: true, granted_at: a.body?.granted_at });
@@ -190,9 +190,23 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     expect(fake.rows).toHaveLength(0);
   });
 
-  it('POST with a different copy_sha256 -> 409 CONSENT_VERSION_MISMATCH', async () => {
+  it('POST naming the superseded client-ai-v3 (180-day text) -> 409 with the v4 version and sha256 over HTTP', async () => {
     const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
       version: 'client-ai-v3',
+      copy_sha256: 'd8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f',
+    });
+    expect(r.status).toBe(409);
+    // The global error envelope carries the stable machine code; the client
+    // then re-reads GET for the current (v4) copy, version and sha256.
+    expect(r.body).toMatchObject({ statusCode: 409, code: 'CONSENT_VERSION_MISMATCH' });
+    expect(fake.rows).toHaveLength(0);
+    const g = await call('GET', '/me/ai-consent', 'u_a');
+    expect(g.body).toMatchObject({ current_version: 'client-ai-v4', copy: { sha256: COPY_SHA } });
+  });
+
+  it('POST with a different copy_sha256 -> 409 CONSENT_VERSION_MISMATCH', async () => {
+    const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
+      version: 'client-ai-v4',
       copy_sha256: 'c'.repeat(64),
     });
     expect(r.status).toBe(409);
@@ -200,11 +214,11 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it.each([
-    ['a foreign user_id (subject is never a body field)', { version: 'client-ai-v3', user_id: 'u_b' }],
+    ['a foreign user_id (subject is never a body field)', { version: 'client-ai-v4', user_id: 'u_b' }],
     ['a missing version', {}],
-    ['a malformed copy_sha256', { version: 'client-ai-v3', copy_sha256: 'xyz' }],
-    ['an unknown platform', { version: 'client-ai-v3', platform: 'tv' }],
-    ['an over-long locale', { version: 'client-ai-v3', locale: 'en-US-xxxxxxxxxxxxxxxx' }],
+    ['a malformed copy_sha256', { version: 'client-ai-v4', copy_sha256: 'xyz' }],
+    ['an unknown platform', { version: 'client-ai-v4', platform: 'tv' }],
+    ['an over-long locale', { version: 'client-ai-v4', locale: 'en-US-xxxxxxxxxxxxxxxx' }],
   ])('POST with %s -> 400, nothing written', async (_l, body) => {
     const r = await call('POST', '/me/ai-consent/roman', 'u_a', body);
     expect(r.status).toBe(400);
@@ -212,11 +226,11 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it('DELETE withdraws (200) and is idempotent; history is append-only', async () => {
-    await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v3' });
+    await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v4' });
     const a = await call('DELETE', '/me/ai-consent/roman', 'u_a');
     expect(a.status).toBe(200);
     expect(a.headers['cache-control']).toBe('no-store');
-    expect(a.body).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v3' });
+    expect(a.body).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v4' });
     const b = await call('DELETE', '/me/ai-consent/roman', 'u_a');
     expect(b.status).toBe(200);
     expect(b.body).toMatchObject({ state: 'withdrawn', withdrawn_at: a.body?.withdrawn_at });
@@ -233,7 +247,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it("one user's grant never shows as another user's", async () => {
-    await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v3' });
+    await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v4' });
     const b = await call('GET', '/me/ai-consent', 'u_b');
     expect(b.body).toMatchObject({ granted: false, state: 'not_granted' });
   });
@@ -241,7 +255,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   it.each(['student', 'coach', 'owner'])('role %s may read and write its own record', async (role) => {
     expect((await call('GET', '/me/ai-consent', 'u_r', undefined, role)).status).toBe(200);
     expect(
-      (await call('POST', '/me/ai-consent/roman', 'u_r', { version: 'client-ai-v3' }, role)).status,
+      (await call('POST', '/me/ai-consent/roman', 'u_r', { version: 'client-ai-v4' }, role)).status,
     ).toBe(200);
   });
 
@@ -251,7 +265,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     'POST with %s: null -> 400, nothing written',
     async (field) => {
       const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
-        version: 'client-ai-v3',
+        version: 'client-ai-v4',
         [field]: null,
       });
       expect(r.status).toBe(400);
@@ -261,7 +275,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
 
   it('POST with an uppercase matching digest still succeeds (only null changed)', async () => {
     const r = await call('POST', '/me/ai-consent/roman', 'u_a', {
-      version: 'client-ai-v3',
+      version: 'client-ai-v4',
       copy_sha256: COPY_SHA.toUpperCase(),
     });
     expect(r.status).toBe(200);
@@ -271,7 +285,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   // Sol B-622-2: a ledger read failure is the contract's 503, over the wire.
   it.each([
     ['GET', '/me/ai-consent', undefined],
-    ['POST', '/me/ai-consent/roman', { version: 'client-ai-v3' }],
+    ['POST', '/me/ai-consent/roman', { version: 'client-ai-v4' }],
     ['DELETE', '/me/ai-consent/roman', undefined],
   ])('%s %s: a ledger read failure -> 503 AI_CONSENT_UNAVAILABLE', async (method, path, body) => {
     fake.failNext = { method: 'findFirst', times: 1, error: new Error('READ_CANARY') };
@@ -285,7 +299,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   describe('flag off (default)', () => {
     it.each([
       ['GET', '/me/ai-consent', undefined],
-      ['POST', '/me/ai-consent/roman', { version: 'client-ai-v3' }],
+      ['POST', '/me/ai-consent/roman', { version: 'client-ai-v4' }],
       ['POST', '/me/ai-consent/roman', { bogus: true }],
       ['DELETE', '/me/ai-consent/roman', undefined],
     ])('%s %s -> 503 AI_CONSENT_UNAVAILABLE (before body validation)', async (method, path, body) => {
