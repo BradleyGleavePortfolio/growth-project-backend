@@ -107,6 +107,25 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
       activityEvent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       messageDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       communityWin: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      // Step 10b (B-610-5 round 5): the voice erasure is recorded durably
+      // before anything else, so finalization reads the user's voice notes
+      // and records the owner-folder erasure even when they have none.
+      communityVoiceNote: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      communitySearchEntry: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      communityVoiceErasure: {
+        upsert: jest.fn().mockImplementation(
+          async (args: { create: { kind: string; target: string } }) => ({
+            id: `erasure-${args.create.target}`,
+            kind: args.create.kind,
+            target: args.create.target,
+            attempts: 0,
+          }),
+        ),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $executeRaw: jest.fn().mockResolvedValue(1),
       $transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         return fn(txProxy);
