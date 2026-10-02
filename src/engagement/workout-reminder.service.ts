@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
@@ -18,8 +19,10 @@ import {
 // MECHANISM: a five-minute @Cron (same claim-by-write pattern as the session
 // reminder job and the drip dispatcher). Each tick walks clients who finished
 // onboarding and, per client:
-//   1. opt-out: NotificationPreferences.muted or workout_reminder_push=false
-//      -> nothing (Settings > Notifications > Workout reminders, default on);
+//   1. opt-out: NotificationPreferences.muted, or both workout_reminder_push
+//      and workout_reminder_inapp false -> nothing (Settings > Notifications >
+//      Workout reminders, default on). The two channels are independent
+//      (C-609-6): push off still writes the in-app row and vice versa;
 //   2. decideReminder(): client-local date/time (NotificationPreferences.timezone)
 //      is the first session day (C1) or a day with a scheduled plan workout,
 //      and local time is inside [slot, slot + 3h] for their S2 answer;
@@ -32,6 +35,20 @@ import {
 //      send. A lost claim (another replica, a retry, a restart) sends nothing,
 //      so a client gets at most one reminder per local day. A crash between
 //      claim and push loses that day's reminder rather than risk a second one.
+//
+// SEND-TIME ELIGIBILITY (B-609-4): the page query is only a pre-filter. The
+// claim, the ledger row and the in-app row are written in ONE transaction
+// that first takes `SELECT ... FROM "User" ... FOR SHARE` on the client row
+// and requires deleted_at IS NULL, deletion_scheduled_at IS NULL and
+// role = 'student' at that instant. Every deletion path writes that row
+// (AccountService.requestDeletion sets deletion_scheduled_at, the GDPR
+// scrubber sets deleted_at), and those UPDATEs need a row lock that conflicts
+// with FOR SHARE. So either the deletion committed first and the claim sees it
+// and writes nothing, or the claim committed first and the deletion (and the
+// erasure that follows it) sees the rows. No reminder row is ever created for
+// a client whose deletion has committed. Eligibility is read again right
+// before the push transport; a client who requested deletion in between gets
+// no push (ledger status 'cancelled').
 //
 // CONSENT / AI: only clients whose onboarding is complete (D2 box-1 consent on
 // file) are considered. The copy is fixed text in workout-reminder.policy.ts;
@@ -59,7 +76,12 @@ export interface ReminderTickStats {
   already_sent: number;
   not_due: number;
   failed: number;
+  /** Deleted, deletion-scheduled or no longer a client at send time. */
+  ineligible: number;
 }
+
+/** The eligibility predicate, shared by the page filter and the send-time checks. */
+const ELIGIBLE_CLIENT = { deleted_at: null, deletion_scheduled_at: null, role: 'student' } as const;
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -120,6 +142,7 @@ export class WorkoutReminderService {
       already_sent: 0,
       not_due: 0,
       failed: 0,
+      ineligible: 0,
     };
     await this.purgeErasedSafely();
     let cursor: string | undefined;
@@ -127,7 +150,7 @@ export class WorkoutReminderService {
       const page = await this.prisma.clientOnboardingIntake.findMany({
         where: {
           completed_at: { not: null },
-          client: { deleted_at: null, deletion_scheduled_at: null, role: 'student' },
+          client: { ...ELIGIBLE_CLIENT },
         },
         select: {
           id: true,
@@ -170,7 +193,11 @@ export class WorkoutReminderService {
   ): Promise<Exclude<keyof ReminderTickStats, 'considered'>> {
     const prefs = await this.notifications.getPreferences(clientId);
     const p: Record<string, unknown> = { ...prefs };
-    if (p.muted === true || p.workout_reminder_push === false) return 'opted_out';
+    // C-609-6: mute is global; the two channels are evaluated independently,
+    // and the reminder is skipped only when neither is on.
+    const pushOn = p.workout_reminder_push !== false;
+    const inappOn = p.workout_reminder_inapp !== false;
+    if (p.muted === true || (!pushOn && !inappOn)) return 'opted_out';
     const timezone = resolveTimezone(p.timezone);
 
     // Pass 1: which local day is it, and does it carry a plan workout?
@@ -207,26 +234,6 @@ export class WorkoutReminderService {
 
     if (isDunningV2Enabled() && (await this.isDunningLockedOut(clientId))) return 'locked_out';
 
-    // Claim the day before anything goes out.
-    let deliveryId: string;
-    try {
-      const created = await this.prisma.workoutReminderDelivery.create({
-        data: {
-          client_id: clientId,
-          local_date: dayStart,
-          timezone,
-          slot: decision.slot,
-          first_day: decision.firstDay,
-          status: 'sending',
-        },
-        select: { id: true },
-      });
-      deliveryId = created.id;
-    } catch (err) {
-      if (isUniqueViolation(err)) return 'already_sent';
-      throw err;
-    }
-
     const { title, body } = reminderCopy(decision.localDate, decision.firstDay);
     const deepLink = assignments[0] ? `tgp://workouts/${assignments[0].id}` : 'tgp://workouts';
     const payload = {
@@ -234,30 +241,75 @@ export class WorkoutReminderService {
       first_day: decision.firstDay,
       assignment_id: assignments[0]?.id ?? null,
     };
+
+    // Claim the day, eligibility-locked, before anything goes out (B-609-4).
+    let claim: { deliveryId: string; inappWritten: boolean } | null;
     try {
-      await this.notifications.createNotification({
-        user_id: clientId,
-        kind: NotificationKind.WORKOUT_REMINDER,
-        body,
-        payload,
-        deep_link: deepLink,
-        channel: 'inapp',
+      claim = await this.prisma.$transaction(async (tx) => {
+        if (!(await lockEligibleClient(tx, clientId))) return null;
+        const created = await tx.workoutReminderDelivery.create({
+          data: {
+            client_id: clientId,
+            local_date: dayStart,
+            timezone,
+            slot: decision.slot,
+            first_day: decision.firstDay,
+            status: 'sending',
+          },
+          select: { id: true },
+        });
+        // The in-app row commits with the claim, under the same lock; the
+        // preference gate (workout_reminder_inapp) is applied inside
+        // createNotification. Its failure rolls the claim back so the next
+        // tick can try again within the window.
+        const row = inappOn
+          ? await this.notifications.createNotification(
+              {
+                user_id: clientId,
+                kind: NotificationKind.WORKOUT_REMINDER,
+                body,
+                payload,
+                deep_link: deepLink,
+                channel: 'inapp',
+              },
+              tx,
+            )
+          : null;
+        return { deliveryId: created.id, inappWritten: row !== null };
       });
     } catch (err) {
-      this.logger.warn(
-        `workout-reminders in-app row failed client=${clientId} (${err instanceof Error ? err.name : 'unknown'})`,
-      );
+      if (isUniqueViolation(err)) return 'already_sent';
+      throw err;
     }
-    const push = await this.notifications.pushToUser(clientId, title, body, {
-      kind: NotificationKind.WORKOUT_REMINDER,
-      deep_link: deepLink,
-      ...payload,
-    });
+    if (!claim) return 'ineligible';
+
+    let delivered = claim.inappWritten;
+    if (pushOn) {
+      // Last check before the transport: a deletion request that committed
+      // after the claim stops the push.
+      const live = await this.prisma.user.findFirst({
+        where: { id: clientId, ...ELIGIBLE_CLIENT },
+        select: { id: true },
+      });
+      if (!live) {
+        await this.prisma.workoutReminderDelivery.update({
+          where: { id: claim.deliveryId },
+          data: { status: 'cancelled' },
+        });
+        return 'ineligible';
+      }
+      const push = await this.notifications.pushToUser(clientId, title, body, {
+        kind: NotificationKind.WORKOUT_REMINDER,
+        deep_link: deepLink,
+        ...payload,
+      });
+      delivered = push.delivered || delivered;
+    }
     await this.prisma.workoutReminderDelivery.update({
-      where: { id: deliveryId },
-      data: push.delivered ? { status: 'sent', sent_at: now } : { status: 'failed' },
+      where: { id: claim.deliveryId },
+      data: delivered ? { status: 'sent', sent_at: now } : { status: 'failed' },
     });
-    return push.delivered ? 'sent' : 'failed';
+    return delivered ? 'sent' : 'failed';
   }
 
   /**
@@ -301,4 +353,25 @@ export class WorkoutReminderService {
     });
     return res.count;
   }
+}
+
+/**
+ * Lock the client's User row FOR SHARE inside the claim transaction and
+ * report whether the client is still eligible (not deleted, no deletion
+ * scheduled, still a client). Deletion paths UPDATE this row, which waits for
+ * the lock, so the eligibility read and the claim writes are atomic with
+ * respect to deletion (B-609-4).
+ */
+export async function lockEligibleClient(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+): Promise<boolean> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "User"
+    WHERE "id" = ${clientId}
+      AND "deleted_at" IS NULL
+      AND "deletion_scheduled_at" IS NULL
+      AND "role" = 'student'
+    FOR SHARE`;
+  return rows.length === 1;
 }

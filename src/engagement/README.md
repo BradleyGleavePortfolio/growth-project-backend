@@ -11,5 +11,6 @@ message). Per-coach flag (default off) and template (`{first_name}`,
 `scripts/set-coach-welcome-message.ts`. `WorkoutReminderService` (every 5 min)
 pushes at the client's preferred training time (S2) on C1 and each plan day,
 client-local timezone, at most one per day, skipped when the session is
-logged, opt-out via `workout_reminder_push`. Full detail:
+logged, opt-out per channel via `workout_reminder_push` / `workout_reminder_inapp`,
+eligibility re-checked under a row lock at send time. Full detail:
 [docs/clinic-engagement.md](../../docs/clinic-engagement.md).

@@ -26,7 +26,12 @@
  *     writes every row;
  *   - the two NotificationPreferences columns are NOT NULL DEFAULT true, and
  *     the idempotency keys (one job per client, one reminder per client per
- *     local day) are enforced by the database.
+ *     local day, one welcome CoachMessage per job) are enforced by the
+ *     database;
+ *   - B-609-4: the reminder claim's eligibility lock (lockEligibleClient,
+ *     SELECT ... FOR SHARE on the client's User row) blocks a concurrent
+ *     deletion UPDATE until the claim commits, and refuses a client whose
+ *     deletion has committed.
  *
  * Gate: TEST_DATABASE_URL (set by the rls-live-tests job). No URL -> skip,
  * except under CI=true where a missing URL is a hard failure (no
@@ -34,6 +39,7 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
+import { lockEligibleClient } from '../../src/engagement/workout-reminder.service';
 
 // Not DATABASE_URL: test/jest.setup.ts always sets a placeholder DATABASE_URL.
 const DB_URL = process.env.TEST_DATABASE_URL || '';
@@ -532,5 +538,64 @@ const UPDATE_SQL: Record<Table, string> = {
       CLIENT,
     );
     expect(await sqlStateOf(duplicateDelivery)).toBe('23505');
+  });
+  it('B-609-3: CoachMessage.welcome_job_id is nullable and unique (one welcome message per job; any number of ordinary messages)', async () => {
+    const ids = [`${P}msg-a`, `${P}msg-b`, `${P}msg-c`, `${P}msg-d`];
+    try {
+      await exec(
+        `INSERT INTO "CoachMessage" (id, coach_id, client_id, sender_id, body) VALUES ($1, $3, $4, $3, 'x'), ($2, $3, $4, $3, 'x')`,
+        ids[0],
+        ids[1],
+        COACH,
+        CLIENT,
+      );
+      await exec(
+        `INSERT INTO "CoachMessage" (id, coach_id, client_id, sender_id, body, welcome_job_id) VALUES ($1, $2, $3, $2, 'w', $4)`,
+        ids[2],
+        COACH,
+        CLIENT,
+        `${P}job-client`,
+      );
+      const duplicate = exec(
+        `INSERT INTO "CoachMessage" (id, coach_id, client_id, sender_id, body, welcome_job_id) VALUES ($1, $2, $3, $2, 'w', $4)`,
+        ids[3],
+        COACH,
+        CLIENT,
+        `${P}job-client`,
+      );
+      expect(await sqlStateOf(duplicate)).toBe('23505');
+    } finally {
+      await exec(`DELETE FROM "CoachMessage" WHERE id = ANY($1::text[])`, ids);
+    }
+  });
+
+  it('B-609-4: the reminder eligibility lock blocks a concurrent deletion until the claim commits, then refuses the deleted client', async () => {
+    try {
+      await prisma.$transaction(async (tx) => {
+        expect(await lockEligibleClient(tx, CLIENT)).toBe(true);
+        // A deletion request on another connection cannot commit while the
+        // claim transaction holds the lock.
+        const blocked = prisma.$transaction(async (other) => {
+          await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
+          await other.$executeRawUnsafe(
+            `UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`,
+            CLIENT,
+          );
+        });
+        expect(await sqlStateOf(blocked)).toBe('55P03');
+      });
+      await exec(`UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`, CLIENT);
+      expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(false);
+      await exec(`UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = now() WHERE id = $1`, CLIENT);
+      expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(false);
+      await exec(`UPDATE "User" SET deleted_at = NULL WHERE id = $1`, CLIENT);
+      expect(await prisma.$transaction((tx) => lockEligibleClient(tx, COACH))).toBe(false);
+      expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(true);
+    } finally {
+      await exec(
+        `UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = NULL WHERE id = $1`,
+        CLIENT,
+      );
+    }
   });
 });

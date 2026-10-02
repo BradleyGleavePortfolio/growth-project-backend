@@ -27,9 +27,12 @@ Inputs come from onboarding PR-B (`ClientOnboardingIntake.completed_at`, `first_
 
 **No duplicates.**
 
-- The rendered body is stamped on the row before the send.
-- If an earlier attempt stamped a body, the job first looks for a `CoachMessage` from that coach to that client with that exact body, created since the job was created. If it finds one, it marks the job `sent` and links that message instead of sending again. This covers a worker crash mid-send and a send that threw after the row was written.
-- `message_id` is also `@unique`.
+Exactly one welcome per job is enforced by the database, not by timing (B-609-3):
+
+- **Idempotency key at the persistence boundary.** The welcome is written with `CoachMessage.welcome_job_id = job.id` (nullable, `@unique`, NULL for every other message). However many workers reach `sendAsCoach` for one job (a stale lease-holder that is still alive, the worker that reclaimed it, a retry after a send that threw after its INSERT), one `CoachMessage` row exists: the losing INSERT trips the unique key and `sendAsCoach` returns the existing row with no second realtime ping, push, audit, analytics or PTM signal.
+- **Fencing.** Every claim writes a fresh `lease_token`. Every later write by that worker (body stamp, `sent`, retry, `failed`, `cancelled`) is conditional on it, so a worker whose lease went stale and was reclaimed loses every write and stops (`superseded` in the tick stats). It cannot re-send, reset the job to `pending` or overwrite the new holder's result. A stale reclaim matches the exact lease it replaces, so two reclaimers cannot both win.
+- **Reconcile first.** Before any other check, the holder looks the job's message up by `welcome_job_id`; if it exists the job is marked `sent` with that id.
+- The rendered body is stamped on the row before the send, so a retry sends the same words; `message_id` is also `@unique`.
 - Transient errors are retried after 1, 5, 15 and 60 minutes. After 5 attempts the job is set to `failed`.
 
 **Template.** The template supports two placeholders: `{first_name}` (the client's first name, or "there" if missing) and `{coach_first_name}` (or "your coach" if missing). The code default is generic and names no clinic or coach:
@@ -92,12 +95,14 @@ Turn the flag on **before** the first client finishes onboarding. Clients who co
 **Skipped** when:
 
 - that day's assignment is completed, or a `WorkoutSession` exists on that date;
-- the client turned reminders off (`workout_reminder_push = false`; default true; the mobile toggle is Settings > Notifications > Workout reminders);
-- the client is muted (`muted`);
-- the client is deleted or scheduled for deletion;
+- the client turned both channels off (`workout_reminder_push = false` and `workout_reminder_inapp = false`; both default true; the mobile toggle Settings > Notifications > Workout reminders sets both);
+- the client is muted (`muted`; global, wins over both channels);
+- the client is deleted, scheduled for deletion or no longer a client, checked at send time (below);
 - the client is in the Day-10 dunning lockout (only while `FEATURE_DUNNING_V2` is on), because workouts answer 403 `LOCKED_DUNNING` then.
 
-`workout_reminder_inapp` controls only the in-app inbox row.
+**Channels are independent (C-609-6).** `workout_reminder_push` controls only the push and `workout_reminder_inapp` only the in-app inbox row; with push off the in-app row is still written, and the reverse. The day's ledger row is `sent` when at least one channel reached the client and `failed` when none did.
+
+**Send-time eligibility (B-609-4).** The page query is only a pre-filter. The claim, the ledger row and the in-app row are written in one transaction that first runs `SELECT "id" FROM "User" WHERE ... FOR SHARE` (`lockEligibleClient`) and requires `deleted_at IS NULL`, `deletion_scheduled_at IS NULL` and `role = 'student'` at that instant. Every deletion path updates that row (a deletion request sets `deletion_scheduled_at`, the GDPR scrubber sets `deleted_at`), and that UPDATE waits for the lock. So either the deletion committed first and the claim writes nothing, or the claim committed first and the deletion (and the erasure that follows it) sees its rows: no reminder row is created for a client whose deletion has committed. Eligibility is read again just before the push; a deletion request that landed in between stops the push and the ledger row is set to `cancelled`. The live suite proves the lock blocks a concurrent deletion UPDATE (SQLSTATE 55P03 under `lock_timeout`).
 
 **Copy.** Roman's butler voice: short, warm, no medical claims, no exclamation marks. The title is "From Roman".
 

@@ -32,9 +32,11 @@ function harness() {
     attempt_count: 0,
     next_retry_at: null,
     locked_at: null,
+    lease_token: null,
     sent_at: null,
   }));
-  const messages = new FakeTable();
+  // CoachMessage.welcome_job_id is @unique (B-609-3), like the real table.
+  const messages = new FakeTable([['welcome_job_id']]);
   const userMatches = (id: unknown, filter: unknown): boolean => {
     const u = users.rows.find((x) => x.id === id);
     return !!u && matches(u, filter as Record<string, unknown>);
@@ -57,14 +59,39 @@ function harness() {
     coachWelcomeMessageJob: jobs,
     coachMessage: messages,
   };
+  // Mirrors MessagingService.sendAsCoach: the welcome_job_id key is written
+  // with the row; a duplicate key returns the existing row and produces no
+  // side effects (sideEffects counts the ping/push/audit fan-out).
+  const sideEffects = { count: 0 };
   const sendAsCoach = jest.fn(
-    async (coachId: string, clientId: string, payload: { body: string }) => {
+    async (
+      coachId: string,
+      clientId: string,
+      payload: { body: string },
+      options: { welcomeJobId?: string } = {},
+    ) => {
       const client = users.rows.find((u) => u.id === clientId);
       if (!client || client.coach_id !== coachId) throw new NotFoundException('Client not found');
       if (blocks.has(`${coachId}:${clientId}`)) throw new ForbiddenException({ error: 'BLOCKED' });
-      return messages.create({
-        data: { coach_id: coachId, client_id: clientId, sender_id: coachId, body: payload.body },
-      });
+      try {
+        const row = await messages.create({
+          data: {
+            coach_id: coachId,
+            client_id: clientId,
+            sender_id: coachId,
+            body: payload.body,
+            welcome_job_id: options.welcomeJobId ?? null,
+          },
+        });
+        sideEffects.count += 1;
+        return row;
+      } catch (err) {
+        const existing = options.welcomeJobId
+          ? await messages.findUnique({ where: { welcome_job_id: options.welcomeJobId } })
+          : null;
+        if (existing) return existing;
+        throw err;
+      }
     },
   );
   const safety = {
@@ -78,7 +105,7 @@ function harness() {
       cast<MessagingService>({ sendAsCoach }),
       cast<MessagesSafetyService>(safety),
     );
-  return { users, intakes, settings, jobs, messages, blocks, sendAsCoach, safety, make };
+  return { users, intakes, settings, jobs, messages, blocks, sendAsCoach, safety, make, sideEffects };
 }
 
 async function seed(
@@ -140,9 +167,14 @@ describe('CoachWelcomeService — scheduling', () => {
     const s = await svc.runOnce(new Date(T0.getTime() + 13 * MIN));
     expect(s.sent).toBe(1);
     expect(h.sendAsCoach).toHaveBeenCalledTimes(1);
-    expect(h.sendAsCoach).toHaveBeenCalledWith(COACH, CLIENT, {
-      body: "Hi Dana, it's Morgan. Welcome in. Your plan and targets are ready. Message me here anytime.",
-    });
+    expect(h.sendAsCoach).toHaveBeenCalledWith(
+      COACH,
+      CLIENT,
+      {
+        body: "Hi Dana, it's Morgan. Welcome in. Your plan and targets are ready. Message me here anytime.",
+      },
+      { welcomeJobId: h.jobs.rows[0].id },
+    );
     expect(h.messages.rows).toHaveLength(1);
     expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', message_id: h.messages.rows[0].id });
   });
@@ -360,9 +392,20 @@ describe('CoachWelcomeService — retries without duplicates', () => {
     const svc = h.make();
     await svc.runOnce(new Date(T0.getTime() + MIN));
     h.sendAsCoach.mockImplementationOnce(
-      async (coachId: string, clientId: string, payload: { body: string }) => {
+      async (
+        coachId: string,
+        clientId: string,
+        payload: { body: string },
+        options: { welcomeJobId?: string } = {},
+      ) => {
         await h.messages.create({
-          data: { coach_id: coachId, client_id: clientId, sender_id: coachId, body: payload.body },
+          data: {
+            coach_id: coachId,
+            client_id: clientId,
+            sender_id: coachId,
+            body: payload.body,
+            welcome_job_id: options.welcomeJobId,
+          },
         });
         throw new Error('post-write failure');
       },
@@ -387,7 +430,7 @@ describe('CoachWelcomeService — retries without duplicates', () => {
       rendered_body: body,
     });
     await h.messages.create({
-      data: { coach_id: COACH, client_id: CLIENT, sender_id: COACH, body },
+      data: { coach_id: COACH, client_id: CLIENT, sender_id: COACH, body, welcome_job_id: job.id },
     });
     // not stale yet: left alone
     await svc.runOnce(new Date(T0.getTime() + 14 * MIN));
@@ -590,5 +633,128 @@ describe('CoachWelcomeService — data minimisation and erasure (B-JOURNEY fix r
     await svc.runOnce(DUE());
     expect(h.jobs.rows).toHaveLength(0);
     expect(h.sendAsCoach).not.toHaveBeenCalled();
+  });
+});
+
+describe('CoachWelcomeService — B-609-3: a still-live stale lease-holder never sends a second welcome', () => {
+  const DUE_AT = new Date(T0.getTime() + 13 * MIN);
+  const RECLAIM_AT = new Date(DUE_AT.getTime() + __coachWelcomeConsts.STALE_CLAIM_MS + MIN);
+
+  function deferred() {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    return { gate, release };
+  }
+
+  /**
+   * Worker A claims the job and is paused inside sendAsCoach (before or after
+   * its INSERT). Its lease goes stale, worker B (a second replica) reclaims
+   * and finishes, then A resumes. Returns once A has resumed and finished.
+   */
+  async function overlap(
+    h: ReturnType<typeof harness>,
+    a: 'before-insert' | 'after-insert',
+    aResult: 'ok' | 'throws' = 'ok',
+  ) {
+    const workerA = h.make();
+    const workerB = h.make();
+    await workerA.runOnce(new Date(T0.getTime() + MIN)); // schedules
+    const entered = deferred();
+    const resume = deferred();
+    const real = h.sendAsCoach.getMockImplementation();
+    if (!real) throw new Error('harness sendAsCoach has no implementation');
+    h.sendAsCoach.mockImplementationOnce(async (coachId, clientId, payload, options) => {
+      if (a === 'after-insert') {
+        const row = await real(coachId, clientId, payload, options);
+        entered.release();
+        await resume.gate;
+        if (aResult === 'throws') throw new Error('socket hang up');
+        return row;
+      }
+      entered.release();
+      await resume.gate;
+      if (aResult === 'throws') throw new Error('socket hang up');
+      return real(coachId, clientId, payload, options);
+    });
+    const aRun = workerA.runOnce(DUE_AT);
+    await entered.gate; // A holds the lease and is mid-send
+    const bStats = await workerB.runOnce(RECLAIM_AT); // A's lease is stale now
+    resume.release();
+    const aStats = await aRun;
+    return { aStats, bStats };
+  }
+
+  it('A paused before its INSERT, B reclaims and sends, A resumes: one message, one fan-out, A superseded', async () => {
+    const h = harness();
+    await seed(h);
+    const { aStats, bStats } = await overlap(h, 'before-insert');
+    expect(h.messages.rows).toHaveLength(1);
+    expect(h.sideEffects.count).toBe(1);
+    expect(bStats.sent).toBe(1);
+    expect(aStats).toMatchObject({ sent: 0, superseded: 1 });
+    expect(h.jobs.rows[0]).toMatchObject({
+      status: 'sent',
+      message_id: h.messages.rows[0].id,
+      lease_token: null,
+      rendered_body: null,
+    });
+    expect(h.messages.rows[0].welcome_job_id).toBe(h.jobs.rows[0].id);
+  });
+
+  it('A paused after its INSERT, B reclaims: B reconciles by welcome_job_id without sending, A cannot overwrite', async () => {
+    const h = harness();
+    await seed(h);
+    const { aStats, bStats } = await overlap(h, 'after-insert');
+    expect(h.sendAsCoach).toHaveBeenCalledTimes(1); // only A ever sent
+    expect(h.messages.rows).toHaveLength(1);
+    expect(h.sideEffects.count).toBe(1);
+    expect(bStats.sent).toBe(1);
+    expect(aStats.superseded).toBe(1);
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', message_id: h.messages.rows[0].id });
+  });
+
+  it("A's late failure cannot reset B's lease to pending (fenced): still exactly one message after more ticks", async () => {
+    const h = harness();
+    await seed(h);
+    const { aStats } = await overlap(h, 'before-insert', 'throws');
+    expect(aStats).toMatchObject({ retried: 0, superseded: 1 });
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', attempt_count: 1 });
+    const later = h.make();
+    await later.runOnce(new Date(RECLAIM_AT.getTime() + 60 * MIN));
+    await later.runOnce(new Date(RECLAIM_AT.getTime() + 120 * MIN));
+    expect(h.messages.rows).toHaveLength(1);
+    expect(h.sideEffects.count).toBe(1);
+  });
+
+  it('two reclaimers of the same stale lease: only one wins the claim', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    Object.assign(h.jobs.rows[0], { status: 'sending', locked_at: DUE_AT, lease_token: 'lease-a' });
+    const [b, c] = await Promise.all([h.make().runOnce(RECLAIM_AT), h.make().runOnce(RECLAIM_AT)]);
+    expect(b.sent + c.sent).toBe(1);
+    expect(h.messages.rows).toHaveLength(1);
+    expect(h.sendAsCoach).toHaveBeenCalledTimes(1);
+  });
+
+  it('every claim writes a fresh lease token', async () => {
+    const h = harness();
+    await seed(h);
+    const svc = h.make();
+    await svc.runOnce(new Date(T0.getTime() + MIN));
+    const tokens: unknown[] = [];
+    h.sendAsCoach.mockImplementation(async () => {
+      tokens.push(h.jobs.rows[0].lease_token);
+      throw new Error('transient');
+    });
+    await svc.runOnce(DUE_AT);
+    await svc.runOnce(new Date(DUE_AT.getTime() + 2 * MIN));
+    expect(tokens).toHaveLength(2);
+    expect(typeof tokens[0]).toBe('string');
+    expect(tokens[0]).not.toBe(tokens[1]);
+    expect(h.jobs.rows[0].lease_token).toBeNull();
   });
 });

@@ -13,6 +13,30 @@ import { cast, FakeTable, matches } from './_fake-db';
 const CLIENT = 'client-1';
 const C1 = '2026-10-05';
 
+/**
+ * Adds the two Prisma entry points the claim uses (B-609-4): an interactive
+ * $transaction (the fake runs the callback on the same tables) and the
+ * `SELECT ... FOR SHARE` eligibility lock, evaluated against the users table
+ * at the instant it runs. Every lock statement is recorded in `locks`.
+ */
+function withTx<T extends Record<string, unknown>>(base: T, users: FakeTable) {
+  const locks: Array<{ sql: string; values: unknown[] }> = [];
+  const hooks: { afterCommit?: () => void } = {};
+  const db: Record<string, unknown> = { ...base, user: base.user ?? users };
+  db.$queryRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    locks.push({ sql: strings.join('$'), values });
+    const u = users.rows.find((x) => x.id === values[0]);
+    const ok = !!u && !u.deleted_at && !u.deletion_scheduled_at && u.role === 'student';
+    return ok ? [{ id: values[0] }] : [];
+  };
+  db.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
+    const out = await fn(db);
+    hooks.afterCommit?.();
+    return out;
+  };
+  return { db, locks, hooks };
+}
+
 function harness(prefs: Record<string, unknown> | null = null) {
   const users = new FakeTable([['id']]);
   const intakes = new FakeTable([['client_id']]);
@@ -36,16 +60,19 @@ function harness(prefs: Record<string, unknown> | null = null) {
     const filter = f as { deleted_at?: null; deletion_scheduled_at?: null; role?: string };
     return !!u && !u.deleted_at && !u.deletion_scheduled_at && u.role === filter.role;
   };
-  const prisma = {
-    user: users,
-    clientOnboardingIntake: intakes,
-    clientWorkoutAssignment: assignments,
-    workoutSession: sessions,
-    workoutReminderDelivery: deliveries,
-    notification: notifRows,
-    notificationPreferences: prefRows,
-    dunningState: dunning,
-  };
+  const { db: prisma, locks, hooks } = withTx(
+    {
+      user: users,
+      clientOnboardingIntake: intakes,
+      clientWorkoutAssignment: assignments,
+      workoutSession: sessions,
+      workoutReminderDelivery: deliveries,
+      notification: notifRows,
+      notificationPreferences: prefRows,
+      dunningState: dunning,
+    },
+    users,
+  );
   // Real NotificationsService on the fake DB, so preference gating and the
   // workout_reminder prefs prefix are exercised for real; only the Expo
   // transport is stubbed.
@@ -67,6 +94,8 @@ function harness(prefs: Record<string, unknown> | null = null) {
     purchases,
     pushToUser,
     svc,
+    locks,
+    hooks,
   };
 }
 
@@ -118,12 +147,17 @@ describe('WorkoutReminderService', () => {
     await h.svc.runOnce(new Date('2026-10-07T14:00:00Z'));
     await h.svc.runOnce(new Date('2026-10-07T14:05:00Z'));
     const other = new WorkoutReminderService(
-      cast<PrismaService>({
-        clientOnboardingIntake: h.intakes,
-        clientWorkoutAssignment: h.assignments,
-        workoutSession: h.sessions,
-        workoutReminderDelivery: h.deliveries,
-      }),
+      cast<PrismaService>(
+        withTx(
+          {
+            clientOnboardingIntake: h.intakes,
+            clientWorkoutAssignment: h.assignments,
+            workoutSession: h.sessions,
+            workoutReminderDelivery: h.deliveries,
+          },
+          h.users,
+        ).db,
+      ),
       cast<NotificationsService>({
         getPreferences: async () => ({}),
         createNotification: jest.fn(),
@@ -167,12 +201,14 @@ describe('WorkoutReminderService', () => {
     expect(h.pushToUser).not.toHaveBeenCalled();
   });
 
-  it('opt-out: workout_reminder_push=false sends nothing', async () => {
-    const h = harness({ workout_reminder_push: false, workout_reminder_inapp: true, muted: false });
+  it('opt-out: workout_reminder_push=false and workout_reminder_inapp=false sends nothing', async () => {
+    const h = harness({ workout_reminder_push: false, workout_reminder_inapp: false, muted: false });
     await seed(h);
     const s = await h.svc.runOnce(new Date('2026-10-05T14:00:00Z'));
     expect(s.opted_out).toBe(1);
     expect(h.pushToUser).not.toHaveBeenCalled();
+    expect(h.notifRows.rows).toHaveLength(0);
+    expect(h.deliveries.rows).toHaveLength(0);
     expect(h.notifRows.rows).toHaveLength(0);
   });
 
@@ -228,6 +264,19 @@ describe('WorkoutReminderService', () => {
     h.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'no-token' });
     await h.svc.runOnce(new Date('2026-10-05T14:00:00Z'));
     await h.svc.runOnce(new Date('2026-10-05T14:05:00Z'));
+    expect(h.pushToUser).toHaveBeenCalledTimes(1);
+    // The in-app row still reached the client, so the day counts as sent.
+    expect(h.notifRows.rows).toHaveLength(1);
+    expect(h.deliveries.rows[0].status).toBe('sent');
+  });
+
+  it('a failed push with the in-app channel off is recorded as failed and not retried the same day', async () => {
+    const h = harness({ workout_reminder_inapp: false });
+    await seed(h);
+    h.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'no-token' });
+    const s = await h.svc.runOnce(new Date('2026-10-05T14:00:00Z'));
+    await h.svc.runOnce(new Date('2026-10-05T14:05:00Z'));
+    expect(s.failed).toBe(1);
     expect(h.pushToUser).toHaveBeenCalledTimes(1);
     expect(h.deliveries.rows[0].status).toBe('failed');
   });
@@ -346,5 +395,112 @@ describe('WorkoutReminderService — dunning lockout and erasure (B-JOURNEY fix 
 
   it('the cadence is fixed at every 5 minutes (no env override)', () => {
     expect(WORKOUT_REMINDER_CRON).toBe('*/5 * * * *');
+  });
+});
+
+describe('WorkoutReminderService — channel independence (C-609-6)', () => {
+  const C1_0700 = new Date('2026-10-05T14:00:00Z');
+
+  it('push off, in-app on: the in-app row is written and no push goes out', async () => {
+    const h = harness({ workout_reminder_push: false, workout_reminder_inapp: true, muted: false });
+    await seed(h);
+    const s = await h.svc.runOnce(C1_0700);
+    expect(s.sent).toBe(1);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+    expect(h.notifRows.rows).toHaveLength(1);
+    expect(h.notifRows.rows[0]).toMatchObject({ kind: 'workout_reminder', channel: 'inapp' });
+    expect(h.deliveries.rows[0]).toMatchObject({ status: 'sent' });
+  });
+
+  it('push on, in-app off: only the push goes out', async () => {
+    const h = harness({ workout_reminder_push: true, workout_reminder_inapp: false });
+    await seed(h);
+    await h.svc.runOnce(C1_0700);
+    expect(h.pushToUser).toHaveBeenCalledTimes(1);
+    expect(h.notifRows.rows).toHaveLength(0);
+  });
+
+  it('global mute wins over both channels', async () => {
+    const h = harness({ muted: true, workout_reminder_push: true, workout_reminder_inapp: true });
+    await seed(h);
+    const s = await h.svc.runOnce(C1_0700);
+    expect(s.opted_out).toBe(1);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+    expect(h.notifRows.rows).toHaveLength(0);
+  });
+});
+
+describe('WorkoutReminderService — send-time eligibility and the erasure path (B-609-4)', () => {
+  const C1_0700 = new Date('2026-10-05T14:00:00Z');
+
+  async function selectedThen(
+    h: ReturnType<typeof harness>,
+    change: Record<string, unknown>,
+    at: Date = C1_0700,
+  ) {
+    // The page query selects the client, then the change commits before the
+    // client is processed (deletion between selection and send).
+    const realFindMany = h.intakes.findMany.bind(h.intakes);
+    jest.spyOn(h.intakes, 'findMany').mockImplementationOnce(async (args) => {
+      const page = await realFindMany(args);
+      Object.assign(h.users.rows[0], change);
+      return page;
+    });
+    return h.svc.runOnce(at);
+  }
+
+  it.each([
+    ['deletion requested', { deletion_scheduled_at: new Date('2026-10-05T13:59:00Z') }],
+    ['account tombstoned', { deleted_at: new Date('2026-10-05T13:59:00Z') }],
+    ['no longer a client', { role: 'coach' }],
+  ])('%s after page selection: no ledger row, no in-app row, no push', async (_label, change) => {
+    const h = harness();
+    await seed(h);
+    const s = await selectedThen(h, change);
+    expect(s.considered).toBe(1);
+    expect(s.ineligible).toBe(1);
+    expect(h.deliveries.rows).toHaveLength(0);
+    expect(h.notifRows.rows).toHaveLength(0);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('erasure overlap: a client tombstoned mid-tick gets no new ledger row, and the sweep then removes the old one', async () => {
+    const h = harness();
+    await seed(h);
+    await h.svc.runOnce(C1_0700); // C1 reminder sent
+    expect(h.deliveries.rows).toHaveLength(1);
+    const day3 = new Date('2026-10-07T14:00:00Z');
+    const s = await selectedThen(h, { deleted_at: new Date('2026-10-07T13:59:00Z') }, day3);
+    expect(s.ineligible).toBe(1);
+    expect(h.deliveries.rows).toHaveLength(1); // nothing recreated for day 3
+    await h.svc.runOnce(new Date('2026-10-07T14:05:00Z'));
+    expect(h.deliveries.rows).toHaveLength(0);
+    expect(h.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('a deletion request that commits after the claim and before the push stops the push (ledger cancelled)', async () => {
+    const h = harness();
+    await seed(h);
+    h.hooks.afterCommit = () => {
+      h.users.rows[0].deletion_scheduled_at = new Date('2026-10-05T14:00:01Z');
+    };
+    const s = await h.svc.runOnce(C1_0700);
+    expect(s.ineligible).toBe(1);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+    expect(h.deliveries.rows[0]).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('the claim takes the FOR SHARE eligibility lock on the client row inside the transaction', async () => {
+    const h = harness();
+    await seed(h);
+    await h.svc.runOnce(C1_0700);
+    expect(h.locks).toHaveLength(1);
+    const sql = h.locks[0].sql.replace(/\s+/g, ' ');
+    expect(sql).toContain('FROM "User"');
+    expect(sql).toContain('"deleted_at" IS NULL');
+    expect(sql).toContain('"deletion_scheduled_at" IS NULL');
+    expect(sql).toContain(`"role" = 'student'`);
+    expect(sql).toMatch(/FOR SHARE\s*$/);
+    expect(h.locks[0].values).toEqual([CLIENT]);
   });
 });

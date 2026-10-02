@@ -1259,6 +1259,13 @@ model CoachMessage {
   // produce two CoachMessage rows; the second INSERT trips P2002 and
   // the materialiser falls through to its "already_materialised" branch.
   ai_draft_id String? @unique
+  // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
+  // the CoachWelcomeMessageJob that produced this row. `@unique` is the
+  // persistence-boundary idempotency key: a stale worker whose lease was
+  // reclaimed cannot insert a second welcome; its INSERT trips P2002 and
+  // MessagingService.sendAsCoach returns the existing row with no side effects.
+  // NULL for every other message.
+  welcome_job_id String? @unique
 
   @@index([coach_id])
   @@index([client_id])
@@ -2591,6 +2598,10 @@ model CoachWelcomeMessageJob {
   attempt_count Int       @default(0)
   next_retry_at DateTime?
   locked_at     DateTime?
+  // B-609-3 fencing token: a fresh value on every claim. Every later write by
+  // the claiming worker is conditional on it, so a worker whose lease went
+  // stale and was reclaimed can no longer stamp, mark sent, retry or cancel.
+  lease_token   String?
   sent_at       DateTime?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt

@@ -6,7 +6,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import type { CoachWelcomeMessageJob } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import type { CoachWelcomeMessageJob, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
@@ -36,11 +37,20 @@ import { isCoachWelcomeSchedulerEnabled } from './engagement.flags';
 // DURABILITY: all state is in Postgres. A restart loses nothing: pending rows
 // stay pending, a stale 'sending' claim is reclaimed after STALE_CLAIM_MS.
 //
-// NO DUPLICATES: the rendered body is stamped on the row before the send. A
-// reclaimed 'sending' row first looks for a CoachMessage from the coach to the
-// client with that exact body created since the dead worker's claim; if one
-// exists the job is marked sent with that message id and nothing is re-sent.
-// CoachWelcomeMessageJob.message_id is @unique as a final backstop.
+// NO DUPLICATES (B-609-3), enforced by the database, not by timing:
+//   - Idempotency key at the persistence boundary: the welcome is written with
+//     CoachMessage.welcome_job_id = job.id (@unique). However many workers
+//     reach sendAsCoach for one job (a stale lease-holder that is still alive,
+//     a reclaiming worker, a retry after a post-write failure), exactly one
+//     CoachMessage row exists; the losing INSERT trips P2002 and sendAsCoach
+//     returns the existing row with no second ping, push, audit or PTM signal.
+//   - Fencing: every claim writes a fresh lease_token, and every later write
+//     (body stamp, sent, retry, failed, cancelled) is conditional on it. A
+//     worker whose lease was reclaimed loses every write and stops
+//     ('superseded'); it can neither re-send nor overwrite the new holder.
+//   - Reconcile: before sending, the holder looks the job's message up by
+//     welcome_job_id; if it exists the job is marked sent with that id.
+//   CoachWelcomeMessageJob.message_id is @unique as a final backstop.
 //
 // CONSENT / AI: the job runs only for intakes with completed_at, and
 // OnboardingService.complete() writes completed_at only after the D2 box-1
@@ -79,7 +89,11 @@ export interface WelcomeTickStats {
   cancelled: number;
   retried: number;
   failed: number;
+  /** The lease was reclaimed by another worker; this one stopped without writing. */
+  superseded: number;
 }
+
+type DeliverOutcome = 'sent' | 'cancelled' | 'retried' | 'failed' | 'superseded';
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -136,6 +150,7 @@ export class CoachWelcomeService {
       cancelled: 0,
       retried: 0,
       failed: 0,
+      superseded: 0,
     };
     await this.purgeErasedSafely();
     await this.schedule(now, stats);
@@ -262,76 +277,107 @@ export class CoachWelcomeService {
       take: TICK_BATCH_SIZE,
     });
     for (const job of due) {
-      const claimed = await this.claim(job, now);
-      if (!claimed) continue;
-      const outcome = await this.deliver(job, now);
+      const lease = await this.claim(job, now);
+      if (!lease) continue;
+      const outcome = await this.deliver(job, lease, now);
       stats[outcome] += 1;
     }
   }
 
-  private async claim(job: CoachWelcomeMessageJob, now: Date): Promise<boolean> {
+  /**
+   * Claim-by-write. Returns the fresh fencing token on success, null when
+   * another worker holds (or just took) the job. A stale reclaim matches the
+   * exact lease it replaces (status + locked_at + lease_token as read), so two
+   * reclaimers can never both win.
+   */
+  private async claim(job: CoachWelcomeMessageJob, now: Date): Promise<string | null> {
     const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
+    const lease = randomUUID();
     const res = await this.prisma.coachWelcomeMessageJob.updateMany({
       where:
         job.status === 'sending'
-          ? { id: job.id, status: 'sending', locked_at: { lte: staleBefore } }
+          ? {
+              id: job.id,
+              status: 'sending',
+              locked_at: { lte: staleBefore },
+              lease_token: job.lease_token,
+            }
           : { id: job.id, status: 'pending' },
-      data: { status: 'sending', locked_at: now },
+      data: { status: 'sending', locked_at: now, lease_token: lease },
+    });
+    return res.count === 1 ? lease : null;
+  }
+
+  /** Every write after the claim goes through here: fenced on the lease. */
+  private async writeFenced(
+    job: CoachWelcomeMessageJob,
+    lease: string,
+    data: Prisma.CoachWelcomeMessageJobUpdateManyMutationInput,
+  ): Promise<boolean> {
+    const res = await this.prisma.coachWelcomeMessageJob.updateMany({
+      where: { id: job.id, status: 'sending', lease_token: lease },
+      data,
     });
     return res.count === 1;
   }
 
+  private superseded(job: CoachWelcomeMessageJob): 'superseded' {
+    this.logger.warn(`coach-welcome job=${job.id} lease reclaimed by another worker; stopping`);
+    return 'superseded';
+  }
+
   private async cancel(
     job: CoachWelcomeMessageJob,
+    lease: string,
     reason: WelcomeCancelReason,
-  ): Promise<'cancelled'> {
-    await this.prisma.coachWelcomeMessageJob.updateMany({
-      where: { id: job.id, status: 'sending' },
-      data: { status: 'cancelled', reason, locked_at: null, rendered_body: null },
+  ): Promise<'cancelled' | 'superseded'> {
+    const ok = await this.writeFenced(job, lease, {
+      status: 'cancelled',
+      reason,
+      locked_at: null,
+      lease_token: null,
+      rendered_body: null,
     });
+    if (!ok) return this.superseded(job);
     this.logger.log(`coach-welcome job=${job.id} cancelled reason=${reason}`);
     return 'cancelled';
   }
 
   private async deliver(
     job: CoachWelcomeMessageJob,
+    lease: string,
     now: Date,
-  ): Promise<'sent' | 'cancelled' | 'retried' | 'failed'> {
+  ): Promise<DeliverOutcome> {
+    // A previous holder may already have written this job's message (it died
+    // mid-send, the send threw after the INSERT, or it is still alive and its
+    // lease went stale): the welcome_job_id key finds it; never send twice.
+    // This runs first: a message that exists is the truth (sent), whatever
+    // changed since.
+    const already = await this.prisma.coachMessage.findUnique({
+      where: { welcome_job_id: job.id },
+      select: { id: true },
+    });
+    if (already) return this.markSent(job, lease, already.id, now);
+
     // Cancellation checks run at send time, not only at schedule time.
     const client = await this.prisma.user.findUnique({
       where: { id: job.client_id },
       select: { name: true, coach_id: true, deleted_at: true, deletion_scheduled_at: true },
     });
     if (!client || client.deleted_at || client.deletion_scheduled_at) {
-      return this.cancel(job, 'client_deleted');
+      return this.cancel(job, lease, 'client_deleted');
     }
-    if (client.coach_id !== job.coach_id) return this.cancel(job, 'detached');
+    if (client.coach_id !== job.coach_id) return this.cancel(job, lease, 'detached');
     const setting = await this.prisma.coachWelcomeMessageSetting.findUnique({
       where: { coach_id: job.coach_id },
       select: { enabled: true, template: true },
     });
-    if (!setting?.enabled) return this.cancel(job, 'coach_disabled');
+    if (!setting?.enabled) return this.cancel(job, lease, 'coach_disabled');
     if (now.getTime() - job.fire_at.getTime() > MAX_LATENESS_MS) {
-      return this.cancel(job, 'expired');
+      return this.cancel(job, lease, 'expired');
     }
     if (this.safety && (await this.safety.isEitherSideBlocked(job.coach_id, job.client_id))) {
-      return this.cancel(job, 'blocked');
-    }
-
-    // A previous attempt stamped the body (worker died mid-send, or the send
-    // threw after the row was written): never send twice.
-    if (job.rendered_body) {
-      const already = await this.prisma.coachMessage.findFirst({
-        where: {
-          coach_id: job.coach_id,
-          client_id: job.client_id,
-          sender_id: job.coach_id,
-          body: job.rendered_body,
-          created_at: { gte: job.created_at },
-        },
-        select: { id: true },
-      });
-      if (already) return this.markSent(job, already.id, now);
+      return this.cancel(job, lease, 'blocked');
     }
 
     let body = job.rendered_body;
@@ -344,75 +390,79 @@ export class CoachWelcomeService {
         clientName: client.name,
         coachName: coach?.name ?? null,
       });
-      await this.prisma.coachWelcomeMessageJob.updateMany({
-        where: { id: job.id, status: 'sending' },
-        data: { rendered_body: body },
-      });
+      // Fenced: a holder whose lease was reclaimed stops here, before send.
+      if (!(await this.writeFenced(job, lease, { rendered_body: body }))) {
+        return this.superseded(job);
+      }
     }
 
     try {
-      const created = await this.messaging.sendAsCoach(job.coach_id, job.client_id, { body });
-      return this.markSent(job, created.id, now);
+      const created = await this.messaging.sendAsCoach(
+        job.coach_id,
+        job.client_id,
+        { body },
+        { welcomeJobId: job.id },
+      );
+      return this.markSent(job, lease, created.id, now);
     } catch (err) {
-      if (err instanceof ForbiddenException) return this.cancel(job, 'blocked');
-      if (err instanceof NotFoundException) return this.cancel(job, 'detached');
-      return this.retryOrFail(job, err, now);
+      if (err instanceof ForbiddenException) return this.cancel(job, lease, 'blocked');
+      if (err instanceof NotFoundException) return this.cancel(job, lease, 'detached');
+      return this.retryOrFail(job, lease, err, now);
     }
   }
 
   private async markSent(
     job: CoachWelcomeMessageJob,
+    lease: string,
     messageId: string,
     now: Date,
-  ): Promise<'sent'> {
-    await this.prisma.coachWelcomeMessageJob.updateMany({
-      where: { id: job.id, status: 'sending' },
-      data: {
-        status: 'sent',
-        message_id: messageId,
-        sent_at: now,
-        attempt_count: { increment: 1 },
-        locked_at: null,
-        next_retry_at: null,
-        reason: null,
-        rendered_body: null,
-      },
+  ): Promise<'sent' | 'superseded'> {
+    const ok = await this.writeFenced(job, lease, {
+      status: 'sent',
+      message_id: messageId,
+      sent_at: now,
+      attempt_count: { increment: 1 },
+      locked_at: null,
+      lease_token: null,
+      next_retry_at: null,
+      reason: null,
+      rendered_body: null,
     });
-    return 'sent';
+    // Superseded: the new holder reconciles by welcome_job_id and marks it.
+    return ok ? 'sent' : this.superseded(job);
   }
 
   private async retryOrFail(
     job: CoachWelcomeMessageJob,
+    lease: string,
     err: unknown,
     now: Date,
-  ): Promise<'retried' | 'failed'> {
+  ): Promise<'retried' | 'failed' | 'superseded'> {
     const attempt = job.attempt_count + 1;
     const reason = err instanceof Error ? err.name : 'unknown';
     if (attempt >= MAX_ATTEMPTS) {
-      await this.prisma.coachWelcomeMessageJob.updateMany({
-        where: { id: job.id, status: 'sending' },
-        data: {
-          status: 'failed',
-          reason,
-          attempt_count: { increment: 1 },
-          locked_at: null,
-          rendered_body: null,
-        },
+      const ok = await this.writeFenced(job, lease, {
+        status: 'failed',
+        reason,
+        attempt_count: { increment: 1 },
+        locked_at: null,
+        lease_token: null,
+        rendered_body: null,
       });
+      if (!ok) return this.superseded(job);
       this.logger.error(`coach-welcome job=${job.id} failed permanently (${reason})`);
       return 'failed';
     }
     const backoff = BACKOFF_MS[Math.min(attempt - 1, BACKOFF_MS.length - 1)];
-    await this.prisma.coachWelcomeMessageJob.updateMany({
-      where: { id: job.id, status: 'sending' },
-      data: {
-        status: 'pending',
-        reason,
-        attempt_count: { increment: 1 },
-        next_retry_at: new Date(now.getTime() + backoff),
-        locked_at: null,
-      },
+    const ok = await this.writeFenced(job, lease, {
+      status: 'pending',
+      reason,
+      attempt_count: { increment: 1 },
+      next_retry_at: new Date(now.getTime() + backoff),
+      locked_at: null,
+      lease_token: null,
     });
+    if (!ok) return this.superseded(job);
     this.logger.warn(`coach-welcome job=${job.id} attempt ${attempt} failed (${reason}); retrying`);
     return 'retried';
   }

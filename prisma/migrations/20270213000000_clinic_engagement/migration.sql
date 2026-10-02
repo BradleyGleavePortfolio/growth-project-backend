@@ -1,9 +1,10 @@
 -- C05 items 6-7 — clinic engagement: coach welcome message (13 minutes after
 -- onboarding completes) + workout reminders on plan days.
 --
--- Additive-only. Adds two default-true columns to NotificationPreferences and
--- creates three tables with indexes/FKs. No existing table, column, type,
--- index or constraint is altered or dropped. User back-relations in
+-- Additive-only. Adds two default-true columns to NotificationPreferences, one
+-- nullable unique column to CoachMessage (welcome_job_id, the welcome
+-- message's idempotency key) and creates three tables with indexes/FKs. No
+-- existing column, type, index or constraint is altered or dropped. User back-relations in
 -- schema.prisma are Prisma-virtual and emit no DDL.
 --
 -- RLS POLICY CITATION (ENGINEERING_RULES §2), helpers from
@@ -66,6 +67,7 @@ CREATE TABLE "CoachWelcomeMessageJob" (
     "attempt_count" INTEGER NOT NULL DEFAULT 0,
     "next_retry_at" TIMESTAMP(3),
     "locked_at" TIMESTAMP(3),
+    "lease_token" TEXT,
     "sent_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -87,6 +89,14 @@ CREATE TABLE "WorkoutReminderDelivery" (
 
     CONSTRAINT "WorkoutReminderDelivery_pkey" PRIMARY KEY ("id")
 );
+
+-- AlterTable (B-609-3): persistence-boundary idempotency key for the welcome
+-- message. Nullable, NULL for every existing and every non-welcome row; the
+-- unique index admits any number of NULLs.
+ALTER TABLE "CoachMessage" ADD COLUMN "welcome_job_id" TEXT;
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CoachMessage_welcome_job_id_key" ON "CoachMessage"("welcome_job_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CoachWelcomeMessageSetting_coach_id_key" ON "CoachWelcomeMessageSetting"("coach_id");
