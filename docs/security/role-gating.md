@@ -131,7 +131,7 @@ All routes `@Public()`. ✅ Intentionally unauthenticated (download links, priva
 
 ### `src/diagnostic/diagnostic.controller.ts`
 
-All routes `@Public()`. ✅ Rate-limited lead-capture form.
+Not mounted (B-QUIZ-OFF, owner 2026-10-01: the quiz belongs to TGP Finance). `DiagnosticModule` is not imported by `AppModule`, so these `@Public()` routes do not exist in this backend; `test/diagnostic-quiz-off.spec.ts` guards it.
 
 ### `src/invite-landing/invite-landing.controller.ts`
 
