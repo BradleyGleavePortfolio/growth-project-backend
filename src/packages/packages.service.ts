@@ -95,7 +95,11 @@ export function hasBeenOnSale(
   return !!(row.first_published_at ?? row.published_at);
 }
 
-function changed(row: CoachPackage, data: Record<string, unknown>, key: keyof CoachPackage): boolean {
+function changed(
+  row: CoachPackage,
+  data: Record<string, unknown>,
+  key: keyof CoachPackage,
+): boolean {
   return key in data && data[key] !== row[key];
 }
 
@@ -191,45 +195,41 @@ export class PackagesService {
     if (input.is_active !== undefined) data.is_active = input.is_active;
 
     // Validate the merged shape.
-    this.assertValidPricing({
-      name: (data.name as string) ?? row.name,
-      amount_cents: (data.amount_cents as number) ?? row.amount_cents,
-      currency: (data.currency as string) ?? row.currency,
-      billing_type:
-        ((data.billing_type as 'one_time' | 'recurring') ?? row.billing_type) as
-          | 'one_time'
-          | 'recurring',
-      interval:
-        ((data.interval as 'week' | 'month' | 'year' | null) ?? row.interval) as
-          | 'week'
-          | 'month'
-          | 'year'
-          | null,
-      interval_count: (data.interval_count as number) ?? row.interval_count,
-      duration_periods:
-        (data.duration_periods as number | null) ?? row.duration_periods,
-      recurring_amount_cents:
-        'recurring_amount_cents' in data
-          ? (data.recurring_amount_cents as number | null)
-          : row.recurring_amount_cents,
-      recurring_interval:
-        ('recurring_interval' in data
-          ? (data.recurring_interval as 'week' | 'month' | 'year' | null)
-          : (row.recurring_interval as 'week' | 'month' | 'year' | null)),
-      recurring_interval_count:
-        'recurring_interval_count' in data
-          ? (data.recurring_interval_count as number | null)
-          : row.recurring_interval_count,
-    }, {
-      // S-FEE — the $19.99 floor applies to a price configuration the coach
-      // is setting now. Only an UNCHANGED configuration keeps a grandfathered
-      // (pre-floor) price (C-629-1): changing the amount, currency, billing
-      // type, interval, interval count or duration of the primary price, or
-      // the amount, currency, interval or interval count of the recurring
-      // price, is a new price and must meet the floor.
-      enforcePrimaryMinimum: primaryConfigChanged(row, data),
-      enforceRecurringMinimum: recurringConfigChanged(row, data),
-    });
+    this.assertValidPricing(
+      {
+        name: (data.name as string) ?? row.name,
+        amount_cents: (data.amount_cents as number) ?? row.amount_cents,
+        currency: (data.currency as string) ?? row.currency,
+        billing_type: ((data.billing_type as 'one_time' | 'recurring') ?? row.billing_type) as
+          'one_time' | 'recurring',
+        interval: ((data.interval as 'week' | 'month' | 'year' | null) ?? row.interval) as
+          'week' | 'month' | 'year' | null,
+        interval_count: (data.interval_count as number) ?? row.interval_count,
+        duration_periods: (data.duration_periods as number | null) ?? row.duration_periods,
+        recurring_amount_cents:
+          'recurring_amount_cents' in data
+            ? (data.recurring_amount_cents as number | null)
+            : row.recurring_amount_cents,
+        recurring_interval:
+          'recurring_interval' in data
+            ? (data.recurring_interval as 'week' | 'month' | 'year' | null)
+            : (row.recurring_interval as 'week' | 'month' | 'year' | null),
+        recurring_interval_count:
+          'recurring_interval_count' in data
+            ? (data.recurring_interval_count as number | null)
+            : row.recurring_interval_count,
+      },
+      {
+        // S-FEE — the $19.99 floor applies to a price configuration the coach
+        // is setting now. Only an UNCHANGED configuration keeps a grandfathered
+        // (pre-floor) price (C-629-1): changing the amount, currency, billing
+        // type, interval, interval count or duration of the primary price, or
+        // the amount, currency, interval or interval count of the recurring
+        // price, is a new price and must meet the floor.
+        enforcePrimaryMinimum: primaryConfigChanged(row, data),
+        enforceRecurringMinimum: recurringConfigChanged(row, data),
+      },
+    );
 
     // If price-shaping fields changed, clear the cached Stripe Price id so
     // the next checkout mints a fresh one. The Stripe Product is kept (the
@@ -391,31 +391,30 @@ export class PackagesService {
     // Cheap validity gate. Re-runs assertValidPricing against the
     // current row so a coach can't publish a package whose pricing
     // was somehow invalidated.
-    this.assertValidPricing({
-      name: row.name,
-      amount_cents: row.amount_cents,
-      currency: row.currency,
-      billing_type: row.billing_type as 'one_time' | 'recurring',
-      interval: row.interval as 'week' | 'month' | 'year' | null,
-      interval_count: row.interval_count,
-      duration_periods: row.duration_periods,
-      recurring_amount_cents: row.recurring_amount_cents,
-      recurring_interval: row.recurring_interval as
-        | 'week'
-        | 'month'
-        | 'year'
-        | null,
-      recurring_interval_count: row.recurring_interval_count,
-    }, {
-      // S-FEE (B-629-2) — a package put on sale for the FIRST time must meet
-      // the $19.99 floor. A package that has been on sale before
-      // (first_published_at is durable; unpublish never clears it) keeps its
-      // grandfathered price when it is republished: every price-config edit
-      // since then already had to meet the floor in update(), so a price
-      // below $19.99 on such a row is the unchanged one it was sold at.
-      enforcePrimaryMinimum: !hasBeenOnSale(row),
-      enforceRecurringMinimum: !hasBeenOnSale(row),
-    });
+    this.assertValidPricing(
+      {
+        name: row.name,
+        amount_cents: row.amount_cents,
+        currency: row.currency,
+        billing_type: row.billing_type as 'one_time' | 'recurring',
+        interval: row.interval as 'week' | 'month' | 'year' | null,
+        interval_count: row.interval_count,
+        duration_periods: row.duration_periods,
+        recurring_amount_cents: row.recurring_amount_cents,
+        recurring_interval: row.recurring_interval as 'week' | 'month' | 'year' | null,
+        recurring_interval_count: row.recurring_interval_count,
+      },
+      {
+        // S-FEE (B-629-2) — a package put on sale for the FIRST time must meet
+        // the $19.99 floor. A package that has been on sale before
+        // (first_published_at is durable; unpublish never clears it) keeps its
+        // grandfathered price when it is republished: every price-config edit
+        // since then already had to meet the floor in update(), so a price
+        // below $19.99 on such a row is the unchanged one it was sold at.
+        enforcePrimaryMinimum: !hasBeenOnSale(row),
+        enforceRecurringMinimum: !hasBeenOnSale(row),
+      },
+    );
     // TODO(PR-8): once content-attach lands, gate sellable packages
     // here on `is_sellable === false || contents.length > 0`. Allowed
     // for now so the editor flow ships before PR-8.
@@ -596,18 +595,21 @@ export class PackagesService {
     });
   }
 
-  private assertValidPricing(input: {
-    name: string;
-    amount_cents: number;
-    currency?: string;
-    billing_type?: string;
-    interval?: string | null;
-    interval_count?: number;
-    duration_periods?: number | null;
-    recurring_amount_cents?: number | null;
-    recurring_interval?: string | null;
-    recurring_interval_count?: number | null;
-  }, opts: PricingFloorOptions = ENFORCE_ALL_FLOORS) {
+  private assertValidPricing(
+    input: {
+      name: string;
+      amount_cents: number;
+      currency?: string;
+      billing_type?: string;
+      interval?: string | null;
+      interval_count?: number;
+      duration_periods?: number | null;
+      recurring_amount_cents?: number | null;
+      recurring_interval?: string | null;
+      recurring_interval_count?: number | null;
+    },
+    opts: PricingFloorOptions = ENFORCE_ALL_FLOORS,
+  ) {
     if (!input.name?.trim()) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',

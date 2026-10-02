@@ -263,7 +263,10 @@ describe('S-FEE #629 package pricing over HTTP (production pipe + filter)', () =
 
     const off = await call('POST', `/v1/coach/packages/${id}/unpublish`);
     expect(off.status).toBe(200);
-    expect(off.body).toMatchObject({ published_at: null, first_published_at: first.body?.first_published_at });
+    expect(off.body).toMatchObject({
+      published_at: null,
+      first_published_at: first.body?.first_published_at,
+    });
     const back = await call('POST', `/v1/coach/packages/${id}/publish`);
     expect(back.status).toBe(200);
     expect(back.body).toMatchObject({ amount_cents: 1000 });

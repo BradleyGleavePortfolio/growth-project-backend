@@ -958,7 +958,10 @@ describe('C01 — free packages: POST /v1/packages/:id/claim-free', () => {
       pipe.transform({ ...base, amount_cents: -1 }, { type: 'body', metatype: CreatePackageDto }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
-      pipe.transform({ ...base, amount_cents: 19.99 }, { type: 'body', metatype: CreatePackageDto }),
+      pipe.transform(
+        { ...base, amount_cents: 19.99 },
+        { type: 'body', metatype: CreatePackageDto },
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       pipe.transform({ amount_cents: 0 }, { type: 'body', metatype: UpdatePackageDto }),

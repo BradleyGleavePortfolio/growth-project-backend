@@ -1,12 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsInt,
-  IsBoolean,
-  IsIn,
-  Min,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, IsIn, Min, MaxLength } from 'class-validator';
 
 export class CreatePackageDto {
   @IsString()
@@ -24,7 +16,10 @@ export class CreatePackageDto {
   // cents); PackagesService owns the price rules so every refusal carries a
   // machine code: PACKAGE_PRICE_BELOW_MINIMUM (paid packages start at $19.99,
   // with minimum_cents), PACKAGE_FREE_MUST_BE_ONE_TIME, PACKAGE_INVALID.
-  @IsInt({ message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.' })
+  @IsInt({
+    message:
+      'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.',
+  })
   @Min(0, { message: 'amount_cents must be 0 (free) or a positive number of cents.' })
   amount_cents!: number;
 
@@ -64,7 +59,9 @@ export class CreatePackageDto {
   // S-FEE — shape only; PackagesService refuses a recurring price under
   // $19.99 with PACKAGE_RECURRING_PRICE_BELOW_MINIMUM.
   @IsOptional()
-  @IsInt({ message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.' })
+  @IsInt({
+    message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.',
+  })
   @Min(0, { message: 'recurring_amount_cents must be a positive number of cents.' })
   recurring_amount_cents?: number;
 
@@ -97,7 +94,10 @@ export class UpdatePackageDto {
   // Clinic C01 / S-FEE — exactly 0 = free (see CreatePackageDto). Shape only;
   // PackagesService.update applies the price rules and the pricing lock.
   @IsOptional()
-  @IsInt({ message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.' })
+  @IsInt({
+    message:
+      'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.',
+  })
   @Min(0, { message: 'amount_cents must be 0 (free) or a positive number of cents.' })
   amount_cents?: number;
 
@@ -134,7 +134,9 @@ export class UpdatePackageDto {
   // S-FEE — shape only; the service refuses a recurring price under $19.99
   // with PACKAGE_RECURRING_PRICE_BELOW_MINIMUM.
   @IsOptional()
-  @IsInt({ message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.' })
+  @IsInt({
+    message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.',
+  })
   @Min(0, { message: 'recurring_amount_cents must be a positive number of cents.' })
   recurring_amount_cents?: number | null;
 

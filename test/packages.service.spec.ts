@@ -758,9 +758,11 @@ describe('PackagesService', () => {
       ((err as BadRequestException).getResponse() as { error: string }).error;
 
     it('accepts exactly $19.99 one-time and recurring, rejects $19.98', async () => {
-      await expect(svc.create('coach-1', { name: 'a', amount_cents: 1999 })).resolves.toMatchObject({
-        amount_cents: 1999,
-      });
+      await expect(svc.create('coach-1', { name: 'a', amount_cents: 1999 })).resolves.toMatchObject(
+        {
+          amount_cents: 1999,
+        },
+      );
       await expect(
         svc.create('coach-1', {
           name: 'm',
@@ -790,7 +792,12 @@ describe('PackagesService', () => {
 
     it('rejects $0 on a recurring package or with a recurring price', async () => {
       const recurring = await svc
-        .create('coach-1', { name: 'r0', amount_cents: 0, billing_type: 'recurring', interval: 'month' })
+        .create('coach-1', {
+          name: 'r0',
+          amount_cents: 0,
+          billing_type: 'recurring',
+          interval: 'month',
+        })
         .catch((e) => e);
       expect(recurring).toBeInstanceOf(BadRequestException);
       expect((recurring as BadRequestException).getResponse()).toEqual({
@@ -911,7 +918,10 @@ describe('PackagesService', () => {
       expect(back.first_published_at).toEqual(new Date('2026-01-01T00:00:00Z'));
       // and again: off, a name / description edit, on
       await svc.unpublish('coach-1', 'pkg-legacy');
-      await svc.update('coach-1', 'pkg-legacy', { name: 'Legacy, renamed', description: 'Same price' });
+      await svc.update('coach-1', 'pkg-legacy', {
+        name: 'Legacy, renamed',
+        description: 'Same price',
+      });
       await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({
         amount_cents: 1000,
         name: 'Legacy, renamed',
@@ -923,7 +933,9 @@ describe('PackagesService', () => {
       await svc.publish('coach-1', 'pkg-legacy'); // already live: records history
       expect(row.first_published_at).toEqual(new Date('2026-01-01T00:00:00Z'));
       await svc.unpublish('coach-1', 'pkg-legacy');
-      await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({ amount_cents: 1000 });
+      await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({
+        amount_cents: 1000,
+      });
     });
 
     it('B-629-2: the draft floor is not weakened: never-published drafts and new prices must meet $19.99', async () => {
@@ -934,7 +946,9 @@ describe('PackagesService', () => {
       );
       legacyLiveOffer();
       await svc.unpublish('coach-1', 'pkg-legacy');
-      const lower = await svc.update('coach-1', 'pkg-legacy', { amount_cents: 900 }).catch((e) => e);
+      const lower = await svc
+        .update('coach-1', 'pkg-legacy', { amount_cents: 900 })
+        .catch((e) => e);
       expect(codeOf(lower)).toBe('PACKAGE_PRICE_BELOW_MINIMUM');
       // first publish sets history; it is never moved by later publishes
       const fresh = await svc.create('coach-1', { name: 'new', amount_cents: 1999 });
@@ -992,7 +1006,9 @@ describe('PackagesService', () => {
         .update('coach-1', 'pkg-legacy', { recurring_interval: 'week' })
         .catch((e) => e);
       expect(codeOf(cadence)).toBe('PACKAGE_RECURRING_PRICE_BELOW_MINIMUM');
-      const currency = await svc.update('coach-1', 'pkg-legacy', { currency: 'eur' }).catch((e) => e);
+      const currency = await svc
+        .update('coach-1', 'pkg-legacy', { currency: 'eur' })
+        .catch((e) => e);
       expect(codeOf(currency)).toBe('PACKAGE_RECURRING_PRICE_BELOW_MINIMUM');
       await svc.unpublish('coach-1', 'pkg-legacy');
       await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({
