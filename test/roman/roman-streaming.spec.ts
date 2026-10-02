@@ -110,6 +110,11 @@ function makePrisma(sessionOwner = 'user-A') {
   const romanSession = {
     findFirst: jest.fn(async () => (session.deleted_at ? null : session)),
     findMany: jest.fn(async () => []),
+    // No erased shells in these streaming fixtures.
+    aggregate: jest.fn(async () => ({
+      _sum: { message_count: null },
+      _min: { last_activity_at: null },
+    })),
     updateMany: jest.fn(
       async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
         if (where.id !== session.id || where.user_id !== session.user_id || session.deleted_at) {

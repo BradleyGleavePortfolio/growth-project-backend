@@ -44,7 +44,9 @@ import {
   ROMAN_RATE_LIMIT_FREE_PER_DAY,
   ROMAN_RATE_LIMIT_PRO_PER_DAY,
   ROMAN_RATE_LIMIT_WINDOW_MS,
-  ROMAN_ERASED_SESSIONS_SCAN_MAX,
+  ROMAN_ERASED_DAY_KEY_PREFIX,
+  ROMAN_ERASE_SWEEP_BATCH,
+  ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
 import { isRomanChatEnabled } from './roman.feature';
 import {
@@ -83,6 +85,14 @@ export function dayKeyUtc(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
+/**
+ * day_key of an erased session shell: unique per session, never a calendar
+ * day, so the shell no longer holds the (user, surface, day) open key.
+ */
+export function erasedDayKey(sessionId: string): string {
+  return `${ROMAN_ERASED_DAY_KEY_PREFIX}${sessionId}`;
+}
+
 @Injectable()
 export class RomanService {
   private readonly logger = new Logger(RomanService.name);
@@ -101,9 +111,11 @@ export class RomanService {
   /**
    * Open or resume the caller's session for a surface. Idempotent on
    * (userId, surface, dayKey): a live session for today is resumed; otherwise a
-   * new one is created. A soft-deleted session for the same day does NOT get
-   * resurrected — the unique key still holds it, so we resume only non-deleted
-   * rows and rely on the day rolling over for a fresh start.
+   * new one is created. A deleted session is never resurrected: erasing a chat
+   * moves its row off the day key (`erasedDayKey`), so a fresh session can open
+   * the same day (Sol B-635-1). A pre-upgrade soft-deleted row that still holds
+   * today's key (and its transcript) is erased here first, then the open is
+   * retried once (Sol C-635-1).
    */
   async openOrResumeSession(
     caller: RomanCaller,
@@ -111,38 +123,37 @@ export class RomanService {
     subjectContext?: Prisma.InputJsonValue,
   ): Promise<RomanSession> {
     const day_key = dayKeyUtc();
+    const liveWhere = { user_id: caller.id, surface, day_key, deleted_at: null };
 
-    const existing = await this.prisma.romanSession.findFirst({
-      where: {
-        user_id: caller.id,
-        surface,
-        day_key,
-        deleted_at: null,
-      },
-    });
+    const existing = await this.prisma.romanSession.findFirst({ where: liveWhere });
     if (existing) return existing;
 
-    try {
-      return await this.prisma.romanSession.create({
-        data: {
-          user_id: caller.id,
-          surface,
-          day_key,
-          ...(subjectContext !== undefined
-            ? { subject_context_json: subjectContext }
-            : {}),
-        },
-      });
-    } catch (err) {
-      // Unique-violation race: another request created the row first. Resume it.
-      if (this.isUniqueViolation(err)) {
-        const row = await this.prisma.romanSession.findFirst({
-          where: { user_id: caller.id, surface, day_key, deleted_at: null },
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await this.prisma.romanSession.create({
+          data: {
+            user_id: caller.id,
+            surface,
+            day_key,
+            ...(subjectContext !== undefined
+              ? { subject_context_json: subjectContext }
+              : {}),
+          },
         });
+      } catch (err) {
+        if (!this.isUniqueViolation(err)) throw err;
+        // Another request created today's session first: resume it.
+        const row = await this.prisma.romanSession.findFirst({ where: liveWhere });
         if (row) return row;
+        // Otherwise a deleted session that was never erased holds the key.
+        // Erase it (transcript gone, cap count kept), then open fresh.
+        if (attempt === 0) await this.eraseUnerasedHolderOfDayKey(caller.id, surface, day_key);
       }
-      throw err;
     }
+    throw new ServiceUnavailableException({
+      code: ROMAN_ERROR_UNAVAILABLE,
+      message: 'Roman could not open a new conversation just now. Wait a moment and open Roman again.',
+    });
   }
 
   /** Load a session the caller owns, or throw 404 (never 403 — avoid ID probing). */
@@ -166,10 +177,13 @@ export class RomanService {
    * client-ai-v4 and the privacy policy say exactly this). There is no
    * time-based purge.
    *
-   * In one transaction, scoped to the caller's own session AND user_id:
-   *   1. tombstone the session row (deleted_at, subject context cleared) —
-   *      the row lock makes a concurrent `appendMessage` either commit first
-   *      (and be erased by step 2) or see the tombstone and write nothing;
+   * In one transaction, scoped to the caller's own session AND user_id
+   * (`eraseSessionInTx`):
+   *   1. tombstone the session row (deleted_at, subject context cleared) and
+   *      move it off the (user, surface, day) key to `erasedDayKey(id)`, so a
+   *      fresh session can open the same day (Sol B-635-1); the row lock makes
+   *      a concurrent `appendMessage` either commit first (and be erased by
+   *      step 2) or see the tombstone and write nothing;
    *   2. hard-delete every message of the session;
    *   3. keep only a content-free count of the user turns that were inside the
    *      rolling rate-limit window, so deleting a chat never resets the daily
@@ -179,31 +193,132 @@ export class RomanService {
    */
   async deleteSession(caller: RomanCaller, sessionId: string): Promise<void> {
     const session = await this.getOwnedSession(caller, sessionId);
+    const erased = await this.prisma.$transaction((tx) =>
+      this.eraseSessionInTx(tx, session.id, caller.id, { deleted_at: null }, new Date()),
+    );
+    if (!erased) {
+      throw new NotFoundException('Roman session not found');
+    }
+  }
+
+  /**
+   * Erase one session inside `tx`. `guard` is the compare-and-set predicate
+   * the row must still match (live for a client delete; still unerased for a
+   * pre-upgrade tombstone), so concurrent erasers and a racing append are
+   * ordered by the row lock and each row is erased exactly once. `deletedAt`
+   * stamps a live row; an existing tombstone keeps its deletion time.
+   * Returns false when the guard no longer matches (nothing written).
+   */
+  private async eraseSessionInTx(
+    tx: Prisma.TransactionClient,
+    sessionId: string,
+    userId: string,
+    guard: Prisma.RomanSessionWhereInput,
+    deletedAt: Date | null,
+  ): Promise<boolean> {
     const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
-    await this.prisma.$transaction(async (tx) => {
-      const marked = await tx.romanSession.updateMany({
-        where: { id: session.id, user_id: caller.id, deleted_at: null },
-        data: { deleted_at: new Date(), subject_context_json: Prisma.DbNull },
-      });
-      if (marked.count === 0) {
-        throw new NotFoundException('Roman session not found');
-      }
-      const erasedUserTurnsInWindow = await tx.romanMessage.count({
-        where: {
-          session_id: session.id,
-          user_id: caller.id,
-          role: 'user',
-          created_at: { gte: since },
-        },
-      });
-      await tx.romanMessage.deleteMany({
-        where: { session_id: session.id, user_id: caller.id },
-      });
-      await tx.romanSession.updateMany({
-        where: { id: session.id, user_id: caller.id },
-        data: { message_count: erasedUserTurnsInWindow },
-      });
+    const marked = await tx.romanSession.updateMany({
+      where: { ...guard, id: sessionId, user_id: userId },
+      data: {
+        ...(deletedAt ? { deleted_at: deletedAt } : {}),
+        day_key: erasedDayKey(sessionId),
+        subject_context_json: Prisma.DbNull,
+      },
     });
+    if (marked.count === 0) return false;
+    const erasedUserTurnsInWindow = await tx.romanMessage.count({
+      where: {
+        session_id: sessionId,
+        user_id: userId,
+        role: 'user',
+        created_at: { gte: since },
+      },
+    });
+    await tx.romanMessage.deleteMany({
+      where: { session_id: sessionId, user_id: userId },
+    });
+    await tx.romanSession.updateMany({
+      where: { id: sessionId, user_id: userId },
+      data: { message_count: erasedUserTurnsInWindow },
+    });
+    return true;
+  }
+
+  /**
+   * A deleted session that still holds a calendar day_key was soft-deleted
+   * before this version (messages and subject context kept). Erase the one
+   * holding (user, surface, day) so `openOrResumeSession` can open fresh.
+   */
+  private async eraseUnerasedHolderOfDayKey(
+    userId: string,
+    surface: RomanSurface,
+    dayKey: string,
+  ): Promise<void> {
+    const holder = await this.prisma.romanSession.findFirst({
+      where: { user_id: userId, surface, day_key: dayKey, deleted_at: { not: null } },
+      select: { id: true },
+    });
+    if (!holder) return;
+    await this.prisma.$transaction((tx) =>
+      this.eraseSessionInTx(
+        tx,
+        holder.id,
+        userId,
+        { deleted_at: { not: null }, day_key: dayKey },
+        null,
+      ),
+    );
+  }
+
+  /**
+   * Erase every deleted session that still holds content because it was
+   * soft-deleted before deletes erased (Sol C-635-1): pre-upgrade rows, and
+   * rows an old machine soft-deletes during a rolling deploy. Same erasure as
+   * a client delete (transcript and subject context gone, content-free cap
+   * count kept). Never touches a live session: this is not a retention purge.
+   * Idempotent and safe on several machines at once (per-row compare-and-set);
+   * bounded per run. Returns the number of sessions erased.
+   */
+  async eraseUnerasedDeletedSessions(
+    opts: { batch?: number; maxBatches?: number } = {},
+  ): Promise<number> {
+    const batch = opts.batch ?? ROMAN_ERASE_SWEEP_BATCH;
+    const maxBatches = opts.maxBatches ?? ROMAN_ERASE_SWEEP_MAX_BATCHES;
+    const failed: string[] = [];
+    let erased = 0;
+    for (let b = 0; b < maxBatches; b++) {
+      const rows = await this.prisma.romanSession.findMany({
+        where: {
+          deleted_at: { not: null },
+          NOT: { day_key: { startsWith: ROMAN_ERASED_DAY_KEY_PREFIX } },
+          ...(failed.length > 0 ? { id: { notIn: failed } } : {}),
+        },
+        select: { id: true, user_id: true, day_key: true },
+        orderBy: { id: 'asc' },
+        take: batch,
+      });
+      for (const row of rows) {
+        try {
+          const done = await this.prisma.$transaction((tx) =>
+            this.eraseSessionInTx(
+              tx,
+              row.id,
+              row.user_id,
+              { deleted_at: { not: null }, day_key: row.day_key },
+              null,
+            ),
+          );
+          if (done) erased++;
+        } catch (err) {
+          failed.push(row.id);
+          this.logger.error(
+            `roman.erase_deleted_session_failed session=${row.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+      if (rows.length < batch) break;
+    }
+    return erased;
   }
 
   // ─── Messages ────────────────────────────────────────────────────────────
@@ -318,20 +433,22 @@ export class RomanService {
         created_at: { gte: since },
       },
     });
-    // At most one session per (user, surface, UTC day), so this is a handful
-    // of rows; the bound is defensive.
-    const erased = await this.prisma.romanSession.findMany({
+    // Content-free counts kept by erased shells (deleteSession / the sweep).
+    // Summed in the database, so any number of deleted chats counts in full.
+    // Unerased pre-upgrade tombstones are excluded: their messages still
+    // exist and are already in `live`.
+    const erased = await this.prisma.romanSession.aggregate({
       where: {
         user_id: caller.id,
         deleted_at: { not: null },
+        day_key: { startsWith: ROMAN_ERASED_DAY_KEY_PREFIX },
         last_activity_at: { gte: since },
         message_count: { gt: 0 },
       },
-      select: { message_count: true, last_activity_at: true },
-      orderBy: { last_activity_at: 'asc' },
-      take: ROMAN_ERASED_SESSIONS_SCAN_MAX,
+      _sum: { message_count: true },
+      _min: { last_activity_at: true },
     });
-    const used = live + erased.reduce((n, r) => n + r.message_count, 0);
+    const used = live + (erased._sum.message_count ?? 0);
     if (used >= cap) {
       // Retry-after = time until the oldest counted turn (or erased session's
       // last activity) falls out of the window.
@@ -345,7 +462,7 @@ export class RomanService {
       });
       const candidates = [
         ...(oldest ? [oldest.created_at.getTime()] : []),
-        ...erased.map((r) => r.last_activity_at.getTime()),
+        ...(erased._min.last_activity_at ? [erased._min.last_activity_at.getTime()] : []),
       ];
       const earliest = candidates.length > 0 ? Math.min(...candidates) : null;
       const retryAfterSeconds =

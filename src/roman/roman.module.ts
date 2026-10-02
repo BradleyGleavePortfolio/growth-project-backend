@@ -18,10 +18,13 @@ import { RomanController } from './roman.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
+import { RomanErasureSweep } from './roman-erasure.sweep';
 
 @Module({
   controllers: [RomanController],
-  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider],
+  // RomanErasureSweep runs regardless of FEATURE_ROMAN_CHAT_ENABLED: finishing
+  // the erasure of chats a client deleted is a privacy duty, not a chat feature.
+  providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider, RomanErasureSweep],
   exports: [RomanService],
 })
 export class RomanModule {}

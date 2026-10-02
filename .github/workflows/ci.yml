@@ -440,3 +440,15 @@ jobs:
         run: npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)
+        # test/roman/roman-session-erase.live.spec.ts: on real Postgres, a
+        # deleted Roman chat frees the (user, surface, day) unique key so a
+        # fresh session opens the same day, concurrent opens converge, a late
+        # append to the deleted session is refused, the daily cap survives
+        # delete + reopen, and pre-upgrade soft-deleted rows are erased. Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap; its own
+        # step so it never edits the shared default-lane spec list.
+        run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096

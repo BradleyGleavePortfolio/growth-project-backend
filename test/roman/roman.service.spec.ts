@@ -13,11 +13,13 @@ import {
   HttpStatus,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../src/prisma.service';
 import {
   RomanCaller,
   RomanService,
   dayKeyUtc,
+  erasedDayKey,
 } from '../../src/roman/roman.service';
 import {
   ROMAN_RATE_LIMIT_FREE_PER_DAY,
@@ -63,11 +65,40 @@ function makeFakePrisma() {
   let seq = 0;
   const id = (p: string) => `${p}_${++seq}`;
 
-  const matchSession = (where: Record<string, unknown>, r: SessionRow) =>
+  // Prisma-faithful predicate subset the service uses: equality, null,
+  // { not }, { startsWith }, { gte }, { gt }, { notIn }, and NOT.
+  const matchValue = (cond: unknown, actual: unknown): boolean => {
+    if (cond === null) return actual === null;
+    if (cond instanceof Date) return actual instanceof Date && actual.getTime() === cond.getTime();
+    if (typeof cond !== 'object') return actual === cond;
+    const c = cond as Record<string, unknown>;
+    if ('not' in c && !(c.not === null ? actual !== null : actual !== c.not)) return false;
+    if ('startsWith' in c && !(typeof actual === 'string' && actual.startsWith(String(c.startsWith))))
+      return false;
+    if ('gte' in c && !(actual instanceof Date && c.gte instanceof Date && actual >= c.gte))
+      return false;
+    if ('gt' in c && !(typeof actual === 'number' && actual > Number(c.gt))) return false;
+    if ('notIn' in c && Array.isArray(c.notIn) && c.notIn.includes(actual)) return false;
+    return true;
+  };
+  const matchSession = (where: Record<string, unknown>, r: SessionRow): boolean =>
     Object.entries(where).every(([k, v]) => {
-      if (v === null) return (r as unknown as Record<string, unknown>)[k] === null;
-      return (r as unknown as Record<string, unknown>)[k] === v;
+      if (k === 'NOT') return !matchSession(v as Record<string, unknown>, r);
+      return matchValue(v, (r as unknown as Record<string, unknown>)[k]);
     });
+  // The real unique index roman_session_user_surface_day covers EVERY row,
+  // deleted or not (prisma/schema.prisma @@unique([user_id, surface, day_key])),
+  // so this fake rejects a duplicate key exactly like Postgres (Sol B-635-1).
+  const uniqueViolation = () =>
+    new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`user_id`,`surface`,`day_key`)',
+      { code: 'P2002', clientVersion: 'test', meta: { target: ['user_id', 'surface', 'day_key'] } },
+    );
+  const keyTaken = (user_id: string, surface: string, day_key: string, exceptId?: string) =>
+    sessions.some(
+      (r) =>
+        r.id !== exceptId && r.user_id === user_id && r.surface === surface && r.day_key === day_key,
+    );
 
   const api = {
     romanSession: {
@@ -76,6 +107,9 @@ function makeFakePrisma() {
       ),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const now = new Date();
+        if (keyTaken(String(data.user_id), String(data.surface), String(data.day_key))) {
+          throw uniqueViolation();
+        }
         const row: SessionRow = {
           id: id('sess'),
           user_id: data.user_id as string,
@@ -94,9 +128,8 @@ function makeFakePrisma() {
         sessions.push(row);
         return row;
       }),
-      // Matches the live-session predicate the service uses
-      // ({ id, user_id, deleted_at: null }) and applies the same fields as
-      // `update`, plus a plain message_count / subject_context_json set.
+      // Applies the fields the service writes; a day_key change is checked
+      // against the same unique key.
       updateMany: jest.fn(
         async ({
           where,
@@ -107,6 +140,10 @@ function makeFakePrisma() {
         }) => {
           const hits = sessions.filter((r) => matchSession(where, r));
           for (const row of hits) {
+            if (typeof data.day_key === 'string') {
+              if (keyTaken(row.user_id, row.surface, data.day_key, row.id)) throw uniqueViolation();
+              row.day_key = data.day_key;
+            }
             if (data.deleted_at) row.deleted_at = data.deleted_at as Date;
             if ('subject_context_json' in data) row.subject_context_json = null;
             if (data.last_activity_at) row.last_activity_at = data.last_activity_at as Date;
@@ -125,21 +162,28 @@ function makeFakePrisma() {
       findMany: jest.fn(
         async ({
           where,
+          take,
         }: {
-          where: {
-            user_id: string;
-            last_activity_at?: { gte: Date };
-            message_count?: { gt: number };
-          };
-        }) =>
-          sessions.filter(
-            (r) =>
-              r.user_id === where.user_id &&
-              r.deleted_at !== null &&
-              (!where.last_activity_at || r.last_activity_at >= where.last_activity_at.gte) &&
-              (!where.message_count || r.message_count > where.message_count.gt),
-          ),
+          where: Record<string, unknown>;
+          take?: number;
+        }) => {
+          const rows = sessions
+            .filter((r) => matchSession(where, r))
+            .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+          return typeof take === 'number' ? rows.slice(0, take) : rows;
+        },
       ),
+      aggregate: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const rows = sessions.filter((r) => matchSession(where, r));
+        return {
+          _sum: { message_count: rows.length ? rows.reduce((n, r) => n + r.message_count, 0) : null },
+          _min: {
+            last_activity_at: rows.length
+              ? new Date(Math.min(...rows.map((r) => r.last_activity_at.getTime())))
+              : null,
+          },
+        };
+      }),
       update: jest.fn(
         async ({
           where,
@@ -420,6 +464,251 @@ describe('RomanService — client delete erases the conversation', () => {
     await svc.deleteSession(CALLER, s.id);
     prisma._state.sessions[0].last_activity_at = new Date(Date.now() - 25 * 60 * 60 * 1000);
     await expect(svc.assertWithinRateLimit(CALLER)).resolves.toBeUndefined();
+  });
+});
+
+// Sol B-635-1 (REQUEST CHANGES @ 0a32b4fe): the unique key
+// (user_id, surface, day_key) covers deleted rows too, so the tombstone used to
+// block a fresh session until UTC midnight (P2002). The fake above enforces
+// that key like Postgres; test/roman/roman-session-erase.live.spec.ts proves
+// the same sequences on a real database.
+describe('RomanService — same-day fresh session after a delete (B-635-1)', () => {
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+
+  it('the fake enforces the real unique key across deleted rows (negative control)', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    // A tombstone that still held the day key would make this create fail.
+    prisma._state.sessions[0].deleted_at = new Date();
+    await expect(
+      prisma.romanSession.create({
+        data: { user_id: CALLER.id, surface: 'client', day_key: s.day_key },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('open -> append -> delete -> open gives a fresh, empty session that takes turns', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client', { brief: 'old context' });
+    await svc.appendMessage(CALLER, s.id, { role: 'user', content: 'first chat' });
+    await svc.deleteSession(CALLER, s.id);
+
+    const tomb = prisma._state.sessions.find((r) => r.id === s.id)!;
+    expect(tomb.day_key).toBe(erasedDayKey(s.id));
+    expect(tomb.subject_context_json).toBeNull();
+
+    const next = await svc.openOrResumeSession(CALLER, 'client');
+    expect(next.id).not.toBe(s.id);
+    expect(next.day_key).toBe(dayKeyUtc());
+    expect(next.deleted_at).toBeNull();
+    expect(next.subject_context_json).toBeNull();
+    expect(await svc.listMessages(CALLER, next.id, {})).toMatchObject({ messages: [] });
+    await svc.appendMessage(CALLER, next.id, { role: 'user', content: 'second chat' });
+    expect(prisma._state.messages.map((m) => m.content)).toEqual(['second chat']);
+    // Resume still works on the fresh session.
+    expect((await svc.openOrResumeSession(CALLER, 'client')).id).toBe(next.id);
+  });
+
+  it('the old deleted session stays deleted: a late append to it is refused (404)', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.deleteSession(CALLER, s.id);
+    const next = await svc.openOrResumeSession(CALLER, 'client');
+    await expect(
+      svc.appendMessage(CALLER, s.id, { role: 'roman', content: 'late reply' }),
+    ).rejects.toThrow('Roman session not found');
+    await expect(svc.getOwnedSession(CALLER, s.id)).rejects.toThrow('Roman session not found');
+    expect(prisma._state.messages).toHaveLength(0);
+    expect((await svc.openOrResumeSession(CALLER, 'client')).id).toBe(next.id);
+  });
+
+  it('concurrent opens after a delete converge on ONE fresh session', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.deleteSession(CALLER, s.id);
+    const opened = await Promise.all([
+      svc.openOrResumeSession(CALLER, 'client'),
+      svc.openOrResumeSession(CALLER, 'client'),
+      svc.openOrResumeSession(CALLER, 'client'),
+    ]);
+    expect(new Set(opened.map((o) => o.id)).size).toBe(1);
+    expect(opened[0].id).not.toBe(s.id);
+    const live = prisma._state.sessions.filter((r) => r.deleted_at === null);
+    expect(live).toHaveLength(1);
+  });
+
+  it('delete + reopen (three chats in one day) never resets the daily cap', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const perChat = Math.ceil(ROMAN_RATE_LIMIT_FREE_PER_DAY / 3);
+    for (let chat = 0; chat < 3; chat++) {
+      const s = await svc.openOrResumeSession(CALLER, 'client');
+      for (let i = 0; i < perChat; i++) {
+        await svc.appendMessage(CALLER, s.id, { role: 'user', content: `c${chat}t${i}` });
+      }
+      await svc.deleteSession(CALLER, s.id);
+    }
+    const fresh = await svc.openOrResumeSession(CALLER, 'client');
+    expect(prisma._state.messages).toHaveLength(0);
+    expect(fresh.message_count).toBe(0);
+    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
+      response: { code: 'ROMAN_RATE_LIMIT' },
+    });
+  });
+
+  it("another user's same-day session is untouched by my delete and reopen", async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const theirs = await svc.openOrResumeSession(OTHER, 'client');
+    await svc.appendMessage(OTHER, theirs.id, { role: 'user', content: 'theirs' });
+    const mine = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.deleteSession(CALLER, mine.id);
+    await svc.openOrResumeSession(CALLER, 'client');
+    expect(prisma._state.sessions.find((r) => r.id === theirs.id)).toMatchObject({
+      day_key: dayKeyUtc(),
+      deleted_at: null,
+    });
+    expect((await svc.openOrResumeSession(OTHER, 'client')).id).toBe(theirs.id);
+    expect(prisma._state.messages.map((m) => m.content)).toEqual(['theirs']);
+  });
+});
+
+// Sol C-635-1: rows soft-deleted before #635 (or by an old machine during a
+// rolling deploy) kept their transcript and subject context under a tombstone
+// that still holds a calendar day_key.
+describe('RomanService — pre-upgrade soft-deleted sessions are erased (C-635-1)', () => {
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+
+  function seedLegacyTombstone(
+    prisma: ReturnType<typeof makeFakePrisma>,
+    userId: string,
+    dayKey: string,
+    turns: { user: number; roman: number },
+  ): string {
+    const sid = `legacy_${userId}_${dayKey}`;
+    const now = new Date();
+    prisma._state.sessions.push({
+      id: sid,
+      user_id: userId,
+      surface: 'client',
+      day_key: dayKey,
+      message_count: turns.user + turns.roman,
+      started_at: now,
+      last_activity_at: now,
+      quips_in_session: 0,
+      exclamation_used: false,
+      subject_context_json: { brief: 'legacy private context' },
+      created_at: now,
+      updated_at: now,
+      deleted_at: now,
+    });
+    let n = 0;
+    const push = (role: 'user' | 'roman', content: string) =>
+      prisma._state.messages.push({
+        id: `${sid}_m${++n}`,
+        session_id: sid,
+        user_id: userId,
+        role,
+        content,
+        prompt_tokens: null,
+        completion_tokens: null,
+        model_id: null,
+        interrupted: false,
+        parent_message_id: null,
+        created_at: now,
+      });
+    for (let i = 0; i < turns.user; i++) push('user', `legacy question ${i}`);
+    for (let i = 0; i < turns.roman; i++) push('roman', `legacy reply ${i}`);
+    return sid;
+  }
+
+  it("open erases a legacy tombstone holding today's key, then opens a fresh session", async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const legacy = seedLegacyTombstone(prisma, CALLER.id, dayKeyUtc(), { user: 2, roman: 1 });
+
+    const s = await svc.openOrResumeSession(CALLER, 'client');
+    expect(s.id).not.toBe(legacy);
+    expect(s.day_key).toBe(dayKeyUtc());
+    const tomb = prisma._state.sessions.find((r) => r.id === legacy)!;
+    expect(tomb).toMatchObject({
+      day_key: erasedDayKey(legacy),
+      subject_context_json: null,
+      message_count: 2,
+    });
+    expect(tomb.deleted_at).toBeInstanceOf(Date);
+    expect(JSON.stringify(prisma._state)).not.toContain('legacy question');
+    expect(JSON.stringify(prisma._state)).not.toContain('legacy reply');
+    expect(JSON.stringify(prisma._state)).not.toContain('legacy private context');
+    expect(prisma._state.messages).toHaveLength(0);
+  });
+
+  it('the legacy erase keeps the cap: 50 legacy turns today still block a new turn', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    seedLegacyTombstone(prisma, CALLER.id, dayKeyUtc(), {
+      user: ROMAN_RATE_LIMIT_FREE_PER_DAY,
+      roman: 3,
+    });
+    await svc.openOrResumeSession(CALLER, 'client');
+    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
+      response: { code: 'ROMAN_RATE_LIMIT' },
+    });
+  });
+
+  it('an unerased legacy tombstone is counted once (its messages), not twice', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    // Old code stored the total turn count (user + roman) in message_count.
+    seedLegacyTombstone(prisma, CALLER.id, '2000-01-01', { user: 30, roman: 30 });
+    prisma._state.sessions[0].day_key = 'legacy-yesterday';
+    await expect(svc.assertWithinRateLimit(CALLER)).resolves.toBeUndefined();
+  });
+
+  it('the sweep erases every legacy tombstone, is idempotent, and leaves live chats and erased shells alone', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const a = seedLegacyTombstone(prisma, CALLER.id, '2026-09-28', { user: 1, roman: 1 });
+    const b = seedLegacyTombstone(prisma, CALLER.id, '2026-09-29', { user: 2, roman: 2 });
+    const c = seedLegacyTombstone(prisma, OTHER.id, '2026-09-29', { user: 1, roman: 0 });
+    const live = await svc.openOrResumeSession(CALLER, 'client');
+    await svc.appendMessage(CALLER, live.id, { role: 'user', content: 'keep this live chat' });
+    const gone = await svc.openOrResumeSession(OTHER, 'coach');
+    await svc.deleteSession(OTHER, gone.id);
+    const shellBefore = { ...prisma._state.sessions.find((r) => r.id === gone.id)! };
+
+    await expect(svc.eraseUnerasedDeletedSessions({ batch: 2 })).resolves.toBe(3);
+    for (const sid of [a, b, c]) {
+      expect(prisma._state.sessions.find((r) => r.id === sid)).toMatchObject({
+        day_key: erasedDayKey(sid),
+        subject_context_json: null,
+      });
+    }
+    expect(prisma._state.messages.map((m) => m.content)).toEqual(['keep this live chat']);
+    expect(prisma._state.sessions.find((r) => r.id === live.id)).toMatchObject({
+      deleted_at: null,
+      day_key: dayKeyUtc(),
+    });
+    expect(prisma._state.sessions.find((r) => r.id === gone.id)).toEqual(shellBefore);
+    await expect(svc.eraseUnerasedDeletedSessions()).resolves.toBe(0);
+  });
+
+  it('a row that fails to erase is logged and skipped; the rest still erase', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const bad = seedLegacyTombstone(prisma, CALLER.id, '2026-09-27', { user: 1, roman: 0 });
+    const ok = seedLegacyTombstone(prisma, CALLER.id, '2026-09-28', { user: 1, roman: 0 });
+    const real = prisma.romanMessage.count.getMockImplementation()!;
+    prisma.romanMessage.count.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+      if (args.where.session_id === bad) throw new Error('db hiccup');
+      return real(args);
+    });
+    await expect(svc.eraseUnerasedDeletedSessions({ batch: 1 })).resolves.toBe(1);
+    expect(prisma._state.sessions.find((r) => r.id === ok)!.day_key).toBe(erasedDayKey(ok));
   });
 });
 

@@ -10,11 +10,22 @@ export const ROMAN_RATE_LIMIT_PRO_PER_DAY = 500;
 export const ROMAN_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Bound on the erased-session shells the rate limiter reads back. A user has
- * at most one session per (surface, UTC day), so a 24h window holds about
- * four; the bound only guards against bad data.
+ * day_key prefix of an ERASED session shell (`erased:<session id>`). Erasing
+ * a chat moves its row off the (user, surface, UTC day) key so the unique
+ * index `roman_session_user_surface_day` no longer blocks a fresh session the
+ * same day (Sol B-635-1); the shell keeps only a content-free count of the
+ * erased user turns for the daily cap. A deleted row whose day_key does NOT
+ * carry this prefix is a pre-upgrade soft delete that still holds transcript
+ * rows (Sol C-635-1) and is erased by the sweep / the open path.
  */
-export const ROMAN_ERASED_SESSIONS_SCAN_MAX = 16;
+export const ROMAN_ERASED_DAY_KEY_PREFIX = 'erased:';
+
+/** Rows per batch and max batches per run of the deleted-session erasure sweep. */
+export const ROMAN_ERASE_SWEEP_BATCH = 100;
+export const ROMAN_ERASE_SWEEP_MAX_BATCHES = 50;
+
+/** Delay after boot before the first erasure sweep (keeps it off the boot path). */
+export const ROMAN_ERASE_SWEEP_BOOT_DELAY_MS = 60_000;
 
 /**
  * Max prior turns included in an API call (brief §3). Phase 1 ships a simple
