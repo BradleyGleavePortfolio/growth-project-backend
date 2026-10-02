@@ -5,7 +5,11 @@
  * and roman-session-erase.live.spec.ts (Postgres); this spec pins the
  * scheduling and the never-throw + Sentry contract of the wrapper.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { MODULE_METADATA } from '@nestjs/common/constants';
 import * as Sentry from '@sentry/node';
+import { RomanModule } from '../../src/roman/roman.module';
 import { RomanErasureSweep } from '../../src/roman/roman-erasure.sweep';
 import type { RomanService } from '../../src/roman/roman.service';
 import { ROMAN_ERASE_SWEEP_BOOT_DELAY_MS } from '../../src/roman/roman.constants';
@@ -62,5 +66,20 @@ describe('RomanErasureSweep (C-635-1)', () => {
     sweep.onModuleDestroy();
     jest.advanceTimersByTime(ROMAN_ERASE_SWEEP_BOOT_DELAY_MS * 2);
     expect(eraseUnerasedDeletedSessions).not.toHaveBeenCalled();
+  });
+
+  it('RomanModule provides the sweep (it runs whatever the chat flag says)', () => {
+    const providers: unknown[] = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, RomanModule) ?? [];
+    expect(providers).toContain(RomanErasureSweep);
+  });
+
+  it('the mwb-3-live-tests CI job runs the Roman live erase spec on Postgres', () => {
+    const ci = readFileSync(join(__dirname, '../../.github/workflows/ci.yml'), 'utf8');
+    const start = ci.indexOf('\n  mwb-3-live-tests:');
+    const rest = ci.slice(start + 1);
+    const next = rest.search(/\n {2}[a-z0-9-]+:\n/);
+    const job = next >= 0 ? rest.slice(0, next) : rest;
+    expect(job).toContain('MWB3_TEST_DATABASE_URL: postgresql://');
+    expect(job).toContain('npx jest test/roman/roman-session-erase.live.spec.ts --runInBand');
   });
 });
