@@ -216,7 +216,7 @@ describe('AI consent routes while billing-locked (DunningLockoutGuard, #622 ruli
   });
 
   it('a locked-out client can POST a grant (the whole consent surface is a privacy control)', async () => {
-    const res = await call('POST', '/api/me/ai-consent/roman', { version: 'client-ai-v3' });
+    const res = await call('POST', '/api/me/ai-consent/roman', { version: 'client-ai-v4' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ granted: true, state: 'granted' });
     expect(fake.dunningLookups).toBe(0);

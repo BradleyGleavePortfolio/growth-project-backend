@@ -275,8 +275,8 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `VOICE_NOTE_MAX_DURATION_SEC` | optional | Backend operator | Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to `300` s; clamped to `[10, 600]`. Validated at upload-URL issuance and again at message-send. |
 | `VOICE_NOTE_MAX_SIZE_MB` | optional | Backend operator | Phase 6C — server-enforced max file size for voice attachments. Defaults to `5` MB; clamped to `[1, 25]`. |
 | `SUPABASE_VOICE_BUCKET` | optional | Backend operator | Phase 6C — Supabase Storage bucket name for voice attachments. Defaults to `voice-notes`. Bucket must exist in Supabase Storage; the signed-upload flow returns `501 VOICE_STORAGE_UNAVAILABLE` if the bucket is unreachable or the JS SDK is too old. |
-| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
-| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
+| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Inert: the diagnostic routes are not mounted (B-QUIZ-OFF). Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
+| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Inert: the diagnostic routes are not mounted (B-QUIZ-OFF). Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
 | `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
 | `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
 | `AUDIT_LOGGING_ENABLED` | optional | Backend operator | Kill switch for audit writes. Set to `off` to suppress all `AuditService.write()` calls without removing call sites. Reads via `GET /admin/audit/log` are unaffected. Use only for short-lived debugging windows; the default (`on`) is the correct production value. See [`src/audit/README.md`](src/audit/README.md). |
@@ -1443,7 +1443,7 @@ src/
   coach/         Coach mobile surface (roster, timeline, alerts, guidelines)
   common/        Shared decorators, guards, env validation
   community/     Leaderboard and wins
-  diagnostic/    40-point diagnostic + AI roadmap (public lead capture)
+  diagnostic/    40-point diagnostic + AI roadmap: switched off, not mounted (TGP Finance product; see docs/diagnostic.md)
   fasting/       Fasting windows
   filters/       Global exception filters
   food/          Food DB (local + USDA + OpenFoodFacts)

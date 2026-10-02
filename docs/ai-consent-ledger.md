@@ -45,14 +45,14 @@ being on. Every response carries `Cache-Control: no-store`.
   "version": null,
   "granted_at": null,
   "withdrawn_at": null,
-  "current_version": "client-ai-v3",
+  "current_version": "client-ai-v4",
   "needs_reconsent": false,
   "copy": {
-    "version": "client-ai-v3",
+    "version": "client-ai-v4",
     "processor": "anthropic",
-    "paragraph": { "text": "Roman, the assistant in this app, ...", "sha256": "77c0e706..." },
+    "paragraph": { "text": "Roman, the assistant in this app, ...", "sha256": "56d14fb9..." },
     "box_label": { "text": "Optional: I allow Roman and my coach's AI tools ...", "sha256": "77da153d..." },
-    "sha256": "d8738c90..."
+    "sha256": "fbf82140..."
   }
 }
 ```
@@ -67,13 +67,30 @@ being on. Every response carries `Cache-Control: no-store`.
   one matching its action is set.
 - `copy.sha256` = sha256 (hex, UTF-8) of `paragraph.text + "\n\n" + box_label.text`.
 
-Pinned digests for `client-ai-v3`:
+Pinned digests for `client-ai-v4` (current):
 
 | Part | sha256 |
 |---|---|
-| paragraph | `77c0e7062adb29cf59a532b130e50d5b373789c3564972cc309d8361bf57227b` |
+| paragraph | `56d14fb96b9f7b6abdd43242f5ce9eaee419bc0d9fb4302bc283ecc1529d430b` |
 | box_label | `77da153df7f06a045e1abbbb83b771f8a33941d47268e276becc6b4ffe5e5eba` |
-| combined (`copy.sha256`) | `d8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f` |
+| combined (`copy.sha256`) | `fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4` |
+
+v4 changed only the retention sentence of the paragraph: v3 said Roman
+conversations are "kept for 180 days, and you can delete them at any time";
+v4 says they "are kept until you delete them or delete your account" (owner
+decision 2026-10-01 20:32, operator ruling OR-110-1; there is no time-based
+purge, a client delete erases the conversation, and account deletion erases
+all of them).
+
+How older grants are treated (the exact-match rule, unchanged): a grant of
+`client-ai-v3` (combined sha256 `d8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f`)
+or any older copy stays in the append-only history and is never rewritten,
+but it is not consent: `GET` shows `state: "needs_reconsent"`,
+`granted: false`, `hasClientAiConsent()` is false and every AI path refuses
+with `ai_consent_required` until the client allows the v4 text. A `POST`
+that names `client-ai-v3` is a 409 `CONSENT_VERSION_MISMATCH` carrying the v4
+`current_version` and `copy_sha256`; nothing is written. A `DELETE` while the
+latest decision is a v3 grant records the withdraw against `client-ai-v3`.
 
 ### `POST /api/me/ai-consent/roman` -> 200 (same body as GET)
 
@@ -81,7 +98,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, must equal `current_version` (`client-ai-v3`) |
+| `version` | yes | string, must equal `current_version` (`client-ai-v4`) |
 | `copy_sha256` | no | 64 hex chars; when sent must equal `copy.sha256` (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |
