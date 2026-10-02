@@ -707,6 +707,7 @@ describe('PackagesService', () => {
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).getResponse()).toEqual({
         error: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        code: 'PACKAGE_PRICE_BELOW_MINIMUM',
         message: 'Paid packages start at $19.99, or make it free.',
         minimum_cents: 1999,
       });
@@ -725,6 +726,7 @@ describe('PackagesService', () => {
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).getResponse()).toEqual({
         error: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        code: 'PACKAGE_PRICE_BELOW_MINIMUM',
         message: 'Paid packages start at $19.99. Set the one-time price to $19.99 or more.',
         minimum_cents: 1999,
       });
@@ -743,6 +745,7 @@ describe('PackagesService', () => {
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).getResponse()).toEqual({
         error: 'PACKAGE_RECURRING_PRICE_BELOW_MINIMUM',
+        code: 'PACKAGE_RECURRING_PRICE_BELOW_MINIMUM',
         message:
           'The recurring price starts at $19.99. Set it to $19.99 or more, or remove the recurring price.',
         minimum_cents: 1999,
@@ -792,6 +795,7 @@ describe('PackagesService', () => {
       expect(recurring).toBeInstanceOf(BadRequestException);
       expect((recurring as BadRequestException).getResponse()).toEqual({
         error: 'PACKAGE_FREE_MUST_BE_ONE_TIME',
+        code: 'PACKAGE_FREE_MUST_BE_ONE_TIME',
         message:
           'Free packages are one-time. Switch the package to one-time, or set a price of $19.99 or more.',
       });
@@ -812,6 +816,7 @@ describe('PackagesService', () => {
         const err = await svc.create('coach-1', { name: 'x', amount_cents }).catch((e) => e);
         expect((err as BadRequestException).getResponse()).toEqual({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99.',
         });
       }
@@ -860,6 +865,148 @@ describe('PackagesService', () => {
       prisma._rows[1].amount_cents = 1000;
       prisma._rows[1].published_at = new Date('2026-01-01T00:00:00Z');
       await expect(svc.publish('coach-1', live.id)).resolves.toMatchObject({ amount_cents: 1000 });
+    });
+
+    // B-629-2 (Sol): publish -> unpublish -> republish of an unchanged
+    // grandfathered offer. first_published_at is durable history.
+    function legacyLiveOffer(overrides: Record<string, unknown> = {}) {
+      const sold = new Date('2026-01-01T00:00:00Z');
+      prisma._rows.push({
+        id: 'pkg-legacy',
+        coach_id: 'coach-1',
+        name: 'Legacy $10',
+        description: null,
+        amount_cents: 1000,
+        currency: 'usd',
+        billing_type: 'one_time',
+        interval: null,
+        interval_count: 1,
+        duration_periods: null,
+        stripe_price_id: 'price_legacy',
+        stripe_product_id: 'prod_legacy',
+        is_active: true,
+        archived_at: null,
+        published_at: sold,
+        first_published_at: sold,
+        recurring_amount_cents: null,
+        recurring_interval: null,
+        recurring_interval_count: null,
+        recurring_stripe_price_id: null,
+        created_at: sold,
+        updated_at: sold,
+        ...overrides,
+      });
+      return prisma._rows[prisma._rows.length - 1];
+    }
+
+    it('B-629-2: an unchanged legacy offer can be unpublished and republished at its price', async () => {
+      const row = legacyLiveOffer();
+      const off = await svc.unpublish('coach-1', 'pkg-legacy');
+      expect(off.published_at).toBeNull();
+      // unpublish clears visibility only, never the history
+      expect(row.first_published_at).toEqual(new Date('2026-01-01T00:00:00Z'));
+      const back = await svc.publish('coach-1', 'pkg-legacy');
+      expect(back).toMatchObject({ amount_cents: 1000 });
+      expect(back.published_at).not.toBeNull();
+      expect(back.first_published_at).toEqual(new Date('2026-01-01T00:00:00Z'));
+      // and again: off, a name / description edit, on
+      await svc.unpublish('coach-1', 'pkg-legacy');
+      await svc.update('coach-1', 'pkg-legacy', { name: 'Legacy, renamed', description: 'Same price' });
+      await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({
+        amount_cents: 1000,
+        name: 'Legacy, renamed',
+      });
+    });
+
+    it('B-629-2: a legacy row published before first_published_at existed gets its history on republish', async () => {
+      const row = legacyLiveOffer({ first_published_at: undefined });
+      await svc.publish('coach-1', 'pkg-legacy'); // already live: records history
+      expect(row.first_published_at).toEqual(new Date('2026-01-01T00:00:00Z'));
+      await svc.unpublish('coach-1', 'pkg-legacy');
+      await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({ amount_cents: 1000 });
+    });
+
+    it('B-629-2: the draft floor is not weakened: never-published drafts and new prices must meet $19.99', async () => {
+      const draft = await svc.create('coach-1', { name: 'draft', amount_cents: 2500 });
+      prisma._rows[0].amount_cents = 1000; // pre-floor draft, never on sale
+      expect(codeOf(await svc.publish('coach-1', draft.id).catch((e) => e))).toBe(
+        'PACKAGE_PRICE_BELOW_MINIMUM',
+      );
+      legacyLiveOffer();
+      await svc.unpublish('coach-1', 'pkg-legacy');
+      const lower = await svc.update('coach-1', 'pkg-legacy', { amount_cents: 900 }).catch((e) => e);
+      expect(codeOf(lower)).toBe('PACKAGE_PRICE_BELOW_MINIMUM');
+      // first publish sets history; it is never moved by later publishes
+      const fresh = await svc.create('coach-1', { name: 'new', amount_cents: 1999 });
+      const first = await svc.publish('coach-1', fresh.id);
+      expect(first.first_published_at).toEqual(first.published_at);
+      await svc.unpublish('coach-1', fresh.id);
+      const again = await svc.publish('coach-1', fresh.id);
+      expect(again.first_published_at).toEqual(first.first_published_at);
+    });
+
+    it('C-629-1: only an unchanged price configuration is grandfathered (interval, currency, billing type, duration)', async () => {
+      legacyLiveOffer({
+        billing_type: 'recurring',
+        interval: 'month',
+        stripe_price_id: 'price_legacy_m',
+      });
+      for (const change of [
+        { interval: 'week' as const },
+        { interval_count: 2 },
+        { currency: 'gbp' },
+        { duration_periods: 6 },
+        { billing_type: 'one_time' as const, interval: null },
+      ]) {
+        const err = await svc.update('coach-1', 'pkg-legacy', change).catch((e) => e);
+        expect(codeOf(err)).toBe('PACKAGE_PRICE_BELOW_MINIMUM');
+      }
+      // same configuration re-sent (a full-form save) is not a change
+      await expect(
+        svc.update('coach-1', 'pkg-legacy', {
+          amount_cents: 1000,
+          currency: 'usd',
+          billing_type: 'recurring',
+          interval: 'month',
+          interval_count: 1,
+          name: 'Legacy monthly',
+        }),
+      ).resolves.toMatchObject({ amount_cents: 1000, name: 'Legacy monthly' });
+      // raising to the floor with the new cadence works
+      await expect(
+        svc.update('coach-1', 'pkg-legacy', { amount_cents: 1999, interval: 'week' }),
+      ).resolves.toMatchObject({ amount_cents: 1999, interval: 'week' });
+    });
+
+    it('C-629-1: a legacy recurring companion keeps its price only while its cadence is unchanged', async () => {
+      legacyLiveOffer({
+        amount_cents: 5000,
+        recurring_amount_cents: 1000,
+        recurring_interval: 'month',
+        recurring_interval_count: 1,
+      });
+      await expect(svc.update('coach-1', 'pkg-legacy', { name: 'combo' })).resolves.toMatchObject({
+        recurring_amount_cents: 1000,
+      });
+      const cadence = await svc
+        .update('coach-1', 'pkg-legacy', { recurring_interval: 'week' })
+        .catch((e) => e);
+      expect(codeOf(cadence)).toBe('PACKAGE_RECURRING_PRICE_BELOW_MINIMUM');
+      const currency = await svc.update('coach-1', 'pkg-legacy', { currency: 'eur' }).catch((e) => e);
+      expect(codeOf(currency)).toBe('PACKAGE_RECURRING_PRICE_BELOW_MINIMUM');
+      await svc.unpublish('coach-1', 'pkg-legacy');
+      await expect(svc.publish('coach-1', 'pkg-legacy')).resolves.toMatchObject({
+        recurring_amount_cents: 1000,
+      });
+    });
+
+    it('every pricing refusal carries the machine code in both `code` and `error`', async () => {
+      const err = await svc.create('coach-1', { name: 'b', amount_cents: 1500 }).catch((e) => e);
+      expect((err as BadRequestException).getResponse()).toMatchObject({
+        code: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        error: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        minimum_cents: 1999,
+      });
     });
   });
 

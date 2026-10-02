@@ -88,6 +88,39 @@ export const PAID_PACKAGE_MIN_CENTS = 1999;
 // (price unchanged since) are checked against this instead.
 const STRIPE_MIN_CHARGE_CENTS = 50;
 
+/** True once the package has been put on sale (durable; B-629-2). */
+export function hasBeenOnSale(
+  row: Pick<CoachPackage, 'published_at' | 'first_published_at'>,
+): boolean {
+  return !!(row.first_published_at ?? row.published_at);
+}
+
+function changed(row: CoachPackage, data: Record<string, unknown>, key: keyof CoachPackage): boolean {
+  return key in data && data[key] !== row[key];
+}
+
+/** C-629-1 — any change to the primary price configuration is a new price. */
+export function primaryConfigChanged(row: CoachPackage, data: Record<string, unknown>): boolean {
+  return (
+    changed(row, data, 'amount_cents') ||
+    changed(row, data, 'currency') ||
+    changed(row, data, 'billing_type') ||
+    changed(row, data, 'interval') ||
+    changed(row, data, 'interval_count') ||
+    changed(row, data, 'duration_periods')
+  );
+}
+
+/** C-629-1 — any change to the recurring companion configuration is a new price. */
+export function recurringConfigChanged(row: CoachPackage, data: Record<string, unknown>): boolean {
+  return (
+    changed(row, data, 'recurring_amount_cents') ||
+    changed(row, data, 'recurring_interval') ||
+    changed(row, data, 'recurring_interval_count') ||
+    (changed(row, data, 'currency') && row.recurring_amount_cents != null)
+  );
+}
+
 interface PricingFloorOptions {
   enforcePrimaryMinimum: boolean;
   enforceRecurringMinimum: boolean;
@@ -188,12 +221,14 @@ export class PackagesService {
           ? (data.recurring_interval_count as number | null)
           : row.recurring_interval_count,
     }, {
-      // S-FEE — the $19.99 floor applies to a price the coach is setting now.
-      enforcePrimaryMinimum:
-        'amount_cents' in data && data.amount_cents !== row.amount_cents,
-      enforceRecurringMinimum:
-        'recurring_amount_cents' in data &&
-        data.recurring_amount_cents !== row.recurring_amount_cents,
+      // S-FEE — the $19.99 floor applies to a price configuration the coach
+      // is setting now. Only an UNCHANGED configuration keeps a grandfathered
+      // (pre-floor) price (C-629-1): changing the amount, currency, billing
+      // type, interval, interval count or duration of the primary price, or
+      // the amount, currency, interval or interval count of the recurring
+      // price, is a new price and must meet the floor.
+      enforcePrimaryMinimum: primaryConfigChanged(row, data),
+      enforceRecurringMinimum: recurringConfigChanged(row, data),
     });
 
     // If price-shaping fields changed, clear the cached Stripe Price id so
@@ -279,6 +314,7 @@ export class PackagesService {
       if (activeRecurringCount > 0) {
         throw new ConflictException({
           error: 'PACKAGE_PRICING_LOCKED',
+          code: 'PACKAGE_PRICING_LOCKED',
           message:
             'Pricing is locked because this package has active subscribers. Create a new package for new pricing.',
         });
@@ -326,6 +362,7 @@ export class PackagesService {
     if (activeCount > 0) {
       throw new ConflictException({
         error: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
+        code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
         message: `This package has ${activeCount} active subscriber(s). Cancel their subscriptions before archiving.`,
         active_subscriber_count: activeCount,
       });
@@ -347,6 +384,7 @@ export class PackagesService {
     if (row.archived_at) {
       throw new BadRequestException({
         error: 'PACKAGE_ARCHIVED',
+        code: 'PACKAGE_ARCHIVED',
         message: 'Cannot publish an archived package',
       });
     }
@@ -369,20 +407,35 @@ export class PackagesService {
         | null,
       recurring_interval_count: row.recurring_interval_count,
     }, {
-      // S-FEE — a package newly put on sale must meet the $19.99 floor; an
-      // already-published package saved before the floor is left as is.
-      enforcePrimaryMinimum: !row.published_at,
-      enforceRecurringMinimum: !row.published_at,
+      // S-FEE (B-629-2) — a package put on sale for the FIRST time must meet
+      // the $19.99 floor. A package that has been on sale before
+      // (first_published_at is durable; unpublish never clears it) keeps its
+      // grandfathered price when it is republished: every price-config edit
+      // since then already had to meet the floor in update(), so a price
+      // below $19.99 on such a row is the unchanged one it was sold at.
+      enforcePrimaryMinimum: !hasBeenOnSale(row),
+      enforceRecurringMinimum: !hasBeenOnSale(row),
     });
     // TODO(PR-8): once content-attach lands, gate sellable packages
     // here on `is_sellable === false || contents.length > 0`. Allowed
     // for now so the editor flow ships before PR-8.
     // Idempotent: if already published, return the existing row
     // without bumping the timestamp.
-    if (row.published_at) return row;
+    if (row.published_at) {
+      // Rows published before first_published_at existed (and not
+      // backfilled) get their history recorded on the next publish call.
+      if (!row.first_published_at) {
+        return this.prisma.coachPackage.update({
+          where: { id: packageId },
+          data: { first_published_at: row.published_at },
+        });
+      }
+      return row;
+    }
+    const now = new Date();
     return this.prisma.coachPackage.update({
       where: { id: packageId },
-      data: { published_at: new Date() },
+      data: { published_at: now, first_published_at: row.first_published_at ?? now },
     });
   }
 
@@ -493,6 +546,7 @@ export class PackagesService {
     if (!row) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
+        code: 'PACKAGE_NOT_FOUND',
         message: `No package with id ${packageId}`,
       });
     }
@@ -557,6 +611,7 @@ export class PackagesService {
     if (!input.name?.trim()) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
+        code: 'PACKAGE_INVALID',
         message: 'name is required',
       });
     }
@@ -571,14 +626,16 @@ export class PackagesService {
       input.recurring_interval != null ||
       input.recurring_interval_count != null;
     // S-FEE (owner ruling 2026-09-30) — a package is either FREE (exactly 0,
-    // one-time, no recurring companion) or PAID at PAID_PACKAGE_MIN_CENTS or
-    // more. The floor keeps the coach's net meaningful after the card fee and
+    // one-time, no recurring companion; clinic C01: checkout refuses it with
+    // PACKAGE_IS_FREE and clients claim it via POST /v1/packages/:id/claim-free)
+    // or PAID at PAID_PACKAGE_MIN_CENTS or more. The floor keeps the coach's net meaningful after the card fee and
     // the TGP 2%. On update the floor applies only when the price changes, so
     // packages saved before this rule keep working until the coach edits the
     // price (never silently rewritten); they still need the Stripe minimum.
     if (!Number.isInteger(input.amount_cents) || input.amount_cents < 0) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
+        code: 'PACKAGE_INVALID',
         message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99.',
       });
     }
@@ -586,6 +643,7 @@ export class PackagesService {
       if (input.billing_type === 'recurring' || hasRecurringCompanion) {
         throw new BadRequestException({
           error: 'PACKAGE_FREE_MUST_BE_ONE_TIME',
+          code: 'PACKAGE_FREE_MUST_BE_ONE_TIME',
           message:
             input.billing_type === 'recurring'
               ? 'Free packages are one-time. Switch the package to one-time, or set a price of $19.99 or more.'
@@ -598,6 +656,7 @@ export class PackagesService {
     ) {
       throw new BadRequestException({
         error: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        code: 'PACKAGE_PRICE_BELOW_MINIMUM',
         message: hasRecurringCompanion
           ? 'Paid packages start at $19.99. Set the one-time price to $19.99 or more.'
           : 'Paid packages start at $19.99, or make it free.',
@@ -607,6 +666,7 @@ export class PackagesService {
     if (input.currency && !/^[a-z]{3}$/i.test(input.currency)) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
+        code: 'PACKAGE_INVALID',
         message: 'currency must be a 3-letter ISO code',
       });
     }
@@ -618,6 +678,7 @@ export class PackagesService {
       ) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'recurring packages require interval = week | month | year',
         });
       }
@@ -627,6 +688,7 @@ export class PackagesService {
       ) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'interval_count must be an integer ≥ 1',
         });
       }
@@ -634,6 +696,7 @@ export class PackagesService {
       if (input.interval) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'one_time packages cannot have an interval',
         });
       }
@@ -645,6 +708,7 @@ export class PackagesService {
     ) {
       throw new BadRequestException({
         error: 'PACKAGE_INVALID',
+        code: 'PACKAGE_INVALID',
         message: 'duration_periods must be an integer ≥ 1 (or null)',
       });
     }
@@ -668,6 +732,7 @@ export class PackagesService {
       if (input.billing_type === 'recurring') {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message:
             'recurring companion price is only valid when primary billing_type=one_time',
         });
@@ -675,6 +740,7 @@ export class PackagesService {
       if (!allRecurring) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message:
             'recurring companion requires recurring_amount_cents and recurring_interval',
         });
@@ -686,6 +752,7 @@ export class PackagesService {
       ) {
         throw new BadRequestException({
           error: 'PACKAGE_RECURRING_PRICE_BELOW_MINIMUM',
+          code: 'PACKAGE_RECURRING_PRICE_BELOW_MINIMUM',
           message:
             'The recurring price starts at $19.99. Set it to $19.99 or more, or remove the recurring price.',
           minimum_cents: PAID_PACKAGE_MIN_CENTS,
@@ -694,6 +761,7 @@ export class PackagesService {
       if (r.interval !== 'week' && r.interval !== 'month' && r.interval !== 'year') {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'recurring_interval must be week | month | year',
         });
       }
@@ -703,6 +771,7 @@ export class PackagesService {
       ) {
         throw new BadRequestException({
           error: 'PACKAGE_INVALID',
+          code: 'PACKAGE_INVALID',
           message: 'recurring_interval_count must be an integer ≥ 1',
         });
       }

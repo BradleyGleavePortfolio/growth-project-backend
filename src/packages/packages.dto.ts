@@ -6,7 +6,6 @@ import {
   IsIn,
   Min,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
 
 export class CreatePackageDto {
@@ -19,11 +18,14 @@ export class CreatePackageDto {
   @MaxLength(1000)
   description?: string;
 
-  // Clinic C01 — 0 = a FREE package (claimed via POST /v1/packages/:id/claim-free,
-  // never sent to Stripe). Any positive amount must be ≥ 50 cents (Stripe floor).
-  @ValidateIf((o: CreatePackageDto) => o.amount_cents !== 0)
-  @IsInt()
-  @Min(50, { message: 'amount_cents must be 0 (free) or at least 50' })
+  // Clinic C01 / S-FEE (B-629-1) — exactly 0 = a FREE package (one-time, no
+  // recurring price; claimed via POST /v1/packages/:id/claim-free, never sent
+  // to Stripe). The DTO only checks the shape (a whole, non-negative number of
+  // cents); PackagesService owns the price rules so every refusal carries a
+  // machine code: PACKAGE_PRICE_BELOW_MINIMUM (paid packages start at $19.99,
+  // with minimum_cents), PACKAGE_FREE_MUST_BE_ONE_TIME, PACKAGE_INVALID.
+  @IsInt({ message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.' })
+  @Min(0, { message: 'amount_cents must be 0 (free) or a positive number of cents.' })
   amount_cents!: number;
 
   @IsString()
@@ -59,9 +61,11 @@ export class CreatePackageDto {
   // the PRIMARY price (amount_cents/billing_type) mints one Stripe
   // Price; this second config mints an additional recurring Stripe
   // Price. Leave these null/omitted for single-price packages.
+  // S-FEE — shape only; PackagesService refuses a recurring price under
+  // $19.99 with PACKAGE_RECURRING_PRICE_BELOW_MINIMUM.
   @IsOptional()
-  @IsInt()
-  @Min(50)
+  @IsInt({ message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.' })
+  @Min(0, { message: 'recurring_amount_cents must be a positive number of cents.' })
   recurring_amount_cents?: number;
 
   @IsOptional()
@@ -90,12 +94,11 @@ export class UpdatePackageDto {
   @MaxLength(1000)
   description?: string;
 
-  // Clinic C01 — 0 = free (see CreatePackageDto). Note PackagesService.update
-  // still applies its pricing-lock rules to any price change.
+  // Clinic C01 / S-FEE — exactly 0 = free (see CreatePackageDto). Shape only;
+  // PackagesService.update applies the price rules and the pricing lock.
   @IsOptional()
-  @ValidateIf((o: UpdatePackageDto) => o.amount_cents !== undefined && o.amount_cents !== 0)
-  @IsInt()
-  @Min(50, { message: 'amount_cents must be 0 (free) or at least 50' })
+  @IsInt({ message: 'amount_cents must be a whole number of cents, for example 1999 for $19.99, or 0 for free.' })
+  @Min(0, { message: 'amount_cents must be 0 (free) or a positive number of cents.' })
   amount_cents?: number;
 
   @IsOptional()
@@ -128,9 +131,11 @@ export class UpdatePackageDto {
 
   // PR-6 decision #1 — optional second (recurring) price. Pass null
   // on any field to clear / drop the combo back to single-price.
+  // S-FEE — shape only; the service refuses a recurring price under $19.99
+  // with PACKAGE_RECURRING_PRICE_BELOW_MINIMUM.
   @IsOptional()
-  @IsInt()
-  @Min(50)
+  @IsInt({ message: 'recurring_amount_cents must be a whole number of cents, for example 1999 for $19.99.' })
+  @Min(0, { message: 'recurring_amount_cents must be a positive number of cents.' })
   recurring_amount_cents?: number | null;
 
   @IsOptional()
