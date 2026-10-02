@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
@@ -165,7 +166,11 @@ export class InviteCodesController {
   // brute-force enumeration of the 30-bit code space pointless.
   @Public()
   @Get('invite/:code/preview')
-  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  // C14 — public read behind every /join/<code> landing; dedicated per-IP
+  // bucket sized for a room of clients scanning one QR on shared Wi-Fi.
+  @Throttle({
+    [THROTTLER_NAMES.PUBLIC_READS]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.PUBLIC_READS_PER_MIN },
+  })
   async previewInvite(@Param('code') code: string) {
     return this.inviteCodes.previewCode(code);
   }
