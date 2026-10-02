@@ -1,9 +1,6 @@
 import { z } from 'zod';
-import {
-  WearableMetricBucket,
-  WearableMetricType,
-  WearableProvider,
-} from '@prisma/client';
+import { WearableMetricBucket, WearableMetricType, WearableProvider } from '@prisma/client';
+import { METRIC_BUCKET } from '../metric-bucket.map';
 
 /**
  * P0-0A — Zod schema for `POST /v1/wearables/samples/ingest`.
@@ -30,6 +27,15 @@ import {
 /** Hard cap on a single ingest batch (LOCK — auditor gates). */
 export const MAX_INGEST_BATCH = 2000;
 
+/**
+ * S14 — typed 400 code returned when any sample in the batch carries a
+ * `userId` key. The subject user is ALWAYS the authenticated JWT user; a body
+ * `userId` is never honoured. The controller checks for this key BEFORE the
+ * strict parse so an outdated client gets a precise, actionable code instead of
+ * a generic unknown-key error.
+ */
+export const INGEST_USER_ID_FORBIDDEN_CODE = 'WEARABLES_INGEST_USER_ID_FORBIDDEN';
+
 export const IngestSampleSchema = z
   .object({
     connectionId: z.guid(),
@@ -48,6 +54,14 @@ export const IngestSampleSchema = z
   .refine((sample) => sample.startAt <= sample.endAt, {
     message: 'startAt must be before or equal to endAt',
     path: ['endAt'],
+  })
+  // S14 — the denormalized `bucket` column drives every bucket-filtered read
+  // (the client Health and Sleep views). A sample whose bucket disagrees with
+  // the canonical metric->bucket map would be stored but never shown, so it is
+  // rejected here with a field-level 400 instead.
+  .refine((sample) => METRIC_BUCKET[sample.metric] === sample.bucket, {
+    message: 'bucket does not match the canonical bucket for metric',
+    path: ['bucket'],
   });
 
 export const IngestSamplesBodySchema = z
