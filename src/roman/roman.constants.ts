@@ -28,6 +28,33 @@ export const ROMAN_ERASE_SWEEP_MAX_BATCHES = 50;
 export const ROMAN_ERASE_SWEEP_BOOT_DELAY_MS = 60_000;
 
 /**
+ * Follow-up runs of the erasure sweep (Sol C-635-1 / B-635-3). A run that
+ * made progress but left rows behind (the per-run bound was hit, or a
+ * straggler arrived) continues after ROMAN_ERASE_SWEEP_CONTINUE_DELAY_MS until
+ * nothing is left. A run that erased nothing but saw failures retries after
+ * ROMAN_ERASE_SWEEP_RETRY_DELAY_MS, at most ROMAN_ERASE_SWEEP_MAX_RETRIES times
+ * in a row, then waits for the nightly run (every failure is already in
+ * Sentry, so a persistent fault is never silent).
+ */
+export const ROMAN_ERASE_SWEEP_CONTINUE_DELAY_MS = 60_000;
+export const ROMAN_ERASE_SWEEP_RETRY_DELAY_MS = 15 * 60_000;
+export const ROMAN_ERASE_SWEEP_MAX_RETRIES = 4;
+
+/**
+ * DELETE /roman/sessions (erase every chat of the caller, B-635-2): sessions
+ * erased per batch, and the batch bound per request. One session exists per
+ * (surface, UTC day), so the bound covers years of daily use on both
+ * surfaces; anything left past it is a coded 503 the client can retry (what
+ * was erased stays erased).
+ */
+export const ROMAN_DELETE_ALL_BATCH = 100;
+export const ROMAN_DELETE_ALL_MAX_BATCHES = 50;
+
+/** Default + max page size for the caller's session list (GET /roman/sessions). */
+export const ROMAN_SESSIONS_DEFAULT_LIMIT = 30;
+export const ROMAN_SESSIONS_MAX_LIMIT = 100;
+
+/**
  * Max prior turns included in an API call (brief §3). Phase 1 ships a simple
  * tail-slice of the most recent N turns; Phase 1.1 summarises older turns into
  * a single "earlier in this session: …" line.
@@ -44,3 +71,19 @@ export const ROMAN_MAX_OUTPUT_TOKENS = 1024;
 /** Structured error codes (ENGINEERING_RULES §3 / AGENT_RULES #9 — no raw codes). */
 export const ROMAN_ERROR_RATE_LIMIT = 'ROMAN_RATE_LIMIT';
 export const ROMAN_ERROR_UNAVAILABLE = 'ROMAN_UNAVAILABLE';
+/** 404: the session does not exist for this caller (never 403: no ID probing). */
+export const ROMAN_ERROR_SESSION_NOT_FOUND = 'ROMAN_SESSION_NOT_FOUND';
+/** 503: a delete could not finish; nothing of that chat was removed, retry is safe. */
+export const ROMAN_ERROR_ERASE_INCOMPLETE = 'ROMAN_ERASE_INCOMPLETE';
+/** 400: the session-list cursor is not one of the caller's sessions. */
+export const ROMAN_ERROR_CURSOR_INVALID = 'ROMAN_CURSOR_INVALID';
+
+/** User-facing copy for the coded Roman errors (plain words, a next step). */
+export const ROMAN_SESSION_NOT_FOUND_MESSAGE =
+  'This conversation no longer exists. Open Roman again to start a new one.';
+export const ROMAN_ERASE_INCOMPLETE_MESSAGE =
+  'Roman could not finish deleting this conversation, so it was not changed. Try deleting it again in a moment.';
+export const ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE =
+  'Roman could not finish deleting your conversations. The ones already deleted stay deleted. Try again in a moment to delete the rest.';
+export const ROMAN_CURSOR_INVALID_MESSAGE =
+  'This list of conversations is out of date. Refresh it to load your conversations again.';

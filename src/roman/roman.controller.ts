@@ -5,7 +5,11 @@
  *   POST   /roman/sessions                  open or resume (idempotent on day-key)
  *   GET    /roman/sessions/:id/messages      paginated, newest first
  *   POST   /roman/sessions/:id/messages      submit a user turn → SSE assistant stream
- *   DELETE /roman/sessions/:id               erase (messages hard-deleted)
+ *
+ * Listing and deleting chats (GET /roman/sessions, DELETE /roman/sessions,
+ * DELETE /roman/sessions/:id) live in RomanChatsController, which is NOT
+ * behind the feature flag: a client's right to find and erase their chats
+ * must not depend on Roman chat being on (B-635-2).
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
@@ -20,8 +24,8 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -68,7 +72,10 @@ export class RomanController {
   }
 
   // ─── GET /roman/sessions/:id/messages — paginated, newest first ────────────
+  // no-store: a transcript must never outlive its deletion in a device HTTP
+  // cache (the global interceptor would otherwise mark it private, max-age=60).
   @Get('sessions/:id/messages')
+  @Header('Cache-Control', 'no-store')
   @Roles('student', 'coach', 'owner')
   async listMessages(
     @Req() req: AuthedRequest,
@@ -162,18 +169,6 @@ export class RomanController {
       req.off('close', onClose);
       res.end();
     }
-  }
-
-  // ─── DELETE /roman/sessions/:id — erase the conversation ───────────────────
-  // The messages are hard-deleted (owner 2026-10-01 20:32 / OR-110-1: kept
-  // until the client deletes them or their account). See
-  // RomanService.deleteSession.
-  @Delete('sessions/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles('student', 'coach', 'owner')
-  async deleteSession(@Req() req: AuthedRequest, @Param('id') id: string) {
-    const caller = await this.callerOf(req);
-    await this.roman.deleteSession(caller, id);
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────

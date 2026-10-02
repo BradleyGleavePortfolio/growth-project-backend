@@ -15,13 +15,16 @@
 
 import { Module } from '@nestjs/common';
 import { RomanController } from './roman.controller';
+import { RomanChatsController } from './roman-chats.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanErasureSweep } from './roman-erasure.sweep';
 
 @Module({
-  controllers: [RomanController],
+  // RomanChatsController (list + delete own chats) is not behind the chat
+  // feature flag: deleting your chats never depends on Roman being on.
+  controllers: [RomanController, RomanChatsController],
   // RomanErasureSweep runs regardless of FEATURE_ROMAN_CHAT_ENABLED: finishing
   // the erasure of chats a client deleted is a privacy duty, not a chat feature.
   providers: [RomanService, RomanFeatureGuard, romanAnthropicClientProvider, RomanErasureSweep],

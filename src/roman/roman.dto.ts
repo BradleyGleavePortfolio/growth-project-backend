@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 /** The two Roman surfaces. Mirrors the Prisma `RomanSurface` enum. */
 export const ROMAN_SURFACES = ['client', 'coach'] as const;
@@ -45,9 +46,37 @@ export class ListMessagesQueryDto {
   @MaxLength(64)
   cursor?: string;
 
+  // Query strings arrive as text; convert before @IsInt (the global
+  // ValidationPipe has transform on but no implicit conversion), so
+  // `?limit=30` is accepted rather than a 400.
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;
+}
+
+/**
+ * GET /roman/sessions?cursor=&limit=&surface= — the caller's own live chats,
+ * newest first (B-635-2). `cursor` is the id of the last session already
+ * shown (it must be one of the caller's sessions); `surface` narrows to one
+ * surface, both when absent.
+ */
+export class ListSessionsQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsIn(ROMAN_SURFACES)
+  surface?: RomanSurfaceDto;
 }
