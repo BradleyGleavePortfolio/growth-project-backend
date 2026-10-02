@@ -49,8 +49,10 @@ export class AiConsentRequiredException extends ForbiddenException {
 export const AI_EGRESS_POLICY_CODE = 'ai_egress_blocked';
 // B-626-1 — says what happened and the working next step (support, with the
 // reference shown alongside this message: `requestId` on the HTTP error
-// envelope). It never asks the person to change their consent, because this
-// refusal is a server defect, not their choice.
+// envelope and the X-Request-ID header; on Roman's SSE stream the error frame
+// stays exactly `{ code, message }` and the reference is the X-Request-ID
+// header, B-626-2). It never asks the person to change their consent,
+// because this refusal is a server defect, not their choice.
 export const AI_EGRESS_POLICY_MESSAGE = `AI help is turned off for this request because of a problem on our side. Your account and privacy settings are fine. Contact support at ${SUPPORT_EMAIL} and include the reference shown with this message so we can fix it.`;
 
 export class AiEgressPolicyException extends ServiceUnavailableException {

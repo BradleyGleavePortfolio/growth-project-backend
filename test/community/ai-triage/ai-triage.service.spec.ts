@@ -6,7 +6,14 @@ import {
 } from '../../../src/community/ai-triage/ai-triage.service';
 import { TriageCacheService } from '../../../src/community/ai-triage/triage-cache.service';
 import type { AiGatewayService } from '../../../src/ai/gateway/ai-gateway.service';
-import { AiConsentRequiredException } from '../../../src/ai-egress/ai-consent-required.exception';
+import {
+  AiConsentRequiredException,
+  AiEgressPolicyException,
+} from '../../../src/ai-egress/ai-consent-required.exception';
+import {
+  AI_TRIAGE_UNAVAILABLE_CODE,
+  AiTriageUnavailableException,
+} from '../../../src/community/ai-triage/ai-triage-unavailable.exception';
 import type { CommunityCoachInboxRepository } from '../../../src/community/inbox/community-coach-inbox.repository';
 import type { CommunityAccessService } from '../../../src/community/community-access.service';
 import { COACH_AI_METERED_CAPABILITIES } from '../../../src/ai-credits/ai-credits.constants';
@@ -357,21 +364,32 @@ describe('AiTriageService', () => {
       expect(mocks.gateway.invoke).not.toHaveBeenCalled();
     });
 
-    it('degrades to a typed empty triage when the LLM throws (no silent swallow into fake data)', async () => {
+    it('C-626-4: an LLM failure is an explicit 503 ai_triage_unavailable, not an empty inbox (and is not cached)', async () => {
       const mocks = makeMocks();
       const now = new Date('2026-06-10T12:00:00Z');
       mocks.repo.unansweredMessages.mockResolvedValue([
         messageRow(MSG_1, COHORT_A, 'A question.', now),
       ]);
-      mocks.gateway.invoke.mockRejectedValue(new Error('provider down'));
+      mocks.gateway.invoke.mockRejectedValueOnce(new Error('provider down'));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
-      expect(out.source_item_ids).toEqual([]);
+      const err = await svc.generateForCoach(coach()).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(AiTriageUnavailableException);
+      expect((err as AiTriageUnavailableException).getStatus()).toBe(503);
+      expect((err as AiTriageUnavailableException).getResponse()).toMatchObject({
+        code: AI_TRIAGE_UNAVAILABLE_CODE,
+        message: expect.stringContaining('Try again'),
+      });
+      // The retry is not served a cached failure: it runs the pipeline again.
+      mocks.gateway.invoke.mockResolvedValueOnce(gatewayReply(JSON.stringify({
+        buckets: TRIAGE_CATEGORIES.map((category) => ({ category, items: [] })),
+      })));
+      const retry = await svc.generateForCoach(coach());
+      expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+      expect(retry.buckets).toHaveLength(TRIAGE_CATEGORIES.length);
     });
 
-    it('degrades to empty when the model output is invalid even after one repair', async () => {
+    it('C-626-4: invalid model output even after one repair is 503 ai_triage_unavailable', async () => {
       const mocks = makeMocks();
       const now = new Date('2026-06-10T12:00:00Z');
       mocks.repo.unansweredMessages.mockResolvedValue([
@@ -380,10 +398,35 @@ describe('AiTriageService', () => {
       mocks.gateway.invoke.mockResolvedValue(gatewayReply('not json at all'));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
-      // Two invokes: original + single repair attempt, then fail-empty.
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
+      // Two invokes: original + single repair attempt, then unavailable.
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('C-626-4: a failed repair call is 503 ai_triage_unavailable', async () => {
+      const mocks = makeMocks();
+      const now = new Date('2026-06-10T12:00:00Z');
+      mocks.repo.unansweredMessages.mockResolvedValue([
+        messageRow(MSG_1, COHORT_A, 'A question.', now),
+      ]);
+      mocks.gateway.invoke
+        .mockResolvedValueOnce(gatewayReply('not json at all'))
+        .mockRejectedValueOnce(new Error('timeout'));
+      await expect(build(mocks).generateForCoach(coach())).rejects.toBeInstanceOf(
+        AiTriageUnavailableException,
+      );
+    });
+
+    it('C-626-4: an egress policy refusal keeps its own 503 ai_egress_blocked code', async () => {
+      const mocks = makeMocks();
+      const now = new Date('2026-06-10T12:00:00Z');
+      mocks.repo.unansweredMessages.mockResolvedValue([
+        messageRow(MSG_1, COHORT_A, 'A question.', now),
+      ]);
+      mocks.gateway.invoke.mockRejectedValue(new AiEgressPolicyException());
+      await expect(build(mocks).generateForCoach(coach())).rejects.toBeInstanceOf(
+        AiEgressPolicyException,
+      );
     });
   });
 
@@ -510,8 +553,7 @@ describe('AiTriageService', () => {
       mocks.gateway.invoke.mockResolvedValue(gatewayReply(bad));
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
-      expect(out.is_empty).toBe(true);
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
       expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
     });
 
@@ -543,9 +585,8 @@ describe('AiTriageService', () => {
       );
       const svc = build(mocks);
 
-      const out = await svc.generateForCoach(coach());
       // The smuggled draft_reply field fails .strict() on both attempts.
-      expect(out.is_empty).toBe(true);
+      await expect(svc.generateForCoach(coach())).rejects.toBeInstanceOf(AiTriageUnavailableException);
     });
   });
 
@@ -679,9 +720,12 @@ describe('AiTriageService — R2b box-2 consent', () => {
     seed(mocks);
     const { egress } = egressWithGrants(['sender-1', 'author-1']);
     mocks.gateway.invoke.mockRejectedValue(new AiConsentRequiredException('coach'));
-    const out = await build(mocks, new TriageCacheService(), egress).generateForCoach(coach());
+    const err = await build(mocks, new TriageCacheService(), egress)
+      .generateForCoach(coach())
+      .catch((e: unknown) => e);
     expect(mocks.gateway.invoke).toHaveBeenCalledTimes(2);
-    expect(out.is_empty).toBe(true);
+    // C-626-4: explicit "triage unavailable", never an empty inbox.
+    expect(err).toBeInstanceOf(AiTriageUnavailableException);
   });
 
   it('ledger error: fails closed, no AI call', async () => {

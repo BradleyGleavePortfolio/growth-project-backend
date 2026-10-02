@@ -10,7 +10,11 @@ import {
 import { CommunityAccessService } from '../community-access.service';
 import { TriageCacheService } from './triage-cache.service';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
-import { AiConsentRequiredException } from '../../ai-egress/ai-consent-required.exception';
+import {
+  AiConsentRequiredException,
+  AiEgressPolicyException,
+} from '../../ai-egress/ai-consent-required.exception';
+import { AiTriageUnavailableException } from './ai-triage-unavailable.exception';
 import buildInboxTriagePrompt, {
   PROMPT_VERSION as INBOX_TRIAGE_VERSION,
   TriagePromptItem,
@@ -184,7 +188,7 @@ export class AiTriageService {
       this.logger.warn(
         `triage LLM failed/timed out coach=${user.id}: ${(err as Error).message}`,
       );
-      return emptyTriage(new Date());
+      throw this.unavailable(err);
     }
 
     let parsed = this.tryParse(raw);
@@ -201,14 +205,14 @@ export class AiTriageService {
         this.logger.warn(
           `triage repair failed coach=${user.id}: ${(err as Error).message}`,
         );
-        return emptyTriage(new Date());
+        throw this.unavailable(err);
       }
       parsed = this.tryParse(repaired);
       if (!parsed) {
         this.logger.warn(
-          `triage output invalid after repair coach=${user.id} — failing empty`,
+          `triage output invalid after repair coach=${user.id} — triage unavailable`,
         );
-        return emptyTriage(new Date());
+        throw new AiTriageUnavailableException();
       }
     }
 
@@ -223,6 +227,16 @@ export class AiTriageService {
       `triage generated coach=${user.id} items=${response.source_item_ids.length} model=${this.lastModelUsed} prompt=${INBOX_TRIAGE_VERSION}`,
     );
     return response;
+  }
+
+  /**
+   * C-626-4 — an AI failure is an explicit 503 `ai_triage_unavailable`, never
+   * an empty triage the coach would read as "nothing needs attention". An
+   * egress policy refusal keeps its own code (503 `ai_egress_blocked`, a
+   * server defect with a support path). Failures are never cached.
+   */
+  private unavailable(err: unknown): AiEgressPolicyException | AiTriageUnavailableException {
+    return err instanceof AiEgressPolicyException ? err : new AiTriageUnavailableException();
   }
 
   /**

@@ -487,7 +487,7 @@ describe('Roman — R2b box-2 consent', () => {
     expect(error?.data).toMatchObject({ code: 'ai_consent_required' });
   });
 
-  it('B-626-1: a policy refusal mid-stream is a specific error event with the support step and the reference', async () => {
+  it('B-626-1/B-626-2: a policy refusal mid-stream is a specific {code, message} frame; the reference is the X-Request-ID header', async () => {
     const { ctrl, service } = setup(['user-A']);
     jest.spyOn(service, 'streamAssistantTurn').mockImplementation(async function* () {
       yield* [];
@@ -500,10 +500,13 @@ describe('Roman — R2b box-2 consent', () => {
     expect(error?.data).toEqual({
       code: AI_EGRESS_POLICY_CODE,
       message: AI_EGRESS_POLICY_MESSAGE,
-      requestId: 'req_7f3a',
     });
     expect(error?.data.message).toContain(SUPPORT_EMAIL);
     expect(error?.data.message).not.toContain('Settings');
+    expect(res.writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({ 'X-Request-ID': 'req_7f3a', 'Content-Type': 'text/event-stream' }),
+    );
   });
 
   it('ledger error: fails closed', async () => {

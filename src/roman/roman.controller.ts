@@ -38,6 +38,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
+import { toRomanSseErrorFrame } from './roman-sse-error';
 import {
   RomanCaller,
   RomanService,
@@ -125,11 +126,17 @@ export class RomanController {
     // Manual SSE: we own the response stream so we can persist the partial on
     // client-disconnect. (NestJS @Sse maps an Observable but does not give us a
     // clean disconnect hook for partial persistence — brief §1.3.)
+    // B-626-2 — the support reference for this stream travels in the
+    // X-Request-ID header (RequestIdMiddleware already set it; repeating it
+    // here keeps it on the SSE response whatever writeHead merges). It is
+    // never added to the strict `{ code, message }` error frame.
+    const requestId = (req as { requestId?: string }).requestId;
     res.writeHead(HttpStatus.OK, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      ...(requestId ? { 'X-Request-ID': requestId } : {}),
     });
     if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
       (res as { flushHeaders: () => void }).flushHeaders();
@@ -148,16 +155,9 @@ export class RomanController {
       }
     } catch (err) {
       // Surface a structured error event, never a raw stack (AGENT_RULES #9).
-      const body =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: unknown }).response
-          : { code: 'ROMAN_UNAVAILABLE', message: 'Roman is not available right now.' };
-      // B-626-1 — carry the request reference the support path asks for
-      // (the HTTP error envelope has it as `requestId`; SSE errors did not).
-      const requestId = (req as { requestId?: string }).requestId;
-      const payload =
-        body && typeof body === 'object' && requestId ? { ...body, requestId } : body;
-      res.write(`event: error\ndata: ${JSON.stringify(payload)}\n\n`);
+      // B-626-2 — exactly `{ code, message }`: the mobile parser is strict,
+      // and the reference is already in the X-Request-ID header above.
+      res.write(`event: error\ndata: ${JSON.stringify(toRomanSseErrorFrame(err))}\n\n`);
     } finally {
       req.off('close', onClose);
       res.end();
