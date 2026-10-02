@@ -114,7 +114,7 @@ export interface VoiceStorageError {
  * Supabase Storage creates this marker object when a folder is made in the
  * dashboard. It is not a recording and never has a canonical key (C-610-9).
  */
-export const EMPTY_FOLDER_PLACEHOLDER = '.emptyFolderPlaceholder';
+export const EMPTY_FOLDER_MARKER = '.emptyFolderPlaceholder';
 
 /**
  * B-610-8: the one storage answer that proves an exact object is gone.
@@ -492,9 +492,7 @@ export class VoiceUploadProvider {
       // real file behind it.
       const page = await list.call(storage, folder, { limit: 10, offset: 0 });
       if (page.error) return null;
-      const files = (page.data ?? []).filter(
-        (o) => !!o.name && o.name !== EMPTY_FOLDER_PLACEHOLDER,
-      );
+      const files = (page.data ?? []).filter((o) => !!o.name && o.name !== EMPTY_FOLDER_MARKER);
       if (files.length > 0) return false;
     } catch {
       return null;
@@ -555,7 +553,7 @@ export class VoiceUploadProvider {
         if (page.error) return { removed, failed: true };
         names = (page.data ?? [])
           .map((o) => o.name)
-          .filter((n) => !!n && n !== EMPTY_FOLDER_PLACEHOLDER);
+          .filter((n) => !!n && n !== EMPTY_FOLDER_MARKER);
       } catch {
         return { removed, failed: true };
       }

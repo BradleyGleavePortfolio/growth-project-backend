@@ -19,7 +19,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { PrismaService } from '../../../prisma.service';
 import type { SupabaseService } from '../../../supabase/supabase.service';
 import {
-  EMPTY_FOLDER_PLACEHOLDER,
+  EMPTY_FOLDER_MARKER,
   VoiceUploadProvider,
   isObjectNotFound,
 } from '../voice-upload.provider';
@@ -258,7 +258,7 @@ describe('B-610-8: owner-folder erasure (account deletion) needs a confirmed buc
 
   it('C-610-9: the dashboard folder placeholder alone counts as empty; a real file behind it does not', async () => {
     const placeholderOnly = sdkProvider({
-      list: { status: 200, body: [{ name: EMPTY_FOLDER_PLACEHOLDER, id: 'p' }] },
+      list: { status: 200, body: [{ name: EMPTY_FOLDER_MARKER, id: 'p' }] },
     });
     await expect(placeholderOnly.provider.ownerFolderEmpty(OWNER)).resolves.toBe(true);
     // removeOwnerFolder no longer reports a failure for the placeholder.
@@ -271,7 +271,7 @@ describe('B-610-8: owner-folder erasure (account deletion) needs a confirmed buc
       list: {
         status: 200,
         body: [
-          { name: EMPTY_FOLDER_PLACEHOLDER, id: 'p' },
+          { name: EMPTY_FOLDER_MARKER, id: 'p' },
           { name: '1700000000000-0123456789abcdef.m4a', id: 'f' },
         ],
       },
