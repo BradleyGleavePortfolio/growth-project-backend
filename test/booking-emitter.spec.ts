@@ -1,178 +1,306 @@
 /**
- * Unit tests for the BookingEmitter (Concierge booking lifecycle).
+ * Unit tests for BookingEmitter (native scheduling lifecycle notifications).
  *
- * Strategy mirrors test/notification-emitters.spec.ts: mock
- * NotificationsService.createNotification and assert the calls. Each
- * trigger writes one `inapp` row and one `push` row for the target
- * user with the documented kind, payload, and deep_link.
+ * S-SCHED-2: each event writes exactly ONE in-app row (the notification
+ * center entry) and sends a REAL push through
+ * NotificationsService.pushToUser, gated on the recipient's booking_push /
+ * muted preference. Both carry actionScreen/actionParams so a tap opens the
+ * session (client: CalendarSession, coach: CoachBookingInbox). Times are in
+ * the recipient's zone with the zone abbreviation.
  */
-
-import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
+import {
+  BOOKING_PUSH_SCREEN,
+  BookingEmitter,
+  formatTime,
+  formatWhen,
+} from '../src/notifications/emitters/booking.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
-import type { CreateNotificationInput } from '../src/notifications/notifications.service';
+import {
+  NotificationsService,
+  type CreateNotificationInput,
+} from '../src/notifications/notifications.service';
+import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
 
-const createNotificationMock = jest.fn().mockResolvedValue({ id: 'notif-1' });
+const SCHEDULED_AT = new Date('2026-10-06T17:00:00Z'); // Tue Oct 6, 10:00 AM PDT
+const NEW_SCHEDULED_AT = new Date('2026-10-07T18:30:00Z');
+const REQUESTED_AT = new Date('2026-10-05T15:00:00Z');
 
-const mockNotificationsService = {
-  createNotification: createNotificationMock,
-} as never;
+class FakeNotifications {
+  rows: CreateNotificationInput[] = [];
+  pushes: Array<{ userId: string; title: string; body: string; data: Record<string, unknown> }> =
+    [];
+  prefs: Record<string, Record<string, unknown>> = {};
+  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
+  failInapp = false;
+  failPush = false;
 
-function calls(): CreateNotificationInput[] {
-  return createNotificationMock.mock.calls.map(
-    (c: [CreateNotificationInput]) => c[0],
+  createNotification = jest.fn(async (input: CreateNotificationInput) => {
+    if (this.failInapp) throw new TypeError('db down');
+    if (this.prefs[input.user_id]?.muted === true) return null;
+    this.rows.push(input);
+    return { id: `notif-${this.rows.length}` };
+  });
+
+  getPreferences = jest.fn(async (userId: string) => ({
+    user_id: userId,
+    timezone: 'America/Los_Angeles',
+    booking_push: true,
+    muted: false,
+    ...(this.prefs[userId] ?? {}),
+  }));
+
+  pushToUser = jest.fn(
+    async (userId: string, title: string, body: string, data?: Record<string, unknown>) => {
+      if (this.failPush) throw new TypeError('expo unreachable');
+      this.pushes.push({ userId, title, body, data: data ?? {} });
+      return this.pushResult;
+    },
   );
 }
 
-beforeEach(() => {
-  createNotificationMock.mockClear();
-});
+function build() {
+  const fake = new FakeNotifications();
+  const emitter = new BookingEmitter(
+    Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
+  );
+  return { fake, emitter };
+}
 
-const FIXED_REQUESTED_AT = new Date('2026-06-01T12:00:00Z');
-const FIXED_SCHEDULED_AT = new Date('2026-06-02T15:30:00Z');
-const FIXED_NEW_SCHEDULED_AT = new Date('2026-06-03T16:00:00Z');
-
-describe('BookingEmitter', () => {
-  const emitter = new BookingEmitter(mockNotificationsService);
-
-  it('emitRequested: targets the coach with booking_requested on inapp + push', async () => {
-    await emitter.emitRequested({
+describe('BookingEmitter delivery', () => {
+  it('requested -> coach: one in-app row plus a real push routed to the booking inbox', async () => {
+    const { fake, emitter } = build();
+    const outcome = await emitter.emitRequested({
       coachUserId: 'coach-1',
       clientDisplayName: 'Jamie',
       sessionId: 'sess-1',
-      requestedAt: FIXED_REQUESTED_AT,
+      sessionTypeName: 'Quick Q/A Call',
+      requestedAt: REQUESTED_AT,
+      scheduledAt: SCHEDULED_AT,
       notes: null,
     });
-
-    const written = calls();
-    expect(written.length).toBe(2);
-    const [inapp, push] = written;
-    expect(inapp.user_id).toBe('coach-1');
-    expect(inapp.kind).toBe(NotificationKind.BOOKING_REQUESTED);
-    expect(inapp.channel).toBe('inapp');
-    expect(push.channel).toBe('push');
-    expect(inapp.deep_link).toBe('tgp://coach/sessions/sess-1');
-    expect(inapp.body).toContain('Jamie');
-    expect(inapp.body.length).toBeLessThanOrEqual(160);
-    expect(inapp.payload).toMatchObject({
+    expect(outcome).toEqual({ inapp: 'written', push: 'delivered' });
+    expect(fake.rows).toHaveLength(1);
+    const [row] = fake.rows;
+    expect(row).toMatchObject({
+      user_id: 'coach-1',
+      kind: NotificationKind.BOOKING_REQUESTED,
+      channel: 'inapp',
+      deep_link: 'tgp://coach/sessions/sess-1',
+    });
+    expect(row.body).toBe(
+      'Jamie asked for Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT. Approve or decline in your booking inbox.',
+    );
+    expect(row.payload).toMatchObject({
       sessionId: 'sess-1',
-      clientDisplayName: 'Jamie',
-      requestedAt: FIXED_REQUESTED_AT.toISOString(),
+      title: 'New session request',
+      recipientRole: 'coach',
+      actionScreen: 'CoachBookingInbox',
+      actionParams: { sessionId: 'sess-1' },
+      scheduledAt: SCHEDULED_AT.toISOString(),
+      sessionTypeName: 'Quick Q/A Call',
+    });
+    expect(fake.pushToUser).toHaveBeenCalledTimes(1);
+    expect(fake.pushes[0]).toEqual({
+      userId: 'coach-1',
+      title: 'New session request',
+      body: row.body,
+      data: {
+        kind: 'booking_requested',
+        category: 'COACH_DIRECT',
+        actionScreen: 'CoachBookingInbox',
+        actionParams: { sessionId: 'sess-1' },
+        notificationId: 'notif-1',
+      },
     });
   });
 
-  it('emitConfirmed: targets the client with booking_confirmed; payload carries scheduledAt', async () => {
+  it('confirmed -> client routes to CalendarSession; instant wording differs from approval', async () => {
+    const { fake, emitter } = build();
     await emitter.emitConfirmed({
       clientUserId: 'client-1',
-      coachDisplayName: 'Coach K',
+      coachDisplayName: 'Coach Kim',
       sessionId: 'sess-2',
-      scheduledAt: FIXED_SCHEDULED_AT,
+      sessionTypeName: 'Quick initialization',
+      scheduledAt: SCHEDULED_AT,
+      instant: true,
     });
-    const [inapp] = calls();
-    expect(inapp.user_id).toBe('client-1');
-    expect(inapp.kind).toBe(NotificationKind.BOOKING_CONFIRMED);
-    expect(inapp.deep_link).toBe('tgp://client/sessions/sess-2');
-    expect(inapp.body).toContain('Coach K');
-    expect(inapp.payload).toMatchObject({
-      sessionId: 'sess-2',
-      scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
-    });
-  });
-
-  it('emitDeclined: targets the client with booking_declined; passes reason through payload', async () => {
-    await emitter.emitDeclined({
+    await emitter.emitConfirmed({
       clientUserId: 'client-1',
-      coachDisplayName: 'Coach K',
+      coachDisplayName: 'Coach Kim',
       sessionId: 'sess-3',
-      requestedAt: FIXED_REQUESTED_AT,
-      declineReason: 'out that week',
+      sessionTypeName: 'Quick Q/A Call',
+      scheduledAt: SCHEDULED_AT,
     });
-    const [inapp] = calls();
-    expect(inapp.kind).toBe(NotificationKind.BOOKING_DECLINED);
-    expect(inapp.payload).toMatchObject({
-      declineReason: 'out that week',
-    });
+    expect(fake.rows.map((r) => r.body)).toEqual([
+      'Your Quick initialization with Coach Kim is confirmed for Tue, Oct 6, 10:00 AM PDT.',
+      'Coach Kim confirmed your Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT.',
+    ]);
+    expect(fake.pushes.map((p) => p.data.actionScreen)).toEqual([
+      'CalendarSession',
+      'CalendarSession',
+    ]);
   });
 
-  it('emitCancelled: targets the OTHER party; payload identifies cancelling party', async () => {
-    await emitter.emitCancelled({
-      recipientUserId: 'coach-1',
-      cancellingPartyDisplayName: 'Jamie',
+  it('writes the time in the recipient zone', async () => {
+    const { fake, emitter } = build();
+    fake.prefs['client-ny'] = { timezone: 'America/New_York' };
+    await emitter.emitDeclined({
+      clientUserId: 'client-ny',
+      coachDisplayName: 'Coach Kim',
       sessionId: 'sess-4',
-      scheduledAt: FIXED_SCHEDULED_AT,
+      sessionTypeName: 'Quick Q/A Call',
+      requestedAt: REQUESTED_AT,
+      scheduledAt: SCHEDULED_AT,
+      declineReason: null,
+    });
+    expect(fake.rows[0].body).toBe(
+      'Coach Kim could not take your Quick Q/A Call request for Tue, Oct 6, 1:00 PM EDT. Pick another time in Calendar.',
+    );
+  });
+
+  it('falls back to Pacific time for an unknown zone', async () => {
+    const { fake, emitter } = build();
+    fake.prefs['client-x'] = { timezone: 'Mars/Olympus' };
+    await emitter.emitLinkReady({
+      clientUserId: 'client-x',
+      coachDisplayName: 'Coach Kim',
+      sessionId: 'sess-5',
+      sessionTypeName: null,
+      scheduledAt: SCHEDULED_AT,
+    });
+    expect(fake.rows[0].body).toContain('10:00 AM PDT');
+    expect(fake.rows[0].body).toContain('your session');
+  });
+
+  it('respects booking_push=false: in-app row still written, no push sent', async () => {
+    const { fake, emitter } = build();
+    fake.prefs['coach-1'] = { booking_push: false };
+    const outcome = await emitter.emitBooked({
+      coachUserId: 'coach-1',
+      clientDisplayName: 'Jamie',
+      sessionId: 'sess-6',
+      sessionTypeName: 'Quick initialization',
+      scheduledAt: SCHEDULED_AT,
+    });
+    expect(outcome).toEqual({ inapp: 'written', push: 'disabled' });
+    expect(fake.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('muted recipient: nothing written, nothing pushed', async () => {
+    const { fake, emitter } = build();
+    fake.prefs['client-1'] = { muted: true };
+    const outcome = await emitter.emitCancelled({
+      recipientUserId: 'client-1',
+      recipientRole: 'client',
+      cancellingPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-7',
+      scheduledAt: SCHEDULED_AT,
       cancelReason: null,
     });
-    const [inapp] = calls();
-    expect(inapp.user_id).toBe('coach-1');
-    expect(inapp.kind).toBe(NotificationKind.BOOKING_CANCELLED);
-    expect(inapp.payload).toMatchObject({
-      cancellingPartyDisplayName: 'Jamie',
-      sessionId: 'sess-4',
-    });
+    expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled' });
+    expect(fake.rows).toHaveLength(0);
+    expect(fake.pushToUser).not.toHaveBeenCalled();
   });
 
-  it('emitRescheduled: payload carries both old and new scheduledAt', async () => {
-    await emitter.emitRescheduled({
+  it('reports a missing device token without throwing', async () => {
+    const { fake, emitter } = build();
+    fake.pushResult = { delivered: false, code: 'no-token' };
+    const outcome = await emitter.emitReminder1h({
       recipientUserId: 'client-1',
-      reschedulerDisplayName: 'Coach K',
-      sessionId: 'sess-5',
-      oldScheduledAt: FIXED_SCHEDULED_AT,
-      newScheduledAt: FIXED_NEW_SCHEDULED_AT,
+      recipientRole: 'client',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-8',
+      scheduledAt: SCHEDULED_AT,
+      sessionTypeName: 'Quick Q/A Call',
+      hasMeetingLink: true,
     });
-    const [inapp] = calls();
-    expect(inapp.kind).toBe(NotificationKind.BOOKING_RESCHEDULED);
-    expect(inapp.payload).toMatchObject({
-      oldScheduledAt: FIXED_SCHEDULED_AT.toISOString(),
-      newScheduledAt: FIXED_NEW_SCHEDULED_AT.toISOString(),
-    });
+    expect(outcome).toEqual({ inapp: 'written', push: 'no-token' });
   });
 
-  it('emitReminder24h + emitReminder1h: use distinct kinds with the same deep-link pattern', async () => {
+  it('never throws when storage or transport fail', async () => {
+    const { fake, emitter } = build();
+    fake.failInapp = true;
+    fake.failPush = true;
+    await expect(
+      emitter.emitRescheduled({
+        recipientUserId: 'coach-1',
+        recipientRole: 'coach',
+        reschedulerDisplayName: 'Jamie',
+        sessionId: 'sess-9',
+        oldScheduledAt: SCHEDULED_AT,
+        newScheduledAt: NEW_SCHEDULED_AT,
+      }),
+    ).resolves.toEqual({ inapp: 'failed', push: 'failed' });
+  });
+
+  it('reminders name the other party and handle a missing call link per side', async () => {
+    const { fake, emitter } = build();
+    await emitter.emitReminder24h({
+      recipientUserId: 'coach-1',
+      recipientRole: 'coach',
+      otherPartyDisplayName: 'Jamie',
+      sessionId: 'sess-10',
+      scheduledAt: SCHEDULED_AT,
+      sessionTypeName: 'Quick Q/A Call',
+      hasMeetingLink: false,
+    });
     await emitter.emitReminder24h({
       recipientUserId: 'client-1',
-      otherPartyDisplayName: 'Coach K',
-      sessionId: 'sess-6',
-      scheduledAt: FIXED_SCHEDULED_AT,
+      recipientRole: 'client',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-10',
+      scheduledAt: SCHEDULED_AT,
+      sessionTypeName: 'Quick Q/A Call',
+      hasMeetingLink: false,
     });
-    await emitter.emitReminder1h({
-      recipientUserId: 'client-1',
-      otherPartyDisplayName: 'Coach K',
-      sessionId: 'sess-6',
-      scheduledAt: FIXED_SCHEDULED_AT,
+    expect(fake.rows.map((r) => r.body)).toEqual([
+      'Your Quick Q/A Call with Jamie is tomorrow at 10:00 AM PDT. It has no call link yet. Add one so they can join.',
+      'Your Quick Q/A Call with Coach Kim is tomorrow at 10:00 AM PDT. Your coach will add the call link before it starts.',
+    ]);
+    expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
+      ['Session tomorrow', 'CoachBookingInbox'],
+      ['Session tomorrow', 'CalendarSession'],
+    ]);
+  });
+
+  it('every message is plain (no exclamation marks) and fits 160 characters', async () => {
+    const { fake, emitter } = build();
+    const long = 'A'.repeat(40);
+    await emitter.emitRequested({
+      coachUserId: 'c',
+      clientDisplayName: long,
+      sessionId: 's',
+      sessionTypeName: 'B'.repeat(80),
+      requestedAt: REQUESTED_AT,
+      scheduledAt: SCHEDULED_AT,
+      notes: null,
     });
-    const written = calls();
-    // Two emit calls × (inapp + push) = 4 rows total.
-    expect(written.length).toBe(4);
-    expect(written[0].kind).toBe(NotificationKind.BOOKING_REMINDER_24H);
-    expect(written[2].kind).toBe(NotificationKind.BOOKING_REMINDER_1H);
-    for (const w of written) {
-      expect(w.deep_link).toBe('tgp://sessions/sess-6');
-      expect(w.body.length).toBeLessThanOrEqual(160);
+    await emitter.emitMoveRequested({
+      coachUserId: 'c',
+      clientDisplayName: long,
+      sessionId: 's',
+      oldScheduledAt: SCHEDULED_AT,
+      newScheduledAt: NEW_SCHEDULED_AT,
+    });
+    await emitter.emitLinkNeeded({
+      coachUserId: 'c',
+      clientDisplayName: long,
+      sessionId: 's',
+      scheduledAt: SCHEDULED_AT,
+    });
+    for (const r of fake.rows) {
+      expect(r.body.length).toBeLessThanOrEqual(160);
+      expect(r.body).not.toContain('!');
     }
+    expect(fake.pushes.every((p) => !p.title.includes('!'))).toBe(true);
   });
 
-  it('swallows underlying createNotification errors so lifecycle never blocks', async () => {
-    createNotificationMock.mockRejectedValueOnce(new Error('db down'));
-    await expect(
-      emitter.emitRequested({
-        coachUserId: 'coach-1',
-        clientDisplayName: 'Jamie',
-        sessionId: 'sess-x',
-        requestedAt: FIXED_REQUESTED_AT,
-        notes: null,
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it('body strings never contain emoji or exclamation marks (house style)', async () => {
-    await emitter.emitConfirmed({
-      clientUserId: 'client-1',
-      coachDisplayName: 'Coach K',
-      sessionId: 'sess-style',
-      scheduledAt: FIXED_SCHEDULED_AT,
+  it('exports the tap targets the mobile push router knows', () => {
+    expect(BOOKING_PUSH_SCREEN).toEqual({
+      client: 'CalendarSession',
+      coach: 'CoachBookingInbox',
     });
-    const [inapp] = calls();
-    expect(inapp.body).not.toMatch(/!/);
-    // eslint-disable-next-line no-control-regex
-    expect(inapp.body).not.toMatch(/[\u{1F300}-\u{1FFFF}]/u);
+    expect(formatWhen(SCHEDULED_AT)).toBe('Tue, Oct 6, 10:00 AM PDT');
+    expect(formatTime(SCHEDULED_AT, 'Europe/London')).toBe('6:00 PM GMT+1');
   });
 });

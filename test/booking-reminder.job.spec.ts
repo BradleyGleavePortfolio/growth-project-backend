@@ -41,16 +41,21 @@ function buildPrismaFake(sessions: FakeSession[]) {
   return {
     _logs: logs,
     coachingSession: {
-      findMany: jest.fn(async (args: { where: { status: string; start_at: { gte: Date; lte: Date } } }) => {
-        const lower = args.where.start_at.gte;
-        const upper = args.where.start_at.lte;
-        return sessions.filter(
-          (s) =>
-            s.status === args.where.status &&
-            s.start_at >= lower &&
-            s.start_at <= upper,
-        );
-      }),
+      findMany: jest.fn(
+        async (args: {
+          where: { status: string | { in: string[] }; start_at: { gte: Date; lte: Date } };
+        }) => {
+          const lower = args.where.start_at.gte;
+          const upper = args.where.start_at.lte;
+          const wanted = args.where.status;
+          // S-SCHED-2: the sweep asks for status IN (scheduled, pending_provider).
+          const statusOk = (status: string) =>
+            typeof wanted === 'string' ? status === wanted : wanted.in.includes(status);
+          return sessions.filter(
+            (s) => statusOk(s.status) && s.start_at >= lower && s.start_at <= upper,
+          );
+        },
+      ),
     },
     notificationDeliveryLog: {
       create: jest.fn(async (args: { data: FakeLog }) => {

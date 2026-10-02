@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -13,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { isUUID } from 'class-validator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
@@ -29,6 +31,7 @@ import {
   UpdateSessionTypeDto,
 } from './dto/scheduling.dto';
 import { SchedulingService } from './scheduling.service';
+import { SchedulingErrorCode, schedulingError } from './scheduling.types';
 
 // Mounted at /scheduling under the global JwtAuthGuard. Every endpoint
 // here requires an authenticated user; the service layer enforces the
@@ -86,20 +89,39 @@ export class SchedulingController {
 
   // ---------------- Session types ----------------
 
-  @ApiOperation({ summary: "List a coach's session types" })
+  @ApiOperation({
+    summary: 'List the coaches the calling client can book with',
+    description:
+      "Head coach first, then the current sub-coach. Each row carries the coach timezone, the number of active appointment types, and the welcome type with the client's upcoming welcome booking (if any). Coaches and owners get an empty list.",
+  })
+  @ApiResponse({ status: 200, description: 'Bookable coaches.' })
+  @Get('my-coaches')
+  async listMyCoaches(@Request() req: AuthedRequest) {
+    return this.scheduling.listMyCoaches(toActor(req));
+  }
+
+  @ApiOperation({
+    summary: "List a coach's session types",
+    description:
+      'Readable by the coach, an owner, and clients assigned to that coach (head coach or current sub-coach). Clients see active types only and never the default meeting link. include_archived=true is honoured for the coach and owners.',
+  })
   @ApiResponse({ status: 200, description: 'Session types listed.' })
+  @ApiResponse({ status: 403, description: 'COACH_NOT_BOOKABLE' })
   @Get('coaches/:coachId/session-types')
-  async listSessionTypes(@Param('coachId') coachId: string) {
-    return this.scheduling.listSessionTypes(coachId);
+  async listSessionTypes(
+    @Request() req: AuthedRequest,
+    @Param('coachId') coachId: string,
+    @Query('include_archived') includeArchived?: string,
+  ) {
+    return this.scheduling.listSessionTypes(toActor(req), coachId, {
+      includeArchived: includeArchived === 'true' || includeArchived === '1',
+    });
   }
 
   @ApiOperation({ summary: 'Create a session type for the calling coach' })
   @ApiResponse({ status: 201, description: 'Session type created.' })
   @Post('session-types')
-  async createSessionType(
-    @Request() req: AuthedRequest,
-    @Body() body: CreateSessionTypeDto,
-  ) {
+  async createSessionType(@Request() req: AuthedRequest, @Body() body: CreateSessionTypeDto) {
     return this.scheduling.createSessionType(toActor(req), body);
   }
 
@@ -118,9 +140,10 @@ export class SchedulingController {
 
   @ApiOperation({ summary: "Read a coach's recurring availability" })
   @ApiResponse({ status: 200, description: 'Availability windows.' })
+  @ApiResponse({ status: 403, description: 'COACH_NOT_BOOKABLE' })
   @Get('coaches/:coachId/availability')
-  async getAvailability(@Param('coachId') coachId: string) {
-    return this.scheduling.getAvailability(coachId);
+  async getAvailability(@Request() req: AuthedRequest, @Param('coachId') coachId: string) {
+    return this.scheduling.getAvailability(toActor(req), coachId);
   }
 
   @ApiOperation({
@@ -142,18 +165,29 @@ export class SchedulingController {
   // ---------------- Sessions ----------------
 
   @ApiOperation({
-    summary: 'List the calling user\'s upcoming sessions',
+    summary: "List the calling user's sessions",
     description:
-      'Owners see all upcoming, coaches see their roster, clients see their own.',
+      'scope=upcoming (default): sessions that have not ended, soonest first. scope=past: ended sessions, most recent first; page with before=<start_at of the last row>. Owners see all, coaches their own calendar, clients their own sessions.',
   })
-  @ApiResponse({ status: 200, description: 'Upcoming sessions.' })
+  @ApiResponse({ status: 200, description: 'Sessions.' })
   @Get('sessions')
   async listUpcoming(
     @Request() req: AuthedRequest,
     @Query('limit') limit?: string,
+    @Query('scope') scope?: string,
+    @Query('before') before?: string,
   ) {
+    if (scope !== undefined && scope !== 'upcoming' && scope !== 'past') {
+      throw new BadRequestException(
+        schedulingError(SchedulingErrorCode.INVALID_TIME, 'scope must be upcoming or past.'),
+      );
+    }
     const cap = limit ? parseInt(limit, 10) : 25;
-    return this.scheduling.listUpcomingForActor(toActor(req), cap);
+    return this.scheduling.listSessionsForActor(toActor(req), {
+      scope: scope === 'past' ? 'past' : 'upcoming',
+      limit: Number.isFinite(cap) ? cap : 25,
+      before: before ?? null,
+    });
   }
 
   @ApiOperation({ summary: 'Get a single session by id' })
@@ -166,10 +200,7 @@ export class SchedulingController {
   @ApiOperation({ summary: 'Request (or auto-book) a session with a coach' })
   @ApiResponse({ status: 201, description: 'Session requested or scheduled.' })
   @Post('sessions')
-  async requestSession(
-    @Request() req: AuthedRequest,
-    @Body() body: RequestSessionDto,
-  ) {
+  async requestSession(@Request() req: AuthedRequest, @Body() body: RequestSessionDto) {
     return this.scheduling.requestSession(toActor(req), body);
   }
 
@@ -244,7 +275,7 @@ export class SchedulingController {
   @ApiOperation({
     summary: 'Attach a manual video link to a session (coach only)',
     description:
-      'Sets video_provider=manual and stores the supplied URL verbatim. Reminder jobs will not re-mint a provider link.',
+      'Sets video_provider=manual and stores the supplied https:// (or tel:) link. Allowed while the session is requested, confirmed, or waiting on a provider link; a session waiting on a provider link becomes confirmed. The client is notified when a confirmed session gets its link.',
   })
   @ApiResponse({ status: 200, description: 'Video link attached.' })
   @Post('sessions/:id/manual-video-link')
@@ -272,13 +303,22 @@ export class SchedulingController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('duration_minutes') durationMinutes?: string,
+    @Query('session_type_id') sessionTypeId?: string,
   ) {
-    const parsed =
-      durationMinutes !== undefined ? Number(durationMinutes) : null;
+    if (sessionTypeId !== undefined && !isUUID(sessionTypeId)) {
+      throw new BadRequestException(
+        schedulingError(
+          SchedulingErrorCode.SESSION_TYPE_UNAVAILABLE,
+          "That appointment type could not be found. Pick a type from your coach's list.",
+        ),
+      );
+    }
+    const parsed = durationMinutes !== undefined ? Number(durationMinutes) : null;
     return this.scheduling.getOpenSlots(toActor(req), coachId, {
       from,
       to,
       duration_minutes: parsed,
+      session_type_id: sessionTypeId ?? null,
     });
   }
 
@@ -323,10 +363,7 @@ export class SchedulingController {
   @ApiResponse({ status: 200, description: 'Override deleted.' })
   @Delete('coach/availability-overrides/:id')
   @HttpCode(HttpStatus.OK)
-  async deleteAvailabilityOverride(
-    @Request() req: AuthedRequest,
-    @Param('id') id: string,
-  ) {
+  async deleteAvailabilityOverride(@Request() req: AuthedRequest, @Param('id') id: string) {
     return this.scheduling.deleteAvailabilityOverride(toActor(req), id);
   }
 }
@@ -342,7 +379,7 @@ function toActor(req: AuthedRequest) {
     req.socket?.remoteAddress ??
     null;
   const ua = req.headers?.['user-agent'];
-  const userAgent = Array.isArray(ua) ? ua[0] : ua ?? null;
+  const userAgent = Array.isArray(ua) ? ua[0] : (ua ?? null);
   return {
     id: req.user.id,
     role: req.user.role as 'student' | 'coach' | 'owner',

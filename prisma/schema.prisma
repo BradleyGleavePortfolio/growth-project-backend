@@ -3030,6 +3030,17 @@ model SessionType {
   default_video_provider VideoProvider @default(stub)
   // Soft-disable so historic sessions still link back to their type.
   archived_at            DateTime?
+  // S-SCHED-2: the coach's welcome / first call type (the one Roman's
+  // tutorial offers: "Book your welcome call with <coach>"). Persistent
+  // marker, never inferred from the name. At most one active
+  // (archived_at IS NULL) welcome type per coach: partial unique index
+  // SessionType_one_active_welcome_per_coach (migration 20270222000000).
+  is_welcome             Boolean       @default(false)
+  // S-SCHED-2: the coach's own https meeting room for this type. Attached
+  // as the session's manual video link when a session of this type is
+  // confirmed without one. Never shown to clients on the type list.
+  // CHECK SessionType_default_meeting_url_https keeps it https and bounded.
+  default_meeting_url    String?
   created_at             DateTime      @default(now())
   updated_at             DateTime      @default(now()) @updatedAt
 
@@ -3155,6 +3166,13 @@ model CoachingSession {
   participants  SessionParticipant[]      @relation("SessionParticipantSession")
   delivery_logs NotificationDeliveryLog[] @relation("DeliveryLogSession")
 
+  // S-SCHED-2 no-double-booking floor (migration 20270222000000, raw SQL
+  // because Prisma cannot express it): exclusion constraint
+  // CoachingSession_no_overlapping_active_booking forbids two rows for the
+  // same coach_id whose [start_at, end_at) overlap while both are in an
+  // occupying status (requested, scheduled, pending_provider). The service
+  // also serialises writers per coach with an advisory lock and re-checks.
+  //
   // Hot paths:
   //   - "list this coach's upcoming sessions" → (coach_id, start_at)
   //   - "list this client's upcoming sessions" → (client_id, start_at)

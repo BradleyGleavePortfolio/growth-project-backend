@@ -47,6 +47,11 @@ export const NotificationKind = {
   BOOKING_RESCHEDULED: 'booking_rescheduled',
   BOOKING_REMINDER_24H: 'booking_reminder_24h',
   BOOKING_REMINDER_1H: 'booking_reminder_1h',
+  // S-SCHED-2: a confirmed session has no call link yet (to the coach, with
+  // an "add the call link" action) and the link was added (to the client).
+  // Same booking_* preference cluster.
+  BOOKING_LINK_NEEDED: 'booking_link_needed',
+  BOOKING_LINK_READY: 'booking_link_ready',
 
   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
   // each independently opt-out-able via NotificationPreferences.

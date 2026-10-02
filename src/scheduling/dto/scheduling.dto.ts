@@ -42,6 +42,20 @@ export class CreateSessionTypeDto {
   @IsOptional()
   @IsIn(VIDEO_PROVIDERS as readonly string[])
   default_video_provider?: VideoProviderDtoValue;
+
+  // S-SCHED-2: marks the coach's welcome / first call type. Setting it
+  // clears the marker on the coach's other active types.
+  @IsOptional()
+  @IsBoolean()
+  is_welcome?: boolean;
+
+  // S-SCHED-2: the coach's own https room for this type, attached to
+  // sessions of this type when they are confirmed without a link.
+  // Empty string removes it. Never returned to clients on the type list.
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  default_meeting_url?: string | null;
 }
 
 export class UpdateSessionTypeDto {
@@ -73,6 +87,16 @@ export class UpdateSessionTypeDto {
   @IsOptional()
   @IsBoolean()
   archived?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  is_welcome?: boolean;
+
+  // Empty string or null removes the default link.
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  default_meeting_url?: string | null;
 }
 
 export class AvailabilityWindowDto {
@@ -111,6 +135,9 @@ export class RequestSessionDto {
   @IsUUID()
   coach_id!: string;
 
+  // Required by the service (400 SESSION_TYPE_REQUIRED with a readable
+  // message when missing); optional here so the error is coded, not a
+  // generic validation string.
   @IsOptional()
   @IsUUID()
   session_type_id?: string;
