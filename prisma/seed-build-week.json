@@ -2,20 +2,20 @@
   {
     "day_number": 1,
     "title": "Audit",
-    "focus_area": "Diagnostic + Baseline",
-    "narrative": "Day 1 is an audit. Before strategy, before action, you take an honest inventory of where you are right now across body, income, and environment. The 40-point diagnostic, the starting body weight, and the income baseline together form the snapshot you will measure every future week against.",
+    "focus_area": "Consultation + Baseline",
+    "narrative": "Day 1 is an audit. Before strategy, before action, you take an honest inventory of where you are right now across body, income, and environment. Your consultation, the starting body weight, and the income baseline together form the snapshot you will measure every future week against.",
     "prompt_questions": [
       "What does success look like in 90 days?",
       "What is your current monthly income, and how many hours per week are you free to work on this?",
       "What is your starting body weight today?"
     ],
     "action_items": [
-      { "title": "Complete the 40-point diagnostic", "description": "Work through the diagnostic form end-to-end. Honest answers only — this becomes the baseline every later week is measured against.", "time_estimate_min": 25 },
+      { "title": "Complete your consultation", "description": "Work through your consultation in the app from start to finish so your coach can tailor your plan. Honest answers only. This becomes the baseline every later week is measured against.", "time_estimate_min": 25 },
       { "title": "Log starting body weight", "description": "Record your starting weight today. A photo is optional but recommended — you will compare against it on Day 7 and at the 30/60/90-day marks.", "time_estimate_min": 5 },
       { "title": "Income baseline", "description": "Capture current monthly income and the hours per week you can realistically commit. This sets the expansion target for Day 3.", "time_estimate_min": 10 },
       { "title": "Define 90-day success", "description": "Write at least 100 words on what success looks like in 90 days. Specifics beat abstractions — name a number, a body, a place.", "time_estimate_min": 15 }
     ],
-    "expected_artifact": "Diagnostic + baseline snapshot: weight, income, hours, and a 100-word success statement."
+    "expected_artifact": "Consultation + baseline snapshot: weight, income, hours, and a 100-word success statement."
   },
   {
     "day_number": 2,

@@ -27,10 +27,13 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+import { PlanContextRepository } from '../../src/community/plan-context/plan-context.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
 import { CommunityMessagesEnabledGuard } from '../../src/community/community-write-flag.guard';
@@ -41,14 +44,14 @@ import { CommunityRealtimeService } from '../../src/community/realtime/community
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-messages] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-messages] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -82,10 +85,8 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       const req = ctx.switchToHttp().getRequest();
       const userId = req.headers[H_USER] as string | undefined;
       if (!userId) throw new UnauthorizedException();
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       req.user = user;
       return true;
@@ -144,7 +145,11 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       providers: [
         CommunityMessagesService,
         CommunityMessagesRepository,
+        // CommunityMessagesService validates plan-context tags on send.
+        PlanContextService,
+        PlanContextRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
         CommunityRealtimeService,
@@ -193,19 +198,14 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     ids.studentA2 = randomUUID();
     ids.studentB = randomUUID();
 
-    const users: Array<[string, string, string, string | null]> = [
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentA2, 'student', 'Student A2', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: { coach_id: ids.coachA, name: 'WS A', slug: `ws-a-${tag}` },
@@ -243,13 +243,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [
-      ids.coachA,
-      ids.coachB,
-      ids.studentA,
-      ids.studentA2,
-      ids.studentB,
-    ].filter(Boolean);
+    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentA2, ids.studentB].filter(
+      Boolean,
+    );
     await prisma.communityMessage.deleteMany({
       where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
     });
@@ -263,9 +259,14 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   }
 
   it('1. anonymous send → 401', async () => {
-    const res = await call('POST', `/api/community/cohorts/${ids.cohortA}/messages`, {}, {
-      body: 'hi',
-    });
+    const res = await call(
+      'POST',
+      `/api/community/cohorts/${ids.cohortA}/messages`,
+      {},
+      {
+        body: 'hi',
+      },
+    );
     expect(res.status).toBe(401);
   });
 
@@ -290,9 +291,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
   });
 
   it('2b. v1-4: send emits an IDs-only community.message.created broadcast', async () => {
-    const spy = jest
-      .spyOn(realtime, 'broadcastCommunityEvent')
-      .mockResolvedValue(undefined);
+    const spy = jest.spyOn(realtime, 'broadcastCommunityEvent').mockResolvedValue(undefined);
     try {
       const sent = await call(
         'POST',
@@ -306,14 +305,10 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       expect(spy).toHaveBeenCalled();
       const [channel, event, payload] = spy.mock.calls[0];
       expect(event).toBe('community.message.created');
-      expect(channel).toMatch(
-        new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`),
-      );
+      expect(channel).toMatch(new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`));
       // IDs only — the user-authored body must NEVER reach the payload.
       expect(JSON.stringify(payload)).not.toContain('SECRET-LEAK-TOKEN-XYZ');
-      expect(JSON.stringify(payload)).not.toMatch(
-        /body|content|text|emoji|reason/i,
-      );
+      expect(JSON.stringify(payload)).not.toMatch(/body|content|text|emoji|reason/i);
       expect(Object.keys(payload as object).sort()).toEqual(
         ['authorId', 'cohortId', 'createdAt', 'id'].sort(),
       );
@@ -350,12 +345,9 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     );
     const id = sent.body.message.id;
 
-    const edit = await call(
-      'PATCH',
-      `/api/community/messages/${id}`,
-      asUser(ids.studentA),
-      { body: 'edited' },
-    );
+    const edit = await call('PATCH', `/api/community/messages/${id}`, asUser(ids.studentA), {
+      body: 'edited',
+    });
     expect(edit.status).toBe(200);
     expect(edit.body.message.body).toBe('edited');
 
@@ -456,11 +448,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     expect(bodies).toContain('real cohort message');
 
     // The comment is unreachable through every /messages/:id path → 404.
-    const get = await call(
-      'GET',
-      `/api/community/messages/${comment.id}`,
-      asUser(ids.studentA),
-    );
+    const get = await call('GET', `/api/community/messages/${comment.id}`, asUser(ids.studentA));
     expect(get.status).toBe(404);
 
     const patch = await call(
@@ -471,11 +459,7 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     );
     expect(patch.status).toBe(404);
 
-    const del = await call(
-      'DELETE',
-      `/api/community/messages/${comment.id}`,
-      asUser(ids.studentA),
-    );
+    const del = await call('DELETE', `/api/community/messages/${comment.id}`, asUser(ids.studentA));
     expect(del.status).toBe(404);
   });
 

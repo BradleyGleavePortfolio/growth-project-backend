@@ -1302,6 +1302,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
   },
   {
+    name: 'CONSULT_CONSENT_COPY_VERSIONS',
+    tier: 'optional',
+    default: "consult-consent-v3 (unset, empty, or no known name -> ['consult-consent-v3'])",
+    reason:
+      "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
+  },
+  {
     name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -1321,6 +1328,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: '600 (VOICE_UPLOAD_TTL_SEC, clamped 60..86400)',
     reason: 'Signed upload URL lifetime for community voice notes.',
+  },
+  {
+    name: 'VOICE_KEY_SIGNING_SECRET',
+    tier: 'optional',
+    default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
+    reason:
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
   },
   {
     name: 'VOICE_NOTE_MAX_BYTES',
