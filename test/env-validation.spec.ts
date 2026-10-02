@@ -85,6 +85,10 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // were added alongside the storefront. Set here so missingFeature
     // stays empty for the "clean fullProdEnv" assertion.
     APPLE_TEAM_ID: 'TEAMID1234',
+    // #608 account deletion — Sign in with Apple token revocation key
+    // (feature tier: unset means revocation is skipped, never a boot crash).
+    APPLE_SIGNIN_KEY_ID: 'KEYID12345',
+    APPLE_SIGNIN_PRIVATE_KEY: 'fixture-p8-pem',
     ANDROID_SHA256_FINGERPRINT:
       'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
     RESEND_API_KEY: 're_test_key',
@@ -129,6 +133,20 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // assertion stays green.
     COACH_AI_MAX_ACTUAL_CENTS: '4000',
     COACH_AI_VALUE_MULTIPLIER: '3.125',
+    // S-ENVTRUTH inventory — feature-tier names registered 2026-10-01. Set
+    // here so the clean-prod-env assertion stays green; each one degrades a
+    // live surface when unset (see its rule in env-validation.ts).
+    ADMIN_SERVICE_TOKEN: 'test-admin-service-token',
+    SUPABASE_ANON_KEY: 'test-supabase-anon-key',
+    EMAIL_TRANSPORT: 'resend',
+    EMAIL_FROM_ADDRESS: 'Growth Project <noreply@trygrowthproject.com>',
+    DATA_EXPORT_TOKEN_SECRET: 'test-data-export-token-secret-32-chars-min',
+    METRICS_AUTH_TOKEN: 'test-metrics-auth-token',
+    STRIPE_CONNECT_REFRESH_URL: 'https://app.trygrowthproject.com/connect/refresh',
+    STRIPE_CONNECT_RETURN_URL: 'https://app.trygrowthproject.com/connect/return',
+    MUX_TOKEN_ID: 'test-mux-token-id',
+    MUX_TOKEN_SECRET: 'test-mux-token-secret',
+    MUX_WEBHOOK_SECRET: 'test-mux-webhook-secret',
   };
 }
 
