@@ -86,3 +86,11 @@ export function dunningV2LockoutAt(cycleStart: Date): Date {
 
 /** Stable 403 error code returned by the lockout guard for non-billing routes. */
 export const LOCKED_DUNNING_CODE = 'LOCKED_DUNNING';
+
+/**
+ * S-DUNNING-R2 (OR-110-2) — the https path every client dunning notice links
+ * to. A universal link / Android App Link (AASA and assetlinks are served by
+ * this backend) opens the native in-app card update; without the app it
+ * lands on a calm page that asks the client to open the app.
+ */
+export const DUNNING_UPDATE_CARD_URL = 'https://app.trygrowthproject.com/billing/update-card';

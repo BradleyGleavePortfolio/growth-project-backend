@@ -24,6 +24,9 @@ export class StripeConnectApiError extends Error {
     public readonly httpStatus: number,
     public readonly stripeCode: string | null,
     public readonly stripeType: string | null,
+    // S-DUNNING-R2: the issuer's decline reason on a card_error
+    // (e.g. insufficient_funds), so a failed in-app payment is truthful.
+    public readonly declineCode: string | null = null,
   ) {
     super(message);
     this.name = 'StripeConnectApiError';
@@ -114,6 +117,34 @@ export interface StripeSubscriptionObject {
   canceled_at?: number | null;
   items?: { data?: Array<{ price?: { id?: string } }> };
   metadata?: Record<string, string>;
+  [k: string]: unknown;
+}
+
+export interface StripeSetupIntentObject {
+  id: string;
+  status: string;
+  client_secret?: string | null;
+  customer?: string | null;
+  payment_method?: string | { id?: string } | null;
+  usage?: string;
+  metadata?: Record<string, string>;
+  [k: string]: unknown;
+}
+
+export interface StripeInvoiceObject {
+  id: string;
+  status: string; // draft | open | paid | uncollectible | void
+  subscription?: string | null;
+  customer?: string | null;
+  amount_due?: number;
+  amount_paid?: number;
+  amount_remaining?: number;
+  currency?: string;
+  created?: number;
+  payment_intent?:
+    | string
+    | { id?: string; status?: string; client_secret?: string | null }
+    | null;
   [k: string]: unknown;
 }
 
@@ -751,6 +782,138 @@ export class StripeConnectApiService {
     });
   }
 
+  // --- S-DUNNING-R2 — native card update (OR-110-2) and owner rulings 1A/2A ---
+  //
+  // All on the PLATFORM account (no Stripe-Account header): the client's
+  // Customer, the subscription and its invoices live on the platform; funds
+  // reach the coach through the subscription's transfer_data (destination
+  // charges). Every mutation carries an Idempotency-Key.
+
+  /**
+   * SetupIntent the in-app PaymentSheet confirms to save a new card on the
+   * platform Customer for future off-session subscription charges (the same
+   * place Checkout saves the first card; no on_behalf_of, so the card is
+   * usable by every subscription the client holds).
+   */
+  async createSetupIntent(args: {
+    customer: string;
+    metadata?: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeSetupIntentObject> {
+    const form: Record<string, string> = {
+      customer: args.customer,
+      usage: 'off_session',
+      'payment_method_types[0]': 'card',
+    };
+    if (args.metadata) {
+      for (const [k, v] of Object.entries(args.metadata)) {
+        form[`metadata[${k}]`] = v;
+      }
+    }
+    return this.post<StripeSetupIntentObject>('/setup_intents', form, args.idempotencyKey);
+  }
+
+  async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
+    return this.get<StripeSetupIntentObject>(
+      `/setup_intents/${encodeURIComponent(setupIntentId)}`,
+    );
+  }
+
+  /** Customer default for future invoices (priority 3 in Stripe's order). */
+  async setCustomerDefaultPaymentMethod(args: {
+    customerId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeCustomerObject> {
+    return this.post<StripeCustomerObject>(
+      `/customers/${encodeURIComponent(args.customerId)}`,
+      { 'invoice_settings[default_payment_method]': args.paymentMethodId },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Subscription default (priority 2, above the customer default). Checkout
+   * saves the first card ON the subscription
+   * (`save_default_payment_method=on_subscription`), so Stripe keeps retrying
+   * the old card unless this field is replaced too.
+   */
+  async setSubscriptionDefaultPaymentMethod(args: {
+    subscriptionId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { default_payment_method: args.paymentMethodId },
+      args.idempotencyKey,
+    );
+  }
+
+  /** Open (finalized, unpaid) invoices of one subscription, newest first. */
+  async listOpenInvoices(subscriptionId: string): Promise<StripeInvoiceObject[]> {
+    const q = new URLSearchParams({
+      subscription: subscriptionId,
+      status: 'open',
+      limit: '10',
+    }).toString();
+    const res = await this.get<{ data?: StripeInvoiceObject[] }>(`/invoices?${q}`);
+    return Array.isArray(res?.data) ? res.data : [];
+  }
+
+  async retrieveInvoice(invoiceId: string): Promise<StripeInvoiceObject> {
+    const q = new URLSearchParams({ 'expand[0]': 'payment_intent' }).toString();
+    return this.get<StripeInvoiceObject>(`/invoices/${encodeURIComponent(invoiceId)}?${q}`);
+  }
+
+  /**
+   * Attempt payment of one open invoice with an explicit payment method,
+   * on-session (the client is in the app, having just saved the card). The
+   * invoice owns exactly one PaymentIntent, so this and any Stripe retry
+   * confirm the SAME PaymentIntent: an invoice can be paid at most once.
+   * Stripe answers 402 `invoice_payment_intent_requires_action` when the
+   * bank wants 3DS; the caller then hands the invoice's PaymentIntent
+   * client_secret to the app.
+   */
+  async payInvoice(args: {
+    invoiceId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
+      { payment_method: args.paymentMethodId, off_session: 'false' },
+      args.idempotencyKey,
+    );
+  }
+
+  /** Mark an open invoice void (terminal: it can never be paid). */
+  async voidInvoice(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/void`,
+      {},
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Voluntary cancel outside dunning (owner 13:43 option A): the client keeps
+   * access through the period already paid, no refund, no proration.
+   */
+  async setCancelAtPeriodEnd(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { cancel_at_period_end: 'true', proration_behavior: 'none' },
+      args.idempotencyKey,
+    );
+  }
+
   // --- Phase 6 — Payout readiness, balance, refunds, disputes ---
   //
   // All four read methods use Stripe's `Stripe-Account` header to scope
@@ -1003,7 +1166,8 @@ export class StripeConnectApiService {
         `Stripe API ${res.status} on ${path}`;
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
-      throw new StripeConnectApiError(message, res.status, code, type);
+      const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;
+      throw new StripeConnectApiError(message, res.status, code, type, declineCode);
     }
     return parsed as T;
   }

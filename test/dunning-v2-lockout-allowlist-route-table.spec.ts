@@ -158,16 +158,20 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'auth/signup-policy',
   'auth/signup-with-code',
   'auth/validate-invite-code',
+  'billing/update-card', // PublicPagesController — dunning email landing (S-DUNNING-R2)
   'checkout', // public landing checkout page (LandingPagePublicController)
   'checkout/billing-portal', // CheckoutController owns the rest of this block
   'checkout/dunning', // DunningStatusController — the lockout screen's status read (S-DUNNING)
   'checkout/entitlement',
   'checkout/payment-intent',
   'checkout/payment-method',
+  'checkout/payment-method/confirm', // ClientBillingController — native card update + 1A pay (S-DUNNING-R2)
+  'checkout/payment-method/setup-intent',
   'checkout/purchases',
   'checkout/purchases/:purchaseid/drops',
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
+  'checkout/subscriptions/:purchaseid/cancel', // ClientBillingController — 2A / option A cancel (S-DUNNING-R2)
   'coach/billing/portal-session', // mobile coach billing (MobileCoachBillingController)
   'coach/billing/status',
   'coach/me/billing', // v1 coach billing (CoachBillingController) — Lens A P2-1

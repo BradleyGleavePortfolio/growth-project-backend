@@ -785,11 +785,30 @@ export class CheckoutWebhookHandlerService {
       return this.applySubscriptionUpdated(event, tx);
     }
 
+    const status = this.normalizeSubscriptionStatus(sub.status);
+
+    // S-DUNNING-R2 (owner 2A): a Stripe subscription that is canceled can
+    // never become live again, so an update carrying a live status for a
+    // purchase we already ended is an out-of-order delivery (Stripe does not
+    // order events). The 2A path voids the open invoice (Stripe then emits
+    // `customer.subscription.updated` status=active) a moment before it
+    // cancels; without this guard that late event would hand access back.
+    if (purchase.status === 'canceled' && status !== 'canceled') {
+      this.logger.log(
+        JSON.stringify({
+          event: 'checkout_webhook.stale_subscription_update_ignored',
+          purchase_id: purchase.id,
+          stripe_event_id: event.id,
+          incoming_status: status,
+        }),
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
+    }
+
     const pkg = await db.coachPackage.findUnique({
       where: { id: purchase.package_id },
     });
 
-    const status = this.normalizeSubscriptionStatus(sub.status);
     const entitlementActive = ['active', 'trialing', 'past_due'].includes(status);
     const currentPeriodEnd = this.toDate(sub.current_period_end);
     const canceledAt = this.toDate(sub.canceled_at);

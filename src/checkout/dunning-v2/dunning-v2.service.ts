@@ -15,6 +15,7 @@ import {
   DunningV2State,
   dunningV2LockoutAt,
   dunningV2StepForElapsed,
+  DUNNING_UPDATE_CARD_URL,
 } from './dunning-v2.cadence';
 
 /**
@@ -83,9 +84,22 @@ export interface ClientDunningStatus {
   day: number | null;
   coach_name: string | null;
   card_last4: string | null;
-  /** The client action that ends the cycle: POST this route for a portal URL. */
-  update_payment_route: '/v1/checkout/billing-portal';
+  card_brand: string | null;
+  /**
+   * The client action that ends the cycle (OR-110-2, native): POST this route
+   * for a SetupIntent, present the in-app PaymentSheet, then POST
+   * `/v1/checkout/payment-method/confirm`, which (1A) pays the open invoice.
+   */
+  update_payment_route: '/v1/checkout/payment-method/setup-intent';
+  /** Universal link (emails, notifications) that opens the in-app card update. */
+  update_card_url: string;
+  /**
+   * POST to end the plan now (owner 2A: the unpaid invoice is voided, access
+   * ends at once, nothing more is collected). Null when there is no cycle.
+   */
+  cancel_route: string | null;
 }
+
 
 const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
 
@@ -204,6 +218,8 @@ export class DunningV2Service {
         id: state.id,
         status: 'active',
         locked_out_at: null,
+        // S-DUNNING-R2 2A: a client who ended their plan gets no more notices.
+        client_canceled_at: null,
         step_index: state.step_index,
       },
       data: {
@@ -258,6 +274,9 @@ export class DunningV2Service {
       where: {
         status: 'active',
         locked_out_at: null,
+        // S-DUNNING-R2 2A: never notify or Day-10-lock a client who ended
+        // their plan in dunning; the reconciler finishes that cancel.
+        client_canceled_at: null,
         step_index: { gte: 0 },
         entered_at: { not: null },
       },
@@ -335,7 +354,7 @@ export class DunningV2Service {
     let won = false;
     await this.prisma.$transaction(async (tx) => {
       const res = await tx.dunningState.updateMany({
-        where: { id: row.id, status: 'active', locked_out_at: null },
+        where: { id: row.id, status: 'active', locked_out_at: null, client_canceled_at: null },
         data: { locked_out_at: now, step_index: Math.max(row.step_index, 3) },
       });
       if (res.count !== 1) return;
@@ -568,13 +587,17 @@ export class DunningV2Service {
       day: null,
       coach_name: null,
       card_last4: null,
-      update_payment_route: '/v1/checkout/billing-portal',
+      card_brand: null,
+      update_payment_route: '/v1/checkout/payment-method/setup-intent',
+      update_card_url: DUNNING_UPDATE_CARD_URL,
+      cancel_route: null,
     };
     if (!base.enabled) return base;
 
     const rows = await this.prisma.dunningState.findMany({
       where: {
         status: 'active',
+        client_canceled_at: null,
         step_index: { gte: 0 },
         entered_at: { not: null },
         purchase: { client_user_id: clientUserId },
@@ -594,7 +617,7 @@ export class DunningV2Service {
       }),
       this.prisma.connectCustomer.findUnique({
         where: { client_user_id: clientUserId },
-        select: { default_card_last4: true },
+        select: { default_card_last4: true, default_card_brand: true },
       }),
     ]);
     const enteredAt = row.entered_at as Date;
@@ -610,6 +633,8 @@ export class DunningV2Service {
       day: Math.max(0, Math.floor((Date.now() - enteredAt.getTime()) / DUNNING_V2_DAY_MS)),
       coach_name: coach?.name ?? null,
       card_last4: customer?.default_card_last4 ?? null,
+      card_brand: customer?.default_card_brand ?? null,
+      cancel_route: `/v1/checkout/subscriptions/${row.purchase_id}/cancel`,
     };
   }
 

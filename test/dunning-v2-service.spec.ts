@@ -411,7 +411,9 @@ describe('DunningV2Service', () => {
         lockout_at: at(10).toISOString(),
         coach_name: 'Morgan Coach',
         card_last4: '0341',
-        update_payment_route: '/v1/checkout/billing-portal',
+        update_payment_route: '/v1/checkout/payment-method/setup-intent',
+        update_card_url: 'https://app.trygrowthproject.com/billing/update-card',
+        cancel_route: '/v1/checkout/subscriptions/p1/cancel',
       });
       fake.find('dunningState', { id: 'ds1' })!.locked_out_at = at(10);
       expect((await svc.getClientStatus('client-1')).state).toBe('locked');

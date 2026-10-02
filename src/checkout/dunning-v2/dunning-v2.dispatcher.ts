@@ -14,7 +14,7 @@ import {
   QuipRotation,
 } from './dunning-v2.renderer';
 import { DunningV2Telemetry } from './dunning-v2.telemetry';
-import { DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
+import { DUNNING_UPDATE_CARD_URL, DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 import {
   SurfaceKey,
@@ -203,8 +203,13 @@ export class DunningV2Dispatcher {
     if (this.email && ctx.clientEmail) {
       await this.email.send({
         to: ctx.clientEmail,
-        template: this.emailTemplateForStep(ctx.stepIndex),
-        data: { roman_body: body, ...ctx.tokens },
+        template: EmailTemplateKey.DUNNING_V2_CLIENT,
+        data: {
+          roman_body: body,
+          ...ctx.tokens,
+          subject: this.clientEmailSubject(ctx),
+          update_card_url: DUNNING_UPDATE_CARD_URL,
+        },
         idempotencyKey: `dunning_v2:${ctx.dunningStateId}:email:${ctx.stepIndex}`,
       });
     }
@@ -290,7 +295,7 @@ export class DunningV2Dispatcher {
     if (this.email && ctx.coachEmail) {
       await this.email.send({
         to: ctx.coachEmail,
-        template: EmailTemplateKey.DUNNING_FINAL,
+        template: EmailTemplateKey.DUNNING_V2_COACH,
         data: { roman_body: emailBody, ...ctx.tokens },
         idempotencyKey: `coach_notify:${ctx.dunningStateId}:email`,
       });
@@ -304,17 +309,28 @@ export class DunningV2Dispatcher {
     this.telemetry.notifySent(ctx.coachUserId, 7, 'email', 'coach');
   }
 
-  /** Map a v2 step to its email template (reuses v1 cadence templates). */
-  private emailTemplateForStep(stepIndex: number): EmailTemplateKey {
-    switch (stepIndex) {
+  /**
+   * Per-step client subject. S-DUNNING-R2 (F17): v2 used to send the v1
+   * cadence templates, which render v1 fields (`billing_portal_url`,
+   * `amount_display`) v2 never passes, so the button had no link and the
+   * amount was blank; the coach got the client's "subscription is ending"
+   * mail. v2 now has its own templates that render `roman_body`.
+   */
+  private clientEmailSubject(ctx: DispatchContext): string {
+    if (ctx.isLateReversalCycle) return 'Your recent payment was reversed';
+    switch (ctx.stepIndex) {
+      case 0:
+        return 'Your payment did not go through';
       case 1:
-        return EmailTemplateKey.PAYMENT_REMINDER_URGENT;
+        return 'Your payment is still outstanding';
       case 2:
-        return EmailTemplateKey.PAYMENT_FINAL_NOTICE;
+        return 'Your access is at risk';
       case 3:
-        return EmailTemplateKey.PAYMENT_FINAL_NOTICE;
+        return ctx.tokens.lockoutDate
+          ? `Final notice: access pauses on ${ctx.tokens.lockoutDate}`
+          : 'Final notice before your access pauses';
       default:
-        return EmailTemplateKey.PAYMENT_REMINDER_SOFT;
+        return 'About your Growth Project payment';
     }
   }
 

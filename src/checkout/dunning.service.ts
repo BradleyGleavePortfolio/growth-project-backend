@@ -10,6 +10,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { PrismaService } from '../prisma.service';
 import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
+import { DUNNING_UPDATE_CARD_URL } from './dunning-v2/dunning-v2.cadence';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dunning v1 — webhook-driven failed-payment recovery.
@@ -1237,7 +1238,9 @@ export class DunningService {
       cancellation_date: cancellation
         ? cancellation.toISOString().slice(0, 10)
         : null,
-      billing_portal_url: process.env.BILLING_PORTAL_URL ?? 'https://thegrowthproject.app/billing',
+      // S-DUNNING-R2 (OR-110-2): the default opens the native in-app card
+      // update (universal link), not a browser-hosted billing page.
+      billing_portal_url: process.env.BILLING_PORTAL_URL ?? DUNNING_UPDATE_CARD_URL,
       coach_name: null,
     };
   }

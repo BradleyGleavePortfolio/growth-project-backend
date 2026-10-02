@@ -3823,6 +3823,21 @@ model DunningState {
   // charge is later reversed. Drives regular-vs-"again" copy selection.
   // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
   reversal_count           Int            @default(0)
+  // S-DUNNING-R2 (owner 1A/2A) — short billing-action lease. A client card
+  // update that pays the open invoice ('paying:<uuid>') and a client cancel
+  // that voids it ('canceling:<uuid>') claim this lease by CAS before any
+  // Stripe call, so the two never interleave across requests or machines;
+  // only the holder of the token releases it. Null when idle; an expired
+  // lease (billing_action_until <= now) is free.
+  billing_action           String?
+  billing_action_until     DateTime?
+  // S-DUNNING-R2 (owner 2A) — the client ended their plan during this
+  // dunning cycle. Written after the open invoice is voided and before the
+  // Stripe cancel; status 'abandoned' follows once the subscription is
+  // canceled. status 'active' with this set means the cancel is unfinished:
+  // the client's retry or the hourly reconciler completes it. Null for every
+  // other ending.
+  client_canceled_at       DateTime?
 
   attempts DunningAttempt[]
 

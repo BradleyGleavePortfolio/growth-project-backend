@@ -34,6 +34,8 @@ interface PageContent {
   cta_label: string;
   cta_href: string;
   invite_code?: string | null;
+  /** Optional quieter links under the CTA (label + href, both escaped). */
+  links?: ReadonlyArray<{ label: string; href: string }>;
 }
 
 function pageFor(platform: DownloadPlatform): PageContent {
@@ -65,6 +67,37 @@ function pageFor(platform: DownloadPlatform): PageContent {
 
 export function renderDownloadPage(platform: DownloadPlatform): string {
   return baseDocument(pageFor(platform));
+}
+
+/**
+ * S-DUNNING-R2 (OR-110-2) — landing for the https link in dunning emails
+ * (https://app.trygrowthproject.com/billing/update-card). On a phone with the
+ * app installed the OS opens the app's card screen directly (universal link /
+ * App Link) and this page never shows. Anywhere else it calmly asks the
+ * client to open the app, where the card is updated natively. No account
+ * data is rendered: the page is public and identical for everyone.
+ */
+export function renderBillingUpdateCardPage(): string {
+  return baseDocument({
+    title: 'The Growth Project — Update your card',
+    headline: 'Update your card in the app',
+    body:
+      'Card updates happen inside The Growth Project app, so your card ' +
+      'details stay with our payment provider and never pass through a web ' +
+      'page. Open the app on your phone and it takes you straight to the ' +
+      'card screen. Once the new card is saved, the amount owed is paid with ' +
+      'it and your access stays on.',
+    cta_label: 'Open the app',
+    cta_href: 'tgp://billing/update-card',
+    links: [
+      { label: 'Get the iPhone app', href: '/download/ios' },
+      { label: 'Get the Android app', href: '/download/android' },
+      {
+        label: `Need help? Email ${SUPPORT_EMAIL}`,
+        href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Updating my card')}`,
+      },
+    ],
+  });
 }
 
 export function renderSignupPage(inviteCode?: string | null): string {
@@ -119,6 +152,10 @@ function baseDocument(p: PageContent): string {
   const codeBlock = p.invite_code
     ? `\n  <p class="code-label">Your invite code</p>\n  <p class="code">${escapeHtml(p.invite_code)}</p>`
     : '';
+  const links = (p.links ?? [])
+    .map((l) => `\n    <li><a href="${escapeAttr(l.href)}">${escapeHtml(l.label)}</a></li>`)
+    .join('');
+  const linksBlock = links ? `\n  <ul class="links">${links}\n  </ul>` : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -137,6 +174,9 @@ function baseDocument(p: PageContent): string {
   p.code { margin: 0 0 28px 0; font-family: "SF Mono", "Menlo", ui-monospace, monospace; font-size: 17px; color: #1F1B16; user-select: all; }
   a.cta { display: inline-block; padding: 14px 22px; border-radius: 999px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
   a.cta:hover { background: #3A332B; }
+  ul.links { list-style: none; padding: 0; margin: 28px 0 0 0; }
+  ul.links li { margin: 0 0 10px 0; font-size: 15px; }
+  ul.links a { color: #3A332B; }
   footer { margin-top: 40px; font-size: 13px; color: #8A7F6E; }
 </style>
 </head>
@@ -144,7 +184,7 @@ function baseDocument(p: PageContent): string {
 <main>
   <h1>${headline}</h1>
   <p>${body}</p>${codeBlock}
-  <a class="cta" href="${ctaHref}">${ctaLabel}</a>
+  <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
   <footer>The Growth Project</footer>
 </main>
 </body>
