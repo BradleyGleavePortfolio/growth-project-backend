@@ -319,11 +319,11 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
 
       - name: Bootstrap + apply the clinic engagement migration (#609)
-        # Minimal NotificationPreferences (the migration adds two columns to
-        # it), then the engagement migration VERBATIM (three tables and their
-        # RLS policies), then the Supabase-default table grants so RLS (not a
-        # missing GRANT) decides. Runs after the onboarding step, which adds
-        # "User".deleted_at.
+        # Minimal NotificationPreferences and CoachMessage (the migration adds
+        # columns to both) and "User".deletion_scheduled_at, then the
+        # engagement migration VERBATIM (three tables and their RLS policies),
+        # then the Supabase-default table grants so RLS (not a missing GRANT)
+        # decides. Runs after the onboarding step, which adds "User".deleted_at.
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/clinic-engagement-live-bootstrap.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270213000000_clinic_engagement/migration.sql
@@ -362,7 +362,9 @@ jobs:
         # (coach-self welcome setting, owner-only welcome jobs, client-self
         # reminder ledger), anon denied, no INSERT / UPDATE / DELETE for any
         # non-service principal, service_role read/write, column defaults and
-        # the idempotency unique keys. Refuses to skip under CI=true.
+        # the idempotency unique keys (incl. CoachMessage.welcome_job_id), and
+        # that the reminder claim's FOR SHARE eligibility lock blocks a
+        # concurrent deletion UPDATE. Refuses to skip under CI=true.
         run: npx jest --config jest.rls.config.js test/rls/clinic-engagement-rls.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
