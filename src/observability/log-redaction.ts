@@ -49,6 +49,12 @@ export const REDACT_KEYS: ReadonlySet<string> = new Set([
   'bodyfat',
   'fat_percentage',
   'raw_bloodwork',
+  // Consultation onboarding (C05): answers include health screening and
+  // injury notes; never log them (operator privacy ruling 2026-09-30).
+  'answers',
+  'consultation_answers',
+  'completion_result',
+  'screening',
   // Stripe / billing
   'stripe_secret_key',
   'stripe_webhook_secret',
@@ -81,10 +87,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
  *               parent call).
  * @param seen   WeakSet used to detect circular references.
  */
-export function redactObject(
-  value: unknown,
-  seen: WeakSet<object> = new WeakSet(),
-): unknown {
+export function redactObject(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value as object)) return '[Circular]';
   seen.add(value as object);
