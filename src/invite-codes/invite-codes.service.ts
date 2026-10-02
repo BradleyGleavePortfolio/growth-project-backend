@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
   // Phase 1C imports retained when previewCode/attachUserToCoachByCode are
   // exercised below.
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { Events } from '../analytics/events';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
+import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
 
 type ValidationSuccess = {
   valid: true;
@@ -175,6 +177,20 @@ function invalidInviteCode(): BadRequestException {
   });
 }
 
+/** Grant outcome attached to an attach result (C01). */
+export type AttachGrant = Omit<GrantOutcome, 'purchase_id'> & {
+  purchase_id: string | null;
+  package_id: string | null;
+};
+
+/** Result of the canonical attach. `grant` is absent when the code carries no package. */
+export type AttachResult = {
+  role: string;
+  coach_id: string | null;
+  already_attached: boolean;
+  grant?: AttachGrant | null;
+};
+
 @Injectable()
 export class InviteCodesService {
   private readonly logger = new Logger(InviteCodesService.name);
@@ -184,6 +200,9 @@ export class InviteCodesService {
     private analytics: AnalyticsService,
     private email: EmailService,
     private audit: AuditService,
+    // Clinic C01 — optional so existing 4-arg constructions (tests, scripts)
+    // keep working; when absent, codes never grant packages.
+    @Optional() private readonly grants?: InviteGrantService,
   ) {}
 
   /**
@@ -679,7 +698,7 @@ export class InviteCodesService {
   async attachUserToCoachByCode(
     userId: string,
     rawCode: string,
-  ): Promise<{ role: string; coach_id: string | null; already_attached: boolean }> {
+  ): Promise<AttachResult> {
     // The throttler predicate and the mobile client both trim; do the same
     // here so a pasted code with stray whitespace resolves (case is preserved).
     const code = rawCode.trim();
@@ -716,7 +735,8 @@ export class InviteCodesService {
         // nothing for the lifecycle rules to protect; any GRANT attached to
         // the code is authorised separately and strictly (C01).
         this.logger.debug(`attach no-op: user=${userId} already attached to coach=${target.coachId}`);
-        return { role: me.role, coach_id: me.coach_id, already_attached: true };
+        const grant = await this.grantAfterAttach(userId, me.coach_id, code, 'replay');
+        return { role: me.role, coach_id: me.coach_id, already_attached: true, ...(grant ? { grant } : {}) };
       }
       this.logger.warn(
         `attach refused: user=${userId} already attached to a different coach (re-parent is not a side effect of code entry)`,
@@ -787,18 +807,52 @@ export class InviteCodesService {
     } catch (err) {
       if (err instanceof AttachRaceSameCoach) {
         this.logger.debug(`attach race resolved as no-op: user=${userId} coach=${err.coachId}`);
-        return { role: 'student', coach_id: err.coachId, already_attached: true };
+        const grant = await this.grantAfterAttach(userId, err.coachId, code, 'replay');
+        return { role: 'student', coach_id: err.coachId, already_attached: true, ...(grant ? { grant } : {}) };
       }
       throw err;
     }
 
+    // Clinic C01 — a bound code grants its package AFTER the attach
+    // committed. Only on success (never after a refusal); the grant can
+    // never undo the attach.
+    const grant = await this.grantAfterAttach(userId, coachId, code, 'new');
     this.analytics.capture(userId, Events.INVITE_REDEEMED, {
       via: 'attach_code',
       coach_id: coachId,
       legacy_invite_row: !!inviteCodeRowId,
       already_attached: false,
+      grant_status: grant?.status ?? null,
     });
-    return result;
+    return { ...result, ...(grant ? { grant } : {}) };
+  }
+
+  /** C01 — post-commit, never-throwing grant for a bound code. */
+  private async grantAfterAttach(
+    userId: string,
+    coachId: string | null,
+    code: string,
+    redemption: 'new' | 'replay',
+  ): Promise<AttachGrant | null> {
+    if (!this.grants || !coachId) return null;
+    try {
+      const binding = await this.grants.resolveBinding(code);
+      if (!binding || !binding.package_id || binding.grant_mode === 'none') return null;
+      const outcome = await this.grants.grantForAttachedCode({
+        clientUserId: userId,
+        coachUserId: coachId,
+        binding,
+        redemption,
+      });
+      return outcome ? { ...outcome, package_id: binding.package_id } : null;
+    } catch (err) {
+      this.logger.warn(
+        `grant lookup failed after attach: user=${userId} coach=${coachId} — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return { purchase_id: null, status: 'failed', package_id: null };
+    }
   }
 
   /**
