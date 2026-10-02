@@ -13,6 +13,11 @@ import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
+import {
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+} from '../community/voice/voice-erasure';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
@@ -723,9 +728,10 @@ export class AccountDeletionService {
     // again), then the recordings are erased from storage: the exact keys on
     // their rows plus everything else in their `voice-notes/<uid>/` folder
     // (unpublished uploads, DM voice uploads). The User row is tombstoned,
-    // not deleted, so no FK cascade would do this. Storage is external:
-    // failures are logged (the rows are already unsignable) and do not block
-    // the rest of the deletion, like the auth revocation below.
+    // not deleted, so no FK cascade would do this. The erasure is recorded
+    // durably first (a failed record aborts finalization for a retry);
+    // storage faults after that do not block the rest of the deletion: the
+    // open erasure work is retried until verified.
     await this.eraseCommunityVoice(userId, now);
 
     // ── 11. Revoke Supabase auth identity ──────────────────────────────────
@@ -850,18 +856,36 @@ export class AccountDeletionService {
     });
   }
 
-  /** B-610-5: soft-delete the user's voice notes + search rows, then erase the audio. */
+  /**
+   * B-610-5: erase the user's community voice recordings.
+   *
+   * Round 5: the erasure work (every exact key on their notes plus their
+   * owner folder) is recorded durably in community_voice_erasures FIRST. If
+   * that write fails this throws, the account is NOT finalized and the next
+   * finalize run retries the whole user, so a recording is never left behind
+   * by an acknowledged deletion. Then the rows are soft-deleted (nothing signs
+   * them again) and storage is tried; any removal not verified stays open and
+   * VoiceErasureService retries it after the account is tombstoned (the work
+   * table has no FK to User, so finalization never drops it).
+   */
   private async eraseCommunityVoice(userId: string, now: Date): Promise<void> {
-    let keys: string[] = [];
-    try {
-      const notes = await this.prisma.communityVoiceNote.findMany({
-        where: { author_id: userId },
-        select: { id: true, storage_key: true },
-      });
-      keys = notes.map((n) => n.storage_key);
-      if (notes.length > 0) {
-        // Rows first: once soft-deleted nothing signs them again. Both writes
-        // are idempotent, so a retried deletion converges.
+    const notes = await this.prisma.communityVoiceNote.findMany({
+      where: { author_id: userId },
+      select: { id: true, storage_key: true },
+    });
+    const work = await recordVoiceErasures(
+      this.prisma,
+      [
+        ...objectTargets(notes.map((n) => n.storage_key)),
+        { kind: 'owner_folder', target: userId },
+      ],
+      'account_deletion',
+      now,
+    );
+    if (notes.length > 0) {
+      // Rows next: once soft-deleted nothing signs them again. Both writes
+      // are idempotent, so a retried deletion converges.
+      try {
         await this.prisma.communityVoiceNote.updateMany({
           where: { author_id: userId, soft_deleted_at: null },
           data: { soft_deleted_at: now },
@@ -874,20 +898,22 @@ export class AccountDeletionService {
           },
           data: { softDeletedAt: now },
         });
+      } catch (err) {
+        this.logger.error(
+          `finalizeUserDeletion: voice note soft-delete failed for ${userId}: ${(err as Error).message}; recordings are still erased (work recorded)`,
+        );
       }
-    } catch (err) {
-      this.logger.error(
-        `finalizeUserDeletion: voice note soft-delete failed for ${userId}: ${(err as Error).message}`,
-      );
     }
-    const storage = new VoiceUploadProvider(this.supabase);
-    const byKey = await storage.removeObjects(keys);
-    const byFolder = await storage.removeOwnerFolder(userId);
-    if (byKey.failed || byFolder.failed) {
-      this.logger.error(
-        `finalizeUserDeletion: voice recording removal incomplete for ${userId} ` +
-          `(removed ${byKey.removed + byFolder.removed}); rows are soft-deleted and unsignable, ` +
-          'retry the storage cleanup for this folder.',
+    const outcome = await attemptVoiceErasures(
+      this.prisma,
+      new VoiceUploadProvider(this.supabase),
+      work,
+      this.logger,
+    );
+    if (outcome.pending > 0) {
+      this.logger.warn(
+        `finalizeUserDeletion: ${outcome.pending} voice erasure(s) for ${userId} not yet verified; ` +
+          'recorded in community_voice_erasures and retried by VoiceErasureService.',
       );
     }
   }

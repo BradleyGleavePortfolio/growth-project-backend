@@ -407,6 +407,7 @@ jobs:
         run: >-
           npx jest
           test/community/rls/community-wins-rls.live.spec.ts
+          test/community/rls/community-message-shape.live.spec.ts
           test/community/community-moderation.e2e.spec.ts
           test/community/community-reactions.e2e.spec.ts
           test/community/community-dms.e2e.spec.ts

@@ -12,8 +12,11 @@ import type { Prisma } from '@prisma/client';
  * Community safety (and as a banner on the community screens). Push is a
  * best-effort extra on top, never the record.
  *
- * Idempotent per moderation action: re-acting on the same report never
- * stores a second notice (payload.idempotency_key).
+ * Idempotent per (report, action): repeating the same action on a report
+ * never stores a second notice, and an escalation on the same report (Warn,
+ * then Ban) stores the notice for the NEW action (B-610-4 round 5: the key
+ * used to be the report alone, so a Ban after a Warn left only the warning
+ * while the moderator was told the member could read why they were removed).
  *
  * The body carries no reporter identity, no report reason and no copy of the
  * content: only what happened and what the member can do next.
@@ -37,9 +40,12 @@ export const MODERATION_NOTICE_BODIES: Record<ModerationNoticeAction, string> = 
   ban: 'Your community access was removed. Open Community safety to read why.',
 };
 
-export function moderationNoticeKey(moderationActionId: string): string {
-  return `community:moderation_notice:${moderationActionId}`;
+export function moderationNoticeKey(moderationActionId: string, action: string): string {
+  return `community:moderation_notice:${moderationActionId}:${action}`;
 }
+
+/** 'created' = written now; 'exists' = this exact notice was already stored; 'skipped' = no notice for this action. */
+export type ModerationNoticeResult = 'created' | 'exists' | 'skipped';
 
 function isNoticeAction(a: string): a is ModerationNoticeAction {
   return a === 'hide' || a === 'warn' || a === 'ban';
@@ -60,16 +66,18 @@ export async function storeModerationNotice(
     targetType: string;
     targetId: string;
   },
-): Promise<void> {
-  if (!isNoticeAction(input.action)) return;
-  const key = moderationNoticeKey(input.moderationActionId);
+): Promise<ModerationNoticeResult> {
+  if (!isNoticeAction(input.action)) return 'skipped';
+  const key = moderationNoticeKey(input.moderationActionId, input.action);
   // A member has a handful of these at most, so the idempotency check reads
   // their notices and compares the key (portable, no JSON-path operator).
   const existing = await tx.notification.findMany({
     where: { user_id: input.recipientId, kind: COMMUNITY_MODERATION_NOTICE_KIND },
     select: { payload: true },
   });
-  if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) return;
+  if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) {
+    return 'exists';
+  }
   await tx.notification.create({
     data: {
       user_id: input.recipientId,
@@ -86,6 +94,7 @@ export async function storeModerationNotice(
       },
     },
   });
+  return 'created';
 }
 
 export interface ModerationNoticeView {

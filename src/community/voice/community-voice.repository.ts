@@ -2,6 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import {
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+  type VoiceErasureOutcome,
+  type VoiceErasureReason,
+  type VoiceErasureRow,
+  type VoiceErasureStorage,
+} from './voice-erasure';
 
 /**
  * community-voice.repository.ts — data access for v3-3 community voice notes.
@@ -110,6 +119,22 @@ export class CommunityVoiceRepository {
       where: { id },
       data: { soft_deleted_at: at },
     });
+  }
+
+  /**
+   * B-610-5 round 5: durably record the recording erasure BEFORE the row is
+   * soft-deleted or storage is called (see voice-erasure.ts).
+   */
+  async recordErasure(storageKeys: string[], reason: VoiceErasureReason): Promise<VoiceErasureRow[]> {
+    return recordVoiceErasures(this.prisma, objectTargets(storageKeys), reason);
+  }
+
+  /** Try the recorded erasure now; an unverified row stays open for the retry cron. */
+  async attemptErasure(
+    storage: VoiceErasureStorage,
+    rows: VoiceErasureRow[],
+  ): Promise<VoiceErasureOutcome> {
+    return attemptVoiceErasures(this.prisma, storage, rows);
   }
 
   /** Hide any search row for a deleted note (defence in depth). */

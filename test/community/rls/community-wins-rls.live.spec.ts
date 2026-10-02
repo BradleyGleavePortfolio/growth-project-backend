@@ -45,6 +45,8 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
     ws: '',
   };
   const win = { alice: '', aliceHidden: '', legacyPublic: '', banned: '', bob: '', blocker: '' };
+  /** Rows created by the round 5 cases (outside the visibility fixture). */
+  const extra: string[] = [];
 
   /** Run `fn` as the non-BYPASSRLS `authenticated` role acting as `userId`. */
   async function as<T>(
@@ -133,6 +135,7 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
   afterAll(async () => {
     if (!prisma) return;
     await prisma.$executeRaw`DELETE FROM "CommunityWin" WHERE coach_id = ${id.coach}`;
+    await prisma.$executeRaw`DELETE FROM "CommunityWin" WHERE id = ANY(${extra}::text[])`;
     await prisma.$executeRaw`DELETE FROM "UserBlock" WHERE blocker_id = ${id.blocker}`;
     await prisma.$executeRaw`DELETE FROM community_workspace_bans WHERE workspace_id = ${id.ws}::uuid`;
     await prisma.$executeRaw`DELETE FROM community_workspaces WHERE id = ${id.ws}::uuid`;
@@ -233,5 +236,75 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
       (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET title = 'Edited' WHERE id = ${win.alice}`,
     );
     expect(edited).toBe(1);
+  });
+
+  // ── Fix round 5 (Sol A-610-2 / Opus B-610-6): coach_id is never trusted ──
+
+  async function insertAs(
+    actor: string,
+    row: { userId: string; coachId: string | null },
+  ): Promise<number> {
+    const newId = randomUUID();
+    extra.push(newId);
+    return as(
+      actor,
+      (tx) => tx.$executeRaw`
+        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+        VALUES (${newId}, ${row.userId}, ${row.coachId}, 'x', 'y', 'circle')`,
+    );
+  }
+
+  it('an author cannot insert a win naming themselves as its coach', async () => {
+    await expectDenied(insertAs(id.alice, { userId: id.alice, coachId: id.alice }));
+  });
+
+  it('an author cannot inject a win into another coach circle (forged foreign coach_id)', async () => {
+    await expectDenied(insertAs(id.stranger, { userId: id.stranger, coachId: id.coach }));
+    // A banned member cannot re-enter a circle through another coach either.
+    await expectDenied(insertAs(id.banned, { userId: id.banned, coachId: id.otherCoach }));
+    await expectDenied(insertAs(id.alice, { userId: id.alice, coachId: null }));
+  });
+
+  it('the author (own coach), the current coach (coach path) and a coach for their own win may insert', async () => {
+    expect(await insertAs(id.alice, { userId: id.alice, coachId: id.coach })).toBe(1);
+    expect(await insertAs(id.coach, { userId: id.bob, coachId: id.coach })).toBe(1);
+    expect(await insertAs(id.coach, { userId: id.coach, coachId: id.coach })).toBe(1);
+  });
+
+  it('a forged self-coach row (written by a privileged path) gives the author no moderator power', async () => {
+    const forged = randomUUID();
+    extra.push(forged);
+    await prisma.$executeRaw`
+      INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+      VALUES (${forged}, ${id.alice}, ${id.alice}, 'x', 'y', 'circle')`;
+    // The real coach (live relationship) hides it ...
+    expect(
+      await as(
+        id.coach,
+        (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = now() WHERE id = ${forged}`,
+      ),
+    ).toBe(1);
+    // ... and the author can neither see the hidden row nor unhide it.
+    expect(await visibleIds(id.alice)).not.toContain(forged);
+    await expectNoEffect(
+      as(
+        id.alice,
+        (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = NULL WHERE id = ${forged}`,
+      ),
+    );
+    const row = await prisma.communityWin.findUnique({ where: { id: forged } });
+    expect(row?.hidden_at).toBeInstanceOf(Date);
+  });
+
+  it('a forged foreign-coach row never reaches that coach circle (teammate helper checks the author)', async () => {
+    const forged = randomUUID();
+    extra.push(forged);
+    await prisma.$executeRaw`
+      INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+      VALUES (${forged}, ${id.stranger}, ${id.coach}, 'x', 'y', 'circle')`;
+    const seen = await as(id.bob, async (tx) =>
+      tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
+    );
+    expect(seen).toEqual([]);
   });
 });

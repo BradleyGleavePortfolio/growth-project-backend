@@ -40,8 +40,11 @@ export class CommunityModerationRepository {
     });
   }
 
-  async findById(itemId: string): Promise<CommunityModerationAction | null> {
-    return this.prisma.communityModerationAction.findUnique({
+  async findById(
+    itemId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<CommunityModerationAction | null> {
+    return (tx ?? this.prisma).communityModerationAction.findUnique({
       where: { id: itemId },
     });
   }
@@ -63,6 +66,42 @@ export class CommunityModerationRepository {
       orderBy: { created_at: 'desc' },
       take: params.limit,
     });
+  }
+
+  /**
+   * B-610-4 round 5: compare-and-set resolution. Writes only when the item is
+   * still in the state the caller decided on (status + action), so two
+   * moderators acting at once can never silently overwrite each other.
+   * Returns null when the item changed underneath (the caller re-evaluates).
+   */
+  async resolveIfUnchanged(
+    params: {
+      itemId: string;
+      expectedStatus: CommunityModerationStatus;
+      expectedAction: string | null;
+      actorId: string;
+      status: CommunityModerationStatus;
+      action: string;
+      notes: string | null;
+    },
+    tx: Prisma.TransactionClient,
+  ): Promise<CommunityModerationAction | null> {
+    const written = await tx.communityModerationAction.updateMany({
+      where: {
+        id: params.itemId,
+        status: params.expectedStatus,
+        action: params.expectedAction,
+      },
+      data: {
+        actor_id: params.actorId,
+        status: params.status,
+        action: params.action,
+        ...(params.notes !== null ? { notes: params.notes } : {}),
+        resolved_at: new Date(),
+      },
+    });
+    if (written.count !== 1) return null;
+    return tx.communityModerationAction.findUnique({ where: { id: params.itemId } });
   }
 
   async resolve(

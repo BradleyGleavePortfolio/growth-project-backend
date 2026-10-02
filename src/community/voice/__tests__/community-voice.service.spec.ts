@@ -39,6 +39,8 @@ type RepoMock = {
   softDelete: jest.Mock;
   softDeleteSearchEntries: jest.Mock;
   list: jest.Mock;
+  recordErasure: jest.Mock;
+  attemptErasure: jest.Mock;
 };
 type UploadMock = {
   createSignedUpload: jest.Mock;
@@ -125,6 +127,10 @@ describe('CommunityVoiceService', () => {
       softDelete: jest.fn().mockResolvedValue(undefined),
       softDeleteSearchEntries: jest.fn().mockResolvedValue(undefined),
       list: jest.fn().mockResolvedValue({ items: [note()], nextCursor: null }),
+      recordErasure: jest.fn(async (keys: string[]) =>
+        keys.map((k, i) => ({ id: `erasure-${i}`, kind: 'object', target: k, attempts: 0 })),
+      ),
+      attemptErasure: jest.fn().mockResolvedValue({ completed: 1, pending: 0 }),
     };
     upload = {
       createSignedUpload: jest.fn().mockResolvedValue({
@@ -301,6 +307,30 @@ describe('CommunityVoiceService', () => {
       const res = await service.delete(member, NOTE_A);
       expect(res).toEqual({ deleted: true });
       expect(repo.softDelete).toHaveBeenCalledWith(NOTE_A, expect.any(Date));
+    });
+
+    it('records the recording erasure durably BEFORE the soft delete, then tries it (B-610-5 round 5)', async () => {
+      const order: string[] = [];
+      repo.recordErasure.mockImplementation(async (keys: string[]) => {
+        order.push('record');
+        return keys.map((k) => ({ id: 'e1', kind: 'object', target: k, attempts: 0 }));
+      });
+      repo.softDelete.mockImplementation(async () => {
+        order.push('softDelete');
+      });
+      repo.attemptErasure.mockImplementation(async () => {
+        order.push('attempt');
+        return { completed: 0, pending: 1 };
+      });
+      await expect(service.delete(member, NOTE_A)).resolves.toEqual({ deleted: true });
+      expect(order).toEqual(['record', 'softDelete', 'attempt']);
+      expect(repo.recordErasure).toHaveBeenCalledWith([note().storage_key], 'author_delete');
+    });
+
+    it('a failed erasure record fails the delete before anything is soft-deleted', async () => {
+      repo.recordErasure.mockRejectedValue(new Error('db down'));
+      await expect(service.delete(member, NOTE_A)).rejects.toThrow('db down');
+      expect(repo.softDelete).not.toHaveBeenCalled();
     });
 
     it('lets a workspace coach soft-delete a member note', async () => {

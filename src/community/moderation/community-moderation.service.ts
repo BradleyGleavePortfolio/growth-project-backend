@@ -1,8 +1,15 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   CommunityModerationAction,
   CommunityModerationStatus,
   CommunityModerationTargetType,
+  Prisma,
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
@@ -18,7 +25,16 @@ import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
-import { storeModerationNotice } from '../safety/community-moderation-notices';
+import {
+  storeModerationNotice,
+  type ModerationNoticeResult,
+} from '../safety/community-moderation-notices';
+import {
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+  type VoiceErasureRow,
+} from '../voice/voice-erasure';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -57,6 +73,49 @@ export const CANNOT_BAN_COACH = {
   code: 'community.moderation.cannot_ban_coach',
   message:
     'The coach who runs this community and the TGP team cannot be banned. You can hide the content instead.',
+} as const;
+
+/**
+ * B-610-4 round 5: enforcement strength. An actioned report may only move to
+ * a stronger action; repeating the same action is an idempotent replay.
+ */
+const ACTION_STRENGTH: Record<string, number> = { dismiss: 0, warn: 1, hide: 2, ban: 3 };
+
+const ACTION_LABEL: Record<string, string> = {
+  warn: 'Warn',
+  hide: 'Hide',
+  ban: 'Ban',
+  dismiss: 'Dismiss',
+};
+
+/** True when `next` may be applied to an item in its current state. */
+export function moderationActionAllowed(
+  current: { status: CommunityModerationStatus; action: string | null },
+  next: string,
+): boolean {
+  if (current.status !== 'actioned') return true;
+  const prev = current.action ?? '';
+  if (prev === next) return true;
+  return (ACTION_STRENGTH[next] ?? -1) > (ACTION_STRENGTH[prev] ?? 0);
+}
+
+/** 409 body for a weaker action or a Dismiss on an already-actioned report. */
+export function alreadyActioned(currentAction: string | null) {
+  const label = ACTION_LABEL[currentAction ?? ''] ?? 'an action';
+  return {
+    error: 'conflict',
+    code: 'community.moderation.already_actioned',
+    current_action: currentAction,
+    message: `This report was already handled with ${label}. A handled report can only be made stronger (Warn, then Hide, then Ban). Refresh the queue to see where it stands.`,
+  } as const;
+}
+
+/** 409 body when the item kept changing under concurrent moderators. */
+export const MODERATION_CHANGED = {
+  error: 'conflict',
+  code: 'community.moderation.changed',
+  message:
+    'Another moderator acted on this report at the same moment. Refresh the queue to see the current outcome, then act again if needed.',
 } as const;
 
 /** Short-lived playback link for a reported voice note in the review queue. */
@@ -340,6 +399,17 @@ export class CommunityModerationService {
    * record the enforcement and mark it actioned. `hide` additionally soft-hides
    * the underlying content so the action has a real effect, not just an audit
    * note.
+   *
+   * B-610-4 round 5 (resolution rules):
+   *  - repeating the action a report already has is an idempotent replay: no
+   *    second notice, no second push, the existing notice is the accurate one;
+   *  - an actioned report can only be escalated (Warn -> Hide -> Ban). The
+   *    escalation stores the notice for the NEW action, so a Ban after a Warn
+   *    leaves the member a ban notice;
+   *  - a weaker action or a Dismiss on an actioned report is refused with
+   *    409 community.moderation.already_actioned before anything is written;
+   *  - the resolution is a compare-and-set inside the notice transaction, so a
+   *    concurrent action is re-evaluated instead of silently overwritten.
    */
   async act(
     user: User,
@@ -350,12 +420,15 @@ export class CommunityModerationService {
     const item = await this.moderation.findById(itemId);
     if (!item) throw new NotFoundException(NOT_FOUND);
     await this.assertModerator(item.workspace_id, user);
+    if (!moderationActionAllowed(item, action)) {
+      throw new ConflictException(alreadyActioned(item.action));
+    }
 
     // The member whose content this is (null when unresolvable or a dismiss).
     const ownerId =
       action === 'dismiss' ? null : await this.contentOwnerId(item.target_type, item.target_id);
 
-    let erasedVoiceKeys: string[] = [];
+    let erasures: VoiceErasureRow[] = [];
     if (action === 'ban') {
       // A ban removes the content AND the author's access to the workspace:
       // a durable ban row (B-610-2) plus every membership -> removed. The
@@ -365,45 +438,51 @@ export class CommunityModerationService {
       // platform owner BEFORE anything is written, so a refused ban never
       // leaves the content half-actioned.
       await this.banAuthor(item.workspace_id, ownerId, user.id, item.id);
-      erasedVoiceKeys = await this.hideTarget(item.target_type, item.target_id);
+      erasures = await this.hideTarget(item.target_type, item.target_id);
     }
     if (action === 'hide') {
-      erasedVoiceKeys = await this.hideTarget(item.target_type, item.target_id);
+      erasures = await this.hideTarget(item.target_type, item.target_id);
     }
 
     const status: CommunityModerationStatus = action === 'dismiss' ? 'dismissed' : 'actioned';
     // B-610-4: the resolution and the member-readable notice commit together,
     // so a report is never marked actioned without the member being told in
-    // the app. Push stays a best-effort extra on top.
+    // the app. Push stays a best-effort extra on top, sent only when this
+    // call wrote a new notice.
     const notify = action !== 'dismiss' && ownerId !== null && ownerId !== user.id;
-    const { resolved, noticeStored } = await this.prisma.$transaction(async (tx) => {
-      const row = await this.moderation.resolve(
-        { itemId: item.id, actorId: user.id, status, action, notes: notes ?? null },
+    const { resolved, notice } = await this.prisma.$transaction(async (tx) => {
+      const row = await this.resolveGuarded(
+        item,
+        { actorId: user.id, status, action, notes: notes ?? null },
         tx,
       );
-      let stored = false;
+      let result: ModerationNoticeResult = 'skipped';
       if (notify && ownerId) {
-        await storeModerationNotice(tx, {
+        result = await storeModerationNotice(tx, {
           recipientId: ownerId,
           moderationActionId: row.id,
           action,
           targetType: row.target_type,
           targetId: row.target_id,
         });
-        stored = true;
       }
-      return { resolved: row, noticeStored: stored };
+      return { resolved: row, notice: result };
     });
+    const noticeStored = notice !== 'skipped';
 
-    // B-610-5: a hidden/banned voice note's recording is erased once the
-    // report is closed. The moderation row stays as the non-media audit
-    // record. The note is already soft-deleted, so nothing can sign it again
-    // even if storage is briefly unreachable (logged for a retry).
-    if (erasedVoiceKeys.length > 0) {
-      const removal = await this.voiceStorage.removeObjects(erasedVoiceKeys);
-      if (removal.failed) {
+    // B-610-5: a hidden/banned voice note's recording erasure was recorded
+    // durably in hideTarget (before the soft delete). Try it now; anything
+    // not verified stays open and VoiceErasureService retries it.
+    if (erasures.length > 0) {
+      const outcome = await attemptVoiceErasures(
+        this.prisma,
+        this.voiceStorage,
+        erasures,
+        this.logger,
+      );
+      if (outcome.pending > 0) {
         this.logger.warn(
-          `moderation ${resolved.id}: voice recording removal failed; note is soft-deleted and unsignable`,
+          `moderation ${resolved.id}: voice recording removal not yet verified; erasure recorded and retried`,
         );
       }
     }
@@ -424,8 +503,10 @@ export class CommunityModerationService {
       { distinctId: user.id, channelKind: 'moderation' },
     );
     // Push to the affected member: best-effort extra on top of the stored
-    // notice (gated behind FEATURE_COMMUNITY_PUSH inside the service).
-    if (notify && ownerId) {
+    // notice (gated behind FEATURE_COMMUNITY_PUSH inside the service). Only
+    // for a notice written by this call: a replay never pushes twice.
+    const pushed = notify && ownerId !== null && notice === 'created';
+    if (pushed && ownerId) {
       void this.communityPush.sendCommunityPush({
         recipientId: ownerId,
         kind: NotificationKind.COMMUNITY_MODERATION_ACTION_AGAINST_ME,
@@ -439,9 +520,48 @@ export class CommunityModerationService {
       member_notice: {
         stored: noticeStored,
         // Push is attempted only as an extra; delivery is never promised.
-        push: noticeStored ? 'attempted' : 'not_sent',
+        push: pushed ? 'attempted' : 'not_sent',
       },
     });
+  }
+
+  /**
+   * Compare-and-set the resolution (B-610-4 round 5). If another moderator
+   * changed the item between our read and this write, re-read it: a state we
+   * may still escalate from is retried; a state that is already the same or
+   * stronger is refused with a coded 409 (our enforcement, if any, is
+   * contained in the stronger action: Ban hides, Hide is stronger than Warn).
+   */
+  private async resolveGuarded(
+    item: CommunityModerationAction,
+    params: {
+      actorId: string;
+      status: CommunityModerationStatus;
+      action: ModerationActionKind;
+      notes: string | null;
+    },
+    tx: Prisma.TransactionClient,
+  ): Promise<CommunityModerationAction> {
+    let expected: Pick<CommunityModerationAction, 'status' | 'action'> = item;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const row = await this.moderation.resolveIfUnchanged(
+        {
+          itemId: item.id,
+          expectedStatus: expected.status,
+          expectedAction: expected.action,
+          ...params,
+        },
+        tx,
+      );
+      if (row) return row;
+      const current = await this.moderation.findById(item.id, tx);
+      if (!current) throw new NotFoundException(NOT_FOUND);
+      if (!moderationActionAllowed(current, params.action)) {
+        throw new ConflictException(alreadyActioned(current.action));
+      }
+      expected = current;
+    }
+    throw new ConflictException(MODERATION_CHANGED);
   }
 
   /**
@@ -729,7 +849,7 @@ export class CommunityModerationService {
   private async hideTarget(
     targetType: CommunityModerationTargetType,
     targetId: string,
-  ): Promise<string[]> {
+  ): Promise<VoiceErasureRow[]> {
     if (targetType === 'post') {
       const post = await this.postsRepo.findById(targetId);
       if (post && !post.deleted_at) await this.postsRepo.softDelete(post.id);
@@ -754,6 +874,11 @@ export class CommunityModerationService {
         where: { id: targetId },
         select: { storage_key: true },
       });
+      // B-610-5 round 5: the recording erasure is recorded durably BEFORE
+      // the soft delete, so a crash or storage outage can never strand it.
+      const work = note
+        ? await recordVoiceErasures(this.prisma, objectTargets([note.storage_key]), 'moderation')
+        : [];
       await this.prisma.communityVoiceNote.updateMany({
         where: { id: targetId, soft_deleted_at: null },
         data: { soft_deleted_at: at },
@@ -762,7 +887,7 @@ export class CommunityModerationService {
         where: { kind: 'voice_note_transcript', targetId, softDeletedAt: null },
         data: { softDeletedAt: at },
       });
-      return note ? [note.storage_key] : [];
+      return work;
     }
     if (targetType === 'win') {
       await this.prisma.communityWin.updateMany({

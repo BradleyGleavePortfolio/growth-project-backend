@@ -5822,6 +5822,28 @@ model CommunityWorkspaceBan {
   @@map("community_workspace_bans")
 }
 
+// B-610-5 (fix round 5): durable voice-recording erasure work. One row per
+// exact storage key (kind 'object') or owner folder (kind 'owner_folder'),
+// written BEFORE the note rows or storage are touched; completed only after a
+// verified removal, retried by VoiceErasureService with backoff until then.
+// No relation to User: the work outlives account finalization. Server-only
+// table (RLS: service_role only).
+model CommunityVoiceErasure {
+  id              String    @id @default(uuid()) @db.Uuid
+  kind            String
+  target          String
+  reason          String
+  attempts        Int       @default(0)
+  last_error      String?
+  next_attempt_at DateTime  @default(now()) @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+
+  @@unique([kind, target])
+  @@index([completed_at, next_attempt_at])
+  @@map("community_voice_erasures")
+}
+
 model CommunityWorkspace {
   id                 String    @id @default(uuid()) @db.Uuid
   coach_id           String

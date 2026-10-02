@@ -8,6 +8,7 @@ import { CommunityVoiceEnabledGuard } from './community-voice-flag.guard';
 import { CommunityVoiceRepository } from './community-voice.repository';
 import { CommunityVoiceService } from './community-voice.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { VoiceErasureService } from './voice-erasure';
 import { VoiceUploadProvider } from './voice-upload.provider';
 
 /**
@@ -52,6 +53,8 @@ import { VoiceUploadProvider } from './voice-upload.provider';
     CommunityAccessService,
     CommunityFeatureFlagGuard,
     VoiceUploadProvider,
+    // B-610-5 round 5: retries open recording erasures until verified.
+    VoiceErasureService,
   ],
   // VoiceUploadProvider: the moderation queue signs short-lived playback
   // links for reported voice notes.

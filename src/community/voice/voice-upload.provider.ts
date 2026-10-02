@@ -378,6 +378,43 @@ export class VoiceUploadProvider {
   }
 
   /**
+   * Erasure verification (B-610-5 round 5): true when the exact object reads
+   * back missing, false while it is still present, null when storage could not
+   * answer (the erasure stays open and is retried).
+   */
+  async objectGone(storageKey: string): Promise<boolean | null> {
+    const owner = storageKey.split('/')[0] ?? '';
+    const stat = await this.statObject(storageKey, owner);
+    if (stat.state === 'missing') return true;
+    if (stat.state === 'present') return false;
+    return null;
+  }
+
+  /**
+   * Erasure verification for an owner folder: true when `<bucket>/<ownerId>/`
+   * lists empty, false while files remain, null when storage could not answer.
+   */
+  async ownerFolderEmpty(ownerId: string): Promise<boolean | null> {
+    const folder = voiceOwnerFolder(ownerId);
+    if (!folder) return true;
+    let storage: SupabaseStorageWithSignedUpload;
+    try {
+      storage = this.supabase.getClient().storage.from(this.bucket());
+    } catch {
+      return null;
+    }
+    const list = storage.list;
+    if (typeof list !== 'function') return null;
+    try {
+      const page = await list.call(storage, folder, { limit: 1, offset: 0 });
+      if (page.error) return null;
+      return (page.data ?? []).filter((o) => !!o.name).length === 0;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Erase every object in `<bucket>/<ownerId>/` (account deletion, B-610-5):
    * published, unpublished and DM uploads alike.
    */

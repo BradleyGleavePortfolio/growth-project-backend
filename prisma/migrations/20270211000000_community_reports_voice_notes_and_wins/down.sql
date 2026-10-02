@@ -15,9 +15,14 @@
 -- community_moderation_actions that use them must be deleted or re-pointed by
 -- hand before any rollback of the application code that writes them (older
 -- code would fail to parse those rows).
+-- Section 6 (durable voice erasure work): dropping community_voice_erasures
+-- forgets every pending recording erasure; run it only once the table has
+-- no row with completed_at IS NULL (or erase those keys by hand first).
 -- Section 5 (comments on workspace-wide posts / challenges): restoring the
 -- original scope-shape check fails while any cohort-less comment row exists;
 -- delete or re-home those comments first.
+DROP TABLE IF EXISTS "community_voice_erasures";
+
 ALTER TABLE "community_messages" DROP CONSTRAINT IF EXISTS "community_messages_scope_shape_check";
 ALTER TABLE "community_messages" ADD CONSTRAINT "community_messages_scope_shape_check" CHECK (
     ("scope" = 'cohort' AND "cohort_id" IS NOT NULL AND "dm_key" IS NULL)
@@ -35,6 +40,7 @@ DROP POLICY IF EXISTS "p_communitywin_update" ON "CommunityWin";
 CREATE POLICY "p_communitywin_update" ON "CommunityWin" AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR "coach_id" = app.current_user_id() OR app.is_current_coach_of("user_id"))))) WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR "coach_id" = app.current_user_id() OR app.is_current_coach_of("user_id")))));
 
 DROP FUNCTION IF EXISTS app.community_win_teammate_visible(text, text);
+DROP FUNCTION IF EXISTS app.community_win_author_coach(text);
 
 DROP TABLE IF EXISTS "community_workspace_bans";
 

@@ -94,6 +94,12 @@ const DEFAULTS: Record<string, () => Row> = {
     lifted_by_id: null,
   }),
   notification: () => ({ payload: null, deep_link: null, read_at: null }),
+  communityVoiceErasure: () => ({
+    attempts: 0,
+    last_error: null,
+    completed_at: null,
+    next_attempt_at: new Date(clock),
+  }),
 };
 
 export class InMemoryPrisma {

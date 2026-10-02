@@ -22,7 +22,7 @@ const KEY_B = `${USER_ID}/1700000000001-0123456789abcdef-0123456789abcdef0123456
 
 type Call = { delegate: string; method: string; args: unknown };
 
-function permissivePrisma(calls: Call[]) {
+function permissivePrisma(calls: Call[], opts: { failErasureRecord?: boolean } = {}) {
   const user = {
     id: USER_ID,
     email: 'member@example.com',
@@ -41,6 +41,11 @@ function permissivePrisma(calls: Call[]) {
           jest.fn(async (args: unknown) => {
             calls.push({ delegate: name, method, args });
             if (name === 'user' && (method === 'findUnique' || method === 'findFirst')) return user;
+            if (name === 'communityVoiceErasure' && method === 'upsert') {
+              if (opts.failErasureRecord) throw new Error('erasure table unavailable');
+              const create = (args as { create: { kind: string; target: string } }).create;
+              return { id: `erasure-${create.kind}-${create.target}`, ...create, attempts: 0 };
+            }
             if (name === 'communityVoiceNote' && method === 'findMany') {
               return [
                 { id: 'note-a', storage_key: KEY_A },
@@ -86,6 +91,12 @@ function storageClient(opts: { failRemove?: boolean } = {}) {
       listed.push(prefix);
       return { data: folder.map((name) => ({ name })), error: null };
     }),
+    // Erasure verification reads each exact key back (round 5).
+    info: jest.fn(async (key: string) =>
+      removed.some((batch) => batch.includes(key)) && !opts.failRemove
+        ? { data: null, error: { message: 'Object not found', statusCode: '404' } }
+        : { data: { size: 1, contentType: 'audio/mp4' }, error: null },
+    ),
   };
   const client = {
     auth: { admin: { deleteUser: jest.fn(async () => ({ error: null })) } },
@@ -136,13 +147,56 @@ describe('account deletion erases community voice notes (B-610-5)', () => {
       where: { kind: 'voice_note_transcript', targetId: { in: ['note-a', 'note-b'] } },
     });
     expect(client.storage.from).toHaveBeenCalledWith('voice-notes');
-    expect(removed[0]).toEqual([KEY_A, KEY_B]);
+    expect(removed).toContainEqual([KEY_A]);
+    expect(removed).toContainEqual([KEY_B]);
     expect(listed).toContain(USER_ID);
     expect(removed).toContainEqual([`${USER_ID}/orphan-upload.m4a`]);
     expect(client.auth.admin.deleteUser).toHaveBeenCalled();
+
+    // Round 5: the work is recorded durably (both keys + the owner folder)
+    // BEFORE the rows are soft-deleted, and each row is completed only after
+    // the removal was verified.
+    const upserts = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
+    );
+    expect(upserts.map((c) => (c.args as { create: { target: string } }).create.target)).toEqual([
+      KEY_A,
+      KEY_B,
+      USER_ID,
+    ]);
+    const firstUpsert = calls.indexOf(upserts[0]);
+    expect(firstUpsert).toBeLessThan(calls.indexOf(noteDelete as Call));
+    const completions = calls.filter(
+      (c) =>
+        c.delegate === 'communityVoiceErasure' &&
+        c.method === 'updateMany' &&
+        (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
+    );
+    expect(completions).toHaveLength(3);
   });
 
-  it('a storage outage is logged and never blocks the rest of the deletion', async () => {
+  it('a failed erasure record aborts finalization before any row is touched (retried next run)', async () => {
+    const calls: Call[] = [];
+    const { client } = storageClient();
+    const service = await build(permissivePrisma(calls, { failErasureRecord: true }), client);
+    await expect(
+      service.adminForceDelete(USER_ID, { actorId: 'admin-1', actorRole: 'owner', actorEmail: null }),
+    ).rejects.toThrow('erasure table unavailable');
+    expect(
+      calls.some((c) => c.delegate === 'communityVoiceNote' && c.method === 'updateMany'),
+    ).toBe(false);
+    // The account is not tombstoned, so the finalize cron picks it up again.
+    expect(
+      calls.some(
+        (c) =>
+          c.delegate === 'user' &&
+          c.method === 'update' &&
+          (c.args as { data?: { deleted_at?: Date } }).data?.deleted_at instanceof Date,
+      ),
+    ).toBe(false);
+  });
+
+  it('a storage outage leaves the erasure work open for the retry cron and never blocks the rest of the deletion', async () => {
     const calls: Call[] = [];
     const { client } = storageClient({ failRemove: true });
     const service = await build(permissivePrisma(calls), client);
@@ -156,5 +210,18 @@ describe('account deletion erases community voice notes (B-610-5)', () => {
       calls.some((c) => c.delegate === 'communityVoiceNote' && c.method === 'updateMany'),
     ).toBe(true);
     expect(client.auth.admin.deleteUser).toHaveBeenCalled();
+    // Nothing was marked complete; every row was rescheduled with the error.
+    const erasureUpdates = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'updateMany',
+    );
+    expect(erasureUpdates).toHaveLength(3);
+    for (const u of erasureUpdates) {
+      expect((u.args as { data: Record<string, unknown> }).data).toMatchObject({
+        attempts: 1,
+        last_error: 'storage_remove_failed',
+        next_attempt_at: expect.any(Date),
+      });
+      expect((u.args as { data: Record<string, unknown> }).data.completed_at).toBeUndefined();
+    }
   });
 });
