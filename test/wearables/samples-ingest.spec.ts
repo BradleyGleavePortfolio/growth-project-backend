@@ -208,7 +208,7 @@ describe('POST /v1/wearables/samples/ingest (P0-0A)', () => {
       expect(roles).toEqual(['student']);
     });
 
-    it('declares the EXACT 20-req / 60s throttle on the handler', () => {
+    it('declares the EXACT 60-req / 60s throttle on the handler (S14 history import)', () => {
       // @nestjs/throttler stores per-name limit/ttl under
       // `THROTTLER:LIMIT<name>` / `THROTTLER:TTL<name>`. The route uses the
       // 'default' named bucket (THROTTLER_NAMES.DEFAULT), so assert the exact
@@ -216,7 +216,7 @@ describe('POST /v1/wearables/samples/ingest (P0-0A)', () => {
       const handler = WearableSamplesController.prototype.ingestSamples;
       const limit = Reflect.getMetadata(`${THROTTLER_LIMIT}default`, handler);
       const ttl = Reflect.getMetadata(`${THROTTLER_TTL}default`, handler);
-      expect(limit).toBe(20);
+      expect(limit).toBe(60);
       expect(ttl).toBe(60_000);
     });
   });
@@ -490,10 +490,43 @@ describe('POST /v1/wearables/samples/ingest (P0-0A)', () => {
       await expectInvalid([validSample({ evil: 'x' })]);
     });
 
-    it('rejects a foreign userId in the body as an unknown field (strict)', async () => {
-      // The body cannot name a subject user: `userId` is not in the schema, so
-      // a strict parse rejects it outright. The subject is owned by the JWT.
-      await expectInvalid([validSample({ userId: FOREIGN_USER })]);
+    it('rejects a body userId with the typed WEARABLES_INGEST_USER_ID_FORBIDDEN 400 (S14)', async () => {
+      // The body cannot name a subject user. A sample carrying `userId` (foreign
+      // OR the caller's own id) gets a precise typed 400 before the strict
+      // parse, and nothing is written. The subject is owned by the JWT.
+      for (const userId of [FOREIGN_USER, USER]) {
+        const body = [validSample(), validSample({ userId })];
+        let caught: unknown;
+        try {
+          await ctrl.ingestSamples(reqFor(USER), body);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const resp = (caught as BadRequestException).getResponse() as {
+          error: string;
+          code: string;
+          issues: { path: string }[];
+        };
+        expect(resp.error).toBe('WEARABLES_INGEST_USER_ID_FORBIDDEN');
+        // `code` is what survives the global HttpExceptionFilter.
+        expect(resp.code).toBe('WEARABLES_INGEST_USER_ID_FORBIDDEN');
+        expect(resp.issues[0].path).toBe('1.userId');
+        // The submitted id is never echoed back.
+        expect(JSON.stringify(resp)).not.toContain(userId);
+      }
+      expect(ingestMock).not.toHaveBeenCalled();
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
+
+    it('still rejects any other unknown key through the strict schema', async () => {
+      await expectInvalid([validSample({ user_id: FOREIGN_USER })]);
+    });
+
+    it('rejects a sample whose bucket does not match the metric (S14)', async () => {
+      // STEPS lives in HEALTH_FITNESS; a SLEEP_RECOVERY row would be stored but
+      // never shown on the Health view, so it is a 400.
+      await expectInvalid([validSample({ bucket: WearableMetricBucket.SLEEP_RECOVERY })]);
     });
 
     it('rejects a non-UUID connectionId', async () => {
