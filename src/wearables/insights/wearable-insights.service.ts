@@ -2,6 +2,9 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { WearableMetricBucket } from '@prisma/client';
 import { ZodSchema } from 'zod';
 import { PrismaService } from '../../prisma.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
+import { clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import { InsightCacheService, INSIGHT_WINDOW_DAYS } from './insight-cache.service';
 import {
@@ -71,6 +74,8 @@ export class WearableInsightsService {
     private readonly prisma: PrismaService,
     private readonly gateway: AiGatewayService,
     private readonly cache: InsightCacheService,
+    // R2b — box-2 consent gate (also guards cached AI output).
+    private readonly egress: AiEgressService,
   ) {}
 
   // Authorization: assert the coach (or owner) currently owns the
@@ -154,6 +159,17 @@ export class WearableInsightsService {
   }): Promise<T | EmptyInsight> {
     const { audience, subjectUserId, bucket } = opts;
 
+    // R2b — the client's live box-2 grant is required BEFORE the cache is
+    // read: an AI insight generated from the client's data is not served
+    // after they withdraw, and no new one is generated (403
+    // ai_consent_required). Coach callers reach this only after
+    // assertCoachOwnsClient, so the answer is no cross-tenant oracle.
+    await this.egress.assertMaySend(
+      clientDataSubject(subjectUserId, audience === 'coach' ? 'coach' : 'client'),
+      'anthropic',
+      'wearables.insight',
+    );
+
     // 1. Cache check — a fresh (non-expired, non-invalidated) row short-
     //    circuits the whole pipeline. No LLM call, no audit row.
     const cached = (await this.cache.get(audience, subjectUserId, bucket)) as T | null;
@@ -179,6 +195,7 @@ export class WearableInsightsService {
     try {
       raw = await this.invokeWithTimeout(opts, prompt, prompt.user);
     } catch (err) {
+      if (isAiEgressRefusal(err)) throw err;
       this.logger.warn(
         `insight LLM call failed/timed out audience=${audience} user=${subjectUserId}: ${(err as Error).message}`,
       );
@@ -196,6 +213,7 @@ export class WearableInsightsService {
       try {
         repaired = await this.invokeWithTimeout(opts, prompt, repairUser);
       } catch (err) {
+        if (isAiEgressRefusal(err)) throw err;
         this.logger.warn(
           `insight repair call failed audience=${audience}: ${(err as Error).message}`,
         );

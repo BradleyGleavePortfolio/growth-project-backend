@@ -20,7 +20,6 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type Anthropic from '@anthropic-ai/sdk';
 import type {
   Prisma,
   RomanMessage,
@@ -28,6 +27,13 @@ import type {
   RomanSurface,
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { AiEgressService, AnthropicHandle } from '../ai-egress/ai-egress.service';
+import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
+import {
+  AiDataSubject,
+  clientDataSubject,
+  noClientDataSubject,
+} from '../ai-egress/ai-egress.types';
 import {
   ROMAN_ANTHROPIC_CLIENT,
   ROMAN_MODEL_PHASE_1,
@@ -86,9 +92,11 @@ export class RomanService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // R2b — box-2 consent gate before every Anthropic request.
+    private readonly egress: AiEgressService,
     @Optional()
     @Inject(ROMAN_ANTHROPIC_CLIENT)
-    private readonly anthropic: Anthropic | null = null,
+    private readonly anthropic: AnthropicHandle | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -302,6 +310,29 @@ export class RomanService {
     }
   }
 
+  // ─── AI consent (R2b) ────────────────────────────────────────────────────
+
+  /**
+   * Whose data a Roman turn sends. A client (role `student`) sends their own
+   * conversation: their live box-2 grant is required. Coaches and owners
+   * chat about their own work; the server loads no client record into the
+   * prompt (coach_own_scope).
+   */
+  dataSubjectFor(caller: RomanCaller): AiDataSubject {
+    return caller.role === 'coach' || caller.role === 'owner'
+      ? noClientDataSubject('coach_own_scope')
+      : clientDataSubject(caller.id, 'client');
+  }
+
+  /**
+   * Refuse early (403 ai_consent_required) so the controller can answer
+   * before it stores the user turn or opens the stream. The stream re-checks
+   * immediately before the provider request regardless.
+   */
+  async assertMayUseAi(caller: RomanCaller): Promise<void> {
+    await this.egress.assertMaySend(this.dataSubjectFor(caller), 'anthropic', 'roman.chat');
+  }
+
   // ─── Anthropic streaming ─────────────────────────────────────────────────
 
   /** Current per-session voice budget surfaced to the model. */
@@ -386,7 +417,11 @@ export class RomanService {
     }
 
     try {
-      const stream = this.anthropic.messages.stream(
+      // R2b — the grant is read live inside the egress call.
+      const stream = await this.egress.anthropicMessagesStream(
+        this.anthropic,
+        this.dataSubjectFor(caller),
+        'roman.chat',
         {
           model: ROMAN_MODEL_PHASE_1,
           max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
@@ -416,6 +451,9 @@ export class RomanService {
         }
       }
     } catch (err) {
+      // R2b — refused before anything was sent: no Roman turn is stored;
+      // the controller turns this into a structured error event.
+      if (isAiEgressRefusal(err)) throw err;
       // Mark interrupted, persist whatever we accumulated, and surface a
       // structured error chunk (never a raw SDK string — AGENT_RULES #9).
       interrupted = true;

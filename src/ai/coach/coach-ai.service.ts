@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma.service';
 import { AnthropicAdapter } from '../adapters/anthropic.adapter';
 import { ClientContextService } from '../context/client-context.service';
 import { CoachAIStateService } from './coach-ai-state.service';
+import { clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { COACH_AI_CAPABILITIES, COACH_AI_MODEL } from './coach-ai.constants';
 import { WorkoutProgramPrompt, WorkoutProgramInput, WorkoutProgramPayload } from '../prompts/workout-program.prompt';
 import { MealPlanPrompt, MealPlanInput, MealPlanPayload } from '../prompts/meal-plan.prompt';
@@ -96,6 +97,10 @@ export class CoachAIService {
         capability: COACH_AI_CAPABILITIES.WORKOUT_PROGRAM,
         coachId,
         clientId: input.clientId,
+        // R2b — the client's live box-2 grant is required (after the
+        // ownership check above, so the refusal is no cross-tenant oracle).
+        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        surface: 'coach_ai.workout_program',
         maxTokens: 4096,
       },
     );
@@ -131,6 +136,10 @@ export class CoachAIService {
         capability: COACH_AI_CAPABILITIES.MEAL_PLAN,
         coachId,
         clientId: input.clientId,
+        // R2b — the client's live box-2 grant is required (after the
+        // ownership check above, so the refusal is no cross-tenant oracle).
+        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        surface: 'coach_ai.meal_plan',
         maxTokens: 4096,
       },
     );
@@ -171,6 +180,10 @@ export class CoachAIService {
         capability: COACH_AI_CAPABILITIES.INSIGHT,
         coachId,
         clientId: input.clientId,
+        // R2b — the client's live box-2 grant is required (after the
+        // ownership check above, so the refusal is no cross-tenant oracle).
+        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        surface: 'coach_ai.insight',
         maxTokens: 1024,
       },
     );

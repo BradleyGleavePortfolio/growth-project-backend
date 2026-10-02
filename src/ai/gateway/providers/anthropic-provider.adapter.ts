@@ -48,6 +48,13 @@ export class AnthropicProviderAdapter implements AiProviderAdapter {
         maxTokens: req.maxTokens,
         temperature: req.temperature,
         capability: req.capability || 'gateway',
+        // R2b — consent is re-read inside the adapter's egress call.
+        dataSubject: req.dataSubject,
+        surface: 'gateway',
+        clientId:
+          req.dataSubject.kind === 'client_data' && req.dataSubject.clientIds.length === 1
+            ? req.dataSubject.clientIds[0]
+            : null,
       },
     );
     return {
