@@ -4,6 +4,7 @@ import {
   planSeed,
   seedCoachTypes,
 } from '../scripts/seed-coach-session-types';
+import type { PrismaClient } from '@prisma/client';
 
 const coachId = '12345678-1234-1234-1234-123456789abc';
 const existing = DAY1_SESSION_TYPES.map((spec, i) => ({
@@ -58,14 +59,16 @@ describe('C04 appointment type seed', () => {
     const prisma = {
       $transaction: jest.fn(async (fn: (db: typeof tx) => Promise<unknown>) => fn(tx)),
     };
-    await seedCoachTypes(prisma as never, coachId, false);
+    // @ts-expect-error R0 partial Prisma test double supplies the transaction and all delegates the seed uses; no database is opened.
+    const client: PrismaClient = prisma;
+    await seedCoachTypes(client, coachId, false);
     expect(tx.sessionType.create).not.toHaveBeenCalled();
-    await seedCoachTypes(prisma as never, coachId, true);
+    await seedCoachTypes(client, coachId, true);
     expect(tx.sessionType.create).toHaveBeenCalledTimes(2);
     expect(prisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), {
       isolationLevel: 'Serializable',
     });
     tx.user.findUnique.mockResolvedValueOnce({ role: 'student' });
-    await expect(seedCoachTypes(prisma as never, coachId, true)).rejects.toThrow('Complete coach signup');
+    await expect(seedCoachTypes(client, coachId, true)).rejects.toThrow('Complete coach signup');
   });
 });

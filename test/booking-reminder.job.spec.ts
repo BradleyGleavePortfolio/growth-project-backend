@@ -15,6 +15,8 @@
 
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
 import { NotificationKind } from '../src/notifications/notification-kind';
+import type { PrismaService } from '../src/prisma.service';
+import type { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 
 interface FakeSession {
   id: string;
@@ -86,6 +88,17 @@ function buildBookingEmitter() {
     emitReminder24h: jest.fn().mockResolvedValue(undefined),
     emitReminder1h: jest.fn().mockResolvedValue(undefined),
   };
+}
+
+function cronJob(
+  prisma: ReturnType<typeof buildPrismaFake>,
+  emitter: ReturnType<typeof buildBookingEmitter>,
+): SessionReminderJob {
+  // @ts-expect-error R0 partial Prisma test double supplies every delegate the cron reads.
+  const db: PrismaService = prisma;
+  // @ts-expect-error R0 partial emitter test double stubs each public emit method; no private emitter implementation runs.
+  const notifications: BookingEmitter = emitter;
+  return new SessionReminderJob(db, notifications);
 }
 
 function session(
@@ -317,7 +330,7 @@ describe('SessionReminderJob — explicit launch switch', () => {
       if (value === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
       else process.env.BOOKING_REMINDERS_ENABLED = value;
       const prisma = buildPrismaFake([]);
-      const job = new SessionReminderJob(prisma as never, buildBookingEmitter() as never);
+      const job = cronJob(prisma, buildBookingEmitter());
       await job.runOneHourReminderSweep();
       await job.runTwentyFourHourReminderSweep();
       expect(prisma.coachingSession.findMany).not.toHaveBeenCalled();
@@ -331,7 +344,7 @@ describe('SessionReminderJob — explicit launch switch', () => {
       session({ id: 'one-day', startsInMinutes: 1440 }),
     ]);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
     await job.runOneHourReminderSweep();
     await job.runTwentyFourHourReminderSweep();
     expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
