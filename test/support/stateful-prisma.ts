@@ -35,6 +35,9 @@ function matchValue(actual: any, cond: any): boolean {
         case 'in':
           if (!(v as unknown[]).includes(actual)) return false;
           break;
+        case 'notIn':
+          if ((v as unknown[]).includes(actual)) return false;
+          break;
         case 'not':
           if (matchValue(actual, v)) return false;
           break;
@@ -71,7 +74,7 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
       !(cond instanceof Date) &&
       !Array.isArray(cond) &&
       Object.keys(cond).some(
-        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'not', 'equals'].includes(op),
+        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals'].includes(op),
       )
     ) {
       // compound unique selector, e.g. { user_id_code: { user_id, code } }
@@ -152,6 +155,15 @@ export class Model {
   findUnique = async ({ where, select, include }: any) => {
     this.db.hit(this.name, 'findUnique', where);
     return pick(this.rows.find((r) => matchWhere(r, where)) ?? null, select, include, this.db);
+  };
+  findUniqueOrThrow = async (args: any) => {
+    const row = await this.findUnique(args);
+    if (!row) {
+      const e: any = new Error(`${this.name} not found`);
+      e.code = 'P2025';
+      throw e;
+    }
+    return row;
   };
   findFirst = async ({ where, select, include, orderBy }: any = {}) => {
     let rows = this.rows.filter((r) => matchWhere(r, where));

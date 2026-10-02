@@ -2,11 +2,14 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Header,
   Param,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -18,6 +21,7 @@ import {
   type ChargeStatusFilter,
   CoachMoneyService,
   MONEY_CHARGES_PAGE_MAX,
+  parseCurrency,
   parseWindow,
 } from './coach-money.service';
 
@@ -31,29 +35,36 @@ import {
 export class CoachMoneyController {
   constructor(private readonly money: CoachMoneyService) {}
 
-  // GET /v1/coach/money/summary?from&to[&compare_from&compare_to]
+  // GET /v1/coach/money/summary?from&to[&compare_from&compare_to][&currency]
   // The device computes calendar windows (Today / 30d / 90d / YTD) in the
-  // coach's own time zone; the server validates and bounds them.
+  // coach's own time zone; the server validates and bounds them. Every
+  // amount is in the response's `currency` (B-641-3); `currencies` lists
+  // the others the coach can switch to.
   @Roles('coach', 'owner')
   @Get('summary')
   @ApiOperation({ summary: 'Net to the coach for a window, with a comparison window' })
-  @ApiResponse({ status: 400, description: 'MONEY_WINDOW_INVALID | MONEY_COMPARE_WINDOW_INVALID' })
+  @ApiResponse({
+    status: 400,
+    description: 'MONEY_WINDOW_INVALID | MONEY_COMPARE_WINDOW_INVALID | MONEY_CURRENCY_INVALID',
+  })
   async summary(
     @Request() req: AuthedRequest,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('compare_from') compareFrom?: string,
     @Query('compare_to') compareTo?: string,
+    @Query('currency') currencyRaw?: string,
   ) {
     const window = parseWindow(from, to, 'window');
+    const currency = parseCurrency(currencyRaw);
     const compare =
       compareFrom !== undefined || compareTo !== undefined
         ? parseWindow(compareFrom, compareTo, 'compare')
         : null;
-    return this.money.getSummary(req.user.id, window, compare);
+    return this.money.getSummary(req.user.id, window, compare, new Date(), currency);
   }
 
-  // GET /v1/coach/money/charges?status=all|paid|failed|refunded&cursor&limit
+  // GET /v1/coach/money/charges?status=all|paid|failed|refunded|disputed&cursor&limit
   @Roles('coach', 'owner')
   @Get('charges')
   @ApiOperation({ summary: "The coach's own charges, newest first, filtered by state" })
@@ -68,7 +79,7 @@ export class CoachMoneyController {
     if (!CHARGE_STATUS_FILTERS.includes(status)) {
       throw new BadRequestException({
         code: 'MONEY_FILTER_INVALID',
-        message: 'status must be one of all, paid, failed, refunded.',
+        message: `status must be one of ${CHARGE_STATUS_FILTERS.join(', ')}.`,
       });
     }
     const parsed = limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10);
@@ -81,6 +92,32 @@ export class CoachMoneyController {
       cursor: cursor && cursor.trim() ? cursor.trim() : null,
       limit,
     });
+  }
+
+  // GET /v1/coach/money/export.csv?from&to — C-641-4 "Export CSV for taxes".
+  // Same window rules as /summary (max 400 days, so a tax year fits); the
+  // net_to_you column sums to the summary's net for the same window.
+  @Roles('coach', 'owner')
+  @Get('export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Sales, refunds and chargebacks in a window as CSV, for taxes' })
+  @ApiResponse({ status: 200, description: 'text/csv attachment' })
+  @ApiResponse({ status: 400, description: 'MONEY_WINDOW_INVALID | MONEY_EXPORT_TOO_LARGE' })
+  async exportCsv(
+    @Request() req: AuthedRequest,
+    @Res({ passthrough: true }) res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<string> {
+    const window = parseWindow(from, to, 'window');
+    const csv = await this.money.exportCsv(req.user.id, window);
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="tgp-money-${day(window.from)}-to-${day(window.to)}.csv"`,
+    );
+    return csv;
   }
 
   // GET /v1/coach/money/charges/:id — price - processing - TGP 2% = net for
