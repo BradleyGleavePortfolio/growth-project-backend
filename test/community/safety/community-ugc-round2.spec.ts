@@ -652,11 +652,11 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
 
     it('a non-canonical key is never sent to storage; its work is closed with the reason', async () => {
       const work = await recordVoiceErasures(
-        db,
+        prisma,
         [{ kind: 'object', target: `${bob.id}/../victim/x.m4a` }],
         'moderation',
       );
-      await expect(attemptVoiceErasures(db, storage, work)).resolves.toEqual({
+      await expect(attemptVoiceErasures(prisma, storage, work)).resolves.toEqual({
         completed: 1,
         pending: 0,
       });
