@@ -19,6 +19,7 @@ import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
 import { StubProviderAdapter } from '../src/ai/gateway/providers/stub-provider.adapter';
 import { CoachAiBudgetExhaustedException } from '../src/ai-credits/budget-exhausted.exception';
+import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 function buildPrismaMock() {
   return {
@@ -124,6 +125,7 @@ describe('Stream 1 — P1-4: AiGatewayService throws 402 when budget exhausted',
       new AiGatewayConfig(),
       new AiRedactionService(),
       buildRegistry(),
+      grantAllEgress(),
       budget,
     );
 
@@ -176,6 +178,7 @@ describe('Stream 1 — P1-4: AiGatewayService throws 402 when budget exhausted',
       new AiGatewayConfig(),
       new AiRedactionService(),
       buildRegistry(),
+      grantAllEgress(),
       budget,
     );
 

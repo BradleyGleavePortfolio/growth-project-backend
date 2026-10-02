@@ -17,7 +17,8 @@
 
 import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import type { AnthropicHandle } from '../ai-egress/ai-egress.service';
+import { createAnthropicClient } from '../ai-egress/provider-clients';
 
 /** DI token for Roman's Anthropic client (brief §4). */
 export const ROMAN_ANTHROPIC_CLIENT = 'ROMAN_ANTHROPIC_CLIENT';
@@ -39,13 +40,15 @@ export const ROMAN_MODEL_PHASE_1 = 'claude-3-7-sonnet-20250219';
 export const romanAnthropicClientProvider: Provider = {
   provide: ROMAN_ANTHROPIC_CLIENT,
   inject: [ConfigService],
-  useFactory: (config: ConfigService): Anthropic | null => {
+  useFactory: (config: ConfigService): AnthropicHandle | null => {
     const apiKey =
       config.get<string>('ANTHROPIC_API_KEY') ?? process.env.ANTHROPIC_API_KEY;
     if (!apiKey || !apiKey.trim()) {
       // No key — service surfaces ROMAN_UNAVAILABLE rather than crashing boot.
       return null;
     }
-    return new Anthropic({ apiKey });
+    // R2b — built by the egress module; RomanService only uses it through
+    // AiEgressService (box-2 consent checked before every request).
+    return createAnthropicClient(apiKey);
   },
 };
