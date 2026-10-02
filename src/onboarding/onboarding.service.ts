@@ -494,13 +494,17 @@ export class OnboardingService {
     const merged = mergeAnswers(stored, patch);
     const chapters = completedChapters(merged);
 
-    // P0: server-stamped acknowledgement. Re-stamped only when the copy
-    // version changes, so a resume does not move the accepted time.
+    // P0: server-stamped acknowledgement. Re-stamped when the copy version
+    // changes, or when the stored stamp is not provable (Opus C-607-5: a
+    // stored v3 whose P0 no longer proves the v3 text keeps no unproven
+    // time), so a resume of a proven consent does not move the accepted time.
     const p0 = isRecord(merged.P0) ? merged.P0 : null;
     const p0Version = p0 ? consentCopyVersion(p0) : null;
     const disclaimer_version = p0Version;
     const disclaimer_accepted_at = p0Version
-      ? existing?.disclaimer_version === p0Version && existing.disclaimer_accepted_at
+      ? consentOnFile &&
+        existing?.disclaimer_version === p0Version &&
+        existing.disclaimer_accepted_at
         ? existing.disclaimer_accepted_at
         : now
       : null;

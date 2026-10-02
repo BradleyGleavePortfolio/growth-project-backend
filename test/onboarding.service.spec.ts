@@ -1846,6 +1846,38 @@ describe('D2 consent: box 1 only gates completion; box 2 is never required (#607
     expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
   });
 
+  it('C-607-5: re-sending a provable v3 over an unprovable stored v3 re-stamps the acceptance time', async () => {
+    const LATER = new Date('2026-10-02T09:30:00.000Z');
+    const w = makeWorld();
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      NOW,
+    );
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
+    // A proven resume keeps the original time.
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      LATER,
+    );
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(NOW);
+    // The stored v3 P0 stops proving the v3 text (hand-edited row).
+    w.intakes[0].answers = {
+      ...answersOf(w.intakes[0]),
+      P0: { ...CONSENT, text_sha256: 'c'.repeat(64) },
+    };
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: CONSENT } },
+      LATER,
+    );
+    expect(w.intakes[0].disclaimer_version).toBe('consult-consent-v3');
+    expect(w.intakes[0].disclaimer_accepted_at).toEqual(LATER);
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+  });
+
   it('CONSULT_CONSENT_COPY_VERSIONS only chooses among versions with known text', async () => {
     // Unknown names cannot be verified, so they are ignored; v2 is unknown.
     process.env.CONSULT_CONSENT_COPY_VERSIONS = 'consult-consent-v1, consult-consent-v2';
