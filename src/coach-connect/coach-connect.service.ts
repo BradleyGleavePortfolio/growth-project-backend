@@ -12,6 +12,7 @@ import {
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
+import { readRequirements, type ParsedRequirements } from '../coach-money/coach-money.service';
 
 // Phase 8 — Coach-facing Connect surface for the mobile app.
 //
@@ -31,13 +32,38 @@ import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
 // data yet" (real zeros) by the configured flag on ConnectStatus and
 // the empty arrays on Payouts/Packages.
 
+/**
+ * S-COACH: the truthful onboarding state the coach sees.
+ *  - not_started          no Connect account yet
+ *  - details_needed       account exists, the coach has not finished Stripe's form
+ *  - pending_verification form submitted, Stripe is verifying, nothing due from the coach
+ *  - restricted           Stripe needs more from the coach before charges or payouts work
+ *  - active               charges and payouts enabled (requirements may still be due later)
+ *  - deauthorized         the coach disconnected TGP from their Stripe account
+ */
+export type CoachConnectState =
+  | 'not_started'
+  | 'details_needed'
+  | 'pending_verification'
+  | 'restricted'
+  | 'active'
+  | 'deauthorized';
+
 export interface CoachConnectStatus {
   configured: boolean;
   charges_enabled: boolean;
   payouts_enabled: boolean;
   account_id: string | null;
   last_onboarded_at: string | null;
+  /** Legacy union of currently_due, past_due and eventually_due. */
   requirements_due: string[];
+  // S-COACH additive fields (older clients ignore them).
+  state: CoachConnectState;
+  details_submitted: boolean;
+  disabled_reason: string | null;
+  /** True when Stripe needs something from the coach now (currently_due or past_due). */
+  action_required: boolean;
+  requirements: ParsedRequirements;
 }
 
 export interface BusinessMetrics {
@@ -82,6 +108,24 @@ export interface OnboardingLink {
   expires_at: string;
 }
 
+export function deriveConnectState(a: {
+  deauthorized: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  actionRequired: boolean;
+  disabledReason: string | null;
+}): CoachConnectState {
+  if (a.deauthorized) return 'deauthorized';
+  if (a.chargesEnabled && a.payoutsEnabled) return 'active';
+  if (!a.detailsSubmitted) return 'details_needed';
+  if (a.actionRequired) return 'restricted';
+  if (a.disabledReason && a.disabledReason !== 'requirements.pending_verification') {
+    return 'restricted';
+  }
+  return 'pending_verification';
+}
+
 @Injectable()
 export class CoachConnectService {
   private readonly logger = new Logger(CoachConnectService.name);
@@ -108,16 +152,64 @@ export class CoachConnectService {
         account_id: null,
         last_onboarded_at: null,
         requirements_due: [],
+        state: 'not_started',
+        details_submitted: false,
+        disabled_reason: null,
+        action_required: false,
+        requirements: readRequirements(null),
       };
     }
+    const requirements = readRequirements(row.requirements_due);
+    const chargesEnabled = !!row.charges_enabled && !row.deauthorized_at;
+    const payoutsEnabled = !!row.payouts_enabled && !row.deauthorized_at;
+    const actionRequired =
+      requirements.currently_due.length > 0 || requirements.past_due.length > 0;
     return {
-      configured: !!row.charges_enabled && !!row.payouts_enabled,
-      charges_enabled: !!row.charges_enabled,
-      payouts_enabled: !!row.payouts_enabled,
+      configured: chargesEnabled && payoutsEnabled,
+      charges_enabled: chargesEnabled,
+      payouts_enabled: payoutsEnabled,
       account_id: row.stripe_account_id,
       last_onboarded_at: row.updated_at?.toISOString() ?? null,
       requirements_due: this.extractRequirements(row.requirements_due),
+      state: deriveConnectState({
+        deauthorized: !!row.deauthorized_at,
+        chargesEnabled,
+        payoutsEnabled,
+        detailsSubmitted: !!row.details_submitted,
+        actionRequired,
+        disabledReason: row.disabled_reason ?? null,
+      }),
+      details_submitted: !!row.details_submitted,
+      disabled_reason: row.disabled_reason ?? null,
+      action_required: actionRequired,
+      requirements,
     };
+  }
+
+  // POST /coach/connect/status/refresh — re-read the account from Stripe
+  // (the webhook can lag the coach's return from hosted onboarding by
+  // seconds) and return the fresh status. `refreshed: false` means Stripe
+  // could not be reached and the status is the last mirrored copy.
+  async refreshStatus(coachUserId: string): Promise<CoachConnectStatus & { refreshed: boolean }> {
+    const row = await this.prisma.connectAccount.findUnique({
+      where: { coach_user_id: coachUserId },
+      select: { stripe_account_id: true, updated_at: true },
+    });
+    let refreshed = false;
+    if (row && this.stripeConnect.isConfigured()) {
+      try {
+        // syncFromStripe returns the untouched mirror when Stripe rejects the
+        // read, so a moved updated_at is the proof that Stripe answered.
+        const synced = await this.connect.syncFromStripe(row.stripe_account_id);
+        refreshed = !!synced && synced.updated_at.getTime() !== row.updated_at.getTime();
+      } catch (err) {
+        this.logger.warn(
+          `refreshStatus: sync failed for coach=${coachUserId}: ${(err as Error)?.message ?? err}`,
+        );
+      }
+    }
+    const status = await this.getStatus(coachUserId);
+    return { ...status, refreshed };
   }
 
   // POST /coach/connect/onboarding-link — Stripe-hosted onboarding URL.

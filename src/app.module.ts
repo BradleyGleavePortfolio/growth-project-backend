@@ -99,6 +99,7 @@ import { TeamModule } from './team/team.module';
 import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
 import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 import { CoachConnectModule } from './coach-connect/coach-connect.module';
+import { CoachMoneyModule } from './coach-money/coach-money.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
@@ -356,6 +357,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SubCoachesModule,
     TalentMarketplaceModule,
     CoachConnectModule,
+    CoachMoneyModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
     // so the module loads without Google OAuth credentials configured;
