@@ -136,7 +136,12 @@ gates pass. Deleted accounts never produce a signal.
 - `POST /auth/register`: 10 / hour / IP. Loose enough for shared NAT,
   tight enough to kill enumeration loops.
 - `POST /auth/login`: 10 / minute / IP.
-- `POST /auth/signup-with-code`: 10 / hour / IP.
+- `POST /auth/signup-with-code`: 5 / hour / IP without a code (`auth-signup`);
+  100 / hour / IP when the body carries a well-formed invite code
+  (`auth-signup-with-code`, `AUTH_SIGNUP_WITH_CODE_PER_HOUR`). The higher cap
+  lets a 40+ patient clinic event sign up from one clinic Wi-Fi IP inside an
+  hour; `previewCode` still rejects an unknown code before any account is
+  created. See `src/throttler/README.md`.
 - `POST /auth/validate-invite-code`: 20 / minute / IP. Brute-force on the
   30-bit code space is infeasible at this rate.
 
