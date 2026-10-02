@@ -12,13 +12,20 @@ name: Fly Feature Flags Set (operator)
 #      src/common/feature-flag/feature-flag-not-found.middleware.ts.
 #   2. Validates by running `fly secrets list` and checking both names
 #      are present. Only names and digests are printed, never values.
+#   3. Optionally sets or removes FEATURE_DUNNING_V2 (Smart Dunning v2,
+#      read by src/checkout/dunning-v2/dunning-v2.feature.ts). The
+#      input is a closed choice: `unchanged` (default) never touches it,
+#      `true` sets it in the same `fly secrets set` call, `unset` removes
+#      it (rollback to v1 dunning). Validation then checks the name is
+#      present (true) or absent (unset).
 #
 # How to run (operator):
 #   gh workflow run "Fly Feature Flags Set (operator)" \
 #     -f app=backend-spring-lake-3890 \
 #     -f confirm=SET \
 #     -f feature_scout_ingest=true \
-#     -f feature_extension_pairing=true
+#     -f feature_extension_pairing=true \
+#     -f feature_dunning_v2=unchanged
 
 on:
   workflow_dispatch:
@@ -39,6 +46,17 @@ on:
         description: Value for FEATURE_EXTENSION_PAIRING (true/false)
         required: true
         default: 'true'
+      feature_dunning_v2:
+        description: >-
+          Smart Dunning v2 (FEATURE_DUNNING_V2). unchanged = do not touch;
+          true = enable; unset = remove the secret (rollback to v1).
+        type: choice
+        required: true
+        default: unchanged
+        options:
+          - unchanged
+          - 'true'
+          - unset
 
 permissions:
   contents: read
@@ -80,7 +98,15 @@ jobs:
         env:
           SCOUT: ${{ inputs.feature_scout_ingest }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
+          DUNNING_V2: ${{ inputs.feature_dunning_v2 }}
         run: |
+          case "${DUNNING_V2}" in
+            unchanged|true|unset) ;;
+            *)
+              echo "::error::feature_dunning_v2 must be unchanged, true or unset — got '${DUNNING_V2}'."
+              exit 1
+              ;;
+          esac
           for v in "${SCOUT}" "${PAIRING}"; do
             case "${v}" in
               true|false) ;;
@@ -106,20 +132,37 @@ jobs:
 
       - name: Push feature flags to Fly
         env:
+          DUNNING_V2: ${{ inputs.feature_dunning_v2 }}
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
           SCOUT: ${{ inputs.feature_scout_ingest }}
           PAIRING: ${{ inputs.feature_extension_pairing }}
         run: |
           set +x
+          extra=()
+          case "${DUNNING_V2}" in
+            unchanged|unset) ;;
+            true) extra+=("FEATURE_DUNNING_V2=true") ;;
+            *) echo "::error::feature_dunning_v2 must be unchanged, true or unset."; exit 1 ;;
+          esac
           flyctl secrets set -a "${APP}" \
             FEATURE_SCOUT_INGEST="${SCOUT}" \
-            FEATURE_EXTENSION_PAIRING="${PAIRING}"
+            FEATURE_EXTENSION_PAIRING="${PAIRING}" \
+            "${extra[@]}"
+          if [ "${DUNNING_V2}" = "unset" ]; then
+            # Only unset when present: unsetting a missing name is an error.
+            if flyctl secrets list -a "${APP}" | awk '{print $1}' | grep -qx FEATURE_DUNNING_V2; then
+              flyctl secrets unset -a "${APP}" FEATURE_DUNNING_V2
+            else
+              echo "FEATURE_DUNNING_V2 is already absent; nothing to unset."
+            fi
+          fi
 
       - name: Validate flag names exist on Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
+          DUNNING_V2: ${{ inputs.feature_dunning_v2 }}
         run: |
           set +x
           listing=$(flyctl secrets list -a "${APP}")
@@ -136,3 +179,20 @@ jobs:
             exit 1
           fi
           echo "Both feature flag names are present on Fly."
+          case "${DUNNING_V2}" in
+            true)
+              if ! echo "${names}" | grep -qx FEATURE_DUNNING_V2; then
+                echo "::error::FEATURE_DUNNING_V2 did not appear on Fly after set."
+                exit 1
+              fi
+              echo "FEATURE_DUNNING_V2 is present on Fly."
+              ;;
+            unset)
+              if echo "${names}" | grep -qx FEATURE_DUNNING_V2; then
+                echo "::error::FEATURE_DUNNING_V2 is still on Fly after unset."
+                exit 1
+              fi
+              echo "FEATURE_DUNNING_V2 is absent on Fly."
+              ;;
+            *) echo "FEATURE_DUNNING_V2 left unchanged." ;;
+          esac
