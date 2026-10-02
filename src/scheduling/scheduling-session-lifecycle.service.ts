@@ -99,11 +99,22 @@ export function isOverlapConstraintViolation(err: unknown): boolean {
 //    the database floor under that: any writer that skips the lock (another
 //    code path, a script, a future bug) still cannot store an overlap. Its
 //    violation maps to the same 409 SLOT_TAKEN.
-//  - Status transitions (approve, decline, cancel, complete, no-show, link
-//    promotion) are compare-and-set: UPDATE ... WHERE id AND status = <seen>.
-//    Zero rows updated means another actor won the race; the loser gets 409
-//    SESSION_STATE_CHANGED and nothing is notified twice.
-//  - Notifications go out after commit and never fail the transition.
+//  - Status transitions (approve, decline, cancel, complete, no-show) are
+//    compare-and-set on the booking revision the caller read:
+//    UPDATE ... WHERE id AND status AND start_at AND end_at = <seen>, plus the
+//    start-boundary rule in the same statement (approve / client cancel only
+//    while start_at > now; complete / no-show only once start_at <= now).
+//    A client can move a request without changing its status, so status alone
+//    is not a fence (S-SCHED-3 B-634-1). Zero rows updated means another actor
+//    won; the loser gets 409 SESSION_MOVED (same status, new time) or
+//    SESSION_STATE_CHANGED, and nothing is notified twice. Callers may also
+//    send expected_start_at (the time on their screen) for stale cards.
+//  - Provider provisioning runs after commit and writes back fenced on the
+//    revision and call link it read, so a coach's newer manual link, a cancel
+//    or a move during provisioning is never overwritten; artifacts made for a
+//    superseded revision are cancelled (S-SCHED-3 B-634-3).
+//  - Notifications go out after commit, are built from the committed row, and
+//    never fail the transition.
 @Injectable()
 export class SchedulingSessionLifecycleService {
   private readonly logger = new Logger(SchedulingSessionLifecycleService.name);
@@ -252,6 +263,9 @@ export class SchedulingSessionLifecycleService {
     // Instant confirmation: provision first so the confirmation and the
     // coach's "add a link" prompt reflect the final link state.
     const provisioned = await this.provisionSafely(created.id, actor);
+    // A cancel or move that landed while provisioning ran makes this
+    // confirmation obsolete; the other party already heard about that change.
+    if (!isConfirmedRevision(provisioned)) return provisioned;
     const [clientName, coachName] = await Promise.all([
       this.resolveDisplayName(actor.id),
       this.resolveDisplayName(dto.coach_id),
@@ -261,7 +275,7 @@ export class SchedulingSessionLifecycleService {
       coachDisplayName: coachName,
       sessionId: created.id,
       sessionTypeName: type.name,
-      scheduledAt: start,
+      scheduledAt: provisioned.start_at,
       instant: true,
     });
     await this.bookingEmitter.emitBooked({
@@ -269,7 +283,7 @@ export class SchedulingSessionLifecycleService {
       clientDisplayName: clientName,
       sessionId: created.id,
       sessionTypeName: type.name,
-      scheduledAt: start,
+      scheduledAt: provisioned.start_at,
     });
     await this.promptForMissingLink(provisioned, type.name, clientName);
     return provisioned;
@@ -277,39 +291,44 @@ export class SchedulingSessionLifecycleService {
 
   // ── approve / decline ──────────────────────────────────────────────
 
-  async approveSession(actor: ActorContext, sessionId: string): Promise<CoachingSession> {
+  async approveSession(
+    actor: ActorContext,
+    sessionId: string,
+    opts: TransitionOptions = {},
+  ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'scheduled');
-    if (existing.start_at.getTime() <= Date.now()) {
-      throw new ConflictException(
-        schedulingError(
-          SchedulingErrorCode.SESSION_STARTED,
-          'The requested time has already passed. Decline it so the client can pick a new time.',
-        ),
-      );
-    }
-    const updated = await this.compareAndSet(existing, 'scheduled', {
-      approved_at: new Date(),
-    });
+    assertExpectedStart(existing, opts.expectedStartAt);
+    if (existing.start_at.getTime() <= Date.now()) throw approvalTooLate();
+    const updated = await this.compareAndSet(
+      existing,
+      'scheduled',
+      { approved_at: new Date() },
+      { start: 'future', onStarted: approvalTooLate },
+    );
     this.openSlots.invalidateCoach(existing.coach_id);
     await this.writeTransitionAudit(AuditAction.SESSION_APPROVED, actor, existing, 'scheduled');
 
     const provisioned = await this.provisionSafely(updated.id, actor);
-    const typeName = await this.resolveTypeName(existing.session_type_id);
-    if (existing.client_id) {
+    // Built from the committed row (time included). If the session was
+    // cancelled or moved back to a request while provisioning ran, the
+    // confirmation is obsolete.
+    if (!isConfirmedRevision(provisioned)) return provisioned;
+    const typeName = await this.resolveTypeName(provisioned.session_type_id);
+    if (provisioned.client_id) {
       await this.bookingEmitter.emitConfirmed({
-        clientUserId: existing.client_id,
-        coachDisplayName: await this.resolveDisplayName(existing.coach_id),
+        clientUserId: provisioned.client_id,
+        coachDisplayName: await this.resolveDisplayName(provisioned.coach_id),
         sessionId,
         sessionTypeName: typeName,
-        scheduledAt: existing.start_at,
+        scheduledAt: provisioned.start_at,
       });
     }
     await this.promptForMissingLink(
       provisioned,
       typeName,
-      await this.resolveDisplayName(existing.client_id),
+      await this.resolveDisplayName(provisioned.client_id),
     );
     return provisioned;
   }
@@ -318,10 +337,12 @@ export class SchedulingSessionLifecycleService {
     actor: ActorContext,
     sessionId: string,
     reason?: string,
+    opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'declined');
+    assertExpectedStart(existing, opts.expectedStartAt);
     const updated = await this.compareAndSet(existing, 'declined', {
       ended_at: new Date(),
       end_reason: reason ?? null,
@@ -330,14 +351,14 @@ export class SchedulingSessionLifecycleService {
     await this.writeTransitionAudit(AuditAction.SESSION_DECLINED, actor, existing, 'declined', {
       reason: reason ?? null,
     });
-    if (existing.client_id) {
+    if (updated.client_id) {
       await this.bookingEmitter.emitDeclined({
-        clientUserId: existing.client_id,
-        coachDisplayName: await this.resolveDisplayName(existing.coach_id),
+        clientUserId: updated.client_id,
+        coachDisplayName: await this.resolveDisplayName(updated.coach_id),
         sessionId,
-        sessionTypeName: await this.resolveTypeName(existing.session_type_id),
-        requestedAt: existing.created_at,
-        scheduledAt: existing.start_at,
+        sessionTypeName: await this.resolveTypeName(updated.session_type_id),
+        requestedAt: updated.created_at,
+        scheduledAt: updated.start_at,
         declineReason: reason ?? null,
       });
     }
@@ -419,7 +440,12 @@ export class SchedulingSessionLifecycleService {
           : current.status;
 
       const moved = await tx.coachingSession.updateMany({
-        where: { id: current.id, status: current.status, start_at: current.start_at },
+        where: {
+          id: current.id,
+          status: current.status,
+          start_at: current.start_at,
+          end_at: current.end_at,
+        },
         data: {
           start_at: start,
           end_at: end,
@@ -513,18 +539,15 @@ export class SchedulingSessionLifecycleService {
     const existing = await this.loadSessionOrThrow(sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertTransition(existing, 'canceled');
-    if (actor.role === 'student' && existing.start_at.getTime() <= Date.now()) {
-      throw new ConflictException(
-        schedulingError(
-          SchedulingErrorCode.SESSION_STARTED,
-          'This session has already started, so it cannot be cancelled from the app. Message your coach instead.',
-        ),
-      );
-    }
-    const updated = await this.compareAndSet(existing, 'canceled', {
-      ended_at: new Date(),
-      end_reason: dto.reason ?? null,
-    });
+    assertExpectedStart(existing, dto.expected_start_at);
+    const clientCancel = actor.role === 'student';
+    if (clientCancel && existing.start_at.getTime() <= Date.now()) throw clientCancelTooLate();
+    const updated = await this.compareAndSet(
+      existing,
+      'canceled',
+      { ended_at: new Date(), end_reason: dto.reason ?? null },
+      clientCancel ? { start: 'future', onStarted: clientCancelTooLate } : {},
+    );
     this.openSlots.invalidateCoach(existing.coach_id);
     await this.writeTransitionAudit(AuditAction.SESSION_CANCELED, actor, existing, 'canceled', {
       reason: dto.reason ?? null,
@@ -537,13 +560,14 @@ export class SchedulingSessionLifecycleService {
         recipientRole: actorIsCoachSide ? 'client' : 'coach',
         cancellingPartyDisplayName: await this.resolveDisplayName(actor.id),
         sessionId,
-        sessionTypeName: await this.resolveTypeName(existing.session_type_id),
-        scheduledAt: existing.start_at,
+        sessionTypeName: await this.resolveTypeName(updated.session_type_id),
+        scheduledAt: updated.start_at,
         cancelReason: dto.reason ?? null,
       });
     }
-    if (existing.calendar_event_id) {
-      await this.cancelProviderArtifacts(existing);
+    // The committed row carries any artifacts provisioning stored after the read.
+    if (updated.calendar_event_id || updated.video_meeting_id) {
+      await this.cancelProviderArtifacts(updated);
     }
     return updated;
   }
@@ -559,10 +583,12 @@ export class SchedulingSessionLifecycleService {
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'completed');
     assertHasStarted(existing, 'complete');
-    const updated = await this.compareAndSet(existing, 'completed', {
-      ended_at: new Date(),
-      coach_notes_md: dto.coach_notes_md ?? existing.coach_notes_md,
-    });
+    const updated = await this.compareAndSet(
+      existing,
+      'completed',
+      { ended_at: new Date(), coach_notes_md: dto.coach_notes_md ?? existing.coach_notes_md },
+      { start: 'started', onStarted: () => notStartedYet('complete') },
+    );
     await this.writeTransitionAudit(AuditAction.SESSION_COMPLETED, actor, existing, 'completed');
     return updated;
   }
@@ -571,15 +597,19 @@ export class SchedulingSessionLifecycleService {
     actor: ActorContext,
     sessionId: string,
     reason?: string,
+    opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'no_show');
+    assertExpectedStart(existing, opts.expectedStartAt);
     assertHasStarted(existing, 'no_show');
-    const updated = await this.compareAndSet(existing, 'no_show', {
-      ended_at: new Date(),
-      end_reason: reason ?? null,
-    });
+    const updated = await this.compareAndSet(
+      existing,
+      'no_show',
+      { ended_at: new Date(), end_reason: reason ?? null },
+      { start: 'started', onStarted: () => notStartedYet('no_show') },
+    );
     await this.writeTransitionAudit(AuditAction.SESSION_NO_SHOW, actor, existing, 'no_show', {
       reason: reason ?? null,
     });
@@ -748,19 +778,38 @@ export class SchedulingSessionLifecycleService {
     }
   }
 
-  // Compare-and-set transition: only succeeds if the row is still in the
-  // status this request read. The loser of a race gets 409.
+  // Compare-and-set transition on the booking revision this request read:
+  // status AND the exact interval, plus the start-boundary rule evaluated in
+  // the same UPDATE (so the time cannot pass between check and write). The
+  // loser of a race gets 409: SESSION_MOVED when the row only moved,
+  // the caller's boundary error when the start passed, else
+  // SESSION_STATE_CHANGED.
   private async compareAndSet(
     existing: CoachingSession,
     to: SessionStatus,
     data: Prisma.CoachingSessionUpdateManyMutationInput,
+    fence: { start?: 'future' | 'started'; onStarted?: () => HttpException } = {},
   ): Promise<CoachingSession> {
+    const now = new Date();
+    const startFilter: Prisma.DateTimeFilter = { equals: existing.start_at };
+    if (fence.start === 'future') startFilter.gt = now;
+    if (fence.start === 'started') startFilter.lte = now;
     const res = await this.prisma.coachingSession.updateMany({
-      where: { id: existing.id, status: existing.status },
+      where: {
+        id: existing.id,
+        status: existing.status,
+        start_at: startFilter,
+        end_at: existing.end_at,
+      },
       data: { ...data, status: to },
     });
-    if (res.count !== 1) throw stateChanged();
-    return this.loadSessionOrThrow(existing.id);
+    if (res.count === 1) return this.loadSessionOrThrow(existing.id);
+    const current = await this.prisma.coachingSession.findUnique({ where: { id: existing.id } });
+    if (current && current.status === existing.status) {
+      if (!sameInterval(current, existing)) throw sessionMoved();
+      if (fence.onStarted) throw fence.onStarted();
+    }
+    throw stateChanged();
   }
 
   private async writeTransitionAudit(
@@ -929,17 +978,101 @@ export class SchedulingSessionLifecycleService {
       }
     }
 
-    return this.prisma.coachingSession.update({
-      where: { id: sessionId },
+    // S-SCHED-3 (B-634-3): write back only onto the revision and call link
+    // this run read. Providers are awaited above, so a coach can save a
+    // manual link, or either side can cancel or move, in the meantime.
+    const calendarData = {
+      provider_idempotency_key: idempotencyKey,
+      calendar_provider: calResult.resolvedProvider as CalendarProviderEnum,
+      calendar_event_id: calResult.externalEventId,
+    };
+    const fenced = await this.prisma.coachingSession.updateMany({
+      where: {
+        id: sessionId,
+        status: session.status,
+        start_at: session.start_at,
+        end_at: session.end_at,
+        video_provider: session.video_provider,
+        video_url: session.video_url,
+      },
       data: {
-        provider_idempotency_key: idempotencyKey,
-        calendar_provider: calResult.resolvedProvider as CalendarProviderEnum,
-        calendar_event_id: calResult.externalEventId,
+        ...calendarData,
         video_provider: resolvedVideoProvider,
         video_url: videoUrl,
         video_meeting_id: videoMeetingId,
       },
     });
+    if (fenced.count === 1) return this.loadSessionOrThrow(sessionId);
+
+    const createdMeetingId = videoMeetingId !== session.video_meeting_id ? videoMeetingId : null;
+    const current = await this.loadSessionOrThrow(sessionId);
+    if (current.status === session.status && sameInterval(current, session)) {
+      // Same booking; only the call link changed (the coach saved one). Keep
+      // their link, still record the calendar event for this revision, and
+      // drop the meeting this run created for it.
+      const kept = await this.prisma.coachingSession.updateMany({
+        where: {
+          id: sessionId,
+          status: session.status,
+          start_at: session.start_at,
+          end_at: session.end_at,
+          calendar_event_id: current.calendar_event_id,
+        },
+        data: calendarData,
+      });
+      await this.discardSupersededArtifacts(
+        current,
+        kept.count === 1 ? null : calResult,
+        createdMeetingId ? { provider: resolvedVideoProvider, meetingId: createdMeetingId } : null,
+      );
+      return this.loadSessionOrThrow(sessionId);
+    }
+    // Cancelled or moved meanwhile: nothing this run made belongs to the
+    // current revision.
+    await this.discardSupersededArtifacts(
+      current,
+      calResult,
+      createdMeetingId ? { provider: resolvedVideoProvider, meetingId: createdMeetingId } : null,
+    );
+    return current;
+  }
+
+  // Cancels provider artifacts created for a booking revision that no longer
+  // exists. Stub and manual providers create nothing external.
+  private async discardSupersededArtifacts(
+    session: CoachingSession,
+    calendar: { resolvedProvider: string; externalEventId: string | null } | null,
+    meeting: { provider: VideoProviderEnum; meetingId: string } | null,
+  ): Promise<void> {
+    const cancelCalendar =
+      calendar !== null && calendar.resolvedProvider !== 'stub' && !!calendar.externalEventId;
+    const cancelMeeting =
+      meeting !== null && meeting.provider !== 'stub' && meeting.provider !== 'manual';
+    if (!cancelCalendar && !cancelMeeting) return;
+    try {
+      if (cancelCalendar && calendar?.externalEventId) {
+        await this.providers
+          .resolveCalendar(calendar.resolvedProvider as CalendarProviderEnum)
+          .cancelEvent(calendar.externalEventId);
+      }
+      if (cancelMeeting && meeting) {
+        await this.providers.resolveVideo(meeting.provider).cancelMeeting(meeting.meetingId);
+      }
+      await this.audit.write({
+        action: AuditAction.SESSION_PROVIDER_CANCELED,
+        tenantCoachId: session.coach_id,
+        targetType: 'coaching_session',
+        targetId: session.id,
+        metadata: {
+          reason: 'superseded_revision',
+          calendar_provider: cancelCalendar ? calendar?.resolvedProvider : null,
+          video_provider: cancelMeeting ? meeting?.provider : null,
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`superseded artifact cleanup failed for session=${session.id}: ${msg}`);
+    }
   }
 
   private async cancelProviderArtifacts(session: CoachingSession): Promise<void> {
@@ -1045,7 +1178,72 @@ function assertDurationMinutes(expected: number, start: Date, end: Date): void {
 
 function assertHasStarted(existing: CoachingSession, action: 'complete' | 'no_show'): void {
   if (existing.start_at.getTime() <= Date.now()) return;
-  throw new ConflictException(
+  throw notStartedYet(action);
+}
+
+export interface TransitionOptions {
+  /** The start time on the caller's screen (ISO). Mismatch -> 409 SESSION_MOVED. */
+  expectedStartAt?: string | null;
+}
+
+function sameInterval(
+  a: Pick<CoachingSession, 'start_at' | 'end_at'>,
+  b: Pick<CoachingSession, 'start_at' | 'end_at'>,
+): boolean {
+  return a.start_at.getTime() === b.start_at.getTime() && a.end_at.getTime() === b.end_at.getTime();
+}
+
+// True while the session is still confirmed after provisioning. A cancel, a
+// decline or a client move back to approval in the meantime makes the
+// confirmation obsolete. (An instant-confirm session moved meanwhile stays
+// confirmed; the notice then states its current time.)
+function isConfirmedRevision(row: CoachingSession): boolean {
+  return row.status === 'scheduled' || row.status === 'pending_provider';
+}
+
+function assertExpectedStart(existing: CoachingSession, expected: string | null | undefined): void {
+  if (expected === undefined || expected === null || expected === '') return;
+  const at = new Date(expected);
+  if (Number.isNaN(at.getTime())) {
+    throw new BadRequestException(
+      schedulingError(
+        SchedulingErrorCode.INVALID_TIME,
+        'The session time on your screen could not be read. Refresh to see the current time.',
+      ),
+    );
+  }
+  if (at.getTime() !== existing.start_at.getTime()) throw sessionMoved();
+}
+
+function sessionMoved(): ConflictException {
+  return new ConflictException(
+    schedulingError(
+      SchedulingErrorCode.SESSION_MOVED,
+      'This session moved to a new time a moment ago. Refresh to see the new time, then choose again.',
+    ),
+  );
+}
+
+function approvalTooLate(): ConflictException {
+  return new ConflictException(
+    schedulingError(
+      SchedulingErrorCode.SESSION_STARTED,
+      'The requested time has already passed. Decline it so the client can pick a new time.',
+    ),
+  );
+}
+
+function clientCancelTooLate(): ConflictException {
+  return new ConflictException(
+    schedulingError(
+      SchedulingErrorCode.SESSION_STARTED,
+      'This session has already started, so it cannot be cancelled from the app. Message your coach instead.',
+    ),
+  );
+}
+
+function notStartedYet(action: 'complete' | 'no_show'): ConflictException {
+  return new ConflictException(
     schedulingError(
       SchedulingErrorCode.SESSION_NOT_ACTIVE,
       action === 'complete'

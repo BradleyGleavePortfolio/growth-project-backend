@@ -81,6 +81,12 @@ export const SchedulingErrorCode = {
   SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
   NOT_SESSION_PARTICIPANT: 'NOT_SESSION_PARTICIPANT',
   INVALID_MEETING_LINK: 'INVALID_MEETING_LINK',
+  // S-SCHED-3 (B-634-1): the session moved to a new time after the caller
+  // read it, so the answer they gave was about a different time.
+  SESSION_MOVED: 'SESSION_MOVED',
+  // S-SCHED-3 (B-634-4 / C-634-3): a list cursor or status filter that the
+  // server cannot read.
+  INVALID_LIST_QUERY: 'INVALID_LIST_QUERY',
 } as const;
 export type SchedulingErrorCodeValue =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];

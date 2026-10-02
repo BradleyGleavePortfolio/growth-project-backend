@@ -6,7 +6,12 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Prisma, SessionType, VideoProvider as VideoProviderEnum } from '@prisma/client';
+import {
+  Prisma,
+  SessionStatus,
+  SessionType,
+  VideoProvider as VideoProviderEnum,
+} from '@prisma/client';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { BookingEmitter } from '../notifications/emitters/booking.emitter';
 import { PrismaService } from '../prisma.service';
@@ -28,6 +33,7 @@ import type { BookableCoach } from './scheduling-access.service';
 import { SchedulingAvailabilityService } from './scheduling-availability.service';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import { SchedulingSessionLifecycleService } from './scheduling-session-lifecycle.service';
+import type { TransitionOptions } from './scheduling-session-lifecycle.service';
 import { SESSION_VIEW_INCLUDE, toSessionView } from './scheduling-session.view';
 import type { SessionView } from './scheduling-session.view';
 import { assertCanManageAvailability } from './scheduling.permissions';
@@ -290,6 +296,24 @@ export class SchedulingService {
     if (dto.default_meeting_url !== undefined) {
       data.default_meeting_url = normalizeDefaultMeetingUrl(dto.default_meeting_url);
     }
+    // S-SCHED-3 (B-634-5): restoring an archived former welcome type while
+    // the coach has since marked another active welcome type keeps the
+    // current one. The restored type comes back as a regular type instead of
+    // colliding with SessionType_one_active_welcome_per_coach. Asking for
+    // is_welcome: true explicitly still moves the marker (below).
+    const restoring = dto.archived === false && existing.archived_at !== null;
+    if (restoring && existing.is_welcome && dto.is_welcome === undefined) {
+      const currentWelcome = await this.prisma.sessionType.findFirst({
+        where: {
+          coach_id: existing.coach_id,
+          is_welcome: true,
+          archived_at: null,
+          id: { not: sessionTypeId },
+        },
+        select: { id: true },
+      });
+      if (currentWelcome) data.is_welcome = false;
+    }
     // Becoming (or staying) the active welcome type clears the marker on the
     // coach's other active types in the same transaction.
     const willBeActiveWelcome =
@@ -383,16 +407,21 @@ export class SchedulingService {
     return this.view(actor, await this.lifecycle.requestSession(actor, dto));
   }
 
-  async approveSession(actor: ActorContext, sessionId: string): Promise<SessionView> {
-    return this.view(actor, await this.lifecycle.approveSession(actor, sessionId));
+  async approveSession(
+    actor: ActorContext,
+    sessionId: string,
+    opts: TransitionOptions = {},
+  ): Promise<SessionView> {
+    return this.view(actor, await this.lifecycle.approveSession(actor, sessionId, opts));
   }
 
   async declineSession(
     actor: ActorContext,
     sessionId: string,
     reason?: string,
+    opts: TransitionOptions = {},
   ): Promise<SessionView> {
-    return this.view(actor, await this.lifecycle.declineSession(actor, sessionId, reason));
+    return this.view(actor, await this.lifecycle.declineSession(actor, sessionId, reason, opts));
   }
 
   async rescheduleSession(
@@ -419,8 +448,13 @@ export class SchedulingService {
     return this.view(actor, await this.lifecycle.completeSession(actor, sessionId, dto));
   }
 
-  async markNoShow(actor: ActorContext, sessionId: string, reason?: string): Promise<SessionView> {
-    return this.view(actor, await this.lifecycle.markNoShow(actor, sessionId, reason));
+  async markNoShow(
+    actor: ActorContext,
+    sessionId: string,
+    reason?: string,
+    opts: TransitionOptions = {},
+  ): Promise<SessionView> {
+    return this.view(actor, await this.lifecycle.markNoShow(actor, sessionId, reason, opts));
   }
 
   async attachManualVideoLink(
@@ -442,13 +476,32 @@ export class SchedulingService {
 
   /**
    * S-SCHED-2: upcoming (end_at > now, soonest first; includes a session in
-   * progress) or past (end_at <= now, most recent first, `before` cursor on
-   * start_at). Owners see all, coaches their own calendar, clients their own
-   * sessions (with any coach, so history survives a coach change).
+   * progress) or past (end_at <= now, most recent first). Owners see all,
+   * coaches their own calendar, clients their own sessions (with any coach,
+   * so history survives a coach change).
+   *
+   * S-SCHED-3 (B-634-4, C-634-3): keyset pages on the full sort key
+   * (start_at, id), so rows that share a start time are never skipped or
+   * repeated across pages:
+   *   past:     before=<start_at of last row>&before_id=<id of last row>
+   *             -> start_at < before OR (start_at = before AND id < before_id)
+   *   upcoming: after=<start_at of last row>&after_id=<id of last row>
+   *             -> start_at > after OR (start_at = after AND id > after_id)
+   * `before` alone keeps the older (timestamp-only) meaning for old clients.
+   * `statuses` narrows either scope (e.g. the coach inbox asks only for
+   * `requested`), so terminal rows never crowd live ones out of a page.
    */
   async listSessionsForActor(
     actor: ActorContext,
-    args: { scope?: 'upcoming' | 'past'; limit?: number; before?: string | null },
+    args: {
+      scope?: 'upcoming' | 'past';
+      limit?: number;
+      before?: string | null;
+      before_id?: string | null;
+      after?: string | null;
+      after_id?: string | null;
+      statuses?: SessionStatus[] | null;
+    },
   ): Promise<SessionView[]> {
     const cap = Math.min(Math.max(Number.isFinite(args.limit) ? Number(args.limit) : 25, 1), 100);
     const now = new Date();
@@ -459,36 +512,37 @@ export class SchedulingService {
         : actor.role === 'coach'
           ? { coach_id: actor.id }
           : { client_id: actor.id };
-    let before: Date | null = null;
-    if (args.before) {
-      before = new Date(args.before);
-      if (Number.isNaN(before.getTime())) {
-        throw new BadRequestException(
-          schedulingError(
-            SchedulingErrorCode.INVALID_TIME,
-            'The before cursor could not be read. Reload the list from the start.',
-          ),
-        );
-      }
+    const statusFilter: Prisma.CoachingSessionWhereInput =
+      args.statuses && args.statuses.length > 0 ? { status: { in: args.statuses } } : {};
+    if (scope === 'past') {
+      const before = parseCursorTime(args.before, 'before');
+      const beforeId = parseCursorId(args.before_id, 'before_id', before);
+      const cursor: Prisma.CoachingSessionWhereInput = before
+        ? beforeId
+          ? { OR: [{ start_at: { lt: before } }, { start_at: before, id: { lt: beforeId } }] }
+          : { start_at: { lt: before } }
+        : {};
+      const rows = await this.prisma.coachingSession.findMany({
+        where: { AND: [{ ...who, ...statusFilter, end_at: { lte: now } }, cursor] },
+        orderBy: [{ start_at: 'desc' }, { id: 'desc' }],
+        take: cap,
+        include: SESSION_VIEW_INCLUDE,
+      });
+      return rows.map((r) => toSessionView(r, actor, now));
     }
-    const rows =
-      scope === 'past'
-        ? await this.prisma.coachingSession.findMany({
-            where: {
-              ...who,
-              end_at: { lte: now },
-              ...(before ? { start_at: { lt: before } } : {}),
-            },
-            orderBy: [{ start_at: 'desc' }, { id: 'desc' }],
-            take: cap,
-            include: SESSION_VIEW_INCLUDE,
-          })
-        : await this.prisma.coachingSession.findMany({
-            where: { ...who, end_at: { gt: now } },
-            orderBy: [{ start_at: 'asc' }, { id: 'asc' }],
-            take: cap,
-            include: SESSION_VIEW_INCLUDE,
-          });
+    const after = parseCursorTime(args.after, 'after');
+    const afterId = parseCursorId(args.after_id, 'after_id', after);
+    const cursor: Prisma.CoachingSessionWhereInput = after
+      ? afterId
+        ? { OR: [{ start_at: { gt: after } }, { start_at: after, id: { gt: afterId } }] }
+        : { start_at: { gt: after } }
+      : {};
+    const rows = await this.prisma.coachingSession.findMany({
+      where: { AND: [{ ...who, ...statusFilter, end_at: { gt: now } }, cursor] },
+      orderBy: [{ start_at: 'asc' }, { id: 'asc' }],
+      take: cap,
+      include: SESSION_VIEW_INCLUDE,
+    });
     return rows.map((r) => toSessionView(r, actor, now));
   }
 
@@ -603,6 +657,41 @@ export class SchedulingService {
 }
 
 // Coach-entered default room link: trimmed; empty means "remove". Must be https.
+// Keyset cursor parts (S-SCHED-3 B-634-4). Unreadable values are a coded
+// 400 with a next step, never a silent full list.
+function parseCursorTime(raw: string | null | undefined, name: string): Date | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const at = new Date(raw);
+  if (Number.isNaN(at.getTime())) {
+    throw new BadRequestException(
+      schedulingError(
+        SchedulingErrorCode.INVALID_LIST_QUERY,
+        `The ${name} cursor could not be read. Reload the list from the start.`,
+      ),
+    );
+  }
+  return at;
+}
+
+const CURSOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function parseCursorId(
+  raw: string | null | undefined,
+  name: string,
+  time: Date | null,
+): string | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  if (!CURSOR_ID_PATTERN.test(raw) || time === null) {
+    throw new BadRequestException(
+      schedulingError(
+        SchedulingErrorCode.INVALID_LIST_QUERY,
+        `The ${name} cursor could not be read. Reload the list from the start.`,
+      ),
+    );
+  }
+  return raw;
+}
+
 function normalizeDefaultMeetingUrl(raw: string | null | undefined): string | null | undefined {
   if (raw === undefined) return undefined;
   if (raw === null) return null;

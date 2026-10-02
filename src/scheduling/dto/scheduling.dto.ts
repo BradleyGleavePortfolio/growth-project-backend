@@ -172,6 +172,20 @@ export class CancelSessionDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  // S-SCHED-3 (B-634-1): the start time the caller was looking at. When it
+  // no longer matches the session, the server answers 409 SESSION_MOVED
+  // instead of declining or cancelling a time the caller never saw.
+  @IsOptional()
+  @IsISO8601()
+  expected_start_at?: string;
+}
+
+// S-SCHED-3 (B-634-1): approve carries the start time the coach reviewed.
+export class ApproveSessionDto {
+  @IsOptional()
+  @IsISO8601()
+  expected_start_at?: string;
 }
 
 export class CompleteSessionDto {

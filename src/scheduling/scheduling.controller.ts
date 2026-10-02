@@ -13,12 +13,14 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import type { SessionStatus } from '@prisma/client';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import {
+  ApproveSessionDto,
   AttachManualVideoLinkDto,
   CancelSessionDto,
   CompleteSessionDto,
@@ -167,7 +169,7 @@ export class SchedulingController {
   @ApiOperation({
     summary: "List the calling user's sessions",
     description:
-      'scope=upcoming (default): sessions that have not ended, soonest first. scope=past: ended sessions, most recent first; page with before=<start_at of the last row>. Owners see all, coaches their own calendar, clients their own sessions.',
+      'scope=upcoming (default): sessions that have not ended, soonest first; next page with after=<start_at of the last row>&after_id=<id of the last row>. scope=past: ended sessions, most recent first; next page with before=<start_at of the last row>&before_id=<id of the last row>. status=<comma-separated statuses> narrows either scope (e.g. status=requested for the coach inbox). Owners see all, coaches their own calendar, clients their own sessions.',
   })
   @ApiResponse({ status: 200, description: 'Sessions.' })
   @Get('sessions')
@@ -176,10 +178,17 @@ export class SchedulingController {
     @Query('limit') limit?: string,
     @Query('scope') scope?: string,
     @Query('before') before?: string,
+    @Query('before_id') beforeId?: string,
+    @Query('after') after?: string,
+    @Query('after_id') afterId?: string,
+    @Query('status') status?: string,
   ) {
     if (scope !== undefined && scope !== 'upcoming' && scope !== 'past') {
       throw new BadRequestException(
-        schedulingError(SchedulingErrorCode.INVALID_TIME, 'scope must be upcoming or past.'),
+        schedulingError(
+          SchedulingErrorCode.INVALID_LIST_QUERY,
+          'The session list scope must be upcoming or past. Reload Calendar.',
+        ),
       );
     }
     const cap = limit ? parseInt(limit, 10) : 25;
@@ -187,6 +196,10 @@ export class SchedulingController {
       scope: scope === 'past' ? 'past' : 'upcoming',
       limit: Number.isFinite(cap) ? cap : 25,
       before: before ?? null,
+      before_id: beforeId ?? null,
+      after: after ?? null,
+      after_id: afterId ?? null,
+      statuses: parseStatusFilter(status),
     });
   }
 
@@ -208,8 +221,14 @@ export class SchedulingController {
   @ApiResponse({ status: 200, description: 'Session approved and scheduled.' })
   @Post('sessions/:id/approve')
   @HttpCode(HttpStatus.OK)
-  async approve(@Request() req: AuthedRequest, @Param('id') id: string) {
-    return this.scheduling.approveSession(toActor(req), id);
+  async approve(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: ApproveSessionDto,
+  ) {
+    return this.scheduling.approveSession(toActor(req), id, {
+      expectedStartAt: body?.expected_start_at ?? null,
+    });
   }
 
   @ApiOperation({ summary: 'Decline a requested session (coach only)' })
@@ -221,7 +240,9 @@ export class SchedulingController {
     @Param('id') id: string,
     @Body() body: CancelSessionDto,
   ) {
-    return this.scheduling.declineSession(toActor(req), id, body.reason);
+    return this.scheduling.declineSession(toActor(req), id, body.reason, {
+      expectedStartAt: body.expected_start_at ?? null,
+    });
   }
 
   @ApiOperation({ summary: 'Reschedule a requested or scheduled session' })
@@ -269,7 +290,9 @@ export class SchedulingController {
     @Param('id') id: string,
     @Body() body: CancelSessionDto,
   ) {
-    return this.scheduling.markNoShow(toActor(req), id, body.reason);
+    return this.scheduling.markNoShow(toActor(req), id, body.reason, {
+      expectedStartAt: body.expected_start_at ?? null,
+    });
   }
 
   @ApiOperation({
@@ -388,4 +411,34 @@ function toActor(req: AuthedRequest) {
     ip,
     userAgent,
   };
+}
+
+// S-SCHED-3 (C-634-3): ?status=requested or ?status=scheduled,pending_provider.
+const LISTABLE_STATUSES: readonly SessionStatus[] = [
+  'requested',
+  'scheduled',
+  'pending_provider',
+  'declined',
+  'canceled',
+  'completed',
+  'no_show',
+];
+
+function parseStatusFilter(raw: string | undefined): SessionStatus[] | null {
+  if (raw === undefined || raw.trim() === '') return null;
+  const parts = raw.split(',').map((p) => p.trim());
+  const out: SessionStatus[] = [];
+  for (const part of parts) {
+    const match = LISTABLE_STATUSES.find((s) => s === part);
+    if (!match || parts.length > LISTABLE_STATUSES.length) {
+      throw new BadRequestException(
+        schedulingError(
+          SchedulingErrorCode.INVALID_LIST_QUERY,
+          'The session status filter could not be read. Reload Calendar.',
+        ),
+      );
+    }
+    if (!out.includes(match)) out.push(match);
+  }
+  return out;
 }
