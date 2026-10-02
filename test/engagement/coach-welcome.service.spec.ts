@@ -202,6 +202,32 @@ describe('CoachWelcomeService — scheduling', () => {
     expect(h.jobs.rows).toHaveLength(0);
   });
 
+  it('C-609-3: a full batch of older coachless intakes never starves a newer coached completion', async () => {
+    const h = harness();
+    await seed(h);
+    const { TICK_BATCH_SIZE } = __coachWelcomeConsts;
+    for (let i = 0; i < TICK_BATCH_SIZE + 5; i += 1) {
+      const id = `coachless-${i}`;
+      await h.users.create({
+        data: {
+          id,
+          name: `Member ${i}`,
+          role: 'student',
+          coach_id: null,
+          deleted_at: null,
+          deletion_scheduled_at: null,
+        },
+      });
+      // Completed before CLIENT, so oldest-first ordering puts them first.
+      await h.intakes.create({
+        data: { client_id: id, completed_at: new Date(T0.getTime() - (i + 1) * MIN) },
+      });
+    }
+    const s = await h.make().runOnce(new Date(T0.getTime() + MIN));
+    expect(s.scheduled).toBe(1);
+    expect(h.jobs.rows.map((j) => j.client_id)).toEqual([CLIENT]);
+  });
+
   it('uses the per-coach template with both placeholders', async () => {
     const h = harness();
     await seed(h, { template: 'Hello {first_name}. {coach_first_name} here.' });

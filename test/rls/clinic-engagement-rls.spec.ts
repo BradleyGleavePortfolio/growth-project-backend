@@ -150,6 +150,28 @@ const UPDATE_SQL: Record<Table, string> = {
     await prisma.$executeRawUnsafe(sql, ...args);
   }
 
+  /**
+   * B-609-1: the SQLSTATE a statement failed with, read from the error's
+   * machine codes, never its message text. Prisma's raw path wraps a
+   * PostgreSQL error as P2010 with the SQLSTATE under `meta.code`; a typed
+   * unique violation surfaces as P2002 (= SQLSTATE 23505).
+   */
+  async function sqlStateOf(run: Promise<unknown>): Promise<string> {
+    try {
+      await run;
+    } catch (err: unknown) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') return '23505';
+        const meta: Record<string, unknown> = err.meta ?? {};
+        const code = meta.code;
+        if (err.code === 'P2010' && typeof code === 'string') return code;
+        return `prisma ${err.code} without a SQLSTATE`;
+      }
+      return `not a Prisma known request error: ${err instanceof Error ? err.name : typeof err}`;
+    }
+    return 'no error: the statement succeeded';
+  }
+
   async function snapshot(): Promise<string> {
     const parts: unknown[] = [];
     for (const t of TABLES) {
@@ -488,29 +510,27 @@ const UPDATE_SQL: Record<Table, string> = {
   });
 
   it('idempotency keys are database-enforced: one welcome job per client, one setting per coach, one reminder per client per local day', async () => {
-    await expect(
-      exec(
-        `INSERT INTO "CoachWelcomeMessageJob" (id, client_id, coach_id, completed_at, fire_at, updated_at)
-         VALUES ($1, $2, $3, now(), now(), now())`,
-        `${P}job-dup`,
-        CLIENT,
-        COACH,
-      ),
-    ).rejects.toThrow(/unique|duplicate key/i);
-    await expect(
-      exec(
-        `INSERT INTO "CoachWelcomeMessageSetting" (id, coach_id, updated_at) VALUES ($1, $2, now())`,
-        `${P}setting-dup`,
-        COACH,
-      ),
-    ).rejects.toThrow(/unique|duplicate key/i);
-    await expect(
-      exec(
-        `INSERT INTO "WorkoutReminderDelivery" (id, client_id, local_date, timezone, slot)
-         VALUES ($1, $2, DATE '2026-10-05', 'UTC', 'evening')`,
-        `${P}delivery-dup`,
-        CLIENT,
-      ),
-    ).rejects.toThrow(/unique|duplicate key/i);
+    // B-609-1: assert the SQLSTATE (23505 unique_violation), never message text.
+    const duplicateJob = exec(
+      `INSERT INTO "CoachWelcomeMessageJob" (id, client_id, coach_id, completed_at, fire_at, updated_at)
+       VALUES ($1, $2, $3, now(), now(), now())`,
+      `${P}job-dup`,
+      CLIENT,
+      COACH,
+    );
+    expect(await sqlStateOf(duplicateJob)).toBe('23505');
+    const duplicateSetting = exec(
+      `INSERT INTO "CoachWelcomeMessageSetting" (id, coach_id, updated_at) VALUES ($1, $2, now())`,
+      `${P}setting-dup`,
+      COACH,
+    );
+    expect(await sqlStateOf(duplicateSetting)).toBe('23505');
+    const duplicateDelivery = exec(
+      `INSERT INTO "WorkoutReminderDelivery" (id, client_id, local_date, timezone, slot)
+       VALUES ($1, $2, DATE '2026-10-05', 'UTC', 'evening')`,
+      `${P}delivery-dup`,
+      CLIENT,
+    );
+    expect(await sqlStateOf(duplicateDelivery)).toBe('23505');
   });
 });

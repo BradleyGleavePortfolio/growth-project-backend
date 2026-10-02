@@ -1123,6 +1123,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'COACH_WELCOME_SCHEDULER_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     launch: 'switch',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
@@ -1131,6 +1133,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'WORKOUT_REMINDERS_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     launch: 'switch',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",

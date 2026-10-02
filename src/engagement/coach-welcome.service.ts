@@ -185,7 +185,11 @@ export class CoachWelcomeService {
         completed_at: { gte: since, not: null },
         // A tombstoned client is never scheduled (purgeErased removed its
         // job; without this filter it would be re-created every tick).
-        client: { coach_welcome_job: { is: null }, deleted_at: null },
+        // C-609-3: a client with no coach writes no row (scheduleOne returns
+        // no_coach), so without the coach filter those intakes would be
+        // re-selected every tick for the whole lookback and, oldest first,
+        // could fill the batch and starve every newer completion.
+        client: { coach_welcome_job: { is: null }, deleted_at: null, coach_id: { not: null } },
       },
       select: { client_id: true, completed_at: true },
       orderBy: { completed_at: 'asc' },

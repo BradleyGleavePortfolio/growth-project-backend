@@ -61,7 +61,7 @@ Option B: the owner-only endpoints. They require a JWT with the `owner` role; an
 - Errors carry a stable `code` and a message that says what to do next: 400 `invalid_template` (with `detail` = `empty`, `too_long`, `unknown_placeholder:<name>` or `unbalanced_braces`) or `nothing_to_update`; 404 `coach_not_found`.
 - The audit entry records only `enabled`, `custom_template` and `template_length`, never the text.
 
-Turn the flag on **before** the first client finishes onboarding. Clients who completed earlier are deliberately not welcomed. To stop the job without a deploy, set `COACH_WELCOME_SCHEDULER_ENABLED=false` (`0` and `off` also work; unset = on).
+Turn the flag on **before** the first client finishes onboarding. Clients who completed earlier are deliberately not welcomed. To stop the job without a deploy, set `COACH_WELCOME_SCHEDULER_ENABLED=false` (`0` and `off` also work; unset = on). Production manages this switch through the launch-flag manifest (`.github/fly-env-desired-state.json`, closed set `true` / `false`); the emergency kill is the `"false"` row in the kill table of `docs/runbooks/launch-flags.md`. Never unset it to stop the job: unset turns it back on.
 
 **Consent and AI.** Only intakes with `completed_at` are scheduled, and onboarding completion requires the D2 box-1 consent on file with its exact text. The message is the coach's welcome text (or the generic default) with the two name placeholders filled in by string replacement. No AI provider is called and no client data leaves the platform, so box 2 (AI processing) is not involved; any later AI use of the thread goes through the #626 egress gate like every other coach message.
 
@@ -104,7 +104,7 @@ Turn the flag on **before** the first client finishes onboarding. Clients who co
 - First day: "Your first session is today. Everything is laid out and ready when you are."
 - Plan days rotate deterministically by date (see `workout-reminder.policy.ts`).
 
-To stop the job without a deploy, set `WORKOUT_REMINDERS_ENABLED=false` (`0` and `off` also work; unset = on). The cadence is fixed at every 5 minutes: the 3-hour send window assumes it, so it is not an env override.
+To stop the job without a deploy, set `WORKOUT_REMINDERS_ENABLED=false` (`0` and `off` also work; unset = on). Production manages this switch through the launch-flag manifest (`.github/fly-env-desired-state.json`, closed set `true` / `false`); the emergency kill is the `"false"` row in the kill table of `docs/runbooks/launch-flags.md`. Never unset it to stop the job: unset turns it back on. The cadence is fixed at every 5 minutes: the 3-hour send window assumes it, so it is not an env override.
 
 Every tick also deletes the reminder ledger rows of tombstoned clients (erasure backstop, same reason as above), including while `WORKOUT_REMINDERS_ENABLED` is off.
 
