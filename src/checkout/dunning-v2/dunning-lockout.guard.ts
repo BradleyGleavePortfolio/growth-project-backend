@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
+import { effectiveLock } from './dunning-effective-access';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 
 /**
@@ -205,33 +206,9 @@ export class DunningLockoutGuard implements CanActivate {
    * ClientPurchase.client_user_id -> DunningState.purchase_id.
    */
   private async isClientLockedOut(userId: string): Promise<boolean> {
-    const lockedRow = await this.prisma.dunningState.findFirst({
-      where: {
-        locked_out_at: { not: null },
-        status: 'active',
-        purchase: { client_user_id: userId },
-      },
-      select: { id: true, purchase_id: true },
-    });
-    if (lockedRow == null) return false;
-    const others = await this.prisma.clientPurchase.findMany({
-      where: {
-        client_user_id: userId,
-        id: { not: lockedRow.purchase_id },
-        entitlement_active: true,
-        status: { in: ['paid', 'active', 'trialing'] },
-        OR: [{ access_expires_at: null }, { access_expires_at: { gt: new Date() } }],
-      },
-      select: {
-        id: true,
-        dunning: { select: { status: true, locked_out_at: true } },
-      },
-      take: 20,
-    });
-    const otherLive = others.some(
-      (p) => !(p.dunning?.status === 'active' && p.dunning.locked_out_at != null),
-    );
-    return !otherLive;
+    // S-DUNNING-R3 (B-628-7): the same rule the status read model uses.
+    const lock = await effectiveLock(this.prisma, userId);
+    return lock.locked;
   }
 }
 

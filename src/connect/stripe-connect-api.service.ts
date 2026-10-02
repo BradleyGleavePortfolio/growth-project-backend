@@ -141,10 +141,7 @@ export interface StripeInvoiceObject {
   amount_remaining?: number;
   currency?: string;
   created?: number;
-  payment_intent?:
-    | string
-    | { id?: string; status?: string; client_secret?: string | null }
-    | null;
+  payment_intent?: string | { id?: string; status?: string; client_secret?: string | null } | null;
   [k: string]: unknown;
 }
 
@@ -163,9 +160,7 @@ export class StripeConnectApiService {
   protected fetchImpl: typeof fetch = (input, init) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.stripeTimeoutMs);
-    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
-      clearTimeout(timer),
-    );
+    return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
   };
 
   isConfigured(): boolean {
@@ -214,8 +209,7 @@ export class StripeConnectApiService {
         : null;
     const code = (errEnvelope?.code as string | undefined) ?? null;
     const type = (errEnvelope?.type as string | undefined) ?? null;
-    const messageFromStripe =
-      (errEnvelope?.message as string | undefined) ?? null;
+    const messageFromStripe = (errEnvelope?.message as string | undefined) ?? null;
     // Stripe returns 400 with code "account_invalid" or similar when
     // Connect isn't enabled. Map every non-2xx to a 503 from our side so
     // the controller renders the owner-action message.
@@ -267,18 +261,11 @@ export class StripeConnectApiService {
       return_url: args.returnUrl,
       type: 'account_onboarding',
     };
-    return this.post<StripeAccountLink>(
-      '/account_links',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeAccountLink>('/account_links', form, args.idempotencyKey);
   }
 
   async createLoginLink(accountId: string): Promise<StripeLoginLink> {
-    return this.post<StripeLoginLink>(
-      `/accounts/${encodeURIComponent(accountId)}/login_links`,
-      {},
-    );
+    return this.post<StripeLoginLink>(`/accounts/${encodeURIComponent(accountId)}/login_links`, {});
   }
 
   // --- Phase 2-3 — Product / Price / Customer / Checkout ---
@@ -303,17 +290,11 @@ export class StripeConnectApiService {
         form[`metadata[${k}]`] = v;
       }
     }
-    return this.post<StripeCustomerObject>(
-      '/customers',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeCustomerObject>('/customers', form, args.idempotencyKey);
   }
 
   async retrieveCustomer(customerId: string): Promise<StripeCustomerObject> {
-    return this.get<StripeCustomerObject>(
-      `/customers/${encodeURIComponent(customerId)}`,
-    );
+    return this.get<StripeCustomerObject>(`/customers/${encodeURIComponent(customerId)}`);
   }
 
   async retrievePaymentMethod(paymentMethodId: string): Promise<{
@@ -326,14 +307,10 @@ export class StripeConnectApiService {
     };
     [k: string]: unknown;
   }> {
-    return this.get(
-      `/payment_methods/${encodeURIComponent(paymentMethodId)}`,
-    );
+    return this.get(`/payment_methods/${encodeURIComponent(paymentMethodId)}`);
   }
 
-  async retrieveSubscription(
-    subscriptionId: string,
-  ): Promise<StripeSubscriptionObject> {
+  async retrieveSubscription(subscriptionId: string): Promise<StripeSubscriptionObject> {
     return this.get<StripeSubscriptionObject>(
       `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
@@ -429,16 +406,21 @@ export class StripeConnectApiService {
     applicationFeePercent?: number;
     metadata?: Record<string, string>;
     idempotencyKey: string;
-  }): Promise<StripeSubscriptionObject & {
-    latest_invoice?: {
-      id?: string;
-      payment_intent?: {
+  }): Promise<
+    StripeSubscriptionObject & {
+      latest_invoice?: {
         id?: string;
-        client_secret?: string;
-        status?: string;
-      } | string | null;
-    } | null;
-  }> {
+        payment_intent?:
+          | {
+              id?: string;
+              client_secret?: string;
+              status?: string;
+            }
+          | string
+          | null;
+      } | null;
+    }
+  > {
     const form: Record<string, string> = {
       customer: args.customer,
       'items[0][price]': args.recurringPriceId,
@@ -507,15 +489,9 @@ export class StripeConnectApiService {
       form.client_reference_id = args.clientReferenceId;
     }
     if (args.mode === 'payment') {
-      form['payment_intent_data[transfer_data][destination]'] =
-        args.destinationAccount;
-      if (
-        typeof args.applicationFeeAmount === 'number' &&
-        args.applicationFeeAmount > 0
-      ) {
-        form['payment_intent_data[application_fee_amount]'] = String(
-          args.applicationFeeAmount,
-        );
+      form['payment_intent_data[transfer_data][destination]'] = args.destinationAccount;
+      if (typeof args.applicationFeeAmount === 'number' && args.applicationFeeAmount > 0) {
+        form['payment_intent_data[application_fee_amount]'] = String(args.applicationFeeAmount);
       }
       if (args.paymentIntentMetadata) {
         for (const [k, v] of Object.entries(args.paymentIntentMetadata)) {
@@ -523,15 +499,9 @@ export class StripeConnectApiService {
         }
       }
     } else {
-      form['subscription_data[transfer_data][destination]'] =
-        args.destinationAccount;
-      if (
-        typeof args.applicationFeePercent === 'number' &&
-        args.applicationFeePercent > 0
-      ) {
-        form['subscription_data[application_fee_percent]'] = String(
-          args.applicationFeePercent,
-        );
+      form['subscription_data[transfer_data][destination]'] = args.destinationAccount;
+      if (typeof args.applicationFeePercent === 'number' && args.applicationFeePercent > 0) {
+        form['subscription_data[application_fee_percent]'] = String(args.applicationFeePercent);
       }
       if (args.subscriptionMetadata) {
         for (const [k, v] of Object.entries(args.subscriptionMetadata)) {
@@ -549,11 +519,7 @@ export class StripeConnectApiService {
     // Collected tax is remitted by TGP as the Merchant of Record.
     form['automatic_tax[enabled]'] = 'true';
 
-    return this.post<StripeCheckoutSessionObject>(
-      '/checkout/sessions',
-      form,
-      args.idempotencyKey,
-    );
+    return this.post<StripeCheckoutSessionObject>('/checkout/sessions', form, args.idempotencyKey);
   }
 
   // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
@@ -607,11 +573,7 @@ export class StripeConnectApiService {
     for (const [k, v] of Object.entries(params.metadata)) {
       form[`metadata[${k}]`] = v;
     }
-    return this.post<StripePaymentIntentObject>(
-      '/payment_intents',
-      form,
-      params.idempotencyKey,
-    );
+    return this.post<StripePaymentIntentObject>('/payment_intents', form, params.idempotencyKey);
   }
 
   // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
@@ -646,9 +608,7 @@ export class StripeConnectApiService {
     return { secret: parsed.secret };
   }
 
-  async retrieveCheckoutSession(
-    sessionId: string,
-  ): Promise<StripeCheckoutSessionObject> {
+  async retrieveCheckoutSession(sessionId: string): Promise<StripeCheckoutSessionObject> {
     return this.get<StripeCheckoutSessionObject>(
       `/checkout/sessions/${encodeURIComponent(sessionId)}`,
     );
@@ -814,9 +774,7 @@ export class StripeConnectApiService {
   }
 
   async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
-    return this.get<StripeSetupIntentObject>(
-      `/setup_intents/${encodeURIComponent(setupIntentId)}`,
-    );
+    return this.get<StripeSetupIntentObject>(`/setup_intents/${encodeURIComponent(setupIntentId)}`);
   }
 
   /** Customer default for future invoices (priority 3 in Stripe's order). */
@@ -851,14 +809,59 @@ export class StripeConnectApiService {
   }
 
   /** Open (finalized, unpaid) invoices of one subscription, newest first. */
-  async listOpenInvoices(subscriptionId: string): Promise<StripeInvoiceObject[]> {
-    const q = new URLSearchParams({
-      subscription: subscriptionId,
-      status: 'open',
-      limit: '10',
-    }).toString();
-    const res = await this.get<{ data?: StripeInvoiceObject[] }>(`/invoices?${q}`);
-    return Array.isArray(res?.data) ? res.data : [];
+  /**
+   * Every open invoice on a subscription, following Stripe's `has_more`
+   * cursor (S-DUNNING-R3 B-628-4: a single page silently dropped invoices
+   * past the first 10). A partial list is never returned: past the page cap
+   * or on a malformed page this throws, so callers never act on (charge,
+   * void, quote) an incomplete set.
+   */
+  async listOpenInvoices(
+    subscriptionId: string,
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<StripeInvoiceObject[]> {
+    const pageSize = Math.min(Math.max(opts.pageSize ?? 100, 1), 100);
+    const maxPages = Math.max(opts.maxPages ?? 10, 1);
+    const all: StripeInvoiceObject[] = [];
+    let startingAfter: string | null = null;
+    for (let page = 0; page < maxPages; page++) {
+      const params: Record<string, string> = {
+        subscription: subscriptionId,
+        status: 'open',
+        limit: String(pageSize),
+      };
+      if (startingAfter) params.starting_after = startingAfter;
+      const q = new URLSearchParams(params).toString();
+      const res = await this.get<{ data?: StripeInvoiceObject[]; has_more?: boolean }>(
+        `/invoices?${q}`,
+      );
+      if (!Array.isArray(res?.data)) {
+        throw new StripeConnectApiError(
+          'Stripe returned a malformed invoice list',
+          502,
+          'invoice_list_malformed',
+          'api_error',
+        );
+      }
+      all.push(...res.data);
+      const last = res.data[res.data.length - 1];
+      if (res.has_more !== true) return all;
+      if (!last?.id) {
+        throw new StripeConnectApiError(
+          'Stripe invoice list said has_more without a cursor',
+          502,
+          'invoice_list_malformed',
+          'api_error',
+        );
+      }
+      startingAfter = last.id;
+    }
+    throw new StripeConnectApiError(
+      `Open invoice list exceeded ${maxPages * pageSize} invoices`,
+      502,
+      'invoice_list_incomplete',
+      'api_error',
+    );
   }
 
   async retrieveInvoice(invoiceId: string): Promise<StripeInvoiceObject> {
@@ -955,10 +958,7 @@ export class StripeConnectApiService {
     const params = new URLSearchParams();
     params.set('limit', String(Math.min(args.limit ?? 10, 100)));
     if (args.status) params.set('status', args.status);
-    return this.getOnAccount(
-      `/payouts?${params.toString()}`,
-      args.connectedAccountId,
-    );
+    return this.getOnAccount(`/payouts?${params.toString()}`, args.connectedAccountId);
   }
 
   // List balance transactions for a connected account — needed for the
@@ -988,10 +988,7 @@ export class StripeConnectApiService {
     params.set('limit', String(Math.min(args.limit ?? 25, 100)));
     if (args.type) params.set('type', args.type);
     if (args.payout) params.set('payout', args.payout);
-    return this.getOnAccount(
-      `/balance_transactions?${params.toString()}`,
-      args.connectedAccountId,
-    );
+    return this.getOnAccount(`/balance_transactions?${params.toString()}`, args.connectedAccountId);
   }
 
   // Retrieve a single Refund (used for webhook handlers + admin lookup).
@@ -1061,10 +1058,7 @@ export class StripeConnectApiService {
 
   // GET that adds the Stripe-Account header so the request is scoped to a
   // connected account (used for balance, payouts, balance transactions).
-  protected async getOnAccount<T>(
-    path: string,
-    connectedAccountId: string,
-  ): Promise<T> {
+  protected async getOnAccount<T>(path: string, connectedAccountId: string): Promise<T> {
     const secret = this.requireSecret();
     try {
       const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
@@ -1141,8 +1135,7 @@ export class StripeConnectApiService {
   // DOMException bubbling up through NestJS.
   private handleFetchError(err: unknown, path: string): never {
     const isAbort =
-      err instanceof Error &&
-      (err.name === 'AbortError' || err.name === 'TimeoutError');
+      err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
     if (isAbort) {
       throw new StripeConnectApiError(
         `Stripe API timed out after ${this.stripeTimeoutMs}ms on ${path}`,
@@ -1162,8 +1155,7 @@ export class StripeConnectApiService {
           ? (parsed as { error: Record<string, unknown> }).error
           : null;
       const message =
-        (errEnvelope?.message as string | undefined) ??
-        `Stripe API ${res.status} on ${path}`;
+        (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
       const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;

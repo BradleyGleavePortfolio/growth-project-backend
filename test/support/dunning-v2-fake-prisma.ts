@@ -33,6 +33,13 @@ const RELATIONS: Record<
   },
   clientPurchase: {
     dunning: { model: 'dunningState', local: 'id', foreign: 'purchase_id' },
+    billing_lease: { model: 'clientBillingLease', local: 'id', foreign: 'purchase_id' },
+  },
+  clientBillingOperation: {
+    purchase: { model: 'clientPurchase', local: 'purchase_id', foreign: 'id' },
+  },
+  dunningNoticeDelivery: {
+    dunning_state: { model: 'dunningState', local: 'dunning_state_id', foreign: 'id' },
   },
 };
 
@@ -49,9 +56,20 @@ const MODELS = [
   'coachPackage',
   'notificationPreferences',
   'stripeProcessedEvent',
+  'clientBillingLease',
+  'clientBillingOperation',
+  'dunningNoticeDelivery',
+  'chargeDispute',
 ] as const;
 
 export type FakeModelName = (typeof MODELS)[number];
+
+/** Models whose Prisma schema has `@updatedAt` the code under test reads. */
+const UPDATED_AT_MODELS = new Set<string>([
+  'clientBillingLease',
+  'clientBillingOperation',
+  'dunningNoticeDelivery',
+]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !(v instanceof Date) && !Array.isArray(v);
@@ -280,6 +298,9 @@ export class FakePrisma {
   private delegate(model: FakeModelName, viaTx: boolean) {
     const rows = () => this.store[model];
     const record = (op: string, where?: Where) => this.writes.push({ model, op, viaTx, where });
+    const touch = (row: Row) => {
+      if (UPDATED_AT_MODELS.has(model)) row.updated_at = new Date();
+    };
     type Args = {
       where?: Where;
       data?: Row;
@@ -313,6 +334,7 @@ export class FakePrisma {
           created_at: new Date(),
           ...args.data,
         };
+        touch(row);
         rows().push(row);
         return this.project(model, row, args);
       }),
@@ -321,12 +343,16 @@ export class FakePrisma {
         const row = rows().find((x) => this.matches(model, x, args.where));
         if (!row) throw new Error(`fake ${model}.update: record not found`);
         this.applyData(row, args.data ?? {});
+        touch(row);
         return this.project(model, row, args);
       }),
       updateMany: jest.fn(async (args: Args) => {
         record('updateMany', args.where);
         const hit = rows().filter((x) => this.matches(model, x, args.where));
-        for (const row of hit) this.applyData(row, args.data ?? {});
+        for (const row of hit) {
+          this.applyData(row, args.data ?? {});
+          touch(row);
+        }
         return { count: hit.length };
       }),
       upsert: jest.fn(async (args: Args) => {
@@ -334,9 +360,11 @@ export class FakePrisma {
         const row = rows().find((x) => this.matches(model, x, args.where));
         if (row) {
           this.applyData(row, args.update ?? {});
+          touch(row);
           return { ...row };
         }
-        const created: Row = { id: this.nextId(model), ...args.create };
+        const created: Row = { id: this.nextId(model), created_at: new Date(), ...args.create };
+        touch(created);
         rows().push(created);
         return { ...created };
       }),

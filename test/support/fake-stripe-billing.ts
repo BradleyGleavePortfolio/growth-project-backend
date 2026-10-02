@@ -79,6 +79,10 @@ export class FakeStripeBilling {
   beforeVoid?: (invoiceId: string) => Promise<void> | void;
   /** Number of upcoming cancelSubscription calls that fail with a 503. */
   cancelFailures = 0;
+  /** S-DUNNING-R3: subscriptions whose open-invoice list answers 503. */
+  readonly listFailures = new Set<string>();
+  /** S-DUNNING-R3: upcoming pays that SETTLE, then lose the reply (timeout). */
+  loseNextPayReply = 0;
 
   addCard(id: string, behavior: CardBehavior, last4: string, brand = 'visa'): void {
     this.cards.set(id, { behavior, brand, last4, exp_month: 12, exp_year: 2030 });
@@ -178,6 +182,9 @@ export class FakeStripeBilling {
 
   async listOpenInvoices(subscriptionId: string): Promise<FakeInvoice[]> {
     this.calls.push({ op: 'listOpenInvoices', args: subscriptionId });
+    if (this.listFailures.has(subscriptionId)) {
+      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
+    }
     return [...this.invoices.values()]
       .filter((i) => i.subscription === subscriptionId && i.status === 'open')
       .sort((a, b) => b.created - a.created) // Stripe lists newest first
@@ -205,7 +212,7 @@ export class FakeStripeBilling {
   }): Promise<FakeInvoice> {
     this.calls.push({ op: 'payInvoice', key: args.idempotencyKey, args });
     if (this.beforePay) await this.beforePay(args.invoiceId);
-    return this.once(`pay:${args.idempotencyKey}`, () => {
+    const paid = this.once(`pay:${args.idempotencyKey}`, () => {
       const inv = this.invoices.get(args.invoiceId);
       if (!inv) {
         throw new StripeConnectApiError(
@@ -246,6 +253,12 @@ export class FakeStripeBilling {
       this.settle(inv, args.paymentMethodId, 'tgp_pay');
       return this.copy(inv);
     });
+    if (this.loseNextPayReply > 0) {
+      this.loseNextPayReply -= 1;
+      // The charge landed; the answer never reached us.
+      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
+    }
+    return paid;
   }
 
   async voidInvoice(args: { invoiceId: string; idempotencyKey: string }): Promise<FakeInvoice> {

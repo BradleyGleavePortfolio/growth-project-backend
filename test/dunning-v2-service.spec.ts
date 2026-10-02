@@ -38,7 +38,15 @@ function makeTelemetry() {
 function setup(opts: { stripeStatus?: string; stripeThrows?: boolean } = {}) {
   const fake = new FakePrisma();
   const telemetry = makeTelemetry();
-  const dispatcher = { dispatchStep: jest.fn(async () => ({})) };
+  const dispatcher = {
+    dispatchStep: jest.fn(async (_ctx: unknown) => ({})),
+    // S-DUNNING-R3: cycle-scoped claims go through the detailed dispatch
+    // (per-channel results for the outbox); it sends the same step.
+    dispatchStepDetailed: jest.fn(async (ctx: unknown) => {
+      await dispatcher.dispatchStep(ctx);
+      return { decision: {}, results: {} };
+    }),
+  };
   const stripe = {
     retrieveSubscription: jest.fn(async () => {
       if (opts.stripeThrows) throw new Error('stripe unreachable');

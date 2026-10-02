@@ -1,6 +1,9 @@
--- Reverse of 20270215000000_dunning_billing_actions. Drops only the three
--- nullable columns this migration adds. A lease or a 2A marker written after
--- the migration is lost; run only with no billing action in flight.
+-- Reverse of 20270215000000_dunning_billing_actions. Drops only what that
+-- migration creates (tables take their indexes, FKs and policies with them).
+-- Billing leases, operation journals, notice delivery records and 2A markers
+-- written after the migration are lost; run only with no billing action in
+-- flight and the dunning v2 flag off.
+DROP TABLE IF EXISTS "DunningNoticeDelivery";
+DROP TABLE IF EXISTS "ClientBillingOperation";
+DROP TABLE IF EXISTS "ClientBillingLease";
 ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "client_canceled_at";
-ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "billing_action_until";
-ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "billing_action";

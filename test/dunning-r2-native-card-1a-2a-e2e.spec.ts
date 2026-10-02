@@ -3,7 +3,11 @@ import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
-import { CardUpdateResult, ClientBillingService } from '../src/checkout/client-billing.service';
+import {
+  ApprovedInvoice,
+  CardUpdateResult,
+  ClientBillingService,
+} from '../src/checkout/client-billing.service';
 import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
@@ -300,8 +304,20 @@ async function driveToLocked(w: World): Promise<Date> {
 async function updateCardInApp(w: World, pm: string, n = 1): Promise<CardUpdateResult> {
   const setup = await w.billing.createCardSetup('client-1', UUID(n));
   w.stripe.confirmSetupIntentInSheet(setup.setup_intent_id, pm);
-  return w.billing.confirmCardUpdate('client-1', setup.setup_intent_id);
+  return w.billing.confirmCardUpdate('client-1', setup.setup_intent_id, await approveAll(w));
 }
+
+/** S-DUNNING-R3 (B-628-3): the app approves the quote it showed. */
+async function approveAll(w: World, client = 'client-1'): Promise<ApprovedInvoice[]> {
+  const quote = await w.billing.getPaymentQuote(client);
+  return quote.lines.map((l) => ({
+    invoice_id: l.invoice_id,
+    amount_cents: l.amount_cents,
+    currency: l.currency,
+  }));
+}
+
+const leaseRow = (w: World) => w.fake.find('clientBillingLease', { purchase_id: 'purchase-1' });
 
 function expectIntegerCents(...values: Array<number | null | undefined>): void {
   for (const v of values) {
@@ -386,10 +402,8 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       const mine = await w.billing.createCardSetup('client-1', UUID(3));
       const e2 = await errorOf(w.billing.confirmCardUpdate('client-1', mine.setup_intent_id));
       expect(e2.status).toBe(409);
-      expect(e2.body).toMatchObject({
-        code: 'SETUP_INTENT_NOT_CONFIRMED',
-        setup_intent_status: 'requires_payment_method',
-      });
+      // R3: the production envelope keeps code + message only.
+      expect(e2.body).toMatchObject({ code: 'SETUP_INTENT_NOT_CONFIRMED' });
       expect(String(e2.body.message)).toMatch(/nothing was charged/);
       expect(w.stripe.callsOf('payInvoice')).toHaveLength(0);
       expect(w.stripe.charges).toHaveLength(0);
@@ -463,7 +477,6 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(stateRow(w)).toMatchObject({
         status: 'resolved',
         locked_out_at: null,
-        billing_action: null,
       });
       expect(purchaseRow(w)).toMatchObject({ status: 'active', entitlement_active: true });
       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
@@ -482,8 +495,9 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(purchaseRow(w)).toMatchObject({ status: 'active', entitlement_active: true });
       // Re-sending the same confirm (app retry) charges nothing more.
       const setupId = w.stripe.callsOf('retrieveSetupIntent')[0].args as string;
-      const again = await w.billing.confirmCardUpdate('client-1', setupId);
-      expect(again.outcome).toBe('saved');
+      const again = await w.billing.confirmCardUpdate('client-1', setupId, await approveAll(w));
+      // R3: a replay (the app lost our reply) reports what that confirm paid.
+      expect(again).toMatchObject({ outcome: 'paid', amount_paid_cents: 15000 });
       expect(w.stripe.charges).toHaveLength(1);
       // The sweep is quiet afterwards; nothing is ever cancelled.
       expect(await w.v2.runSweep(at(12 * DAY))).toEqual({ locked: 0, advanced: 0, skipped: 0 });
@@ -501,11 +515,12 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         access_restored: false,
         card: { last4: '0002' },
       });
-      expect(res.message).toMatch(/declined the payment, so nothing was charged/);
+      expect(res.message).toMatch(/declined the payment of \$150\.00, so nothing was charged/);
       expect(res.message).not.toMatch(/!/);
       expect(w.stripe.charges).toHaveLength(0);
       expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('open');
-      expect(stateRow(w)).toMatchObject({ status: 'active', billing_action: null });
+      expect(stateRow(w)).toMatchObject({ status: 'active' });
+      expect(leaseRow(w)).toMatchObject({ holder: null });
       expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
 
@@ -534,8 +549,14 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       // The app runs handleNextAction; the bank approves; Stripe settles.
       w.stripe.completeBankConfirmation('in_dv2_renewal_1');
       const setupId = w.stripe.callsOf('retrieveSetupIntent')[0].args as string;
-      const after = await w.billing.confirmCardUpdate('client-1', setupId);
-      expect(after).toMatchObject({ outcome: 'paid', amount_paid_cents: 0, access_restored: true });
+      const after = await w.billing.confirmCardUpdate('client-1', setupId, await approveAll(w));
+      // R3: the journal ties the bank-confirmed payment to this card update,
+      // so the answer reports it (integer cents) instead of "0 paid".
+      expect(after).toMatchObject({
+        outcome: 'paid',
+        amount_paid_cents: 15000,
+        access_restored: true,
+      });
       expect(w.stripe.charges).toEqual([
         {
           invoice: 'in_dv2_renewal_1',
@@ -584,16 +605,22 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       };
       const setup = await w.billing.createCardSetup('client-1', UUID(9));
       w.stripe.confirmSetupIntentInSheet(setup.setup_intent_id, 'pm_new_ok');
-      const inflight = w.billing.confirmCardUpdate('client-1', setup.setup_intent_id);
+      const inflight = w.billing.confirmCardUpdate(
+        'client-1',
+        setup.setup_intent_id,
+        await approveAll(w),
+      );
       for (let i = 0; i < 20 && w.stripe.callsOf('payInvoice').length === 0; i += 1) await flush();
       expect(w.stripe.callsOf('payInvoice')).toHaveLength(1);
-      expect(String(stateRow(w)?.billing_action)).toMatch(/^paying:/);
+      expect(String(leaseRow(w)?.holder)).toMatch(/^paying:/);
 
       const cancel = await errorOf(w.billing.cancelPlan('client-1', 'purchase-1'));
       expect(cancel.status).toBe(409);
       expect(cancel.body).toMatchObject({ code: 'BILLING_ACTION_IN_PROGRESS' });
       expect(String(cancel.body.message)).toMatch(/pull down to see the result/);
-      const tap2 = await errorOf(w.billing.confirmCardUpdate('client-1', setup.setup_intent_id));
+      const tap2 = await errorOf(
+        w.billing.confirmCardUpdate('client-1', setup.setup_intent_id, await approveAll(w)),
+      );
       expect(tap2.body).toMatchObject({ code: 'BILLING_ACTION_IN_PROGRESS' });
       expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);
 
@@ -601,13 +628,14 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       const res = await inflight;
       expect(res.outcome).toBe('paid');
       expect(w.stripe.charges).toHaveLength(1);
-      expect(stateRow(w)?.billing_action).toBeNull();
+      expect(leaseRow(w)?.holder).toBeNull();
 
       // A crashed holder's lease expires on its own.
       const row = stateRow(w)!;
       row.status = 'active';
-      row.billing_action = 'canceling:dead';
-      row.billing_action_until = new Date(Date.now() - 1);
+      const lease = leaseRow(w)!;
+      lease.holder = 'canceling:dead';
+      lease.holder_until = new Date(Date.now() - 1);
       w.stripe.addInvoice({
         id: 'in_next',
         subscription: 'sub_dv2_client',
@@ -657,7 +685,6 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(stateRow(w)).toMatchObject({
         status: 'abandoned',
         locked_out_at: null,
-        billing_action: null,
       });
       expect(stateRow(w)?.client_canceled_at).toEqual(at(4 * DAY));
       // Access ends immediately (paywall), and it is not a dunning lockout.
@@ -747,7 +774,6 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(stateRow(w)).toMatchObject({
         status: 'active',
         client_canceled_at: at(5 * DAY),
-        billing_action: null,
       });
       // In between: no banner, no Day-10 lock, no notices.
       expect((await w.v2.getClientStatus('client-1')).state).toBe('none');

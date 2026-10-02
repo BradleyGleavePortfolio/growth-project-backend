@@ -138,11 +138,41 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
     s.respond = () => ({ status: 200, json: { id: 'in_1', status: 'open' } });
     await s.retrieveInvoice('in_1');
     expect(s.requests[0].url).toBe(
-      'https://api.stripe.com/v1/invoices?subscription=sub_1&status=open&limit=10',
+      'https://api.stripe.com/v1/invoices?subscription=sub_1&status=open&limit=100',
     );
     expect(s.requests[1].url).toBe(
       'https://api.stripe.com/v1/invoices/in_1?expand%5B0%5D=payment_intent',
     );
+  });
+
+  it('S-DUNNING-R3 B-628-4: listOpenInvoices follows has_more (11 invoices over 10-item pages)', async () => {
+    const s = new RecordingStripe();
+    const all = Array.from({ length: 11 }, (_, i) => ({ id: `in_${i + 1}`, status: 'open' }));
+    s.respond = (r) => {
+      const after = new URL(r.url).searchParams.get('starting_after');
+      const start = after ? all.findIndex((x) => x.id === after) + 1 : 0;
+      const data = all.slice(start, start + 10);
+      return { status: 200, json: { data, has_more: start + 10 < all.length } };
+    };
+    const got = await s.listOpenInvoices('sub_1');
+    expect(got.map((x) => x.id)).toEqual(all.map((x) => x.id));
+    expect(s.requests).toHaveLength(2);
+    expect(new URL(s.requests[1].url).searchParams.get('starting_after')).toBe('in_10');
+  });
+
+  it('S-DUNNING-R3 B-628-4: a partial or malformed list is never returned', async () => {
+    const s = new RecordingStripe();
+    s.respond = () => ({
+      status: 200,
+      json: { data: [{ id: 'in_x', status: 'open' }], has_more: true },
+    });
+    await expect(s.listOpenInvoices('sub_1', { maxPages: 3 })).rejects.toMatchObject({
+      stripeCode: 'invoice_list_incomplete',
+    });
+    s.respond = () => ({ status: 200, json: { object: 'list' } });
+    await expect(s.listOpenInvoices('sub_1')).rejects.toMatchObject({
+      stripeCode: 'invoice_list_malformed',
+    });
   });
 
   it('a card_error carries its decline_code', async () => {

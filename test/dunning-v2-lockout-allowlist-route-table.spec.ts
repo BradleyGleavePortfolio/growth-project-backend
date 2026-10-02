@@ -166,6 +166,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'checkout/payment-intent',
   'checkout/payment-method',
   'checkout/payment-method/confirm', // ClientBillingController — native card update + 1A pay (S-DUNNING-R2)
+  'checkout/payment-method/quote', // ClientBillingController — every open invoice the card update would pay (S-DUNNING-R3)
   'checkout/payment-method/setup-intent',
   'checkout/purchases',
   'checkout/purchases/:purchaseid/drops',
