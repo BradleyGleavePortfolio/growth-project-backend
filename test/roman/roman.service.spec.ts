@@ -1161,6 +1161,31 @@ describe('RomanService — the erase is verified, never assumed (C-635-3)', () =
     expect(prisma._state.messages.map((m) => m.content)).toEqual(['still here']);
   });
 
+  it('an open whose legacy day-key holder cannot be erased answers ROMAN_UNAVAILABLE, not a delete message', async () => {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    seedSession(prisma, {
+      id: 's_legacy_today',
+      userId: CALLER.id,
+      dayKey: dayKeyUtc(),
+      startedAt: new Date(),
+      deletedAt: new Date(),
+      userTurns: ['legacy today'],
+    });
+    prisma._tx.rollback = true;
+    deleteRemovesNothing(prisma);
+    const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(svc.openOrResumeSession(CALLER, 'client')).rejects.toMatchObject({
+        status: 503,
+        response: { code: 'ROMAN_UNAVAILABLE' },
+      });
+    } finally {
+      errors.mockRestore();
+    }
+    expect(prisma._state.messages.map((m) => m.content)).toEqual(['legacy today']);
+  });
+
   it('delete-all and the sweep treat it the same way (never counted as erased)', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());

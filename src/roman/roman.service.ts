@@ -207,8 +207,19 @@ export class RomanService {
         const row = await this.prisma.romanSession.findFirst({ where: liveWhere });
         if (row) return row;
         // Otherwise a deleted session that was never erased holds the key.
-        // Erase it (transcript gone, cap count kept), then open fresh.
-        if (attempt === 0) await this.eraseUnerasedHolderOfDayKey(caller.id, surface, day_key);
+        // Erase it (transcript gone, cap count kept), then open fresh. If
+        // that erase fails, the caller gets the open's own coded 503 below,
+        // never a delete message for a chat they did not ask to delete.
+        if (attempt === 0) {
+          try {
+            await this.eraseUnerasedHolderOfDayKey(caller.id, surface, day_key);
+          } catch (eraseErr) {
+            this.logger.error(
+              `roman.open_erase_holder_failed surface=${surface}: ${String(safeDiagnostic(eraseErr))}`,
+            );
+            break;
+          }
+        }
       }
     }
     throw new ServiceUnavailableException({
