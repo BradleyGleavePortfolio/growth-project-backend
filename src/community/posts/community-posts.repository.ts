@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityPost } from '@prisma/client';
+import type { CommunityPost, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 
 /**
@@ -32,8 +32,9 @@ export class CommunityPostsRepository {
     });
   }
 
-  async findById(postId: string): Promise<CommunityPost | null> {
-    return this.prisma.communityPost.findUnique({ where: { id: postId } });
+  /** `tx`: run inside the caller's transaction (moderation act, B-610-13). */
+  async findById(postId: string, tx?: Prisma.TransactionClient): Promise<CommunityPost | null> {
+    return (tx ?? this.prisma).communityPost.findUnique({ where: { id: postId } });
   }
 
   /**
@@ -57,18 +58,15 @@ export class CommunityPostsRepository {
     });
   }
 
-  async update(
-    postId: string,
-    data: { title?: string; body?: string },
-  ): Promise<CommunityPost> {
+  async update(postId: string, data: { title?: string; body?: string }): Promise<CommunityPost> {
     return this.prisma.communityPost.update({
       where: { id: postId },
       data,
     });
   }
 
-  async softDelete(postId: string): Promise<CommunityPost> {
-    return this.prisma.communityPost.update({
+  async softDelete(postId: string, tx?: Prisma.TransactionClient): Promise<CommunityPost> {
+    return (tx ?? this.prisma).communityPost.update({
       where: { id: postId },
       data: { deleted_at: new Date(), visibility: 'hidden' },
     });

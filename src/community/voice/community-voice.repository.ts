@@ -2,6 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import {
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+  type VoiceErasureOutcome,
+  type VoiceErasureReason,
+  type VoiceErasureRow,
+  type VoiceErasureStorage,
+} from './voice-erasure';
 
 /**
  * community-voice.repository.ts — data access for v3-3 community voice notes.
@@ -85,6 +94,22 @@ export class CommunityVoiceRepository {
     return created;
   }
 
+  /** Any row (live or soft-deleted) already holding this storage key. */
+  async findByStorageKey(storageKey: string): Promise<{ id: string } | null> {
+    return this.prisma.communityVoiceNote.findFirst({
+      where: { storage_key: storageKey },
+      select: { id: true },
+    });
+  }
+
+  /** Every note an author recorded (live or soft-deleted), for account deletion. */
+  async findAllByAuthor(authorId: string): Promise<Array<{ id: string; storage_key: string }>> {
+    return this.prisma.communityVoiceNote.findMany({
+      where: { author_id: authorId },
+      select: { id: true, storage_key: true },
+    });
+  }
+
   async findById(id: string): Promise<CommunityVoiceNote | null> {
     return this.prisma.communityVoiceNote.findUnique({ where: { id } });
   }
@@ -93,6 +118,30 @@ export class CommunityVoiceRepository {
     await this.prisma.communityVoiceNote.update({
       where: { id },
       data: { soft_deleted_at: at },
+    });
+  }
+
+  /**
+   * B-610-5 round 5: durably record the recording erasure BEFORE the row is
+   * soft-deleted or storage is called (see voice-erasure.ts).
+   */
+  async recordErasure(storageKeys: string[], reason: VoiceErasureReason): Promise<VoiceErasureRow[]> {
+    return recordVoiceErasures(this.prisma, objectTargets(storageKeys), reason);
+  }
+
+  /** Try the recorded erasure now; an unverified row stays open for the retry cron. */
+  async attemptErasure(
+    storage: VoiceErasureStorage,
+    rows: VoiceErasureRow[],
+  ): Promise<VoiceErasureOutcome> {
+    return attemptVoiceErasures(this.prisma, storage, rows);
+  }
+
+  /** Hide any search row for a deleted note (defence in depth). */
+  async softDeleteSearchEntries(id: string, at: Date): Promise<void> {
+    await this.prisma.communitySearchEntry.updateMany({
+      where: { kind: 'voice_note_transcript', targetId: id, softDeletedAt: null },
+      data: { softDeletedAt: at },
     });
   }
 
@@ -121,8 +170,7 @@ export class CommunityVoiceRepository {
                 {
                   cohort_id: {
                     in:
-                      filter.visibleCohortIds &&
-                      filter.visibleCohortIds.length > 0
+                      filter.visibleCohortIds && filter.visibleCohortIds.length > 0
                         ? filter.visibleCohortIds
                         : ['__none__'],
                   },
@@ -139,9 +187,7 @@ export class CommunityVoiceRepository {
       workspace_id: filter.workspaceId,
       soft_deleted_at: null,
       ...(filter.cohortId !== null ? { cohort_id: filter.cohortId } : {}),
-      ...(filter.conversationId !== null
-        ? { conversation_id: filter.conversationId }
-        : {}),
+      ...(filter.conversationId !== null ? { conversation_id: filter.conversationId } : {}),
       ...visibility,
     };
 
@@ -149,14 +195,11 @@ export class CommunityVoiceRepository {
       where,
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       take: take + 1,
-      ...(filter.cursor
-        ? { cursor: { id: filter.cursor }, skip: 1 }
-        : {}),
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
 
     const items = rows.slice(0, take);
-    const nextCursor =
-      rows.length > take ? items[items.length - 1].id : null;
+    const nextCursor = rows.length > take ? items[items.length - 1].id : null;
     return { items, nextCursor };
   }
 }

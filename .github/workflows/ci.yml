@@ -367,6 +367,90 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+  community-live-tests:
+    # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
+    # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL
+    # and never ran in CI (green-by-skip). Voice notes launch ON, so the
+    # report -> review -> action loop, the wins RLS proof (A-610-2) and the
+    # community e2e suites must execute against a real database.
+    #
+    # Same Postgres 15 service as rls-live-tests. Unlike that job's scoped
+    # bootstrap, this one applies the Supabase-equivalent bootstrap and then
+    # the WHOLE migration chain with `prisma migrate deploy` (the same command
+    # the Fly release runs, as migration-dry-run does), so the suites assert
+    # against the real migration output, including 20270211000000.
+    # The pg-driver scratch-schema suites (test/community/rls/community-rls,
+    # schema, test/rls/community-*) need the optional `pg` driver and their own
+    # migration replay, so they are not part of this job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # The var every community live suite connects with AND gates on.
+      COMMUNITY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # SupabaseService builds a client at construction; nothing here reaches
+      # it (storage calls fail closed and are best-effort in these paths).
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # auth schema + anon/authenticated/service_role roles, idempotent;
+        # the same script migration-dry-run uses. Never run against Supabase.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply all migrations (prisma migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Run community live suites
+        # --runInBand: the suites share one database. 4GB heap as in
+        # rls-live-tests (Nest + ts-jest under --runInBand overruns 2GB).
+        run: >-
+          npx jest
+          test/community/rls/community-wins-rls.live.spec.ts
+          test/community/rls/community-message-shape.live.spec.ts
+          test/community/community-moderation.e2e.spec.ts
+          test/community/community-reactions.e2e.spec.ts
+          test/community/community-dms.e2e.spec.ts
+          test/community/community-foundation.e2e.spec.ts
+          test/community/community-plan-context.e2e.spec.ts
+          test/community/community-posts.e2e.spec.ts
+          test/community/community-messages.e2e.spec.ts
+          test/community/events/community-events.e2e.spec.ts
+          --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   mwb-3-live-tests:
     # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
     # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization

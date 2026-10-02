@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Body,
@@ -9,6 +10,7 @@ import {
   Request,
   HttpCode,
   GoneException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
@@ -58,10 +60,7 @@ export class CommunityController {
   @Get('workspaces/:workspaceId')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
   @Roles('student', 'coach', 'owner')
-  async getWorkspace(
-    @Request() req: AuthedRequest,
-    @Param('workspaceId') workspaceId: string,
-  ) {
+  async getWorkspace(@Request() req: AuthedRequest, @Param('workspaceId') workspaceId: string) {
     const { workspaceId: id } = CommunityWorkspaceParamsSchema.parse({
       workspaceId,
     });
@@ -80,10 +79,7 @@ export class CommunityController {
   @Get('cohorts/:cohortId')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
   @Roles('student', 'coach', 'owner')
-  async getCohort(
-    @Request() req: AuthedRequest,
-    @Param('cohortId') cohortId: string,
-  ) {
+  async getCohort(@Request() req: AuthedRequest, @Param('cohortId') cohortId: string) {
     const { cohortId: id } = CommunityCohortParamsSchema.parse({ cohortId });
     return this.communityService.getCohort(req.user, id);
   }
@@ -101,17 +97,18 @@ export class CommunityController {
   @Get('leaderboard')
   @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
   @Roles('student')
-  async getLeaderboard(
-    @Request() req: AuthedRequest,
-    @Query('period') period?: 'week' | 'month',
-  ) {
+  async getLeaderboard(@Request() req: AuthedRequest, @Query('period') period?: 'week' | 'month') {
     return this.communityService.getLeaderboard(req.user.id, period || 'week');
   }
 
   /**
    * GET /community/feed
-   * Returns the last 30 anonymised community wins.
-   * Response: [{ id, displayName, action, createdAt }]
+   * The last 30 member wins the caller may see: the coach's moderated circle,
+   * or only the caller's own wins when the coach runs no community space
+   * (community-wins.policy.ts). Block-filtered both ways; first names only.
+   * Response: [{ id, user_id, display_name, title, description, created_at,
+   * is_mine, displayName, action, createdAt }] (the last three are the
+   * legacy keys older app builds read).
    */
   @Get('feed')
   @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
@@ -122,14 +119,29 @@ export class CommunityController {
 
   /**
    * POST /community/wins
-   * Creates a new community win entry for the current user.
-   * Body: { title, description, visibility?: "circle" | "public" }
+   * Shares a win with the coach's circle. Content filter first (422
+   * community.content.rejected, nothing stored); members removed from the
+   * community get 403 community.win.removed_member.
+   * Body: { title, description, visibility?: "circle" | "public" } ("public"
+   * is accepted for older builds and stored as "circle").
    */
   @Post('wins')
   @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
   @Roles('student')
   async postWin(@Request() req: AuthedRequest, @Body() body: PostWinDto) {
     return this.communityService.postWin(req.user.id, body);
+  }
+
+  /**
+   * DELETE /community/wins/:id
+   * The author deletes their own win. No entitlement gate: a member can always
+   * remove their own content. Anyone else gets 404 community.win.not_found.
+   */
+  @Delete('wins/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('student')
+  async deleteWin(@Request() req: AuthedRequest, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.communityService.deleteWin(req.user.id, id);
   }
 
   /**
