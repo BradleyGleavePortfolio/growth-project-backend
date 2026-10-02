@@ -600,6 +600,27 @@ describe('RefundDisputeHandlerService', () => {
     expect(p.status).toBe('chargeback_lost');
   });
 
+  it('C01 — createAdminRefund on a $0 grant row is a clean 400 GRANT_NOT_REFUNDABLE and never calls Stripe', async () => {
+    const { svc, prisma, stripe } = makeServices();
+    prisma._purchases.push({
+      id: 'p_grant',
+      amount_cents: 0,
+      source: 'invite_grant:prepaid',
+      stripe_payment_intent_id: null,
+    });
+    await expect(
+      svc.createAdminRefund({
+        purchase_id: 'p_grant',
+        amount_cents: 0,
+        reason: 'requested_by_customer',
+        note: null,
+        initiated_by_user_id: 'owner-1',
+      }),
+    ).rejects.toMatchObject({ status: 400, response: { error: 'GRANT_NOT_REFUNDABLE' } });
+    expect(stripe.createRefund).not.toHaveBeenCalled();
+    expect(prisma._refunds).toHaveLength(0);
+  });
+
   it('createAdminRefund hits Stripe + persists ChargeRefund', async () => {
     const { svc, prisma, stripe } = makeServices();
     prisma._purchases.push({
