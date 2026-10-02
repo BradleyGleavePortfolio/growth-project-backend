@@ -171,6 +171,14 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
   });
 });
 
+/** The characters outside `<...>` tags: the copy a reader sees (plus any inline CSS). */
+function textOutsideTags(html: string): string {
+  return html
+    .split('<')
+    .map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
+    .join(' ');
+}
+
 /**
  * Serves one controller over real HTTP on an ephemeral port (no global
  * prefix, no guards), so the handler runs against a real Express Response.
@@ -204,7 +212,7 @@ describe('S-DUNNING-R2 email link target (universal link + calm landing page)', 
     expect(body).toContain('href="/download/ios"');
     expect(body).toContain('href="/download/android"');
     expect(body).not.toMatch(/billing\.stripe\.com|portal/i);
-    expect(body.replace(/<[^>]+>/g, '')).not.toContain('!');
+    expect(textOutsideTags(body)).not.toContain('!');
   });
 
   it('AASA lists /billing/update-card so iOS opens the app directly', async () => {
@@ -252,7 +260,7 @@ describe('S-DUNNING-R2 v2 email templates (F17)', () => {
     expect(out.html).toContain('href="https://app.trygrowthproject.com/billing/update-card"');
     expect(out.html).toContain('End my plan');
     expect(out.html).not.toMatch(/portal/i);
-    expect(out.html.replace(/<[^>]+>/g, '')).not.toContain('!');
+    expect(textOutsideTags(out.html)).not.toContain('!');
   });
 
   it('client subject falls back when none is passed; HTML in copy is escaped', () => {
