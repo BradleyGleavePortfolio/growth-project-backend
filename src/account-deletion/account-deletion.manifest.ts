@@ -653,10 +653,28 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
  * ledger `AiProcessingConsentEvent` is now in the schema and is deleted by
  * ERASURE_MANIFEST (B-608-9).
  */
-export const OPTIONAL_USER_TABLES: ReadonlyArray<{ table: string; column: string }> = [
+export const OPTIONAL_USER_TABLES: ReadonlyArray<{
+  table: string;
+  column: string;
+  /** Default delete. `detach` sets the column to NULL (another person's row). */
+  op?: 'detach';
+}> = [
   { table: 'ClientOnboardingIntakeRevision', column: 'client_id' },
   { table: 'ClientOnboardingIntake', column: 'client_id' },
+  // The clinic program set a coach seeded (#607, stacked under #609).
+  { table: 'ClinicProgramSet', column: 'coach_id' },
   { table: 'AiProcessingConsent', column: 'user_id' },
+  // Backend #609 (clinic engagement, migration 20270213000000), not merged
+  // when #608 was written. Its FKs to User are ON DELETE CASCADE, which never
+  // fires because the User row is tombstoned, so they are erased here. Each
+  // step runs only when the table exists, so #608 works with or without #609.
+  // Welcome-message jobs hold the client's rendered first name.
+  { table: 'CoachWelcomeMessageJob', column: 'client_id' },
+  { table: 'CoachWelcomeMessageJob', column: 'coach_id' },
+  { table: 'CoachWelcomeMessageSetting', column: 'coach_id' },
+  // An owner who last edited some coach's setting: keep the coach's row.
+  { table: 'CoachWelcomeMessageSetting', column: 'updated_by', op: 'detach' },
+  { table: 'WorkoutReminderDelivery', column: 'client_id' },
 ];
 
 /**
@@ -668,11 +686,18 @@ export async function purgeOptionalUserTables(
   userId: string,
 ): Promise<ErasureStepResult[]> {
   const results: ErasureStepResult[] = [];
-  for (const { table, column } of OPTIONAL_USER_TABLES) {
+  for (const { table, column, op } of OPTIONAL_USER_TABLES) {
     const present = await tx.$queryRaw<Array<{ present: boolean }>>`
       SELECT to_regclass(${`public."${table}"`}) IS NOT NULL AS present
     `;
-    if (present[0]?.present) {
+    if (!present[0]?.present) continue;
+    if (op === 'detach') {
+      const count = await tx.$executeRaw`
+        UPDATE ${Prisma.raw(`"${table}"`)} SET ${Prisma.raw(`"${column}"`)} = NULL
+         WHERE ${Prisma.raw(`"${column}"`)} = ${userId}
+      `;
+      results.push({ model: table, field: column, op: 'update', count });
+    } else {
       const count = await tx.$executeRaw`
         DELETE FROM ${Prisma.raw(`"${table}"`)} WHERE ${Prisma.raw(`"${column}"`)} = ${userId}
       `;
