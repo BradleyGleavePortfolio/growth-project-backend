@@ -1,6 +1,6 @@
 /**
- * S-ENVTRUTH — structural invariants for the two operator env workflows:
- *   .github/workflows/fly-env-sync.yml   (stages allowlisted GitHub secrets on Fly)
+ * S-ENVTRUTH / B-FLAGS-2 — structural invariants for the two operator env workflows:
+ *   .github/workflows/fly-env-sync.yml   (plan / apply of .github/fly-env-desired-state.json)
  *   .github/workflows/fly-env-truth.yml  (read-only in-machine classifier)
  * Parses the YAML and checks the guards that a later edit could quietly drop.
  */
@@ -74,70 +74,64 @@ function expectAppAllowlist(job: Job): void {
   expect(job.steps.indexOf(guard!)).toBeLessThan(firstFly);
 }
 
-describe('fly-env-sync.yml', () => {
+describe('fly-env-sync.yml (manifest-driven plan / apply; B-FLAGS-2)', () => {
   const { wf, text, job } = loadWorkflow('.github/workflows/fly-env-sync.yml');
-  const pushStep = job.steps.find((s) => /flyctl secrets set/.test(s.run ?? ''))!;
+  const stageStep = job.steps.find((s) => /flyctl secrets set/.test(s.run ?? ''))!;
+  const manifest = JSON.parse(read('.github/fly-env-desired-state.json')) as {
+    secrets: Record<string, string>;
+  };
 
-  it('is workflow_dispatch only, read-only token, production environment', () => {
+  it('is workflow_dispatch only, read-only token, production environment, one Fly lock', () => {
     expect(Object.keys(wf.on)).toEqual(['workflow_dispatch']);
-    expect(wf.on.workflow_dispatch.inputs?.app?.default).toBe('backend-spring-lake-3890');
-    expect(wf.on.workflow_dispatch.inputs?.confirm?.required).toBe(true);
     expect(wf.permissions).toEqual({ contents: 'read' });
     expect(envName(job)).toBe('production');
+    expect(text).toMatch(/concurrency: fly-secrets-\$\{\{ inputs\.app \}\}/);
+    expectAppAllowlist(job);
   });
 
-  it('guards: app allowlist and confirm=SET before anything touches Fly', () => {
-    expectAppAllowlist(job);
+  it('defaults to plan; apply needs confirm=SET; deploy_staged is opt-in and apply-only', () => {
+    const inputs = wf.on.workflow_dispatch.inputs ?? {};
+    expect(inputs.mode).toMatchObject({ type: 'choice', default: 'plan' });
+    expect(inputs.deploy_staged).toMatchObject({ type: 'boolean', default: false });
+    expect(inputs.confirm?.required).toBe(false);
     const confirm = job.steps.find((s) => s.name === 'Confirm operator intent');
-    expect(confirm?.run).toMatch(/if \[ "\$\{CONFIRM\}" != "SET" \]; then[\s\S]*exit 1/);
+    expect(confirm?.run).toMatch(/if \[ "\$\{CONFIRM\}" != "SET" \]/);
     const firstFly = job.steps.findIndex((s) => /setup-flyctl/.test(s.uses ?? ''));
     expect(job.steps.indexOf(confirm!)).toBeLessThan(firstFly);
+    const writers = job.steps.filter((s) => /flyctl secrets (set|unset|deploy)/.test(s.run ?? ''));
+    expect(writers.map((s) => s.if)).toEqual([
+      "${{ inputs.mode == 'apply' }}",
+      "${{ inputs.mode == 'apply' && inputs.deploy_staged }}",
+    ]);
   });
 
-  it('stages with --stage (no machine restart); applies only when deploy_staged=true', () => {
-    expect(pushStep.run).toMatch(/flyctl secrets set --stage -a "\$\{APP\}" "\$\{args\[@\]\}"/);
-    const input = wf.on.workflow_dispatch.inputs?.deploy_staged;
-    expect(input?.type).toBe('boolean');
-    expect(input?.default).toBe(false);
-    const applying = job.steps.filter((s) => /flyctl secrets deploy/.test(s.run ?? ''));
-    expect(applying).toHaveLength(1);
-    expect(applying[0].if).toBe('${{ inputs.deploy_staged }}');
-    expect(allRuns(job)).not.toMatch(/flyctl (deploy|machine restart|apps restart)/);
-    expect(allRuns(job)).not.toMatch(/secrets unset/);
+  it('validates the manifest before setting up flyctl, and runs it without npm install', () => {
+    const validate = job.steps.findIndex((s) =>
+      /^Validate the desired-state manifest/.test(s.name ?? ''),
+    );
+    const setup = job.steps.findIndex((s) => /setup-flyctl/.test(s.uses ?? ''));
+    expect(validate).toBeGreaterThan(-1);
+    expect(validate).toBeLessThan(setup);
+    expect(allRuns(job)).not.toMatch(/npm (ci|install)/);
   });
 
-  it('can push GOOGLE_CLIENT_IDS (required for launch)', () => {
-    expect(pushStep.env?.GOOGLE_CLIENT_IDS).toBe('${{ secrets.GOOGLE_CLIENT_IDS }}');
-    expect(ENV_RULES.find((r) => r.name === 'GOOGLE_CLIENT_IDS')?.launch).toBe('required');
+  it('stages with --stage only (no restart); flyctl secrets deploy appears once, behind deploy_staged', () => {
+    const runs = allRuns(job);
+    for (const line of runs.split('\n').filter((l) => /^\s*flyctl secrets (set|unset)/.test(l)))
+      expect(line).toMatch(/flyctl secrets (set|unset) --stage /);
+    expect(runs.match(/^\s*flyctl secrets deploy /gm)).toHaveLength(1);
   });
 
-  it('pushes exactly the allowlist, every name maps to the same-named GitHub secret and is registered', () => {
-    const env = pushStep.env ?? {};
-    const allow = Object.keys(env).filter((k) => k !== 'FLY_API_TOKEN' && k !== 'APP');
-    expect(allow.sort()).toEqual([...EXPECTED_ALLOWLIST].sort());
-    for (const n of allow) {
+  it('every manifest secret maps to the same-named GitHub secret and is registered; Apple keys are never copied', () => {
+    const env = stageStep.env ?? {};
+    const names = Object.keys(env).filter((k) => k !== 'FLY_API_TOKEN' && k !== 'APP');
+    expect(names.sort()).toEqual(Object.keys(manifest.secrets).sort());
+    expect(names).toEqual(expect.arrayContaining(EXPECTED_ALLOWLIST));
+    for (const n of names) {
       expect(env[n]).toBe(`\${{ secrets.${n} }}`);
-      expect(REGISTERED.has(n)).toBe(true);
+      expect([n, REGISTERED.has(n)]).toEqual([n, true]);
     }
-    // The bash allowlist array matches the env block exactly.
-    const arr = /allowlist=\(\n([\s\S]*?)\n\s*\)/.exec(pushStep.run ?? '');
-    expect(arr).not.toBeNull();
-    expect(
-      arr![1]
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .sort(),
-    ).toEqual(allow.sort());
-  });
-
-  it('does not push the Apple sign-in keys (owned by the account-deletion lane workflow)', () => {
-    expect(text).not.toMatch(/APPLE_SIGNIN_/);
-  });
-
-  it('skips unset/empty secrets instead of pushing empty values', () => {
-    expect(pushStep.run).toMatch(/if \[ -n "\$\{!name:-\}" \]; then/);
-    expect(pushStep.run).toMatch(/skipped\+=/);
+    expect(text).not.toMatch(/APPLE_SIGNIN_PRIVATE_KEY|APPLE_SIGNIN_KEY_ID/);
   });
 
   it('never echoes a value: no set -x, no echo/printf of a secret variable, args or indirect expansion', () => {
@@ -147,41 +141,44 @@ describe('fly-env-sync.yml', () => {
     const printing = runs.split('\n').filter((l) => /^\s*(echo|printf|cat)\b/.test(l));
     for (const line of printing) {
       expect(line).not.toMatch(/\$\{!name|\$\{args|\$args\b|\$\{?FLY_API_TOKEN/);
-      for (const n of EXPECTED_ALLOWLIST) expect(line).not.toMatch(new RegExp(`\\$\\{?${n}\\b`));
+      for (const n of Object.keys(manifest.secrets))
+        expect(line).not.toMatch(new RegExp(`\\$\\{?${n}\\b`));
     }
-    expect(pushStep.run).toMatch(/flyctl secrets set[^\n]*> \/dev\/null/);
-    expect(pushStep.run).toMatch(/set \+x/);
+    expect(stageStep.run).toMatch(/flyctl secrets set --stage[^\n]*> \/dev\/null/);
+    expect(stageStep.run).toMatch(/set \+x/);
   });
 
-  it('post-check uses the structured --json listing and projects names + status only (never digests)', () => {
-    // Behaviour (staged / partial / deployed fixtures, apply reachability) is
-    // proven in fly-env-sync-behavior.spec.ts; this pins the shape.
-    const check = job.steps.find((s) => /flyctl secrets list/.test(s.run ?? ''))!;
-    expect(check.run).toMatch(
-      /flyctl secrets list -a "\$\{APP\}" --json [^\n]*\| jq -r "\$\{filter\}"/,
+  it('B-633-1: every listing is the structured --json projection (names + status only); no table parsing', () => {
+    const runs = allRuns(job);
+    expect(runs).toMatch(
+      /flyctl secrets list -a "\$\{APP\}" --json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt/,
     );
-    expect(check.run).not.toMatch(/awk -F'│'/);
-    expect(check.run).not.toMatch(/\.digest|\.Digest/);
-    expect(check.run).not.toMatch(/echo "\$\{listing\}"/);
+    expect(runs).not.toMatch(/\bawk\b/);
+    expect(runs).not.toMatch(/\.digest|\.Digest/);
+    expect(runs).not.toMatch(/flyctl secrets list(?![^\n]*--json)/);
   });
 
   it('B-624-3: no flyctl output reaches the log; stderr is only classified with grep -q and removed by an EXIT trap', () => {
-    // Behaviour (hostile whitespace / newline / quoted / standalone values) is
-    // proven in fly-env-sync-behavior.spec.ts; this pins the shape so a later
-    // edit cannot reintroduce a "redact then print" relay.
+    // Behaviour (hostile values, every failure path) is proven in
+    // fly-env-sync-behavior.spec.ts; this pins the shape.
     const flySteps = job.steps.filter((s) => /^\s*flyctl /m.test(s.run ?? ''));
     expect(flySteps.map((s) => s.name)).toEqual([
-      'Stage allowlisted secrets (names only in output)',
-      'Confirm staged names are listed on Fly (names and status only)',
-      'Apply staged secrets now (only when deploy_staged=true)',
+      'Plan (names, status and actions only)',
+      'Stage the planned changes (apply mode only; no restart)',
+      'Verify Fly matches the manifest (apply mode only)',
+      'Apply staged changes now (apply mode with deploy_staged=true)',
     ]);
-    const blocks = flySteps.map(
-      (s) => /# BEGIN fly_error_class[\s\S]*?# END fly_error_class\n/.exec(s.run ?? '')?.[0],
-    );
-    for (const b of blocks) expect(b).toEqual(expect.stringContaining('fly_error_class() {'));
-    expect(new Set(blocks).size).toBe(1);
-    // The classifier only tests the file (grep -q) and prints fixed words.
-    const code = blocks[0]!
+    const blockOf = (s: Step, tag: string) =>
+      new RegExp(`# BEGIN ${tag}[\\s\\S]*?# END ${tag}\\n`).exec(s.run ?? '')?.[0];
+    const classBlocks = flySteps.map((s) => blockOf(s, 'fly_error_class'));
+    for (const b of classBlocks) expect(b).toEqual(expect.stringContaining('fly_error_class() {'));
+    expect(new Set(classBlocks).size).toBe(1);
+    const readers = flySteps.filter((s) => /fly_list_state /.test(s.run ?? ''));
+    expect(readers).toHaveLength(3);
+    const helperBlocks = readers.map((s) => blockOf(s, 'fly_helpers'));
+    for (const b of helperBlocks) expect(b).toEqual(expect.stringContaining('fly_list_state() {'));
+    expect(new Set(helperBlocks).size).toBe(1);
+    const code = classBlocks[0]!
       .split('\n')
       .filter((l) => !/^\s*#/.test(l))
       .join('\n');
@@ -190,37 +187,44 @@ describe('fly-env-sync.yml', () => {
     for (const s of flySteps) {
       const run = s.run ?? '';
       expect(run).not.toMatch(/\bsed\b/);
+      expect(run).toMatch(/^\s*set \+x$/m);
       for (const line of run.split('\n').filter((l) => /^\s*flyctl /.test(l)))
         expect(line).toMatch(
-          / (> \/dev\/null 2> fly-[a-z]+-stderr\.txt|--json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" 2> jq-stderr\.txt)$/,
+          / (> \/dev\/null 2> fly-[a-z]+-stderr\.txt|--json 2> fly-list-stderr\.txt \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt|-C "\$\(cat compare\.cmd\)" > ssh-stdout\.txt 2> fly-ssh-stderr\.txt)$/,
         );
       for (const line of run.split('\n').filter((l) => /stderr\.txt/.test(l) && !/^\s*#/.test(l)))
         expect([
           line,
           [
-            /^\s*flyctl .* 2> fly-[a-z]+-stderr\.txt( \| jq -r "\$\{filter\}" 2> jq-stderr\.txt)?$/,
+            /^\s*flyctl .* 2> fly-[a-z]+-stderr\.txt( \| jq -r "\$\{filter\}" > "\$1" 2> jq-stderr\.txt)?$/,
             /^\s*trap 'rm -f [a-z. -]+' EXIT$/,
             /cls=\$\(fly_error_class fly-[a-z]+-stderr\.txt\)/,
             /^\s*code=\$\(grep -oE 'ENVSYNC_\[A-Z_\]\+' jq-stderr\.txt \| head -n 1 \|\| true\)$/,
+            /^\s*rm -f ssh-stdout\.txt fly-ssh-stderr\.txt$/,
           ].some((re) => re.test(line)),
         ]).toEqual([line, true]);
-      // Every scratch file the step writes is removed by its EXIT trap.
-      const written = [
-        ...run.matchAll(/> ([a-z-]+\.txt)$/gm),
-        ...run.matchAll(/2> ([a-z-]+\.txt)/g),
-      ]
-        .map((m) => m[1])
-        .filter((f) => f !== 'staged-names.txt');
+      // Every stderr scratch file the step writes is removed by its EXIT trap.
+      const written = [...run.matchAll(/2> ([a-z-]+\.txt)/g)].map((m) => m[1]);
       const trap = /trap 'rm -f ([^']+)' EXIT/.exec(run)?.[1].split(' ') ?? [];
       expect(trap).toEqual(expect.arrayContaining(written));
       expect(run.search(/^\s*trap '/m)).toBeGreaterThan(-1);
-      expect(run.search(/^\s*trap '/m)).toBeLessThan(run.search(/^\s*flyctl /m));
+      expect(run.search(/^\s*trap '/m)).toBeLessThan(run.search(/^\s*(flyctl|fly_list_state) /m));
     }
-    // The apply step's follow-up listing uses the post-check's exact projection.
-    const filterOf = (s: (typeof flySteps)[number]) =>
-      /^\s*filter='.*'$/m.exec(s.run ?? '')?.[0].trim();
-    expect(filterOf(flySteps[2])).toBeDefined();
-    expect(filterOf(flySteps[2])).toBe(filterOf(flySteps[1]));
+  });
+
+  it('scratch files live under RUNNER_TEMP and are removed by an always() step', () => {
+    const last = job.steps[job.steps.length - 1];
+    expect(last).toMatchObject({
+      if: '${{ always() }}',
+      run: 'rm -rf "${RUNNER_TEMP}/fly-env-sync"',
+    });
+    for (const s of job.steps.filter((x) => /fly_list_state |flyctl secrets/.test(x.run ?? '')))
+      expect(s.run).toMatch(/^\s*cd "\$\{RUNNER_TEMP\}\/fly-env-sync"$/m);
+  });
+
+  it('pins every third-party action to a full commit sha; checkout does not persist credentials', () => {
+    for (const s of job.steps.filter((x) => x.uses)) expect(s.uses).toMatch(/@[0-9a-f]{40}$/);
+    expect(text).toMatch(/persist-credentials: false/);
   });
 });
 

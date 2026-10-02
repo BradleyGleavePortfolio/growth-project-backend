@@ -1,51 +1,58 @@
 name: Fly Env Sync (operator)
 
-# S-ENVTRUTH. Operator workflow that copies an explicit allowlist of GitHub
-# Actions secrets to the production Fly app with `fly secrets set --stage`.
+# B-FLAGS-2 (T4). The ONE path that changes launch flags (and the
+# GitHub-sourced secrets) on the production Fly app. It reconciles Fly with the
+# checked-in desired state in .github/fly-env-desired-state.json.
+# Runbook: docs/runbooks/launch-flags.md.
 #
-# Why --stage: staged secrets do NOT restart machines. They are applied at the
-# next `fly deploy` (or an explicit `fly secrets deploy`), so this workflow can
-# run during the day without bouncing production.
+# Modes (workflow_dispatch input `mode`):
+#   plan   (default) Read-only. Lists Fly secrets (names + status only), runs a
+#          value check inside the running machine and prints, per managed name:
+#          kind, declared state, Fly status, in-machine result, action, reason.
+#          Prints the manifest sha256 instead of any value or Fly digest.
+#   apply  Requires confirm=SET. Re-plans, stages exactly the planned changes
+#          with `flyctl secrets set --stage` / `flyctl secrets unset --stage`
+#          (no restart), then re-lists and proves every managed name is present
+#          or absent exactly as declared. With deploy_staged=true it then runs
+#          `flyctl secrets deploy` (one rolling restart), but only when
+#          something changed or was staged earlier, and proves the running
+#          machine now holds every declared value and none of the unset names.
 #
-# What it does:
-#   1. Guards: app allowlist, confirm=SET, `production` environment (same
-#      pattern as fly-secrets-set.yml), FLY_API_TOKEN present.
-#   2. For every allowlisted name, reads the GitHub secret of the SAME name.
-#      Unset or empty secrets are SKIPPED (never pushed as empty, never fail
-#      the run) so the operator can fill the list in over time.
-#   3. Stages the non-empty ones in one `fly secrets set --stage` call.
-#   4. Confirms the staged names appear in `fly secrets list --json` (the
-#      structured listing; jq projects name + status only) and prints
-#      NAMES + STATUS ONLY (no digests, no values).
-#   5. Only when deploy_staged=true: `fly secrets deploy`, then the same
-#      structured listing reports each staged name's status (warns, without
-#      failing, when a name is not yet Deployed).
+# Unchanged values are never re-set. Fly's listing digest is a server-side
+# authenticator tag a client cannot reproduce, so "unchanged" is proven inside
+# the machine: scripts/fly-env/fly-env-manifest.js sends sha256(salt||0||value)
+# per declared name with a random per-run salt, and the machine answers
+# match / differs / absent (present / absent for names declared unset).
+# A value that is Deployed and matches is kept, so an apply with nothing to
+# change writes nothing and restarts nothing. When the machine check cannot
+# run, declared values are staged again (safe, no restart) and the plan says
+# the values were unproven.
 #
-# Optional apply (deploy_staged=true): after staging, runs `fly secrets deploy`
-# so the staged values take effect immediately (rolling machine restart).
-# Off by default; when off, the next `fly deploy` applies them.
+# Preconditions fail the plan with a specific message before anything is
+# written (for example FEATURE_MWB_AUTOSAVE_UNDO=true needs
+# MWB_AUTOSAVE_LOCK_TOKEN_SECRET, community surface flags need
+# FEATURE_COMMUNITY_API=true, a github-secret source must be set and pass its
+# shape check).
 #
-# What it does NOT do:
-#   - It does not deploy or restart machines unless deploy_staged=true.
-#   - It does not generate, rotate or delete any secret.
-#   - It does not print any value. `set +x` everywhere; values only ever live in
-#     env vars and the argv array handed to flyctl.
-#   - It never prints flyctl's own output (B-624-3): flyctl errors can echo a
-#     value, so every failure is reported as a fixed operation, exit code,
-#     secret NAMES, an allowlisted error class (auth, app_not_found,
-#     rate_limited, machine_health, network, unclassified, no_output) and a
-#     fixed "Fix:" action. test/ci/fly-env-sync-behavior.spec.ts runs these
-#     scripts against a hostile fake flyctl to prove it.
-#   - It does not push the Apple sign-in keys; the account-deletion lane's own
-#     workflow owns those.
+# What it never does:
+#   - print a secret value, a Fly digest or flyctl's own output (B-624-3):
+#     flyctl stdout goes to /dev/null (or, for `secrets list --json`, only
+#     through the jq name + status projection), stderr is only classified with
+#     `grep -q` (fly_error_class) and deleted by an EXIT trap;
+#   - parse the human `fly secrets list` table (B-633-1): every check reads the
+#     structured `--json` listing;
+#   - touch a name the manifest does not manage (except that
+#     `flyctl secrets deploy` applies every secret already staged on the app;
+#     the plan lists those names);
+#   - deploy the app image, generate, rotate or print any secret.
 #
-# Every allowlisted name must be registered in src/common/env-validation.ts;
-# test/ci/fly-env-workflows.spec.ts enforces that plus the guards above.
+# flyctl caveat: `flyctl secrets deploy` and `fly deploy` from a fresh runner
+# apply what Fly has staged; see the runbook for the deploy-window sequence.
 #
 # How to run (operator):
-#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET
-#   # stage and apply now (rolling restart):
-#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f confirm=SET -f deploy_staged=true
+#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=plan
+#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=apply -f confirm=SET
+#   gh workflow run "Fly Env Sync (operator)" -f app=backend-spring-lake-3890 -f mode=apply -f confirm=SET -f deploy_staged=true
 
 on:
   workflow_dispatch:
@@ -54,12 +61,20 @@ on:
         description: Fly app name (production)
         required: true
         default: backend-spring-lake-3890
-      confirm:
-        description: Type SET to confirm you intend to stage production secrets
+      mode:
+        description: plan = read-only, prints what would change; apply = stage the planned changes on Fly, then verify
         required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm:
+        description: Type SET to confirm apply mode (not needed for plan)
+        required: false
         default: ''
       deploy_staged:
-        description: Also run `fly secrets deploy` after staging (restarts machines to apply now). Default false = apply at the next deploy.
+        description: apply mode only. Also run `flyctl secrets deploy` when something changed (one rolling restart). Default false = changes apply at the next deploy.
         required: false
         type: boolean
         default: false
@@ -69,7 +84,7 @@ permissions:
 
 jobs:
   fly-env-sync:
-    name: Stage allowlisted secrets on Fly
+    name: Reconcile Fly with the desired-state manifest
     runs-on: ubuntu-latest
     environment: production
     concurrency: fly-secrets-${{ inputs.app }}
@@ -82,7 +97,7 @@ jobs:
           case "${APP}" in
             backend-spring-lake-3890) ;;
             *)
-              echo "::error::The app input is not an allowed Fly app target, so nothing was staged. This workflow only manages backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
+              echo "::error::The app input is not an allowed Fly app target, so nothing was read or changed. This workflow only manages backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
               exit 1
               ;;
           esac
@@ -90,32 +105,66 @@ jobs:
 
       - name: Confirm operator intent
         env:
+          MODE: ${{ inputs.mode }}
           CONFIRM: ${{ inputs.confirm }}
+          DEPLOY_STAGED: ${{ inputs.deploy_staged }}
         run: |
-          if [ "${CONFIRM}" != "SET" ]; then
-            echo "::error::The confirm input is not the literal string SET, so nothing was staged. Fix: re-run with -f confirm=SET once you intend to stage production secrets."
-            exit 1
-          fi
-          echo "Operator confirmed."
+          set -euo pipefail
+          case "${MODE}" in
+            plan)
+              if [ "${DEPLOY_STAGED}" = "true" ]; then
+                echo "::error::deploy_staged=true only applies in apply mode and this run is a plan, so nothing was read or changed. Fix: re-run with -f mode=apply -f confirm=SET -f deploy_staged=true, or drop deploy_staged for a plan."
+                exit 1
+              fi
+              echo "Plan mode: read-only."
+              ;;
+            apply)
+              if [ "${CONFIRM}" != "SET" ]; then
+                echo "::error::The confirm input is not the literal string SET, so nothing was staged. Fix: re-run with -f confirm=SET once you intend to change production."
+                exit 1
+              fi
+              echo "Apply mode confirmed (deploy_staged=${DEPLOY_STAGED})."
+              ;;
+            *)
+              echo "::error::The mode input must be plan or apply, so nothing was read or changed. Fix: re-run with -f mode=plan or -f mode=apply."
+              exit 1
+              ;;
+          esac
 
       - name: Check Fly token configuration
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot manage secrets and nothing was staged. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production environment, then re-run."
+            echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot read or manage secrets and nothing was changed. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production environment, then re-run."
             exit 1
           fi
           echo "FLY_API_TOKEN is configured."
 
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '20.x'
+
+      - name: Validate the desired-state manifest (no Fly access)
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "${RUNNER_TEMP}/fly-env-sync"
+          node scripts/fly-env/fly-env-manifest.js validate .github/fly-env-desired-state.json src/common/env-validation.ts
+
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
 
-      - name: Stage allowlisted secrets (names only in output)
+      - name: Plan (names, status and actions only)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
-          # BEGIN ALLOWLIST (each maps to the GitHub secret of the same name)
+          # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
+          MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
@@ -141,56 +190,13 @@ jobs:
           WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
           WITHINGS_CLIENT_ID: ${{ secrets.WITHINGS_CLIENT_ID }}
           WITHINGS_CLIENT_SECRET: ${{ secrets.WITHINGS_CLIENT_SECRET }}
-          # END ALLOWLIST
+          # END SOURCES
         run: |
           set +x
           set -euo pipefail
-          allowlist=(
-            GOOGLE_CLIENT_IDS
-            GOOGLE_OAUTH_CLIENT_ID
-            GOOGLE_OAUTH_CLIENT_SECRET
-            GOOGLE_OAUTH_REDIRECT_URI
-            METRICS_AUTH_TOKEN
-            DATA_EXPORT_DOWNLOAD_SECRET
-            CONTRACT_PDF_URL_SECRET
-            SCHEDULING_WEBHOOK_SECRET
-            GARMIN_WEBHOOK_SALT
-            WHOOP_WEBHOOK_SALT
-            FITBIT_CLIENT_ID
-            FITBIT_CLIENT_SECRET
-            GARMIN_CLIENT_ID
-            GARMIN_CLIENT_SECRET
-            OURA_CLIENT_ID
-            OURA_CLIENT_SECRET
-            POLAR_CLIENT_ID
-            POLAR_CLIENT_SECRET
-            STRAVA_CLIENT_ID
-            STRAVA_CLIENT_SECRET
-            WAHOO_CLIENT_ID
-            WAHOO_CLIENT_SECRET
-            WHOOP_CLIENT_ID
-            WHOOP_CLIENT_SECRET
-            WITHINGS_CLIENT_ID
-            WITHINGS_CLIENT_SECRET
-          )
-          args=()
-          staged=()
-          skipped=()
-          for name in "${allowlist[@]}"; do
-            # Indirect expansion reads the value without ever printing it.
-            if [ -n "${!name:-}" ]; then
-              args+=("${name}=${!name}")
-              staged+=("${name}")
-            else
-              skipped+=("${name}")
-            fi
-          done
-          printf 'skipped (unset or empty in GitHub secrets): %s\n' "${skipped[*]:-none}"
-          if [ "${#staged[@]}" -eq 0 ]; then
-            echo "Nothing to stage."
-            exit 0
-          fi
-          printf 'staging: %s\n' "${staged[*]}"
+          umask 077
+          cd "${RUNNER_TEMP}/fly-env-sync"
+          trap 'rm -f fly-list-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
           # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
           # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
           # in its errors, so no flyctl output is ever printed, filtered or
@@ -221,38 +227,101 @@ jobs:
             esac
           }
           # END fly_error_class
-          umask 077
-          trap 'rm -f fly-set-stderr.txt' EXIT
-          # --stage: no machine restart; applied at the next deploy. stdout is
-          # discarded; stderr is only classified (fly_error_class), never shown.
-          set +e
-          flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null 2> fly-set-stderr.txt
-          rc=$?
-          set -e
-          unset args
-          if [ "${rc}" -ne 0 ]; then
-            cls=$(fly_error_class fly-set-stderr.txt)
-            echo "::error::flyctl secrets set --stage failed (exit ${rc}, error class ${cls}) for: ${staged[*]}. Nothing was applied to running machines. flyctl's own error text is withheld from this log because it can echo secret values. $(fly_error_hint "${cls}") Staging the same values again is safe."
-            exit 1
-          fi
-          printf '%s\n' "${staged[@]}" > staged-names.txt
-          echo "Staged ${#staged[@]} secret(s). They apply at the next deploy, or now when deploy_staged=true."
+          # BEGIN fly_helpers (byte-identical in every step that reads Fly state; B-FLAGS-2)
+          FEM=(node "${GITHUB_WORKSPACE}/scripts/fly-env/fly-env-manifest.js")
+          MANIFEST="${GITHUB_WORKSPACE}/.github/fly-env-desired-state.json"
+          RULES="${GITHUB_WORKSPACE}/src/common/env-validation.ts"
+          # Structured listing (B-624-1, B-633-1): `--json` gives each secret's
+          # bare name; jq projects name + status word only, so digests never
+          # reach a variable, the log or a file. Error codes are fixed strings.
+          fly_list_state() {
+            local filter fly_rc jq_rc code cls
+            filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
+            (
+              set +e
+              flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" > "$1" 2> jq-stderr.txt
+              echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+            )
+            read -r fly_rc jq_rc < list-status.txt
+            if [ "${fly_rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-list-stderr.txt)
+              echo "::error::flyctl secrets list --json failed (exit ${fly_rc}, error class ${cls}) for ${APP}, so $2. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}")"
+              return 1
+            fi
+            if [ "${jq_rc}" -ne 0 ]; then
+              code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
+              echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so $2. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in fly_list_state, then re-run."
+              return 1
+            fi
+          }
+          # In-machine value check. `prepare` builds the command (base64 only);
+          # the machine prints one marked line of match / differs / absent /
+          # present words. stdout goes to a 0600 scratch file that only
+          # parse-compare reads; stderr is only classified; both are deleted.
+          fly_machine_check() {
+            local rc cls out
+            out=machine.json
+            if [ "$1" = after ]; then out=machine-after.json; fi
+            set +e
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-ssh-stderr.txt)
+              printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
+              echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
+            else
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+            fi
+            rm -f ssh-stdout.txt fly-ssh-stderr.txt
+          }
+          # END fly_helpers
+          fly_list_state fly-state.tsv "nothing could be planned and nothing was changed" || exit 1
+          # Source checks (booleans only) and the in-machine check command.
+          "${FEM[@]}" prepare "${MANIFEST}" "${RULES}" .
+          fly_machine_check before
+          "${FEM[@]}" plan "${MANIFEST}" "${RULES}" .
 
-      - name: Confirm staged names are listed on Fly (names and status only)
+      - name: Stage the planned changes (apply mode only; no restart)
+        if: ${{ inputs.mode == 'apply' }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
+          # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
+          GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
+          MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
+          METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
+          DATA_EXPORT_DOWNLOAD_SECRET: ${{ secrets.DATA_EXPORT_DOWNLOAD_SECRET }}
+          CONTRACT_PDF_URL_SECRET: ${{ secrets.CONTRACT_PDF_URL_SECRET }}
+          SCHEDULING_WEBHOOK_SECRET: ${{ secrets.SCHEDULING_WEBHOOK_SECRET }}
+          GARMIN_WEBHOOK_SALT: ${{ secrets.GARMIN_WEBHOOK_SALT }}
+          WHOOP_WEBHOOK_SALT: ${{ secrets.WHOOP_WEBHOOK_SALT }}
+          FITBIT_CLIENT_ID: ${{ secrets.FITBIT_CLIENT_ID }}
+          FITBIT_CLIENT_SECRET: ${{ secrets.FITBIT_CLIENT_SECRET }}
+          GARMIN_CLIENT_ID: ${{ secrets.GARMIN_CLIENT_ID }}
+          GARMIN_CLIENT_SECRET: ${{ secrets.GARMIN_CLIENT_SECRET }}
+          OURA_CLIENT_ID: ${{ secrets.OURA_CLIENT_ID }}
+          OURA_CLIENT_SECRET: ${{ secrets.OURA_CLIENT_SECRET }}
+          POLAR_CLIENT_ID: ${{ secrets.POLAR_CLIENT_ID }}
+          POLAR_CLIENT_SECRET: ${{ secrets.POLAR_CLIENT_SECRET }}
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          WAHOO_CLIENT_ID: ${{ secrets.WAHOO_CLIENT_ID }}
+          WAHOO_CLIENT_SECRET: ${{ secrets.WAHOO_CLIENT_SECRET }}
+          WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
+          WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+          WITHINGS_CLIENT_ID: ${{ secrets.WITHINGS_CLIENT_ID }}
+          WITHINGS_CLIENT_SECRET: ${{ secrets.WITHINGS_CLIENT_SECRET }}
+          # END SOURCES
         run: |
           set +x
           set -euo pipefail
-          if [ ! -s staged-names.txt ]; then
-            echo "No staged names to confirm."
-            exit 0
-          fi
-          if ! command -v jq > /dev/null 2>&1; then
-            echo "::error::jq is not installed on this runner, so the staged names cannot be confirmed (the stage step already succeeded). Fix: run on ubuntu-latest, which ships jq, or add a jq install step, then re-run; staging the same values again is safe."
-            exit 1
-          fi
+          umask 077
+          cd "${RUNNER_TEMP}/fly-env-sync"
+          trap 'rm -f fly-set-stderr.txt fly-unset-stderr.txt' EXIT
           # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
           # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
           # in its errors, so no flyctl output is ever printed, filtered or
@@ -283,59 +352,85 @@ jobs:
             esac
           }
           # END fly_error_class
-          umask 077
-          trap 'rm -f fly-list-stderr.txt jq-stderr.txt list-status.txt' EXIT
-          # Structured listing (B-624-1): `--json` gives each secret's bare name
-          # (the table prefixes staged names with "* " and partial ones with
-          # "! "). jq projects name + status word only, so digests never reach
-          # a variable, the log or a file. Error codes are fixed strings.
-          filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
-          listed=$(
-            set +e
-            flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" 2> jq-stderr.txt
-            echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
-          )
-          read -r fly_rc jq_rc < list-status.txt
-          if [ "${fly_rc}" -ne 0 ]; then
-            cls=$(fly_error_class fly-list-stderr.txt)
-            echo "::error::flyctl secrets list --json failed (exit ${fly_rc}, error class ${cls}) for ${APP}, so the staged names could not be confirmed. The stage step already succeeded and nothing was applied to running machines. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}") Staging the same values again is safe."
-            exit 1
-          fi
-          if [ "${jq_rc}" -ne 0 ]; then
-            code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
-            echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so the staged names could not be confirmed. The stage step already succeeded. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in this step, then re-run."
-            exit 1
-          fi
-          missing=()
-          report=()
+          args=()
+          set_names=()
+          unset_names=()
+          while IFS= read -r line; do
+            [ -n "${line}" ] || continue
+            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9]+$'; then
+              echo "::error::The plan's flag list has a line that is not NAME=value, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
+              exit 1
+            fi
+            args+=("${line}")
+            set_names+=("${line%%=*}")
+          done < set-flags.txt
           while IFS= read -r name; do
             [ -n "${name}" ] || continue
-            status=$(printf '%s\n' "${listed}" | awk -F'\t' -v n="${name}" '$1 == n { print $2; exit }')
-            if [ -z "${status}" ]; then
-              missing+=("${name}")
-            else
-              report+=("${name}: ${status}")
+            if ! printf '%s\n' "${name}" | grep -Eq '^[A-Z][A-Z0-9_]*$'; then
+              echo "::error::The plan's secret list has a line that is not an env var name, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
+              exit 1
             fi
-          done < staged-names.txt
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::These names were staged but are not listed on Fly: ${missing[*]}. Fix: re-run this workflow (staging the same values again is safe); if they are still missing, run 'fly secrets list -a ${APP}' and look for a flyctl error in the stage step above."
-            exit 1
+            # Indirect expansion reads the GitHub secret without printing it.
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is planned as github-secret but the GitHub secret ${name} is empty in this step, so nothing was staged. Fix: check that ${name} is listed in this step's env block and set with 'gh secret set ${name}', then re-run."
+              exit 1
+            fi
+            args+=("${name}=${!name}")
+            set_names+=("${name}")
+          done < set-secrets.txt
+          while IFS= read -r name; do
+            [ -n "${name}" ] || continue
+            if ! printf '%s\n' "${name}" | grep -Eq '^[A-Z][A-Z0-9_]*$'; then
+              echo "::error::The plan's unset list has a line that is not an env var name, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
+              exit 1
+            fi
+            unset_names+=("${name}")
+          done < unset.txt
+          : > changed.txt
+          if [ "${#set_names[@]}" -eq 0 ] && [ "${#unset_names[@]}" -eq 0 ]; then
+            echo "Nothing to stage: Fly already matches the manifest. No secret was written."
+            exit 0
           fi
-          echo "All staged names are listed on Fly (Staged = applies at the next deploy or with deploy_staged=true; Partial = a rolling deploy is in progress; Deployed = already live):"
-          printf '%s\n' "${report[@]}"
+          if [ "${#set_names[@]}" -gt 0 ]; then
+            printf 'staging set: %s\n' "${set_names[*]}"
+            set +e
+            flyctl secrets set --stage -a "${APP}" "${args[@]}" > /dev/null 2> fly-set-stderr.txt
+            rc=$?
+            set -e
+            unset args
+            if [ "${rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-set-stderr.txt)
+              echo "::error::flyctl secrets set --stage failed (exit ${rc}, error class ${cls}) for: ${set_names[*]}. Nothing was applied to running machines and no unset was attempted. flyctl's own error text is withheld from this log because it can echo secret values. $(fly_error_hint "${cls}") Staging the same values again is safe."
+              exit 1
+            fi
+            printf '%s\n' "${set_names[@]}" >> changed.txt
+          fi
+          if [ "${#unset_names[@]}" -gt 0 ]; then
+            printf 'staging unset: %s\n' "${unset_names[*]}"
+            set +e
+            flyctl secrets unset --stage -a "${APP}" "${unset_names[@]}" > /dev/null 2> fly-unset-stderr.txt
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-unset-stderr.txt)
+              echo "::error::flyctl secrets unset --stage failed (exit ${rc}, error class ${cls}) for: ${unset_names[*]}. Any set listed above is staged; nothing was applied to running machines. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}") Re-running is safe."
+              exit 1
+            fi
+            printf '%s\n' "${unset_names[@]}" >> changed.txt
+          fi
+          echo "Staged ${#set_names[@]} set(s) and ${#unset_names[@]} unset(s). They apply at the next deploy, or now with deploy_staged=true."
 
-      - name: Apply staged secrets now (only when deploy_staged=true)
-        if: ${{ inputs.deploy_staged }}
+      - name: Verify Fly matches the manifest (apply mode only)
+        if: ${{ inputs.mode == 'apply' }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ inputs.app }}
         run: |
           set +x
           set -euo pipefail
-          if [ ! -s staged-names.txt ]; then
-            echo "Nothing was staged; skipping fly secrets deploy."
-            exit 0
-          fi
+          umask 077
+          cd "${RUNNER_TEMP}/fly-env-sync"
+          trap 'rm -f fly-list-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
           # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
           # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
           # in its errors, so no flyctl output is ever printed, filtered or
@@ -366,47 +461,166 @@ jobs:
             esac
           }
           # END fly_error_class
+          # BEGIN fly_helpers (byte-identical in every step that reads Fly state; B-FLAGS-2)
+          FEM=(node "${GITHUB_WORKSPACE}/scripts/fly-env/fly-env-manifest.js")
+          MANIFEST="${GITHUB_WORKSPACE}/.github/fly-env-desired-state.json"
+          RULES="${GITHUB_WORKSPACE}/src/common/env-validation.ts"
+          # Structured listing (B-624-1, B-633-1): `--json` gives each secret's
+          # bare name; jq projects name + status word only, so digests never
+          # reach a variable, the log or a file. Error codes are fixed strings.
+          fly_list_state() {
+            local filter fly_rc jq_rc code cls
+            filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
+            (
+              set +e
+              flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" > "$1" 2> jq-stderr.txt
+              echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+            )
+            read -r fly_rc jq_rc < list-status.txt
+            if [ "${fly_rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-list-stderr.txt)
+              echo "::error::flyctl secrets list --json failed (exit ${fly_rc}, error class ${cls}) for ${APP}, so $2. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}")"
+              return 1
+            fi
+            if [ "${jq_rc}" -ne 0 ]; then
+              code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
+              echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so $2. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in fly_list_state, then re-run."
+              return 1
+            fi
+          }
+          # In-machine value check. `prepare` builds the command (base64 only);
+          # the machine prints one marked line of match / differs / absent /
+          # present words. stdout goes to a 0600 scratch file that only
+          # parse-compare reads; stderr is only classified; both are deleted.
+          fly_machine_check() {
+            local rc cls out
+            out=machine.json
+            if [ "$1" = after ]; then out=machine-after.json; fi
+            set +e
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-ssh-stderr.txt)
+              printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
+              echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
+            else
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+            fi
+            rm -f ssh-stdout.txt fly-ssh-stderr.txt
+          }
+          # END fly_helpers
+          fly_list_state fly-state-staged.tsv "the staged state could not be verified (the stage step already succeeded; staging again is safe)" || exit 1
+          "${FEM[@]}" verify "${MANIFEST}" "${RULES}" . staged
+
+      - name: Apply staged changes now (apply mode with deploy_staged=true)
+        if: ${{ inputs.mode == 'apply' && inputs.deploy_staged }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ inputs.app }}
+        run: |
+          set +x
+          set -euo pipefail
           umask 077
-          trap 'rm -f fly-deploy-stderr.txt fly-list-stderr.txt jq-stderr.txt list-status.txt' EXIT
-          # Rolling restart that applies the staged secrets. flyctl's output is
-          # withheld like every other flyctl call here (B-624-3); the outcome is
-          # reported from the exit code and the structured listing below.
-          echo "Applying staged secrets to ${APP} (rolling machine restart)."
+          cd "${RUNNER_TEMP}/fly-env-sync"
+          trap 'rm -f fly-deploy-stderr.txt fly-list-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
+          # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
+          # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
+          # in its errors, so no flyctl output is ever printed, filtered or
+          # uploaded: stdout goes to /dev/null (or, for `secrets list --json`,
+          # only through the jq name + status projection) and stderr goes to a
+          # 0600 file in the job directory that is only tested with `grep -q`
+          # against fixed patterns. fly_error_class prints one fixed word chosen
+          # by this script, never a byte of the file; an EXIT trap deletes the
+          # file on every path.
+          fly_error_class() {
+            if [ ! -s "$1" ]; then echo no_output
+            elif grep -qiE 'unauthori[sz]ed|not authori[sz]ed|authenticat|forbidden|access denied|invalid token|token (is )?(invalid|expired|not valid)' "$1"; then echo auth
+            elif grep -qiE 'could not find app|app not found|no such app|app .* not found' "$1"; then echo app_not_found
+            elif grep -qiE 'rate limit|too many requests' "$1"; then echo rate_limited
+            elif grep -qiE 'health ?check|unhealthy|failed to update machine|machine .* failed' "$1"; then echo machine_health
+            elif grep -qiE 'timeout|timed out|connection refused|connection reset|no such host|dial tcp|network is unreachable|tls handshake|unexpected eof|service unavailable|bad gateway' "$1"; then echo network
+            else echo unclassified
+            fi
+          }
+          fly_error_hint() {
+            case "$1" in
+              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+              app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
+              rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
+              machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
+              network) echo "Fix: the Fly API could not be reached; check that FLY_API_TOKEN is a valid token for ${APP}, check https://status.flyio.net, then re-run." ;;
+              *) echo "Fix: check that FLY_API_TOKEN is a valid token for ${APP} ('fly tokens create deploy -a ${APP}') and that the Fly API is reachable (https://status.flyio.net), then re-run; to read flyctl's full error, run 'fly secrets list -a ${APP}' from a trusted terminal." ;;
+            esac
+          }
+          # END fly_error_class
+          # BEGIN fly_helpers (byte-identical in every step that reads Fly state; B-FLAGS-2)
+          FEM=(node "${GITHUB_WORKSPACE}/scripts/fly-env/fly-env-manifest.js")
+          MANIFEST="${GITHUB_WORKSPACE}/.github/fly-env-desired-state.json"
+          RULES="${GITHUB_WORKSPACE}/src/common/env-validation.ts"
+          # Structured listing (B-624-1, B-633-1): `--json` gives each secret's
+          # bare name; jq projects name + status word only, so digests never
+          # reach a variable, the log or a file. Error codes are fixed strings.
+          fly_list_state() {
+            local filter fly_rc jq_rc code cls
+            filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
+            (
+              set +e
+              flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" > "$1" 2> jq-stderr.txt
+              echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+            )
+            read -r fly_rc jq_rc < list-status.txt
+            if [ "${fly_rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-list-stderr.txt)
+              echo "::error::flyctl secrets list --json failed (exit ${fly_rc}, error class ${cls}) for ${APP}, so $2. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}")"
+              return 1
+            fi
+            if [ "${jq_rc}" -ne 0 ]; then
+              code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
+              echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so $2. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in fly_list_state, then re-run."
+              return 1
+            fi
+          }
+          # In-machine value check. `prepare` builds the command (base64 only);
+          # the machine prints one marked line of match / differs / absent /
+          # present words. stdout goes to a 0600 scratch file that only
+          # parse-compare reads; stderr is only classified; both are deleted.
+          fly_machine_check() {
+            local rc cls out
+            out=machine.json
+            if [ "$1" = after ]; then out=machine-after.json; fi
+            set +e
+            flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" > ssh-stdout.txt 2> fly-ssh-stderr.txt
+            rc=$?
+            set -e
+            if [ "${rc}" -ne 0 ]; then
+              cls=$(fly_error_class fly-ssh-stderr.txt)
+              printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
+              echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
+            else
+              "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . "$1"
+            fi
+            rm -f ssh-stdout.txt fly-ssh-stderr.txt
+          }
+          # END fly_helpers
+          if [ ! -s changed.txt ] && [ ! -s pending.txt ]; then
+            echo "Nothing changed and nothing managed is waiting for a deploy, so flyctl secrets deploy was skipped and no machine restarts."
+            exit 0
+          fi
+          echo "Applying staged secrets to ${APP} (one rolling machine restart)."
           set +e
           flyctl secrets deploy -a "${APP}" > /dev/null 2> fly-deploy-stderr.txt
           rc=$?
           set -e
           if [ "${rc}" -ne 0 ]; then
             cls=$(fly_error_class fly-deploy-stderr.txt)
-            echo "::error::flyctl secrets deploy failed (exit ${rc}, error class ${cls}) for ${APP}. The secrets stay staged and the next fly deploy applies them. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}") Then re-run this workflow with deploy_staged=true (staging the same values again is safe) or let the next normal deploy apply them."
+            echo "::error::flyctl secrets deploy failed (exit ${rc}, error class ${cls}) for ${APP}. The changes stay staged and the next fly deploy applies them. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}") Then re-run this workflow in apply mode with deploy_staged=true."
             exit 1
           fi
-          # Confirm what is live now: same structured listing and jq projection
-          # (names + status only) as the post-check step.
-          filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
-          listed=$(
-            set +e
-            flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" 2> jq-stderr.txt
-            echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
-          )
-          read -r fly_rc jq_rc < list-status.txt
-          if [ "${fly_rc}" -ne 0 ] || [ "${jq_rc}" -ne 0 ]; then
-            cls=none
-            if [ "${fly_rc}" -ne 0 ]; then cls=$(fly_error_class fly-list-stderr.txt); fi
-            echo "::warning::flyctl secrets deploy succeeded for ${APP}, but the follow-up listing failed (flyctl exit ${fly_rc}, error class ${cls}; jq exit ${jq_rc}), so per-name status cannot be shown. Fix: run 'fly secrets list -a ${APP}' from a trusted terminal and check that each staged name shows Deployed."
-            echo "Staged secrets applied (flyctl secrets deploy exit 0); per-name status not confirmed."
-            exit 0
-          fi
-          not_live=()
-          report=()
-          while IFS= read -r name; do
-            [ -n "${name}" ] || continue
-            status=$(printf '%s\n' "${listed}" | awk -F'\t' -v n="${name}" '$1 == n { print $2; exit }')
-            report+=("${name}: ${status:-not listed}")
-            if [ "${status}" != "Deployed" ]; then not_live+=("${name}"); fi
-          done < staged-names.txt
-          printf '%s\n' "${report[@]}"
-          if [ "${#not_live[@]}" -gt 0 ]; then
-            echo "::warning::flyctl secrets deploy succeeded for ${APP}, but these names are not reported as Deployed yet: ${not_live[*]}. Fix: run 'fly status -a ${APP}' to check that the rolling restart finished, then 'fly secrets list -a ${APP}'; if they still show Staged, re-run this workflow with deploy_staged=true."
-          fi
-          echo "Staged secrets applied."
+          fly_list_state fly-state-deployed.tsv "the deployed state could not be verified (flyctl secrets deploy already succeeded)" || exit 1
+          fly_machine_check after
+          "${FEM[@]}" verify "${MANIFEST}" "${RULES}" . deployed
+
+      - name: Remove scratch files
+        if: ${{ always() }}
+        run: rm -rf "${RUNNER_TEMP}/fly-env-sync"
