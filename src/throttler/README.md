@@ -33,7 +33,8 @@ not reveal which bucket fired or what the internal limit is.
 | `POST /auth/google`                       | POST   | `auth-login-per-hour`   | 30    | 1 hr   | IP (unauthenticated)   |
 | `POST /auth/forgot-password`              | POST   | `auth-password-reset`   | 3     | 1 hr   | IP (unauthenticated)   |
 | `POST /auth/register`                     | POST   | `auth-signup`           | 5     | 1 hr   | IP (unauthenticated)   |
-| `POST /auth/signup-with-code`             | POST   | `auth-signup`           | 5     | 1 hr   | IP (unauthenticated)   |
+| `POST /auth/signup-with-code` (no well-formed code) | POST | `auth-signup`   | 5     | 1 hr   | IP (unauthenticated)   |
+| `POST /auth/signup-with-code` (well-formed `invite_code`) | POST | `auth-signup-with-code` | 100 (`AUTH_SIGNUP_WITH_CODE_PER_HOUR`) | 1 hr | IP (unauthenticated) |
 | `POST /coach/clients/:id/messages`        | POST   | `coach-messages`        | 30    | 1 min  | user-id (authenticated)|
 | `POST /coach/clients/:id/messages/voice-upload` | POST | `coach-messages`   | 20    | 1 min  | user-id (authenticated)|
 | `PUT /notifications/preferences`          | PUT    | `notifications-prefs`   | 30    | 1 min  | user-id (authenticated)|
@@ -89,6 +90,7 @@ restart. Every var has a safe default that is production-appropriate.
 | `AUTH_LOGIN_PER_MIN`          | `5`     | 1   | 1 000  | Per-IP login attempts per minute (all login endpoints share this). |
 | `AUTH_LOGIN_PER_HOUR`         | `30`    | 1   | 5 000  | Per-IP login attempts per hour (sustained-attack brake). |
 | `AUTH_PWD_RESET_PER_HOUR`     | `3`     | 1   | 1 000  | Per-IP password-reset emails per hour.                      |
+| `AUTH_SIGNUP_WITH_CODE_PER_HOUR` | `100` | 5 | 500    | Per-IP `POST /auth/signup-with-code` requests per hour that carry a well-formed invite code. Sized for a 40+ patient clinic event on one Wi-Fi IP (retries included). Codeless signups keep the 5/hour `auth-signup` baseline; `previewCode` still gates account creation. |
 | `COACH_MESSAGES_PER_MIN`      | `30`    | 1   | 1 000  | Per-user coach message sends per minute.                    |
 | `NOTIF_PREFS_PER_MIN`         | `30`    | 1   | 1 000  | Per-user notification preference writes per minute.         |
 | `BLOODWORK_WRITE_PER_MIN`     | `30`    | 1   | 1 000  | Per-user bloodwork POST writes per minute.                  |
