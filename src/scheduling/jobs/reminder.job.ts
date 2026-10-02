@@ -10,6 +10,7 @@ import {
 import type { BookingDeliveryOutcome } from '../../notifications/emitters/booking.emitter';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { PrismaService } from '../../prisma.service';
+import { safeDiagnostic } from '../../observability/orm-diagnostics';
 import { hasUsableLink } from '../scheduling.types';
 
 // Per-recipient context the sweep hands to the emitter (S-SCHED-2): which
@@ -43,6 +44,26 @@ export interface ReminderSweepResult {
   recovered: number;
   /** Unfinished delivery rows closed as gave_up because they can never be sent. */
   retired: number;
+  /**
+   * S-SCHED-5 (B-634-2): sessions whose first claim never got written (a
+   * database failure at the band's last tick) picked up just below the band.
+   */
+  caught_up: number;
+  /** Retained rows for a session moved later, parked for the band pass. */
+  parked: number;
+  /** 1 when the recovery read itself failed this tick (B-634-6), else 0. */
+  recovery_failed: number;
+}
+
+/**
+ * B-634-6: the only text a reminder log line carries for an error. ORM
+ * errors (which can embed query arguments) collapse to their safe code;
+ * anything else keeps its message.
+ */
+function describeError(err: unknown): string {
+  const safe = safeDiagnostic(err);
+  if (safe instanceof Error) return `${safe.name}: ${safe.message}`.slice(0, 200);
+  return 'unknown error';
 }
 
 // S-SCHED-3 (B-634-2) delivery-claim tuning. The lease is shorter than the
@@ -58,6 +79,13 @@ export const REMINDER_RECOVERY_BATCH = 200;
 // The 24h reminder says "tomorrow at <time>". Once the 1h reminder band has
 // been reached, the 24h reminder is superseded and is retired, not sent late.
 export const REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES = 65;
+// S-SCHED-5 (B-634-2): how far below its band a session whose first claim
+// was never written is still picked up (6 ticks of the 1h cron, 2 of the
+// 24h cron). Only sessions confirmed at their current time before the band
+// reached them qualify, so a late booking never gets a back-dated reminder.
+export const REMINDER_CATCHUP_MINUTES = 30;
+// Sessions read per sweep for the catch-up pass.
+export const REMINDER_CATCHUP_BATCH = 200;
 const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_provider'];
 
 interface ReminderClaim {
@@ -190,19 +218,21 @@ export class SessionReminderJob {
       this.logger.debug('1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable');
       return;
     }
-    await this.dispatchWindow({
-      lowerOffsetMinutes: 55,
-      upperOffsetMinutes: 65,
-      kind: NotificationKind.BOOKING_REMINDER_1H,
-      emit: (recipient, otherName, session, ctx) =>
-        this.bookingEmitter.emitReminder1h({
-          recipientUserId: recipient,
-          otherPartyDisplayName: otherName,
-          sessionId: session.id,
-          scheduledAt: session.start_at,
-          ...reminderContext(ctx),
-        }),
-    });
+    await this.safeSweep('1h', () =>
+      this.dispatchWindow({
+        lowerOffsetMinutes: 55,
+        upperOffsetMinutes: 65,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        emit: (recipient, otherName, session, ctx) =>
+          this.bookingEmitter.emitReminder1h({
+            recipientUserId: recipient,
+            otherPartyDisplayName: otherName,
+            sessionId: session.id,
+            scheduledAt: session.start_at,
+            ...reminderContext(ctx),
+          }),
+      }),
+    );
   }
 
   // 24h reminder cron — runs every 15 minutes.
@@ -216,20 +246,32 @@ export class SessionReminderJob {
       this.logger.debug('24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable');
       return;
     }
-    await this.dispatchWindow({
-      lowerOffsetMinutes: 60 * 24 - 15,
-      upperOffsetMinutes: 60 * 24 + 15,
-      recoverMinLeadMinutes: REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES,
-      kind: NotificationKind.BOOKING_REMINDER_24H,
-      emit: (recipient, otherName, session, ctx) =>
-        this.bookingEmitter.emitReminder24h({
-          recipientUserId: recipient,
-          otherPartyDisplayName: otherName,
-          sessionId: session.id,
-          scheduledAt: session.start_at,
-          ...reminderContext(ctx),
-        }),
-    });
+    await this.safeSweep('24h', () =>
+      this.dispatchWindow({
+        lowerOffsetMinutes: 60 * 24 - 15,
+        upperOffsetMinutes: 60 * 24 + 15,
+        recoverMinLeadMinutes: REMINDER_24H_RECOVERY_MIN_LEAD_MINUTES,
+        kind: NotificationKind.BOOKING_REMINDER_24H,
+        emit: (recipient, otherName, session, ctx) =>
+          this.bookingEmitter.emitReminder24h({
+            recipientUserId: recipient,
+            otherPartyDisplayName: otherName,
+            sessionId: session.id,
+            scheduledAt: session.start_at,
+            ...reminderContext(ctx),
+          }),
+      }),
+    );
+  }
+
+  // B-634-6: a sweep that fails outright is logged with a safe diagnostic
+  // (never the raw ORM text) instead of reaching the scheduler's own logger.
+  private async safeSweep(label: string, run: () => Promise<ReminderSweepResult>): Promise<void> {
+    try {
+      await run();
+    } catch (err) {
+      this.logger.error(`reminder sweep ${label} failed: err=${describeError(err)}`);
+    }
   }
 
   // Shared sweep helper. Public so tests can drive it deterministically
@@ -272,6 +314,9 @@ export class SessionReminderJob {
       failed: 0,
       recovered: 0,
       retired: 0,
+      caught_up: 0,
+      parked: 0,
+      recovery_failed: 0,
     };
 
     // S-SCHED-4 (B-634-2): unfinished delivery work is selected on its own,
@@ -287,12 +332,32 @@ export class SessionReminderJob {
       dueIds: new Set(due.map((d) => d.id)),
     });
     result.retired += recovery.retired;
+    result.parked += recovery.parked;
+    result.recovery_failed += recovery.failed ? 1 : 0;
     result.recovered = recovery.sessions.length;
     result.scanned += recovery.sessions.length;
+
+    // S-SCHED-5 (B-634-2): a first claim that was never written (the insert
+    // failed at the band's last tick) leaves no row for recovery to read.
+    // Sessions just below the band with a participant who has no row at all
+    // are picked up here.
+    const recoveredIds = new Set(recovery.sessions.map((r) => r.session.id));
+    const missed = await this.collectMissedFirstClaims({
+      kind: args.kind,
+      now,
+      lower,
+      lowerOffsetMinutes: args.lowerOffsetMinutes,
+      minLeadMs: (args.recoverMinLeadMinutes ?? 0) * 60 * 1000,
+      skipIds: recoveredIds,
+    });
+    result.caught_up = missed.sessions.length;
+    result.scanned += missed.sessions.length;
+    result.recovery_failed += missed.failed ? 1 : 0;
 
     const work: Array<{ session: CoachingSession; onlyUsers: Set<string> | null }> = [
       ...due.map((session) => ({ session, onlyUsers: null })),
       ...recovery.sessions,
+      ...missed.sessions,
     ];
     for (const { session, onlyUsers } of work) {
       const participants: Array<{
@@ -312,70 +377,109 @@ export class SessionReminderJob {
         otherUserId: session.client_id,
         role: 'coach',
       });
-      const sessionTypeName = await this.resolveTypeName(session.session_type_id);
+      // The type name only shapes the wording; a failed read says "session".
+      const sessionTypeName = await this.resolveTypeName(session.session_type_id).catch(
+        (err: unknown) => {
+          this.logger.warn(
+            `reminder type name read failed: session=${session.id} err=${describeError(err)}`,
+          );
+          return null;
+        },
+      );
 
       for (const p of participants) {
         // A recovered session re-sends only to recipients with unfinished
         // work; nobody else is newly claimed outside the band.
         if (onlyUsers && !onlyUsers.has(p.userId)) continue;
-        const claim = await this.claimDelivery(session, p.userId, args.kind);
-        if (claim === 'duplicate') {
-          result.skipped += 1;
-          continue;
-        }
-        if (claim === 'error') {
-          result.failed += 1;
-          continue;
-        }
-        // Fence: the session may have been cancelled or moved after the
-        // sweep read it. Never remind a time that no longer exists; a moved
-        // session is reminded for its new time by a later sweep.
-        const current = await this.prisma.coachingSession.findUnique({
-          where: { id: session.id },
-        });
-        if (
-          !current ||
-          !REMINDABLE_STATUSES.includes(current.status) ||
-          current.start_at.getTime() !== session.start_at.getTime() ||
-          current.start_at.getTime() <= Date.now()
-        ) {
-          // A claim this sweep inserted is simply released. A taken-over row
-          // keeps its per-channel receipts and is closed instead.
-          if (claim.fresh) await this.releaseClaim(claim);
-          else await this.retireClaim(claim, current);
-          result.skipped += 1;
-          continue;
-        }
-        const otherName = await this.resolveDisplayName(p.otherUserId);
-        let outcome: BookingDeliveryOutcome | void | undefined;
         try {
-          outcome = await args.emit(p.userId, otherName, current, {
-            recipientRole: p.role,
-            sessionTypeName,
-            hasMeetingLink: hasUsableLink(current.video_url),
-            skipInApp: claim.inappDone,
-            skipPush: claim.pushDone,
-            notificationId: claim.notificationId,
-          });
+          await this.remindOne(args, session, p, sessionTypeName, result);
         } catch (err) {
-          this.logger.warn(
-            `reminder dispatch threw: session=${session.id} user=${p.userId} kind=${args.kind} err=${(err as Error).message}`,
+          result.failed += 1;
+          this.logger.error(
+            `reminder delivery failed: session=${session.id} user=${p.userId} kind=${args.kind} err=${describeError(err)}`,
           );
-          outcome = { inapp: 'failed', push: 'failed' };
         }
-        const state = await this.settleClaim(claim, outcome);
-        if (state === 'sent') result.dispatched += 1;
-        else if (state === 'retry') result.retrying += 1;
-        else result.failed += 1;
       }
     }
 
-    if (result.scanned > 0 || result.retired > 0) {
+    if (
+      result.scanned > 0 ||
+      result.retired > 0 ||
+      result.parked > 0 ||
+      result.recovery_failed > 0
+    ) {
       this.logger.log(
-        `reminder sweep kind=${args.kind} scanned=${result.scanned} recovered=${result.recovered} dispatched=${result.dispatched} skipped=${result.skipped} retrying=${result.retrying} failed=${result.failed} retired=${result.retired}`,
+        `reminder sweep kind=${args.kind} scanned=${result.scanned} recovered=${result.recovered} caught_up=${result.caught_up} dispatched=${result.dispatched} skipped=${result.skipped} retrying=${result.retrying} failed=${result.failed} retired=${result.retired} parked=${result.parked} recovery_failed=${result.recovery_failed}`,
       );
     }
     return result;
+  }
+
+  // One recipient of one session: claim, fence, send, settle (S-SCHED-3).
+  private async remindOne(
+    args: {
+      kind: string;
+      emit: (
+        recipientUserId: string,
+        otherPartyDisplayName: string,
+        session: CoachingSession,
+        ctx: ReminderRecipientContext,
+      ) => Promise<BookingDeliveryOutcome | void | undefined>;
+    },
+    session: CoachingSession,
+    p: { userId: string; otherUserId: string | null; role: 'client' | 'coach' },
+    sessionTypeName: string | null,
+    result: ReminderSweepResult,
+  ): Promise<void> {
+    const claim = await this.claimDelivery(session, p.userId, args.kind);
+    if (claim === 'duplicate') {
+      result.skipped += 1;
+      return;
+    }
+    if (claim === 'error') {
+      result.failed += 1;
+      return;
+    }
+    // Fence: the session may have been cancelled or moved after the
+    // sweep read it. Never remind a time that no longer exists; a moved
+    // session is reminded for its new time by a later sweep.
+    const current = await this.prisma.coachingSession.findUnique({
+      where: { id: session.id },
+    });
+    if (
+      !current ||
+      !REMINDABLE_STATUSES.includes(current.status) ||
+      current.start_at.getTime() !== session.start_at.getTime() ||
+      current.start_at.getTime() <= Date.now()
+    ) {
+      // A claim this sweep inserted is simply released. A taken-over row
+      // keeps its per-channel receipts and is closed instead.
+      if (claim.fresh) await this.releaseClaim(claim);
+      else await this.retireClaim(claim, current);
+      result.skipped += 1;
+      return;
+    }
+    const otherName = await this.resolveDisplayName(p.otherUserId);
+    let outcome: BookingDeliveryOutcome | void | undefined;
+    try {
+      outcome = await args.emit(p.userId, otherName, current, {
+        recipientRole: p.role,
+        sessionTypeName,
+        hasMeetingLink: hasUsableLink(current.video_url),
+        skipInApp: claim.inappDone,
+        skipPush: claim.pushDone,
+        notificationId: claim.notificationId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `reminder dispatch threw: session=${session.id} user=${p.userId} kind=${args.kind} err=${describeError(err)}`,
+      );
+      outcome = { inapp: 'failed', push: 'failed' };
+    }
+    const state = await this.settleClaim(claim, outcome);
+    if (state === 'sent') result.dispatched += 1;
+    else if (state === 'retry') result.retrying += 1;
+    else result.failed += 1;
   }
 
   // S-SCHED-4 (B-634-2): read this kind's unfinished delivery rows ('retry',
@@ -390,9 +494,14 @@ export class SessionReminderJob {
   //    exhausted). It is closed as 'gave_up' with the reason in last_error
   //    by a compare-and-set, so a concurrent owner keeps it. Per-channel
   //    receipts are left untouched.
-  //  - leave: a live lease (another worker owns it) or a claim whose session
-  //    was moved to a time that is still ahead of its band (the band pass
-  //    re-arms it there).
+  //  - park (S-SCHED-5): a claim whose session was moved to a time still
+  //    ahead of its band. It is set to 'parked' (receipts kept) so it leaves
+  //    the unfinished set and can never pin the recovery page; the band pass
+  //    re-arms it at the new time (claimDelivery resets a stale revision
+  //    whatever its status).
+  // Every row on the page therefore changes state this tick (claimed,
+  // retired or parked) unless another worker owns it, so a backlog larger
+  // than one page drains on the following ticks.
   private async collectRecoverableWork(args: {
     kind: string;
     now: Date;
@@ -403,8 +512,10 @@ export class SessionReminderJob {
   }): Promise<{
     sessions: Array<{ session: CoachingSession; onlyUsers: Set<string> }>;
     retired: number;
+    parked: number;
+    failed: boolean;
   }> {
-    const empty = { sessions: [], retired: 0 };
+    const empty = { sessions: [], retired: 0, parked: 0, failed: false };
     let rows: DeliveryLogRow[];
     try {
       rows = await this.prisma.notificationDeliveryLog.findMany({
@@ -422,21 +533,32 @@ export class SessionReminderJob {
         take: REMINDER_RECOVERY_BATCH,
       });
     } catch (err) {
+      // B-634-6: reported as a failed recovery (not an empty one); the
+      // durable rows stay as they are for the next tick.
       this.logger.error(
-        `reminder recovery read failed: kind=${args.kind} err=${(err as Error).message}`,
+        `reminder recovery read failed: kind=${args.kind} err=${describeError(err)}`,
       );
-      return empty;
+      return { ...empty, failed: true };
     }
     if (rows.length === 0) return empty;
 
     const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(isString))];
-    const sessions = await this.prisma.coachingSession.findMany({
-      where: { id: { in: sessionIds } },
-    });
+    let sessions: CoachingSession[];
+    try {
+      sessions = await this.prisma.coachingSession.findMany({
+        where: { id: { in: sessionIds } },
+      });
+    } catch (err) {
+      this.logger.error(
+        `reminder recovery session read failed: kind=${args.kind} err=${describeError(err)}`,
+      );
+      return { ...empty, failed: true };
+    }
     const byId = new Map(sessions.map((s) => [s.id, s]));
     const cutoff = args.now.getTime() + args.minLeadMs;
     const recover = new Map<string, { session: CoachingSession; onlyUsers: Set<string> }>();
     let retired = 0;
+    let parked = 0;
 
     for (const row of rows) {
       const session = row.session_id ? byId.get(row.session_id) : undefined;
@@ -453,15 +575,16 @@ export class SessionReminderJob {
       }
       if (!session || !row.user_id) continue;
       const forStart = row.session_start_at ?? null;
-      if (forStart !== null && forStart.getTime() !== session.start_at.getTime()) {
-        // Moved to a later time: the band pass re-arms this row when the new
-        // time enters the band (claimDelivery resets a stale revision).
+      if (args.dueIds.has(session.id)) continue;
+      if (
+        (forStart !== null && forStart.getTime() !== session.start_at.getTime()) ||
+        session.start_at.getTime() > args.upper.getTime()
+      ) {
+        // Moved to a later time (or otherwise not this band's work yet):
+        // parked for the band pass, which re-arms it at the new time.
+        if (await this.parkRow(row)) parked += 1;
         continue;
       }
-      if (args.dueIds.has(session.id)) continue;
-      // Claimed inside this band earlier, so the start is at most the band's
-      // upper edge; anything later is not this sweep's work.
-      if (session.start_at.getTime() > args.upper.getTime()) continue;
       const entry = recover.get(session.id) ?? { session, onlyUsers: new Set<string>() };
       entry.onlyUsers.add(row.user_id);
       recover.set(session.id, entry);
@@ -471,7 +594,94 @@ export class SessionReminderJob {
         (a, b) => a.session.start_at.getTime() - b.session.start_at.getTime(),
       ),
       retired,
+      parked,
+      failed: false,
     };
+  }
+
+  // S-SCHED-5 (B-634-2): sessions in [lower - REMINDER_CATCHUP_MINUTES,
+  // lower) (and past the recovery cutoff) that are confirmed, were confirmed
+  // at least lowerOffset before their start (so a band tick saw them), and
+  // have a participant with NO delivery row of this kind. Those are first
+  // claims that were never written; each such participant is claimed now.
+  private async collectMissedFirstClaims(args: {
+    kind: string;
+    now: Date;
+    lower: Date;
+    lowerOffsetMinutes: number;
+    minLeadMs: number;
+    skipIds: Set<string>;
+  }): Promise<{
+    sessions: Array<{ session: CoachingSession; onlyUsers: Set<string> }>;
+    failed: boolean;
+  }> {
+    const from = new Date(
+      Math.max(
+        args.lower.getTime() - REMINDER_CATCHUP_MINUTES * 60 * 1000,
+        args.now.getTime() + args.minLeadMs + 1,
+      ),
+    );
+    if (from.getTime() >= args.lower.getTime()) return { sessions: [], failed: false };
+    let candidates: CoachingSession[];
+    let logs: Array<{ session_id: string; user_id: string }>;
+    try {
+      candidates = await this.prisma.coachingSession.findMany({
+        where: {
+          status: { in: [...REMINDABLE_STATUSES] },
+          start_at: { gte: from, lt: args.lower },
+        },
+        orderBy: { start_at: 'asc' },
+        take: REMINDER_CATCHUP_BATCH,
+      });
+      const ids = candidates.map((c) => c.id).filter((id) => !args.skipIds.has(id));
+      if (ids.length === 0) return { sessions: [], failed: false };
+      logs = await this.prisma.notificationDeliveryLog.findMany({
+        where: { kind: args.kind, session_id: { in: ids } },
+        select: { session_id: true, user_id: true },
+      });
+    } catch (err) {
+      this.logger.error(
+        `reminder catch-up read failed: kind=${args.kind} err=${describeError(err)}`,
+      );
+      return { sessions: [], failed: true };
+    }
+    const have = new Set(logs.map((l) => `${l.session_id}|${l.user_id}`));
+    const leadMs = args.lowerOffsetMinutes * 60 * 1000;
+    const out: Array<{ session: CoachingSession; onlyUsers: Set<string> }> = [];
+    for (const session of candidates) {
+      if (args.skipIds.has(session.id)) continue;
+      const confirmedAt = session.approved_at ?? session.created_at ?? null;
+      if (confirmedAt && confirmedAt.getTime() > session.start_at.getTime() - leadMs) continue;
+      const onlyUsers = new Set<string>();
+      for (const userId of [session.client_id, session.coach_id]) {
+        if (userId && !have.has(`${session.id}|${userId}`)) onlyUsers.add(userId);
+      }
+      if (onlyUsers.size > 0) out.push({ session, onlyUsers });
+    }
+    if (out.length > 0) {
+      this.logger.warn(
+        `reminder catch-up: kind=${args.kind} sessions=${out.length} (first claim was never written)`,
+      );
+    }
+    return { sessions: out, failed: false };
+  }
+
+  private async parkRow(row: DeliveryLogRow): Promise<boolean> {
+    try {
+      const res = await this.prisma.notificationDeliveryLog.updateMany({
+        where: {
+          id: row.id,
+          status: row.status,
+          attempts: row.attempts,
+          claim_token: row.claim_token ?? null,
+        },
+        data: { status: 'parked', lease_until: null, last_error: 'parked:moved_later' },
+      });
+      return res.count === 1;
+    } catch (err) {
+      this.logger.warn(`reminder claim ${row.id} park failed: ${describeError(err)}`);
+      return false;
+    }
   }
 
   private retireReason(
@@ -512,7 +722,7 @@ export class SessionReminderJob {
       });
       if (res.count !== 1) return false;
     } catch (err) {
-      this.logger.warn(`reminder claim ${row.id} retire failed: ${(err as Error).message}`);
+      this.logger.warn(`reminder claim ${row.id} retire failed: ${describeError(err)}`);
       return false;
     }
     const log = `reminder retired: claim=${row.id} session=${row.session_id ?? 'unknown'} reason=${reason} attempts=${row.attempts}`;
@@ -565,7 +775,7 @@ export class SessionReminderJob {
     } catch (err) {
       if (!isUniqueViolation(err)) {
         this.logger.error(
-          `reminder claim failed: session=${session.id} user=${userId} kind=${kind} err=${(err as Error).message}`,
+          `reminder claim failed: session=${session.id} user=${userId} kind=${kind} err=${describeError(err)}`,
         );
         return 'error';
       }
@@ -578,7 +788,7 @@ export class SessionReminderJob {
       });
     } catch (err) {
       this.logger.error(
-        `reminder claim lookup failed: session=${session.id} user=${userId} kind=${kind} err=${(err as Error).message}`,
+        `reminder claim lookup failed: session=${session.id} user=${userId} kind=${kind} err=${describeError(err)}`,
       );
       return 'error';
     }
@@ -593,29 +803,37 @@ export class SessionReminderJob {
       status === 'sending' && (lease === null || lease.getTime() <= now.getTime());
     const retryable =
       !staleRevision &&
-      (status === 'retry' || leaseExpired) &&
+      (status === 'retry' || status === 'parked' || leaseExpired) &&
       priorAttempts < REMINDER_MAX_ATTEMPTS;
     if (!staleRevision && !retryable) return 'duplicate';
 
     const attempts = staleRevision ? 1 : priorAttempts + 1;
-    const took = await this.prisma.notificationDeliveryLog.updateMany({
-      where: {
-        id: existing.id,
-        status,
-        attempts: priorAttempts,
-        claim_token: existing.claim_token ?? null,
-      },
-      data: {
-        status: 'sending',
-        attempts,
-        lease_until: leaseUntil,
-        claim_token: token,
-        session_start_at: session.start_at,
-        ...(staleRevision
-          ? { inapp_done_at: null, push_done_at: null, notification_id: null, last_error: null }
-          : {}),
-      },
-    });
+    let took: { count: number };
+    try {
+      took = await this.prisma.notificationDeliveryLog.updateMany({
+        where: {
+          id: existing.id,
+          status,
+          attempts: priorAttempts,
+          claim_token: existing.claim_token ?? null,
+        },
+        data: {
+          status: 'sending',
+          attempts,
+          lease_until: leaseUntil,
+          claim_token: token,
+          session_start_at: session.start_at,
+          ...(staleRevision
+            ? { inapp_done_at: null, push_done_at: null, notification_id: null, last_error: null }
+            : {}),
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `reminder claim takeover failed: session=${session.id} user=${userId} kind=${kind} err=${describeError(err)}`,
+      );
+      return 'error';
+    }
     if (took.count !== 1) return 'duplicate';
     return {
       id: existing.id,
@@ -667,7 +885,7 @@ export class SessionReminderJob {
     } catch (err) {
       // The lease expires and the next sweep retries the channels that are
       // not recorded as done; nothing is marked delivered that was not.
-      this.logger.error(`reminder claim ${claim.id} settle failed: ${(err as Error).message}`);
+      this.logger.error(`reminder claim ${claim.id} settle failed: ${describeError(err)}`);
     }
     if (state === 'gave_up') {
       this.logger.error(
@@ -693,7 +911,7 @@ export class SessionReminderJob {
         data: { status: 'gave_up', lease_until: null, last_error: `retired:${reason}` },
       });
     } catch (err) {
-      this.logger.warn(`reminder claim ${claim.id} retire failed: ${(err as Error).message}`);
+      this.logger.warn(`reminder claim ${claim.id} retire failed: ${describeError(err)}`);
     }
   }
 
@@ -703,7 +921,7 @@ export class SessionReminderJob {
         where: { id: claim.id, claim_token: claim.token },
       });
     } catch (err) {
-      this.logger.warn(`reminder claim ${claim.id} release failed: ${(err as Error).message}`);
+      this.logger.warn(`reminder claim ${claim.id} release failed: ${describeError(err)}`);
     }
   }
 

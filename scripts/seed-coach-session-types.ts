@@ -49,7 +49,18 @@ export interface ExistingType {
 }
 export type SeedAction =
   | { kind: 'create'; spec: SeedSpec }
-  | { kind: 'keep'; id: string; spec: SeedSpec; drift: boolean; archived: boolean };
+  | {
+      kind: 'keep';
+      id: string;
+      spec: SeedSpec;
+      drift: boolean;
+      archived: boolean;
+      /**
+       * C-634-5: the kept welcome type has no welcome marker and the coach
+       * has no other active welcome type, so --apply marks it.
+       */
+      welcomeMissing: boolean;
+    };
 
 export function planSeed(existing: ExistingType[]): SeedAction[] {
   return DAY1_SESSION_TYPES.map((spec) => {
@@ -61,11 +72,19 @@ export function planSeed(existing: ExistingType[]): SeedAction[] {
     }
     const match = matches[0];
     if (!match) return { kind: 'create', spec };
+    const otherActiveWelcome = existing.some(
+      (row) => row.id !== match.id && row.is_welcome === true && row.archived_at === null,
+    );
     return {
       kind: 'keep',
       id: match.id,
       spec,
       archived: match.archived_at !== null,
+      welcomeMissing:
+        spec.is_welcome &&
+        match.archived_at === null &&
+        match.is_welcome !== true &&
+        !otherActiveWelcome,
       drift:
         match.description !== spec.description ||
         match.duration_minutes !== spec.duration_minutes ||
@@ -115,6 +134,15 @@ export async function seedCoachTypes(
           (row) => row.is_welcome === true && row.archived_at === null,
         );
         for (const action of plan) {
+          if (action.kind === 'keep' && action.welcomeMissing && !welcomeTaken) {
+            // C-634-5: a type seeded before the welcome marker existed.
+            // Only when the coach has no active welcome type of their own.
+            welcomeTaken = true;
+            await tx.sessionType.update({
+              where: { id: action.id },
+              data: { is_welcome: true },
+            });
+          }
           if (action.kind === 'create') {
             const isWelcome = action.spec.is_welcome && !welcomeTaken;
             if (isWelcome) welcomeTaken = true;
@@ -148,9 +176,13 @@ async function main(): Promise<void> {
         action.kind === 'keep'
           ? action.archived
             ? ' (archived by coach; not restored)'
-            : action.drift
-              ? ' (coach edits preserved)'
-              : ''
+            : `${action.drift ? ' (coach edits preserved)' : ''}${
+                action.welcomeMissing
+                  ? apply
+                    ? ' (marked as the welcome call type)'
+                    : ' (welcome call marker missing; --apply marks it)'
+                  : ''
+              }`
           : '';
       process.stdout.write(`${action.kind}: ${action.spec.name}${detail}\n`);
     }

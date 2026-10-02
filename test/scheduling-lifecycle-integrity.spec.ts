@@ -19,7 +19,8 @@
  * The database-level floor itself is proven against real Postgres in
  * test/scheduling-booking-concurrency.live.spec.ts.
  */
-import { HttpException } from '@nestjs/common';
+import { HttpException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
 import { AuditService } from '../src/audit/audit.service';
 import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
@@ -1868,7 +1869,8 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         session_start_at: new Date(NOW.getTime() + 24 * 60 * MIN),
       }),
       // Claimed for an older start; the new start is still ahead of its
-      // band, so the band pass re-arms it later: left alone.
+      // band, so the band pass re-arms it later. S-SCHED-5: it is parked
+      // (receipts kept) so it can never pin the recovery page.
       logRow({
         id: 'x-later',
         session_id: later.id,
@@ -1905,7 +1907,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
       status: 'gave_up',
       last_error: 'retired:superseded',
     });
-    expect(byId('x-later')).toMatchObject({ status: 'retry', last_error: null });
+    expect(byId('x-later')).toMatchObject({ status: 'parked', last_error: 'parked:moved_later' });
   });
 
   it('a 24h reminder still unfinished when the 1h band is reached is retired, never sent as "tomorrow"', async () => {
@@ -1956,5 +1958,225 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
       notification_id: 'n-first',
       last_error: 'retired:session_cancelled',
     });
+  });
+});
+
+/**
+ * S-SCHED-5 (Sol re-audit @ d1661ab8): the three executed probes in
+ * ops/aud-sol3-112/backend634-independent-boundaries.spec.ts as regression
+ * tests, plus their 24h and safety counterparts. Each fails on d1661ab8.
+ */
+describe('S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe diagnostics', () => {
+  const MIN = 60_000;
+  function confirmed(
+    db: SchedulingFakeDb,
+    id: string,
+    startMinutes: number,
+    coachId = 'coach-1',
+    over: Record<string, unknown> = {},
+  ): Date {
+    const start = new Date(NOW.getTime() + startMinutes * MIN);
+    db.addSession({
+      id,
+      coach_id: coachId,
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * MIN),
+      video_url: 'https://meet.example.com/r5',
+      ...over,
+    });
+    return start;
+  }
+  function retryRow(
+    id: string,
+    sessionId: string,
+    forStart: Date,
+    createdAt = NOW,
+    kind: string = NotificationKind.BOOKING_REMINDER_1H,
+  ) {
+    return {
+      id,
+      session_id: sessionId,
+      user_id: 'client-1',
+      kind,
+      status: 'retry',
+      attempts: 1,
+      lease_until: null,
+      claim_token: `token-${id}`,
+      session_start_at: forStart,
+      inapp_done_at: null,
+      push_done_at: null,
+      notification_id: null,
+      last_error: null,
+      created_at: createdAt,
+    };
+  }
+  function failInserts(db: SchedulingFakeDb, message = 'synthetic pool timeout before insert') {
+    const create = db.notificationDeliveryLog.create;
+    db.notificationDeliveryLog.create = async () => {
+      throw new Prisma.PrismaClientKnownRequestError(message, {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    };
+    return () => {
+      db.notificationDeliveryLog.create = create;
+    };
+  }
+  afterEach(() => jest.setSystemTime(NOW));
+
+  it('1h: both first-claim inserts fail at the final due tick (55m); the next real tick (50m) delivers both (Sol probe)', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'claim-failed-edge', 55);
+    const restore = failInserts(db);
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(db.deliveryLogs).toHaveLength(0);
+    restore();
+    jest.setSystemTime(new Date(NOW.getTime() + 5 * MIN));
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(notifications.rows).toHaveLength(2);
+    expect(notifications.pushes).toHaveLength(2);
+    expect(db.deliveryLogs.map((l) => l.status)).toEqual(['sent', 'sent']);
+    // And never twice: the following tick finds both rows.
+    jest.setSystemTime(new Date(NOW.getTime() + 10 * MIN));
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(notifications.rows).toHaveLength(2);
+  });
+
+  it('24h: first-claim inserts fail at the final due tick; the next 15m tick delivers the "tomorrow" reminder', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'claim-failed-24h', 24 * 60 - 14);
+    const restore = failInserts(db);
+    await withReminders(() => reminder.runTwentyFourHourReminderSweep());
+    expect(db.deliveryLogs).toHaveLength(0);
+    restore();
+    jest.setSystemTime(new Date(NOW.getTime() + 15 * MIN));
+    await withReminders(() => reminder.runTwentyFourHourReminderSweep());
+    const sent = notifications.rows.filter((r) => r.kind === NotificationKind.BOOKING_REMINDER_24H);
+    expect(sent).toHaveLength(2);
+    expect(notifications.pushes).toHaveLength(2);
+  });
+
+  it('a session booked after its band (confirmed 40m before start) is not sent a back-dated reminder', async () => {
+    const { db, notifications, reminder } = harness();
+    const start = new Date(NOW.getTime() + 40 * MIN);
+    confirmed(db, 'late-booking', 40, 'coach-1', { approved_at: NOW, created_at: NOW });
+    expect(start.getTime() - NOW.getTime()).toBe(40 * MIN);
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(notifications.rows).toHaveLength(0);
+    expect(db.deliveryLogs).toHaveLength(0);
+  });
+
+  it('200 retained moved-later rows do not pin the recovery page: the eligible retry is sent within the next ticks (Sol probe)', async () => {
+    const { db, notifications, reminder } = harness();
+    for (let i = 0; i < 200; i++) {
+      const id = `future-${i}`;
+      confirmed(db, id, 300 + i * 20, `coach-future-${i}`);
+      db.deliveryLogs.push(
+        retryRow(
+          `old-${i}`,
+          id,
+          new Date(NOW.getTime() - (i + 1) * 24 * 60 * MIN),
+          new Date(NOW.getTime() - 60_000),
+        ),
+      );
+    }
+    const eligible = confirmed(db, 'eligible-after-first-page', 50);
+    db.deliveryLogs.push(retryRow('eligible', 'eligible-after-first-page', eligible));
+    for (let tick = 0; tick < 3; tick++) {
+      jest.setSystemTime(new Date(NOW.getTime() + tick * 5 * MIN));
+      await withReminders(() => reminder.runOneHourReminderSweep());
+    }
+    expect(db.deliveryLogs.find((r) => r.id === 'eligible')?.status).toBe('sent');
+    expect(notifications.pushes.length).toBeGreaterThanOrEqual(1);
+    // The retained rows are parked (receipts kept), not deleted or sent.
+    const old = db.deliveryLogs.filter((r) => String(r.id).startsWith('old-'));
+    expect(old).toHaveLength(200);
+    expect(old.every((r) => r.status === 'parked')).toBe(true);
+  });
+
+  it('a parked row is re-armed and sent when its new time reaches the band', async () => {
+    const { db, notifications, reminder } = harness();
+    confirmed(db, 'moved-later', 120);
+    db.deliveryLogs.push(retryRow('moved', 'moved-later', new Date(NOW.getTime() + 30 * MIN)));
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(db.deliveryLogs.find((r) => r.id === 'moved')?.status).toBe('parked');
+    jest.setSystemTime(new Date(NOW.getTime() + 60 * MIN));
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(db.deliveryLogs.find((r) => r.id === 'moved')?.status).toBe('sent');
+    expect(notifications.rows.filter((r) => r.user_id === 'client-1')).toHaveLength(1);
+  });
+
+  it('a failed recovery read never logs raw ORM text and is reported as a failed recovery (Sol probe)', async () => {
+    const { db, reminder, emitter } = harness();
+    const canary = 'SYNTHETIC_PRIVATE_QUERY_CANARY';
+    db.notificationDeliveryLog.findMany = async () => {
+      throw new Prisma.PrismaClientKnownRequestError(`private query args ${canary}`, {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    };
+    const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      const res = await withReminders(() =>
+        reminder.dispatchWindow({
+          lowerOffsetMinutes: 55,
+          upperOffsetMinutes: 65,
+          kind: NotificationKind.BOOKING_REMINDER_1H,
+          emit: (recipient, otherName, session, ctx) =>
+            emitter.emitReminder1h({
+              recipientUserId: recipient,
+              otherPartyDisplayName: otherName,
+              sessionId: session.id,
+              scheduledAt: session.start_at,
+              recipientRole: ctx.recipientRole,
+            }),
+        }),
+      );
+      expect(res.recovery_failed).toBe(1);
+      const logged = JSON.stringify([...errors.mock.calls, ...warns.mock.calls]);
+      expect(logged).not.toContain(canary);
+      expect(logged).toContain('P2024');
+    } finally {
+      errors.mockRestore();
+      warns.mockRestore();
+    }
+  });
+
+  it('claim insert and dispatch failures log only the safe code, including an ORM error wrapped as a cause', async () => {
+    const { db, reminder } = harness();
+    confirmed(db, 'diag-1', 60);
+    const canary = 'SYNTHETIC_CAUSE_CANARY';
+    const restore = failInserts(db, `insert args ${canary}`);
+    const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      restore();
+      const cause = new Prisma.PrismaClientKnownRequestError(`cause args ${canary}`, {
+        code: 'P2010',
+        clientVersion: 'test',
+      });
+      const res = await reminder.dispatchWindow({
+        lowerOffsetMinutes: 55,
+        upperOffsetMinutes: 65,
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        emit: async () => {
+          throw Object.assign(new Error(`wrapped ${canary}`), { cause });
+        },
+      });
+      expect(res.retrying).toBe(2);
+      const logged = JSON.stringify([...errors.mock.calls, ...warns.mock.calls]);
+      expect(logged).not.toContain(canary);
+      expect(logged).toContain('P2024');
+      expect(logged).toContain('P2010');
+    } finally {
+      errors.mockRestore();
+      warns.mockRestore();
+    }
   });
 });
