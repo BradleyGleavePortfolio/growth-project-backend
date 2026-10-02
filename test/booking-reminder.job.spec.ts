@@ -15,6 +15,8 @@
 
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
 import { NotificationKind } from '../src/notifications/notification-kind';
+import type { PrismaService } from '../src/prisma.service';
+import type { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 
 interface FakeSession {
   id: string;
@@ -123,6 +125,17 @@ function buildBookingEmitter() {
     emitReminder24h: jest.fn().mockResolvedValue(undefined),
     emitReminder1h: jest.fn().mockResolvedValue(undefined),
   };
+}
+
+function cronJob(
+  prisma: ReturnType<typeof buildPrismaFake>,
+  emitter: ReturnType<typeof buildBookingEmitter>,
+): SessionReminderJob {
+  // @ts-expect-error R0 partial Prisma test double supplies every delegate the cron reads.
+  const db: PrismaService = prisma;
+  // @ts-expect-error R0 partial emitter test double stubs each public emit method; no private emitter implementation runs.
+  const notifications: BookingEmitter = emitter;
+  return new SessionReminderJob(db, notifications);
 }
 
 function session(
@@ -338,5 +351,40 @@ describe('SessionReminderJob — findDueReminders helper', () => {
 
     const due = await job.findDueReminders(60);
     expect(due.map((s) => s.id)).toEqual(['s-in']);
+  });
+});
+
+describe('SessionReminderJob — explicit launch switch', () => {
+  const original = process.env.BOOKING_REMINDERS_ENABLED;
+  afterEach(() => {
+    if (original === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+    else process.env.BOOKING_REMINDERS_ENABLED = original;
+  });
+
+  it.each([undefined, '', 'off', 'false', 'true', 'ON', 'invalid'])(
+    'does not dispatch either reminder when configured as %s',
+    async (value) => {
+      if (value === undefined) delete process.env.BOOKING_REMINDERS_ENABLED;
+      else process.env.BOOKING_REMINDERS_ENABLED = value;
+      const prisma = buildPrismaFake([]);
+      const job = cronJob(prisma, buildBookingEmitter());
+      await job.runOneHourReminderSweep();
+      await job.runTwentyFourHourReminderSweep();
+      expect(prisma.coachingSession.findMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('dispatches both cron windows only with explicit on', async () => {
+    process.env.BOOKING_REMINDERS_ENABLED = 'on';
+    const prisma = buildPrismaFake([
+      session({ id: 'one-hour', startsInMinutes: 60 }),
+      session({ id: 'one-day', startsInMinutes: 1440 }),
+    ]);
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    await job.runOneHourReminderSweep();
+    await job.runTwentyFourHourReminderSweep();
+    expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
+    expect(emitter.emitReminder24h).toHaveBeenCalledTimes(2);
   });
 });
