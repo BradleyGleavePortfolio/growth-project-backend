@@ -112,12 +112,18 @@ switches:
     auto_flip_on_in_prod: false
     owner: observability
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: AUTH_LOGIN_ACCOUNT_FAILURES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C14 — failed password sign-ins per account per 15 min before a 15-min lock (any IP); only that account's own success clears it. Defaults to 10; clamped to [3, 100]."
   - name: AUTH_LOGIN_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000]."
+    description: "Phase 10 / C14 — per-IP POST /auth/login attempts per hour. Never reset by a successful login. Defaults to 200; clamped to [1, 5000]."
   - name: AUTH_SIGNUP_WITH_CODE_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
@@ -130,6 +136,18 @@ switches:
     auto_flip_on_in_prod: false
     owner: auth
     description: "Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful"
+  - name: AUTH_OAUTH_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C14 — per-IP POST /auth/google + /auth/apple exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000]."
+  - name: AUTH_OAUTH_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "Clinic C14 — per-IP POST /auth/google + /auth/apple exchanges per minute (own bucket, never reset). Defaults to 60; clamped to [5, 5000]."
   - name: AUTH_PWD_RESET_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
@@ -956,6 +974,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Web signup target the invite landing page links to when the user has no app installed. Falls back to PUBLIC_INVITE_BASE_URL/<code> when unse"
+  - name: PUBLIC_READS_PER_MIN
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000]."
   - name: RATELIMIT_ANON_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
