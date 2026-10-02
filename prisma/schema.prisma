@@ -517,6 +517,10 @@ model User {
   // src/roman/roman.feature.ts. RLS scopes every row to userId at the DB
   // layer (migration 20261216000000_add_roman_chat).
   roman_sessions RomanSession[] @relation("RomanSessionUser")
+  // C05/C07 clinic onboarding (additive virtual back-relations).
+  onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
+  onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
+  clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
@@ -2440,6 +2444,106 @@ model MacroTarget {
 
   @@index([client_id, effective_from])
   @@index([coach_id, created_at])
+}
+
+// ─── C05/C07: clinic consultation intake + program set (additive) ─────────
+// One row per client. Holds the full versioned consultation answer set,
+// including the P1-P7 readiness screening. RLS: the client owns the row; the
+// client's CURRENT coach may read it (app.is_current_coach_of); Roman reads it
+// only in that client's own request context. Never exposed to anyone else.
+model ClientOnboardingIntake {
+  id                        String    @id @default(uuid())
+  client_id                 String    @unique
+  client                    User      @relation("OnboardingIntakeClient", fields: [client_id], references: [id], onDelete: Cascade)
+  // Consultation contract version, e.g. "consult-v1".
+  version                   String
+  // { <screen_key>: <value> } exactly as validated by consultation-answers.ts.
+  answers                   Json
+  completed_chapters        String[]  @default([])
+  // Server-stamped P0 acknowledgement (copy version + server time).
+  disclaimer_version        String?
+  disclaimer_accepted_at    DateTime?
+  // True when any P1-P7 answer is "yes" (or T3 injury is yes); drives the
+  // coach flag. Recomputed on every save.
+  screening_any_yes         Boolean   @default(false)
+  screening_flagged_at      DateTime?
+  saved_at                  DateTime  @default(now())
+  // Head of the append-only revision history (ClientOnboardingIntakeRevision).
+  current_revision          Int       @default(0)
+  // Engagement inputs (C1 first session date, S2 preferred time), denormalised
+  // for the engagement jobs (welcome message, reminders) so they need not
+  // parse the answer JSON.
+  first_session_date        DateTime? @db.Date
+  preferred_training_time   String?
+  // Completion claim (idempotency/concurrency) and the frozen result.
+  // completion_claim_token is the fencing token of the attempt holding the
+  // claim; finalisation is conditional on (token, current_revision) so a
+  // worker whose lease expired can never write completion effects.
+  completion_claimed_at     DateTime?
+  completion_claim_token    String?
+  completion_claim_revision Int?
+  selected_program_key      String?
+  completed_at              DateTime?
+  completion_result         Json?
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
+
+  revisions ClientOnboardingIntakeRevision[]
+
+  @@index([screening_any_yes, screening_flagged_at])
+  @@index([completed_at])
+}
+
+// Append-only history: every save of the consultation writes a new revision;
+// rows are never updated or deleted (owner ruling: forms are kept as
+// submitted, edits create a new version). RLS mirrors the intake (client
+// insert + read, current coach read), with no UPDATE/DELETE policy at all.
+model ClientOnboardingIntakeRevision {
+  id                     String                 @id @default(uuid())
+  intake_id              String
+  intake                 ClientOnboardingIntake @relation(fields: [intake_id], references: [id], onDelete: Cascade)
+  client_id              String
+  client                 User                   @relation("OnboardingIntakeRevisionClient", fields: [client_id], references: [id], onDelete: Cascade)
+  revision               Int
+  version                String
+  answers                Json
+  completed_chapters     String[]               @default([])
+  disclaimer_version     String?
+  disclaimer_accepted_at DateTime?
+  screening_any_yes      Boolean                @default(false)
+  // "save" for PUT /me/onboarding/consultation, "complete" when frozen by
+  // POST /me/onboarding/complete.
+  cause                  String
+  created_at             DateTime               @default(now())
+
+  @@unique([intake_id, revision])
+  @@index([client_id, created_at(sort: Desc)])
+}
+
+// One row per (coach, fixture version): the seeded master programs and the
+// community spaces for the clinic, written only by scripts/seed-clinic-programs.ts.
+// Read server-side by onboarding complete. RLS: the owning coach may read;
+// no client or public writes.
+model ClinicProgramSet {
+  id                    String   @id @default(uuid())
+  coach_id              String
+  coach                 User     @relation("ClinicProgramSetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  fixture_version       String
+  fixture_sha256        String
+  approval_status       String
+  workspace_id          String   @db.Uuid
+  all_members_cohort_id String   @db.Uuid
+  // { <program_key>: { program_id, cohort_id, name } }
+  programs              Json
+  // Materialisation inputs copied from the fixture at seed time
+  // (frequency_variants, equipment_overrides, overlays, why templates).
+  materialisation       Json
+  active                Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@unique([coach_id, fixture_version])
+  @@index([coach_id, active])
 }
 
 // ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
