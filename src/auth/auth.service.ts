@@ -657,9 +657,9 @@ export class AuthService {
   // (`source: 'extension'`) so ops can distinguish extension sessions from the
   // mobile/web app. It reuses Supabase sessions per the 2026-06-30 operator
   // ruling: no backend-minted tokens, no refresh-token table — Supabase owns
-  // rotation + revocation. The controller does NOT reset the IP login throttle
-  // on success (unlike /auth/login) because extensions fan out across many IPs,
-  // so a per-IP reset is neither useful nor safe here.
+  // rotation + revocation. It shares `/auth/login`'s per-account failure lock
+  // through `_passwordLogin` (C14 #604 Opus A1); per-IP counters are never
+  // reset on either route.
   async extensionLogin(
     email: string,
     password: string,
@@ -671,6 +671,13 @@ export class AuthService {
   // Shared email+password login against Supabase. `source` only affects the
   // audit-log metadata tag; the returned token/user shape is identical for
   // every caller. Extracted so `login` and `extensionLogin` cannot drift.
+  //
+  // C14 #604 Opus A1: the per-account failure lock lives HERE, not in the
+  // controller, so every password endpoint (`/auth/login`,
+  // `/auth/extension/login`) shares one lock and one failure counter per
+  // account. `loginThrottle` is always wired in AuthModule (ThrottlerModule
+  // exports it and AuthController requires the same provider non-optionally);
+  // it is absent only in hand-built unit doubles.
   private async _passwordLogin(
     rawEmail: string,
     password: string,
@@ -682,6 +689,18 @@ export class AuthService {
     // who registered as `Jane@Example.com` signs in with that spelling, the
     // lowercase one, or any case variant.
     const email = normalizeEmail(rawEmail);
+    // A1 (#604): the per-account lock keys on the same canonical address, so
+    // case / Unicode variants of one account share one failure counter.
+    const attempt = () => this._passwordLoginUnlocked(email, password, ctx, source);
+    return this.loginThrottle ? this.loginThrottle.guardPasswordLogin(email, attempt) : attempt();
+  }
+
+  private async _passwordLoginUnlocked(
+    email: string,
+    password: string,
+    ctx: { ip?: string | null; userAgent?: string | null },
+    source: 'email_password' | 'extension',
+  ) {
     // Authenticate via Supabase
     const supaClient = createClient(
       process.env.SUPABASE_URL || '',

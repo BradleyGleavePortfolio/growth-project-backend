@@ -79,6 +79,19 @@ export interface EnvRule {
   // blocking boot — we warn rather than throw because the operator's intent
   // can't be inferred from the env var alone.
   validate?: (value: string) => string | null;
+  // S-ENVTRUTH — the real code default: what the code does when the var is
+  // unset (a literal, a named constant, or the fail-closed behaviour). Purely
+  // descriptive; never read at runtime. Required on every rule added by the
+  // env-truth inventory so operators can tell "deliberately unset" from
+  // "forgotten".
+  default?: string;
+  // S-ENVTRUTH — launch classification (descriptive only; never read at
+  // runtime and never changes boot behaviour):
+  //   'required'             must hold a real value before launch
+  //   'switch'               a launch switch whose default must stay as shipped
+  //   'optional-integration' an integration that is NOT a launch dependency;
+  //                          its flags must be explicitly false or unset
+  launch?: 'required' | 'switch' | 'optional-integration';
 }
 
 export const ENV_RULES: EnvRule[] = [
@@ -230,8 +243,10 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'GOOGLE_CLIENT_IDS',
     tier: 'feature',
+    launch: 'required',
+    default: 'unset → falls back to GOOGLE_CLIENT_ID; with neither set every Google ID token is rejected',
     reason:
-      'Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_ID when both are set; use this when the platform issues separate iOS / Android / Web client IDs.',
+      'Comma-separated allow-list of Google OAuth client IDs accepted as audiences by the local Google ID-token verifier. Supersedes GOOGLE_CLIENT_ID when both are set; use this when the platform issues separate iOS / Android / Web client IDs. Required for launch (operator 2026-10-01): Google sign-in audience for the Supabase Google provider web client. Stored as a GitHub Actions secret and pushed to Fly by .github/workflows/fly-env-sync.yml (staged, applied at the next deploy).',
     validate: (v) => {
       const entries = v
         .split(',')
@@ -576,6 +591,12 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Phase 10 — global default: max requests per minute per user-id (authenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 300; clamped to [1, 10000].',
   },
   {
+    name: 'PUBLIC_READS_PER_MIN',
+    tier: 'optional',
+    default: '240 per IP per minute (unset, empty or unparseable fall back to 240; clamped to [10, 5000])',
+    reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000].',
+  },
+  {
     name: 'RATELIMIT_ANON_PER_MIN',
     tier: 'optional',
     reason: 'Phase 10 — global default: max requests per minute per IP (unauthenticated). Applies to every route with no explicit @Throttle decorator. Defaults to 100; clamped to [1, 10000].',
@@ -583,26 +604,47 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_LOGIN_PER_MIN',
     tier: 'optional',
-    reason: 'Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful login resets this counter.',
+    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 20 (a room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
   },
   {
     name: 'AUTH_LOGIN_PER_HOUR',
     tier: 'optional',
-    reason: 'Phase 10 — per-IP login attempts per hour across all login endpoints. Sustained-attack brake. Defaults to 30; clamped to [1, 5000].',
+    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per hour. Never reset by a successful login. Defaults to 200; clamped to [1, 5000].',
+  },
+  {
+    name: 'AUTH_OAUTH_PER_MIN',
+    tier: 'optional',
+    default: '60 per IP per minute (unset, empty or unparseable fall back to 60; clamped to [5, 5000])',
+    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per minute (own bucket, never reset). Defaults to 60 (a 40-person room on one Wi-Fi); clamped to [5, 5000].',
+  },
+  {
+    name: 'AUTH_OAUTH_PER_HOUR',
+    tier: 'optional',
+    default: '400 per IP per hour (unset, empty or unparseable fall back to 400; clamped to [20, 20000])',
+    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000].',
+  },
+  {
+    name: 'AUTH_LOGIN_ACCOUNT_FAILURES',
+    tier: 'optional',
+    default: '10 failed sign-ins per account per 15 minutes (unset, unparseable or below 3 fall back to 10; capped at 100)',
+    reason: 'Clinic C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; values below 3 fall back to 10; capped at 100.',
   },
   {
     name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
     tier: 'optional',
+    default: '5 per IP per hour (unset, unparseable or < 1 fall back; clamped to 500)',
     reason: 'Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500].',
   },
   {
     name: 'SIGNUP_ROLE_CHOICE_ENABLED',
     tier: 'optional',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
   },
   {
     name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
     tier: 'optional',
+    default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
     reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
   },
   {
@@ -707,14 +749,16 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'YMOVE_API_KEY',
     tier: 'optional',
+    default: 'unset → provider skipped; falls back to ExerciseDB',
     reason:
-      'YMove exercise video API key (prefix: ym_). When set, the YMove provider returns HLS video URLs (via Bunny CDN) for up to 698 exercises. When unset, YMove is skipped and the system falls back to MuscleWiki then ExerciseDB GIF. NOTE: YMove v2 returns pre-signed URLs that expire after 48 hours — they are cached with a 3-hour Redis TTL, not persisted to the database.',
+      'YMove exercise video API key (prefix: ym_). When set, the YMove provider returns HLS video URLs (via Bunny CDN) for up to 698 exercises. When unset, YMove is skipped and the system falls back to MuscleWiki then ExerciseDB GIF. NOTE: YMove v2 returns pre-signed URLs that expire after 48 hours — they are cached with a 3-hour Redis TTL, not persisted to the database. Not used in v1 / alternative provider ExerciseDB (EXERCISEDB_API_KEY) is live.',
   },
   {
     name: 'MUSCLEWIKI_API_KEY',
     tier: 'optional',
+    default: 'unset → provider skipped; falls back to ExerciseDB',
     reason:
-      'MuscleWiki exercise video API key (RapidAPI key). When set, the MuscleWiki provider returns stable MP4 video URLs for 1,800+ exercises. When unset, the system falls back to ExerciseDB GIF. MuscleWiki URLs are stable CDN paths cached for 24 hours and safe to persist in ExerciseCatalogItem.video_url.',
+      'MuscleWiki exercise video API key (RapidAPI key). When set, the MuscleWiki provider returns stable MP4 video URLs for 1,800+ exercises. When unset, the system falls back to ExerciseDB GIF. MuscleWiki URLs are stable CDN paths cached for 24 hours and safe to persist in ExerciseCatalogItem.video_url. Not used in v1 / alternative provider ExerciseDB (EXERCISEDB_API_KEY) is live.',
   },
   {
     name: 'EXERCISEDB_API_KEY',
@@ -762,6 +806,1480 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'feature',
     reason:
       'Days of CoachBrief history retained before TTL prune. GDPR Art.17 hygiene — embedded client_name in brief_context JSON ages out within this window. Defaults to 7 when absent or unparseable. (BL-GDPR-BRIEF-2)',
+  },
+
+  // ============================================================
+  // S-ENVTRUTH inventory (2026-10-01). Every env name read anywhere in
+  // runtime src/ is registered here so the boot summary, the H4 board, the
+  // operator keys list and the in-machine env-truth classifier
+  // (.github/workflows/fly-env-truth.yml) can see it. `default` records the
+  // REAL code default (what the code does when the var is unset); nothing in
+  // this block adds a validator or changes runtime behaviour. Enforced by
+  // test/prod-readiness/env-registration.spec.ts: a new src/ env read that is
+  // not registered fails CI.
+  // ============================================================
+  // --- AUTH / ADMIN ---
+  {
+    name: 'ADMIN_SERVICE_TOKEN',
+    tier: 'feature',
+    default:
+      'unset → ServiceTokenGuard throws 401 "Service token not configured" on every service-token route',
+    reason:
+      'Bearer token the finance/admin console presents to service-token-guarded admin routes (src/auth/service-token.guard.ts). Unset disables those routes (fail closed).',
+  },
+  {
+    name: 'BOOTSTRAP_SECRET',
+    tier: 'optional',
+    default: 'unset → POST bootstrap-first-owner returns 403 "Bootstrap endpoint is not enabled"',
+    reason:
+      'One-time secret for promoting the first owner account (auth.service.ts bootstrapFirstOwner). Unset after use; absence is the safe steady state.',
+  },
+  {
+    name: 'APPLE_NONCE_REQUIRED',
+    tier: 'optional',
+    default: 'unset → nonce check skipped (only the literal "true" enforces it)',
+    reason:
+      'Sign in with Apple: require the hashed nonce claim on the identity token when exactly "true".',
+  },
+  {
+    name: 'SUPABASE_ANON_KEY',
+    tier: 'feature',
+    default:
+      "unset → '' passed to the Supabase auth client (signup / sign-in / password flows fail at request time)",
+    reason:
+      'Supabase anon (public) key used by AuthService for user-scoped Supabase auth calls. Not a boot dependency, but every password/OTP auth flow fails without it.',
+  },
+  {
+    name: 'SUPABASE_REDIRECT_URL',
+    tier: 'optional',
+    default: "'tgp://verified'",
+    reason:
+      'emailRedirectTo for Supabase signup confirmation links (auth.service.ts). The code default is the app deep link.',
+  },
+  {
+    name: 'JWT_SECRET',
+    tier: 'optional',
+    default: 'unset → last-resort fallback only',
+    reason:
+      'Read only as the third fallback signing key for contract PDF URLs (CONTRACT_PDF_URL_SECRET → DATA_EXPORT_DOWNLOAD_SECRET → JWT_SECRET) in src/contracts/signed-pdf-store.service.ts. Contracts are not used in v1. Supabase JWTs are verified via JWKS, not this value.',
+  },
+  // --- AI ---
+  {
+    name: 'AI_GATEWAY_ENABLED',
+    tier: 'optional',
+    default: 'unset → off (envFlag: only true/1/yes/on enable)',
+    reason:
+      'Master switch for the AI gateway (src/ai/gateway/ai-gateway.config.ts). Off means every capability resolves to the stub provider.',
+  },
+  {
+    name: 'AI_GATEWAY_PROVIDER',
+    tier: 'optional',
+    default: "'stub'",
+    reason:
+      'AI gateway provider: perplexity / openai / anthropic; anything else normalises to stub. Anthropic is the live provider in v1.',
+  },
+  {
+    name: 'AI_GATEWAY_CAPABILITIES',
+    tier: 'optional',
+    default: "unset → no capability allowed ('*' allows all)",
+    reason: 'Comma-separated capability allow-list for the AI gateway.',
+  },
+  {
+    name: 'AI_GATEWAY_REQUIRE_APPROVAL',
+    tier: 'optional',
+    default:
+      'unset → DEFAULT_APPROVAL_REQUIRED (draft.coach_message, draft.meal_plan_change, draft.client_facing_claim, …)',
+    reason:
+      'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated.',
+  },
+  {
+    name: 'OPENAI_API_KEY',
+    tier: 'optional',
+    default: 'unset → openai provider reports no key',
+    reason:
+      'Not used in v1 / alternative provider Anthropic (ANTHROPIC_API_KEY) is live. Only consulted when AI_GATEWAY_PROVIDER=openai.',
+  },
+  {
+    name: 'COACH_AI_BUDGET_ROLLOVER_CRON',
+    tier: 'optional',
+    default: "'5 * * * *' (COACH_AI_BUDGET_ROLLOVER_CRON_DEFAULT)",
+    reason: 'Cron for the coach AI budget rollover scheduler.',
+  },
+  {
+    name: 'COACH_AI_BUDGET_ROLLOVER_ENABLED',
+    tier: 'optional',
+    default: '\'true\' (only "false" disables)',
+    reason: 'Kill switch for the coach AI budget rollover cron.',
+  },
+  {
+    name: 'COACH_AI_DORMANCY_UNREAD_THRESHOLD',
+    tier: 'optional',
+    default: '3 (COACH_AI_DORMANCY_UNREAD_THRESHOLD_DEFAULT; values < 1 fall back)',
+    reason: 'Unread-draft count after which the dormancy guard pauses coach AI drafting.',
+  },
+  {
+    name: 'COACH_AI_MAX_ACTUAL_CENTS',
+    tier: 'feature',
+    default:
+      '4000 (COACH_AI_MAX_ACTUAL_CENTS_DEFAULT) — production boot requires it set (prodHardenedFeatureVars)',
+    reason:
+      'Per-request ceiling on actual AI provider spend in cents. Enforced present at production boot by prodHardenedFeatureVars in this file; registered here so the inventory sees it.',
+  },
+  {
+    name: 'COACH_AI_VALUE_MULTIPLIER',
+    tier: 'feature',
+    default:
+      '3.125 (COACH_AI_VALUE_MULTIPLIER_DEFAULT) — production boot requires it set (prodHardenedFeatureVars)',
+    reason:
+      'Credit value multiplier for coach AI packs. Enforced present at production boot by prodHardenedFeatureVars in this file.',
+  },
+  {
+    name: 'COACH_AI_PACK_SUCCESS_URL',
+    tier: 'optional',
+    default: "STRIPE_CHECKOUT_SUCCESS_URL, else 'https://app.trygrowthproject.com/billing/success'",
+    reason: 'Stripe Checkout success URL for coach AI credit packs.',
+  },
+  {
+    name: 'COACH_AI_PACK_CANCEL_URL',
+    tier: 'optional',
+    default: "STRIPE_CHECKOUT_CANCEL_URL, else 'https://app.trygrowthproject.com/billing/cancel'",
+    reason: 'Stripe Checkout cancel URL for coach AI credit packs.',
+  },
+  {
+    name: 'COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN',
+    tier: 'optional',
+    default: '5 (clamped 1..120)',
+    reason: 'Throttle: coach AI credit-pack checkout requests per minute.',
+  },
+  // --- URLS / IDENTIFIERS ---
+  {
+    name: 'APP_URL',
+    tier: 'optional',
+    default: "'https://app.thegrowthproject.app'",
+    reason: 'Base URL for links in digests, nudges and the Google OAuth return redirect.',
+  },
+  {
+    name: 'CONSOLE_URL',
+    tier: 'optional',
+    default: "'https://console.thegrowthproject.app'",
+    reason: 'Coach console base URL used in coach digest emails.',
+  },
+  {
+    name: 'PUBLIC_APP_BASE_URL',
+    tier: 'optional',
+    default: "PUBLIC_INVITE_BASE_URL without '/join', else 'https://app.trygrowthproject.com'",
+    reason: 'Base URL for landing-page links.',
+  },
+  {
+    name: 'BILLING_PORTAL_URL',
+    tier: 'optional',
+    default: "'https://thegrowthproject.app/billing'",
+    reason: 'Billing portal link in dunning emails.',
+  },
+  {
+    name: 'IOS_BUNDLE_ID',
+    tier: 'optional',
+    default: "'com.growthproject.app'",
+    reason: 'iOS bundle id served in apple-app-site-association.',
+  },
+  {
+    name: 'ANDROID_PACKAGE_NAME',
+    tier: 'optional',
+    default: "'com.growthproject.app'",
+    reason: 'Android package name served in assetlinks.json.',
+  },
+  {
+    name: 'ANDROID_CERT_SHA256_FINGERPRINTS',
+    tier: 'optional',
+    default:
+      'unset → stub assetlinks.json in dev; production refuses (prodHardenedFeatureVars, either this or ANDROID_SHA256_FINGERPRINT)',
+    reason:
+      'Android App Links signing-cert SHA-256 fingerprints (comma-separated). Alias of ANDROID_SHA256_FINGERPRINT (feature tier, registered above); production boot requires one of the two (prodHardenedFeatureVars). Read by well-known.controller.ts.',
+  },
+  {
+    name: 'LANDING_CNAME_TARGET',
+    tier: 'optional',
+    default: "'cname.trygrowthproject.com'",
+    reason: 'CNAME target coaches point custom landing domains at.',
+  },
+  {
+    name: 'LANDING_VIEW_HASH_SECRET',
+    tier: 'feature',
+    default:
+      'unset → production refuses to hash visitors (throws); production boot requires it (prodHardenedFeatureVars)',
+    reason: 'HMAC secret for landing-page visitor hashes.',
+  },
+  {
+    name: 'COMMUNITY_EVENT_LINK_HOSTS',
+    tier: 'optional',
+    default: "'' → built-in allow-list only (zoom.us, zoom.com, …)",
+    reason: 'Extra comma-separated host suffixes allowed for community event links.',
+  },
+  // --- EMAIL ---
+  {
+    name: 'EMAIL_TRANSPORT',
+    tier: 'feature',
+    default: "'log' (emails are logged, not sent)",
+    reason:
+      "Email transport: 'resend' (live) or 'log'. Must be 'resend' in production for any email to send.",
+  },
+  {
+    name: 'EMAIL_FROM_ADDRESS',
+    tier: 'feature',
+    default: "'noreply@thegrowthproject.app'",
+    reason:
+      'From-address for transactional and digest email. Must be a Resend-verified domain when EMAIL_TRANSPORT=resend (EmailService throws otherwise).',
+  },
+  {
+    name: 'SENDGRID_API_KEY',
+    tier: 'optional',
+    default: 'unset → digest send skipped with a warn',
+    reason: 'Not used in v1 / alternative provider Resend (RESEND_API_KEY) is live.',
+  },
+  {
+    name: 'POSTMARK_SERVER_TOKEN',
+    tier: 'optional',
+    default: 'unset → digest send skipped with a warn',
+    reason: 'Not used in v1 / alternative provider Resend (RESEND_API_KEY) is live.',
+  },
+  {
+    name: 'EMAIL_DIGEST_CLIENT_ENABLED',
+    tier: 'optional',
+    default: 'on (only "off" disables)',
+    reason: 'Kill switch for the client daily digest email.',
+  },
+  {
+    name: 'EMAIL_DIGEST_COACH_ENABLED',
+    tier: 'optional',
+    default: 'on (only "off" disables)',
+    reason: 'Kill switch for the coach daily digest email.',
+  },
+  // --- CRONS / SCHEDULERS ---
+  {
+    name: 'CLIENT_DAILY_CRON',
+    tier: 'optional',
+    default: "'0 7 * * *'",
+    reason: 'Cron for the client daily digest.',
+  },
+  {
+    name: 'COACH_DAILY_CRON',
+    tier: 'optional',
+    default: "'0 6 * * *'",
+    reason: 'Cron for the coach daily digest.',
+  },
+  {
+    name: 'WEEKLY_DIGEST_CRON',
+    tier: 'optional',
+    default: "'0 8 * * 0'",
+    reason: 'Cron for the weekly digest.',
+  },
+  {
+    name: 'NUDGE_DETECTION_CRON',
+    tier: 'optional',
+    default: "'*/15 * * * *'",
+    reason: 'Cron for nudge detection.',
+  },
+  {
+    name: 'NUDGE_ENABLED',
+    tier: 'optional',
+    default: 'on (only "off" disables)',
+    reason: 'Kill switch for nudge detection.',
+  },
+  {
+    name: 'BOOKING_REMINDER_1H_CRON',
+    tier: 'optional',
+    default: "'*/5 * * * *'",
+    reason: 'Cron for 1-hour booking reminders.',
+  },
+  {
+    name: 'BOOKING_REMINDER_24H_CRON',
+    tier: 'optional',
+    default: "'*/15 * * * *'",
+    reason: 'Cron for 24-hour booking reminders.',
+  },
+  {
+    name: 'BOOKING_REMINDERS_ENABLED',
+    tier: 'optional',
+    launch: 'switch',
+    default: '\'on\' (only "off" disables)',
+    reason:
+      'Launch switch (operator 2026-10-01): kill switch for the booking reminder crons. Ships on; only "off" disables. Must stay on (unset or "on") for launch.',
+  },
+  {
+    name: 'DELETION_FINALIZE_CRON',
+    tier: 'optional',
+    default: "'0 3 * * *'",
+    reason: 'Cron for finalising account deletions after the grace period.',
+  },
+  {
+    name: 'LEADERBOARD_ENABLED',
+    tier: 'optional',
+    default: '\'on\' (only "off" disables)',
+    reason: 'Kill switch for leaderboard recompute and reads.',
+  },
+  {
+    name: 'LEADERBOARD_RECOMPUTE_CRON',
+    tier: 'optional',
+    default: "'0 6 * * *' (LEADERBOARD_RECOMPUTE_CRON_DEFAULT)",
+    reason: 'Cron for leaderboard recompute.',
+  },
+  {
+    name: 'BLOODWORK_STALE_DISABLED',
+    tier: 'optional',
+    default: 'unset → scheduler runs (only "true" disables)',
+    reason: 'Kill switch for the bloodwork staleness scheduler.',
+  },
+  {
+    name: 'BLOODWORK_STALE_AFTER_DAYS',
+    tier: 'optional',
+    default: '365 (DEFAULT_STALE_AFTER_DAYS)',
+    reason: 'Days after which a bloodwork panel is marked stale.',
+  },
+  {
+    name: 'CHECKOUT_RECEIPT_DISABLED',
+    tier: 'optional',
+    default: 'unset → scheduler runs (only "true" disables)',
+    reason: 'Kill switch for the checkout receipt scheduler.',
+  },
+  {
+    name: 'LEGACY_PDF_RECEIPT_ENABLED',
+    tier: 'optional',
+    default: 'unset → legacy PDF receipts off (only "true" enables)',
+    reason: 'Legacy PDF receipt generation.',
+  },
+  {
+    name: 'CHECKOUT_RECONCILE_DISABLED',
+    tier: 'optional',
+    default: 'unset → reconcile runs (only "true" disables)',
+    reason: 'Kill switch for the lost-webhook checkout reconcile job.',
+  },
+  {
+    name: 'CRM_LEAD_SYNC_DISABLED',
+    tier: 'optional',
+    default: 'unset → sync runs (only "true" disables)',
+    reason: 'Kill switch for the CRM lead sync processor.',
+  },
+  {
+    name: 'DRIP_DISPATCHER_ENABLED',
+    tier: 'optional',
+    default: 'unset → dispatcher runs (only "false" disables)',
+    reason: 'Kill switch for the package drip dispatcher cron.',
+  },
+  {
+    name: 'AUDIT_LOGGING_ENABLED',
+    tier: 'optional',
+    default: "'on'",
+    reason: 'Audit log writes (audit.service.ts); "off" disables.',
+  },
+  // --- TTLS / LIMITS ---
+  {
+    name: 'DATA_EXPORT_EXPIRY_DAYS',
+    tier: 'optional',
+    default: '7',
+    reason: 'Days a "download my data" export stays downloadable.',
+  },
+  {
+    name: 'DATA_EXPORT_RATE_LIMIT_HRS',
+    tier: 'optional',
+    default: '24',
+    reason: 'Minimum hours between data export requests per user.',
+  },
+  {
+    name: 'DATA_EXPORT_FS_DIR',
+    tier: 'optional',
+    default: "'/tmp/exports'",
+    reason: 'Local directory export files are written to (ephemeral, per machine).',
+  },
+  {
+    name: 'DATA_EXPORT_TOKEN_SECRET',
+    tier: 'feature',
+    default:
+      "'change-me-in-production-min32chars!' in dev; production throws unless a real 32+ char secret is set",
+    reason: 'HMAC secret for data-export download tokens (data-export.service.ts).',
+  },
+  {
+    name: 'DATA_EXPORT_DOWNLOAD_SECRET',
+    tier: 'optional',
+    default: 'unset → next fallback (JWT_SECRET)',
+    reason:
+      'Second fallback signing key for contract PDF URLs (signed-pdf-store.service.ts). Contracts are not used in v1; the data-export flow itself signs with DATA_EXPORT_TOKEN_SECRET.',
+  },
+  {
+    name: 'DATA_EXPORT_BUCKET',
+    tier: 'optional',
+    default: 'unset → contract PDFs stay on local disk',
+    reason:
+      'Read only as the CONTRACT_PDF_BUCKET fallback. Contracts are not used in v1 and the data-export cloud storage path is not built, so setting it changes nothing for "download my data".',
+  },
+  {
+    name: 'DELETION_GRACE_DAYS',
+    tier: 'optional',
+    default: '14 (non-positive / unparseable fall back)',
+    reason: 'Days between an account deletion request and finalisation.',
+  },
+  {
+    name: 'DELETION_TOKEN_TTL_HOURS',
+    tier: 'optional',
+    default: '24 (non-positive / unparseable fall back)',
+    reason: 'Lifetime of an account-deletion confirmation token.',
+  },
+  {
+    name: 'RECEIPT_FS_DIR',
+    tier: 'optional',
+    default: "'/tmp/checkout-receipts'",
+    reason: 'Local directory for checkout receipt files.',
+  },
+  {
+    name: 'DUNNING_CADENCE_DAYS',
+    tier: 'optional',
+    default: 'DEFAULT_DUNNING_CADENCE (dunning.service.ts); malformed lists fall back',
+    reason: 'Comma-separated dunning step offsets in days.',
+  },
+  // The four dunning tunables below are read through numEnv(env, 'NAME', d) on
+  // a ProcessEnv alias (dunning.service.ts resolveDunningConfig); the scanner
+  // only saw them once alias-keyed helper reads were followed (B-624-2).
+  {
+    name: 'DUNNING_GRACE_DAYS',
+    tier: 'optional',
+    default: '7 (non-positive / unparseable fall back)',
+    reason: 'Dunning grace period in days (resolveDunningConfig graceDays).',
+  },
+  {
+    name: 'DUNNING_MAX_FAILURES',
+    tier: 'optional',
+    default: '4 (non-positive / unparseable fall back)',
+    reason: 'Dunning failed-payment ceiling (resolveDunningConfig maxFailures).',
+  },
+  {
+    name: 'DUNNING_MAX_SEND_RETRIES',
+    tier: 'optional',
+    default: '3 (non-positive / unparseable fall back)',
+    reason: 'Email-send retries per dunning attempt before it is marked failed_permanent.',
+  },
+  {
+    name: 'DUNNING_RETRY_BACKOFF_MS',
+    tier: 'optional',
+    default: '3600000 = 1 h (non-positive / unparseable fall back)',
+    reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
+  },
+  {
+    name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
+    tier: 'optional',
+    default: "off (on only when exactly 'true', case-insensitive)",
+    reason:
+      "AI processing consent ledger master switch (src/ai-consent, #622). While off every /me/ai-consent route returns 503 AI_CONSENT_UNAVAILABLE and hasClientAiConsent() is false for everyone. prod-switches.yml: feature, prod_default OFF.",
+  },
+  {
+    name: 'MEDIA_SIGNED_URL_TTL_SEC',
+    tier: 'optional',
+    default: '900 (clamped 60..86400)',
+    reason: 'Signed URL lifetime for classroom media.',
+  },
+  {
+    name: 'VOICE_SIGNED_URL_TTL_SEC',
+    tier: 'optional',
+    default: '600 (VOICE_UPLOAD_TTL_SEC, clamped 60..86400)',
+    reason: 'Signed upload URL lifetime for community voice notes.',
+  },
+  {
+    name: 'VOICE_NOTE_MAX_BYTES',
+    tier: 'optional',
+    default: '25000000 (MAX_VOICE_BYTES)',
+    reason: 'Maximum community voice note size in bytes.',
+  },
+  {
+    name: 'VOICE_NOTE_MAX_DURATION_MS',
+    tier: 'optional',
+    default: '300000 (MAX_VOICE_DURATION_MS)',
+    reason: 'Maximum community voice note duration in milliseconds.',
+  },
+  {
+    name: 'COMMUNITY_SEARCH_PAGE_SIZE',
+    tier: 'optional',
+    default: '20 (SEARCH_PAGE_SIZE_DEFAULT, max 50)',
+    reason: 'Community search page size.',
+  },
+  {
+    name: 'COMMUNITY_ACK_SLA_SOFT_MS',
+    tier: 'optional',
+    default: '86400000 (24h, DEFAULT_SLA_SOFT_MS)',
+    reason: 'Soft SLA for community post acknowledgements.',
+  },
+  {
+    name: 'COMMUNITY_ACK_SLA_HARD_MS',
+    tier: 'optional',
+    default: '172800000 (48h, DEFAULT_SLA_HARD_MS)',
+    reason: 'Hard SLA for community post acknowledgements.',
+  },
+  {
+    name: 'MARKETPLACE_IDEMPOTENCY_CLAIM_TTL_MS',
+    tier: 'optional',
+    default: '600000 (CLAIM_TTL_FALLBACK_MS)',
+    reason: 'Talent marketplace idempotency claim lifetime.',
+  },
+  {
+    name: 'PAIR_CODE_TTL_SECONDS',
+    tier: 'optional',
+    default: '120 (clamped 30..300)',
+    reason: 'Browser-extension pairing code lifetime.',
+  },
+  {
+    name: 'PAIR_REDEEM_PER_MIN',
+    tier: 'optional',
+    default: '10 (clamped 1..120)',
+    reason: 'Pairing-code redeem attempts per minute per IP.',
+  },
+  {
+    name: 'SCOUT_RUN_DEADLINE_MS',
+    tier: 'optional',
+    default: '300000 (SCOUT_RUN_DEADLINE_MS_DEFAULT)',
+    reason: 'Deadline for one Scout import run.',
+  },
+  {
+    name: 'STRIPE_API_TIMEOUT_MS',
+    tier: 'optional',
+    default: '10000 (values < 1000 fall back)',
+    reason: 'Stripe API request timeout.',
+  },
+  {
+    name: 'CHECKOUT_MINT_PER_HOUR',
+    tier: 'optional',
+    default: '20 (clamped 1..500)',
+    reason: 'Throttle: checkout session mints per hour.',
+  },
+  {
+    name: 'STOREFRONT_JOIN_IP_PER_MIN',
+    tier: 'optional',
+    default: '120 (clamped 1..5000)',
+    reason: 'Throttle: storefront join requests per minute per IP.',
+  },
+  {
+    name: 'COMMUNITY_MESSAGES_PER_MIN',
+    tier: 'optional',
+    default: '30 (clamped 1..1000)',
+    reason: 'Throttle: community messages per minute.',
+  },
+  {
+    name: 'COMMUNITY_MSG_EDIT_PER_MIN',
+    tier: 'optional',
+    default: '10 (clamped 1..1000)',
+    reason: 'Throttle: community message edits per minute.',
+  },
+  {
+    name: 'COMMUNITY_POSTS_PER_MIN',
+    tier: 'optional',
+    default: '5 (clamped 1..1000)',
+    reason: 'Throttle: community posts per minute.',
+  },
+  {
+    name: 'COMMUNITY_COMMENTS_PER_MIN',
+    tier: 'optional',
+    default: '30 (clamped 1..1000)',
+    reason: 'Throttle: community comments per minute.',
+  },
+  {
+    name: 'COMMUNITY_DM_PER_MIN',
+    tier: 'optional',
+    default: '30 (clamped 1..1000)',
+    reason: 'Throttle: community DMs per minute.',
+  },
+  {
+    name: 'COMMUNITY_REACTIONS_PER_MIN',
+    tier: 'optional',
+    default: '60 (clamped 1..1000)',
+    reason: 'Throttle: community reactions per minute.',
+  },
+  {
+    name: 'COMMUNITY_REPORTS_PER_5MIN',
+    tier: 'optional',
+    default: '10 (clamped 1..1000)',
+    reason: 'Throttle: community reports per 5 minutes.',
+  },
+  {
+    name: 'COMMUNITY_EVENTS_PER_MIN',
+    tier: 'optional',
+    default: '20 (clamped 1..1000)',
+    reason: 'Throttle: community event creates per minute.',
+  },
+  {
+    name: 'COMMUNITY_EVENT_RSVP_PER_MIN',
+    tier: 'optional',
+    default: '30 (clamped 1..1000)',
+    reason: 'Throttle: community event RSVPs per minute.',
+  },
+  {
+    name: 'COMMUNITY_READS_PER_MIN',
+    tier: 'optional',
+    default: '60 (clamped 1..1000)',
+    reason: 'Throttle: community reads per minute.',
+  },
+  {
+    name: 'TM_ANTIBOT_IP_LIMIT',
+    tier: 'optional',
+    default: '8 (clamped 1..1000)',
+    reason: 'Talent marketplace anti-bot per-IP ceiling.',
+  },
+  {
+    name: 'TM_ANTIBOT_IP_WINDOW_SEC',
+    tier: 'optional',
+    default: '600 (clamped 30..86400)',
+    reason: 'Talent marketplace anti-bot window.',
+  },
+  {
+    name: 'TM_ANTIBOT_IDENTITY_LIMIT',
+    tier: 'optional',
+    default: '4 (clamped 1..1000)',
+    reason: 'Talent marketplace anti-bot per-identity ceiling.',
+  },
+  {
+    name: 'TM_ANTIBOT_DEVICE_FANOUT',
+    tier: 'optional',
+    default: '3 (clamped 1..1000)',
+    reason: 'Talent marketplace anti-bot device fan-out.',
+  },
+  {
+    name: 'TM_ANTIBOT_IDENTITY_IP_FANOUT',
+    tier: 'optional',
+    default: '5 (clamped 1..1000)',
+    reason: 'Talent marketplace anti-bot identity IP fan-out.',
+  },
+  {
+    name: 'TM_ANTIBOT_SIGNAL_TTL_DAYS',
+    tier: 'optional',
+    default: '30 (clamped 1..365)',
+    reason: 'Talent marketplace anti-bot signal retention.',
+  },
+  // --- SECRETS / CRYPTO ---
+  {
+    name: 'KMS_MASTER_KEY',
+    tier: 'feature',
+    default:
+      'unset → PLAINTEXT marker in dev; production refuses to persist (and production boot requires it via prodHardenedFeatureVars)',
+    reason: '32 raw bytes, base64, for KmsService envelope encryption.',
+  },
+  {
+    name: 'KMS_KEY_ALIAS',
+    tier: 'optional',
+    default: "'local:v1'",
+    reason: 'Key alias recorded alongside KMS ciphertexts.',
+  },
+  {
+    name: 'KMS_KEY_VERSION',
+    tier: 'optional',
+    default: "'1'",
+    reason: 'Key version recorded alongside KMS ciphertexts.',
+  },
+  {
+    name: 'METRICS_AUTH_TOKEN',
+    tier: 'feature',
+    default: 'unset → /metrics returns 503 in staging/production (open in dev)',
+    reason:
+      'Bearer token for the Prometheus /metrics endpoint (metrics-auth.guard.ts). Safe by default (fail closed).',
+  },
+  {
+    name: 'MWB_AUTOSAVE_LOCK_TOKEN_SECRET',
+    tier: 'optional',
+    default: 'none — throws when FEATURE_MWB_AUTOSAVE_UNDO=true and unset',
+    reason:
+      'HMAC secret for workout-builder autosave lock tokens. Only read when FEATURE_MWB_AUTOSAVE_UNDO is on (default off).',
+  },
+  {
+    name: 'PUBLIC_LISTING_CURSOR_SECRET',
+    tier: 'optional',
+    default: "'tm3-public-cursor-dev' (warns in production)",
+    reason: 'HMAC secret for talent marketplace public listing cursors.',
+  },
+  {
+    name: 'SCHEDULING_WEBHOOK_SECRET',
+    tier: 'optional',
+    default: 'unset → stub webhook accepts without a secret check (no-op handler)',
+    reason:
+      'Shared secret for the scheduling webhook stub (scheduling-webhook.controller.ts). The handler performs no state mutation.',
+  },
+  // --- OBSERVABILITY / RUNTIME ---
+  {
+    name: 'NODE_ENV',
+    tier: 'optional',
+    default: 'unset → treated as development',
+    reason: 'Runtime environment. Set by the Dockerfile / Fly to production.',
+  },
+  {
+    name: 'PORT',
+    tier: 'optional',
+    default: "'3000'",
+    reason: 'HTTP listen port.',
+  },
+  {
+    name: 'GIT_SHA',
+    tier: 'optional',
+    default: 'unset → RELEASE_VERSION',
+    reason: 'Build commit SHA (image build arg) used for the Sentry release id.',
+  },
+  {
+    name: 'RELEASE_VERSION',
+    tier: 'optional',
+    default: 'unset → no sha in Sentry release',
+    reason: 'Release version (image build arg) used for the Sentry release id.',
+  },
+  {
+    name: 'SENTRY_RELEASE',
+    tier: 'optional',
+    default: "unset → '<service>@<sha>-<env>'",
+    reason: 'Explicit Sentry release override.',
+  },
+  {
+    name: 'LAST_SECURITY_DEPLOY_AT',
+    tier: 'optional',
+    default: "'2026-04-25T20:00:00Z' (LAST_SECURITY_FLOOR)",
+    reason: 'ISO date shown as the last security update on the Trust screen.',
+  },
+  {
+    name: 'ENABLE_API_DOCS',
+    tier: 'optional',
+    default: 'unset → docs on outside production, off in production (only "true" opts in)',
+    reason: 'Exposes the OpenAPI docs when exactly "true".',
+  },
+  {
+    name: 'POSTHOG_HOST',
+    tier: 'optional',
+    default: "'https://us.i.posthog.com'",
+    reason: 'PostHog ingestion host.',
+  },
+  {
+    name: 'FLY_APP_NAME',
+    tier: 'optional',
+    default: 'unset → SOC2 snapshot omits app/releases',
+    reason: 'Fly app name (set by Fly at runtime) for the SOC2 evidence snapshot.',
+  },
+  {
+    name: 'FLY_PRIMARY_REGION',
+    tier: 'optional',
+    default: 'unset → PRIMARY_REGION',
+    reason: 'Fly primary region (set by Fly at runtime) for the SOC2 evidence snapshot.',
+  },
+  {
+    name: 'PRIMARY_REGION',
+    tier: 'optional',
+    default: 'unset → null',
+    reason: 'Fallback primary region for the SOC2 evidence snapshot.',
+  },
+  {
+    name: 'FLY_API_TOKEN',
+    tier: 'optional',
+    default: 'unset → SOC2 snapshot has no deploy history',
+    reason: 'Fly API token for reading release history in the SOC2 evidence snapshot.',
+  },
+  // --- STRIPE ---
+  {
+    name: 'STRIPE_CONNECT_REFRESH_URL',
+    tier: 'feature',
+    default: 'unset → POST /v1/connect/accounts/onboarding-link returns 503',
+    reason: 'Stripe Connect onboarding refresh URL.',
+  },
+  {
+    name: 'STRIPE_CONNECT_RETURN_URL',
+    tier: 'feature',
+    default: 'unset → POST /v1/connect/accounts/onboarding-link returns 503',
+    reason: 'Stripe Connect onboarding return URL.',
+  },
+  {
+    name: 'STRIPE_PRICE_GROWTH',
+    tier: 'optional',
+    default: 'unset → tier resolver has no growth price',
+    reason: 'Stripe price id for the Growth team tier.',
+  },
+  {
+    name: 'STRIPE_PRICE_PRO',
+    tier: 'optional',
+    default: 'unset → tier resolver has no pro price',
+    reason: 'Stripe price id for the Pro team tier.',
+  },
+  {
+    name: 'STRIPE_PRICE_ENTERPRISE',
+    tier: 'optional',
+    default: 'unset → tier resolver has no enterprise price',
+    reason: 'Stripe price id for the Enterprise team tier.',
+  },
+  {
+    name: 'STRIPE_PRICE_STAFF_SEAT',
+    tier: 'optional',
+    default: 'unset → staff seat line item skipped with a warn',
+    reason: 'Stripe price id for Pro staff seats.',
+  },
+  // --- VIDEO / STORAGE ---
+  {
+    name: 'MUX_TOKEN_ID',
+    tier: 'feature',
+    default: '\'\' → uploads return "Set MUX_TOKEN_ID and MUX_TOKEN_SECRET"',
+    reason: 'Mux API token id for coach video uploads.',
+  },
+  {
+    name: 'MUX_TOKEN_SECRET',
+    tier: 'feature',
+    default: '\'\' → uploads return "Set MUX_TOKEN_ID and MUX_TOKEN_SECRET"',
+    reason: 'Mux API token secret for coach video uploads.',
+  },
+  {
+    name: 'MUX_WEBHOOK_SECRET',
+    tier: 'feature',
+    default: 'unset → Mux webhooks cannot be verified',
+    reason: 'Mux webhook signing secret.',
+  },
+  {
+    name: 'MUX_SIGNING_KEY_ID',
+    tier: 'optional',
+    default: 'unset → signed playback unavailable',
+    reason: 'Mux signed-playback key id.',
+  },
+  {
+    name: 'MUX_SIGNING_KEY_PRIVATE',
+    tier: 'optional',
+    default: 'unset → signed playback unavailable',
+    reason: 'Mux signed-playback private key (PEM or base64 PEM).',
+  },
+  {
+    name: 'SUPABASE_MEDIA_BUCKET',
+    tier: 'optional',
+    default: "'coach-media'",
+    reason: 'Supabase storage bucket for coach media.',
+  },
+  // --- SCHEDULING / CALENDAR (calendar sync off for launch) ---
+  {
+    name: 'GOOGLE_OAUTH_CLIENT_ID',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → Google Calendar connect returns "not configured"',
+    reason:
+      'Google Calendar OAuth client id (scheduling). Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_OAUTH_CLIENT_SECRET',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → Google Calendar connect returns "not configured"',
+    reason:
+      'Google Calendar OAuth client secret. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_OAUTH_REDIRECT_URI',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → Google Calendar connect returns "not configured"',
+    reason:
+      'Google Calendar OAuth redirect URI (https://backend-spring-lake-3890.fly.dev/api/scheduling/auth/google/callback). Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_OAUTH_SCOPES',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: "'https://www.googleapis.com/auth/calendar.events'",
+    reason:
+      'Comma-separated Google Calendar OAuth scopes. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'FEATURE_GOOGLE_CALENDAR_SYNC',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → off (only "true" enables)',
+    reason:
+      'Google Calendar sync flag; webhook and OAuth routes 404/refuse while off. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_CALENDAR_ENABLED',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → stub adapter (only "true" enables)',
+    reason:
+      'Google Calendar scheduling provider. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_CALENDAR_WATCH_CHANNELS_ENABLED',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → watch channels off',
+    reason:
+      'Google Calendar push watch channels. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_CALENDAR_WEBHOOK_PUBLIC_BASE_URL',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → watch channels misconfigured if enabled',
+    reason:
+      'Public base URL Google pushes calendar notifications to. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_CALENDAR_WEBHOOK_TOKEN',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → calendar webhook rejects every push',
+    reason:
+      'Channel token checked on Google Calendar webhook pushes. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'GOOGLE_MEET_ENABLED',
+    tier: 'optional',
+    launch: 'optional-integration',
+    default: 'unset → stub adapter (only "true" enables)',
+    reason:
+      'Google Meet scheduling provider. Optional integration, not a launch dependency (owner 2026-10-01): TGP native scheduling is the product. Leave unset or explicitly false; existing shared-placeholder Fly values are cleanup candidates, not values to fill.',
+  },
+  {
+    name: 'ZOOM_ENABLED',
+    tier: 'optional',
+    default: 'unset → stub adapter (only "true" enables)',
+    reason: 'Not used in v1 / Zoom scheduling provider is not part of the launch.',
+  },
+  // --- CONTRACTS (not used in v1) ---
+  {
+    name: 'CONTRACT_PDF_BUCKET',
+    tier: 'optional',
+    default: 'unset → DATA_EXPORT_BUCKET, else local disk',
+    reason:
+      'Not used in v1 / contracts (Dropbox Sign) are not part of the launch. Bucket for signed contract PDFs.',
+  },
+  {
+    name: 'CONTRACT_PDF_URL_SECRET',
+    tier: 'optional',
+    default:
+      'unset → DATA_EXPORT_DOWNLOAD_SECRET → JWT_SECRET; all unset throws when minting a PDF URL',
+    reason:
+      'Not used in v1 / contracts are not part of the launch. HMAC key for signed contract PDF URLs.',
+  },
+  {
+    name: 'HELLOSIGN_API_KEY',
+    tier: 'optional',
+    default: 'unset → HelloSign provider unavailable',
+    reason: 'Not used in v1 / HelloSign (Dropbox Sign) contracts are not part of the launch.',
+  },
+  {
+    name: 'HELLOSIGN_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → embedded signing unavailable',
+    reason: 'Not used in v1 / HelloSign (Dropbox Sign) contracts are not part of the launch.',
+  },
+  {
+    name: 'HELLOSIGN_TEST_MODE',
+    tier: 'optional',
+    default: 'unset → test mode off (only "true" enables)',
+    reason: 'Not used in v1 / HelloSign (Dropbox Sign) contracts are not part of the launch.',
+  },
+  {
+    name: 'FEATURE_CONTRACTS_ENABLED',
+    tier: 'optional',
+    default: 'unset → on in development/test, off otherwise',
+    reason: 'Not used in v1 / contracts module flag.',
+  },
+  {
+    name: 'FEATURE_CONTRACTS_DOCUSIGN_PROVIDER',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Not used in v1 / DocuSign contracts provider flag.',
+  },
+  {
+    name: 'FEATURE_CONTRACTS_NATIVE_CANVAS',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Not used in v1 / native signature canvas flag.',
+  },
+  // --- FEATURE FLAGS ---
+  {
+    name: 'FEATURE_BANK_PAYOUTS_V2',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Bank payouts v2 flag.',
+  },
+  {
+    name: 'FEATURE_STRIPE_TREASURY_PAYOUTS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Stripe Treasury payouts flag.',
+  },
+  {
+    name: 'FEATURE_DUNNING_V2',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Dunning v2 flag.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_SCHEMA',
+    tier: 'optional',
+    default: 'unset → on (only "false" disables)',
+    reason: 'Community schema presence flag; downstream community mounts back off when "false".',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_API',
+    tier: 'optional',
+    default: 'unset → off (only "true"; FEATURE_COMMUNITY_API_ALLOWLIST can open it per user)',
+    reason: 'Community API master flag. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_API_ALLOWLIST',
+    tier: 'optional',
+    default: "'' → no allow-listed users",
+    reason:
+      'Comma-separated user ids that see the community API while FEATURE_COMMUNITY_API is off.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_MESSAGES',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community message writes. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_POSTS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community post writes. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_DM',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community DMs. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_PUSH',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community push notifications. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_REALTIME',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community realtime. Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_TELEMETRY',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community telemetry (no user text). Set at the Wave-1 launch deploy.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_PLAN_TAGS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community plan-context tags.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_ACKS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community acknowledgements.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_AI_TRIAGE',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community AI triage.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_CHALLENGES',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community challenges.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_CLASSROOM_POSTS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community classroom posts.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_EVENTS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community events.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_SEARCH',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community search.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_VOICE_NOTES',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community voice notes.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Require an entitlement for community voice notes.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_WEARABLE_PROMPTS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Community wearable prompts.',
+  },
+  {
+    name: 'FEATURE_MWB_AI_LIVE_CREATE',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Workout builder AI live-create capabilities.',
+  },
+  {
+    name: 'FEATURE_MWB_AUTOSAVE_UNDO',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Workout builder autosave + undo (needs MWB_AUTOSAVE_LOCK_TOKEN_SECRET when on).',
+  },
+  {
+    name: 'FEATURE_MWB_TEMPLATES',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Workout builder templates.',
+  },
+  {
+    name: 'FEATURE_NAMED_REGIMES',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Named regimes.',
+  },
+  {
+    name: 'FEATURE_ROMAN_CHAT_ENABLED',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
+  },
+  {
+    name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Roman coach-reviewed timestamp surface.',
+  },
+  {
+    name: 'FEATURE_ROMAN_COPY_V2',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Roman voice copy v2.',
+  },
+  {
+    name: 'FEATURE_ROMAN_FIRST_PAYMENT',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Roman first-payment moment on checkout webhook.',
+  },
+  {
+    name: 'FEATURE_ROMAN_THREE_ARC_COUNTS',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Coach home three-arc counts.',
+  },
+  {
+    name: 'FEATURE_SCOUT_INGEST',
+    tier: 'optional',
+    default: 'unset → /api/scout routes 404 (only "true")',
+    reason: 'Scout ingest routes (feature-flag-not-found middleware).',
+  },
+  {
+    name: 'FEATURE_SCOUT_RECONSTRUCT',
+    tier: 'optional',
+    default: 'unset → /api/scout/reconstruct 404 (only "true")',
+    reason: 'Scout reconstruct route.',
+  },
+  {
+    name: 'FEATURE_SCOUT_PILOT_COACH_IDS',
+    tier: 'optional',
+    default: 'unset → no pilot coaches',
+    reason: 'Comma-separated pilot coach ids allowed through Scout gates.',
+  },
+  {
+    name: 'FEATURE_EXTENSION_PAIRING',
+    tier: 'optional',
+    default: 'unset → /api/extension/pair 404 (only "true")',
+    reason: 'Browser-extension pairing routes.',
+  },
+  {
+    name: 'FEATURE_WEARABLES_INGEST_POST',
+    tier: 'optional',
+    default: 'unset → POST wearable samples returns disabled (only "true")',
+    reason: 'Wearable samples ingest endpoint. Set at the launch deploy.',
+  },
+  // --- CLOUD WEARABLES (not used in v1: Apple Health / Health Connect are live and need no server key) ---
+  {
+    name: 'FEATURE_WEARABLES_CLOUD_CONNECTORS',
+    tier: 'optional',
+    default: 'unset → off; OAuth start and the eight webhooks return 503',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Master flag for cloud wearable connectors.',
+  },
+  {
+    name: 'WEARABLES_OAUTH_REDIRECT_BASE_URL',
+    tier: 'optional',
+    default: 'unset → cloud wearable connect throws "not configured"',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Base URL for cloud wearable OAuth redirects.',
+  },
+  {
+    name: 'FITBIT_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Fitbit cloud connector OAuth client id.',
+  },
+  {
+    name: 'FITBIT_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Fitbit cloud connector OAuth client secret.',
+  },
+  {
+    name: 'FITBIT_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Fitbit cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'FITBIT_VERIFICATION_CODE',
+    tier: 'optional',
+    default: 'unset → subscriber verification rejected',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Fitbit cloud connector webhook subscriber verification code.',
+  },
+  {
+    name: 'GARMIN_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Garmin cloud connector OAuth client id.',
+  },
+  {
+    name: 'GARMIN_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Garmin cloud connector OAuth client secret.',
+  },
+  {
+    name: 'GARMIN_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Garmin cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'GARMIN_PUSH_TOKEN',
+    tier: 'optional',
+    default: "'' → every push treated as untrusted (fail closed)",
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Garmin cloud connector push verification token.',
+  },
+  {
+    name: 'GARMIN_WEBHOOK_SALT',
+    tier: 'optional',
+    default: 'unset → falls back to the provider push token / webhook secret / client secret',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Garmin cloud connector salt for hashing provider user ids in webhook logs.',
+  },
+  {
+    name: 'OURA_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Oura cloud connector OAuth client id.',
+  },
+  {
+    name: 'OURA_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Oura cloud connector OAuth client secret.',
+  },
+  {
+    name: 'OURA_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Oura cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'OURA_VERIFICATION_TOKEN',
+    tier: 'optional',
+    default: 'unset → webhook verification challenge rejected',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Oura cloud connector webhook verification token.',
+  },
+  {
+    name: 'POLAR_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Polar cloud connector OAuth client id.',
+  },
+  {
+    name: 'POLAR_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Polar cloud connector OAuth client secret.',
+  },
+  {
+    name: 'POLAR_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Polar cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'POLAR_WEBHOOK_SECRET',
+    tier: 'optional',
+    default: 'unset → webhook verification fails closed (Wahoo/WHOOP fall back to CLIENT_SECRET)',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Polar cloud connector webhook signing secret.',
+  },
+  {
+    name: 'STRAVA_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector OAuth client id.',
+  },
+  {
+    name: 'STRAVA_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector OAuth client secret.',
+  },
+  {
+    name: 'STRAVA_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'STRAVA_WEBHOOK_ALLOWED_IPS',
+    tier: 'optional',
+    default: 'unset → no IP allow-list check',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector comma-separated webhook source IP allow-list.',
+  },
+  {
+    name: 'STRAVA_WEBHOOK_SUBSCRIPTION_ID',
+    tier: 'optional',
+    default: 'unset → webhook events rejected ("subscription id unset")',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector push subscription id.',
+  },
+  {
+    name: 'STRAVA_WEBHOOK_VERIFY_TOKEN',
+    tier: 'optional',
+    default: 'unset → subscription validation rejected',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Strava cloud connector subscription verify token.',
+  },
+  {
+    name: 'WAHOO_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Wahoo cloud connector OAuth client id.',
+  },
+  {
+    name: 'WAHOO_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Wahoo cloud connector OAuth client secret.',
+  },
+  {
+    name: 'WAHOO_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Wahoo cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'WAHOO_WEBHOOK_SECRET',
+    tier: 'optional',
+    default: 'unset → webhook verification fails closed (Wahoo/WHOOP fall back to CLIENT_SECRET)',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Wahoo cloud connector webhook signing secret.',
+  },
+  {
+    name: 'WAHOO_WEBHOOK_TOKEN',
+    tier: 'optional',
+    default: 'unset → webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Wahoo cloud connector webhook token.',
+  },
+  {
+    name: 'WHOOP_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. WHOOP cloud connector OAuth client id.',
+  },
+  {
+    name: 'WHOOP_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. WHOOP cloud connector OAuth client secret.',
+  },
+  {
+    name: 'WHOOP_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. WHOOP cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'WHOOP_WEBHOOK_SALT',
+    tier: 'optional',
+    default: 'unset → falls back to the provider push token / webhook secret / client secret',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. WHOOP cloud connector salt for hashing provider user ids in webhook logs.',
+  },
+  {
+    name: 'WHOOP_WEBHOOK_SECRET',
+    tier: 'optional',
+    default: 'unset → webhook verification fails closed (Wahoo/WHOOP fall back to CLIENT_SECRET)',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. WHOOP cloud connector webhook signing secret.',
+  },
+  {
+    name: 'WITHINGS_CLIENT_ID',
+    tier: 'optional',
+    default: 'unset → requireEnv throws "required env var … is not set" on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Withings cloud connector OAuth client id.',
+  },
+  {
+    name: 'WITHINGS_CLIENT_SECRET',
+    tier: 'optional',
+    default: 'unset → token exchange throws; webhook verification fails closed',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Withings cloud connector OAuth client secret.',
+  },
+  {
+    name: 'WITHINGS_REDIRECT_URI',
+    tier: 'optional',
+    default: 'unset → requireEnv throws on OAuth start',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Withings cloud connector OAuth redirect URI.',
+  },
+  {
+    name: 'WITHINGS_VERIFICATION_TOKEN',
+    tier: 'optional',
+    default: 'unset → webhook verification challenge rejected',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Withings cloud connector webhook verification token.',
+  },
+  {
+    name: 'WITHINGS_WEBHOOK_SECRET',
+    tier: 'optional',
+    default: 'unset → webhook verification fails closed (Wahoo/WHOOP fall back to CLIENT_SECRET)',
+    reason:
+      'Not used in v1 / alternative provider Apple Health + Health Connect (on-device) is live. Withings cloud connector webhook signing secret.',
   },
 ];
 
