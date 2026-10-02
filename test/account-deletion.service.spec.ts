@@ -60,6 +60,7 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
     message: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     loggedFoodEntry: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     workoutSession: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    workoutProgram: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     fastingWindow: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     weightLog: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     waterLog: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -141,7 +142,7 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
   };
 
   async function buildService(userRow: ReturnType<typeof buildUserRow>) {
-    const { prisma } = buildPrismaMock(userRow);
+    const { prisma, txProxy } = buildPrismaMock(userRow);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -156,6 +157,7 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     return {
       service: module.get<AccountDeletionService>(AccountDeletionService),
       prisma,
+      txProxy,
     };
   }
 
@@ -239,5 +241,23 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     expect(result).toBeUndefined();
     // Transaction was entered for the scrub
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+  it('S-MWB B-640-3: deletes the client\'s own program copies inside the scrub transaction (the tombstoned User row never fires the FK cascade)', async () => {
+    const confirmedUser = buildUserRow({
+      deletion_confirmed_at: new Date(Date.now() - 15 * 86400 * 1000),
+    });
+    const { service: svc, txProxy } = await buildService(confirmedUser);
+    const finalize = Reflect.get(svc, 'finalizeUserDeletion') as (
+      id: string,
+      opts: { isAdminForced: boolean },
+    ) => Promise<{ skipped?: string } | void>;
+    await finalize.call(svc, 'user-1', { isAdminForced: false });
+    expect(txProxy.workoutProgram.deleteMany).toHaveBeenCalledWith({
+      where: { client_id: 'user-1', is_template: false },
+    });
+    // ...and before the tombstone write, in the same transaction.
+    const deleteOrder = txProxy.workoutProgram.deleteMany.mock.invocationCallOrder[0];
+    const tombstoneOrder = txProxy.user.update.mock.invocationCallOrder[0];
+    expect(deleteOrder).toBeLessThan(tombstoneOrder);
   });
 });

@@ -149,6 +149,25 @@ export class PackageContentsService {
         input,
       );
 
+      // S-MWB Programs (C-640-9): serialise with ProgramLibraryService
+      // .archiveProgram on the master's row lock and re-check it is still live,
+      // so an archive cannot slip between the authoring check above and this
+      // insert (the archive takes the same FOR UPDATE lock before it reads the
+      // package list).
+      if (input.asset_type === 'workout_program') {
+        const locked = await tx.$queryRaw<Array<{ archived_at: Date | null }>>`
+          SELECT "archived_at" FROM "WorkoutProgram"
+          WHERE "id" = ${input.asset_id} AND "coach_id" = ${tenantCoachId} AND "is_template" = true
+          FOR UPDATE`;
+        if (locked.length > 0 && locked[0].archived_at) {
+          throw new UnprocessableEntityException({
+            error: 'PROGRAM_ARCHIVED',
+            code: 'program_archived',
+            message: 'This program is archived. Restore it in Programs before adding it to a package.',
+          });
+        }
+      }
+
       const display_order =
         input.display_order ?? (await this.nextDisplayOrder(tx, packageId));
 

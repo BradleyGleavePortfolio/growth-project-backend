@@ -326,11 +326,18 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
             authorKind,
             cause: 'undo',
           });
+          // S-MWB-2: undo restores the plan's name and type too, not only the
+          // snapshot JSON. A rename made through autosave (plan_meta op) lives
+          // on the WorkoutPlan row, so without this an undo of a rename wrote
+          // the old name into history while the builder kept showing the new
+          // one. Only the two builder-editable columns are restored; a
+          // snapshot without them (revision 0 baselines) leaves them as is.
           await tx.workoutPlan.update({
             where: { id: planId },
             data: {
               head_revision_id: revision.id,
               version: { increment: 1 },
+              ...this.restorablePlanMeta(target.plan_meta_json),
             },
           });
 
@@ -695,6 +702,22 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
         })),
       });
     }
+  }
+
+  /**
+   * The name / type columns an undo puts back from a revision's plan-meta
+   * snapshot (the same two fields the builder edits through `plan_meta`).
+   */
+  private restorablePlanMeta(
+    meta: Prisma.JsonValue | null,
+  ): Pick<Prisma.WorkoutPlanUpdateInput, 'name' | 'type'> {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return {};
+    const out: Pick<Prisma.WorkoutPlanUpdateInput, 'name' | 'type'> = {};
+    const name = meta.name;
+    if (typeof name === 'string' && name.trim().length > 0) out.name = name;
+    const type = meta.type;
+    if (type === 'strength' || type === 'cardio' || type === 'mobility') out.type = type;
+    return out;
   }
 
   /**

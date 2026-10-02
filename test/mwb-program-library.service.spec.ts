@@ -43,6 +43,7 @@ function mk(value: unknown): jest.Mock<Promise<unknown>, unknown[]> {
 function makePrisma(over: Record<string, unknown> = {}) {
   const tx = {
     $executeRaw: mk(1),
+    $queryRaw: mk([{ id: 'master-1' }]),
     workoutProgram: {
       findFirst: mk({ ...MASTER }),
       findUnique: mk(null),
@@ -61,7 +62,7 @@ function makePrisma(over: Record<string, unknown> = {}) {
     workoutPlanExercise: { createMany: mk({ count: 0 }) },
     workoutPlanRevision: { create: mk({}) },
     workoutProgramRevision: { findFirst: mk({ revision_index: 4 }), create: mk({}) },
-    coachPackageContent: { count: mk(0) },
+    coachPackageContent: { count: mk(0), findMany: mk([]) },
     clientWorkoutAssignment: { deleteMany: mk({ count: 0 }), count: mk(0) },
   };
   const prisma = {
@@ -87,7 +88,12 @@ function makePrisma(over: Record<string, unknown> = {}) {
 
 function makeService(
   prisma: unknown,
-  opts: { access?: (clientId: string) => void; deliver?: jest.Mock } = {},
+  opts: {
+    access?: (clientId: string) => void;
+    deliver?: jest.Mock;
+    headCoachId?: string | null;
+    authorizedClientIds?: string[];
+  } = {},
 ) {
   const workoutBuilder = {
     withIdempotency: jest.fn(async (_u: string, _r: string, _k: string, op: () => unknown) => op()),
@@ -109,13 +115,18 @@ function makeService(
       })),
   };
   const notifications = { createNotification: jest.fn(async () => null) };
+  const subCoachScope = {
+    getHeadCoachIdForSubCoach: jest.fn(async () => opts.headCoachId ?? null),
+    getAuthorizedClientIds: jest.fn(async () => opts.authorizedClientIds ?? []),
+  };
   const svc = new ProgramLibraryService(
     fake(prisma),
     fake(workoutBuilder),
     fake(delivery),
+    fake(subCoachScope),
     fake(notifications),
   );
-  return { svc, workoutBuilder, delivery, notifications };
+  return { svc, workoutBuilder, delivery, notifications, subCoachScope };
 }
 
 describe('startDateToInstant', () => {
@@ -267,14 +278,36 @@ describe('ProgramLibraryService edits', () => {
   });
 
   it('archiveProgram: refused while a live package delivers it, naming the package', async () => {
-    const { prisma } = makePrisma();
-    prisma.coachPackageContent.findMany.mockResolvedValueOnce([
-      { package: { name: 'Clinic intro' } },
-    ]);
+    const { prisma, tx } = makePrisma();
+    tx.coachPackageContent.findMany.mockResolvedValueOnce([{ package: { name: 'Clinic intro' } }]);
     const { svc } = makeService(prisma);
     await expect(svc.archiveProgram('coach-1', 'master-1')).rejects.toMatchObject({
       response: { code: 'program_in_package', message: expect.stringContaining('Clinic intro') },
     });
+    expect(tx.workoutProgram.updateMany).not.toHaveBeenCalled();
+    expect(prisma.workoutProgram.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('C-640-9 archiveProgram: takes the master row lock, then reads packages and archives in the SAME transaction', async () => {
+    const { prisma, tx } = makePrisma();
+    const order: string[] = [];
+    tx.$queryRaw.mockImplementationOnce(async () => {
+      order.push('lock');
+      return [{ id: 'master-1' }];
+    });
+    tx.coachPackageContent.findMany.mockImplementationOnce(async () => {
+      order.push('packages');
+      return [];
+    });
+    tx.workoutProgram.updateMany.mockImplementationOnce(async () => {
+      order.push('archive');
+      return { count: 1 };
+    });
+    const { svc } = makeService(prisma);
+    await svc.archiveProgram('coach-1', 'master-1');
+    expect(order).toEqual(['lock', 'packages', 'archive']);
+    const lockSql = fake<string[]>(tx.$queryRaw.mock.calls[0][0]).join('?');
+    expect(lockSql).toMatch(/FOR UPDATE/);
     expect(prisma.workoutProgram.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -314,7 +347,8 @@ describe('ProgramLibraryService.bulkAssign', () => {
       masterProgramId: 'master-1',
       tenantCoachId: 'coach-1',
       clientId: 'c-ok',
-      deliveryKey: 'bulk:coach-1:11111111-1111-4111-8111-111111111111:c-ok',
+      deliveryKey:
+        'bulk:coach-1:master-1:2026-10-05:once:11111111-1111-4111-8111-111111111111:c-ok',
       source: 'bulk_assign',
     });
     expect((call.startAt as Date).toISOString()).toBe('2026-10-05T12:00:00.000Z');
@@ -383,5 +417,226 @@ describe('ProgramLibraryService.bulkAssign', () => {
       response: { code: 'program_empty' },
     });
     expect(delivery.deliverInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe('S-MWB-2 fix round: actor scope, deleted clients, assignee paging', () => {
+  it('C13 A1 parity: a coach row with a bare coach_id but no team membership is the head of its own library (never a phantom sub-coach of that tenant)', async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'coach-x',
+      role: 'coach',
+      coach_id: 'other-head',
+    });
+    const { svc, subCoachScope } = makeService(prisma, { headCoachId: null });
+    await expect(svc.resolveActor('coach-x')).resolves.toEqual({
+      id: 'coach-x',
+      tenantId: 'coach-x',
+      authorKind: 'coach',
+    });
+    expect(subCoachScope.getHeadCoachIdForSubCoach).toHaveBeenCalledWith('coach-x');
+  });
+
+  it('a real team member resolves to the head coach tenant as sub_coach', async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      role: 'coach',
+      coach_id: 'head-1',
+    });
+    const { svc } = makeService(prisma, { headCoachId: 'head-1' });
+    await expect(svc.resolveActor('sub-1')).resolves.toEqual({
+      id: 'sub-1',
+      tenantId: 'head-1',
+      authorKind: 'sub_coach',
+    });
+  });
+
+  it('B-640-2 listAssignees: a sub-coach only gets clients delegated to them (DB filter on the copies AND on the assignment rows)', async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      role: 'coach',
+      coach_id: 'head-1',
+    });
+    prisma.workoutProgram.findFirst.mockResolvedValueOnce({
+      ...MASTER,
+      coach_id: 'head-1',
+      owner_user_id: 'head-1',
+      visibility: 'tenant_shared',
+    });
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([
+      {
+        id: 'copy-a',
+        created_at: new Date('2026-10-02T10:00:00Z'),
+        plans: [
+          {
+            assignments: [
+              {
+                client_id: 'c-mine',
+                scheduled_for: new Date('2026-10-05T12:00:00Z'),
+                completed_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    prisma.user.findMany.mockResolvedValueOnce([{ id: 'c-mine', name: 'Mine' }]);
+    const { svc } = makeService(prisma, { headCoachId: 'head-1', authorizedClientIds: ['c-mine'] });
+    const res = await svc.listAssignees('sub-1', 'master-1');
+    expect(res.items.map((i) => i.client_id)).toEqual(['c-mine']);
+    const args = fake<{
+      where: {
+        coach_id: string;
+        plans: { some: { assignments: { some: Record<string, unknown> } } };
+      };
+      select: { plans: { select: { assignments: { where: Record<string, unknown> } } } };
+    }>(prisma.workoutProgram.findMany.mock.calls[0][0]);
+    expect(args.where.coach_id).toBe('head-1');
+    const scope = { client: { deleted_at: null }, client_id: { in: ['c-mine'] } };
+    expect(args.where.plans.some.assignments.some).toEqual(scope);
+    expect(args.select.plans.select.assignments.where).toEqual(scope);
+  });
+
+  it('B-640-2: a sub-coach with no delegated clients sees no assignees and no tenant-wide count', async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      role: 'coach',
+      coach_id: 'head-1',
+    });
+    prisma.workoutProgram.findFirst.mockResolvedValueOnce({
+      ...MASTER,
+      coach_id: 'head-1',
+      visibility: 'tenant_shared',
+    });
+    const { svc } = makeService(prisma, { headCoachId: 'head-1', authorizedClientIds: [] });
+    await expect(svc.listAssignees('sub-1', 'master-1')).resolves.toEqual({
+      items: [],
+      next_cursor: null,
+    });
+    expect(prisma.workoutProgram.findMany).not.toHaveBeenCalled();
+  });
+
+  it("B-640-3 + B-640-2 assigned_count: excludes deleted accounts, and is scoped to a sub-coach's clients", async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      role: 'coach',
+      coach_id: 'head-1',
+    });
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([
+      { ...MASTER, coach_id: 'head-1', owner_user_id: 'sub-1' },
+    ]);
+    const { svc } = makeService(prisma, { headCoachId: 'head-1', authorizedClientIds: ['c-mine'] });
+    await svc.listPrograms('sub-1', {});
+    // Tagged-template call: (strings, ...values); the scope is a nested fragment.
+    const sqlCall = prisma.$queryRaw.mock.calls.find((c) =>
+      fake<string[]>(c[0]).join('?').includes('cloned_from_id'),
+    );
+    expect(sqlCall).toBeTruthy();
+    expect(fake<string[]>(sqlCall?.[0]).join('?')).toMatch(/u\."deleted_at" IS NULL/);
+    const fragments = (sqlCall ?? []).slice(1).map((v) => fake<{ values?: unknown[] }>(v));
+    expect(fragments.some((f) => f.values?.includes('c-mine'))).toBe(true);
+  });
+
+  it('B-640-3 bulkAssign: a deleted (tombstoned) client is refused per client, never copied', async () => {
+    const { prisma } = makePrisma();
+    prisma.user.findUnique
+      .mockResolvedValueOnce(COACH)
+      .mockResolvedValueOnce({ deleted_at: new Date('2026-10-01T00:00:00Z') });
+    const { svc, delivery } = makeService(prisma);
+    const res = await svc.bulkAssign(
+      'coach-1',
+      'master-1',
+      { client_ids: ['c-gone'], start_date: '2026-10-05' },
+      'k',
+    );
+    expect(res.results[0]).toMatchObject({ status: 'failed', code: 'client_not_found' });
+    expect(delivery.deliverInTx).not.toHaveBeenCalled();
+  });
+
+  it('C-640-8: the same Idempotency-Key used for two different programs makes two distinct delivery keys', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutProgram.findFirst.mockResolvedValue(null);
+    const { svc, delivery } = makeService(prisma);
+    await svc.bulkAssign(
+      'coach-1',
+      'master-1',
+      { client_ids: ['c1'], start_date: '2026-10-05' },
+      'same',
+    );
+    prisma.workoutProgram.findFirst.mockResolvedValueOnce({ ...MASTER, id: 'master-2' });
+    await svc.bulkAssign(
+      'coach-1',
+      'master-2',
+      { client_ids: ['c1'], start_date: '2026-10-05' },
+      'same',
+    );
+    const keys = delivery.deliverInTx.mock.calls.map(
+      (c) => fake<[unknown, { deliveryKey: string }]>(c)[1].deliveryKey,
+    );
+    expect(keys).toEqual([
+      'bulk:coach-1:master-1:2026-10-05:once:same:c1',
+      'bulk:coach-1:master-2:2026-10-05:once:same:c1',
+    ]);
+  });
+
+  it('C-640-8: the same key with a different start date is a new intent, not a replay of the old date', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutProgram.findFirst.mockResolvedValue(null);
+    const { svc, delivery } = makeService(prisma);
+    await svc.bulkAssign(
+      'coach-1',
+      'master-1',
+      { client_ids: ['c1'], start_date: '2026-10-05' },
+      'same',
+    );
+    await svc.bulkAssign(
+      'coach-1',
+      'master-1',
+      { client_ids: ['c1'], start_date: '2026-10-12', allow_repeat: true },
+      'same',
+    );
+    const keys = delivery.deliverInTx.mock.calls.map(
+      (c) => fake<[unknown, { deliveryKey: string }]>(c)[1].deliveryKey,
+    );
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[1]).toBe('bulk:coach-1:master-1:2026-10-12:repeat:same:c1');
+  });
+
+  it('C-640-10 listAssignees: pages over copies (limit + next_cursor) and never lists a deleted account', async () => {
+    const { prisma } = makePrisma();
+    const copy = (id: string, at: string, client: string) => ({
+      id,
+      created_at: new Date(at),
+      plans: [
+        { assignments: [{ client_id: client, scheduled_for: new Date(at), completed_at: null }] },
+      ],
+    });
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([
+      copy('copy-2', '2026-10-02T10:00:00Z', 'c2'),
+      copy('copy-1', '2026-10-01T10:00:00Z', 'c1'),
+    ]);
+    prisma.user.findMany.mockResolvedValueOnce([{ id: 'c2', name: 'Two' }]);
+    const { svc } = makeService(prisma);
+    const page = await svc.listAssignees('coach-1', 'master-1', { limit: 1 });
+    expect(page.items.map((i) => i.client_id)).toEqual(['c2']);
+    expect(page.next_cursor).toEqual(expect.any(String));
+    const args = fake<{ take: number; where: Record<string, unknown> }>(
+      prisma.workoutProgram.findMany.mock.calls[0][0],
+    );
+    expect(args.take).toBe(2);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['c2'] }, deleted_at: null } }),
+    );
+    // Second page: the cursor narrows the copy query.
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([]);
+    await svc.listAssignees('coach-1', 'master-1', { limit: 1, cursor: page.next_cursor });
+    const second = fake<{ where: { OR?: unknown[] } }>(
+      prisma.workoutProgram.findMany.mock.calls[1][0],
+    );
+    expect(second.where.OR).toHaveLength(2);
   });
 });

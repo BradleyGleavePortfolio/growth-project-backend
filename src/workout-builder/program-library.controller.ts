@@ -198,8 +198,16 @@ export class ProgramLibraryController {
   }
 
   @Get(':programId/assignees')
-  assignees(@Req() req: AuthedRequest, @Param('programId', new ParseUUIDPipe()) programId: string) {
-    return this.programs.listAssignees(req.user.id, programId);
+  assignees(
+    @Req() req: AuthedRequest,
+    @Param('programId', new ParseUUIDPipe()) programId: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.programs.listAssignees(req.user.id, programId, {
+      limit: parseLimit(limit),
+      cursor: cursor ?? null,
+    });
   }
 
   @Post(':programId/assign')

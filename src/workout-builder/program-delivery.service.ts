@@ -99,6 +99,22 @@ export class ProgramDeliveryService {
     });
   }
 
+  /**
+   * Is `assetId` any master program (no tenancy filter: this only decides
+   * whether the inline fan-out defers the drop to the dispatcher, which runs
+   * the full tenant + client checks when it delivers).
+   */
+  async isProgramMaster(
+    assetId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<boolean> {
+    const row = await db.workoutProgram.findFirst({
+      where: { id: assetId, is_template: true },
+      select: { id: true },
+    });
+    return row != null;
+  }
+
   /** Deliver in a NEW transaction (cron path, bulk assign). */
   async deliver(input: DeliverProgramInput): Promise<DeliveredProgram> {
     return this.prisma.$transaction((tx) => this.deliverInTx(tx, input), {

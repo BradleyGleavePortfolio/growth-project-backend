@@ -405,7 +405,7 @@ export class PackagePushService {
         // pair IFF push_seq === 0; for a re-send (push_seq > 0) pass ONLY the
         // per-drop scheduledDropId so the resolver produces a FRESH delivery.
         const isResend = drop.push_seq > 0;
-        const result = await this.resolvers.materialise(drop.asset_type, {
+        const materialiseInput = {
           clientId: purchase.client_user_id,
           coachId: purchase.coach_user_id,
           assetId: drop.asset_id,
@@ -416,7 +416,18 @@ export class PackagePushService {
           clientPurchaseId: isResend ? null : purchase.id,
           contentId: isResend ? null : drop.content_id,
           tx: tx as Prisma.TransactionClient,
-        });
+        };
+        // S-MWB Programs (B-640-4): a push of a whole program to up to
+        // MAX_PUSH_AUDIENCE buyers must not copy every program inside this one
+        // interactive transaction (Prisma's 5 s default would roll back the
+        // whole push). The drop is seeded `pending` (due now) and the drip
+        // dispatcher delivers each buyer in its own transaction with retries;
+        // the inline alert below skips it (it re-reads status 'fired'), and the
+        // dispatcher alerts the buyer when the program lands.
+        if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
+          continue;
+        }
+        const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
 
         await tx.scheduledDrop.update({
           where: { id: drop.id },

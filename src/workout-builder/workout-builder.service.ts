@@ -83,6 +83,10 @@ export interface Paginated<T> {
   nextCursor: string | null;
 }
 
+// Must match LOCK_NS_PROGRAM_GRID in program-library.service.ts ('MWBG'): the
+// legacy plan archive route and the library grid writes serialise per program.
+const LOCK_NS_PROGRAM_GRID = 0x4d574247;
+
 @Injectable()
 export class WorkoutBuilderService {
   private readonly logger = new Logger(WorkoutBuilderService.name);
@@ -338,8 +342,33 @@ export class WorkoutBuilderService {
       },
     });
     if (!plan) throw new NotFoundException('Workout plan not found');
-    if (plan.coach_id !== coachId) throw new ForbiddenException();
+    if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
+      throw new ForbiddenException();
+    }
     return plan;
+  }
+
+  /**
+   * S-MWB-2 — a program day plan carries the TENANT (head coach) id, so a team
+   * sub-coach failed the bare ownership check above even for a program they
+   * authored. Allow the open when the caller is an in-team sub-coach of the
+   * plan's tenant (membership-checked, never a bare coach_id) AND the plan is a
+   * day of a library master they own or one shared with the team. Owner-only
+   * masters of the head coach stay closed (403, never a 404 leak).
+   */
+  private async canOpenTeamProgramDay(
+    callerId: string,
+    plan: { coach_id: string; program_id: string | null },
+  ): Promise<boolean> {
+    if (!plan.program_id || !this.subCoachScope) return false;
+    const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(callerId);
+    if (headCoachId === null || headCoachId !== plan.coach_id) return false;
+    const program = await this.prisma.workoutProgram.findUnique({
+      where: { id: plan.program_id },
+      select: { is_template: true, owner_user_id: true, visibility: true },
+    });
+    if (!program?.is_template) return false;
+    return program.owner_user_id === callerId || program.visibility === 'tenant_shared';
   }
 
   async createPlan(
@@ -424,10 +453,29 @@ export class WorkoutBuilderService {
         // Atomic conditional update — safe under concurrent DELETEs.
         // Whichever request matches first stamps archived_at; replays
         // (and concurrent losers) match zero rows and no-op.
-        await this.prisma.workoutPlan.updateMany({
-          where: { id: planId, coach_id: coachId, archived_at: null },
-          data: { archived_at: new Date() },
+        const target = await this.prisma.workoutPlan.findUnique({
+          where: { id: planId },
+          select: { program_id: true },
         });
+        const programId = target?.program_id ?? null;
+        if (programId) {
+          // S-MWB-2 C-640-5: a program day archived through the legacy plan
+          // route takes the same grid lock as the library clear-day route and
+          // obeys the same rule, so a master a package delivers never empties.
+          await this.prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_PROGRAM_GRID}::int4, hashtext(${programId}))`;
+            await this.assertPackagedProgramKeepsADay(tx, programId, planId);
+            await tx.workoutPlan.updateMany({
+              where: { id: planId, coach_id: coachId, archived_at: null },
+              data: { archived_at: new Date() },
+            });
+          });
+        } else {
+          await this.prisma.workoutPlan.updateMany({
+            where: { id: planId, coach_id: coachId, archived_at: null },
+            data: { archived_at: new Date() },
+          });
+        }
 
         // Re-read the row regardless. Handles both first-archive and
         // replay: in both cases we return the now-archived plan.
@@ -439,6 +487,36 @@ export class WorkoutBuilderService {
         return plan;
       },
     );
+  }
+
+  /**
+   * Refuse to archive the last live day of a program that a live package
+   * delivers (typed 409, same code and copy as the library clear-day route).
+   */
+  private async assertPackagedProgramKeepsADay(
+    tx: Prisma.TransactionClient,
+    programId: string,
+    planId: string,
+  ): Promise<void> {
+    const others = await tx.workoutPlan.count({
+      where: { program_id: programId, archived_at: null, id: { not: planId } },
+    });
+    if (others > 0) return;
+    const inPackage = await tx.coachPackageContent.count({
+      where: {
+        asset_type: 'workout_program',
+        asset_id: programId,
+        removed_at: null,
+        package: { archived_at: null },
+      },
+    });
+    if (inPackage > 0) {
+      throw new ConflictException({
+        code: 'program_in_package_needs_a_day',
+        message:
+          'This is the last workout in a program that a package delivers. Add another day first, or remove the program from the package.',
+      });
+    }
   }
 
   // ─── WorkoutPlanExercise rows ─────────────────────────────────────────────
@@ -886,9 +964,12 @@ export class WorkoutBuilderService {
   async assertCanAccessClient(actingUserId: string, clientId: string) {
     const client = await this.prisma.user.findUnique({
       where: { id: clientId },
-      select: { id: true, coach_id: true },
+      select: { id: true, coach_id: true, deleted_at: true },
     });
-    if (!client) throw new NotFoundException('Client not found');
+    // S-MWB-2 B-640-3: account deletion tombstones the User row (deleted_at)
+    // rather than deleting it, so a tombstoned client is "not found" here and
+    // can never be handed new workouts or program copies.
+    if (!client || client.deleted_at) throw new NotFoundException('Client not found');
     // Head coach / owner direct ownership.
     if (client.coach_id === actingUserId) return;
     // Sub-coach overlay (open SubCoachAssignment). Only consulted when the
@@ -1185,10 +1266,14 @@ export class WorkoutBuilderService {
         // coach already exists, so the winner has already committed. Surface a
         // typed ConflictException (409) rather than silently creating a second
         // clone (R0: never a silent double-create).
+        // S-MWB-2: the probe is keyed on the CLIENT (WorkoutProgram.client_id,
+        // migration 20270223000000), not only the coach, so the same master
+        // cloned for a second client is a new clone instead of a false 409.
         const existingClone = await tx.workoutProgram.findFirst({
           where: {
             cloned_from_id: masterProgramId,
             owner_user_id: coachId,
+            client_id: clientId,
             is_template: false,
             archived_at: null,
           },
@@ -1214,6 +1299,7 @@ export class WorkoutBuilderService {
               cloned_from_id: masterProgramId,
               goal_tag: master.goal_tag,
               version: 1,
+              client_id: clientId,
             },
           });
         } catch (err) {

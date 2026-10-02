@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { WorkoutBuilderService } from '../../workout-builder/workout-builder.service';
 import { ProgramDeliveryService } from '../../workout-builder/program-delivery.service';
 import { ResolverSubCoachScope } from './sub-coach-scope.helper';
@@ -45,13 +45,19 @@ import type {
 // Programs library and the regimes list use for asset_type `workout_program`),
 // the drop delivers the WHOLE program: ProgramDeliveryService copies it onto
 // the client by value and schedules every day from the drop's fire time
-// (week*7 + day days). It runs inside the ambient fan-out transaction when one
-// is passed (paid checkout, $0 invite grant, free-package claim), so a rollback
-// takes the copy with it; its exactly-once key is the unique
-// WorkoutProgram.delivery_key `pkg:p=<purchase>:c=<content>` (or
-// `pkg:drop=<scheduledDropId>` for a cron re-send). materialisedRef is the
-// FIRST assignment id, so the client's deliverables row opens day 1.
-// A legacy asset_id that is a WorkoutPlan id keeps the single-plan path below.
+// (week*7 + day days). A whole program is unbounded in size, so it is NEVER
+// copied inside a shared inline fan-out transaction (B-640-4 / C-640-5 /
+// C-640-6): `deferInline` tells the paid-checkout, $0-grant, free-claim and
+// push-to-existing paths to leave the due-now drop pending, and the one-minute
+// drip dispatcher delivers it in its OWN transaction (30 s budget) with
+// retries and a coach alert on permanent failure. A large program or an empty
+// one therefore can never time out or roll back a purchase, a grant or a push.
+// Its exactly-once key is the unique WorkoutProgram.delivery_key
+// `pkg:p=<purchase>:c=<content>` (or `pkg:drop=<scheduledDropId>` for a
+// re-send), so an inline retry and the cron converge on one copy.
+// materialisedRef is the FIRST assignment id, so the client's deliverables row
+// opens day 1. A legacy asset_id that is a WorkoutPlan id keeps the single-plan
+// path below (inline, as before).
 //
 // tx-honoring: WorkoutBuilderService opens its own internal transactions
 // and does not accept an external tx. When the immediate-at-checkout caller
@@ -72,11 +78,24 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
   constructor(
     private readonly workoutBuilder: WorkoutBuilderService,
     private readonly scope: ResolverSubCoachScope,
-    @Optional() private readonly programDelivery?: ProgramDeliveryService,
+    // Required (C-640-7): a DI miss must fail at boot, never silently fall
+    // back to the single-plan path for a program id (which would throw at
+    // checkout instead).
+    private readonly programDelivery: ProgramDeliveryService,
   ) {}
 
   canHandle(assetType: string): boolean {
     return assetType === 'workout_plan' || assetType === 'workout_program';
+  }
+
+  /**
+   * B-640-4: a whole-program asset is never copied inside the caller's shared
+   * inline transaction; the drip dispatcher delivers it in its own. Only the
+   * inline paths pass `tx`, so the cron path (no tx) always materialises.
+   */
+  async deferInline(input: AssignableAssetMaterialiseInput): Promise<boolean> {
+    if (!input.tx) return false;
+    return this.programDelivery.isProgramMaster(input.assetId, input.tx);
   }
 
   async materialise(
@@ -84,34 +103,32 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
   ): Promise<AssignableAssetMaterialiseResult> {
     const acting = await this.scope.resolve(input.coachId, input.clientId);
 
-    if (this.programDelivery) {
-      const master = await this.programDelivery.findDeliverableMaster(
-        acting.tenantCoachId,
-        input.assetId,
-        input.tx,
-      );
-      if (master) {
-        const deliveryInput = {
-          masterProgramId: master.id,
-          tenantCoachId: acting.tenantCoachId,
-          actingUserId: acting.tenantCoachId,
-          authorKind: 'coach' as const,
+    const master = await this.programDelivery.findDeliverableMaster(
+      acting.tenantCoachId,
+      input.assetId,
+      input.tx,
+    );
+    if (master) {
+      const deliveryInput = {
+        masterProgramId: master.id,
+        tenantCoachId: acting.tenantCoachId,
+        actingUserId: acting.tenantCoachId,
+        authorKind: 'coach' as const,
+        clientId: input.clientId,
+        startAt: new Date(Date.now() + ASSIGN_DEFAULT_OFFSET_MS),
+        deliveryKey: this.buildProgramDeliveryKey({
           clientId: input.clientId,
-          startAt: new Date(Date.now() + ASSIGN_DEFAULT_OFFSET_MS),
-          deliveryKey: this.buildProgramDeliveryKey({
-            clientId: input.clientId,
-            assetId: input.assetId,
-            clientPurchaseId: input.clientPurchaseId ?? null,
-            contentId: input.contentId ?? null,
-            scheduledDropId: input.scheduledDropId ?? null,
-          }),
-          source: 'package' as const,
-        };
-        const delivered = input.tx
-          ? await this.programDelivery.deliverInTx(input.tx, deliveryInput)
-          : await this.programDelivery.deliver(deliveryInput);
-        return { materialisedRef: delivered.first_assignment_id };
-      }
+          assetId: input.assetId,
+          clientPurchaseId: input.clientPurchaseId ?? null,
+          contentId: input.contentId ?? null,
+          scheduledDropId: input.scheduledDropId ?? null,
+        }),
+        source: 'package' as const,
+      };
+      const delivered = input.tx
+        ? await this.programDelivery.deliverInTx(input.tx, deliveryInput)
+        : await this.programDelivery.deliver(deliveryInput);
+      return { materialisedRef: delivered.first_assignment_id };
     }
 
     // Schedule for "now" by default; PR-9/PR-10 will pass an explicit

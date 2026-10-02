@@ -85,6 +85,7 @@ function buildPrisma() {
       return fn({
         loggedFoodEntry: { deleteMany: jest.fn().mockResolvedValue({}) },
         workoutSession: { deleteMany: jest.fn().mockResolvedValue({}) },
+        workoutProgram: { deleteMany: jest.fn().mockResolvedValue({}) },
         fastingWindow: { deleteMany: jest.fn().mockResolvedValue({}) },
         weightLog: { deleteMany: jest.fn().mockResolvedValue({}) },
         waterLog: { deleteMany: jest.fn().mockResolvedValue({}) },

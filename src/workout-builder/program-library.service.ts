@@ -39,6 +39,7 @@ import { Prisma, WorkoutPlanType } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { ProgramDeliveryService, ProgramEmptyError } from './program-delivery.service';
 import {
@@ -56,6 +57,9 @@ const LOCK_NS_PROGRAM_ASSIGN = 0x4d574241; // 'MWBA' — serialises assign per (
 
 const PAGE_MAX = 50;
 const REVISIONS_MAX = 50;
+/** Assignee list page size (C-640-10): default and hard cap per request. */
+const ASSIGNEES_PAGE_DEFAULT = 50;
+const ASSIGNEES_PAGE_MAX = 100;
 
 export interface ProgramActor {
   id: string;
@@ -169,6 +173,7 @@ export class ProgramLibraryService {
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
     private readonly delivery: ProgramDeliveryService,
+    private readonly subCoachScope: SubCoachScopeService,
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
@@ -186,11 +191,30 @@ export class ProgramLibraryService {
     if (user.role !== 'coach' && user.role !== 'owner') {
       throw new ForbiddenException(err('coach_role_required', 'Programs are for coach accounts.'));
     }
+    // Tenant promotion goes through the membership-checked helper (C13 A1): a
+    // bare `coach_id` on a coach row (left behind by a guest checkout) is NOT a
+    // team seat, so that coach is the head of their own library, never a
+    // member of someone else's tenant.
+    const headCoachId =
+      user.role === 'coach' && user.coach_id
+        ? await this.subCoachScope.getHeadCoachIdForSubCoach(user.id)
+        : null;
     return {
       id: user.id,
-      tenantId: user.coach_id ?? user.id,
-      authorKind: user.coach_id ? 'sub_coach' : 'coach',
+      tenantId: headCoachId ?? user.id,
+      authorKind: headCoachId ? 'sub_coach' : 'coach',
     };
+  }
+
+  /**
+   * Clients this actor may see in assignee lists and counts (B-640-2). Head
+   * coaches see their whole tenant (null = no extra filter); a sub-coach sees
+   * only the clients delegated to them through SubCoachAssignment, the same
+   * scope every other coach surface uses.
+   */
+  private async visibleClientIds(actor: ProgramActor): Promise<Set<string> | null> {
+    if (actor.authorKind !== 'sub_coach') return null;
+    return new Set(await this.subCoachScope.getAuthorizedClientIds(actor.id));
   }
 
   private readableWhere(actor: ProgramActor): Prisma.WorkoutProgramWhereInput {
@@ -317,7 +341,7 @@ export class ProgramLibraryService {
       _count: { _all: true },
     });
     const filledBy = new Map(filled.map((f) => [f.program_id ?? '', f._count._all]));
-    const assigned = await this.assignedCounts(ids);
+    const assigned = await this.assignedCounts(ids, await this.visibleClientIds(actor));
     const pkgs = await this.prisma.coachPackageContent.groupBy({
       by: ['asset_id'],
       where: {
@@ -353,16 +377,28 @@ export class ProgramLibraryService {
    * from ClientWorkoutAssignment so copies made before S-MWB (MWB-2 clones,
    * #607 onboarding copies, no client_id column value) count too.
    */
-  private async assignedCounts(masterIds: string[]): Promise<Map<string, number>> {
+  private async assignedCounts(
+    masterIds: string[],
+    visible: Set<string> | null,
+  ): Promise<Map<string, number>> {
     if (masterIds.length === 0) return new Map();
+    if (visible && visible.size === 0) return new Map();
+    // Deleted (tombstoned) client accounts never count (B-640-3). A sub-coach
+    // counts only their own delegated clients (B-640-2).
+    const scope = visible
+      ? Prisma.sql`AND a."client_id" IN (${Prisma.join(Array.from(visible))})`
+      : Prisma.empty;
     const rows = await this.prisma.$queryRaw<Array<{ master_id: string; n: number }>>`
       SELECT p."cloned_from_id" AS master_id, COUNT(DISTINCT a."client_id")::int AS n
       FROM "ClientWorkoutAssignment" a
       JOIN "WorkoutPlan" wp ON wp."id" = a."workout_plan_id"
       JOIN "WorkoutProgram" p ON p."id" = wp."program_id"
+      JOIN "User" u ON u."id" = a."client_id"
       WHERE p."cloned_from_id" IN (${Prisma.join(masterIds)})
         AND p."is_template" = false
         AND p."archived_at" IS NULL
+        AND u."deleted_at" IS NULL
+        ${scope}
       GROUP BY p."cloned_from_id"`;
     return new Map(rows.map((r) => [r.master_id, Number(r.n)]));
   }
@@ -703,12 +739,7 @@ export class ProgramLibraryService {
         );
       }
       src = await tx.workoutPlan.findFirst({
-        where: {
-          id: dto.plan_id,
-          program_id: null,
-          archived_at: null,
-          coach_id: { in: [actor.id, actor.tenantId] },
-        },
+        where: { id: dto.plan_id, ...this.savedWorkoutWhere(actor) },
         include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
       });
       if (!src) {
@@ -932,27 +963,34 @@ export class ProgramLibraryService {
       );
     }
     if (program.archived_at) return this.detail(actor, programId);
-    const contents = await this.prisma.coachPackageContent.findMany({
-      where: {
-        asset_type: 'workout_program',
-        asset_id: programId,
-        removed_at: null,
-        package: { archived_at: null },
-      },
-      select: { package: { select: { name: true } } },
-    });
-    if (contents.length > 0) {
-      const names = Array.from(new Set(contents.map((c) => c.package.name))).join(', ');
-      throw new ConflictException(
-        err(
-          'program_in_package',
-          `New clients of ${names} receive this program. Remove it from ${contents.length === 1 ? 'that package' : 'those packages'} first, then archive it.`,
-        ),
-      );
-    }
-    await this.prisma.workoutProgram.updateMany({
-      where: { id: programId, owner_user_id: actor.id, archived_at: null },
-      data: { archived_at: new Date() },
+    // One transaction holding the master's row lock (C-640-9): an "Add to
+    // package" takes the same FOR UPDATE lock before it inserts, so either the
+    // attach commits first and is seen here, or it waits and then sees the
+    // archive.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "WorkoutProgram" WHERE "id" = ${programId} FOR UPDATE`;
+      const contents = await tx.coachPackageContent.findMany({
+        where: {
+          asset_type: 'workout_program',
+          asset_id: programId,
+          removed_at: null,
+          package: { archived_at: null },
+        },
+        select: { package: { select: { name: true } } },
+      });
+      if (contents.length > 0) {
+        const names = Array.from(new Set(contents.map((c) => c.package.name))).join(', ');
+        throw new ConflictException(
+          err(
+            'program_in_package',
+            `New clients of ${names} receive this program. Remove it from ${contents.length === 1 ? 'that package' : 'those packages'} first, then archive it.`,
+          ),
+        );
+      }
+      await tx.workoutProgram.updateMany({
+        where: { id: programId, owner_user_id: actor.id, archived_at: null },
+        data: { archived_at: new Date() },
+      });
     });
     return this.detail(actor, programId);
   }
@@ -1017,6 +1055,16 @@ export class ProgramLibraryService {
 
   // ─── saved workouts ─────────────────────────────────────────────────────
 
+  /**
+   * The saved-workouts library: the actor's own standalone plans (not a program
+   * day, not archived). ONE predicate for both the list and the "copy a saved
+   * workout into a day" source (C-640-9), so a day can only be filled from a
+   * workout the coach can see in the picker.
+   */
+  private savedWorkoutWhere(actor: ProgramActor): Prisma.WorkoutPlanWhereInput {
+    return { coach_id: actor.id, program_id: null, archived_at: null };
+  }
+
   async listSavedWorkouts(
     userId: string,
     query: { q?: string; limit?: number; cursor?: string | null },
@@ -1027,9 +1075,7 @@ export class ProgramLibraryService {
     const cursor = this.decodeCursor(query.cursor);
     const rows = await this.prisma.workoutPlan.findMany({
       where: {
-        coach_id: actor.id,
-        program_id: null,
-        archived_at: null,
+        ...this.savedWorkoutWhere(actor),
         AND: [
           q ? { name: { contains: q, mode: 'insensitive' } } : {},
           cursor
@@ -1086,30 +1132,67 @@ export class ProgramLibraryService {
     };
   }
 
-  async listAssignees(userId: string, programId: string): Promise<{ items: ProgramAssignee[] }> {
+  /**
+   * Clients on this program, newest copy first, keyset-paginated over the copy
+   * rows (C-640-10). A sub-coach sees only their delegated clients (B-640-2);
+   * deleted accounts never appear (B-640-3).
+   */
+  async listAssignees(
+    userId: string,
+    programId: string,
+    query: { limit?: number; cursor?: string | null } = {},
+  ): Promise<{ items: ProgramAssignee[]; next_cursor: string | null }> {
     const actor = await this.resolveActor(userId);
     await this.loadReadable(actor, programId);
+    const visible = await this.visibleClientIds(actor);
+    if (visible && visible.size === 0) return { items: [], next_cursor: null };
+    const limit = Math.min(
+      Math.max(Math.floor(query.limit ?? ASSIGNEES_PAGE_DEFAULT), 1),
+      ASSIGNEES_PAGE_MAX,
+    );
+    const cursor = this.decodeCursor(query.cursor);
+    const clientScope: Prisma.ClientWorkoutAssignmentWhereInput = {
+      client: { deleted_at: null },
+      ...(visible ? { client_id: { in: Array.from(visible) } } : {}),
+    };
     const copies = await this.prisma.workoutProgram.findMany({
       where: {
         cloned_from_id: programId,
         is_template: false,
         archived_at: null,
         coach_id: actor.tenantId,
+        plans: { some: { assignments: { some: clientScope } } },
+        ...(cursor
+          ? {
+              OR: [
+                { created_at: { lt: cursor.at } },
+                { created_at: cursor.at, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
       },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
       select: {
         id: true,
+        created_at: true,
         plans: {
           select: {
-            assignments: { select: { client_id: true, scheduled_for: true, completed_at: true } },
+            assignments: {
+              where: clientScope,
+              select: { client_id: true, scheduled_for: true, completed_at: true },
+            },
           },
         },
       },
     });
+    const page = copies.slice(0, limit);
+    const lastCopy = page[page.length - 1];
     const byKey = new Map<
       string,
       { client_id: string; copy: string; dates: Date[]; completed: number }
     >();
-    for (const c of copies) {
+    for (const c of page) {
       for (const p of c.plans) {
         for (const a of p.assignments) {
           const key = `${c.id}:${a.client_id}`;
@@ -1128,12 +1211,13 @@ export class ProgramLibraryService {
     const clientIds = Array.from(new Set(Array.from(byKey.values()).map((e) => e.client_id)));
     const users = clientIds.length
       ? await this.prisma.user.findMany({
-          where: { id: { in: clientIds } },
+          where: { id: { in: clientIds }, deleted_at: null },
           select: { id: true, name: true },
         })
       : [];
     const nameBy = new Map(users.map((u) => [u.id, u.name]));
     const items = Array.from(byKey.values())
+      .filter((e) => nameBy.has(e.client_id))
       .map((e) => {
         const sorted = e.dates.slice().sort((a, b) => a.getTime() - b.getTime());
         return {
@@ -1147,7 +1231,13 @@ export class ProgramLibraryService {
         };
       })
       .sort((a, b) => b.start_date.localeCompare(a.start_date));
-    return { items };
+    return {
+      items,
+      next_cursor:
+        copies.length > limit && lastCopy
+          ? this.encodeCursor(lastCopy.created_at, lastCopy.id)
+          : null,
+    };
   }
 
   async bulkAssign(
@@ -1234,7 +1324,26 @@ export class ProgramLibraryService {
       }
       return this.unexpectedFailure(clientId, masterId, e);
     }
-    const deliveryKey = `bulk:${actor.id}:${idempotencyKey}:${clientId}`;
+    // A deleted (tombstoned) account keeps its User row, so the access check
+    // above can still pass for it; never copy a program onto it (B-640-3).
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { deleted_at: true },
+    });
+    if (!client || client.deleted_at) {
+      return {
+        client_id: clientId,
+        status: 'failed',
+        code: 'client_not_found',
+        message: 'This client account no longer exists.',
+      };
+    }
+    // The key is the whole logical intent (C-640-8): master, start date and the
+    // repeat choice. Reusing one Idempotency-Key for a different program or a
+    // different start date is a NEW intent, never a silent replay of the first
+    // result; it then meets the already-assigned guard below like any request.
+    const intent = `${masterId}:${startAt.toISOString().slice(0, 10)}:${allowRepeat ? 'repeat' : 'once'}`;
+    const deliveryKey = `bulk:${actor.id}:${intent}:${idempotencyKey}:${clientId}`;
     try {
       return await this.prisma.$transaction(
         async (tx) => {

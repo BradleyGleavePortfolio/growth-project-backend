@@ -788,6 +788,13 @@ export class AccountDeletionService {
       // Hard-delete rows that are purely owned by this user (no cross-user FK dep):
       await tx.loggedFoodEntry.deleteMany({ where: { user_id: userId } });
       await tx.workoutSession.deleteMany({ where: { user_id: userId } });
+      // S-MWB Programs (B-640-3): the client's own program copies (bulk assign
+      // / package delivery). The User row is tombstoned, not deleted, so the
+      // WorkoutProgram.client_id ON DELETE CASCADE never fires; delete them
+      // here. Their plans, exercises, revisions, assignments and snapshots
+      // cascade from the program row. Masters (is_template = true) are coach
+      // content and are never matched (client_id is null on masters).
+      await tx.workoutProgram.deleteMany({ where: { client_id: userId, is_template: false } });
       await tx.fastingWindow.deleteMany({ where: { user_id: userId } });
       await tx.weightLog.deleteMany({ where: { user_id: userId } });
       await tx.waterLog.deleteMany({ where: { user_id: userId } });
