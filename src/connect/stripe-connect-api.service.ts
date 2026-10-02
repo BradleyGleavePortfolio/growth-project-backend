@@ -686,6 +686,33 @@ export class StripeConnectApiService {
     return this.get(`/invoices?${params.toString()}`);
   }
 
+  // S-FEE round 3 (B-627-1) — one page of the platform's PAID invoices created
+  // at or after `created_gte` (unix seconds), newest first, continuing after
+  // `starting_after`. The settlement sweeper walks these pages to find any
+  // invoice charge that has no ChargeSettlement row (a renewal whose webhook
+  // was lost). `subscription` and `charge` are ids on 2024-09-30.acacia.
+  async listPaidInvoices(args: {
+    created_gte: number;
+    starting_after?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount_paid?: number;
+      charge?: string | { id?: string } | null;
+      subscription?: string | { id?: string } | null;
+      status?: string;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams({ status: 'paid' });
+    params.set('created[gte]', String(Math.max(0, Math.floor(args.created_gte))));
+    params.set('limit', String(Math.min(Math.max(args.limit ?? 100, 1), 100)));
+    if (args.starting_after) params.set('starting_after', args.starting_after);
+    return this.get(`/invoices?${params.toString()}`);
+  }
+
   async createTransfer(args: {
     amount: number; // cents
     currency: string;

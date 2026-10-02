@@ -110,13 +110,16 @@ CREATE INDEX "ConnectTransfer_settlement_id_idx" ON "ConnectTransfer"("settlemen
 ALTER TABLE "ConnectTransfer" ADD CONSTRAINT "ConnectTransfer_settlement_id_fkey"
   FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- CronLease: single-runner lease for the scheduled settlement sweep.
+-- CronLease: single-runner lease for the scheduled settlement sweep, the
+-- per-charge money lock (name 'sfee-charge:<charge id>', deleted on release)
+-- and the paid-invoice backfill cursor.
 CREATE TABLE "CronLease" (
     "name" TEXT NOT NULL,
     "holder" TEXT NOT NULL,
     "lease_until" TIMESTAMP(3) NOT NULL,
     "acquired_at" TIMESTAMP(3) NOT NULL,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "cursor" TEXT,
     CONSTRAINT "CronLease_pkey" PRIMARY KEY ("name")
 );
 

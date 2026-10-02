@@ -141,6 +141,61 @@ export class SplitLedgerService {
     });
   }
 
+  // S-FEE round 3 — record a settlement leg's ABSOLUTE position on its slice:
+  // reversed_cents = amount - position, clamped to [0, amount]. Idempotent: a
+  // duplicate or concurrent delivery writes the same value, never adds again.
+  // A failed slice keeps its status (the transfer never reached the payee).
+  async setLegPosition(args: {
+    entry_id: string;
+    position_cents: number;
+  }): Promise<SplitLedgerEntry> {
+    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+      where: { id: args.entry_id },
+    });
+    const reversed = Math.min(
+      current.amount_cents,
+      Math.max(0, current.amount_cents - args.position_cents),
+    );
+    const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
+    let status = current.status;
+    if (status !== 'failed') {
+      if (fully) status = 'reversed';
+      else if (status === 'reversed') status = 'posted';
+    }
+    if (reversed === current.reversed_cents && status === current.status) return current;
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: args.entry_id },
+      data: {
+        reversed_cents: reversed,
+        status,
+        reversed_at: reversed > 0 ? (current.reversed_at ?? new Date()) : null,
+      },
+    });
+  }
+
+  // Legacy head-coach transfers (one transfer per slice): mirror the
+  // transfer row's cumulative reversed amount (absolute, idempotent).
+  async setReversedTotal(args: {
+    entry_id: string;
+    reversed_total_cents: number;
+    stripe_transfer_id?: string | null;
+  }): Promise<SplitLedgerEntry> {
+    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+      where: { id: args.entry_id },
+    });
+    const reversed = Math.min(current.amount_cents, Math.max(0, args.reversed_total_cents));
+    const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: args.entry_id },
+      data: {
+        reversed_cents: reversed,
+        status: fully ? 'reversed' : current.status,
+        reversed_at: fully ? (current.reversed_at ?? new Date()) : current.reversed_at,
+        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
+      },
+    });
+  }
+
   // S-FEE — undo part of a reversal (a won dispute reinstated the payee).
   async undoReversal(args: {
     entry_id: string;

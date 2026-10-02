@@ -325,9 +325,17 @@ export class TransferOrchestratorService {
 
   // Reverse a posted transfer (partial or full). Used by the refund
   // webhook handler when a payment is refunded.
+  //
+  // S-FEE round 3 (B-627-2): callers serialize per charge (ChargeLock), so
+  // `row` is read under the lock and the default key names the transfer's new
+  // cumulative reversed total. The legacy refund path passes a key with the
+  // Stripe refund id instead (one reversal per refund). The ledger mirror is
+  // absolute: settlement transfers are synced by ChargeSettlementService
+  // (syncLegLedger); a legacy transfer's slice takes the transfer's total.
   async reverse(args: {
     transfer_row_id: string;
     amount_cents?: number; // omit = full reversal
+    idempotency_key?: string;
   }): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
@@ -335,9 +343,13 @@ export class TransferOrchestratorService {
     if (!row.stripe_transfer_id) {
       throw new Error('cannot reverse transfer with no Stripe id');
     }
-    const amount = args.amount_cents ?? row.amount_cents - row.reversed_amount_cents;
+    const amount = Math.min(
+      args.amount_cents ?? row.amount_cents - row.reversed_amount_cents,
+      row.amount_cents - row.reversed_amount_cents,
+    );
     if (amount <= 0) return row;
-    const idempotencyKey = `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
+    const idempotencyKey =
+      args.idempotency_key ?? `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
     await this.stripe.reverseTransfer({
       transfer_id: row.stripe_transfer_id,
       amount,
@@ -354,10 +366,10 @@ export class TransferOrchestratorService {
         reversed_at: fullyReversed ? new Date() : row.reversed_at,
       },
     });
-    if (row.ledger_entry_id) {
-      await this.ledger.applyReversal({
+    if (row.ledger_entry_id && !row.settlement_id) {
+      await this.ledger.setReversedTotal({
         entry_id: row.ledger_entry_id,
-        reversed_cents: amount,
+        reversed_total_cents: newReversed,
         stripe_transfer_id: row.stripe_transfer_id,
       });
     }

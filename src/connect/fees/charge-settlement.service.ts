@@ -19,6 +19,7 @@ import {
   type StripeBalanceTransactionObject,
   type StripeChargeObject,
 } from '../stripe-connect-api.service';
+import { ChargeLock, isChargeLockBusy } from './charge-lock';
 import { FeePolicyService } from './fee-policy.service';
 import { SplitLedgerService } from './split-ledger.service';
 import {
@@ -51,6 +52,23 @@ import {
 // Stripe: "It's up to your platform to reconcile any amount owed back to it
 // by reducing subsequent transfer amounts or by reversing transfers."
 //
+// Concurrency (round 3, B-627-2): every money movement on one charge runs
+// under that charge's lock (ChargeLock): settleCharge, applyAdjustments and
+// the refund handler's per-refund critical section. Inside the lock the
+// targets come from the CUMULATIVE state (sum of the charge's succeeded
+// ChargeRefund rows, one per Stripe refund id; the dispute's current balance
+// transactions read from Stripe), and each payee is moved from their freshly
+// read position to that target. Two refunds delivered together, a duplicate
+// delivery, or an admin refund racing its own charge.refunded webhook
+// therefore reverse exactly the difference, once. Ledger slices record the
+// absolute leg position (syncLegLedger), never an increment.
+//
+// Backfill (round 3, B-627-1): the sweeper settles every paid invoice whose
+// charge has no ChargeSettlement row (matched by charge id, 35-day window,
+// resumable cursor), not only purchases that have no settlement at all; a
+// charge whose first Stripe read failed keeps an awaiting_fee row that the
+// sweeper retries; stale awaiting rows and pending transfers raise alerts.
+//
 // Never settled: purchases with amount_cents <= 0 (free packages and $0
 // invite-code grants) and $0 charges. They produce no settlement row, no
 // ledger slice, no transfer and no recovery.
@@ -64,6 +82,31 @@ import {
 
 export const SETTLEMENT_MECHANISM_SCT = 'separate_charge_transfer';
 export const SETTLEMENT_MECHANISM_LEGACY = 'legacy_destination';
+
+// Sweeper backfill window and bounds (B-627-1).
+export const BACKFILL_WINDOW_DAYS = 35;
+export const INVOICE_BACKFILL_CURSOR = 'sfee-invoice-backfill-cursor';
+export const INVOICE_BACKFILL_PAGES_PER_RUN = 4;
+export const STALE_AFTER_MS = 60 * 60_000;
+
+export const SETTLEMENT_LOG_CODES = {
+  stripeUnavailable: 'SFEE_SETTLEMENT_STRIPE_UNAVAILABLE',
+  lockBusy: 'SFEE_CHARGE_LOCK_BUSY',
+  staleAwaiting: 'SFEE_SETTLEMENT_STALE',
+  staleTransfers: 'SFEE_TRANSFER_STALE',
+  invoiceBackfill: 'SFEE_INVOICE_BACKFILL',
+  invoiceBackfillFailed: 'SFEE_INVOICE_BACKFILL_FAILED',
+} as const;
+
+export interface SweepSummary {
+  retried: number;
+  backfilled: number;
+  settled: number;
+  invoices_scanned: number;
+  invoices_backfilled: number;
+  stale_awaiting: number;
+  stale_transfers: number;
+}
 
 export type SettleStatus =
   'skipped_free' | 'awaiting_fee' | 'settled' | 'already_settled' | 'legacy_destination';
@@ -83,10 +126,17 @@ export type AdjustOutcome =
 export interface AdjustmentInput {
   purchase: ClientPurchase;
   charge_id: string;
-  // Cumulative refunded amount on the charge (sum of succeeded refunds).
+  // Cumulative refunded amount on the charge as the caller saw it. Inside the
+  // lock the service also sums the charge's succeeded ChargeRefund rows (one
+  // per Stripe refund id) and uses the larger, so a stale caller can never
+  // move the coach backwards or twice.
   refunded_cents?: number;
-  // Current dispute position on the charge (see disputeAmountsFrom).
+  // Dispute position on the charge as the caller saw it (disputeAmountsFrom).
   dispute?: { withdrawn_cents: number; fee_cents: number };
+  // When set, the dispute's CURRENT balance transactions are read from Stripe
+  // inside the lock (falls back to `dispute` if Stripe is unavailable), so an
+  // older event processed late cannot undo a newer outcome.
+  dispute_id?: string | null;
 }
 
 type Leg = {
@@ -187,6 +237,8 @@ export function payeePositionCents(
 @Injectable()
 export class ChargeSettlementService {
   private readonly logger = new Logger(ChargeSettlementService.name);
+  // Per-charge money lock (B-627-2). Public so tests can tune its timing.
+  readonly chargeLock: ChargeLock;
 
   constructor(
     private prisma: PrismaService,
@@ -194,33 +246,71 @@ export class ChargeSettlementService {
     private feePolicy: FeePolicyService,
     private ledger: SplitLedgerService,
     private transfers: TransferOrchestratorService,
-  ) {}
+  ) {
+    this.chargeLock = new ChargeLock(prisma);
+  }
 
   // ---------------------------------------------------------------------
   // Settlement
   // ---------------------------------------------------------------------
 
   /**
+   * Run `fn` while holding the charge's money lock (re-entrant within one
+   * call chain). Throws ChargeLockBusyError when another worker holds it for
+   * longer than the wait budget; nothing has moved in that case.
+   */
+  withChargeLock<T>(chargeId: string, fn: () => Promise<T>): Promise<T> {
+    return this.chargeLock.run(chargeId, fn);
+  }
+
+  /**
    * Settle one Stripe charge for a purchase. Idempotent on the charge id:
    * re-delivery, the sweeper and concurrent webhooks all collapse onto the
    * same ChargeSettlement row, and only one caller wins the claim that writes
-   * the ledger slices and transfer rows.
+   * the ledger slices and transfer rows. Runs under the charge's lock; when
+   * the lock stays busy the charge is left as an awaiting_fee row for the
+   * sweeper (never dropped).
    */
   async settleCharge(args: {
     purchase: ClientPurchase;
     charge_id: string;
     invoice_id?: string | null;
   }): Promise<SettleOutcome> {
-    const { purchase } = args;
-    const chargeId = args.charge_id;
-    if (!(purchase.amount_cents > 0)) {
+    if (!(args.purchase.amount_cents > 0)) {
       return this.outcome(
         'skipped_free',
-        chargeId,
+        args.charge_id,
         null,
         'Free package or $0 grant: nothing to settle.',
       );
     }
+    try {
+      return await this.chargeLock.run(args.charge_id, () => this.settleChargeLocked(args));
+    } catch (err) {
+      if (!isChargeLockBusy(err)) throw err;
+      const row = await this.ensureProvisionalRow(args);
+      if (row.status !== 'awaiting_fee') {
+        return this.outcome(
+          row.status === 'legacy_destination' ? 'legacy_destination' : 'already_settled',
+          args.charge_id,
+          row.id,
+        );
+      }
+      return this.markAwaiting(
+        row,
+        args.charge_id,
+        `${SETTLEMENT_LOG_CODES.lockBusy}: another worker is moving money on this charge; the settlement sweeper retries.`,
+      );
+    }
+  }
+
+  private async settleChargeLocked(args: {
+    purchase: ClientPurchase;
+    charge_id: string;
+    invoice_id?: string | null;
+  }): Promise<SettleOutcome> {
+    const { purchase } = args;
+    const chargeId = args.charge_id;
     const existing = await this.prisma.chargeSettlement.findUnique({
       where: { stripe_charge_id: chargeId },
     });
@@ -233,10 +323,35 @@ export class ChargeSettlementService {
       );
     }
 
-    const charge = await this.stripe.retrieveCharge(chargeId, {
-      expandBalanceTransaction: true,
-    });
+    let charge: StripeChargeObject;
+    try {
+      charge = await this.stripe.retrieveCharge(chargeId, {
+        expandBalanceTransaction: true,
+      });
+    } catch (err) {
+      // B-627-1: never lose a charge we were told about. Keep (or create) an
+      // awaiting_fee row; the sweeper retries it every run until it settles.
+      const row = existing ?? (await this.ensureProvisionalRow(args));
+      if (row.status !== 'awaiting_fee') {
+        return this.outcome(
+          row.status === 'legacy_destination' ? 'legacy_destination' : 'already_settled',
+          chargeId,
+          row.id,
+        );
+      }
+      return this.markAwaiting(
+        row,
+        chargeId,
+        `${SETTLEMENT_LOG_CODES.stripeUnavailable}: reading the charge from Stripe failed (${(err as Error).message}); the settlement sweeper retries.`,
+      );
+    }
     if (!(charge.amount > 0)) {
+      // A provisional row (written when Stripe was unavailable) is not money.
+      if (existing) {
+        await this.prisma.chargeSettlement.deleteMany({
+          where: { id: existing.id, status: 'awaiting_fee' },
+        });
+      }
       return this.outcome('skipped_free', chargeId, null, 'The charge is $0: nothing to settle.');
     }
     const policy = await this.feePolicy.resolvePolicy(purchase.coach_user_id);
@@ -272,6 +387,8 @@ export class ChargeSettlementService {
         data: {
           status: 'legacy_destination',
           mechanism: SETTLEMENT_MECHANISM_LEGACY,
+          gross_cents: bt?.amount ?? charge.amount,
+          currency: (bt?.currency ?? charge.currency ?? purchase.currency).toLowerCase(),
           stripe_balance_transaction_id: bt?.id ?? null,
           stripe_fee_cents: bt?.fee ?? null,
           platform_fee_cents: appFee,
@@ -344,8 +461,18 @@ export class ChargeSettlementService {
     const currency = bt.currency.toLowerCase();
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // Compare-and-set on the adjustment columns too: an adjustment recorded
+      // on the awaiting row after we read it makes this claim miss, and the
+      // next pass settles with it (belt and braces; the charge lock already
+      // serializes settle and adjust).
       const claim = await tx.chargeSettlement.updateMany({
-        where: { id: row.id, status: 'awaiting_fee' },
+        where: {
+          id: row.id,
+          status: 'awaiting_fee',
+          refunded_cents: row.refunded_cents,
+          dispute_withdrawn_cents: row.dispute_withdrawn_cents,
+          dispute_fee_cents: row.dispute_fee_cents,
+        },
         data: {
           status: 'settled',
           mechanism: SETTLEMENT_MECHANISM_SCT,
@@ -429,13 +556,14 @@ export class ChargeSettlementService {
       }
 
       for (const leg of legs) {
+        const sliceCents = Math.max(0, leg.sliceCents);
         const entry = await this.ledger.createChargeEntry(
           {
             ...base,
             kind: leg.ledgerKind,
             payee_user_id: leg.payee,
             payee_stripe_account_id: leg.account,
-            amount_cents: Math.max(0, leg.sliceCents),
+            amount_cents: sliceCents,
             status: 'pending',
           },
           tx,
@@ -457,12 +585,27 @@ export class ChargeSettlementService {
         const netted =
           owed > 0 ? await this.netOpenRecoveries(tx, leg.payee, currency, owed, row.id) : 0;
         const amount = owed - netted;
+        // A refund / dispute that landed before settlement lowers the target
+        // below the slice: the difference is recorded as reversed (absolute;
+        // syncLegLedger keeps it that way), so the reported net is the target.
+        const preReversed = Math.max(0, sliceCents - owed);
         if (amount === 0 && netted === 0) {
           await tx.splitLedgerEntry.update({
             where: { id: entry.id },
-            data: { status: 'posted', posted_at: new Date() },
+            data: {
+              status: sliceCents > 0 && preReversed >= sliceCents ? 'reversed' : 'posted',
+              posted_at: new Date(),
+              reversed_cents: preReversed,
+              reversed_at: preReversed > 0 ? new Date() : null,
+            },
           });
           continue;
+        }
+        if (preReversed > 0) {
+          await tx.splitLedgerEntry.update({
+            where: { id: entry.id },
+            data: { reversed_cents: preReversed, reversed_at: new Date() },
+          });
         }
         const transfer = await this.transfers.enqueueSettlementTransfer(
           {
@@ -549,15 +692,22 @@ export class ChargeSettlementService {
   }
 
   /**
-   * Sweeper: retry settlements waiting on Stripe's fee, and settle recent
-   * paid purchases that no webhook settled (lost or out-of-order events).
-   * Bounded; safe to run repeatedly.
+   * Sweeper (every 15 minutes, and the admin endpoint). Bounded; safe to run
+   * repeatedly (every write is idempotent per charge and transfer).
+   *   1. retry settlements waiting on Stripe (fee not reported yet, Stripe
+   *      unavailable on the first read, charge lock busy);
+   *   2. settle recent paid purchases that have no settlement at all (first
+   *      charge lost: one-time purchases and subscription first invoices);
+   *   3. B-627-1: settle every paid invoice whose CHARGE has no settlement
+   *      row (a renewal is matched by charge id, never skipped because its
+   *      purchase already has an earlier settlement);
+   *   4. alert on awaiting_fee rows and pending transfers older than an hour.
    */
   async runSettlementSweep(
     now: Date = new Date(),
     limit = 25,
     deadlineAt?: number,
-  ): Promise<{ retried: number; backfilled: number; settled: number }> {
+  ): Promise<SweepSummary> {
     const pastDeadline = () => deadlineAt !== undefined && Date.now() >= deadlineAt;
     let settled = 0;
     const waiting = await this.prisma.chargeSettlement.findMany({
@@ -584,9 +734,9 @@ export class ChargeSettlementService {
         );
       }
     }
-    // Backstop: recent paid purchases with no settlement and no ledger at all
-    // (a purchase with legacy ledger rows was handled by the pre-S-FEE flow).
-    const since = new Date(now.getTime() - 14 * 86_400_000);
+    // Paid purchases with no settlement and no ledger at all (a purchase
+    // with legacy ledger rows was handled by the pre-S-FEE flow).
+    const since = new Date(now.getTime() - BACKFILL_WINDOW_DAYS * 86_400_000);
     const orphans = await this.prisma.clientPurchase.findMany({
       where: {
         amount_cents: { gt: 0 },
@@ -614,7 +764,191 @@ export class ChargeSettlementService {
       const results = await this.settlePurchase(p);
       settled += results.filter((r) => r.status === 'settled').length;
     }
-    return { retried: waiting.length, backfilled: orphans.length, settled };
+    const invoices = pastDeadline()
+      ? { scanned: 0, backfilled: 0, settled: 0 }
+      : await this.backfillPaidInvoices(now, limit, pastDeadline);
+    settled += invoices.settled;
+    const stale = await this.reportStale(now);
+    return {
+      retried: waiting.length,
+      backfilled: orphans.length,
+      settled,
+      invoices_scanned: invoices.scanned,
+      invoices_backfilled: invoices.backfilled,
+      stale_awaiting: stale.awaiting,
+      stale_transfers: stale.transfers,
+    };
+  }
+
+  /**
+   * B-627-1 — walk Stripe's paid invoices of the last BACKFILL_WINDOW_DAYS
+   * (newest first, INVOICE_BACKFILL_PAGES_PER_RUN pages of 100 per run) and
+   * settle every invoice charge that has no ChargeSettlement row, matched by
+   * charge id. The position is kept in a CronLease row's `cursor`, so a large
+   * window is covered across runs instead of re-reading the newest pages; at
+   * the end of the window the cursor resets to the newest invoice.
+   * Only S-FEE purchases are backfilled: a purchase with an S-FEE settlement,
+   * or one with no settlement and no legacy ledger rows. Legacy destination
+   * subscriptions keep their pre-S-FEE flow.
+   */
+  private async backfillPaidInvoices(
+    now: Date,
+    budget: number,
+    pastDeadline: () => boolean,
+  ): Promise<{ scanned: number; backfilled: number; settled: number }> {
+    const createdGte = Math.floor((now.getTime() - BACKFILL_WINDOW_DAYS * 86_400_000) / 1000);
+    let cursor: string | null = null;
+    try {
+      const row = await this.prisma.cronLease.findUnique({
+        where: { name: INVOICE_BACKFILL_CURSOR },
+      });
+      cursor = row?.cursor ?? null;
+    } catch (err) {
+      this.logger.warn(
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not read the backfill cursor; starting from the newest invoice: ${(err as Error).message}`,
+      );
+    }
+    let scanned = 0;
+    let backfilled = 0;
+    let settled = 0;
+    let pages = 0;
+    let exhausted = false;
+    try {
+      while (pages < INVOICE_BACKFILL_PAGES_PER_RUN && !pastDeadline() && backfilled < budget) {
+        const page = await this.stripe.listPaidInvoices({
+          created_gte: createdGte,
+          starting_after: cursor,
+          limit: 100,
+        });
+        pages += 1;
+        const data = page.data ?? [];
+        const candidates = data
+          .map((inv) => ({
+            id: inv.id,
+            subscription:
+              typeof inv.subscription === 'string'
+                ? inv.subscription
+                : (inv.subscription?.id ?? null),
+            charge: typeof inv.charge === 'string' ? inv.charge : (inv.charge?.id ?? null),
+            amount_paid: inv.amount_paid ?? 0,
+          }))
+          .filter(
+            (
+              inv,
+            ): inv is { id: string; subscription: string; charge: string; amount_paid: number } =>
+              !!inv.subscription && !!inv.charge && inv.amount_paid > 0,
+          );
+        const known = new Set(
+          candidates.length === 0
+            ? []
+            : (
+                await this.prisma.chargeSettlement.findMany({
+                  where: { stripe_charge_id: { in: candidates.map((c) => c.charge) } },
+                  select: { stripe_charge_id: true },
+                })
+              ).map((r) => r.stripe_charge_id),
+        );
+        const missing = candidates.filter((c) => !known.has(c.charge));
+        const purchases =
+          missing.length === 0
+            ? []
+            : await this.prisma.clientPurchase.findMany({
+                where: {
+                  stripe_subscription_id: { in: [...new Set(missing.map((m) => m.subscription))] },
+                  amount_cents: { gt: 0 },
+                  OR: [
+                    { settlements: { some: { mechanism: SETTLEMENT_MECHANISM_SCT } } },
+                    { settlements: { none: {} }, splits: { none: {} } },
+                  ],
+                },
+              });
+        const bySub = new Map(purchases.map((p) => [p.stripe_subscription_id, p]));
+        let stoppedAt: string | null = null;
+        for (const inv of data) {
+          if (backfilled >= budget || pastDeadline()) {
+            stoppedAt = inv.id;
+            break;
+          }
+          scanned += 1;
+          const m = missing.find((x) => x.id === inv.id);
+          const purchase = m ? bySub.get(m.subscription) : undefined;
+          if (m && purchase) {
+            backfilled += 1;
+            this.logger.warn(
+              `${SETTLEMENT_LOG_CODES.invoiceBackfill} invoice=${m.id} charge=${m.charge} purchase=${purchase.id}: paid invoice had no settlement; settling now`,
+            );
+            try {
+              const o = await this.settleCharge({
+                purchase,
+                charge_id: m.charge,
+                invoice_id: m.id,
+              });
+              if (o.status === 'settled') settled += 1;
+            } catch (err) {
+              this.logger.warn(
+                `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} invoice=${m.id} charge=${m.charge}: ${(err as Error).message}`,
+              );
+            }
+          }
+          cursor = inv.id;
+        }
+        if (stoppedAt) break;
+        if (!page.has_more || data.length === 0) {
+          exhausted = true;
+          break;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} listing paid invoices failed; the next run resumes from the saved cursor: ${(err as Error).message}`,
+      );
+    }
+    await this.saveBackfillCursor(exhausted ? null : cursor, now);
+    return { scanned, backfilled, settled };
+  }
+
+  private async saveBackfillCursor(cursor: string | null, now: Date): Promise<void> {
+    try {
+      await this.prisma.cronLease.upsert({
+        where: { name: INVOICE_BACKFILL_CURSOR },
+        create: {
+          name: INVOICE_BACKFILL_CURSOR,
+          holder: 'sfee-settlement-sweep',
+          lease_until: now,
+          acquired_at: now,
+          cursor,
+        },
+        update: { cursor, acquired_at: now },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not save the backfill cursor; the next run re-reads from the newest invoice: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Alert (error level, alert=true) on money that has waited over an hour.
+  private async reportStale(now: Date): Promise<{ awaiting: number; transfers: number }> {
+    const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
+    const [awaiting, transfers] = await Promise.all([
+      this.prisma.chargeSettlement.count({
+        where: { status: 'awaiting_fee', created_at: { lte: cutoff } },
+      }),
+      this.prisma.connectTransfer.count({
+        where: { status: 'pending', settlement_id: { not: null }, created_at: { lte: cutoff } },
+      }),
+    ]);
+    if (awaiting > 0) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.staleAwaiting} alert=true ${awaiting} charge settlement(s) have waited over an hour (see ChargeSettlement.last_error); coaches are not paid for them yet`,
+      );
+    }
+    if (transfers > 0) {
+      this.logger.error(
+        `${SETTLEMENT_LOG_CODES.staleTransfers} alert=true ${transfers} coach transfer(s) have been pending over an hour (see ConnectTransfer.last_error)`,
+      );
+    }
+    return { awaiting, transfers };
   }
 
   // ---------------------------------------------------------------------
@@ -625,16 +959,27 @@ export class ChargeSettlementService {
    * Re-derive targets after a refund or dispute change and move each payee
    * to their target. Returns `legacy` / `no_settlement` when the charge is
    * not an S-FEE settlement so the caller can run the legacy reversal path.
+   *
+   * B-627-2: runs under the charge's lock. Inside it the refunded amount is
+   * the cumulative total of the charge's succeeded refunds (ChargeRefund rows,
+   * unique per Stripe refund id), never the caller's increment, and every
+   * payee moves from a position read under the lock. Before releasing, the
+   * holder re-reads the refunds and applies any that landed meanwhile, so a
+   * waiter that gave up (ChargeLockBusyError) loses nothing.
    */
   async applyAdjustments(input: AdjustmentInput): Promise<AdjustOutcome> {
     if (!(input.purchase.amount_cents > 0)) return 'skipped_free';
+    return this.chargeLock.run(input.charge_id, () => this.applyAdjustmentsLocked(input));
+  }
+
+  private async applyAdjustmentsLocked(input: AdjustmentInput): Promise<AdjustOutcome> {
     let row = await this.prisma.chargeSettlement.findUnique({
       where: { stripe_charge_id: input.charge_id },
     });
     if (!row || row.status === 'awaiting_fee') {
       // Settle first (it reads Stripe's amount_refunded), then adjust.
       try {
-        await this.settleCharge({ purchase: input.purchase, charge_id: input.charge_id });
+        await this.settleChargeLocked({ purchase: input.purchase, charge_id: input.charge_id });
       } catch (err) {
         this.logger.warn(
           `applyAdjustments: settle-first failed charge=${input.charge_id}: ${(err as Error).message}`,
@@ -646,16 +991,20 @@ export class ChargeSettlementService {
     }
     if (!row) return 'no_settlement';
     if (row.status === 'legacy_destination') return 'legacy';
+    const dispute = await this.currentDispute(input);
     let current: ChargeSettlement = row;
+    let adjusted = false;
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let round = 0; round < 4; round += 1) {
+      const refundedOnRecord = await this.succeededRefundCents(input.charge_id);
       const next: ChargeAdjustments = {
         refunded_cents: Math.max(
           current.refunded_cents,
-          input.refunded_cents ?? current.refunded_cents,
+          input.refunded_cents ?? 0,
+          refundedOnRecord,
         ),
-        dispute_withdrawn_cents: input.dispute?.withdrawn_cents ?? current.dispute_withdrawn_cents,
-        dispute_fee_cents: input.dispute?.fee_cents ?? current.dispute_fee_cents,
+        dispute_withdrawn_cents: dispute?.withdrawn_cents ?? current.dispute_withdrawn_cents,
+        dispute_fee_cents: dispute?.fee_cents ?? current.dispute_fee_cents,
       };
       if (current.status === 'awaiting_fee') {
         // Still no fee from Stripe: remember the adjustment; settleCharge
@@ -697,6 +1046,14 @@ export class ChargeSettlementService {
           current = reread;
           continue;
         }
+        adjusted = true;
+        current = {
+          ...current,
+          ...next,
+          target_platform_fee_cents: targets.platform_fee_cents,
+          target_head_coach_cents: targets.head_coach_split_cents,
+          target_coach_net_cents: targets.coach_net_cents,
+        };
       }
       // TGP keeps no fee on refunded / charged-back principal: mirror the
       // platform slice's reduction on its ledger row (absolute, idempotent).
@@ -732,12 +1089,42 @@ export class ChargeSettlementService {
       for (const leg of legs) {
         await this.convergeLeg(current, leg, next, reason);
       }
-      return unchanged ? 'unchanged' : 'adjusted';
+      // Drain before release: a refund recorded while we converged (its
+      // webhook is waiting on this lock, or gave up) is applied now.
+      const after = await this.succeededRefundCents(input.charge_id);
+      if (after <= next.refunded_cents) return adjusted ? 'adjusted' : 'unchanged';
     }
     this.logger.warn(
-      `applyAdjustments: gave up after concurrent updates charge=${input.charge_id}`,
+      `applyAdjustments: refunds kept arriving charge=${input.charge_id}; the next delivery converges the rest`,
     );
-    return 'deferred';
+    return adjusted ? 'adjusted' : 'deferred';
+  }
+
+  /** Cumulative succeeded refunds on a charge (one row per Stripe refund id). */
+  private async succeededRefundCents(chargeId: string): Promise<number> {
+    const rows = await this.prisma.chargeRefund.findMany({
+      where: { stripe_charge_id: chargeId, status: 'succeeded' },
+      select: { amount_cents: true },
+    });
+    return rows.reduce((n, r) => n + (r.amount_cents > 0 ? r.amount_cents : 0), 0);
+  }
+
+  /** The dispute's current position, read from Stripe under the lock when possible. */
+  private async currentDispute(
+    input: AdjustmentInput,
+  ): Promise<{ withdrawn_cents: number; fee_cents: number } | null> {
+    if (!input.dispute_id) return input.dispute ?? null;
+    try {
+      const fresh = await this.stripe.retrieveDispute(input.dispute_id);
+      if (Array.isArray(fresh.balance_transactions)) {
+        return disputeAmountsFrom(fresh.balance_transactions);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `applyAdjustments: reading dispute ${input.dispute_id} from Stripe failed; using the event's position: ${(err as Error).message}`,
+      );
+    }
+    return input.dispute ?? null;
   }
 
   /** True when the charge settled through S-FEE (not a legacy destination charge). */
@@ -772,7 +1159,20 @@ export class ChargeSettlementService {
   // Internals
   // ---------------------------------------------------------------------
 
+  // Caller holds the charge lock. Moves the payee from their position (read
+  // here, under the lock) to the target, then records the leg's absolute
+  // position on its ledger slice.
   private async convergeLeg(
+    row: ChargeSettlement,
+    leg: Leg,
+    adj: ChargeAdjustments,
+    reason: 'refund' | 'dispute',
+  ): Promise<void> {
+    await this.moveLegToTarget(row, leg, adj, reason);
+    await this.syncLegLedger(row, leg);
+  }
+
+  private async moveLegToTarget(
     row: ChargeSettlement,
     leg: Leg,
     adj: ChargeAdjustments,
@@ -868,7 +1268,6 @@ export class ChargeSettlementService {
         );
         return;
       }
-      const original = transfers.find((t) => t.ledger_entry_id);
       const reinstate = await this.transfers.enqueueSettlementTransfer({
         settlement_id: row.id,
         purchase_id: row.purchase_id,
@@ -882,14 +1281,34 @@ export class ChargeSettlementService {
         source_stripe_charge_id: null,
         idempotency_key: `tgp-settle-${row.stripe_charge_id}-${leg.leg}-reinstate-${key}`,
       });
-      const posted = await this.safeAttempt(reinstate.id);
-      if (posted?.status === 'succeeded' && original?.ledger_entry_id) {
-        await this.ledger.undoReversal({
-          entry_id: original.ledger_entry_id,
-          reinstated_cents: give,
-        });
-      }
+      await this.safeAttempt(reinstate.id);
     }
+  }
+
+  // The leg's ledger slice records the payee's absolute position on this
+  // charge: reversed_cents = slice - (sum of the leg's transfers, net of
+  // reversals, plus what they netted). Recomputed from the transfer rows on
+  // every adjustment, so a duplicate or concurrent delivery can never count a
+  // reversal twice (the old additive applyReversal could).
+  private async syncLegLedger(row: ChargeSettlement, leg: Leg): Promise<void> {
+    const entry = await this.prisma.splitLedgerEntry.findFirst({
+      where: {
+        purchase_id: row.purchase_id,
+        stripe_charge_id: row.stripe_charge_id,
+        kind: leg.leg === 'coach' ? 'destination' : 'head_coach_split',
+        payee_user_id: leg.payee_user_id,
+      },
+    });
+    if (!entry) return;
+    const transfers = await this.prisma.connectTransfer.findMany({
+      where: { settlement_id: row.id, destination_user_id: leg.payee_user_id },
+    });
+    let position = 0;
+    for (const t of transfers) {
+      if (t.status === 'failed') continue;
+      position += t.amount_cents + t.netted_recovery_cents - t.reversed_amount_cents;
+    }
+    await this.ledger.setLegPosition({ entry_id: entry.id, position_cents: position });
   }
 
   // Net a payee's open recoveries (oldest first, same currency) against an
@@ -964,6 +1383,30 @@ export class ChargeSettlementService {
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
     }
+  }
+
+  // An awaiting_fee row for a charge we know about but could not settle yet
+  // (Stripe unavailable, charge lock busy). Provisional gross / currency are
+  // the purchase's; the settle claim overwrites them from Stripe.
+  private async ensureProvisionalRow(args: {
+    purchase: ClientPurchase;
+    charge_id: string;
+    invoice_id?: string | null;
+  }): Promise<ChargeSettlement> {
+    const existing = await this.prisma.chargeSettlement.findUnique({
+      where: { stripe_charge_id: args.charge_id },
+    });
+    if (existing) return existing;
+    const policy = await this.feePolicy.resolvePolicy(args.purchase.coach_user_id);
+    return this.createSettlementRow({
+      purchase: args.purchase,
+      chargeId: args.charge_id,
+      invoiceId: args.invoice_id ?? null,
+      grossCents: args.purchase.amount_cents,
+      currency: (args.purchase.currency ?? 'usd').toLowerCase(),
+      platformBps: policy.platform_application_fee_bps,
+      mechanism: SETTLEMENT_MECHANISM_SCT,
+    });
   }
 
   private async createSettlementRow(args: {

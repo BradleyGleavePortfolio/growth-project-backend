@@ -5,6 +5,7 @@
 // 2024-09-30.acacia.
 import type { PrismaService } from '../../src/prisma.service';
 import {
+  StripeConnectApiError,
   StripeConnectApiService,
   type StripeChargeObject,
 } from '../../src/connect/stripe-connect-api.service';
@@ -59,8 +60,10 @@ export function matches(
     ) {
       const related = rel ? rel(row, k) : null;
       if (!related) return true;
-      if ('none' in (cond as Row)) return related.length === 0;
-      return related.length > 0;
+      const inner = ('none' in (cond as Row) ? (cond as Row).none : (cond as Row).some) as Row;
+      const hits = related.filter((r) => matches(r, inner));
+      if ('none' in (cond as Row)) return hits.length === 0;
+      return hits.length > 0;
     }
     return matchValue(row[k], cond);
   });
@@ -169,6 +172,13 @@ export class Table {
     return { count: hits.length };
   });
 
+  deleteMany = jest.fn(async ({ where }: { where?: Row } = {}) => {
+    const keep = this.rows.filter((r) => !matches(r, where, this.opts.rel));
+    const count = this.rows.length - keep.length;
+    this.rows.splice(0, this.rows.length, ...keep);
+    return { count };
+  });
+
   upsert = jest.fn(async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
     const row = this.rows.find((r) => matches(r, where, this.opts.rel));
     if (row) {
@@ -215,6 +225,8 @@ export interface SettlementDb {
   ledger: Row[];
   transfers: Row[];
   refunds: Row[];
+  // CronLease rows (sweep lease, per-charge money locks, backfill cursor).
+  leases?: Row[];
 }
 
 export function makeSettlementDb(): SettlementDb {
@@ -228,6 +240,7 @@ export function makeSettlementDb(): SettlementDb {
     ledger: [],
     transfers: [],
     refunds: [],
+    leases: [],
   };
 }
 
@@ -304,6 +317,11 @@ export function settlementTables(db: SettlementDb) {
       }),
     }),
     chargeRefund: new Table(db.refunds, { prefix: 'rf', unique: ['stripe_refund_id'] }),
+    cronLease: new Table(db.leases ?? (db.leases = []), {
+      prefix: 'lease',
+      unique: ['name'],
+      defaults: () => ({ cursor: null }),
+    }),
   };
 }
 
@@ -386,6 +404,18 @@ export class FakeStripe extends StripeConnectApiService {
   >();
   reversalsByKey = new Map<string, { id: string; transfer: string; amount: number }>();
   failReversals = false;
+  /** Paid-invoice pages for listPaidInvoices, newest first (like Stripe). */
+  paidInvoices: Array<{
+    id: string;
+    amount_paid: number;
+    charge: string | null;
+    subscription: string | null;
+    created: number;
+  }> = [];
+  disputes = new Map<
+    string,
+    { id: string; balance_transactions: Array<{ id: string; amount: number; fee: number }> }
+  >();
 
   retrieveCharge = jest.fn(async (id: string) => {
     const c = this.charges.get(id);
@@ -422,6 +452,26 @@ export class FakeStripe extends StripeConnectApiService {
     },
   );
 
+  listPaidInvoices = jest.fn(
+    async (args: { created_gte: number; starting_after?: string | null; limit?: number }) => {
+      const all = this.paidInvoices
+        .filter((i) => i.created >= args.created_gte)
+        .sort((a, b) => b.created - a.created);
+      const start = args.starting_after
+        ? all.findIndex((i) => i.id === args.starting_after) + 1
+        : 0;
+      const limit = args.limit ?? 100;
+      const data = start > 0 || !args.starting_after ? all.slice(start, start + limit) : [];
+      return { data, has_more: start + limit < all.length };
+    },
+  );
+
+  retrieveDispute = jest.fn(async (id: string) => {
+    const d = this.disputes.get(id);
+    if (!d) throw new Error(`No such dispute: '${id}'`);
+    return { amount: 0, currency: 'usd', status: 'needs_response', ...d };
+  });
+
   reverseTransfer = jest.fn(
     async (args: { transfer_id: string; amount?: number; idempotencyKey: string }) => {
       if (this.failReversals) {
@@ -429,6 +479,19 @@ export class FakeStripe extends StripeConnectApiService {
       }
       const existing = this.reversalsByKey.get(args.idempotencyKey);
       if (existing) return existing;
+      // Like Stripe: a transfer can never be reversed past its amount.
+      const transfer = [...this.transfersByKey.values()].find((t) => t.id === args.transfer_id);
+      const already = [...this.reversalsByKey.values()]
+        .filter((r) => r.transfer === args.transfer_id)
+        .reduce((n, r) => n + r.amount, 0);
+      if (transfer && already + (args.amount ?? transfer.amount - already) > transfer.amount) {
+        throw new StripeConnectApiError(
+          'The transfer has insufficient remaining amount to be reversed by the requested amount.',
+          400,
+          'parameter_invalid_integer',
+          'invalid_request_error',
+        );
+      }
       const r = {
         id: `trr_${this.reversalsByKey.size + 1}`,
         transfer: args.transfer_id,

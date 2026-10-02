@@ -272,6 +272,8 @@ function makeHandler() {
     connectTransfer: tables.connectTransfer,
     chargeSettlement: tables.chargeSettlement,
     payeeRecovery: tables.payeeRecovery,
+    chargeRefund: tables.chargeRefund,
+    cronLease: tables.cronLease,
     $transaction: async (fn: (tx: object) => Promise<unknown>) => fn(prisma),
   });
   const stripe = new StripeStub();

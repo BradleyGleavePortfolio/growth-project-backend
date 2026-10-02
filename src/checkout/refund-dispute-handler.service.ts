@@ -5,6 +5,7 @@ import {
   disputeAmountsFrom,
   isLegacyDestinationCharge,
 } from '../connect/fees/charge-settlement.service';
+import { isChargeLockBusy } from '../connect/fees/charge-lock';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
@@ -366,23 +367,27 @@ export class RefundDisputeHandlerService {
     note?: string | null;
     initiated_by_user_id?: string | null;
   }): Promise<{ row: ChargeRefund; ledger_just_reversed: boolean }> {
+    const updateExisting = (existing: ChargeRefund) =>
+      this.prisma.chargeRefund.update({
+        where: { stripe_refund_id: args.stripe_refund_id },
+        data: {
+          status: args.status,
+          amount_cents: args.amount_cents,
+          reason: args.reason ?? existing.reason,
+          note: args.note ?? existing.note,
+          initiated_by_user_id: args.initiated_by_user_id ?? existing.initiated_by_user_id,
+          posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
+        },
+      });
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
     });
-    const row = existing
-      ? await this.prisma.chargeRefund.update({
-          where: { stripe_refund_id: args.stripe_refund_id },
-          data: {
-            status: args.status,
-            amount_cents: args.amount_cents,
-            reason: args.reason ?? existing.reason,
-            note: args.note ?? existing.note,
-            initiated_by_user_id:
-              args.initiated_by_user_id ?? existing.initiated_by_user_id,
-            posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
-          },
-        })
-      : await this.prisma.chargeRefund.create({
+    let row: ChargeRefund;
+    if (existing) {
+      row = await updateExisting(existing);
+    } else {
+      try {
+        row = await this.prisma.chargeRefund.create({
           data: {
             purchase_id: args.purchase.id,
             stripe_refund_id: args.stripe_refund_id,
@@ -395,6 +400,19 @@ export class RefundDisputeHandlerService {
             posted_at: args.status === 'succeeded' ? new Date() : null,
           },
         });
+      } catch (err) {
+        // An admin refund and its charge.refunded webhook raced to insert the
+        // same refund id: the loser updates the winner's row.
+        const raced =
+          typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002'
+            ? await this.prisma.chargeRefund.findUnique({
+                where: { stripe_refund_id: args.stripe_refund_id },
+              })
+            : null;
+        if (!raced) throw err;
+        row = await updateExisting(raced);
+      }
+    }
 
     // Apply ledger reversals only once per refund (idempotency flag),
     // and only when the refund is actually `succeeded` — pending refunds
@@ -403,17 +421,45 @@ export class RefundDisputeHandlerService {
       return { row, ledger_just_reversed: false };
     }
 
-    const settled = await this.applySettlementRefund(args.purchase, args.stripe_charge_id);
-    if (!settled) {
-      // Legacy destination charge (pre-S-FEE): unchanged reversal path.
-      await this.applyLedgerReversal(args.purchase.id, args.amount_cents, args.stripe_charge_id);
-      await this.applyHeadCoachReversal(args.purchase.id, args.amount_cents, args.stripe_charge_id);
+    // S-FEE round 3 (B-627-2): one application per Stripe refund id, and one
+    // money movement at a time per charge. "Is this refund applied yet",
+    // the adjustment and "mark it applied" form one critical section under
+    // the charge's lock, so a duplicate delivery, two refunds of one charge
+    // delivered together, or an admin refund racing its own charge.refunded
+    // webhook apply each refund exactly once. The settlement path converges
+    // on the cumulative refunded total; the legacy path reverses this
+    // refund's share with an idempotency key that carries the refund id.
+    // A ChargeLockBusyError propagates (the webhook returns non-2xx and
+    // Stripe redelivers; the lock holder applies this refund before it
+    // releases, because it re-reads the charge's succeeded refunds).
+    const apply = async (): Promise<ChargeRefund | null> => {
+      if (this.settlements) {
+        const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
+        if (!fresh || fresh.ledger_reversed) return null;
+      }
+      const settled = await this.applySettlementRefund(args.purchase, args.stripe_charge_id);
+      if (!settled) {
+        // Legacy destination charge (pre-S-FEE): unchanged reversal path.
+        await this.applyLedgerReversal(args.purchase.id, args.amount_cents, args.stripe_charge_id);
+        await this.applyHeadCoachReversal(
+          args.purchase.id,
+          args.amount_cents,
+          args.stripe_charge_id,
+          args.stripe_refund_id,
+        );
+      }
+      return this.prisma.chargeRefund.update({
+        where: { id: row.id },
+        data: { ledger_reversed: true, transfer_reversed: true },
+      });
+    };
+    const updated = this.settlements
+      ? await this.settlements.withChargeLock(args.stripe_charge_id, apply)
+      : await apply();
+    if (!updated) {
+      const current = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
+      return { row: current ?? row, ledger_just_reversed: false };
     }
-
-    const updated = await this.prisma.chargeRefund.update({
-      where: { id: row.id },
-      data: { ledger_reversed: true, transfer_reversed: true },
-    });
     return { row: updated, ledger_just_reversed: true };
   }
 
@@ -504,12 +550,16 @@ export class RefundDisputeHandlerService {
     purchase: ClientPurchase,
     chargeId: string,
     balanceTransactions: Array<{ amount?: number; fee?: number }> | undefined,
+    disputeId?: string | null,
   ): Promise<boolean> {
     if (!this.settlements || !balanceTransactions) return false;
     const outcome = await this.settlements.applyAdjustments({
       purchase,
       charge_id: chargeId,
       dispute: disputeAmountsFrom(balanceTransactions),
+      // Read the dispute's current position under the charge lock, so an
+      // older event processed late cannot undo a newer outcome.
+      dispute_id: disputeId ?? null,
     });
     return outcome !== 'legacy' && outcome !== 'no_settlement';
   }
@@ -554,6 +604,8 @@ export class RefundDisputeHandlerService {
     purchaseId: string,
     refundAmountCents: number,
     chargeId?: string | null,
+    // Stripe refund id (or dispute id): one reversal per refund at Stripe.
+    reversalSourceId?: string | null,
   ): Promise<void> {
     // Legacy head-coach transfers only (S-FEE settlement transfers are
     // reversed by ChargeSettlementService).
@@ -581,6 +633,9 @@ export class RefundDisputeHandlerService {
       await this.transfers.reverse({
         transfer_row_id: transfer.id,
         amount_cents: amount,
+        ...(reversalSourceId
+          ? { idempotency_key: `tgp-tr-rev-${transfer.id}-src-${reversalSourceId}` }
+          : {}),
       });
     } catch (err) {
       this.logger.warn(
@@ -646,6 +701,7 @@ export class RefundDisputeHandlerService {
           disputePurchase,
           dispute.charge,
           dispute.balance_transactions,
+          dispute.id,
         );
       }
     }
@@ -850,8 +906,16 @@ export class RefundDisputeHandlerService {
     // connected account by reversing the transfer"). Idempotent per dispute
     // position; a legacy destination charge is left to the legacy path.
     try {
-      await this.applySettlementDispute(purchase, dispute.charge, dispute.balance_transactions);
+      await this.applySettlementDispute(
+        purchase,
+        dispute.charge,
+        dispute.balance_transactions,
+        dispute.id,
+      );
     } catch (err) {
+      // Lock busy: fail the delivery so Stripe redelivers it (the dispute
+      // withdrawal must be recovered from the coach, not dropped).
+      if (isChargeLockBusy(err)) throw err;
       this.logger.warn(
         `dispute settlement adjustment failed dispute=${dispute.id} charge=${dispute.charge}: ${(err as Error).message}`,
       );
@@ -1056,7 +1120,7 @@ export class RefundDisputeHandlerService {
       },
       idempotencyKey,
     });
-    const outcome = await this.upsertAndApplyRefund({
+    const refundInput = {
       purchase,
       stripe_refund_id: stripe.id,
       stripe_charge_id: chargeId,
@@ -1065,7 +1129,24 @@ export class RefundDisputeHandlerService {
       reason: args.reason ?? null,
       note: args.note ?? null,
       initiated_by_user_id: args.initiated_by_user_id,
-    });
+    };
+    let outcome: { row: ChargeRefund; ledger_just_reversed: boolean };
+    try {
+      outcome = await this.upsertAndApplyRefund(refundInput);
+    } catch (err) {
+      // The refund exists at Stripe and its ChargeRefund row is written; the
+      // payout adjustment is applied by whoever holds the charge lock (it
+      // re-reads the refunds) or by the charge.refunded webhook.
+      if (!isChargeLockBusy(err)) throw err;
+      this.logger.warn(
+        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${(err as Error).message}`,
+      );
+      const recorded = await this.prisma.chargeRefund.findUnique({
+        where: { stripe_refund_id: stripe.id },
+      });
+      if (!recorded) throw err;
+      return recorded;
+    }
     // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
     // (admin path doesn't go through the webhook's purchase.update
     // branch, so we use the row state at call time) and emit the same

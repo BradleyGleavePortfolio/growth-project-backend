@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
-import { ChargeSettlementService } from '../connect/fees/charge-settlement.service';
+import {
+  ChargeSettlementService,
+  type SweepSummary,
+} from '../connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
@@ -227,7 +230,7 @@ export class PurchaseSplitHandlerService {
     succeeded: number;
     failed: number;
     deadline_reached?: boolean;
-    settlements?: { retried: number; backfilled: number; settled: number };
+    settlements?: SweepSummary;
   }> {
     const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
     const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);

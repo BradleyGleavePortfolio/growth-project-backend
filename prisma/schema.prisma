@@ -3817,6 +3817,9 @@ model CronLease {
   lease_until DateTime
   acquired_at DateTime
   updated_at  DateTime @updatedAt
+  // Resume position of a paged job (the S-FEE paid-invoice backfill keeps the
+  // last Stripe invoice id it examined). Null for plain leases.
+  cursor      String?
 }
 
 model ChargeSettlement {
