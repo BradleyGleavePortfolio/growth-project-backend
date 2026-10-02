@@ -209,6 +209,10 @@ Effects, in order:
    row and snapshot writer `assignProgramToClient` uses), under the verified
    coach's id. The selection is always recomputed from the answers being
    completed (fix round A607-2: nothing from an earlier attempt is replayed).
+   The clone's tenant (`WorkoutProgram.coach_id` / `WorkoutPlan.coach_id`) is
+   the coach's head only when the coach is an explicit member of that head's
+   team (main's #597 rule, fix round INT-607-1); otherwise the coach itself,
+   so a bare `coach_id` never puts a client's plans in another coach's lists.
    A failed or fenced-off attempt leaves no clone and no assignment, so a
    safety answer added meanwhile can never complete against an older,
    higher-intensity program; as defence in depth every other not-started
@@ -239,13 +243,26 @@ computed and stored. The same two fields are on `GET /api/me/macros/current`.
 ### `GET /api/coach/clients/:clientId/consultation[?revision=N]`
 
 Readers (CURRENT tenancy only, evaluated from live rows on every request,
-fix round A607-1): the client's current coach (`User.coach_id`); the current
-head coach of that coach; or a sub-coach whose current head is the client's
-current head AND who holds an open `SubCoachAssignment` for the client issued
-by that head. The client must be a live student and the reader and the
-client's coach live coach-type users. A transfer, a sub-coach moved to
-another team, or a revoked assignment loses access immediately; the
-attach-code transfer also closes every open assignment for the client.
+fix rounds A607-1 and INT-607-1): the client's current coach
+(`User.coach_id`); the head coach of that coach; or a sub-coach on the
+client's current head's team who holds an open `SubCoachAssignment` for the
+client issued by that head.
+
+"Head of" and "on the team of" use main's explicit membership rule (#597,
+C13 Opus A1; `SubCoachScopeService.getHeadCoachIdForSubCoach`, SQL twin
+`app.sub_coach_membership_head`): a coach is on head H's team only when
+`role = 'coach'`, `coach_id = H` and an active `TeamSubCoachAssignment(H,
+coach)` or an open `SubCoachAssignment(H, coach)` exists. A bare `coach_id`
+is not membership: old guest checkouts stamped `coach_id` onto coach buyers,
+and such a phantom "head" reads nothing of the buyer coach's clients. The
+client's current head is the membership head of the client's coach, or the
+client's coach itself when it is not a team member. A head coach reads only
+when it is not itself a member of another team.
+
+The client must be a live student and the reader and the client's coach live
+coach-type users. A transfer, a sub-coach moved to another team, an archived
+team seat or a revoked assignment loses access immediately. Code entry never
+moves a client to another coach (409 `already_attached_to_different_coach`).
 Anyone else, including the client, gets `404`. `@Roles` lists every Role
 enum value (coach, student, owner, sub_coach) so no signed-in role is
 stopped with a `403`; the service decides and every refusal is `404`. The
@@ -319,7 +336,11 @@ the required `rls-live-tests` CI job against Postgres 15 with this migration
 applied verbatim. It runs as the non-bypass `authenticated`/`anon` roles with
 the production GUCs and asserts, for every reader x client pair and after each
 tenancy change, that `OnboardingService.canCoachRead` equals what RLS lets the
-reader SELECT from both tables; plus self-only INSERT, coach read-only, no
+reader SELECT from both tables; that `app.sub_coach_membership_head` equals
+main's `SubCoachScopeService.getHeadCoachIdForSubCoach` for every fixture user
+in every state; the phantom chain (INT-607-1: a phantom head and its real
+sub-coach read nothing of a buyer coach's clients until an explicit
+membership row exists); plus self-only INSERT, coach read-only, no
 re-owning, immutable revisions, no public `ClinicProgramSet` writes and anon
 denial. The platform owner is the one documented difference (RLS admits it via
 `app.is_owner()`; the coach API does not).

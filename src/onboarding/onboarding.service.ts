@@ -205,14 +205,26 @@ function readMaterialisation(v: unknown): Materialisation | null {
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
+  /**
+   * Main's team-membership rule (#597, C13 Opus A1). The consultation read
+   * asks it one question only, "is this coach an EXPLICIT member of a head
+   * coach's team, and of which head?" (getHeadCoachIdForSubCoach), so the API
+   * and every other tenant surface share one definition. SubCoachModule is
+   * @Global, so production always injects it; the fallback builds the same
+   * service over the same PrismaService (tests, standalone construction).
+   */
+  private readonly membership: SubCoachScopeService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
-    @Optional() private readonly subCoachScope?: SubCoachScopeService,
+    @Optional() subCoachScope?: SubCoachScopeService,
     @Optional()
     @Inject(ONBOARDING_COMPLETION_HOOKS)
     private readonly completionHooks: OnboardingCompletionHook[] = [],
-  ) {}
+  ) {
+    this.membership = subCoachScope ?? new SubCoachScopeService(prisma);
+  }
 
   // ─── GET /coach/clients/:clientId/consultation ─────────────────────────
   /**
@@ -220,6 +232,14 @@ export class OnboardingService {
    * open assignment to the client, or the head coach of the client's coach
    * may read. Everyone else, including the client, gets 404 (no existence
    * oracle).
+   *
+   * INT-607-1: "head coach of" and "sub-coach on the team of" use main's
+   * explicit membership rule (#597 C13 Opus A1, SubCoachScopeService): a coach
+   * is on head H's team only when role = 'coach', coach_id = H AND an active
+   * TeamSubCoachAssignment(H, coach) or an open SubCoachAssignment(H, coach)
+   * exists. A bare coach_id is NOT membership: old guest checkouts stamped
+   * coach_id onto coach buyers (phantom sub-coaches), and the phantom "head"
+   * must never read the buyer coach's clients' screening answers.
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
     // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
@@ -234,14 +254,16 @@ export class OnboardingService {
       select: { coach_id: true, role: true, deleted_at: true },
     });
     if (!client || client.role !== 'student' || client.deleted_at || !client.coach_id) return false;
+    // coach_id is deliberately not read here: team membership comes only from
+    // the explicit-membership rule below (INT-607-1).
     const [reader, clientCoach] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: readerId },
-        select: { id: true, role: true, coach_id: true, deleted_at: true },
+        select: { id: true, role: true, deleted_at: true },
       }),
       this.prisma.user.findUnique({
         where: { id: client.coach_id },
-        select: { id: true, role: true, coach_id: true, deleted_at: true },
+        select: { id: true, role: true, deleted_at: true },
       }),
     ]);
     if (!reader || reader.deleted_at) return false;
@@ -251,12 +273,23 @@ export class OnboardingService {
 
     // 1) The client's current coach.
     if (clientCoach.id === reader.id) return true;
-    // 2) The current head coach of the client's current coach.
-    if (clientCoach.coach_id && clientCoach.coach_id === reader.id && !reader.coach_id) return true;
-    // 3) A sub-coach currently on the client's head's team with an open
+    // Explicit team membership (main's rule; null = not a member of any
+    // team, i.e. head of their own roster). Read live on every request.
+    const [clientCoachHead, readerHead] = await Promise.all([
+      this.membership.getHeadCoachIdForSubCoach(clientCoach.id),
+      this.membership.getHeadCoachIdForSubCoach(reader.id),
+    ]);
+    // The client's current head: the head of the client's coach when that
+    // coach is an explicit team member, otherwise the client's coach itself.
+    const head = clientCoachHead ?? clientCoach.id;
+    // 2) The current head coach of the client's current coach: the client's
+    //    coach is an explicit member of the reader's team, and the reader is
+    //    not itself a member of another team.
+    if (clientCoachHead !== null && clientCoachHead === reader.id && readerHead === null)
+      return true;
+    // 3) An explicit member of the client's head's team with an open
     //    assignment issued by that same head for this client.
-    const head = clientCoach.coach_id ?? clientCoach.id;
-    if (!reader.coach_id || reader.coach_id !== head) return false;
+    if (readerHead === null || readerHead !== head) return false;
     const open = await this.prisma.subCoachAssignment.findFirst({
       where: {
         sub_coach_id: reader.id,
@@ -570,6 +603,11 @@ export class OnboardingService {
     if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
       throw conflict('not_attached', 'This account is not attached to a coach yet');
     }
+    // INT-607-1: the client clone's tenant is the coach's head ONLY when the
+    // coach is an explicit member of that head's team (main's #597 rule); a
+    // bare coach_id stamped by an old guest checkout keeps the clone in the
+    // coach's own tenant, so a phantom head never lists the client's plans.
+    const coachTeamHead = await this.membership.getHeadCoachIdForSubCoach(coach.id);
 
     const answers: Answers = isRecord(intake?.answers)
       ? (JSON.parse(JSON.stringify(intake?.answers)) as Answers)
@@ -669,7 +707,10 @@ export class OnboardingService {
             !liveClient ||
             liveClient.deleted_at ||
             liveClient.role !== 'student' ||
-            liveClient.coach_id !== coach.id
+            liveClient.coach_id !== coach.id ||
+            // The membership read above named this head: if the coach row
+            // now points elsewhere, re-run against the current team.
+            (coachTeamHead !== null && liveCoach.coach_id !== coachTeamHead)
           ) {
             throw new TenancyChangedError();
           }
@@ -695,7 +736,7 @@ export class OnboardingService {
 
           const program = await this.materialiseAndAssignInTx(
             tx,
-            { id: coach.id, coach_id: liveCoach.coach_id },
+            { id: coach.id, tenant_id: coachTeamHead ?? coach.id },
             clientId,
             entry.program_id,
             sel,
@@ -969,7 +1010,7 @@ export class OnboardingService {
    */
   private async materialiseAndAssignInTx(
     tx: Prisma.TransactionClient,
-    coach: { id: string; coach_id: string | null },
+    coach: { id: string; tenant_id: string },
     clientId: string,
     masterId: string,
     sel: ProgramSelection,
@@ -981,7 +1022,7 @@ export class OnboardingService {
     assignment_ids: string[];
     first_plan_id: string;
   }> {
-    const tenantId = coach.coach_id ?? coach.id;
+    const tenantId = coach.tenant_id;
     const master = await tx.workoutProgram.findUnique({ where: { id: masterId } });
     // Tenancy: the master must be the attached coach's own live template.
     if (!master || master.owner_user_id !== coach.id || !master.is_template || master.archived_at) {

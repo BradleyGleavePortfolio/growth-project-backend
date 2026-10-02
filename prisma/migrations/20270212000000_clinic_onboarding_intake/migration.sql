@@ -9,16 +9,30 @@
 --   app.current_user_id()          session GUC set by RlsContextInterceptor
 --   app.is_owner()                 platform owner context
 --   app.is_current_coach_of(text)  caller is the client's CURRENT coach
+--   app.sub_coach_membership_head(text)  (defined below) main's explicit team
+--     membership rule (#597 C13 Opus A1, SubCoachScopeService
+--     .getHeadCoachIdForSubCoach): the head coach id when the user has
+--     role 'coach', a non-null coach_id AND an active
+--     TeamSubCoachAssignment(head = coach_id, sub = user, archived_at IS NULL)
+--     or an open SubCoachAssignment(head = coach_id, sub = user,
+--     unassigned_at IS NULL); otherwise NULL. A bare coach_id is NOT
+--     membership (phantom sub-coaches from old guest checkouts, INT-607-1).
+--     Internal: EXECUTE for service_role only (no membership oracle).
 --   app.can_read_client_consultation(text)  (defined below) the CURRENT-tenancy
 --     coach audience of a client's consultation, identical to the API rule in
---     OnboardingService.canCoachRead (fix round A607-1 / B607-3):
+--     OnboardingService.canCoachRead (fix rounds A607-1 / B607-3 / INT-607-1):
 --       a) the client's current coach, or
---       b) the current head coach of the client's current coach, or
---       c) a sub-coach whose CURRENT head is the client's current head AND who
---          holds an open SubCoachAssignment for this client issued by that head.
+--       b) the head coach of the client's current coach, where the client's
+--          coach is an EXPLICIT member of the reader's team and the reader is
+--          not itself a member of another team, or
+--       c) an EXPLICIT member of the client's current head's team (head = the
+--          membership head of the client's coach, else the client's coach)
+--          who holds an open SubCoachAssignment for this client issued by
+--          that head.
 --     The client must be a live student; the reader and the client's coach must
---     be live coach-type users. A transfer (User.coach_id change) or a
---     revoked/moved sub-coach loses access in the same statement.
+--     be live coach-type users. A transfer (User.coach_id change), a
+--     revoked/moved sub-coach or an archived team seat loses access in the
+--     same statement.
 --
 -- ClientOnboardingIntake (health-adjacent screening answers; T4):
 --   p_clientonboardingintake_service_role_all  service_role ALL
@@ -147,6 +161,49 @@ ALTER TABLE "ClientOnboardingIntakeRevision" ADD CONSTRAINT "ClientOnboardingInt
 ALTER TABLE "ClinicProgramSet" ADD CONSTRAINT "ClinicProgramSet_coach_id_fkey" FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ═════════════════════════════════════════════════════════════════════════
+-- TEAM MEMBERSHIP HELPER (main's #597 rule, INT-607-1)
+-- ═════════════════════════════════════════════════════════════════════════
+-- SQL twin of SubCoachScopeService.getHeadCoachIdForSubCoach (src/sub-coach/
+-- sub-coach-scope.service.ts). test/rls/onboarding-intake-rls.spec.ts asserts
+-- on a live database that both return the same value for every fixture user
+-- in every tenancy state.
+CREATE OR REPLACE FUNCTION app.sub_coach_membership_head(coach_user_id text)
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, app, pg_temp
+AS $fn$
+  SELECT u.coach_id
+    FROM "User" u
+   WHERE u.id = coach_user_id
+     AND u.role::text = 'coach'
+     AND u.coach_id IS NOT NULL
+     AND (
+           EXISTS (
+             SELECT 1
+               FROM "TeamSubCoachAssignment" t
+              WHERE t.head_coach_id = u.coach_id
+                AND t.sub_coach_id = u.id
+                AND t.archived_at IS NULL
+           )
+        OR EXISTS (
+             SELECT 1
+               FROM "SubCoachAssignment" s
+              WHERE s.head_coach_id = u.coach_id
+                AND s.sub_coach_id = u.id
+                AND s.unassigned_at IS NULL
+           )
+     )
+$fn$;
+
+REVOKE ALL ON FUNCTION app.sub_coach_membership_head(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION app.sub_coach_membership_head(text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION app.sub_coach_membership_head(text) TO service_role;
+COMMENT ON FUNCTION app.sub_coach_membership_head(text) IS
+  'Head coach id of an EXPLICIT team member (role coach, coach_id set, active TeamSubCoachAssignment or open SubCoachAssignment from that head), else NULL. A bare coach_id is not membership. Mirrors SubCoachScopeService.getHeadCoachIdForSubCoach. Internal to app.can_read_client_consultation; not executable by anon/authenticated.';
+
+-- ═════════════════════════════════════════════════════════════════════════
 -- CONSULTATION AUDIENCE HELPER (API/RLS parity)
 -- ═════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION app.can_read_client_consultation(client_user_id text)
@@ -161,6 +218,10 @@ AS $fn$
       FROM "User" c
       JOIN "User" cc ON cc.id = c.coach_id
       JOIN "User" r  ON r.id = app.current_user_id()
+     CROSS JOIN LATERAL (
+            SELECT app.sub_coach_membership_head(cc.id) AS cc_head,
+                   app.sub_coach_membership_head(r.id)  AS r_head
+          ) m
      WHERE c.id = client_user_id
        AND r.id <> c.id
        AND c.role::text = 'student'
@@ -171,16 +232,16 @@ AS $fn$
        AND r.role::text IN ('coach', 'owner', 'sub_coach')
        AND (
              r.id = cc.id
-          OR (cc.coach_id IS NOT NULL AND r.id = cc.coach_id AND r.coach_id IS NULL)
+          OR (m.cc_head IS NOT NULL AND r.id = m.cc_head AND m.r_head IS NULL)
           OR (
-                r.coach_id IS NOT NULL
-            AND r.coach_id = COALESCE(cc.coach_id, cc.id)
+                m.r_head IS NOT NULL
+            AND m.r_head = COALESCE(m.cc_head, cc.id)
             AND EXISTS (
                   SELECT 1
                     FROM "SubCoachAssignment" a
                    WHERE a.sub_coach_id = r.id
                      AND a.client_id = c.id
-                     AND a.head_coach_id = COALESCE(cc.coach_id, cc.id)
+                     AND a.head_coach_id = m.r_head
                      AND a.unassigned_at IS NULL
                 )
           )
@@ -192,7 +253,7 @@ REVOKE ALL ON FUNCTION app.can_read_client_consultation(text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION app.can_read_client_consultation(text) FROM anon;
 GRANT EXECUTE ON FUNCTION app.can_read_client_consultation(text) TO authenticated, service_role;
 COMMENT ON FUNCTION app.can_read_client_consultation(text) IS
-  'Current-tenancy coach audience of a client consultation: current coach, current head of that coach, or a sub-coach on the current head''s team with an open assignment from that head. Mirrors OnboardingService.canCoachRead.';
+  'Current-tenancy coach audience of a client consultation: current coach; the head of that coach when the coach is an explicit member of the head''s team (app.sub_coach_membership_head); or an explicit member of the current head''s team with an open assignment from that head. A bare coach_id is never membership. Mirrors OnboardingService.canCoachRead.';
 
 -- ═════════════════════════════════════════════════════════════════════════
 -- ROW-LEVEL SECURITY

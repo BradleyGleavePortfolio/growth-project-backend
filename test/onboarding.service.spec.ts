@@ -11,7 +11,7 @@ import { OnboardingService } from '../src/onboarding/onboarding.service';
 import { parseFixture } from '../src/onboarding/clinic-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
-import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -23,9 +23,6 @@ function asPrisma(m: object): PrismaService {
 }
 function asBuilder(m: object): WorkoutBuilderService {
   return m as WorkoutBuilderService;
-}
-function asScope(m: object): SubCoachScopeService {
-  return m as SubCoachScopeService;
 }
 
 type Row = Record<string, unknown>;
@@ -69,6 +66,10 @@ function makeWorld() {
       unassigned_at: null,
     },
   ];
+  // Team Mode seats (TeamSubCoachAssignment). Main's membership rule (#597)
+  // reads these first; sub-1 is a team member through its open delegation
+  // sca-1 above, so the default world needs none (INT-607-1).
+  const teamSeats: Row[] = [];
   // Client workout assignments created by assignProgramToClient.
   const workoutAssignments: Row[] = [];
   for (const p of fx.programs) {
@@ -188,6 +189,11 @@ function makeWorld() {
     subCoachAssignment: {
       findFirst: jest.fn(
         async ({ where }: { where: Row }) => subAssignments.find((a) => match(a, where)) ?? null,
+      ),
+    },
+    teamSubCoachAssignment: {
+      findFirst: jest.fn(
+        async ({ where }: { where: Row }) => teamSeats.find((a) => match(a, where)) ?? null,
       ),
     },
     clientWorkoutAssignment: {
@@ -440,16 +446,13 @@ function makeWorld() {
     }),
   };
   // Sub-coach overlay: sub-1 (under coach-1) is assigned client-1;
-  // sub-x belongs to another head and has no assignment here. The service no
-  // longer consults this legacy scope for the consultation read (A607-1):
-  // the double answers true for sub-1 regardless of tenancy, which is
-  // exactly the stale grant the current-tenancy predicate must ignore.
-  const subCoachScope = {
-    canAccessClient: jest.fn(
-      async (reader: string, client: string) => reader === 'sub-1' && client === 'client-1',
-    ),
-  };
-  const svc = new OnboardingService(asPrisma(prisma), asBuilder(builder), asScope(subCoachScope));
+  // sub-x belongs to another head and has no assignment here. The
+  // consultation read asks main's REAL SubCoachScopeService (over this same
+  // double) only for explicit team membership (INT-607-1); it never uses the
+  // legacy canAccessClient scope (A607-1), which the spy below proves.
+  const subCoachScope = new SubCoachScopeService(asPrisma(prisma));
+  const legacyScope = jest.spyOn(subCoachScope, 'canAccessClient');
+  const svc = new OnboardingService(asPrisma(prisma), asBuilder(builder), subCoachScope);
   // The real consent gate: P0 alone first, then answers.
   const consentThenSave = async (
     clientId: string,
@@ -484,6 +487,8 @@ function makeWorld() {
     plans,
     users,
     subAssignments,
+    teamSeats,
+    legacyScope,
     workoutAssignments,
     programs,
     masterIds,
@@ -1047,10 +1052,93 @@ describe('A607-1: consultation read uses CURRENT tenancy only', () => {
     await expect(w.svc.canCoachRead('coach-1', 'client-1')).resolves.toBe(false);
   });
 
-  it('a sub_coach-role reader on the current team with an open assignment can read', async () => {
+  it("INT-607-1: a sub_coach-role user is not a team member under main's rule (role must be coach)", async () => {
+    // Main's SubCoachScopeService (#597) counts only role = 'coach' rows as
+    // team members, and no code path writes role 'sub_coach'. The open
+    // assignment alone therefore grants nothing, exactly as everywhere else.
     const w = await saved();
     user(w, 'sub-1').role = 'sub_coach';
-    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(true);
+    await expect(w.svc.canCoachRead('sub-1', 'client-1')).resolves.toBe(false);
+    // The head keeps its direct-roster access.
+    await expect(w.svc.canCoachRead('coach-1', 'client-1')).resolves.toBe(true);
+  });
+
+  it('never consults the legacy canAccessClient scope', async () => {
+    const w = await saved();
+    await w.svc.canCoachRead('sub-1', 'client-1');
+    await w.svc.canCoachRead('sub-x', 'client-1');
+    await w.svc.canCoachRead('coach-1', 'client-2');
+    expect(w.legacyScope).not.toHaveBeenCalled();
+  });
+});
+
+describe("INT-607-1: the completion clone's tenant follows main's explicit membership rule", () => {
+  const user = (w: ReturnType<typeof makeWorld>, uid: string) => w.users.find((u) => u.id === uid)!;
+  async function ready() {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    return w;
+  }
+  const tenantsOf = (w: ReturnType<typeof makeWorld>) => ({
+    program: w.createdClones.map((c) => c.coach_id),
+    plans: [
+      ...new Set(
+        w.plans
+          .filter((pl) => w.createdClones.some((c) => c.id === pl.program_id))
+          .map((pl) => pl.coach_id),
+      ),
+    ],
+  });
+
+  it('a head coach (no coach_id) keeps the clone in its own tenant', async () => {
+    const w = await ready();
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+  });
+
+  it('a phantom-tagged coach (bare coach_id, no membership row) keeps the clone in its own tenant', async () => {
+    // Old guest checkout stamped coach-1.coach_id = other-coach. Without a
+    // seat or delegation from other-coach, other-coach must never own (and
+    // list) this client's plans.
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
+    expect(w.createdClones[0].owner_user_id).toBe('coach-1');
+  });
+
+  it("an explicit team member's client clone lands in the head's tenant", async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    w.teamSeats.push({
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    });
+    await w.svc.complete('client-1', NOW);
+    expect(tenantsOf(w)).toEqual({ program: ['other-coach'], plans: ['other-coach'] });
+    expect(w.createdClones[0].owner_user_id).toBe('coach-1');
+  });
+
+  it('the coach row moving to another head under the fence re-runs against the current team', async () => {
+    const w = await ready();
+    user(w, 'coach-1').coach_id = 'other-coach';
+    w.teamSeats.push({
+      id: 'seat-1',
+      head_coach_id: 'other-coach',
+      sub_coach_id: 'coach-1',
+      archived_at: null,
+    });
+    // Commits after the membership read, before the fenced transaction.
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      user(w, 'coach-1').coach_id = 'third-head';
+    };
+    await w.svc.complete('client-1', NOW);
+    // The first attempt rolled back; the re-run sees no membership under
+    // third-head, so the only clone is in coach-1's own tenant.
+    expect(tenantsOf(w)).toEqual({ program: ['coach-1'], plans: ['coach-1'] });
   });
 });
 
