@@ -250,6 +250,15 @@ export class BookingEmitter {
         deep_link: args.deepLink,
         channel: 'inapp',
       });
+      // C-643-2: and one device push (quiet lock-screen copy, booking_push
+      // preference, at most once). Reminders reach this once per claim in
+      // NotificationDeliveryLog, so each reminder is pushed once.
+      await this.notifications.sendPush({
+        user_id: args.userId,
+        kind: args.kind,
+        body: args.body,
+        deep_link: args.deepLink,
+      });
     } catch (err) {
       // Emitters never propagate errors — booking lifecycle must not
       // fail because the notification path hiccupped.

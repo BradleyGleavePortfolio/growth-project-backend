@@ -10,7 +10,7 @@ import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
-import { NotificationKindValue } from './notification-kind';
+import { NotificationKind, NotificationKindValue } from './notification-kind';
 import {
   NotificationCategory,
   DEFAULT_NOTIFICATION_CATEGORY,
@@ -20,6 +20,8 @@ import {
   PushDeliveryResult,
 } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
+import { DeviceDeliveryResult, PushDeliveryService } from './push/push-delivery.service';
+import { lockScreenCopy } from './push/lock-screen-copy';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
@@ -55,6 +57,37 @@ export interface CreateNotificationInput {
 // sorted-set TTL key: `notif:rate:<userId>:<kind>`.
 const recentPushes = new Map<string, number>();
 
+/**
+ * Sol B-643-2: one inbox item per notification. These kinds were written as
+ * an `inapp` row plus a `push` twin with the same text, and the inbox and
+ * unread count showed both. Emitters now write only the `inapp` row (device
+ * delivery goes through sendPush / pushToUser). Hiding the `push` twins also
+ * covers rows already stored, and installed builds pick it up because the
+ * API response changes, not the app. Kinds whose only row is `push`
+ * (community, workout and meal-plan assignment, coach-AI notifications)
+ * are not listed and stay visible.
+ */
+export const PUSH_TWIN_KINDS: readonly string[] = [
+  NotificationKind.MILESTONE_REACHED,
+  NotificationKind.MESSAGE_RECEIVED,
+  NotificationKind.MISSED_CHECKIN,
+  NotificationKind.WEIGHT_TREND_ALERT,
+  NotificationKind.CHECKIN_SUBMITTED,
+  NotificationKind.BUILD_WEEK_DAY_UNLOCKED,
+  NotificationKind.COACH_ALERT,
+  NotificationKind.BOOKING_REQUESTED,
+  NotificationKind.BOOKING_CONFIRMED,
+  NotificationKind.BOOKING_DECLINED,
+  NotificationKind.BOOKING_CANCELLED,
+  NotificationKind.BOOKING_RESCHEDULED,
+  NotificationKind.BOOKING_REMINDER_24H,
+  NotificationKind.BOOKING_REMINDER_1H,
+  NotificationKind.FIRST_PAYMENT,
+  NotificationKind.DRIP_RELEASED,
+  NotificationKind.COACH_NEW_PURCHASE,
+];
+const INBOX_HIDES_PUSH_TWINS = { NOT: { channel: 'push', kind: { in: [...PUSH_TWIN_KINDS] } } };
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -70,6 +103,9 @@ export class NotificationsService {
     // that construct NotificationsService without DI keep working — when it is
     // absent the empty-state copy falls back to the pinned legacy string.
     @Optional() private voice?: VoicePolicyService,
+    // C-643-2: device delivery for inbox notifications. @Optional so thin
+    // unit tests without DI keep working (sendPush is then a no-op).
+    @Optional() private pushDelivery?: PushDeliveryService,
   ) {}
 
   // ── Preferences ───────────────────────────────────────────────────────────
@@ -354,12 +390,54 @@ export class NotificationsService {
   }
 
   /**
+   * Send an inbox notification to the recipient's phone (C-643-2).
+   *
+   * The inbox row is written separately with `createNotification({ channel:
+   * 'inapp' })`; this call writes NO row, so each event is one inbox item.
+   * Gated by the same preferences as the row (`muted`, `<kind>_push`). The
+   * lock screen gets quiet copy (lock-screen-copy.ts: no health details, no
+   * message text); `data` carries only tap routing (the screen and the
+   * deep link, which holds ids only). Never throws; delivery is at most
+   * once (PushDeliveryService). Returns null when suppressed or unwired.
+   */
+  async sendPush(input: {
+    user_id: string;
+    kind: NotificationKindValue;
+    body: string;
+    deep_link?: string;
+  }): Promise<DeviceDeliveryResult | null> {
+    if (!this.pushDelivery) return null;
+    try {
+      const prefs = await this.getPreferences(input.user_id);
+      if ((prefs as Record<string, unknown>).muted) return null;
+      const key = `${this._kindToPrefsPrefix(input.kind)}_push` as keyof typeof prefs;
+      if (prefs[key] === false) return null;
+      const copy = lockScreenCopy(input.kind, input.body);
+      return await this.pushDelivery.deliver({
+        userId: input.user_id,
+        kind: input.kind,
+        title: copy.title,
+        body: copy.body,
+        data: {
+          actionScreen: input.kind.startsWith('message') ? 'Messages' : 'NotificationCenter',
+          ...(input.deep_link ? { deepLink: input.deep_link } : {}),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `sendPush skipped: user=${input.user_id} kind=${input.kind} error=${err instanceof Error ? err.name : 'unknown'}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Paginated notification inbox. Cursor is the last seen notification id.
    * Default limit 20, max 100.
    */
   async listNotifications(userId: string, query: GetNotificationsQueryDto) {
     const limit = Math.min(query.limit ?? 20, 100);
-    const where: Record<string, unknown> = { user_id: userId };
+    const where: Record<string, unknown> = { user_id: userId, ...INBOX_HIDES_PUSH_TWINS };
 
     if (query.filter === 'unread') {
       where.read_at = null;
@@ -389,7 +467,7 @@ export class NotificationsService {
     const nextCursor = hasNextPage ? items[items.length - 1].id : null;
 
     const unreadCount = await this.prisma.notification.count({
-      where: { user_id: userId, read_at: null },
+      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
 
     // Phase 2: when the panel is empty, attach the Roman empty-state copy +
@@ -459,7 +537,7 @@ export class NotificationsService {
    */
   async getUnreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { user_id: userId, read_at: null },
+      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
   }
 
