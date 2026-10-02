@@ -646,8 +646,8 @@ export class ClientBillingService {
           error: 'CANCEL_INCOMPLETE',
           message:
             voidedCount > 0
-              ? 'Your unpaid invoice is canceled, so you will not be charged for it, but your plan did not finish ending. Tap End plan again in a minute.'
-              : 'Your plan did not finish ending, and nothing was charged. Tap End plan again in a minute.',
+              ? 'Your unpaid invoice is canceled, so you will not be charged for it, but your plan did not finish ending. Tap End my plan again in a minute.'
+              : 'Your plan did not finish ending, and nothing was charged. Tap End my plan again in a minute.',
           stripe_code: err instanceof StripeConnectApiError ? err.stripeCode : null,
         });
       }

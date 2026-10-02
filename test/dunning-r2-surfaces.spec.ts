@@ -231,7 +231,10 @@ describe('S-DUNNING-R2 v2 email templates (F17)', () => {
     const mod = await Test.createTestingModule({
       providers: [
         EmailService,
-        { provide: PrismaService, useValue: { emailSendLog: { create: jest.fn(), update: jest.fn() } } },
+        {
+          provide: PrismaService,
+          useValue: { emailSendLog: { create: jest.fn(), update: jest.fn() } },
+        },
         { provide: ConfigService, useValue: { get: () => undefined } },
       ],
     }).compile();
