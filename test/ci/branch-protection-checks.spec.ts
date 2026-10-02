@@ -7,7 +7,7 @@
 // Actions), in the order GitHub returns them. "Schema parity (migrations
 // match schema.prisma)" is the 10th (operator ruling OR-110-3).
 //
-// The payload (strict, admins, reviews, linear history ON, conversation
+// The payload (strict, admins, reviews, linear history OFF, conversation
 // resolution OFF, ...) is pinned to the live read-back of 2026-10-02 13:27 PDT.
 //
 // The script is never executed here. Only its REQUIRED_CHECKS=( ... ) array
@@ -78,8 +78,9 @@ function scriptPayload(script: string, reviewCount: string): Record<string, unkn
   return JSON.parse(r.stdout) as Record<string, unknown>;
 }
 
-// Live protection on main, read back 2026-10-02 13:27 PDT after the operator
-// enabled linear history (conversation resolution stays off).
+// Live protection on main, read back 2026-10-02 13:35 PDT (linear history and
+// conversation resolution both off; the 13:27 linear-history change was
+// reverted because it lacked the owner's explicit words).
 const LIVE_MIRROR_PAYLOAD = {
   required_status_checks: {
     strict: true,
@@ -93,7 +94,7 @@ const LIVE_MIRROR_PAYLOAD = {
     require_last_push_approval: false,
   },
   restrictions: null,
-  required_linear_history: true,
+  required_linear_history: false,
   allow_force_pushes: false,
   allow_deletions: false,
   block_creations: false,
@@ -193,10 +194,10 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
     expect(scriptRequiredChecks(commented)).not.toContain('danger');
   });
 
-  it('the payload mirrors live protection exactly (linear history ON, conversation resolution OFF)', () => {
+  it('the payload mirrors live protection exactly (linear history OFF, conversation resolution OFF)', () => {
     const payload = scriptPayload(script, '0');
     expect(payload).toEqual(LIVE_MIRROR_PAYLOAD);
-    expect(payload.required_linear_history).toBe(true);
+    expect(payload.required_linear_history).toBe(false);
     expect(payload.required_conversation_resolution).toBe(false);
   });
 
@@ -214,8 +215,8 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
   });
 
   it('negative control: the payload evaluator sees a flipped linear-history or conversation-resolution flag', () => {
-    const noLinear = script.replace('required_linear_history: true,', 'required_linear_history: false,');
-    expect(scriptPayload(noLinear, '0').required_linear_history).toBe(false);
+    const linear = script.replace('required_linear_history: false,', 'required_linear_history: true,');
+    expect(scriptPayload(linear, '0').required_linear_history).toBe(true);
     const conv = script.replace('required_conversation_resolution: false,', 'required_conversation_resolution: true,');
     expect(scriptPayload(conv, '0').required_conversation_resolution).toBe(true);
   });
