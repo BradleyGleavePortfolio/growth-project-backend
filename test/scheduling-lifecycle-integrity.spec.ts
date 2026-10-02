@@ -516,6 +516,30 @@ describe('booking validation matrix (request)', () => {
     expect(earliest).toBeGreaterThanOrEqual(NOW.getTime() + 5 * 60_000);
     expect(slots.slots[0].start_at).toBe('2026-10-05T16:00:00.000Z');
   });
+
+  it('bad open-slot queries carry INVALID_TIME and a plain next step', async () => {
+    const { svc } = harness();
+    const badLength = await failure(
+      svc.getOpenSlots(CLIENT, 'coach-1', {
+        from: '2026-10-06T16:00:00.000Z',
+        to: '2026-10-06T19:00:00.000Z',
+        duration_minutes: 900,
+      }),
+    );
+    expect(badLength).toMatchObject({ status: 400, code: 'INVALID_TIME' });
+    expect(badLength.message).toMatch(/1 to 480 minutes\)\. Pick an appointment type/);
+    const backwards = await failure(
+      svc.getOpenSlots(CLIENT, 'coach-1', {
+        from: '2026-10-06T19:00:00.000Z',
+        to: '2026-10-06T16:00:00.000Z',
+        session_type_id: 'st-q',
+      }),
+    );
+    expect(backwards).toMatchObject({ status: 400, code: 'INVALID_TIME' });
+    expect(backwards.message).toMatch(
+      /^Open times could not be listed: .*at most 14 days apart\.$/,
+    );
+  });
 });
 
 describe('ownership (T4)', () => {

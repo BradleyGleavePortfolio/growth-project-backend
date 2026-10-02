@@ -9,6 +9,7 @@ import type { Prisma, SessionType } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { DEFAULT_COACH_TIMEZONE, SchedulingAccessService } from './scheduling-access.service';
 import {
+  MAX_RANGE_DAYS as OPEN_SLOTS_MAX_RANGE_DAYS,
   computeOpenSlots,
   isIntervalBookable,
   validateRange,
@@ -121,7 +122,10 @@ export class SchedulingOpenSlotsService {
     const rangeError = validateRange(fromDate, toDate);
     if (rangeError) {
       throw new BadRequestException(
-        schedulingError(SchedulingErrorCode.INVALID_TIME, rangeError.message),
+        schedulingError(
+          SchedulingErrorCode.INVALID_TIME,
+          `Open times could not be listed: ${rangeError.message}. Ask again with a start before the end, at most ${OPEN_SLOTS_MAX_RANGE_DAYS} days apart.`,
+        ),
       );
     }
 
@@ -132,7 +136,10 @@ export class SchedulingOpenSlotsService {
     const duration = sessionType ? sessionType.duration_minutes : (args.duration_minutes ?? 60);
     if (!Number.isFinite(duration) || duration <= 0 || duration > 8 * 60) {
       throw new BadRequestException(
-        schedulingError(SchedulingErrorCode.INVALID_TIME, 'duration_minutes must be 1..480'),
+        schedulingError(
+          SchedulingErrorCode.INVALID_TIME,
+          'That appointment length cannot be booked (it must be 1 to 480 minutes). Pick an appointment type from your coach to see its open times.',
+        ),
       );
     }
 

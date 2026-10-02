@@ -54,7 +54,7 @@ export interface RangeError {
   message: string;
 }
 
-const MAX_RANGE_DAYS = 14;
+export const MAX_RANGE_DAYS = 14;
 
 export function validateRange(from: Date, to: Date): RangeError | null {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
