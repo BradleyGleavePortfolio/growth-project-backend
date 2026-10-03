@@ -365,9 +365,13 @@ describe('B-648-10 (round 4): the window is checked on the clock at the Expo han
     const a = w.worker();
     await a.svc.enqueue(message());
     const original = w.db.pushOutbox.updateMany.getMockImplementation();
+    let slow = true; // only the first handoff write is slow
     w.db.pushOutbox.updateMany.mockImplementation(async (args) => {
       const out = original ? await original(args) : { count: 0 };
-      if (args.data && args.data.handed_off_at instanceof Date) w.clock.at = CROSSED;
+      if (slow && args.data && args.data.handed_off_at instanceof Date) {
+        slow = false;
+        w.clock.at = CROSSED;
+      }
       return out;
     });
     expect(await a.svc.drain()).toBe(0);
