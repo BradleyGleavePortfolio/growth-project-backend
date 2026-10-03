@@ -327,6 +327,11 @@ export class SchedulingSessionLifecycleService {
               message: 'Time slot is not available.',
             });
           }
+          // B-643-1 / Sol B-647-1: reminders re-arm for the new time without
+          // touching the claim ledger. Claims are keyed (session, user, kind,
+          // start_at), so the new start time has no claim yet, and the
+          // reminder job only claims while the session still has the start
+          // time it selected (reminder.job.ts claimDelivery).
           return tx.coachingSession.update({
             where: { id: sessionId },
             data: { start_at: start, end_at: end },
