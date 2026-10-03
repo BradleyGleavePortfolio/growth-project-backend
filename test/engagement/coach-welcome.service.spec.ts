@@ -5,7 +5,8 @@ import {
 } from '../../src/engagement/coach-welcome.service';
 import { DEFAULT_WELCOME_TEMPLATE, WELCOME_DELAY_MS } from '../../src/engagement/welcome-template';
 import type { PrismaService } from '../../src/prisma.service';
-import type { MessagingService } from '../../src/messaging/messaging.service';
+import { MessagingService } from '../../src/messaging/messaging.service';
+import { WelcomeLeaseLostError } from '../../src/engagement/welcome-lease-fence';
 import type { MessagesSafetyService } from '../../src/messages-safety/messages-safety.service';
 import { cast, FakeTable, matches } from './_fake-db';
 
@@ -59,20 +60,31 @@ function harness() {
     coachWelcomeMessageJob: jobs,
     coachMessage: messages,
   };
-  // Mirrors MessagingService.sendAsCoach: the welcome_job_id key is written
-  // with the row; a duplicate key returns the existing row and produces no
-  // side effects (sideEffects counts the ping/push/audit fan-out).
+  // Mirrors MessagingService.sendAsCoach: the INSERT commits only while the
+  // caller holds the job's lease (holdWelcomeLease, B-609-3 persistence
+  // fence); the welcome_job_id key is written with the row; a duplicate key
+  // returns the existing row and produces no side effects (sideEffects counts
+  // the ping/push/audit fan-out).
   const sideEffects = { count: 0 };
   const sendAsCoach = jest.fn(
     async (
       coachId: string,
       clientId: string,
       payload: { body: string },
-      options: { welcomeJobId?: string } = {},
+      options: { welcome?: { jobId: string; lease: string } } = {},
     ) => {
       const client = users.rows.find((u) => u.id === clientId);
       if (!client || client.coach_id !== coachId) throw new NotFoundException('Client not found');
       if (blocks.has(`${coachId}:${clientId}`)) throw new ForbiddenException({ error: 'BLOCKED' });
+      const w = options.welcome;
+      if (
+        w &&
+        !jobs.rows.some(
+          (j) => j.id === w.jobId && j.status === 'sending' && j.lease_token === w.lease,
+        )
+      ) {
+        throw new WelcomeLeaseLostError(w.jobId);
+      }
       try {
         const row = await messages.create({
           data: {
@@ -80,14 +92,14 @@ function harness() {
             client_id: clientId,
             sender_id: coachId,
             body: payload.body,
-            welcome_job_id: options.welcomeJobId ?? null,
+            welcome_job_id: options.welcome?.jobId ?? null,
           },
         });
         sideEffects.count += 1;
         return row;
       } catch (err) {
-        const existing = options.welcomeJobId
-          ? await messages.findUnique({ where: { welcome_job_id: options.welcomeJobId } })
+        const existing = options.welcome
+          ? await messages.findUnique({ where: { welcome_job_id: options.welcome.jobId } })
           : null;
         if (existing) return existing;
         throw err;
@@ -105,7 +117,18 @@ function harness() {
       cast<MessagingService>({ sendAsCoach }),
       cast<MessagesSafetyService>(safety),
     );
-  return { users, intakes, settings, jobs, messages, blocks, sendAsCoach, safety, make, sideEffects };
+  return {
+    users,
+    intakes,
+    settings,
+    jobs,
+    messages,
+    blocks,
+    sendAsCoach,
+    safety,
+    make,
+    sideEffects,
+  };
 }
 
 async function seed(
@@ -173,7 +196,7 @@ describe('CoachWelcomeService — scheduling', () => {
       {
         body: "Hi Dana, it's Morgan. Welcome in. Your plan and targets are ready. Message me here anytime.",
       },
-      { welcomeJobId: h.jobs.rows[0].id },
+      { welcome: { jobId: h.jobs.rows[0].id, lease: expect.any(String) } },
     );
     expect(h.messages.rows).toHaveLength(1);
     expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', message_id: h.messages.rows[0].id });
@@ -396,7 +419,7 @@ describe('CoachWelcomeService — retries without duplicates', () => {
         coachId: string,
         clientId: string,
         payload: { body: string },
-        options: { welcomeJobId?: string } = {},
+        options: { welcome?: { jobId: string; lease: string } } = {},
       ) => {
         await h.messages.create({
           data: {
@@ -404,7 +427,7 @@ describe('CoachWelcomeService — retries without duplicates', () => {
             client_id: clientId,
             sender_id: coachId,
             body: payload.body,
-            welcome_job_id: options.welcomeJobId,
+            welcome_job_id: options.welcome?.jobId,
           },
         });
         throw new Error('post-write failure');
@@ -647,6 +670,115 @@ describe('CoachWelcomeService — B-609-3: a still-live stale lease-holder never
     });
     return { gate, release };
   }
+
+  // B-609-3 (Sol, 18b7e643): the welcome_job_id key deduplicates but does not
+  // authorize the first INSERT. Worker A passes the REAL MessagingService's
+  // authorization and pauses right before its CoachMessage INSERT; its lease
+  // goes stale, the coach disables welcomes, worker B reclaims and commits
+  // `cancelled`, then A resumes. The INSERT is fenced on A's lease, so nothing
+  // is persisted or fanned out and A reports superseded.
+  function realMessaging(h: ReturnType<typeof harness>) {
+    const fanOut = {
+      broadcastNewMessage: jest.fn(async () => undefined),
+      capture: jest.fn(),
+      ptm: jest.fn(),
+      push: jest.fn(),
+      audit: jest.fn(async () => undefined),
+      aiBust: jest.fn(),
+    };
+    const db: Record<string, unknown> = {
+      user: h.users,
+      coachMessage: h.messages,
+      coachWelcomeMessageJob: h.jobs,
+    };
+    db.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(db);
+    const svc = new MessagingService(
+      cast<PrismaService>(db),
+      cast<ConstructorParameters<typeof MessagingService>[1]>({
+        broadcastNewMessage: fanOut.broadcastNewMessage,
+      }),
+      cast<ConstructorParameters<typeof MessagingService>[2]>({ capture: fanOut.capture }),
+      cast<ConstructorParameters<typeof MessagingService>[3]>({ emit: fanOut.ptm }),
+      cast<ConstructorParameters<typeof MessagingService>[4]>({ emit: fanOut.push }),
+      cast<ConstructorParameters<typeof MessagingService>[5]>({ write: fanOut.audit }),
+      cast<ConstructorParameters<typeof MessagingService>[6]>({ invalidateForUser: fanOut.aiBust }),
+    );
+    h.sendAsCoach.mockImplementation((coach, client, body, options) =>
+      svc.sendAsCoach(coach, client, body, options),
+    );
+    const fanOutCount = () =>
+      Object.values(fanOut).reduce((sum, fn) => sum + fn.mock.calls.length, 0);
+    return { fanOutCount };
+  }
+
+  async function staleHolderVsCancel(h: ReturnType<typeof harness>) {
+    const { fanOutCount } = realMessaging(h);
+    const workerA = h.make();
+    const workerB = h.make();
+    const entered = deferred();
+    const resume = deferred();
+    // Pause A inside the real MessagingService, after authorization, at the
+    // first write of its persistence step: the lease fence (an UPDATE whose
+    // only data is the caller's own lease_token) or, without the fence, the
+    // CoachMessage INSERT itself. Whichever comes first is held once.
+    let armed = true;
+    const holdOnce = async () => {
+      if (!armed) return;
+      armed = false;
+      entered.release();
+      await resume.gate;
+    };
+    const realUpdateMany = h.jobs.updateMany.bind(h.jobs);
+    const realCreate = h.messages.create.bind(h.messages);
+    jest.spyOn(h.jobs, 'updateMany').mockImplementation(async (args) => {
+      const keys = Object.keys(args.data);
+      if (keys.length === 1 && keys[0] === 'lease_token') await holdOnce();
+      return realUpdateMany(args);
+    });
+    jest.spyOn(h.messages, 'create').mockImplementation(async (args) => {
+      await holdOnce();
+      return realCreate(args);
+    });
+    const aRun = workerA.runOnce(DUE_AT);
+    await entered.gate;
+    h.settings.rows[0].enabled = false;
+    const bStats = await workerB.runOnce(RECLAIM_AT);
+    expect(bStats.cancelled).toBe(1);
+    expect(h.jobs.rows[0].status).toBe('cancelled');
+    resume.release();
+    const aStats = await aRun;
+    return { aStats, fanOutCount };
+  }
+
+  it('B-609-3 terminal cancellation: a stale holder paused before its INSERT persists nothing after the new holder cancels (real MessagingService)', async () => {
+    const h = harness();
+    await seed(h);
+    await h.make().runOnce(new Date(T0.getTime() + MIN)); // schedules
+    const { aStats, fanOutCount } = await staleHolderVsCancel(h);
+    expect(h.messages.rows).toHaveLength(0);
+    expect(fanOutCount()).toBe(0);
+    expect(aStats.superseded).toBe(1);
+    expect(aStats.sent).toBe(0);
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'cancelled', reason: 'coach_disabled' });
+  });
+
+  it('B-609-3 terminal cancellation with a retained rendered body (retry attempt): still nothing persisted', async () => {
+    const h = harness();
+    await seed(h);
+    await h.make().runOnce(new Date(T0.getTime() + MIN)); // schedules
+    // A previous attempt rendered and kept the body, then failed transiently.
+    Object.assign(h.jobs.rows[0], {
+      rendered_body: 'Hi Dana, retained from attempt 1.',
+      attempt_count: 1,
+      status: 'pending',
+      next_retry_at: null,
+    });
+    const { aStats, fanOutCount } = await staleHolderVsCancel(h);
+    expect(h.messages.rows).toHaveLength(0);
+    expect(fanOutCount()).toBe(0);
+    expect(aStats.superseded).toBe(1);
+    expect(h.jobs.rows[0]).toMatchObject({ status: 'cancelled', reason: 'coach_disabled' });
+  });
 
   /**
    * Worker A claims the job and is paused inside sendAsCoach (before or after

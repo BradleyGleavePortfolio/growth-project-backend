@@ -13,6 +13,7 @@ import { MessagingService } from '../messaging/messaging.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { renderWelcomeMessage, WELCOME_DELAY_MS } from './welcome-template';
 import { isCoachWelcomeSchedulerEnabled } from './engagement.flags';
+import { WelcomeLeaseLostError } from './welcome-lease-fence';
 
 // C05 item 6 — coach welcome message, 13 minutes after onboarding completes.
 //
@@ -401,10 +402,13 @@ export class CoachWelcomeService {
         job.coach_id,
         job.client_id,
         { body },
-        { welcomeJobId: job.id },
+        { welcome: { jobId: job.id, lease } },
       );
       return this.markSent(job, lease, created.id, now);
     } catch (err) {
+      // B-609-3: the lease was reclaimed (and possibly the job cancelled)
+      // before the INSERT could commit. Nothing was persisted or fanned out.
+      if (err instanceof WelcomeLeaseLostError) return this.superseded(job);
       if (err instanceof ForbiddenException) return this.cancel(job, lease, 'blocked');
       if (err instanceof NotFoundException) return this.cancel(job, lease, 'detached');
       return this.retryOrFail(job, lease, err, now);

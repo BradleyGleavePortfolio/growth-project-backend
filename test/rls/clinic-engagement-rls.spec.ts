@@ -40,6 +40,7 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { lockEligibleClient } from '../../src/engagement/workout-reminder.service';
+import { holdWelcomeLease } from '../../src/engagement/welcome-lease-fence';
 
 // Not DATABASE_URL: test/jest.setup.ts always sets a placeholder DATABASE_URL.
 const DB_URL = process.env.TEST_DATABASE_URL || '';
@@ -574,25 +575,31 @@ const UPDATE_SQL: Record<Table, string> = {
     // runs on its own connection whatever connection_limit the URL sets.
     const deleter = new PrismaClient({ datasources: { db: { url: DB_URL } } });
     try {
-      await prisma.$transaction(async (tx) => {
-        expect(await lockEligibleClient(tx, CLIENT)).toBe(true);
-        // A deletion request on another connection cannot commit while the
-        // claim transaction holds the lock.
-        const blocked = deleter.$transaction(
-          async (other) => {
-            await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
-            await other.$executeRawUnsafe(
-              `UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`,
-              CLIENT,
-            );
-          },
-          { timeout: 10_000, maxWait: 10_000 },
-        );
-        expect(await sqlStateOf(blocked)).toBe('55P03');
-      }, { timeout: 15_000, maxWait: 10_000 });
+      await prisma.$transaction(
+        async (tx) => {
+          expect(await lockEligibleClient(tx, CLIENT)).toBe(true);
+          // A deletion request on another connection cannot commit while the
+          // claim transaction holds the lock.
+          const blocked = deleter.$transaction(
+            async (other) => {
+              await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
+              await other.$executeRawUnsafe(
+                `UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`,
+                CLIENT,
+              );
+            },
+            { timeout: 10_000, maxWait: 10_000 },
+          );
+          expect(await sqlStateOf(blocked)).toBe('55P03');
+        },
+        { timeout: 15_000, maxWait: 10_000 },
+      );
       await exec(`UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`, CLIENT);
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(false);
-      await exec(`UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = now() WHERE id = $1`, CLIENT);
+      await exec(
+        `UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = now() WHERE id = $1`,
+        CLIENT,
+      );
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(false);
       await exec(`UPDATE "User" SET deleted_at = NULL WHERE id = $1`, CLIENT);
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, COACH))).toBe(false);
@@ -603,6 +610,51 @@ const UPDATE_SQL: Record<Table, string> = {
         `UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = NULL WHERE id = $1`,
         CLIENT,
       );
+    }
+  });
+
+  it('B-609-3: the welcome lease fence holds the job row until the message commits, and refuses a reclaimed or cancelled lease', async () => {
+    const JOB = ROW.job[CLIENT];
+    const jobState = (status: string, lease: string) =>
+      exec(
+        `UPDATE "CoachWelcomeMessageJob" SET status = $1, lease_token = $2, locked_at = now() WHERE id = $3`,
+        status,
+        lease,
+        JOB,
+      );
+    await jobState('sending', 'lease-a');
+    // A second client = a second connection pool (see B-609-4 above).
+    const rival = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          // Worker A holds its live lease inside the message transaction.
+          expect(await holdWelcomeLease(tx, JOB, 'lease-a')).toBe(true);
+          // Worker B's stale reclaim (the same conditional UPDATE the
+          // scheduler issues) cannot commit while A's transaction is open.
+          const blocked = rival.$transaction(
+            async (other) => {
+              await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
+              await other.$executeRawUnsafe(
+                `UPDATE "CoachWelcomeMessageJob" SET lease_token = 'lease-b', locked_at = now()
+                 WHERE id = $1 AND status = 'sending' AND lease_token = 'lease-a'`,
+                JOB,
+              );
+            },
+            { timeout: 10_000, maxWait: 10_000 },
+          );
+          expect(await sqlStateOf(blocked)).toBe('55P03');
+        },
+        { timeout: 15_000, maxWait: 10_000 },
+      );
+      // B reclaimed and cancelled first: A's fence refuses, so A inserts nothing.
+      await jobState('sending', 'lease-b');
+      expect(await prisma.$transaction((tx) => holdWelcomeLease(tx, JOB, 'lease-a'))).toBe(false);
+      await jobState('cancelled', 'lease-b');
+      expect(await prisma.$transaction((tx) => holdWelcomeLease(tx, JOB, 'lease-a'))).toBe(false);
+      expect(await prisma.$transaction((tx) => holdWelcomeLease(tx, JOB, 'lease-b'))).toBe(false);
+    } finally {
+      await rival.$disconnect();
     }
   });
 });
