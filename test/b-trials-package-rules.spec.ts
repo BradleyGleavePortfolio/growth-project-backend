@@ -48,7 +48,7 @@ function makePrisma() {
   const rows: PkgRow[] = [];
   const prisma = {
     rows,
-    $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
+    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
     $queryRaw: jest.fn(async () => []),
     coachPackage: {
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {

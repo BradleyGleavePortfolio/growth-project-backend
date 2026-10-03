@@ -106,7 +106,7 @@ function world(opts: { tz?: string | null; email?: string | null; pushCode?: str
       ),
     },
     $queryRaw: jest.fn(async () => []),
-    $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
+    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
   };
   const notifications = {
     createNotification: jest.fn(async (input: Record<string, unknown>, _tx?: unknown) => ({
@@ -245,7 +245,10 @@ describe('B-TRIALS — trial-ending copy', () => {
     const flat = html.replace(/\s+/g, ' ');
     expect(flat).toContain('Your card will be charged <strong>$49</strong> then');
     expect(flat).toContain('cancel anytime before Oct 12');
-    expect(html.replace(/<[^>]+>/g, '')).not.toMatch(/!/);
+    // Text between tags only (split, not a tag-stripping replace: this is a
+    // copy assertion, not sanitization). No exclamation mark in any copy.
+    const textNodes = html.split(/<[^>]*>/).join(' ');
+    expect(textNodes).not.toMatch(/!/);
   });
 });
 
