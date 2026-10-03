@@ -22,6 +22,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import {
@@ -107,9 +108,12 @@ export class CommunityRealtimeService {
     const serialized = JSON.stringify(payload);
     const payloadSizeBytes = Buffer.byteLength(serialized);
 
+    let client: SupabaseClient | null = null;
+    let ch: RealtimeChannel | null = null;
     try {
-      const client = this.supabase.getClient();
-      const ch = client.channel(channel);
+      client = this.supabase.getClient();
+      ch = client.channel(channel);
+      const subscribed = ch;
       // Subscribe-then-send-then-remove: Realtime requires a subscribed
       // channel before send() delivers. Bounded by a 1500ms timeout so a
       // Supabase outage degrades gracefully instead of hanging the caller.
@@ -118,10 +122,10 @@ export class CommunityRealtimeService {
           () => reject(new Error('realtime_subscribe_timeout')),
           BROADCAST_TIMEOUT_MS,
         );
-        ch.subscribe(async (status) => {
+        subscribed.subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
             try {
-              await ch.send({ type: 'broadcast', event, payload });
+              await subscribed.send({ type: 'broadcast', event, payload });
               clearTimeout(timeout);
               resolve();
             } catch (sendErr) {
@@ -131,7 +135,6 @@ export class CommunityRealtimeService {
           }
         });
       });
-      await client.removeChannel(ch);
 
       // Telemetry: broadcast succeeded. No user text — channel_kind + event
       // name + payload size only.
@@ -151,15 +154,25 @@ export class CommunityRealtimeService {
       );
       // Telemetry carries a BOUNDED, allowlisted code — never the raw message
       // (PII gate): a lower-layer string could leak user text / emails / tokens.
-      this.track(
-        meta.distinctId,
-        COMMUNITY_TELEMETRY_EVENTS.realtimeBroadcastFailed,
-        {
-          channel_kind: meta.channelKind,
-          event_name: event,
-          error_code: classifyTelemetryError(err),
-        },
-      );
+      this.track(meta.distinctId, COMMUNITY_TELEMETRY_EVENTS.realtimeBroadcastFailed, {
+        channel_kind: meta.channelKind,
+        event_name: event,
+        error_code: classifyTelemetryError(err),
+      });
+    } finally {
+      // Always release the channel, also when subscribe timed out or send
+      // failed. A channel left behind keeps the Realtime socket reconnecting
+      // forever (a timer per failed broadcast during an outage, and a live
+      // handle that kept the community live suites from exiting).
+      if (client && ch) {
+        try {
+          await client.removeChannel(ch);
+        } catch (removeErr) {
+          this.logger.warn(
+            `broadcastCommunityEvent channel cleanup failed: channel=${channel}: ${(removeErr as Error).message}`,
+          );
+        }
+      }
     }
   }
 
@@ -168,11 +181,7 @@ export class CommunityRealtimeService {
    * AnalyticsService is itself a no-op when POSTHOG_KEY is unset, so this is
    * doubly safe. Property keys are snake_case; values carry no user text.
    */
-  private track(
-    distinctId: string,
-    event: string,
-    props: Record<string, unknown>,
-  ): void {
+  private track(distinctId: string, event: string, props: Record<string, unknown>): void {
     if (!this.telemetryEnabled()) return;
     this.analytics.capture(distinctId, event, props);
   }

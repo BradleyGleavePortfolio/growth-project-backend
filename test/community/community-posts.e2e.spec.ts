@@ -25,6 +25,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityPostsController } from '../../src/community/posts/community-posts.controller';
 import { CommunityPostsService } from '../../src/community/posts/community-posts.service';
@@ -45,14 +46,14 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-posts] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-posts] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -83,10 +84,8 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
       const req = ctx.switchToHttp().getRequest();
       const userId = req.headers[H_USER] as string | undefined;
       if (!userId) throw new UnauthorizedException();
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       req.user = user;
       return true;
@@ -145,6 +144,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
         CommunityPostsRepository,
         CommunityMessagesRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityPostsEnabledGuard,
         CommunityMessagesEnabledGuard,
@@ -194,18 +194,13 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     ids.studentA = randomUUID();
     ids.studentB = randomUUID();
 
-    const users: Array<[string, string, string, string | null]> = [
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: { coach_id: ids.coachA, name: 'WS A', slug: `ws-a-${tag}` },
@@ -233,9 +228,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(
-      Boolean,
-    );
+    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(Boolean);
     await prisma.communityMessage.deleteMany({
       where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
     });
@@ -299,11 +292,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
 
   it('4. cross-tenant: foreign student cannot read post → 404', async () => {
     const postId = await createPostAsCoach();
-    const res = await call(
-      'GET',
-      `/api/community/posts/${postId}`,
-      asUser(ids.studentB),
-    );
+    const res = await call('GET', `/api/community/posts/${postId}`, asUser(ids.studentB));
     expect(res.status).toBe(404);
   });
 

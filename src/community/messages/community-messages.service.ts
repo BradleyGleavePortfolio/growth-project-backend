@@ -8,21 +8,13 @@ import {
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
-import {
-  COMMUNITY_BROADCAST_EVENTS,
-} from '../community-events';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { CommunityMessagesRepository } from './community-messages.repository';
-import {
-  PlanContextService,
-  planTagsEnabled,
-} from '../plan-context/plan-context.service';
+import { PlanContextService, planTagsEnabled } from '../plan-context/plan-context.service';
 import { acksEnabled } from '../ack/ack.feature';
 import { buildSlaSnapshot } from '../ack/sla';
 import type { MessageAckEnvelope } from '../dto/community-message.dto';
-import {
-  PlanContextTag,
-  PlanContextTagSchema,
-} from '../plan-context/plan-context.dto';
+import { PlanContextTag, PlanContextTagSchema } from '../plan-context/plan-context.dto';
 import {
   CommunityMessageListResponse,
   CommunityMessageListResponseSchema,
@@ -30,6 +22,7 @@ import {
   CommunityMessageResponseSchema,
   CommunityMessageView,
 } from '../dto/community-message.dto';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 50;
@@ -60,6 +53,7 @@ export class CommunityMessagesService {
     private readonly repo: CommunityMessagesRepository,
     private readonly realtime: CommunityRealtimeService,
     private readonly planContext: PlanContextService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   private view(m: CommunityMessage): CommunityMessageView {
@@ -127,9 +121,7 @@ export class CommunityMessagesService {
   ): Promise<PlanContextTag | null> {
     if (raw == null) return null;
     if (!planTagsEnabled()) {
-      this.logger.log(
-        `dropping plan_context on send reason=flag_off_drop sender=${user.id}`,
-      );
+      this.logger.log(`dropping plan_context on send reason=flag_off_drop sender=${user.id}`);
       return null;
     }
     const parsed = PlanContextTagSchema.safeParse(raw);
@@ -167,12 +159,11 @@ export class CommunityMessagesService {
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Apple 1.2: objectionable-content filter before anything is written.
+    this.safety.assertAllowed(body);
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
-    const planContext = await this.resolveIncomingPlanContext(
-      user,
-      planContextRaw,
-    );
+    const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
     const created = await this.repo.createCohortMessage({
       workspaceId: cohort.workspace_id,
       cohortId: cohort.id,
@@ -226,44 +217,36 @@ export class CommunityMessagesService {
       before: this.parseBefore(query.before),
       limit,
     });
-    const next =
-      rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
+    const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
+    // Block filter AFTER the cursor is computed from the unfiltered page, so
+    // pagination stays stable and a hidden row never becomes the cursor.
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
     return CommunityMessageListResponseSchema.parse({
-      messages: rows.map((m) => this.view(m)),
+      messages: visible.map((m) => this.view(m)),
       next_before: next,
     });
   }
 
-  async getOne(
-    user: User,
-    messageId: string,
-  ): Promise<CommunityMessageResponse> {
+  async getOne(user: User, messageId: string): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
     // Cross-surface containment: the cohort chat surface only owns plain
     // messages (plan_context_type === null). Any row carrying a non-null
     // discriminator is a sub-surface row — a post comment (v2-2) or a v3-1
     // challenge comment / leaderboard opt-in sentinel — and MUST be invisible
     // here so it can't be read/edited/deleted through the message endpoints.
-    if (
-      !m ||
-      m.scope !== 'cohort' ||
-      !m.cohort_id ||
-      m.plan_context_type !== null
-    ) {
+    if (!m || m.scope !== 'cohort' || !m.cohort_id || m.plan_context_type !== null) {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Two-way block: a direct id read cannot go around the list filter.
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND);
     return CommunityMessageResponseSchema.parse({ message: this.view(m) });
   }
 
-  async edit(
-    user: User,
-    messageId: string,
-    body: string,
-  ): Promise<CommunityMessageResponse> {
+  async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
     // See getOne: any non-null plan_context_type row is a sub-surface row and
     // is not editable through the cohort chat message endpoint.
@@ -287,6 +270,7 @@ export class CommunityMessagesService {
         code: 'community.message.not_author',
       });
     }
+    this.safety.assertAllowed(body);
     if (Date.now() - m.created_at.getTime() > EDIT_WINDOW_MS) {
       throw new ForbiddenException({
         error: 'forbidden',
@@ -310,19 +294,11 @@ export class CommunityMessagesService {
     return CommunityMessageResponseSchema.parse({ message: this.view(updated) });
   }
 
-  async remove(
-    user: User,
-    messageId: string,
-  ): Promise<CommunityMessageResponse> {
+  async remove(user: User, messageId: string): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
     // See getOne: any non-null plan_context_type row is a sub-surface row and
     // is not deletable through the cohort chat message endpoint.
-    if (
-      !m ||
-      m.scope !== 'cohort' ||
-      !m.cohort_id ||
-      m.plan_context_type !== null
-    ) {
+    if (!m || m.scope !== 'cohort' || !m.cohort_id || m.plan_context_type !== null) {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);
@@ -331,8 +307,7 @@ export class CommunityMessagesService {
     }
     const isAuthor = m.sender_id === user.id;
     const isModerator =
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(cohort.workspace_id, user.id));
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(cohort.workspace_id, user.id));
     if (!isAuthor && !isModerator) {
       throw new ForbiddenException({
         error: 'forbidden',
