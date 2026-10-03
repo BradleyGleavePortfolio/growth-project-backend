@@ -22,7 +22,7 @@ import {
   TimeZoneSource,
 } from './notifications.dto';
 import { usableTimeZone } from './local-time';
-import { NotificationKind, NotificationKindValue } from './notification-kind';
+import { NotificationKindValue } from './notification-kind';
 import {
   NotificationCategory,
   DEFAULT_NOTIFICATION_CATEGORY,
