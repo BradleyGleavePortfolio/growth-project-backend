@@ -11,6 +11,7 @@ import {
 } from './checkout.controller';
 import { CheckoutService } from './checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
+import { TrialConflictService } from '../packages/trials/trial-conflict.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Module } from './dunning-v2/dunning-v2.module';
 import {
@@ -79,6 +80,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
   providers: [
     CheckoutService,
     CheckoutWebhookHandlerService,
+    // B-TRIALS-3 (B-656-1) — durable second-trial cancellation + its sweep.
+    TrialConflictService,
     PurchaseSplitHandlerService,
     DunningService,
     RefundDisputeHandlerService,

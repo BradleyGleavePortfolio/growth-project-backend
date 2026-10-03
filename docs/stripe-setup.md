@@ -74,6 +74,10 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
+   - `customer.subscription.trial_will_end` (package free trials: sends the
+     "your free trial ends on" notice three days before the first charge; a
+     10-minute reconciler also records any notice this event missed, so a
+     missing event delays nothing beyond one sweep)
    - `invoice.paid`
    - `invoice.payment_failed`
    - `customer.updated`
@@ -418,3 +422,16 @@ disruptive:
 - Customer Portal config: <https://docs.stripe.com/customer-management>
 - Companion code: `src/billing/`, `prisma/schema.prisma` (mirror models),
   `test/stripe-webhook.spec.ts`, `test/subscription.guard.spec.ts`.
+
+## Runbook: free-trial alerts (B-TRIALS-3)
+
+- `TRIAL_CONFLICT_CANCEL_FAILING` (Sentry, tags `purchase_id`): a subscription
+  that tried to start a second free trial with the same coach could not be
+  cancelled after 3 attempts. The sweep keeps retrying every 5 minutes with
+  backoff (max 1 hour). Look up the purchase's `stripe_subscription_id` and
+  cancel it in the Stripe Dashboard before its trial ends; the next
+  `customer.subscription.deleted` event settles the row.
+- `TRIAL_CONFLICT_SUPERSEDED` (Sentry, tags `purchase_id`): every cancel failed
+  until the trial ended and Stripe billed the regular price. The client has
+  access as a regular paid plan without a trial. Offer the client a refund of
+  that first charge through the normal refund path.
