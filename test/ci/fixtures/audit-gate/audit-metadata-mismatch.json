@@ -1,0 +1,105 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "braces": {
+      "name": "braces",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1240992,
+          "name": "braces",
+          "dependency": "braces",
+          "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+          "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+          "severity": "high",
+          "cwe": ["CWE-674"],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<=3.0.3"
+        }
+      ],
+      "effects": ["micromatch"],
+      "range": "*",
+      "nodes": ["node_modules/braces"],
+      "fixAvailable": {
+        "name": "danger",
+        "version": "7.0.19",
+        "isSemVerMajor": true
+      }
+    },
+    "danger": {
+      "name": "danger",
+      "severity": "high",
+      "isDirect": true,
+      "via": ["micromatch"],
+      "effects": [],
+      "range": ">=7.1.0",
+      "nodes": ["node_modules/danger"],
+      "fixAvailable": {
+        "name": "danger",
+        "version": "7.0.19",
+        "isSemVerMajor": true
+      }
+    },
+    "micromatch": {
+      "name": "micromatch",
+      "severity": "high",
+      "isDirect": false,
+      "via": ["braces"],
+      "effects": ["danger"],
+      "range": ">=0.2.0",
+      "nodes": ["node_modules/micromatch"],
+      "fixAvailable": {
+        "name": "danger",
+        "version": "7.0.19",
+        "isSemVerMajor": true
+      }
+    },
+    "multer": {
+      "name": "multer",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1239935,
+          "name": "multer",
+          "dependency": "multer",
+          "title": "multer vulnerable to Denial of Service via orphaned disk writes on aborted uploads",
+          "url": "https://github.com/advisories/GHSA-3pph-fpjx-jg34",
+          "severity": "moderate",
+          "cwe": ["CWE-400", "CWE-459"],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+          },
+          "range": ">=2.2.0 <2.4.0"
+        }
+      ],
+      "effects": [],
+      "range": "2.2.0 - 2.3.0",
+      "nodes": ["node_modules/multer"],
+      "fixAvailable": true
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 1,
+      "high": 2,
+      "critical": 0,
+      "total": 4
+    },
+    "dependencies": {
+      "prod": 358,
+      "dev": 791,
+      "optional": 38,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 1149
+    }
+  }
+}
