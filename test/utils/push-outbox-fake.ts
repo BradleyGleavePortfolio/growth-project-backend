@@ -3,7 +3,9 @@
  * PushDeliveryService reads (B-NOTIF-5). It implements the subset of Prisma
  * filters the service uses (equality, null, gte/lte/lt, in, not: null), the
  * `(user_id, dedupe_key)` unique key for createMany({ skipDuplicates }), and
- * the worker's lease claim ($queryRaw: due `pending` rows -> `sending`).
+ * the worker's lease claim ($queryRaw: the next due `pending` row ->
+ * `sending`, with the claim's lease_token), the recipient's notification
+ * preferences and the coach-profile zones the worker re-reads at send time.
  */
 export interface FakeOutboxRow {
   id: string;
@@ -16,10 +18,13 @@ export interface FakeOutboxRow {
   data: Record<string, unknown>;
   context: Record<string, unknown> | null;
   urgent: boolean;
+  time_zone: string | null;
   status: string;
   not_before: Date;
   deferred_reason: string | null;
   lease_until: Date | null;
+  lease_token: string | null;
+  handed_off_at: Date | null;
   attempts: number;
   result_code: string | null;
   ticket_id: string | null;
@@ -69,10 +74,13 @@ export function pushOutboxWorld(opts: {
   now: () => Date;
   tokens?: Record<string, string | null>;
   sessions?: Record<string, { status: string; start_at: Date }>;
+  /** NotificationPreferences rows by user id (mutable: tests flip switches). */
+  prefs?: Record<string, Record<string, unknown>>;
 }) {
   const rows: FakeOutboxRow[] = [];
   const tokens: Record<string, string | null> = { ...(opts.tokens ?? {}) };
   const sessions = opts.sessions ?? {};
+  const prefs: Record<string, Record<string, unknown>> = opts.prefs ?? {};
   let seq = 0;
 
   const build = (data: Record<string, unknown>): FakeOutboxRow => {
@@ -83,10 +91,13 @@ export function pushOutboxWorld(opts: {
       dedupe_key: null,
       context: null,
       urgent: false,
+      time_zone: null,
       status: 'pending',
       not_before: now,
       deferred_reason: null,
       lease_until: null,
+      lease_token: null,
+      handed_off_at: null,
       attempts: 0,
       result_code: null,
       ticket_id: null,
@@ -157,20 +168,34 @@ export function pushOutboxWorld(opts: {
 
   const db = {
     pushOutbox,
-    // The worker's lease claim: due pending rows -> sending (one statement).
-    $queryRaw: jest.fn(async () => {
+    // The worker's lease claim: the next due pending row -> sending, with
+    // the claim's lease_token (the first string bound into the statement).
+    $queryRaw: jest.fn(async (_sql: TemplateStringsArray, ...values: unknown[]) => {
       const now = opts.now();
+      const leaseToken = values.find((v): v is string => typeof v === 'string') ?? null;
+      // A bound number is the claim's LIMIT; a literal LIMIT 1 binds none.
+      const limit = values.find((v): v is number => typeof v === 'number') ?? 1;
       const due = sortBy(
         rows.filter((r) => r.status === 'pending' && r.not_before.getTime() <= now.getTime()),
         { not_before: 'asc' },
-      ).slice(0, 50);
+      ).slice(0, limit);
       for (const r of due) {
         r.status = 'sending';
         r.lease_until = new Date(now.getTime() + 120_000);
+        r.lease_token = leaseToken;
+        r.handed_off_at = null;
         r.attempts += 1;
       }
       return due.map((r) => ({ ...r }));
     }),
+    notificationPreferences: {
+      findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) =>
+        prefs[where.user_id] ? { user_id: where.user_id, ...prefs[where.user_id] } : null,
+      ),
+    },
+    coachProfile: {
+      findUnique: jest.fn(async () => null),
+    },
     user: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({
         expo_push_token: tokens[where.id] ?? null,
@@ -189,5 +214,5 @@ export function pushOutboxWorld(opts: {
       ),
     },
   };
-  return { rows, tokens, sessions, db };
+  return { rows, tokens, sessions, prefs, db };
 }
