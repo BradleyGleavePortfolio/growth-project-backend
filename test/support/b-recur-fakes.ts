@@ -19,6 +19,8 @@ function matchValue(actual: any, cond: any): boolean {
     if ('startsWith' in cond)
       return typeof actual === 'string' && actual.startsWith(cond.startsWith);
     if ('gt' in cond) return actual != null && actual > cond.gt;
+    if ('lte' in cond) return actual != null && actual <= cond.lte;
+    if ('lt' in cond) return actual != null && actual < cond.lt;
     return false;
   }
   return actual === cond;
@@ -65,7 +67,11 @@ export function makeFakePrisma() {
     // Serialized like a Postgres advisory xact lock: one callback at a time.
     $transaction: jest.fn(async (cb: (tx: any) => Promise<unknown>) => {
       const run = chain.then(() => cb(prisma));
-      chain = run.catch(() => undefined);
+      // The next callback waits for this one to settle, whatever its outcome.
+      chain = run.then(
+        () => 'settled',
+        () => 'settled',
+      );
       return run;
     }),
     user: {
@@ -101,11 +107,13 @@ export function makeFakePrisma() {
         )[0];
         return row ? { ...row } : null;
       }),
-      findMany: jest.fn(async ({ where, orderBy }: any) =>
+      findMany: jest.fn(async ({ where, orderBy, take }: any) =>
         order(
           purchases.filter((p) => matchWhere(p, where)),
           orderBy,
-        ).map((r) => ({ ...r })),
+        )
+          .slice(0, take ?? undefined)
+          .map((r) => ({ ...r })),
       ),
       create: jest.fn(async ({ data }: any) => {
         if (purchases.some((p) => p.idempotency_key === data.idempotency_key))
@@ -192,7 +200,8 @@ export function makeFakeStripe() {
         items: { data: [{ price: { id: args.recurringPriceId } }] },
         latest_invoice: {
           id: `in_${n}`,
-          amount_due: 0,
+          // Unknown unless a spec sets it (the reuse check skips a missing amount).
+          amount_due: undefined,
           payment_intent: trial
             ? null
             : {

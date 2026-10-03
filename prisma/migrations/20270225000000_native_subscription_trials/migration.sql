@@ -6,11 +6,18 @@
 --   trial_days       trial length the checkout offered (NULL = no trial)
 --   trial_started_at when the webhook granted the trial's entitlement
 --
--- Rollback: down.sql (drops the two columns; only trial bookkeeping is lost).
+-- trial_days is SHARED with lane B-TRIALS (#656, 20270228000000), which adds
+-- the same nullable INTEGER column with ADD COLUMN IF NOT EXISTS and no CHECK.
+-- IF NOT EXISTS here too, so the two migrations apply in either order
+-- (fresh database: this file sorts first; production: whichever deploys
+-- first creates it). #656 only ever writes 1..30 into it, inside this CHECK.
+--
+-- Rollback: down.sql (drops the trial_started_at column and the CHECK; drops
+-- trial_days only while #656's PackageTrialUsage table does not exist).
 
 BEGIN;
 
-ALTER TABLE "ClientPurchase" ADD COLUMN "trial_days" INTEGER;
+ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;
 ALTER TABLE "ClientPurchase" ADD COLUMN "trial_started_at" TIMESTAMP(3);
 
 ALTER TABLE "ClientPurchase"

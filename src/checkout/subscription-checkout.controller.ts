@@ -60,6 +60,14 @@ export class CreateSubscriptionIntentDto {
   @Min(0)
   @Max(100_000_000)
   expected_amount_cents?: number;
+
+  // A combo package's one-time part the app showed (today's charge = one-time
+  // + first period). A mismatch answers the same 409 PACKAGE_PRICE_CHANGED.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  expected_one_time_cents?: number;
 }
 
 export class ResumePlanDto {

@@ -92,9 +92,13 @@ const DROP_LIST_HARD_CAP = 500;
 export function isRecurringPackage(
   pkg: Pick<CoachPackage, 'billing_type' | 'recurring_amount_cents' | 'recurring_interval'>,
 ): boolean {
+  // A combo's recurring part of $0 renews nothing: it is a one-time sale
+  // (B-RECUR-BE R1-3), sold through payment-intent like any one-time package.
   return (
     pkg.billing_type === 'recurring' ||
-    (pkg.recurring_amount_cents != null && pkg.recurring_interval != null)
+    (pkg.recurring_amount_cents != null &&
+      pkg.recurring_amount_cents > 0 &&
+      pkg.recurring_interval != null)
   );
 }
 

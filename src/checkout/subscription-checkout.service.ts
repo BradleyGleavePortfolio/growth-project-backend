@@ -56,11 +56,25 @@ export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
 /** Stripe expires an unpaid `incomplete` subscription after 23 hours. */
 const OPEN_ATTEMPT_MAX_AGE_MS = 23 * 3600 * 1000;
 
-/** Statuses of a row that is an attempt nobody has paid for yet. */
-const OPEN_ATTEMPT_STATUSES = ['pending', 'incomplete', 'payment_failed'] as const;
+/**
+ * Statuses of a row that is an attempt nobody has paid for yet (with
+ * entitlement_active=false and trial_started_at=null). 'trialing' is one of
+ * them: a trial attempt mirrors Stripe 'trialing' as soon as its $0 trial
+ * invoice is paid, before the client saved a card (B-RECUR-BE R1-1).
+ */
+const OPEN_ATTEMPT_STATUSES = ['pending', 'incomplete', 'payment_failed', 'trialing'] as const;
 
-/** Statuses that mean the client already has this plan. */
-const LIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'] as const;
+/**
+ * Statuses that mean the client already has this plan. 'trialing' counts
+ * only once the trial started (trial_started_at set, card saved).
+ */
+const LIVE_SUBSCRIPTION_STATUSES = ['active', 'past_due', 'unpaid'] as const;
+
+/** Statuses of an attempt that is over; its key can never start a plan again. */
+const ENDED_ATTEMPT_STATUSES = new Set(['expired', 'canceled', 'incomplete_expired']);
+
+/** Most stale trial attempts retired per checkout call (bounded Stripe work). */
+const STALE_TRIAL_RETIRE_LIMIT = 3;
 
 /** PaymentIntent statuses a PaymentSheet can still complete. */
 const PAYABLE_PI_STATUSES = new Set([
@@ -75,7 +89,10 @@ export const MAX_TRIAL_DAYS = 730;
 export interface SubscriptionIntentInput {
   package_id: string;
   idempotency_key: string;
+  /** The renewal price the app showed. */
   expected_amount_cents?: number;
+  /** A combo's one-time part the app showed (0 or absent for a pure recurring plan). */
+  expected_one_time_cents?: number;
 }
 
 export interface PlanPrice {
@@ -138,6 +155,7 @@ export interface ClientPlanView {
 type Tx = Prisma.TransactionClient;
 
 type Decision =
+  | { kind: 'included'; purchase: ClientPurchase }
   | { kind: 'active'; purchase: ClientPurchase }
   | { kind: 'reuse'; purchase: ClientPurchase }
   | { kind: 'reserved'; purchase: ClientPurchase; trialDays: number };
@@ -243,13 +261,11 @@ export class SubscriptionCheckoutService {
     ) {
       throw this.packageUnavailable();
     }
-    // $0 packages and invite-code grants never create Stripe objects.
-    if (pkg.amount_cents === 0 && !isRecurringPackage(pkg)) {
-      throw new BadRequestException({
-        code: 'PACKAGE_IS_FREE',
-        error: 'PACKAGE_IS_FREE',
-        message: 'This plan is free. Claim it from the plan screen; no card is needed.',
-      });
+    // $0 packages and invite-code grants never create Stripe objects. A
+    // recurring package priced $0 is free too (claimable through
+    // /v1/packages/:id/claim-free, which keys on amount_cents = 0).
+    if (pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring')) {
+      throw this.packageIsFree();
     }
     if (!isRecurringPackage(pkg)) {
       throw new ConflictException({
@@ -262,13 +278,17 @@ export class SubscriptionCheckoutService {
     const pkgTrial = packageTrialDays(pkg);
     const offeredPrice = planPriceFor(pkg, 0);
     if (!(offeredPrice.amount_cents > 0)) {
-      // A recurring price of $0 is not a subscription Stripe can bill; the
-      // package side (#629) refuses it, this is the defensive backstop.
-      throw this.packageUnavailable();
+      // Unreachable after the two checks above (isRecurringPackage requires a
+      // positive recurring part); kept as the backstop against a $0 renewal.
+      throw this.packageIsFree();
     }
+    const oneTimeMismatch =
+      typeof input.expected_one_time_cents === 'number' &&
+      input.expected_one_time_cents !== offeredPrice.one_time_cents;
     if (
-      typeof input.expected_amount_cents === 'number' &&
-      input.expected_amount_cents !== offeredPrice.amount_cents
+      (typeof input.expected_amount_cents === 'number' &&
+        input.expected_amount_cents !== offeredPrice.amount_cents) ||
+      oneTimeMismatch
     ) {
       throw new ConflictException({
         code: 'PACKAGE_PRICE_CHANGED',
@@ -276,7 +296,12 @@ export class SubscriptionCheckoutService {
         message:
           'The price of this plan changed since you opened it. Review the new price before you start.',
         amount_cents: offeredPrice.amount_cents,
+        one_time_cents: offeredPrice.one_time_cents,
+        // Today's charge without a trial; a trial makes today's charge 0.
+        first_charge_cents: offeredPrice.first_charge_cents,
         currency: offeredPrice.currency,
+        interval: offeredPrice.interval,
+        interval_count: offeredPrice.interval_count,
       });
     }
 
@@ -288,6 +313,12 @@ export class SubscriptionCheckoutService {
       where: { idempotency_key: purchaseKey },
     });
     if (replay && replay.client_user_id === client.id) {
+      // R1-5 — the attempt behind this key is over: paid (the plan is live)
+      // or ended. Never hand back a spent or dead PaymentIntent secret, and
+      // never wait on a row that will not get one. The app starts a fresh
+      // attempt with a new key on SUBSCRIPTION_ATTEMPT_EXPIRED.
+      if (replay.entitlement_active || replay.trial_started_at) throw this.alreadyActive(replay);
+      if (ENDED_ATTEMPT_STATUSES.has(replay.status)) throw this.attemptExpired();
       if (replay.stripe_client_secret && replay.stripe_subscription_id) {
         return this.resultFromRow(replay, pkg, true);
       }
@@ -297,6 +328,11 @@ export class SubscriptionCheckoutService {
       }
       throw this.inProgress(winner === null);
     }
+
+    // R1-2 — already included (invite grant, free claim, one-time purchase):
+    // answered before any Stripe object (customer, subscription) exists.
+    const included = await this.findIncluded(this.prisma, client.id, pkg.id);
+    if (included) throw this.alreadyIncluded(included);
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
@@ -336,6 +372,12 @@ export class SubscriptionCheckoutService {
     // subscription to a pending row by (package, client, coach, customer).
     const customer = await this.checkout.ensureCustomer(client.id, client.email, client.name);
 
+    // R1-6 — trial attempts abandoned before the card was saved stay
+    // `trialing` on Stripe until the trial ends (Stripe expires only
+    // `incomplete` ones after 23 h). Retire the stale ones now. Best effort:
+    // it never blocks this checkout.
+    await this.retireStaleTrialAttempts(client.id, coach.id);
+
     // Decide under the per-(client, coach) lock. At most two passes: the
     // second runs only after a stale open attempt was retired.
     for (let pass = 0; pass < 2; pass += 1) {
@@ -350,6 +392,7 @@ export class SubscriptionCheckoutService {
         renewalCents: offeredPrice.amount_cents,
         contractEnvelopeId: gate.coachEnvelopeId ?? null,
       });
+      if (decision.kind === 'included') throw this.alreadyIncluded(decision.purchase);
       if (decision.kind === 'active') throw this.alreadyActive(decision.purchase);
       if (decision.kind === 'reserved') {
         return this.mintSubscription({
@@ -514,14 +557,27 @@ export class SubscriptionCheckoutService {
     return this.prisma.$transaction(async (tx: Tx): Promise<Decision> => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT}::int4, hashtext(${`${args.clientId}:${args.coachId}`}))`;
 
-      // 1. Already on this plan -> coded 409 the app explains.
+      // 0. R1-2 — the client already holds this package without a
+      //    subscription: an invite-code grant (free / prepaid), a free claim,
+      //    or a one-time purchase still in its access window. Charging for it
+      //    again would bill a plan they already have.
+      //    Re-checked under the lock (a grant may land while this runs).
+      const included = await this.findIncluded(tx, args.clientId, args.pkg.id);
+      if (included) return { kind: 'included', purchase: included };
+
+      // 1. Already on this plan -> coded 409 the app explains. A trial counts
+      //    once it started (card saved); before that it is an open attempt.
       const live = await tx.clientPurchase.findFirst({
         where: {
           client_user_id: args.clientId,
           package_id: args.pkg.id,
           billing_type: 'recurring',
           stripe_subscription_id: { not: null },
-          OR: [{ entitlement_active: true }, { status: { in: [...LIVE_SUBSCRIPTION_STATUSES] } }],
+          OR: [
+            { entitlement_active: true },
+            { trial_started_at: { not: null }, status: 'trialing' },
+            { status: { in: [...LIVE_SUBSCRIPTION_STATUSES] } },
+          ],
         },
         orderBy: { created_at: 'desc' },
       });
@@ -535,6 +591,7 @@ export class SubscriptionCheckoutService {
           package_id: args.pkg.id,
           billing_type: 'recurring',
           entitlement_active: false,
+          trial_started_at: null,
           status: { in: [...OPEN_ATTEMPT_STATUSES] },
           idempotency_key: { startsWith: `sub-${args.clientId}-` },
           created_at: { gt: since },
@@ -556,6 +613,7 @@ export class SubscriptionCheckoutService {
               { trial_started_at: { not: null } },
               {
                 trial_days: { not: null },
+                entitlement_active: false,
                 status: { in: [...OPEN_ATTEMPT_STATUSES] },
                 created_at: { gt: since },
               },
@@ -711,10 +769,19 @@ export class SubscriptionCheckoutService {
     const expectedPrice =
       pkg.billing_type !== 'recurring' ? pkg.recurring_stripe_price_id : pkg.stripe_price_id;
     const itemPrice = sub.items?.data?.[0]?.price?.id ?? null;
+    // R1-4 — today's charge must still match: a combo's first invoice carries
+    // its one-time price, which the renewal-price check cannot see.
+    const invoice =
+      sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
+    const firstChargeMatches =
+      sub.status !== 'incomplete' ||
+      typeof invoice?.amount_due !== 'number' ||
+      invoice.amount_due === planPriceFor(pkg, 0).first_charge_cents;
     const stillPayable =
       (sub.status === 'incomplete' || sub.status === 'trialing') &&
       !!secret &&
       open.amount_cents === planPriceFor(pkg, 0).amount_cents &&
+      firstChargeMatches &&
       (!expectedPrice || !itemPrice || expectedPrice === itemPrice);
     if (stillPayable && secret) {
       let ephemeral: { secret: string };
@@ -896,6 +963,114 @@ export class SubscriptionCheckoutService {
         `could not cancel stale subscription ${subscriptionId}: ${(err as Error).message}; Stripe expires it after 23 h`,
       );
     }
+  }
+
+  /**
+   * R1-6 — cancel trial attempts older than the reuse window whose card was
+   * never saved (Stripe `trialing`, no default payment method) and mark them
+   * expired. A trial whose card WAS saved is left alone (its webhook is only
+   * late; the webhook grants it). Bounded, out of any DB transaction, and
+   * never throws: a failure leaves the attempt to end with its trial
+   * (`missing_payment_method=cancel`), exactly as before.
+   */
+  private async retireStaleTrialAttempts(clientId: string, coachId: string): Promise<void> {
+    try {
+      const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      const stale = await this.prisma.clientPurchase.findMany({
+        where: {
+          client_user_id: clientId,
+          coach_user_id: coachId,
+          billing_type: 'recurring',
+          entitlement_active: false,
+          trial_started_at: null,
+          trial_days: { not: null },
+          stripe_subscription_id: { not: null },
+          status: { in: [...OPEN_ATTEMPT_STATUSES] },
+          idempotency_key: { startsWith: `sub-${clientId}-` },
+          created_at: { lte: before },
+        },
+        orderBy: { created_at: 'desc' },
+        take: STALE_TRIAL_RETIRE_LIMIT,
+      });
+      for (const row of stale) {
+        if (!row.stripe_subscription_id) continue;
+        const sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
+        const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
+        const abandonedTrial = sub.status === 'trialing' && !sub.default_payment_method;
+        if (!ended && !abandonedTrial) continue;
+        if (abandonedTrial) await this.stripe.cancelSubscription(sub.id);
+        await this.prisma.clientPurchase.updateMany({
+          where: { id: row.id, entitlement_active: false, trial_started_at: null },
+          data: { status: 'expired', stripe_client_secret: null, stripe_ephemeral_key: null },
+        });
+        this.logger.log(
+          `billing.trial_attempt_retired purchase=${row.id} stripe_status=${sub.status}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `stale trial attempt cleanup skipped client=${clientId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * R1-2 — an entitled row for this package that is not a subscription: an
+   * invite-code grant (free / prepaid), a free claim, or a one-time purchase
+   * still inside its access window.
+   */
+  private findIncluded(
+    db: Tx | PrismaService,
+    clientId: string,
+    packageId: string,
+  ): Promise<ClientPurchase | null> {
+    return db.clientPurchase.findFirst({
+      where: {
+        client_user_id: clientId,
+        package_id: packageId,
+        entitlement_active: true,
+        stripe_subscription_id: null,
+        OR: [{ access_expires_at: null }, { access_expires_at: { gt: new Date() } }],
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  private alreadyIncluded(row: ClientPurchase): HttpException {
+    const source = row.source ?? '';
+    const includedBy: 'invite' | 'free_claim' | 'purchase' = source.startsWith('invite_grant')
+      ? 'invite'
+      : source === 'free_package_claim'
+        ? 'free_claim'
+        : 'purchase';
+    return new ConflictException({
+      code: 'PACKAGE_ALREADY_INCLUDED',
+      error: 'PACKAGE_ALREADY_INCLUDED',
+      message:
+        includedBy === 'purchase'
+          ? 'You already have this plan, so nothing was charged. Open Your plan to see it.'
+          : 'This plan is already included for you through your coach, so there is nothing to pay. Open Your plan to see it.',
+      purchase_id: row.id,
+      included_by: includedBy,
+      access_expires_at: iso(row.access_expires_at),
+    });
+  }
+
+  private attemptExpired(): HttpException {
+    return new ConflictException({
+      code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+      error: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+      message:
+        'This checkout timed out before it was paid. Nothing was charged. Start again to see the current price.',
+    });
+  }
+
+  private packageIsFree(): HttpException {
+    return new BadRequestException({
+      code: 'PACKAGE_IS_FREE',
+      error: 'PACKAGE_IS_FREE',
+      message: 'This plan is free. Claim it from the plan screen; no card is needed.',
+    });
   }
 
   private alreadyActive(row: ClientPurchase): HttpException {

@@ -61,14 +61,44 @@ function trialStartPatch(
   return {};
 }
 
-/** B-RECUR — an unpaid subscription attempt that never granted access. */
+/**
+ * B-RECUR — an unpaid subscription attempt that never granted access. A trial
+ * attempt whose $0 trial invoice was paid mirrors Stripe 'trialing' before
+ * the card is saved; it never granted access either (B-RECUR-BE R1-1).
+ */
 export function isNeverEntitledAttempt(
   purchase: Pick<ClientPurchase, 'status' | 'entitlement_active' | 'trial_started_at'>,
 ): boolean {
   return (
     !purchase.entitlement_active &&
     !purchase.trial_started_at &&
-    ['pending', 'incomplete', 'payment_failed'].includes(purchase.status)
+    ['pending', 'incomplete', 'payment_failed', 'trialing'].includes(purchase.status)
+  );
+}
+
+/**
+ * B-RECUR-BE R1-8 — a native checkout attempt (POST /v1/checkout/
+ * subscription-intent) that ended without ever being paid or starting its
+ * trial. Native rows carry the subscription id as their checkout-session id.
+ * Such an ending is not churn: it is recorded as 'expired', never 'canceled'.
+ */
+export function isUnpaidNativeAttempt(
+  purchase: Pick<
+    ClientPurchase,
+    | 'status'
+    | 'entitlement_active'
+    | 'trial_started_at'
+    | 'billing_type'
+    | 'stripe_subscription_id'
+    | 'stripe_checkout_session_id'
+  >,
+): boolean {
+  return (
+    purchase.billing_type === 'recurring' &&
+    !!purchase.stripe_subscription_id &&
+    purchase.stripe_checkout_session_id === purchase.stripe_subscription_id &&
+    (isNeverEntitledAttempt(purchase) ||
+      (purchase.status === 'expired' && !purchase.entitlement_active && !purchase.trial_started_at))
   );
 }
 
@@ -963,12 +993,17 @@ export class CheckoutWebhookHandlerService {
     // never-entitled purchases — its WHERE clause returns count=0 — but
     // skipping the call avoids noise in the logs).
     const wasEntitled = !!purchase.entitlement_active;
+    // B-RECUR-BE R1-8 — an abandoned native attempt (never paid, trial never
+    // started) ends as 'expired': churn, LTV and plan-list readers key on
+    // 'canceled' and must never count a checkout nobody completed.
+    const unpaidAttempt = isUnpaidNativeAttempt(purchase);
     await db.clientPurchase.update({
       where: { id: purchase.id },
       data: {
-        status: 'canceled',
+        status: unpaidAttempt ? 'expired' : 'canceled',
         entitlement_active: false,
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
+        ...(unpaidAttempt ? { stripe_client_secret: null, stripe_ephemeral_key: null } : {}),
       },
     });
     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
@@ -1125,6 +1160,22 @@ export class CheckoutWebhookHandlerService {
         },
       });
       return { claimed: true, purchase_id: pending.id };
+    }
+    // B-RECUR-BE R1-7 — the PaymentIntent of a native subscription's first
+    // invoice. invoice.payment_failed owns subscription rows (first-attempt
+    // decline = last_error only; renewal = past_due + dunning). Flipping the
+    // attempt to 'payment_failed' here would list a client who mistyped a
+    // card on the coach's failed-payments roster and fight the invoice path.
+    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
+      await db.clientPurchase.update({
+        where: { id: purchase.id },
+        data: { last_error: pi.last_payment_error?.message ?? 'payment_failed' },
+      });
+      return {
+        claimed: true,
+        purchase_id: purchase.id,
+        reason: 'subscription_invoice_owned_by_invoice_events',
+      };
     }
     // Capture pre-flip entitlement: only entitled purchases have drops
     // worth canceling. A first-attempt PaymentSheet failure on a still-
