@@ -1,0 +1,548 @@
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import type { PayoutAdjustmentNotice } from '@prisma/client';
+import {
+  formatMoney,
+  heldBreakdownLines,
+  type PayoutNoticeAmounts,
+} from '../connect/fees/payout-notice-copy';
+import { EmailService } from '../email/email.service';
+import { EmailTemplateKey } from '../email/email.types';
+import { NotificationKind } from '../notifications/notification-kind';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaService } from '../prisma.service';
+
+// S-FEE round 5 (owner decision OR-111-1) — delivery and read side of the
+// payee notices ChargeSettlementService writes after a refund / chargeback /
+// dispute outcome converges.
+//
+// Delivery (at least once, never blocking the money path): an in-app
+// Notification row (kind coach_alert), a push when the payee's coach-alert
+// push preference is on, and the coach-payout-adjustment email through
+// EmailService (EMAIL_TRANSPORT=log records it only; once the provider is
+// live it is sent, keyed by the notice's idempotency key so a retry never
+// sends twice). A notice is claimed with a CAS on dispatch_claimed_at before
+// anything is sent, so two workers never deliver the same notice together;
+// an expired claim (crash mid-delivery) is retried by the sweeper.
+//
+// Read side (Money page): the payee's open held balance per currency (every
+// open PayeeRecovery: amount - collected) and their notices with the full
+// breakdown, newest first, cursor-paginated, scoped to the caller.
+
+export const PAYOUT_NOTICE_DEEP_LINK = 'tgp://coach/money';
+export const PAYOUT_NOTICE_CLAIM_TTL_MS = 5 * 60_000;
+export const PAYOUT_NOTICE_MAX_ATTEMPTS = 6;
+export const PAYOUT_NOTICE_PAGE_MAX = 50;
+
+// Channel outcomes that are final: a retry never repeats them (B-627-6).
+const INAPP_DONE = new Set(['sent', 'off']);
+const PUSH_DONE = new Set(['sent', 'off', 'no_token', 'invalid_token']);
+const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
+
+interface ChannelResult {
+  status: string;
+  notification_id?: string;
+  // The channel's receipt was already written with the delivery itself.
+  receipt_saved?: boolean;
+}
+
+class InAppAlreadyRecorded extends Error {
+  constructor() {
+    super('in-app receipt already recorded by another attempt');
+  }
+}
+
+/** The EmailService idempotency key of one email attempt of a notice. */
+export function payoutNoticeEmailKey(noticeKey: string, attempt: number): string {
+  return attempt <= 1 ? noticeKey : `${noticeKey}:e${attempt}`;
+}
+
+export interface PayoutNoticeView {
+  id: string;
+  event: string;
+  role: string;
+  purchase_id: string;
+  stripe_charge_id: string;
+  currency: string;
+  title: string;
+  body: string;
+  charge_gross_cents: number;
+  customer_refunded_cents: number;
+  reversed_cents: number;
+  reinstated_cents: number;
+  held_cents: number;
+  held_open_cents: number;
+  held_now_open_cents: number;
+  held_breakdown: Array<{ code: string; label: string; cents: number; display: string }>;
+  needs_attention: boolean;
+  acknowledged_at: string | null;
+  created_at: string;
+}
+
+export interface PayoutAdjustmentsView {
+  open_balance: Array<{ currency: string; held_cents: number; display: string; charges: number }>;
+  needs_attention_count: number;
+  notices: PayoutNoticeView[];
+  next_cursor: string | null;
+}
+
+function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
+  return {
+    currency: n.currency,
+    charge_gross_cents: n.charge_gross_cents,
+    customer_refunded_cents: n.customer_refunded_cents,
+    reversed_cents: n.reversed_cents,
+    reinstated_cents: n.reinstated_cents,
+    released_cents: 0,
+    held_cents: n.held_cents,
+    held_tgp_fee_cents: n.held_tgp_fee_cents,
+    held_stripe_fee_cents: n.held_stripe_fee_cents,
+    held_dispute_fee_cents: n.held_dispute_fee_cents,
+    held_not_reversed_cents: n.held_not_reversed_cents,
+    held_open_cents: n.held_open_cents,
+  };
+}
+
+@Injectable()
+export class PayoutNoticeService {
+  private readonly logger = new Logger(PayoutNoticeService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+    @Optional() private readonly email?: EmailService,
+  ) {}
+
+  /**
+   * Deliver every undelivered notice of one charge (after its adjustment).
+   * `recorded` counts the charge's notices of any state, so a caller can tell
+   * a settlement charge (exact-amount notice exists) from a legacy one.
+   */
+  async dispatchForCharge(chargeId: string): Promise<{ recorded: number; sent: number }> {
+    const rows = await this.prisma.payoutAdjustmentNotice.findMany({
+      where: { stripe_charge_id: chargeId },
+      orderBy: { created_at: 'asc' },
+    });
+    let sent = 0;
+    for (const n of rows) {
+      if (n.dispatched_at) continue;
+      if (await this.dispatchOne(n)) sent += 1;
+    }
+    return { recorded: rows.length, sent };
+  }
+
+  /**
+   * Whether a charge has exact-amount notices (a settlement charge). Sends
+   * nothing, so it is safe inside the webhook transaction (C-627-7).
+   */
+  async hasNotices(chargeId: string): Promise<boolean> {
+    const n = await this.prisma.payoutAdjustmentNotice.count({
+      where: { stripe_charge_id: chargeId },
+    });
+    return n > 0;
+  }
+
+  /** Sweeper: notices still undelivered a minute after they were written. */
+  async dispatchPending(now: Date = new Date(), limit = 25): Promise<number> {
+    const rows = await this.prisma.payoutAdjustmentNotice.findMany({
+      where: {
+        dispatched_at: null,
+        dispatch_attempts: { lt: PAYOUT_NOTICE_MAX_ATTEMPTS },
+        created_at: { lte: new Date(now.getTime() - 60_000) },
+      },
+      orderBy: { created_at: 'asc' },
+      take: limit,
+    });
+    let sent = 0;
+    for (const n of rows) if (await this.dispatchOne(n, now)) sent += 1;
+    return sent;
+  }
+
+  private async dispatchOne(n: PayoutAdjustmentNotice, now: Date = new Date()): Promise<boolean> {
+    if (n.dispatched_at) return false;
+    const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
+      where: {
+        id: n.id,
+        dispatched_at: null,
+        OR: [
+          { dispatch_claimed_at: null },
+          { dispatch_claimed_at: { lte: new Date(now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS) } },
+        ],
+      },
+      data: { dispatch_claimed_at: now, dispatch_attempts: { increment: 1 } },
+    });
+    if (claim.count !== 1) return false;
+    // Re-read under the claim: the channels a previous attempt finished are
+    // never repeated (B-627-6, round 6).
+    const row = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
+    if (!row || row.dispatched_at) return false;
+    const payload = {
+      event: 'payout_adjustment',
+      notice_id: row.id,
+      notice_event: row.event,
+      purchase_id: row.purchase_id,
+      stripe_charge_id: row.stripe_charge_id,
+      currency: row.currency,
+      customer_refunded_cents: row.customer_refunded_cents,
+      reversed_cents: row.reversed_cents,
+      held_cents: row.held_cents,
+      held_open_cents: row.held_open_cents,
+      held_tgp_fee_cents: row.held_tgp_fee_cents,
+      held_stripe_fee_cents: row.held_stripe_fee_cents,
+      held_dispute_fee_cents: row.held_dispute_fee_cents,
+      held_not_reversed_cents: row.held_not_reversed_cents,
+    };
+    // Each channel's outcome is written as soon as it is known, so a channel
+    // whose receipt was persisted is never repeated. The in-app row and its
+    // receipt commit together (C-627-8 Sol, round 7); push and email are
+    // at least once across a receipt write that fails after the provider
+    // accepted them (email additionally dedupes on its own attempt key).
+    const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
+      ? { status: row.inapp_status }
+      : await this.deliverInApp(row, payload);
+    if (!inapp.receipt_saved && (inapp.status !== row.inapp_status || inapp.notification_id)) {
+      await this.saveChannel(row.id, {
+        inapp_status: inapp.status,
+        ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
+      });
+    }
+    const push: ChannelResult = PUSH_DONE.has(row.push_status)
+      ? { status: row.push_status }
+      : await this.deliverPush(row, payload);
+    if (push.status !== row.push_status || push.notification_id) {
+      await this.saveChannel(row.id, {
+        push_status: push.status,
+        ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
+      });
+    }
+    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+      ? { status: row.email_status }
+      : await this.deliverEmail(row, now);
+    if (email.status !== row.email_status) {
+      await this.saveChannel(row.id, { email_status: email.status });
+    }
+    const failed =
+      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
+    // A channel that is not done leaves the notice undelivered (the claim
+    // expires and the sweeper retries only that channel, up to
+    // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
+    const finalAttempt = row.dispatch_attempts >= PAYOUT_NOTICE_MAX_ATTEMPTS;
+    if (!failed || finalAttempt) {
+      await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: row.id, dispatched_at: null },
+        data: { dispatched_at: new Date() },
+      });
+    }
+    if (failed && finalAttempt) {
+      this.logger.error(
+        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
+      );
+    }
+    return !failed;
+  }
+
+  private async saveChannel(
+    id: string,
+    data: {
+      inapp_status?: string;
+      inapp_notification_id?: string;
+      push_status?: string;
+      push_notification_id?: string;
+      email_status?: string;
+    },
+  ): Promise<void> {
+    await this.prisma.payoutAdjustmentNotice.updateMany({ where: { id }, data });
+  }
+
+  private async deliverInApp(
+    n: PayoutAdjustmentNotice,
+    payload: Record<string, unknown>,
+  ): Promise<ChannelResult> {
+    // C-627-8 (Sol, round 7): the inbox row and the notice's in-app receipt
+    // are one transaction. A receipt write that fails rolls the inbox row
+    // back, so the retry creates exactly one inbox row for the notice.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await this.notifications.createNotification(
+          {
+            user_id: n.payee_user_id,
+            kind: NotificationKind.COACH_ALERT,
+            body: n.body,
+            payload,
+            deep_link: PAYOUT_NOTICE_DEEP_LINK,
+            channel: 'inapp',
+          },
+          tx,
+        );
+        const result: ChannelResult = created
+          ? { status: 'sent', notification_id: created.id }
+          : { status: 'off' };
+        const receipt = await tx.payoutAdjustmentNotice.updateMany({
+          where: { id: n.id, inapp_status: n.inapp_status },
+          data: {
+            inapp_status: result.status,
+            ...(result.notification_id ? { inapp_notification_id: result.notification_id } : {}),
+          },
+        });
+        if (receipt.count !== 1) {
+          // Another worker recorded this channel first: roll this row back.
+          throw new InAppAlreadyRecorded();
+        }
+        return { ...result, receipt_saved: true };
+      });
+    } catch (err) {
+      if (err instanceof InAppAlreadyRecorded) {
+        const fresh = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
+        return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
+      }
+      this.logger.warn(
+        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+      );
+      return { status: 'failed' };
+    }
+  }
+
+  // The push honours the payee's coach-alert push preference and mute ('off',
+  // done). The 60 s limiter is keyed by the notice (C-627-7), so a second
+  // notice to the same coach is never suppressed; a suppressed push of the
+  // same notice is 'rate_limited' and retried, never mistaken for a mute.
+  private async deliverPush(
+    n: PayoutAdjustmentNotice,
+    payload: Record<string, unknown>,
+  ): Promise<ChannelResult> {
+    try {
+      let rowId = n.push_notification_id;
+      if (!rowId) {
+        // Hand-built wiring without channelGate falls back to
+        // createNotification's own gate (a null then reads as rate_limited).
+        const gate =
+          typeof this.notifications.channelGate === 'function'
+            ? await this.notifications.channelGate(
+                n.payee_user_id,
+                NotificationKind.COACH_ALERT,
+                'push',
+              )
+            : 'enabled';
+        if (gate !== 'enabled') return { status: 'off' };
+        const pushRow = await this.notifications.createNotification({
+          user_id: n.payee_user_id,
+          kind: NotificationKind.COACH_ALERT,
+          body: n.body,
+          payload,
+          deep_link: PAYOUT_NOTICE_DEEP_LINK,
+          channel: 'push',
+          throttle_key: n.id,
+        });
+        if (!pushRow) {
+          this.logger.warn(
+            `SFEE_NOTICE_PUSH_DEFERRED notice=${n.id} payee=${n.payee_user_id}: push suppressed by the rate limit; the sweeper retries`,
+          );
+          return { status: 'rate_limited' };
+        }
+        rowId = pushRow.id;
+      }
+      const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
+        type: 'payout_adjustment',
+        notice_id: n.id,
+        deep_link: PAYOUT_NOTICE_DEEP_LINK,
+      });
+      if (res.delivered) return { status: 'sent', notification_id: rowId };
+      if (res.code === 'no-token') return { status: 'no_token', notification_id: rowId };
+      // The device token is dead: a retry cannot reach it (done, not failed).
+      if (res.code === 'invalid-token') return { status: 'invalid_token', notification_id: rowId };
+      // A returned provider failure is a failure (B-627-6): retried.
+      this.logger.warn(
+        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.code}`,
+      );
+      return { status: 'failed', notification_id: rowId };
+    } catch (err) {
+      this.logger.warn(
+        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+      );
+      return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
+    }
+  }
+
+  /**
+   * Email retry protocol (B-627-6, round 6). EmailService keys every send
+   * and never re-sends a key, even one whose log row ended 'failed' (a reuse
+   * answers 'skipped'). So attempt k uses its own key (attempt 1 the notice
+   * key, attempt k > 1 `${key}:e${k}`), and before a new attempt the previous
+   * attempt's EmailSendLog row decides: sent / logged = done (nothing is
+   * sent again); sending and younger than the claim TTL = still in flight
+   * (wait); failed, missing or a stale sending row = send the next attempt.
+   */
+  private async deliverEmail(n: PayoutAdjustmentNotice, now: Date): Promise<ChannelResult> {
+    if (!this.email) return { status: 'disabled' };
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: n.payee_user_id },
+        select: { email: true, name: true },
+      });
+      if (!user?.email) return { status: 'no_address' };
+      if (n.email_attempts > 0) {
+        const prev = await this.prisma.emailSendLog.findUnique({
+          where: { idempotency_key: payoutNoticeEmailKey(n.idempotency_key, n.email_attempts) },
+          select: { status: true, created_at: true },
+        });
+        if (prev && (prev.status === 'sent' || prev.status === 'logged')) {
+          return { status: prev.status };
+        }
+        if (
+          prev &&
+          prev.status === 'sending' &&
+          prev.created_at.getTime() > now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS
+        ) {
+          return { status: 'pending' };
+        }
+      }
+      const attempt = n.email_attempts + 1;
+      // Recorded before the send: a crash after it never reuses this key.
+      await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: n.id, email_attempts: n.email_attempts },
+        data: { email_attempts: attempt },
+      });
+      const status = await this.sendEmail(
+        n,
+        user,
+        payoutNoticeEmailKey(n.idempotency_key, attempt),
+      );
+      // 'skipped' means the key is already in the log (another sender):
+      // the next attempt reads that row instead of sending.
+      return { status: status === 'skipped' ? 'pending' : status };
+    } catch (err) {
+      this.logger.warn(
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+      );
+      return { status: 'failed' };
+    }
+  }
+
+  private async sendEmail(
+    n: PayoutAdjustmentNotice,
+    user: { email: string; name: string | null },
+    idempotencyKey: string,
+  ): Promise<string> {
+    if (!this.email) return 'disabled';
+    const a = amountsOf(n);
+    const m = (cents: number) => formatMoney(cents, n.currency);
+    const collected = Math.max(0, n.held_cents - n.held_open_cents);
+    const res = await this.email.send({
+      to: user.email,
+      template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
+      idempotencyKey,
+      data: {
+        subject: n.title,
+        title: n.title,
+        recipient_name: user.name,
+        summary: n.body,
+        charge_display: m(n.charge_gross_cents),
+        customer_refunded_display: m(n.customer_refunded_cents),
+        reversed_display: m(n.reversed_cents),
+        reinstated_display: n.reinstated_cents > 0 ? m(n.reinstated_cents) : null,
+        held_display: m(n.held_cents),
+        held_open_display: m(n.held_open_cents),
+        held_collected_display: collected > 0 ? m(collected) : null,
+        held_lines: heldBreakdownLines(a),
+        has_hold: n.held_cents > 0,
+      },
+    });
+    if (res.status === 'failed') {
+      this.logger.warn(
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.error ?? 'provider error'}`,
+      );
+    }
+    return res.status;
+  }
+
+  /** Money page: open held balance + notices for one payee (newest first). */
+  async listForPayee(
+    payeeUserId: string,
+    opts: { cursor?: string | null; limit?: number } = {},
+  ): Promise<PayoutAdjustmentsView> {
+    const limit = Math.max(1, Math.min(PAYOUT_NOTICE_PAGE_MAX, opts.limit ?? 20));
+    const [open, page, unacknowledged] = await Promise.all([
+      this.prisma.payeeRecovery.findMany({
+        where: { payee_user_id: payeeUserId, status: 'open' },
+        select: { settlement_id: true, currency: true, amount_cents: true, collected_cents: true },
+      }),
+      this.prisma.payoutAdjustmentNotice.findMany({
+        where: { payee_user_id: payeeUserId },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      }),
+      this.prisma.payoutAdjustmentNotice.count({
+        where: { payee_user_id: payeeUserId, acknowledged_at: null },
+      }),
+    ]);
+    const byCurrency = new Map<string, { cents: number; settlements: Set<string> }>();
+    const openBySettlement = new Map<string, number>();
+    for (const r of open) {
+      const left = Math.max(0, r.amount_cents - r.collected_cents);
+      if (left <= 0) continue;
+      const e = byCurrency.get(r.currency) ?? { cents: 0, settlements: new Set<string>() };
+      e.cents += left;
+      e.settlements.add(r.settlement_id);
+      byCurrency.set(r.currency, e);
+      openBySettlement.set(r.settlement_id, (openBySettlement.get(r.settlement_id) ?? 0) + left);
+    }
+    const rows = page.slice(0, limit);
+    // Only the newest notice of a charge carries its live open amount.
+    const seen = new Set<string>();
+    const notices = rows.map((n): PayoutNoticeView => {
+      const live = seen.has(n.settlement_id) ? 0 : (openBySettlement.get(n.settlement_id) ?? 0);
+      seen.add(n.settlement_id);
+      return {
+        id: n.id,
+        event: n.event,
+        role: n.role,
+        purchase_id: n.purchase_id,
+        stripe_charge_id: n.stripe_charge_id,
+        currency: n.currency,
+        title: n.title,
+        body: n.body,
+        charge_gross_cents: n.charge_gross_cents,
+        customer_refunded_cents: n.customer_refunded_cents,
+        reversed_cents: n.reversed_cents,
+        reinstated_cents: n.reinstated_cents,
+        held_cents: n.held_cents,
+        held_open_cents: n.held_open_cents,
+        held_now_open_cents: live,
+        held_breakdown: heldBreakdownLines(amountsOf(n)),
+        needs_attention: n.acknowledged_at === null || live > 0,
+        acknowledged_at: n.acknowledged_at ? n.acknowledged_at.toISOString() : null,
+        created_at: n.created_at.toISOString(),
+      };
+    });
+    return {
+      open_balance: [...byCurrency.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([currency, e]) => ({
+          currency,
+          held_cents: e.cents,
+          display: formatMoney(e.cents, currency),
+          charges: e.settlements.size,
+        })),
+      needs_attention_count: unacknowledged,
+      notices,
+      next_cursor: page.length > limit ? (rows[rows.length - 1]?.id ?? null) : null,
+    };
+  }
+
+  /** The payee has seen a notice (its open amount, if any, still shows). */
+  async acknowledge(payeeUserId: string, noticeId: string): Promise<{ acknowledged_at: string }> {
+    const now = new Date();
+    const res = await this.prisma.payoutAdjustmentNotice.updateMany({
+      where: { id: noticeId, payee_user_id: payeeUserId },
+      data: { acknowledged_at: now },
+    });
+    if (res.count !== 1) {
+      throw new NotFoundException({
+        code: 'PAYOUT_NOTICE_NOT_FOUND',
+        message:
+          'We could not find that payout notice on your account. Refresh Money to see your current notices.',
+      });
+    }
+    return { acknowledged_at: now.toISOString() };
+  }
+}

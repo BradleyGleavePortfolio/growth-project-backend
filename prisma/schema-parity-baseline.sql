@@ -17,7 +17,6 @@ ALTER INDEX "NotificationDigestLog_user_digest_window_key" RENAME TO "Notificati
 ALTER INDEX "NotificationDigestLog_user_id_digest_kind_idx" RENAME TO "NotificationDigestLog_user_id_digest_kind_window_date_idx";
 ALTER INDEX "PaymentReminder_purchase_kind_channel_window_idx" RENAME TO "PaymentReminder_purchase_id_kind_channel_window_key_key";
 ALTER INDEX "ScoutReconstructedEntity_coach_id_source_platform_entity_type_s" RENAME TO "ScoutReconstructedEntity_coach_id_source_platform_entity_ty_key";
-ALTER INDEX "SplitLedgerEntry_purchase_kind_payee_idx" RENAME TO "SplitLedgerEntry_purchase_id_kind_payee_user_id_key";
 ALTER INDEX "SubCoachMutationIdempotency_actor_key" RENAME TO "SubCoachMutationIdempotency_actor_id_idempotency_key_key";
 ALTER INDEX "UserBlock_pair_key" RENAME TO "UserBlock_blocker_id_blocked_id_key";
 ALTER INDEX "WorkoutBuilderIdempotencyKey_user_route_key_key" RENAME TO "WorkoutBuilderIdempotencyKey_user_id_route_key_idempotency__key";

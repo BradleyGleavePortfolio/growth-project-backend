@@ -1,14 +1,116 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  ChargeSettlement,
   ClientPurchase,
+  ConnectTransfer,
+  PayeeRecovery,
   ReconciliationSnapshot,
   SplitLedgerEntry,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import {
-  StripeConnectApiError,
-  StripeConnectApiService,
-} from '../stripe-connect-api.service';
+import { StripeConnectApiError, StripeConnectApiService } from '../stripe-connect-api.service';
+import { SETTLEMENT_MECHANISM_SCT, payeePositionCents } from './charge-settlement.service';
+
+// S-FEE — per-charge identity for a separate-charge-and-transfer settlement.
+// Every check is integer cents; drift is the sum of absolute mismatches.
+//   1. Stripe gross / fee / refunded == the settlement's recorded values
+//   2. the four ledger slices of the charge sum to its gross
+//   3. each payee's position == their current target
+//   4. platform: cash kept + recoveries owed - netted in == target platform fee (>= 0)
+//
+// Round 4 (B-627-3, C-627-3): the platform position is also split into what
+// TGP really holds and what it is still owed, so an uncollected receivable is
+// never reported as cash:
+//   platform_cash_cents       = cash on the charge - cents that belong to
+//                               other charges' debts (netted in here) + cents
+//                               already collected on this
+//                               charge's own recoveries
+//   receivable_open_cents     = this charge's recoveries not yet collected
+//   platform_net_cents        = platform_cash_cents + receivable_open_cents
+// A negative platform_cash_cents is reported as `platform_cash_negative`.
+export interface SettlementIdentityInput {
+  settlement: ChargeSettlement;
+  ledger: SplitLedgerEntry[];
+  transfers: ConnectTransfer[];
+  recoveries: PayeeRecovery[];
+  stripe: { gross_cents: number; fee_cents: number; refunded_cents: number };
+}
+
+export function settlementIdentityDrift(input: SettlementIdentityInput): {
+  drift_cents: number;
+  platform_net_cents: number;
+  platform_cash_cents: number;
+  receivable_open_cents: number;
+  notes: string[];
+} {
+  const s = input.settlement;
+  const notes: string[] = [];
+  let drift = 0;
+  const check = (label: string, expected: number, actual: number) => {
+    if (expected !== actual) {
+      drift += Math.abs(expected - actual);
+      notes.push(`${label}: expected ${expected}, found ${actual}`);
+    }
+  };
+  check('stripe_gross', s.gross_cents, input.stripe.gross_cents);
+  check('stripe_fee', s.stripe_fee_cents ?? 0, input.stripe.fee_cents);
+  check('stripe_refunded', s.refunded_cents, input.stripe.refunded_cents);
+  const slices = input.ledger.filter((e) => e.stripe_charge_id === s.stripe_charge_id);
+  const slicesTotal = slices.reduce((n, e) => n + e.amount_cents, 0);
+  if ((s.coach_net_cents ?? 0) >= 0) check('ledger_slices_sum', s.gross_cents, slicesTotal);
+  const forPayee = (payee: string | null) => ({
+    transfers: input.transfers.filter((t) => t.destination_user_id === payee),
+    recoveries: input.recoveries.filter((r) => r.payee_user_id === payee),
+  });
+  const coach = forPayee(s.coach_user_id);
+  check(
+    'coach_position',
+    s.target_coach_net_cents ?? 0,
+    payeePositionCents(coach.transfers, coach.recoveries),
+  );
+  if (s.head_coach_user_id && (s.head_coach_split_cents ?? 0) > 0) {
+    const hc = forPayee(s.head_coach_user_id);
+    check(
+      'head_coach_position',
+      s.target_head_coach_cents ?? 0,
+      payeePositionCents(hc.transfers, hc.recoveries),
+    );
+  }
+  let transferred = 0;
+  let nettedIn = 0;
+  for (const t of input.transfers) {
+    // Netting on this charge's transfers paid other charges' debts; it stands
+    // even when the transfer finally failed (C-627-6, round 6).
+    nettedIn += t.netted_recovery_cents;
+    if (t.status === 'failed') continue;
+    transferred += t.amount_cents - t.reversed_amount_cents;
+  }
+  const live = input.recoveries.filter((r) => r.status !== 'released');
+  const owed = live.reduce((n, r) => n + r.amount_cents, 0);
+  const collected = live.reduce((n, r) => n + Math.min(r.collected_cents, r.amount_cents), 0);
+  const cash =
+    s.gross_cents -
+    (s.stripe_fee_cents ?? 0) -
+    s.refunded_cents -
+    s.dispute_withdrawn_cents -
+    s.dispute_fee_cents -
+    transferred;
+  const platformNet = cash + owed - nettedIn;
+  const platformCash = cash - nettedIn + collected;
+  const receivableOpen = owed - collected;
+  check('platform_net', s.target_platform_fee_cents ?? 0, platformNet);
+  if (platformNet < 0) notes.push(`platform_net_negative: ${platformNet}`);
+  if (platformCash < 0) {
+    notes.push(`platform_cash_negative: ${platformCash} (receivable_open ${receivableOpen})`);
+  }
+  return {
+    drift_cents: drift,
+    platform_net_cents: platformNet,
+    platform_cash_cents: platformCash,
+    receivable_open_cents: receivableOpen,
+    notes,
+  };
+}
 
 // ReconciliationService — answers "does our ledger match Stripe's books
 // for this purchase?". Walks every relevant Stripe object (Charge,
@@ -96,23 +198,29 @@ export class ReconciliationService {
         if (result.status === 'drift') drifted += 1;
         else if (result.status === 'unknown') unknown += 1;
       } catch (err) {
-        this.logger.warn(
-          `reconcile failed purchase=${row.id}: ${(err as Error).message}`,
-        );
+        this.logger.warn(`reconcile failed purchase=${row.id}: ${(err as Error).message}`);
       }
     }
     return { scanned: purchases.length, drifted, unknown };
   }
 
-  private async reconcileFromRow(
-    purchase: ClientPurchase,
-  ): Promise<ReconciliationResult> {
+  private async reconcileFromRow(purchase: ClientPurchase): Promise<ReconciliationResult> {
     const ledger = await this.prisma.splitLedgerEntry.findMany({
       where: { purchase_id: purchase.id },
     });
     const transfers = await this.prisma.connectTransfer.findMany({
       where: { purchase_id: purchase.id },
     });
+
+    // S-FEE — settlement-backed purchases reconcile per charge.
+    const settlements = await this.prisma.chargeSettlement.findMany({
+      where: { purchase_id: purchase.id, mechanism: SETTLEMENT_MECHANISM_SCT, status: 'settled' },
+      orderBy: { created_at: 'desc' },
+      take: 12,
+    });
+    if (settlements.length > 0) {
+      return this.reconcileSettlements(purchase, settlements, ledger, transfers);
+    }
 
     const ledgerSums = summarizeLedger(ledger);
 
@@ -146,12 +254,9 @@ export class ReconciliationService {
     try {
       const charge = await this.stripe.retrieveCharge(chargeId);
       stripeAmount = typeof charge.amount === 'number' ? charge.amount : null;
-      stripeRefunded =
-        typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
+      stripeRefunded = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
       stripeAppFee =
-        typeof charge.application_fee_amount === 'number'
-          ? charge.application_fee_amount
-          : 0;
+        typeof charge.application_fee_amount === 'number' ? charge.application_fee_amount : 0;
       // For every head-coach split we minted as a follow-on Transfer, add
       // its net (amount - reversed) to stripeTransfersCents. We trust our
       // ConnectTransfer row's stripe_transfer_id; pulling the live Stripe
@@ -162,8 +267,7 @@ export class ReconciliationService {
         }
       }
     } catch (err) {
-      const msg =
-        err instanceof StripeConnectApiError ? err.message : (err as Error).message;
+      const msg = err instanceof StripeConnectApiError ? err.message : (err as Error).message;
       this.logger.warn(
         `Stripe charge retrieve failed for purchase=${purchase.id} charge=${chargeId}: ${msg}`,
       );
@@ -209,9 +313,93 @@ export class ReconciliationService {
     });
   }
 
-  private async resolveChargeId(
+  private async reconcileSettlements(
     purchase: ClientPurchase,
-  ): Promise<string | null> {
+    settlements: ChargeSettlement[],
+    ledger: SplitLedgerEntry[],
+    transfers: ConnectTransfer[],
+  ): Promise<ReconciliationResult> {
+    const ledgerSums = summarizeLedger(ledger);
+    const recoveries = await this.prisma.payeeRecovery.findMany({
+      where: { settlement_id: { in: settlements.map((s) => s.id) } },
+    });
+    let drift = 0;
+    let gross = 0;
+    let refunded = 0;
+    let transferred = 0;
+    let platformCash = 0;
+    let receivableOpen = 0;
+    const notes: string[] = [];
+    for (const s of settlements) {
+      let charge;
+      try {
+        charge = await this.stripe.retrieveCharge(s.stripe_charge_id, {
+          expandBalanceTransaction: true,
+        });
+      } catch (err) {
+        const msg = err instanceof StripeConnectApiError ? err.message : (err as Error).message;
+        return this.persistSnapshot(purchase.id, 'unknown', null, {
+          stripe: {
+            amount_cents: null,
+            refunded_cents: null,
+            application_fee_cents: null,
+            transfers_cents: null,
+          },
+          ledger: ledgerSums,
+          notes: `stripe_retrieve_failed charge=${s.stripe_charge_id}: ${msg}`,
+        });
+      }
+      const bt =
+        charge.balance_transaction && typeof charge.balance_transaction === 'object'
+          ? charge.balance_transaction
+          : null;
+      const result = settlementIdentityDrift({
+        settlement: s,
+        ledger,
+        transfers: transfers.filter((t) => t.settlement_id === s.id),
+        recoveries: recoveries.filter((r) => r.settlement_id === s.id),
+        stripe: {
+          gross_cents: bt?.amount ?? charge.amount,
+          fee_cents: bt?.fee ?? 0,
+          refunded_cents: charge.amount_refunded ?? 0,
+        },
+      });
+      drift += result.drift_cents;
+      platformCash += result.platform_cash_cents;
+      receivableOpen += result.receivable_open_cents;
+      gross += bt?.amount ?? charge.amount;
+      refunded += charge.amount_refunded ?? 0;
+      for (const n of result.notes) notes.push(`${s.stripe_charge_id} ${n}`);
+      for (const t of transfers) {
+        if (t.settlement_id === s.id && t.status !== 'failed') {
+          transferred += t.amount_cents - t.reversed_amount_cents;
+        }
+      }
+    }
+    // Cash and receivables are reported separately (B-627-3): an open
+    // recovery is money TGP is fronting, not money it has.
+    if (receivableOpen > 0 || platformCash < 0) {
+      notes.unshift(`platform_cash=${platformCash} receivable_open=${receivableOpen}`);
+    }
+    if (platformCash < 0) {
+      this.logger.error(
+        `SFEE_PLATFORM_CASH_NEGATIVE alert=true purchase=${purchase.id} platform_cash=${platformCash} receivable_open=${receivableOpen}`,
+      );
+    }
+    const status: 'ok' | 'drift' = drift === 0 ? 'ok' : 'drift';
+    return this.persistSnapshot(purchase.id, status, drift, {
+      stripe: {
+        amount_cents: gross,
+        refunded_cents: refunded,
+        application_fee_cents: 0,
+        transfers_cents: transferred,
+      },
+      ledger: ledgerSums,
+      notes: notes.length > 0 ? notes.join('; ').slice(0, 2000) : null,
+    });
+  }
+
+  private async resolveChargeId(purchase: ClientPurchase): Promise<string | null> {
     if (!purchase.stripe_payment_intent_id) {
       // For recurring purchases, the per-renewal charge id lives on the
       // SplitLedgerEntry.stripe_charge_id of the most recent destination
@@ -224,9 +412,7 @@ export class ReconciliationService {
       return entry?.stripe_charge_id ?? null;
     }
     try {
-      const pi = await this.stripe.retrievePaymentIntent(
-        purchase.stripe_payment_intent_id,
-      );
+      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
       const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
       return latest ?? pi.charges?.data?.[0]?.id ?? null;
     } catch (err) {
@@ -308,9 +494,7 @@ export class ReconciliationService {
   }
 
   // Get the saved snapshot for a purchase (cheap read for the admin UI).
-  async getSavedSnapshot(
-    purchaseId: string,
-  ): Promise<ReconciliationSnapshot | null> {
+  async getSavedSnapshot(purchaseId: string): Promise<ReconciliationSnapshot | null> {
     return this.prisma.reconciliationSnapshot.findUnique({
       where: { purchase_id: purchaseId },
     });
