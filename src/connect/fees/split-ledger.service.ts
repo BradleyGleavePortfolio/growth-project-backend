@@ -16,9 +16,19 @@ import type { SplitPlan } from './fee-policy.service';
 //                      from the platform balance using source_transaction
 //                      so it draws from the original charge.
 //
-// All rows are idempotent: (purchase_id, kind, payee_user_id) is a
-// composite unique. Re-running the planner on the same purchase returns
-// the existing rows.
+// S-FEE: rows are per CHARGE. ChargeSettlementService writes, for every
+// settled charge (first charge and each renewal), four slices that sum to the
+// charge's gross:
+//   application_fee  : TGP's 2% (kept in the platform balance, never paid out)
+//   stripe_fee       : Stripe's actual processing fee (payee null; borne by
+//                      the coach because it is deducted from the coach net)
+//   destination      : the selling coach's net (paid by Transfer)
+//   head_coach_split : the head coach's split (paid by Transfer)
+// Composite unique: (purchase_id, kind, payee_user_id, stripe_charge_id).
+//
+// Legacy (pre-S-FEE destination charges, ensurePendingEntries): one set of
+// rows per purchase keyed on (purchase_id, kind, payee_user_id), exactly as
+// before; renewals of a legacy subscription collapse onto that set.
 
 export interface SplitLedgerInputs {
   purchase: ClientPurchase;
@@ -36,9 +46,7 @@ export class SplitLedgerService {
 
   // Create the pending ledger rows for a purchase. Safe to call multiple
   // times — composite unique collapses retries to the same set.
-  async ensurePendingEntries(
-    inputs: SplitLedgerInputs,
-  ): Promise<SplitLedgerEntry[]> {
+  async ensurePendingEntries(inputs: SplitLedgerInputs): Promise<SplitLedgerEntry[]> {
     const { purchase, plan } = inputs;
     const rows: Array<Promise<SplitLedgerEntry>> = [];
 
@@ -90,6 +98,121 @@ export class SplitLedgerService {
     return Promise.all(rows);
   }
 
+  // S-FEE — create one per-charge ledger slice. Create-only: a slice's amount
+  // is immutable once written (adjustments use reversed_cents). Runs inside
+  // the settlement transaction (`db`), whose single-winner claim on the
+  // ChargeSettlement row is what makes the four slices exactly-once.
+  async createChargeEntry(
+    args: {
+      purchase_id: string;
+      stripe_charge_id: string;
+      kind: 'application_fee' | 'stripe_fee' | 'destination' | 'head_coach_split';
+      payee_user_id: string | null;
+      payee_stripe_account_id: string | null;
+      amount_cents: number;
+      currency: string;
+      status: 'pending' | 'posted';
+    },
+    db: Pick<PrismaService, 'splitLedgerEntry'> = this.prisma,
+  ): Promise<SplitLedgerEntry> {
+    const existing = await db.splitLedgerEntry.findFirst({
+      where: {
+        purchase_id: args.purchase_id,
+        kind: args.kind,
+        payee_user_id: args.payee_user_id,
+        stripe_charge_id: args.stripe_charge_id,
+      },
+    });
+    if (existing) return existing;
+    return db.splitLedgerEntry.create({
+      data: {
+        purchase_id: args.purchase_id,
+        kind: args.kind,
+        payee_user_id: args.payee_user_id,
+        payee_stripe_account_id: args.payee_stripe_account_id,
+        amount_cents: args.amount_cents,
+        currency: args.currency,
+        stripe_charge_id: args.stripe_charge_id,
+        status: args.status,
+        posted_at: args.status === 'posted' ? new Date() : null,
+      },
+    });
+  }
+
+  // S-FEE round 3 — record a settlement leg's ABSOLUTE position on its slice:
+  // reversed_cents = amount - position, clamped to [0, amount]. Idempotent: a
+  // duplicate or concurrent delivery writes the same value, never adds again.
+  // A failed slice keeps its status (the transfer never reached the payee).
+  async setLegPosition(args: {
+    entry_id: string;
+    position_cents: number;
+  }): Promise<SplitLedgerEntry> {
+    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+      where: { id: args.entry_id },
+    });
+    const reversed = Math.min(
+      current.amount_cents,
+      Math.max(0, current.amount_cents - args.position_cents),
+    );
+    const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
+    let status = current.status;
+    if (status !== 'failed') {
+      if (fully) status = 'reversed';
+      else if (status === 'reversed') status = 'posted';
+    }
+    if (reversed === current.reversed_cents && status === current.status) return current;
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: args.entry_id },
+      data: {
+        reversed_cents: reversed,
+        status,
+        reversed_at: reversed > 0 ? (current.reversed_at ?? new Date()) : null,
+      },
+    });
+  }
+
+  // Legacy head-coach transfers (one transfer per slice): mirror the
+  // transfer row's cumulative reversed amount (absolute, idempotent).
+  async setReversedTotal(args: {
+    entry_id: string;
+    reversed_total_cents: number;
+    stripe_transfer_id?: string | null;
+  }): Promise<SplitLedgerEntry> {
+    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+      where: { id: args.entry_id },
+    });
+    const reversed = Math.min(current.amount_cents, Math.max(0, args.reversed_total_cents));
+    const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: args.entry_id },
+      data: {
+        reversed_cents: reversed,
+        status: fully ? 'reversed' : current.status,
+        reversed_at: fully ? (current.reversed_at ?? new Date()) : current.reversed_at,
+        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
+      },
+    });
+  }
+
+  // S-FEE — undo part of a reversal (a won dispute reinstated the payee).
+  async undoReversal(args: {
+    entry_id: string;
+    reinstated_cents: number;
+  }): Promise<SplitLedgerEntry> {
+    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+      where: { id: args.entry_id },
+    });
+    const newReversed = Math.max(0, current.reversed_cents - args.reinstated_cents);
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: args.entry_id },
+      data: {
+        reversed_cents: newReversed,
+        status: current.status === 'reversed' ? 'posted' : current.status,
+        reversed_at: newReversed === 0 ? null : current.reversed_at,
+      },
+    });
+  }
+
   // Mark an entry as posted with the Stripe ids that locate it in Stripe's
   // books. Safe to re-call (idempotent on the ledger row).
   async markPosted(args: {
@@ -109,6 +232,42 @@ export class SplitLedgerService {
         last_error: null,
       },
     });
+  }
+
+  // S-FEE round 8 (B-627-9) — record a transfer slice as posted, inside the
+  // transaction that writes the transfer receipt. Compare-and-set: only a
+  // slice still pending (or marked failed by a superseded worker) moves to
+  // posted; a posted or reversed slice is never regressed or re-dated.
+  async markTransferPosted(
+    args: { entry_id: string; stripe_transfer_id: string; stripe_charge_id?: string | null },
+    db: Pick<PrismaService, 'splitLedgerEntry'>,
+    postedAt: Date,
+  ): Promise<boolean> {
+    const res = await db.splitLedgerEntry.updateMany({
+      where: { id: args.entry_id, status: { in: ['pending', 'failed'] } },
+      data: {
+        status: 'posted',
+        stripe_charge_id: args.stripe_charge_id ?? undefined,
+        stripe_transfer_id: args.stripe_transfer_id,
+        posted_at: postedAt,
+        last_error: null,
+      },
+    });
+    return res.count === 1;
+  }
+
+  // S-FEE round 8 (B-627-9) — the final-failure twin of markTransferPosted:
+  // only a pending slice becomes failed (never a posted or reversed one).
+  async markTransferFailed(
+    entryId: string,
+    message: string,
+    db: Pick<PrismaService, 'splitLedgerEntry'>,
+  ): Promise<boolean> {
+    const res = await db.splitLedgerEntry.updateMany({
+      where: { id: entryId, status: 'pending' },
+      data: { status: 'failed', last_error: message },
+    });
+    return res.count === 1;
   }
 
   async markFailed(entryId: string, message: string): Promise<SplitLedgerEntry> {
@@ -140,8 +299,7 @@ export class SplitLedgerService {
         reversed_cents: newReversed,
         status: fullyReversed ? 'reversed' : current.status,
         reversed_at: fullyReversed ? new Date() : current.reversed_at,
-        stripe_transfer_id:
-          args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
+        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
       },
     });
   }
@@ -172,40 +330,31 @@ export class SplitLedgerService {
     amount_cents: number;
     currency: string;
   }): Promise<SplitLedgerEntry> {
-    // The unique constraint is (purchase_id, kind, payee_user_id). On
-    // Postgres NULL is not equal to NULL, so the application_fee row
-    // (payee_user_id=null) won't actually be deduped by the unique
-    // index — handle that explicitly with a findFirst + create.
-    if (args.payee_user_id === null) {
-      const existing = await this.prisma.splitLedgerEntry.findFirst({
-        where: {
-          purchase_id: args.purchase_id,
-          kind: args.kind,
-          payee_user_id: null,
-        },
-      });
-      if (existing) return existing;
-      return this.prisma.splitLedgerEntry.create({
+    // Legacy per-purchase rows. S-FEE moved the unique to include
+    // stripe_charge_id (nullable), so the per-purchase dedupe is explicit:
+    // findFirst on (purchase_id, kind, payee_user_id), then create or update.
+    // Postgres NULL != NULL, so this also covers the payee-null
+    // application_fee row exactly as before.
+    const existing = await this.prisma.splitLedgerEntry.findFirst({
+      where: {
+        purchase_id: args.purchase_id,
+        kind: args.kind,
+        payee_user_id: args.payee_user_id,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+    if (existing) {
+      if (args.payee_user_id === null) return existing;
+      return this.prisma.splitLedgerEntry.update({
+        where: { id: existing.id },
         data: {
-          purchase_id: args.purchase_id,
-          kind: args.kind,
-          payee_user_id: null,
-          payee_stripe_account_id: args.payee_stripe_account_id,
           amount_cents: args.amount_cents,
-          currency: args.currency,
-          status: 'pending',
+          payee_stripe_account_id: args.payee_stripe_account_id,
         },
       });
     }
-    return this.prisma.splitLedgerEntry.upsert({
-      where: {
-        purchase_id_kind_payee_user_id: {
-          purchase_id: args.purchase_id,
-          kind: args.kind,
-          payee_user_id: args.payee_user_id,
-        },
-      },
-      create: {
+    return this.prisma.splitLedgerEntry.create({
+      data: {
         purchase_id: args.purchase_id,
         kind: args.kind,
         payee_user_id: args.payee_user_id,
@@ -213,10 +362,6 @@ export class SplitLedgerService {
         amount_cents: args.amount_cents,
         currency: args.currency,
         status: 'pending',
-      },
-      update: {
-        amount_cents: args.amount_cents,
-        payee_stripe_account_id: args.payee_stripe_account_id,
       },
     });
   }
