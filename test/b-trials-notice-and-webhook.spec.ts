@@ -389,6 +389,9 @@ describe('B-TRIALS — delivery (push + email after commit, retried by the sweep
         purchase_id: 'pur-1',
         actionScreen: 'ClientPackages',
       }),
+      // B-TRIALS-3 (B-656-2) — the push is bounded: an abort signal fires
+      // when the transport outlives TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS.
+      expect.any(AbortSignal),
     );
     expect(w.email.send).toHaveBeenCalledTimes(1);
     expect(w.email.send.mock.calls[0][0]).toMatchObject({
