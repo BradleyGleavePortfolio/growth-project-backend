@@ -1,0 +1,56 @@
+# Roman client context (R3, `ctx-v2`)
+
+Source: `src/roman/context/*`. Tests: `test/roman/roman-client-context.spec.ts`
+(personas in `test/roman/fixtures/roman-personas.ts`).
+
+## Scope (owner ruling 2026-09-30 16:31 #6)
+
+Roman sees ALL of the signed-in client's OWN data, strictly scoped to that one
+client. Every query carries `user_id = caller` (or `client_id = caller` plus the
+current coach for coach-owned rows; `author_id = caller` for posts).
+
+| Block | Source | Window / cap |
+|---|---|---|
+| `identity`, `profile` | `User` | first name, age, sex, tz, goals, injuries, preferences; no email/phone/DOB/ids |
+| `consultation` | `ROMAN_SAFETY_INTAKE_SOURCE` (C05, not yet landed → `completed:false`) | ≤30 Q/A, 80/200 chars |
+| `safety_intake` | same | `completed`, `clearance_recommended`, ≤12 screen Q/A (`flagged` marks the triggering ones) |
+| `targets`, `macro_method` | `MacroTarget` (current coach) → onboarding fallback | – |
+| `today` | `LoggedFoodEntry` | totals + remaining + ≤16 entries (meal, name, kcal, protein) |
+| `last_7_days` | `LoggedFoodEntry` | per-day totals + averages |
+| `plan` | `ClientWorkoutAssignment` (current coach) | today / next session, completions ±14 d |
+| `logged_workouts` | `WorkoutSession` | last 8 |
+| `weight` | `WeightLog` | 30-day trend |
+| `check_ins` | `CheckIn` | last 7 |
+| `wearables` | `WearableConnection` (provider, status, last sync ONLY) + `WearableSample` | 7 local days, daily aggregates of STEPS, ACTIVE_ENERGY_KCAL, RESTING_HEART_RATE_BPM, HRV_MS, SLEEP_TOTAL_MIN/SLEEP_DURATION_MIN, SLEEP_EFFICIENCY_PCT, RECOVERY_SCORE, READINESS_SCORE; 7-day averages; last night's sleep. Never tokens, raw streams or device ids |
+| `coach` | `CoachGuideline`, `CoachMessage` (coach_id = current coach, client_id = caller, sender ∈ {coach, client}) | guidelines ≤1,500 chars; last 8 messages BOTH directions, oldest first |
+| `community_posts` | `CommunityPost` (author_id = caller, `deleted_at IS NULL`, `visibility='active'`) | last 5: date, scope, title ≤80, body ≤200 |
+| `meal_plan` | `DailyMealPlanAssignment` (current coach) | title + items |
+
+Never read: `CoachingSession` (coach private notes), `CommunityWin`,
+`BloodworkPanel`, purchases/invoices, any other user's rows. The persona double
+proxies those delegates and the suite fails if the builder touches them.
+
+## Budget
+
+- Queries: ≤ `ROMAN_CONTEXT_MAX_QUERIES` (16) per build; 15 s memo per
+  (user, local date), invalidated by the write hooks.
+- Renderer: target 2,000 tokens, hard cap 3,500 (`estimateTokens` ≈ 4 chars).
+  Drop order under the cap, recorded in `data_quality.truncated`:
+  `wearables.days` → `community_posts` → `today.entries` →
+  `consultation.answers` → `logged_workouts` → `check_ins.notes` →
+  `meal_plan.items` → `coach.recent_messages` → `last_7_days.days` →
+  `plan.recent_completions` → unflagged safety-screen answers → guidelines cut to 500 chars. Averages, totals, flagged screen answers and `clearance_recommended` are always kept.
+- `data_quality.missing` names what the client has not provided
+  (`targets`, `plan`, `today_logs`, `intake`, `consultation`, `coach`, `weight`,
+  `wearables`), so Roman says so instead of guessing.
+
+## Clearance instruction
+
+When `safety_intake.clearance_recommended` is true the block carries
+`ROMAN_CLEARANCE_RECOMMENDED_INSTRUCTION`: keep guidance conservative, use the
+screen answers only to steer toward safer, pain-free options inside the plan,
+never interpret them medically or name a condition, route intensity/pain/injury
+questions to the coach and physician.
+
+`GET /roman/context/me` returns the rendered block, hash and version so a
+client can see exactly what Roman saw.
