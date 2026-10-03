@@ -362,6 +362,7 @@ model User {
   // Sprint B — Workout Builder relations.
   workout_plans_as_coach           WorkoutPlan[]                  @relation("CoachWorkoutPlans")
   workout_assignments_as_client    ClientWorkoutAssignment[]      @relation("ClientWorkoutAssignments")
+  workout_program_runs             WorkoutProgram[]               @relation("WorkoutProgramClientRuns")
   workout_assignments_as_coach     ClientWorkoutAssignment[]      @relation("CoachWorkoutAssignments")
   workout_builder_idempotency_keys WorkoutBuilderIdempotencyKey[] @relation("WorkoutBuilderIdempotencyUser")
 
@@ -2284,6 +2285,18 @@ model WorkoutProgram {
   // revision_retention_count — rolling history depth for WorkoutProgramRevision
   // eviction on this regime. Default 3 = "last 2 versions + the new one".
   revision_retention_count Int       @default(3)
+  // ── S-MWB Programs (20270223000000) ─────────────────────────────────
+  // client_id — the client a client copy (is_template=false) was made for by
+  // bulk assign or package delivery. Null on masters and on legacy clones
+  // (MWB-2 clone-to-client, #607 onboarding), which are linked only through
+  // their ClientWorkoutAssignment rows. Deleting the client deletes the copy.
+  client_id                String?
+  client                   User?     @relation("WorkoutProgramClientRuns", fields: [client_id], references: [id], onDelete: Cascade)
+  // delivery_key — exactly-once key for a client copy. UNIQUE, so a retried
+  // bulk assign (`bulk:<coach>:<Idempotency-Key>:<client>`) or a retried
+  // package delivery (`pkg:p=<purchase>:c=<content>`) converges on one copy
+  // even across a rolled-back transaction or two racing workers.
+  delivery_key             String?   @unique
   created_at               DateTime  @default(now())
   updated_at               DateTime  @updatedAt
   archived_at              DateTime?
@@ -2296,6 +2309,8 @@ model WorkoutProgram {
   @@index([coach_id, cloned_from_id])
   // F2 — regime list query: `is_regime=true AND archived_at IS NULL` per coach.
   @@index([coach_id, is_regime, archived_at])
+  // S-MWB — assignees / assigned-count / already-assigned lookups.
+  @@index([cloned_from_id, client_id, archived_at])
 }
 
 // Append-only revision log for a single WorkoutPlan ("day"). The head pointer

@@ -15,6 +15,7 @@ import {
 } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from '../packages/packages.service';
+import { BUYER_VISIBLE_DROP_STATUSES, buyerDropStatus } from '../packages/drop-status';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
 import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
 import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
@@ -807,7 +808,8 @@ export class CheckoutService {
   // that does not exist — both return 404 (NEVER 403). We never confirm
   // the existence of another buyer's purchase.
   //
-  // Filter: status IN ('pending','due','fired'). failed/canceled/skipped
+  // Filter: status IN ('pending','due','dispatching','fired','delivered'),
+  // returned to the buyer as pending / due / fired. failed/canceled/skipped
   // rows are filtered AT THE SQL WHERE — master plan §1 #10 routes those
   // to COACH_ALERT, never the buyer. Filtering server-side means a
   // failed drop never even leaves the DB.
@@ -841,7 +843,10 @@ export class CheckoutService {
     const rows = await this.prisma.scheduledDrop.findMany({
       where: {
         client_purchase_id: purchaseId,
-        status: { in: ['pending', 'due', 'fired'] },
+        // S-MWB-3 B-640-12: the drip dispatcher stamps 'delivered' (the
+        // inline path stamps 'fired'), and a due drop is 'dispatching' while
+        // it is being delivered. All of them stay on the buyer's list.
+        status: { in: [...BUYER_VISIBLE_DROP_STATUSES] },
       },
       take: DROP_LIST_HARD_CAP,
       select: {
@@ -880,7 +885,9 @@ export class CheckoutService {
         display_caption: d.display_caption,
         fire_at: d.fire_at,
         fired_at: d.fired_at,
-        status: d.status,
+        // Buyer contract (mobile dropRow.buyerStatusOf, thank-you page):
+        // shipped reads as 'fired', in-flight as 'due'.
+        status: buyerDropStatus(d.status),
         // Rule 18: never fabricate. PR-9 only stamps materialised_ref
         // after a successful inline materialisation, so pending/due rows
         // carry null. Re-export the column as-is.
