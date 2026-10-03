@@ -22,13 +22,12 @@
  *   - The revision row's exercises_json is the FULL post-ops ordered snapshot,
  *     so undo can restore any point without replaying diffs.
  *
- * Authorisation is plan-ownership-based: the acting user is either the plan's
- * head coach (plan.coach_id === actingUserId) OR a sub-coach whose head coach
- * IS plan.coach_id (resolved via SubCoachScopeService.getHeadCoachIdForSubCoach),
- * so an in-team sub-coach may edit a plan owned by their head coach while an
- * out-of-team coach/sub-coach is rejected with 403. (Note: assertCanAccessClient
- * is the WRONG gate here — it expects a CLIENT/student id, not the coach FK that
- * a WorkoutPlan carries.)
+ * Authorisation is owner- and visibility-based (OR-112-18): a library master's
+ * day is editable only by the coach who made the program; a client copy by the
+ * tenant head coach or a team sub-coach who holds that client; a standalone
+ * plan by its own coach. See authorisePlanAccess for the full table. (Note:
+ * assertCanAccessClient is the WRONG gate for the plan itself — it expects a
+ * CLIENT/student id, not the coach FK that a WorkoutPlan carries.)
  */
 
 import {
@@ -62,6 +61,23 @@ import {
   UndoResponseDto,
   UpsertExerciseRowInput,
 } from './workout-builder-autosave.dto';
+
+/**
+ * OR-112-18 (S-MWB-4): stable machine codes + copy for the autosave / undo
+ * owner and visibility gate (see authorisePlanAccess).
+ */
+export const PLAN_CODE_PROGRAM_READ_ONLY = 'program_read_only';
+export const PLAN_CODE_ACCESS_DENIED = 'plan_access_denied';
+export const PLAN_CODE_CLIENT_NOT_ASSIGNED = 'client_not_assigned';
+export const PLAN_CODE_NOT_YOURS = 'plan_not_yours';
+export const PROGRAM_READ_ONLY_MESSAGE =
+  'This program belongs to another coach on your team. Duplicate it to make your own copy.';
+export const PLAN_ACCESS_DENIED_MESSAGE =
+  'This workout is not shared with you, so changes cannot be saved. Ask the coach who made it to share it with your team.';
+export const CLIENT_NOT_ASSIGNED_MESSAGE =
+  'This client is not assigned to you, so changes to their program cannot be saved. Ask your head coach to assign the client to you.';
+export const PLAN_NOT_YOURS_MESSAGE =
+  'This workout belongs to your head coach, so changes cannot be saved. Ask them to add it to a program shared with the team, or build your own.';
 
 /** author_kind written onto a revision row (mirrors the schema comment). */
 export type AuthorKind = 'coach' | 'sub_coach' | 'ai';
@@ -487,19 +503,29 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
   }
 
   /**
-   * Authorise the actor against the plan's OWNERSHIP. A WorkoutPlan.coach_id is
-   * a coach/head-coach FK (NOT a client/student id), so the correct gate is:
-   *   1. the acting user IS the plan's head coach (direct owner), OR
-   *   2. the acting user is a sub-coach whose head coach IS plan.coach_id
-   *      (an in-team sub-coach editing a plan owned by their head coach).
-   * Anything else (a foreign coach, or a sub-coach on a different head coach's
-   * team) is a 403. A non-existent plan is a 404.
+   * Authorise the actor against the plan's OWNER and VISIBILITY (OR-112-18,
+   * S-MWB-4). The same rules the Programs library applies to its own edit
+   * routes, so autosave and undo can never write where the library would
+   * refuse:
    *
-   * This replaces the prior assertCanAccessClient(actingUserId, plan.coach_id)
-   * call, which was semantically wrong: assertCanAccessClient expects a
-   * client/student id, and SubCoachScopeService.canAccessClient only returns
-   * true for assigned STUDENT ids — never for the head coach id a plan carries
-   * — so a valid in-scope sub-coach was incorrectly denied (audit P1.1).
+   *   - A day of a library master (program.is_template): only the coach who
+   *     made the program edits it, and only while they are in its tenant
+   *     (the head coach, or a membership-checked team sub-coach). Anyone else
+   *     in the tenant who can read it (a team-shared master, or the head coach)
+   *     gets 403 `program_read_only` with the duplicate path; a private master
+   *     of another coach is 403 `plan_access_denied`.
+   *   - A client's own copy (program.is_template = false): the tenant head
+   *     coach, or a team sub-coach who holds every client the copy belongs to
+   *     (open SubCoachAssignment; the client is `client_id`, or for older
+   *     copies the clients assigned to its days). Otherwise 403
+   *     `client_not_assigned`.
+   *   - A standalone plan (no program): only its own coach (plan.coach_id).
+   *     A team sub-coach can no longer edit the head coach's standalone plans
+   *     (they could not open them either: GET /workout-plans/:id 403s).
+   *
+   * A foreign coach or a sub-coach of another team is 403 `plan_access_denied`.
+   * A non-existent plan is a 404. Every refusal carries a stable `code` plus
+   * copy that says what to do next.
    */
   private async authorisePlanAccess(
     planId: string,
@@ -507,19 +533,89 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
   ): Promise<void> {
     const plan = await this.prisma.workoutPlan.findUnique({
       where: { id: planId },
-      select: { coach_id: true },
+      select: {
+        coach_id: true,
+        program_id: true,
+        program: {
+          select: {
+            is_template: true,
+            owner_user_id: true,
+            visibility: true,
+            client_id: true,
+          },
+        },
+      },
     });
     if (!plan) throw new NotFoundException('Workout plan not found');
-    // (1) Head coach / owner editing their own plan: direct ownership.
-    if (plan.coach_id === actingUserId) return;
-    // (2) In-team sub-coach: resolve the acting user's head coach and require it
-    // to BE the plan's owner. Returns null for non-sub-coaches (foreign head
-    // coaches, students), so they fall through to the 403 below.
-    const headCoachId =
-      await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId);
-    if (headCoachId !== null && headCoachId === plan.coach_id) return;
-    // Out of scope: an existing-but-forbidden plan is a 403, never a 404 leak.
-    throw new ForbiddenException('No access to this workout plan');
+    const program = plan.program_id ? (plan.program ?? null) : null;
+    const isTenantHead = plan.coach_id === actingUserId;
+    // Resolved lazily: the head coach's own plans never need the lookup.
+    let teamMember: boolean | null = null;
+    const inTeam = async (): Promise<boolean> => {
+      if (teamMember === null) {
+        const headCoachId =
+          await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId);
+        teamMember = headCoachId !== null && headCoachId === plan.coach_id;
+      }
+      return teamMember;
+    };
+
+    // (1) A library master's day: the program's own coach only.
+    if (program?.is_template) {
+      const inTenant = isTenantHead || (await inTeam());
+      if (inTenant && program.owner_user_id === actingUserId) return;
+      if (
+        inTenant &&
+        (isTenantHead || program.visibility === 'tenant_shared')
+      ) {
+        throw new ForbiddenException({
+          code: PLAN_CODE_PROGRAM_READ_ONLY,
+          message: PROGRAM_READ_ONLY_MESSAGE,
+        });
+      }
+      throw new ForbiddenException({
+        code: PLAN_CODE_ACCESS_DENIED,
+        message: PLAN_ACCESS_DENIED_MESSAGE,
+      });
+    }
+
+    // (2) The tenant head coach edits every client copy and their own plans.
+    if (isTenantHead) return;
+    if (!(await inTeam())) {
+      throw new ForbiddenException({
+        code: PLAN_CODE_ACCESS_DENIED,
+        message: PLAN_ACCESS_DENIED_MESSAGE,
+      });
+    }
+
+    // (3) A team sub-coach edits a client copy only for clients they hold.
+    if (program && plan.program_id) {
+      const clientIds = program.client_id
+        ? [program.client_id]
+        : (
+            await this.prisma.clientWorkoutAssignment.findMany({
+              where: { workout_plan: { program_id: plan.program_id } },
+              select: { client_id: true },
+              distinct: ['client_id'],
+            })
+          ).map((a) => a.client_id);
+      if (clientIds.length > 0) {
+        const held = new Set(
+          await this.subCoachScope.getAuthorizedClientIds(actingUserId),
+        );
+        if (clientIds.every((id) => held.has(id))) return;
+      }
+      throw new ForbiddenException({
+        code: PLAN_CODE_CLIENT_NOT_ASSIGNED,
+        message: CLIENT_NOT_ASSIGNED_MESSAGE,
+      });
+    }
+
+    // (4) A standalone plan of the head coach stays the head coach's.
+    throw new ForbiddenException({
+      code: PLAN_CODE_NOT_YOURS,
+      message: PLAN_NOT_YOURS_MESSAGE,
+    });
   }
 
   /**
