@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -35,6 +36,18 @@ export class AdminForceDeleteDto {
   reason?: string;
 }
 
+/**
+ * Body for POST /me/delete-account. Optional: Sign in with Apple users send
+ * the authorization code from the Apple re-authentication they just did, so
+ * the server can revoke the app's Apple tokens (Apple deletion guidance).
+ */
+export class RequestDeletionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  apple_authorization_code?: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -42,13 +55,15 @@ export class AdminForceDeleteDto {
  *
  * Provides the full GDPR right-to-erasure lifecycle for end users and admins.
  *
- * User-initiated flow (two-phase with 14-day grace):
- *   POST   /me/delete-account              → request deletion, sends email with token
- *   GET    /me/delete-account/confirm      → confirm via one-time link (?token=...)
+ * User-initiated flow (in-app, 14-day grace):
+ *   POST /auth/recent-auth-token           → fresh re-auth (password or Apple/Google)
+ *   POST   /me/delete-account              → X-Recent-Auth-Token required; deletion
+ *                                            is scheduled immediately (grace starts)
+ *   GET    /me/delete-account/confirm      → legacy one-time email link (?token=...)
  *   POST   /me/delete-account/cancel       → cancel during grace period
  *   GET    /me/delete-account/status       → machine-readable state
  *
- * Admin-initiated (OWNER role only, audited):
+ * Admin-initiated (OWNER role + fresh X-Recent-Auth-Token, audited; B-608-13):
  *   POST   /admin/users/:id/delete         → immediate hard-delete, no grace period
  */
 @ApiTags('account-deletion')
@@ -62,34 +77,49 @@ export class AccountDeletionController {
   // ── User endpoints ────────────────────────────────────────────────────────
 
   @ApiOperation({
-    summary: 'Request account deletion',
+    summary: 'Request account deletion (schedules it immediately)',
     description:
-      'Starts the two-phase GDPR right-to-erasure flow. Sends a single-use confirmation link to your registered email address. Calling again while a valid (unexpired) link exists is a no-op that returns the same expiry.',
+      'Requires X-Recent-Auth-Token from POST /auth/recent-auth-token (fresh password or Sign in with Apple/Google). The deletion is scheduled immediately: the grace period (DELETION_GRACE_DAYS, default 14) starts now and the account can be cancelled from the app until purge_after. Idempotent: calling again returns the existing schedule. Apple users may send apple_authorization_code so the server revokes Sign in with Apple tokens.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Confirmation email sent (or already pending).',
+    description: 'Deletion scheduled (or already scheduled).',
     schema: {
       example: {
-        message: 'A confirmation link has been sent to your email. Click it within 24 hours to start the 14-day grace period.',
-        expires_at: '2026-01-01T03:00:00.000Z',
+        state: 'confirmed',
+        already_scheduled: false,
+        message:
+          'Your account and its data will be permanently deleted after January 15, 2026. You can cancel before then from Settings.',
+        requested_at: '2026-01-01T03:00:00.000Z',
+        confirmed_at: '2026-01-01T03:00:00.000Z',
+        grace_days: 14,
+        purge_after: '2026-01-15T03:00:00.000Z',
+        cancellable: true,
+        apple_revocation: 'not_requested',
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Missing, expired or invalid X-Recent-Auth-Token.' })
   // C5 PR-A audit: GDPR right-to-erasure entrypoint. Any logged-in user must be
   // able to initiate deletion of their own account, regardless of role. Scoped
   // by req.user.id below — a user cannot start another user's deletion.
-  // RecentAuthGuard: requestDeletion starts the destructive flow; require a
-  // fresh re-auth factor before the email token is even minted (defense in
-  // depth against session-hijack to delete). Resolves the P0 recorded in
-  // STOP_AND_ASK_C5.md for this handler. See the comment above
-  // confirmDeletion for why the guard is intentionally NOT attached there.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard, RecentAuthGuard)
+  // RecentAuthGuard: the fresh, single-use re-auth token is the confirmation
+  // factor for this destructive step (Apple 5.1.1(v): deletion must complete
+  // in the app, so there is no email round-trip).
+  // B-608-7: no @Roles. Every authenticated account (student, coach,
+  // sub_coach, owner) may delete itself; JwtAuthGuard authenticates and the
+  // service scopes by req.user.id.
+  @UseGuards(RecentAuthGuard)
   @Post('me/delete-account')
   @HttpCode(200)
-  requestDeletion(@Request() req: AuditableRequest & AuthedRequest) {
-    return this.deletionService.requestDeletion(req.user.id, auditContext(req));
+  requestDeletion(
+    @Request() req: AuditableRequest & AuthedRequest,
+    @Body() body: RequestDeletionDto,
+  ) {
+    return this.deletionService.requestDeletion(req.user.id, {
+      ...auditContext(req),
+      appleAuthorizationCode: body?.apple_authorization_code ?? null,
+    });
   }
 
   @ApiOperation({
@@ -97,13 +127,18 @@ export class AccountDeletionController {
     description:
       'Validates the single-use token sent by POST /me/delete-account. On success the 14-day grace period starts. The token is invalidated after first use.',
   })
-  @ApiQuery({ name: 'token', required: true, description: '64-char hex token from the confirmation email.' })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    description: '64-char hex token from the confirmation email.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Deletion confirmed. Grace period started.',
     schema: {
       example: {
-        message: 'Your account is scheduled for permanent deletion on January 15, 2026. You have 14 days to cancel.',
+        message:
+          'Your account is scheduled for permanent deletion on January 15, 2026. You have 14 days to cancel.',
         purge_after: '2026-01-15T03:00:00.000Z',
       },
     },
@@ -123,8 +158,7 @@ export class AccountDeletionController {
   // architecturally hostile to the email-flow UX. Top-tier IAM designs
   // (Google account-deletion, AWS root credential flows) require one
   // strong OOB factor, not both. This decision is intentional.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Get('me/delete-account/confirm')
   @AllowDeletionScheduled()
   confirmDeletion(@Query('token') token: string) {
@@ -140,8 +174,7 @@ export class AccountDeletionController {
   @ApiResponse({ status: 400, description: 'No pending deletion or grace period expired.' })
   // C5 PR-A audit: reversal of a pending deletion. Scoped by req.user.id —
   // a user can only cancel their own pending deletion. Any logged-in role.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Post('me/delete-account/cancel')
   @HttpCode(200)
   @AllowDeletionScheduled()
@@ -167,8 +200,7 @@ export class AccountDeletionController {
   })
   // C5 PR-A audit: read-only status of the caller's own deletion lifecycle.
   // Scoped by req.user.id. Any logged-in role.
-  @Roles('student', 'coach', 'owner')
-  @UseGuards(RolesGuard)
+  // Self-scoped, any authenticated role (B-608-7).
   @Get('me/delete-account/status')
   @AllowDeletionScheduled()
   getStatus(@Request() req: AuthedRequest) {
@@ -178,18 +210,38 @@ export class AccountDeletionController {
   // ── Admin endpoint ────────────────────────────────────────────────────────
 
   @ApiOperation({
-    summary: 'Admin: force-delete a user account (OWNER only)',
+    summary: 'Admin: force-delete a user account (OWNER only, step-up re-auth)',
     description:
-      'Immediately scrubs PII and marks the account deleted. Bypasses the confirmation email and 14-day grace period. Every call is written to both deletion_audit and AuditLog. Returns 200 if already deleted (idempotent).',
+      'Immediately and irreversibly erases the account: the full finalization (every erasure-manifest table, Storage purge, Apple token revocation, deletion receipt). Bypasses the 14-day grace period. Requires a fresh, single-use X-Recent-Auth-Token minted for the calling owner by POST /auth/recent-auth-token (B-608-13): a stolen or replayed owner session alone cannot erase anyone. Every call is written to both deletion_audit and AuditLog. Returns 200 if already deleted (idempotent).',
   })
   @ApiParam({ name: 'id', description: 'Target user UUID.' })
+  @ApiHeader({
+    name: 'X-Recent-Auth-Token',
+    required: true,
+    description:
+      'Single-use step-up token for the calling owner, valid 5 minutes (POST /auth/recent-auth-token).',
+  })
   @ApiResponse({ status: 200, description: 'User deleted (or already deleted).' })
-  @ApiResponse({ status: 403, description: 'Not authorized — OWNER role required.' })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Step-up re-auth missing, expired or invalid (code RECENT_AUTH_REQUIRED, RECENT_AUTH_TOKEN_EXPIRED or RECENT_AUTH_TOKEN_INVALID). Mint a new token and retry.',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Not an owner (Insufficient role), or the token belongs to someone else or was already used (code RECENT_AUTH_TOKEN_USER_MISMATCH or RECENT_AUTH_TOKEN_ALREADY_USED).',
+  })
   @ApiResponse({ status: 404, description: 'User not found.' })
   @Post('admin/users/:id/delete')
   @HttpCode(200)
   @Roles('owner')
-  @UseGuards(RolesGuard)
+  // B-608-13: this route is an immediate, irreversible full erasure of any
+  // user id, so an owner bearer token alone is not enough. RecentAuthGuard
+  // (fresh, single-use, bound to the calling owner) is the step-up factor.
+  // Order matters: RolesGuard first (the global RolesGuard also runs before
+  // method guards), so a non-owner is refused before its nonce is consumed.
+  @UseGuards(RolesGuard, RecentAuthGuard)
   adminForceDelete(
     @Request() req: AuditableRequest & AuthedRequest,
     @Param('id') targetId: string,
@@ -211,10 +263,12 @@ export class AccountDeletionController {
 
 function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {
   const xffRaw = req?.headers?.['x-forwarded-for'];
-  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw ?? '';
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : (xffRaw ?? '');
   const fwdIp = (xff as string).split(',')[0]?.trim();
   const ip = fwdIp || req?.ip || req?.socket?.remoteAddress || null;
   const uaRaw = req?.headers?.['user-agent'];
-  const userAgent = Array.isArray(uaRaw) ? uaRaw[0] ?? null : (uaRaw as string | undefined) ?? null;
+  const userAgent = Array.isArray(uaRaw)
+    ? (uaRaw[0] ?? null)
+    : ((uaRaw as string | undefined) ?? null);
   return { ip: ip ?? null, userAgent: userAgent ?? null };
 }
