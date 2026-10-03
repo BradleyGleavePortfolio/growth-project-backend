@@ -503,6 +503,13 @@ export class FakeStripe extends StripeConnectApiService {
   transferNetworkFailures = 0;
   /** Stripe EXECUTES the next N transfer creates, then the response is lost. */
   transferResponsesLost = 0;
+  /**
+   * Round 9: Stripe definitively refuses the next N transfer creates (400,
+   * nothing executed). Stripe saves that answer under the key, so a later
+   * request with the same key gets the same refusal until the key expires.
+   */
+  transferRefusals = 0;
+  transferRefusalCache = new Map<string, StripeConnectApiError>();
   /** Listing transfers fails (Stripe unavailable). */
   failListTransfers = false;
   /** Transfer listing always says has_more (an endless / incomplete listing). */
@@ -527,6 +534,7 @@ export class FakeStripe extends StripeConnectApiService {
   expireIdempotencyKeys(): void {
     this.reversalKeyCache.clear();
     this.transferKeyCache.clear();
+    this.transferRefusalCache.clear();
   }
   /** Listing pages hold this many reversals (Stripe's limit, or smaller). */
   reversalListPageSize = 100;
@@ -576,7 +584,11 @@ export class FakeStripe extends StripeConnectApiService {
       transfer_group?: string;
       metadata?: Record<string, string>;
       idempotencyKey: string;
+      beforeSend?: () => void;
     }) => {
+      // Like StripeConnectApiService.post: the caller's last synchronous
+      // check runs right before the request starts; a throw sends nothing.
+      if (args.beforeSend) args.beforeSend();
       if (this.transferNetworkFailures > 0) {
         this.transferNetworkFailures -= 1;
         throw new StripeConnectApiError(
@@ -588,6 +600,19 @@ export class FakeStripe extends StripeConnectApiService {
       }
       const existing = this.transferKeyCache.get(args.idempotencyKey);
       if (existing) return { ...existing };
+      const refused = this.transferRefusalCache.get(args.idempotencyKey);
+      if (refused) throw refused;
+      if (this.transferRefusals > 0) {
+        this.transferRefusals -= 1;
+        const err = new StripeConnectApiError(
+          'Insufficient funds in Stripe account.',
+          400,
+          'balance_insufficient',
+          'invalid_request_error',
+        );
+        this.transferRefusalCache.set(args.idempotencyKey, err);
+        throw err;
+      }
       const t: FakeTransfer = {
         id: `tr_${this.transfers.length + 1}`,
         amount: args.amount,

@@ -12,11 +12,12 @@ function makePrismaStub() {
   const ops: any[] = [];
   let n = 0;
   // Prisma where semantics the orchestrator uses: equality (null matches a
-  // missing column), `in`, and OR.
+  // missing column; dates compare by instant), `in`, and OR.
   const matches = (row: any, where: any): boolean =>
     Object.entries(where).every(([k, v]: [string, any]) => {
       if (k === 'OR') return v.some((w: any) => matches(row, w));
       if (v === null) return row[k] === null || row[k] === undefined;
+      if (v instanceof Date) return row[k] instanceof Date && row[k].getTime() === v.getTime();
       if (v && typeof v === 'object' && 'in' in v) return v.in.includes(row[k]);
       return row[k] === v;
     });
@@ -230,7 +231,7 @@ describe('TransferOrchestratorService', () => {
     expect(attempt.status).toBe('succeeded');
   });
 
-  it('marks final-failed after max_attempts (B-627-8: an unknown outcome only once Stripe shows it absent)', async () => {
+  it("final failure at max_attempts needs Stripe's answer (B-627-8 / B-627-9: an unresolved create is adopted, never failed from elapsed time)", async () => {
     prisma._ledger.push({
       id: 'le1',
       purchase_id: 'p1',
@@ -261,11 +262,32 @@ describe('TransferOrchestratorService', () => {
     const held = await svc.attempt(row.id);
     expect(held.status).toBe('pending');
     expect(prisma._ledger[0].status).not.toBe('failed');
-    // After the window, Stripe's complete list is proof: absent, budget spent.
+    // Round 9: after the window an absent listing is not proof (the sender
+    // may be paused before its request). At the budget the unresolved attempt
+    // is adopted: re-sent under the SAME key, without a new attempt.
     const later = Date.now() + svc.inFlightWindowMs + 1_000;
     svc.clock = () => new Date(later);
+    const adopted = await svc.attempt(row.id);
+    expect(stripe.createTransfer).toHaveBeenCalledTimes(2);
+    const calls = stripe.createTransfer.mock.calls;
+    expect(calls[1][0].idempotencyKey).toBe(calls[0][0].idempotencyKey);
+    expect(adopted.status).toBe('pending'); // still a 500: not failed
+    expect(prisma._transfers[0].attempts).toBe(1);
+    expect(prisma._transfers[0].stripe_send_unresolved_at.getTime()).toBe(later);
+    expect(prisma._ledger[0].status).not.toBe('failed');
+    // Stripe's definitive answer for the key is the proof of final failure.
+    stripe.createTransfer.mockRejectedValue(
+      new StripeConnectApiError(
+        'No such destination',
+        400,
+        'resource_missing',
+        'invalid_request_error',
+      ),
+    );
+    const muchLater = later + 25 * 3_600_000;
+    svc.clock = () => new Date(muchLater);
     const updated = await svc.attempt(row.id);
-    expect(stripe.createTransfer).toHaveBeenCalledTimes(1);
+    expect(stripe.createTransfer).toHaveBeenCalledTimes(3);
     expect(updated.status).toBe('failed');
     expect(prisma._transfers[0].stripe_send_unresolved_at).toBeNull();
     expect(prisma._ledger[0].status).toBe('failed');

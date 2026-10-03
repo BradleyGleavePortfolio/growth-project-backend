@@ -707,6 +707,10 @@ export class StripeConnectApiService {
     description?: string;
     metadata?: Record<string, string>;
     idempotencyKey: string;
+    // S-FEE round 9 (B-627-9): called synchronously right before the HTTP
+    // request starts; when it throws, no request is made and the error
+    // propagates (the transfer orchestrator's send-start budget).
+    beforeSend?: () => void;
   }): Promise<{
     id: string;
     amount: number;
@@ -730,7 +734,7 @@ export class StripeConnectApiService {
         form[`metadata[${k}]`] = v;
       }
     }
-    return this.post('/transfers', form, args.idempotencyKey);
+    return this.post('/transfers', form, args.idempotencyKey, args.beforeSend);
   }
 
   // S-FEE round 7 (B-627-8) — one page of the platform's transfers to one
@@ -1051,6 +1055,7 @@ export class StripeConnectApiService {
     path: string,
     form: Record<string, string>,
     idempotencyKey?: string,
+    beforeSend?: () => void,
   ): Promise<T> {
     const secret = this.requireSecret();
     const headers: Record<string, string> = {
@@ -1058,11 +1063,14 @@ export class StripeConnectApiService {
       'Content-Type': 'application/x-www-form-urlencoded',
     };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    const body = new URLSearchParams(form).toString();
+    // No await between this check and the request start.
+    if (beforeSend) beforeSend();
     try {
       const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
         method: 'POST',
         headers,
-        body: new URLSearchParams(form).toString(),
+        body,
       });
       return this.parse<T>(res, path);
     } catch (err) {

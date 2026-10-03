@@ -351,7 +351,7 @@ describe('B-627-8 a lost reinstatement result is looked up, never paid twice', (
     expect(c.stripeReinstatements()).toHaveLength(1);
   });
 
-  it('control: absent at the attempt budget is a proven final failure (repay alert is safe)', async () => {
+  it('control (round 9): absent at the attempt budget is adopted under the same key, paid once, never failed from elapsed time', async () => {
     const c = setup();
     await c.sellAndDispute();
     c.stripe.transferNetworkFailures = 1;
@@ -360,9 +360,33 @@ describe('B-627-8 a lost reinstatement result is looked up, never paid twice', (
     const live = c.db.transfers.find((t) => t.id === row.id)!;
     live.max_attempts = 1;
     await c.sweepAt(25);
+    expect(live.status).toBe('succeeded');
+    expect(live.stripe_send_unresolved_at).toBeNull();
+    expect(c.createsFor(row.idempotency_key)).toBe(2);
+    expect(c.stripeReinstatements()).toHaveLength(1);
+    expect(lines(errorLog).some((l) => /SFEE_TRANSFER_FAILED alert=true/.test(l))).toBe(false);
+  });
+
+  it('control (round 9): a definitive refusal of the adopted send is the proven final failure (repay alert is safe)', async () => {
+    const c = setup();
+    await c.sellAndDispute();
+    c.stripe.transferNetworkFailures = 1;
+    await c.win();
+    const [row] = c.reinstateRows();
+    const live = c.db.transfers.find((t) => t.id === row.id)!;
+    live.max_attempts = 1;
+    c.stripe.transferRefusals = 1;
+    await c.sweepAt(25);
     expect(live.status).toBe('failed');
     expect(live.stripe_send_unresolved_at).toBeNull();
+    expect(c.createsFor(row.idempotency_key)).toBe(2);
     expect(c.stripeReinstatements()).toHaveLength(0);
+    const repay = lines(errorLog).filter((l) => /^SFEE_TRANSFER_FAILED alert=true/.test(l));
+    expect(repay).toHaveLength(1);
+    // C-627-8 (Opus): the alert names the live gap, not a fixed amount.
+    expect(repay[0]).toMatch(
+      /owed_cents_at_failure=9480 .*re-read the coach_position gap of GET \/api\/v1\/admin\/payments\/reconciliation\/purchase-1 and repay that gap only/,
+    );
   });
 
   it('two workers on the same aged unresolved row: one re-send at most', async () => {

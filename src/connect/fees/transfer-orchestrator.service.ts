@@ -130,6 +130,43 @@ export function transferInFlightWindowMs(stripeTimeoutMs: number): number {
 // B-627-9: an outcome write lost its compare-and-set to another worker.
 export const TRANSFER_SUPERSEDED_CODE = 'SFEE_TRANSFER_OUTCOME_SUPERSEDED';
 
+// B-627-9 narrowed (round 9). A worker that claimed a send must START the
+// Stripe request within this budget of its claim, or it does not send at all.
+// The budget plus the Stripe client timeout ends far inside the in-flight
+// window (30 s + 10 s against 5 min), and only a worker that finds the claim
+// older than the window may take it over. So a sender paused between its
+// claim and its request (event-loop stall, frozen machine) can never start
+// its request after another worker has read Stripe's listing and acted on
+// it: the check runs synchronously at the HTTP boundary (beforeSend in
+// StripeConnectApiService.createTransfer, right before fetch).
+export const TRANSFER_SEND_START_BUDGET_MS = 30_000;
+export const TRANSFER_SEND_ABANDONED_CODE = 'SFEE_TRANSFER_SEND_ABANDONED';
+// The attempt budget is spent and the last create is still unresolved: the
+// next worker re-sends that same attempt under the same key (adoption).
+export const TRANSFER_ADOPTED_CODE = 'SFEE_TRANSFER_ADOPTED';
+
+/** A claimed send that was not started inside its start budget (nothing sent). */
+export class TransferSendExpiredError extends Error {
+  readonly code = TRANSFER_SEND_ABANDONED_CODE;
+
+  constructor(
+    readonly transferRowId: string,
+    readonly ageMs: number,
+    readonly budgetMs: number,
+  ) {
+    super(
+      `${TRANSFER_SEND_ABANDONED_CODE} transfer=${transferRowId}: the send claim is ${ageMs} ms old ` +
+        `(start budget ${budgetMs} ms), so another worker may take it over; the create was not sent`,
+    );
+    this.name = 'TransferSendExpiredError';
+  }
+}
+
+function sameInstant(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  return a.getTime() === b.getTime();
+}
+
 // B-627-8: the reconciliation lookup of one transfer create.
 export type TransferLookup =
   | { kind: 'found'; id: string; amount: number }
@@ -241,6 +278,8 @@ export class TransferOrchestratorService {
   // B-627-9: how long a sent create is treated as in flight (5 min at the
   // default 10 s Stripe timeout).
   readonly inFlightWindowMs: number;
+  // B-627-9 narrowed (round 9): a claimed send starts within this or never.
+  readonly sendStartBudgetMs = TRANSFER_SEND_START_BUDGET_MS;
   // Wall clock for the transfer-create protocol. Tests move it forward to
   // model a later sweep; production always reads the real time.
   clock: () => Date = () => new Date();
@@ -346,6 +385,26 @@ export class TransferOrchestratorService {
   // window ends. Every outcome write (markFailed, scheduleRecheck,
   // recordPosted) is a compare-and-set; a lost CAS re-reads the row and
   // leaves the winner's result in place.
+  //
+  // S-FEE round 9 (B-627-9 narrowed) — elapsed time is never proof that an
+  // unresolved create will not execute: its sender may be paused between its
+  // claim and its request. So:
+  //   - a send claim is identified by (attempts, stripe_send_unresolved_at);
+  //     every claim and every outcome write compares both;
+  //   - after the claim commits, the sender re-proves the charge lease (fence)
+  //     and its claim (re-read), and at the HTTP boundary (synchronously,
+  //     right before fetch) that the claim is younger than
+  //     sendStartBudgetMs; otherwise it sends nothing
+  //     (SFEE_TRANSFER_SEND_ABANDONED) and leaves the claim for adoption;
+  //   - an unresolved create proven absent after the in-flight window is
+  //     never failed. With budget left it is re-sent as the next attempt;
+  //     at the budget it is ADOPTED: the same attempt is re-sent under the
+  //     same Stripe idempotency key (SFEE_TRANSFER_ADOPTED). Its result is
+  //     then Stripe's answer for that key: a transfer is recorded; a
+  //     definitive refusal is the proven final failure (Stripe replays that
+  //     answer to any late request with the key, and no late request can
+  //     start past its budget); anything else stays pending with an alert
+  //     and is adopted again after the window and the backoff.
   async attempt(
     transferId: string,
     opts: { beforeStripe?: MoneyFence } = {},
@@ -366,6 +425,7 @@ export class TransferOrchestratorService {
     // B-627-8: an earlier create's result is not established. Establish it
     // at Stripe before anything else (including the attempt budget: a
     // transfer that may exist is never reported as failed).
+    let adopt = false;
     if (row.stripe_send_unresolved_at) {
       const lookup = await this.findStripeTransfer(row);
       if (lookup.kind === 'found') return this.recordPosted(row, lookup.id, 'reconciled');
@@ -380,24 +440,38 @@ export class TransferOrchestratorService {
         return this.holdUncertain(row, `transfer lookup unavailable: ${lookup.reason}`, false);
       }
       // absent: a complete listing, read after the in-flight window, shows no
-      // transfer for this operation.
+      // transfer for this operation so far. Round 9: that is not proof it
+      // can never execute, so it is never failed from here. At the budget
+      // the unresolved attempt is adopted (re-sent under its own key).
+      adopt = row.attempts >= row.max_attempts && row.status === 'pending';
     }
 
-    if (row.attempts >= row.max_attempts) {
+    if (!adopt && row.attempts >= row.max_attempts) {
+      // No unresolved create (the last one was definitively refused, or none
+      // was sent): nothing can still execute, so the failure is proven.
       return this.markFailed(row, 'max_attempts_exhausted', /*final=*/ true);
     }
 
     // B-627-2: a stale lock holder never starts a Stripe transfer.
     if (opts.beforeStripe) await opts.beforeStripe();
-    const attemptCount = row.attempts + 1;
+    const attemptCount = adopt ? row.attempts : row.attempts + 1;
     const sentAt = this.clock();
-    // Durable "sent" marker, written before Stripe is called. The CAS on
-    // attempts lets exactly one worker send this attempt; a worker that loses
-    // it returns the row and leaves the result to the winner. B-627-9: never
-    // for a row that already has a Stripe transfer, and the row being sent is
-    // pending (every outcome write below is a CAS on pending + this attempt).
+    // Durable "sent" marker, written before Stripe is called. The CAS on the
+    // claim identity (attempts + marker) lets exactly one worker send this
+    // attempt; a worker that loses it returns the row and leaves the result
+    // to the winner. B-627-9: never for a row that already has a Stripe
+    // transfer, and the row being sent is pending (every outcome write below
+    // is a CAS on pending + this claim). An adoption keeps the attempt count
+    // and moves the marker, so a stale holder of the old claim no longer
+    // matches anything.
     const claim = await this.prisma.connectTransfer.updateMany({
-      where: { id: row.id, status: row.status, attempts: row.attempts, stripe_transfer_id: null },
+      where: {
+        id: row.id,
+        status: row.status,
+        attempts: row.attempts,
+        stripe_transfer_id: null,
+        stripe_send_unresolved_at: row.stripe_send_unresolved_at,
+      },
       data: {
         status: 'pending',
         attempts: attemptCount,
@@ -415,6 +489,19 @@ export class TransferOrchestratorService {
       last_attempt_at: sentAt,
       stripe_send_unresolved_at: sentAt,
     };
+    if (adopt) {
+      this.logger.warn(
+        `${TRANSFER_ADOPTED_CODE} transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
+          `op=${row.idempotency_key} attempt=${attemptCount}/${row.max_attempts} ` +
+          `prior_sent_at=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: the attempt budget is spent ` +
+          'and its last create is unresolved and not at Stripe; re-sent under the same key, never failed from elapsed time',
+      );
+    }
+
+    // Round 9: re-prove the charge lease and this claim after the awaited
+    // claim, right before the external call.
+    const abandoned = await this.reproveSendClaim(sent, opts.beforeStripe);
+    if (abandoned) return abandoned;
 
     let stripeTransferId: string;
     try {
@@ -436,9 +523,12 @@ export class TransferOrchestratorService {
         description: describeTransfer(row),
         metadata,
         idempotencyKey: row.idempotency_key,
+        // Round 9: the last synchronous check before the request starts.
+        beforeSend: () => this.assertSendStartable(sent),
       });
       stripeTransferId = transfer.id;
     } catch (err) {
+      if (err instanceof TransferSendExpiredError) return this.abandonSend(sent, err.message);
       const message = (err as Error)?.message ?? 'unknown transfer error';
       const code = transferFailureCode(err);
       if (isDefinitiveStripeRefusal(err)) {
@@ -472,12 +562,18 @@ export class TransferOrchestratorService {
       // Not visible yet. The request may still be completing at Stripe, so
       // this is never final: the marker stays and the next attempt looks
       // again (after the in-flight window) before it may re-send the same key.
-      const needsPerson = code !== TRANSFER_FAILURE_CODES.failed;
+      // At the budget the payout stays open and needs a person to watch it.
+      const budgetSpent = attemptCount >= row.max_attempts;
+      const needsPerson = budgetSpent || code !== TRANSFER_FAILURE_CODES.failed;
       const line =
         `${code} transfer=${row.id} kind=${row.kind} ` +
         `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
         `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}; ` +
-        'not visible at Stripe yet, re-checked before any re-send';
+        'not visible at Stripe yet, re-checked before any re-send' +
+        (budgetSpent
+          ? `; attempt budget spent: the payout of ${row.amount_cents} ${row.currency} stays pending and is ` +
+            're-sent under the same key after the backoff, never failed without a definitive Stripe answer'
+          : '');
       if (needsPerson) this.logger.error(line);
       else this.logger.warn(line);
       return this.markFailed(sent, `${code}: ${message}`, false, { resolved: false });
@@ -489,8 +585,99 @@ export class TransferOrchestratorService {
   // uses: the row is still pending, has no Stripe transfer recorded, and is
   // still on the attempt this worker read or claimed. A newer claim, a
   // receipt written by another worker, or a final status all make it miss.
+  // Round 9: the claim identity includes the marker, so an adoption (same
+  // attempt count, new marker) also makes a stale worker's write miss.
   private openOutcomeWhere(row: ConnectTransfer): Prisma.ConnectTransferWhereInput {
-    return { id: row.id, status: 'pending', stripe_transfer_id: null, attempts: row.attempts };
+    return {
+      id: row.id,
+      status: 'pending',
+      stripe_transfer_id: null,
+      attempts: row.attempts,
+      stripe_send_unresolved_at: row.stripe_send_unresolved_at,
+    };
+  }
+
+  // B-627-9 narrowed (round 9) — after the claim is committed and before any
+  // Stripe call: the charge lease is re-proven (fence), the claim is re-read
+  // (still pending, no Stripe transfer, this attempt and this marker), and
+  // the claim is still inside its start budget. Returns null when the send
+  // may start, otherwise the row to return (nothing was sent). A lost lease
+  // still throws ChargeLockLostError (retryable) after the claim is parked.
+  private async reproveSendClaim(
+    sent: ConnectTransfer,
+    fence?: MoneyFence,
+  ): Promise<ConnectTransfer | null> {
+    if (fence) {
+      try {
+        await fence();
+      } catch (err) {
+        // Park the claim (best effort), then surface the lock loss itself.
+        try {
+          await this.abandonSend(sent, 'the charge lock was lost after the claim');
+        } catch (parkErr) {
+          this.logger.warn(
+            `${TRANSFER_SEND_ABANDONED_CODE} transfer=${sent.id}: parking the claim failed ` +
+              `(${(parkErr as Error)?.name ?? 'unknown'}); it is due for the sweeper as it is`,
+          );
+        }
+        throw err;
+      }
+    }
+    let live: ConnectTransfer;
+    try {
+      live = await this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: sent.id } });
+    } catch {
+      return this.abandonSend(sent, 'the claim could not be re-read');
+    }
+    const ownsClaim =
+      live.status === 'pending' &&
+      !live.stripe_transfer_id &&
+      live.attempts === sent.attempts &&
+      sameInstant(live.stripe_send_unresolved_at, sent.stripe_send_unresolved_at);
+    if (!ownsClaim) {
+      this.logger.warn(
+        `${TRANSFER_SEND_ABANDONED_CODE} transfer=${sent.id} kind=${sent.kind} attempt=${sent.attempts}: ` +
+          `the claim moved before the Stripe call (status=${live.status} attempts=${live.attempts} ` +
+          `stripe_transfer=${live.stripe_transfer_id ?? 'none'}); nothing sent, the recorded state stands`,
+      );
+      return live;
+    }
+    try {
+      this.assertSendStartable(sent);
+    } catch (err) {
+      if (err instanceof TransferSendExpiredError) return this.abandonSend(sent, err.message);
+      throw err;
+    }
+    return null;
+  }
+
+  // Throws TransferSendExpiredError when the claim is older than the start
+  // budget. Synchronous: StripeConnectApiService calls it right before fetch.
+  private assertSendStartable(sent: ConnectTransfer): void {
+    const claimedAt = sent.stripe_send_unresolved_at?.getTime() ?? 0;
+    const age = this.clock().getTime() - claimedAt;
+    if (age > this.sendStartBudgetMs) {
+      throw new TransferSendExpiredError(sent.id, age, this.sendStartBudgetMs);
+    }
+  }
+
+  // Round 9 — this worker claimed a send and did not start it. Nothing moved.
+  // The claim stays unresolved (it may not be cleared: this worker cannot
+  // prove that no other request with the key exists) and is due again when
+  // its in-flight window ends; the next worker looks it up and re-sends or
+  // adopts it under the same key.
+  private async abandonSend(sent: ConnectTransfer, reason: string): Promise<ConnectTransfer> {
+    const claimedAt = sent.stripe_send_unresolved_at ?? this.clock();
+    const at = new Date(claimedAt.getTime() + this.inFlightWindowMs);
+    this.logger.warn(
+      `${TRANSFER_SEND_ABANDONED_CODE} transfer=${sent.id} kind=${sent.kind} attempt=${sent.attempts}/${sent.max_attempts} ` +
+        `claimed_at=${claimedAt.toISOString()} recheck_at=${at.toISOString()}: ${reason}; nothing sent to Stripe, ` +
+        'the claim is looked up and re-sent under the same key after its in-flight window',
+    );
+    return this.scheduleRecheck(sent, {
+      at,
+      message: `${TRANSFER_SEND_ABANDONED_CODE}: ${reason}`,
+    });
   }
 
   // B-627-9 — an outcome write lost its CAS: another worker moved the row
@@ -1075,8 +1262,16 @@ export class TransferOrchestratorService {
       // C-627-6 (round 6): exact amounts for the operator. Netted cents stay
       // collected (they settled another charge's debt); only amount_cents is
       // owed to the payee, and the reconciliation gap on the charge is that.
+      // C-627-8 (Opus, round 9): the amount owed can move after this alert (a
+      // later refund or dispute on the same charge), so the alert names the
+      // live source of truth instead of a fixed repayment amount.
+      const position = row.kind.startsWith('head_coach') ? 'head_coach_position' : 'coach_position';
       this.logger.error(
-        `SFEE_TRANSFER_FAILED alert=true transfer=${row.id} settlement=${row.settlement_id} payee=${row.destination_user_id ?? 'unknown'} owed_cents=${row.amount_cents} netted_cents=${row.netted_recovery_cents} currency=${row.currency}: repay owed_cents only; the netted cents already settled an earlier hold`,
+        `SFEE_TRANSFER_FAILED alert=true transfer=${row.id} settlement=${row.settlement_id} purchase=${row.purchase_id} ` +
+          `payee=${row.destination_user_id ?? 'unknown'} owed_cents_at_failure=${row.amount_cents} ` +
+          `netted_cents=${row.netted_recovery_cents} currency=${row.currency}: before repaying, re-read the ${position} gap ` +
+          `of GET /api/v1/admin/payments/reconciliation/${row.purchase_id} and repay that gap only (a later refund or dispute ` +
+          'on this charge changes it); the netted cents already settled an earlier hold',
       );
     }
     return this.readBack(row, data);

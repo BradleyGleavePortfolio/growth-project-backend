@@ -258,7 +258,7 @@ describe('B-627-9 (a) the in-flight window', () => {
     expect(transferInFlightWindowMs(0)).toBe(5 * 60_000);
   });
 
-  it('young marker at the attempt budget: no send, no failure, re-check at marker + window; proven failure only after it', async () => {
+  it('young marker at the attempt budget: no send, no failure, re-check at marker + window; after it the attempt is adopted (round 9)', async () => {
     const c = setup();
     await c.sellDisputeWin((s) => (s.transferNetworkFailures = 1));
     const r = c.row('coach_reinstate');
@@ -279,13 +279,17 @@ describe('B-627-9 (a) the in-flight window', () => {
     const early = await c.transfers.findDueTransfers(new Date(marker.getTime() + 4.5 * 60_000));
     expect(early.map((t) => t.id)).not.toContain(r.id);
 
-    // After the window a complete listing that shows nothing is proof.
+    // Round 9 (B-627-9 narrowed): after the window an empty listing is still
+    // not proof (a paused sender may start its request later), so the
+    // unresolved attempt is adopted: re-sent under the same key. It pays.
     c.at(6 * 60_000);
-    const failed = await c.transfers.attempt(r.id);
-    expect(failed.status).toBe('failed');
+    const adopted = await c.transfers.attempt(r.id);
+    expect(adopted.status).toBe('succeeded');
     expect(c.row('coach_reinstate').stripe_send_unresolved_at).toBeNull();
-    expect(c.createsFor(r.idempotency_key)).toBe(1);
-    expect(repayAlerts()).toHaveLength(1);
+    expect(c.row('coach_reinstate').attempts).toBe(1);
+    expect(c.createsFor(r.idempotency_key)).toBe(2);
+    expect(c.reinstatements()).toHaveLength(1);
+    expect(repayAlerts()).toHaveLength(0);
   });
 
   it('young marker with budget left: no re-send inside the window (an expired key would mint a second transfer)', async () => {
@@ -328,7 +332,10 @@ describe('B-627-9 (b) every outcome write is a compare-and-set', () => {
     expect(r.status).toBe('pending');
     expect(r.stripe_send_unresolved_at).toBeInstanceOf(Date);
     r.max_attempts = r.attempts; // budget spent
-    c.at(25 * HOUR); // old marker: the listing (absent) is proof
+    // Round 9: the final failure without Stripe's answer is reached only when
+    // no create is unresolved (an unresolved one is adopted instead).
+    r.stripe_send_unresolved_at = null;
+    c.at(25 * HOUR);
     // Between B's read and B's write, another worker records the transfer.
     const real = c.prisma.connectTransfer.updateMany.getMockImplementation()!;
     c.prisma.connectTransfer.updateMany.mockImplementation(async (args) => {
