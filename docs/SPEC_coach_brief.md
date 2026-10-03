@@ -128,6 +128,34 @@ CHECK constraints (P2-4) enforce:
 | `COACH_BRIEF_NOTIFICATIONS_ENABLED` | `on`      | Set to `off` to disable the per-minute push dispatcher.                              |
 | `COACH_BRIEF_CRON`                  | `* * * * *` | Schedule expression for the dispatcher. Override only for non-production debugging.   |
 
+## 7a. Roman layer (A5-COACH-BRIEF, `FEATURE_COACH_BRIEF_ROMAN`, default off)
+
+With the flag exactly `true`:
+
+- `summary.roman` (CoachBrief.roman JSONB) carries Roman's butler highlights,
+  built deterministically (no model call) inside the generation lease, so once
+  per coach per day across restarts. Money is reconciled from `SplitLedgerEntry`
+  (payee = coach, kind `destination` / `head_coach_split`, status `posted` /
+  `reversed`, net of `reversed_cents`, `posted_at` in the last 24 hours, per
+  currency). Head-coach mode stays business only (no client names, no drafts).
+- The daily push body is `summary.roman.push_text` (no client names).
+- `CoachBriefPreferences.honorific` (`first_name` | `sir` | `maam`, default
+  `first_name`) sets how Roman addresses the coach.
+- Reply drafts: one `RomanReplyDraft` claim per unread client message
+  (unique per coach + source message). Only clients with box-2 AI consent are
+  drafted, through `AiEgressService` (surface `coach.reply_draft`); others are
+  counted ("N messages are from clients who have not enabled AI drafts") and
+  no data about them reaches a model. Drafts are `AiActionDraft` rows
+  (`draft.coach_message`, requester null) and are sent only by the coach:
+  `POST /coach/brief/drafts/:id/send` (optional edited `body`,
+  `Idempotency-Key`) runs `AiApprovalService.decide(approved)`, whose
+  materialiser posts the message exactly once. `POST .../:id/dismiss` rejects.
+  `GET /coach/brief/drafts` lists ready drafts plus threads to answer
+  personally. Generation, edit, send and dismiss are audited.
+- Flag off: no Roman work runs, `summary.roman` is null even for stored rows,
+  and `/coach/brief/drafts/*` returns 404 `coach_brief.roman_unavailable`.
+- Model id: the brief and drafts use the shared `COACH_AI_MODEL`.
+
 ## 8. Cross-references
 
 - Voice contract & CPO ruling: `agent-context/CPO_BRIEFING.md`
