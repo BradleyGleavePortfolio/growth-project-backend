@@ -95,6 +95,12 @@ function makeService() {
   const assertMayUseAi = jest.fn((..._a: unknown[]): Promise<void> =>
     Promise.resolve(undefined),
   );
+  // OR-113-2 — daily spend cap pre-check (resolves = capacity left).
+  const assertDailyCapacity = jest.fn((..._a: unknown[]): Promise<void> =>
+    Promise.resolve(undefined),
+  );
+  // SafetyRouter crisis short-circuit (false = an ordinary message).
+  const isSafetyShortCircuit = jest.fn((..._a: unknown[]): boolean => false);
   const appendMessage = jest.fn((..._a: unknown[]) =>
     Promise.resolve({
       id: 'msg_1',
@@ -140,6 +146,8 @@ function makeService() {
     deleteSession,
     assertWithinRateLimit,
     assertMayUseAi,
+    assertDailyCapacity,
+    isSafetyShortCircuit,
     appendMessage,
     listMessages,
     streamAssistantTurn,

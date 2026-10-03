@@ -773,6 +773,9 @@ export interface PersonaDb {
     communityPosts: Row[];
     wearableConnections: Row[];
     wearableSamples: Row[];
+    coachingSessions: Row[];
+    /** OR-113-2 content-free spend-ledger rows written by RomanService. */
+    aiRequestAudits: Row[];
   };
   /** Count of every delegate call, in order. */
   calls: string[];

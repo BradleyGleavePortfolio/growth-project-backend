@@ -752,7 +752,7 @@ export class RomanClientContextService {
     );
 
     // ── bookings (upcoming, current coach only) ──
-    const upcoming_sessions: RomanCtxBooking[] = bookings.map((b) => {
+    const upcoming_sessions: RomanCtxBooking[] = bookings.map((b): RomanCtxBooking => {
       const c = localClock(b.start_at, clock.timezone);
       return {
         date: c.local_date,

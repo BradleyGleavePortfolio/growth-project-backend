@@ -103,13 +103,18 @@ export class RomanController {
     @Body() dto: SendMessageDto,
   ): Promise<void> {
     const caller = await this.callerOf(req);
+    // An emergency / self-harm message is answered by the deterministic
+    // SafetyRouter template (911 / 988): no model call and no spend. Neither
+    // the per-user turn limit nor the daily spend cap may stand between the
+    // client and that answer. Box-2 consent below applies unchanged.
+    const crisis = this.roman.isSafetyShortCircuit(dto.content);
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
     // count against the cap). Throws a structured 429 Too Many Requests; we
     // surface the retry budget as a real Retry-After header (RFC 6585 §4)
     // before re-throwing so the NestJS filter serialises the body.
     try {
-      await this.roman.assertWithinRateLimit(caller);
+      if (!crisis) await this.roman.assertWithinRateLimit(caller);
     } catch (err) {
       const payload = (
         err as { getResponse?: () => unknown }
@@ -127,7 +132,7 @@ export class RomanController {
     await this.roman.assertMayUseAi(caller);
     // OR-113-2 — daily spend cap, checked before the turn is stored (coded
     // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
-    await this.roman.assertDailyCapacity();
+    if (!crisis) await this.roman.assertDailyCapacity(caller);
     await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,

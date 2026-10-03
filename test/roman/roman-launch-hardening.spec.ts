@@ -19,8 +19,15 @@ import {
   ROMAN_ERROR_CAPACITY_REACHED,
   ROMAN_ERROR_MODEL_UNAVAILABLE,
   ROMAN_MODEL_UNAVAILABLE_MESSAGE,
+  ROMAN_CAPACITY_REACHED_MESSAGE_COACH,
+  ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH,
+  ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH,
+  ROMAN_NOT_CONFIGURED_MESSAGE_COACH,
+  ROMAN_SWITCHED_OFF_MESSAGE_COACH,
   romanRateLimitMessage,
 } from '../../src/roman/roman.constants';
+import { Prisma } from '@prisma/client';
+import { romanErrorTag, romanSanitizedError } from '../../src/roman/roman.service';
 import { classifySafety, ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
 import {
   postCheckRomanReply,
@@ -462,8 +469,12 @@ describe('A-R3-1 grounding failure is sanitised and degraded, never silent', () 
     };
     const svc = new RomanService(fakeOf(prisma), grantAllEgress(), a.handle, fakeOf<RomanClientContextService>(ctxSvc));
     const logs: string[] = [];
-    for (const k of ['error', 'warn', 'log'] as const)
-      jest.spyOn(Logger.prototype, k).mockImplementation((m: unknown) => void logs.push(String(m)));
+    const capture = (...args: unknown[]): void => {
+      logs.push(args.map((a) => String(a)).join(' '));
+    };
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(capture);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(capture);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(capture);
     await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' }));
     jest.restoreAllMocks();
     expect(logs.join('\n')).not.toContain('maya@example.com');
@@ -551,5 +562,184 @@ describe('OR-113-2 launch hardening', () => {
     });
     expect(p).toContain('REPLY CONTRACT (roman-client-v3)');
     expect(p).toContain('<client_data as_of="x">{}</client_data>');
+  });
+});
+
+// ─── FIX ROUND 1 (S-B1, growth-project-backend#651) ─────────────────────────
+
+/** Capture every Logger error/warn/log line (all arguments) for one test. */
+function captureLogs(): string[] {
+  const logs: string[] = [];
+  const capture = (...args: unknown[]): void => {
+    logs.push(args.map((a) => String(a)).join(' '));
+  };
+  jest.spyOn(Logger.prototype, 'error').mockImplementation(capture);
+  jest.spyOn(Logger.prototype, 'warn').mockImplementation(capture);
+  jest.spyOn(Logger.prototype, 'log').mockImplementation(capture);
+  return logs;
+}
+
+describe('FR1-651-1 Roman failure logs are content-free for every error class, not only ORM errors', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('a ledger failure with a plain Error logs the class only, never its message', async () => {
+    const { prisma } = makePrisma({ ledgerFails: true });
+    const a = makeAnthropic('hello');
+    const svc = new RomanService(fakeOf(prisma), grantAllEgress(), a.handle);
+    const logs = captureLogs();
+    await expect(
+      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { message: ROMAN_CAPACITY_UNKNOWN_MESSAGE } });
+    const all = logs.join('\n');
+    expect(all).toContain('roman.spend_ledger_failed: Error');
+    expect(all).not.toContain('secret=abc');
+    expect(all).not.toContain('connection refused');
+  });
+
+  it('a provider error whose message echoes the conversation logs class and status only', async () => {
+    const { prisma } = makePrisma();
+    const err = Object.assign(new Error('overloaded while answering: I want to lose 20 lb before my wedding'), {
+      status: 529,
+    });
+    const a = makeAnthropic(err);
+    const svc = new RomanService(fakeOf(prisma), grantAllEgress(), a.handle);
+    const logs = captureLogs();
+    await expect(
+      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { code: ROMAN_ERROR_MODEL_UNAVAILABLE } });
+    const all = logs.join('\n');
+    expect(all).toContain('roman.stream_error session=sess_1: Error status=529');
+    expect(all).not.toContain('wedding');
+  });
+
+  it('romanErrorTag / romanSanitizedError keep the class, Prisma code and status, never text', () => {
+    expect(romanErrorTag(new TypeError('Cannot read maya@example.com'))).toBe('TypeError');
+    expect(romanErrorTag('raw string with text')).toBe('NonError');
+    expect(romanErrorTag(null)).toBe('NonError');
+    const orm = new Prisma.PrismaClientKnownRequestError('Unique failed on email maya@example.com', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    expect(romanErrorTag(orm)).toBe('DatabaseRequestError code=P2002');
+    const odd = Object.assign(new Error('x'), { name: 'Bad name: maya@example.com' });
+    expect(romanErrorTag(odd)).toBe('Error');
+    const sentry = romanSanitizedError('roman.context_failed', new Error('SELECT maya@example.com'));
+    expect(sentry.message).toBe('roman.context_failed: Error');
+    expect(sentry.name).toBe('RomanSanitizedError');
+  });
+});
+
+describe('FR1-651-2 Roman failure copy is written for the caller (a coach is never told to message "your coach")', () => {
+  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
+
+  it('over the daily cap: the coach gets the coach-audience copy on both checks', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '1';
+    const { prisma } = makePrisma({ spentTokens: { in: 0, out: 1_000_000 } });
+    const a = makeAnthropic('hello');
+    const svc = new RomanService(fakeOf(prisma), grantAllEgress(), a.handle);
+    await expect(svc.assertDailyCapacity(COACH)).rejects.toMatchObject({
+      response: { code: ROMAN_ERROR_CAPACITY_REACHED, message: ROMAN_CAPACITY_REACHED_MESSAGE_COACH },
+    });
+    await expect(
+      drain(svc.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { message: ROMAN_CAPACITY_REACHED_MESSAGE_COACH } });
+    // The client keeps the client copy.
+    await expect(svc.assertDailyCapacity(CLIENT)).rejects.toMatchObject({
+      response: { message: ROMAN_CAPACITY_REACHED_MESSAGE },
+    });
+    expect(a.client.messages.stream).not.toHaveBeenCalled();
+  });
+
+  it('ledger unreadable and model failure: coach-audience copy, same machine codes', async () => {
+    const down = new RomanService(fakeOf(makePrisma({ ledgerFails: true }).prisma), grantAllEgress(), makeAnthropic('x').handle);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    await expect(
+      drain(down.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { message: ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH } });
+    jest.restoreAllMocks();
+
+    const failing = new RomanService(
+      fakeOf(makePrisma().prisma),
+      grantAllEgress(),
+      makeAnthropic(Object.assign(new Error('boom'), { status: 500 })).handle,
+    );
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    await expect(
+      drain(failing.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({
+      response: { code: ROMAN_ERROR_MODEL_UNAVAILABLE, message: ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH },
+    });
+    jest.restoreAllMocks();
+  });
+
+  it('switched off and not configured: coach-audience copy', async () => {
+    const off = new RomanService(fakeOf(makePrisma().prisma), grantAllEgress(), makeAnthropic('x').handle);
+    process.env[FLAG] = 'false';
+    await expect(
+      drain(off.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { message: ROMAN_SWITCHED_OFF_MESSAGE_COACH } });
+    process.env[FLAG] = 'true';
+    const unconfigured = new RomanService(fakeOf(makePrisma().prisma), grantAllEgress(), null);
+    await expect(
+      drain(unconfigured.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { message: ROMAN_NOT_CONFIGURED_MESSAGE_COACH } });
+  });
+
+  it('rate-limit copy: client is pointed to the coach, coach to the rest of the app', () => {
+    expect(romanRateLimitMessage(5 * 3600, 'student')).toContain('Your coach is in Messages');
+    const coach = romanRateLimitMessage(5 * 3600, 'coach');
+    expect(coach).toBe(
+      'You have used your Roman conversations for today. Roman can talk again in about 5 hours. Your clients, messages and the rest of the app work as usual.',
+    );
+    expect(romanRateLimitMessage(600, 'owner')).not.toMatch(/your coach/i);
+  });
+
+  it('every coach-audience copy follows the copy rules and never says "your coach"', () => {
+    for (const t of [
+      ROMAN_CAPACITY_REACHED_MESSAGE_COACH,
+      ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH,
+      ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH,
+      ROMAN_NOT_CONFIGURED_MESSAGE_COACH,
+      ROMAN_SWITCHED_OFF_MESSAGE_COACH,
+      romanRateLimitMessage(7200, 'coach'),
+    ]) {
+      expect(t).not.toMatch(/!|\bwe\b|\bus\b|something went wrong|your coach/i);
+    }
+  });
+});
+
+describe('FR1-651-3 the single per-session exclamation is spent once, then never allowed again', () => {
+  it('a stored reply that uses the exclamation marks the session; a spent session gets none', async () => {
+    const first = makePrisma();
+    const svc = new RomanService(fakeOf(first.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
+    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'I hit my protein' }));
+    const roman1 = first.stored.filter((m) => m.role === 'roman');
+    expect(roman1[0].content).toBe('Nice work! Keep it up.');
+    const marks = first.prisma.romanSession.updateMany.mock.calls.map(
+      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+    );
+    expect(marks).toContain(true);
+
+    const second = makePrisma();
+    const svc2 = new RomanService(fakeOf(second.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
+    await drain(
+      svc2.streamAssistantTurn(CLIENT, fakeOf({ ...session(), exclamation_used: true }), { userMessage: 'again' }),
+    );
+    expect(second.stored.filter((m) => m.role === 'roman')[0].content).toBe('Nice work. Keep it up.');
+    const marks2 = second.prisma.romanSession.updateMany.mock.calls.map(
+      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+    );
+    expect(marks2).not.toContain(true);
+  });
+
+  it('a reply without an exclamation leaves the allowance unspent', async () => {
+    const p = makePrisma();
+    const svc = new RomanService(fakeOf(p.prisma), grantAllEgress(), makeAnthropic('Good. Keep going.').handle);
+    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' }));
+    const marks = p.prisma.romanSession.updateMany.mock.calls.map(
+      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+    );
+    expect(marks).not.toContain(true);
   });
 });

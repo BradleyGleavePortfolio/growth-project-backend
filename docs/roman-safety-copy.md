@@ -18,6 +18,11 @@ then gives the physician line. 911 and 988 routing is unchanged.
 
 > I am sorry you are carrying this, and I am glad you said it here rather than holding it alone. Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer. If you are in immediate danger, call 911. If you can, let someone you trust know where you are so they can sit with you. You matter, and talking to a person right now is the right next step.
 
+These two templates cost nothing (no model call, no spend), so a crisis
+message is answered even when the caller has used every Roman turn (429) or
+the daily spend cap is reached (503 `ROMAN_CAPACITY_REACHED`). Box-2 AI
+consent is checked before them unchanged.
+
 ## Router hints (appended to SESSION STATE; the model composes the reply)
 
 **medical_scope**: stay within general fitness and nutrition; never interpret,
