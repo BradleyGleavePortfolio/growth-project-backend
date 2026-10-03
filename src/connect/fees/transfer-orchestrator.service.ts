@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ConnectTransfer } from '@prisma/client';
+import type { ConnectTransfer, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import {
   StripeConnectApiError,
@@ -186,9 +186,19 @@ export class TransferOrchestratorService {
 
   // Reverse a posted transfer (partial or full). Used by the refund
   // webhook handler when a payment is refunded.
+  // B-641-7: a caller that reverses on behalf of one refund passes
+  //   idempotency_key  a key scoped to that refund, so every racer and every
+  //                    retry sends the SAME Stripe request (Stripe returns the
+  //                    first reversal instead of making a second one), and
+  //   claim            run inside the local-record transaction; the local
+  //                    reversal is recorded only when it returns true, so a
+  //                    racer that also reached Stripe records nothing.
+  // Without them the legacy amount-scoped key and unconditional record apply.
   async reverse(args: {
     transfer_row_id: string;
     amount_cents?: number; // omit = full reversal
+    idempotency_key?: string;
+    claim?: (tx: Prisma.TransactionClient) => Promise<boolean>;
   }): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
@@ -198,16 +208,35 @@ export class TransferOrchestratorService {
     }
     const amount = args.amount_cents ?? row.amount_cents - row.reversed_amount_cents;
     if (amount <= 0) return row;
-    const idempotencyKey = `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
+    const idempotencyKey =
+      args.idempotency_key ?? `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
     await this.stripe.reverseTransfer({
       transfer_id: row.stripe_transfer_id,
       amount,
       metadata: { tgp_purchase_id: row.purchase_id },
       idempotencyKey,
     });
-    const newReversed = row.reversed_amount_cents + amount;
+    const claim = args.claim;
+    if (!claim) return this.recordReversal(this.prisma, row.id, amount);
+    return this.prisma.$transaction(async (tx) => {
+      if (!(await claim(tx))) {
+        return tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+      }
+      return this.recordReversal(tx, row.id, amount);
+    });
+  }
+
+  // Local half of a reversal. Re-reads the row so a concurrent reversal of a
+  // different refund is added to, never overwritten.
+  private async recordReversal(
+    db: Prisma.TransactionClient,
+    rowId: string,
+    amount: number,
+  ): Promise<ConnectTransfer> {
+    const row = await db.connectTransfer.findUniqueOrThrow({ where: { id: rowId } });
+    const newReversed = Math.min(row.amount_cents, row.reversed_amount_cents + amount);
     const fullyReversed = newReversed >= row.amount_cents;
-    const updated = await this.prisma.connectTransfer.update({
+    const updated = await db.connectTransfer.update({
       where: { id: row.id },
       data: {
         status: fullyReversed ? 'reversed' : row.status,
@@ -216,11 +245,14 @@ export class TransferOrchestratorService {
       },
     });
     if (row.ledger_entry_id) {
-      await this.ledger.applyReversal({
-        entry_id: row.ledger_entry_id,
-        reversed_cents: amount,
-        stripe_transfer_id: row.stripe_transfer_id,
-      });
+      await this.ledger.applyReversal(
+        {
+          entry_id: row.ledger_entry_id,
+          reversed_cents: amount,
+          stripe_transfer_id: row.stripe_transfer_id,
+        },
+        db,
+      );
     }
     return updated;
   }

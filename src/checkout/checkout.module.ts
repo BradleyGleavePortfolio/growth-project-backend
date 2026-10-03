@@ -18,6 +18,7 @@ import {
   CoachPaymentOpsController,
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { RefundTransferReversalScheduler } from './refund-transfer-reversal.scheduler';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
 
@@ -82,6 +83,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     PurchaseSplitHandlerService,
     DunningService,
     RefundDisputeHandlerService,
+    RefundTransferReversalScheduler,
     AdminAnalyticsService,
   ],
   exports: [
