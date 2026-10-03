@@ -687,19 +687,38 @@ export class RefundDisputeHandlerService {
 
     let retried = 0;
     let reversed = 0;
-    let cursor: string | undefined;
+    // Keyset paging on (created_at, id), not a Prisma cursor: a reversed row
+    // leaves the owed set, so a cursor on it points outside the filter (the
+    // page came back empty here, and with skip: 1 Postgres would drop a real
+    // row). Rows that fail stay owed but sit behind the key, so one run never
+    // retries the same row twice.
+    let after: { created_at: Date; id: string } | null = null;
     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
+      const keyset = after
+        ? [
+            {
+              OR: [
+                { created_at: { gt: after.created_at } },
+                { created_at: after.created_at, id: { gt: after.id } },
+              ],
+            },
+          ]
+        : [];
       const rows = await this.prisma.chargeRefund.findMany({
         where: {
           ...owed,
-          OR: [
-            { transfer_reversal_first_attempt_at: null },
-            { transfer_reversal_first_attempt_at: { gte: cutoff } },
+          AND: [
+            {
+              OR: [
+                { transfer_reversal_first_attempt_at: null },
+                { transfer_reversal_first_attempt_at: { gte: cutoff } },
+              ],
+            },
+            ...keyset,
           ],
         },
         orderBy: order,
         take: limit,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       });
       for (const row of rows) {
         retried++;
@@ -713,7 +732,8 @@ export class RefundDisputeHandlerService {
         if (outcome === 'needs_review') needsReview++;
       }
       if (rows.length < limit) break;
-      cursor = rows[rows.length - 1].id;
+      const last = rows[rows.length - 1];
+      after = { created_at: last.created_at, id: last.id };
     }
 
     const inReview = await this.prisma.chargeRefund.count({

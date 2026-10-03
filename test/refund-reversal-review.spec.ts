@@ -147,4 +147,31 @@ describe('B-641-8 — expired rows never starve fresh recoverable refunds', () =
     const out = await h.svc.retryPendingTransferReversals(new Date(), 50);
     expect(out).toMatchObject({ retried: 120, reversed: 120, needs_review: 0 });
   });
+
+  it('pages past rows that leave the owed set and rows that stay owed, each retried once per run', async () => {
+    // Every third Stripe call fails, so a page mixes rows that leave the set
+    // (reversed) with rows that stay owed (pending). A cursor on a row that
+    // left the filter returned an empty page at 183ed462; keyset paging on
+    // (created_at, id) reaches all 120 and never retries a row twice.
+    const h = harness();
+    const at = new Date(Date.now() - HOUR);
+    for (let i = 0; i < 120; i++) {
+      const pid = `p-m-${String(i).padStart(3, '0')}`;
+      seedPurchase(h.db, pid, at);
+      h.db.state.chargeRefund.push(
+        refundRow(`r-m-${String(i).padStart(3, '0')}`, pid, new Date(at.getTime() + i)),
+      );
+    }
+    const real = h.reverseTransfer.getMockImplementation();
+    h.reverseTransfer.mockImplementation(async (args) => {
+      const n = Number(args.idempotencyKey.slice(-3));
+      if (n % 3 === 2) throw Object.assign(new Error('Stripe unavailable'), { code: 'api_error' });
+      return (real as NonNullable<typeof real>)(args);
+    });
+    const out = await h.svc.retryPendingTransferReversals(new Date(), 50);
+    expect(out).toMatchObject({ retried: 120, reversed: 80, needs_review: 0 });
+    const keys = h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey);
+    expect(keys).toHaveLength(120);
+    expect(new Set(keys).size).toBe(120);
+  });
 });
