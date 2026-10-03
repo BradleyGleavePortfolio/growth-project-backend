@@ -83,6 +83,21 @@ export class AssignableAssetResolverRegistry {
     return this.resolve(assetType).materialise(input);
   }
 
+  /**
+   * S-MWB Programs (B-640-4): should the inline fan-out leave this due-now drop
+   * for the drip dispatcher instead of materialising it in the shared
+   * transaction? False when no registered resolver handles the type or the
+   * resolver has no opinion (every pre-existing asset type).
+   */
+  async shouldDeferInline(
+    assetType: string,
+    input: AssignableAssetMaterialiseInput,
+  ): Promise<boolean> {
+    const resolver = this.resolvers.find((r) => r.canHandle(assetType));
+    if (!resolver || !resolver.deferInline) return false;
+    return resolver.deferInline(input);
+  }
+
   /** Exposed for tests + ops diagnostics. */
   list(): ReadonlyArray<AssignableAssetResolver> {
     return this.resolvers;

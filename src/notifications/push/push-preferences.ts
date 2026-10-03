@@ -36,6 +36,8 @@ export function notificationPrefsPrefix(kind: string): string {
   // defaults are FALSE, silently short-circuiting every in-app row
   // write — the PR-10 R1 P2 fix.
   if (kind.startsWith('drip_released')) return 'drip_released';
+  // C05 item 7 — WORKOUT_REMINDER routes to workout_reminder_* (default ON).
+  if (kind.startsWith('workout_reminder')) return 'workout_reminder';
   // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
   // coach_new_purchase_* prefs columns (migration
   // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp

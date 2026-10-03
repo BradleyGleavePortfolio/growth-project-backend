@@ -270,6 +270,16 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   nudge_inactive_inapp?: boolean;
+
+  // ── C05 item 7: workout reminders (default on) ────────────────────────────
+
+  @IsOptional()
+  @IsBoolean()
+  workout_reminder_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  workout_reminder_inapp?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────

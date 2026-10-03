@@ -5,8 +5,10 @@
  *     the acting user's HEAD COACH via SubCoachScopeService.getHeadCoachIdForSubCoach
  *     and compare it to WorkoutPlan.coach_id (NOT route the head-coach FK through
  *     assertCanAccessClient, which only matches assigned STUDENT ids). This proves:
- *       - an in-team sub-coach CAN autosave AND undo a plan owned by their head
- *         coach (the regression the old gate caused — a valid sub-coach was denied),
+ *       - an in-team sub-coach CAN autosave AND undo a day of a program they made
+ *         in their head coach's tenant (the regression the old gate caused — a
+ *         valid sub-coach was denied); since OR-112-18 (S-MWB-4) they can NOT
+ *         edit the head coach's own standalone plan,
  *       - a sub-coach on a DIFFERENT head coach's team is denied (403),
  *       - a foreign head coach is denied (403),
  *       - a STUDENT principal is denied (403).
@@ -385,6 +387,7 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
     await prisma.workoutPlan.deleteMany({});
+    await prisma.workoutProgram.deleteMany({ where: { coach_id: HEAD_COACH_ID } });
     await prisma.user.deleteMany({
       where: {
         id: {
@@ -516,9 +519,54 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
   const revisionCount = (planId: string) =>
     prisma.workoutPlanRevision.count({ where: { workout_plan_id: planId } });
 
+  /**
+   * OR-112-18 (S-MWB-4): a team sub-coach edits a plan of their head coach's
+   * tenant only where the Programs library lets them: here, a day of a
+   * library program the sub-coach made (tenant = the head coach).
+   */
+  const makeSubCoachProgramDay = async () => {
+    const program = await prisma.workoutProgram.create({
+      data: {
+        coach_id: HEAD_COACH_ID,
+        owner_user_id: IN_TEAM_SUBCOACH_ID,
+        name: 'Sub-coach strength block',
+        weeks: 1,
+        days_per_week: 1,
+        is_template: true,
+      },
+    });
+    await prisma.workoutPlan.update({
+      where: { id: PLAN_ID },
+      data: { program_id: program.id, week_index: 0, day_index: 0, is_template: true },
+    });
+  };
+
   // ── P1.1: sub-coach authorization ─────────────────────────────────────────
 
-  it('P1.1 an IN-TEAM sub-coach CAN autosave a plan owned by their head coach', async () => {
+  it("OR-112-18 an IN-TEAM sub-coach can NOT autosave the head coach's standalone plan", async () => {
+    const before = await revisionCount(PLAN_ID);
+    const err = await autosave
+      .applyAutosave(
+        PLAN_ID,
+        { userId: IN_TEAM_SUBCOACH_ID },
+        {
+          base_revision_index: 0,
+          lock_token: await tokenFor(PLAN_ID),
+          ops: [insertOp('squat')],
+          cause: 'manual_edit',
+        },
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect((err as ForbiddenException).getResponse()).toMatchObject({ code: 'plan_not_yours' });
+    expect(await revisionCount(PLAN_ID)).toBe(before);
+  }, 60_000);
+
+  it('P1.1 an IN-TEAM sub-coach CAN autosave a day of their own program in the head coach tenant', async () => {
+    await makeSubCoachProgramDay();
     const res = await autosave.applyAutosave(
       PLAN_ID,
       { userId: IN_TEAM_SUBCOACH_ID },
@@ -539,11 +587,12 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
     expect(head.author_kind).toBe('sub_coach');
   }, 60_000);
 
-  it('P1.1 an IN-TEAM sub-coach CAN undo a plan owned by their head coach', async () => {
-    // Owner advances head 0 -> 1 first so there is an earlier index to restore.
+  it('P1.1 an IN-TEAM sub-coach CAN undo a day of their own program in the head coach tenant', async () => {
+    await makeSubCoachProgramDay();
+    // The sub-coach advances head 0 -> 1 first so there is an earlier index to restore.
     await autosave.applyAutosave(
       PLAN_ID,
-      { userId: HEAD_COACH_ID },
+      { userId: IN_TEAM_SUBCOACH_ID },
       {
         base_revision_index: 0,
         lock_token: await tokenFor(PLAN_ID),
