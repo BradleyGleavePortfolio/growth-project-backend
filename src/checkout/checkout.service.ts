@@ -83,6 +83,22 @@ export interface BuyerDropView {
 // <50 in practice. 500 is well above any realistic package.
 const DROP_LIST_HARD_CAP = 500;
 
+// B-SECRETS-3 — the answer to a payment-intent request whose idempotency key
+// belongs to a payment that already finished.
+const PAID_STATUSES = new Set(['paid', 'active', 'past_due', 'trialing']);
+export function finishedPaymentReplay(status: string): ConflictException {
+  if (PAID_STATUSES.has(status)) {
+    return new ConflictException({
+      error: 'PAYMENT_ALREADY_COMPLETE',
+      message: 'This payment is already complete. Your package is ready in your account.',
+    });
+  }
+  return new ConflictException({
+    error: 'PAYMENT_CHECKOUT_CLOSED',
+    message: 'This checkout has closed. Start again from the package page to buy it.',
+  });
+}
+
 @Injectable()
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
@@ -517,6 +533,12 @@ export class CheckoutService {
         customer_id: existing.stripe_customer_id ?? '',
         publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
       };
+    }
+    // B-SECRETS-3: a finished payment's credentials are erased (paid,
+    // expired or ended). A replay of its key gets a specific answer instead
+    // of waiting on a reservation that will never publish a secret.
+    if (existing && existing.client_user_id === client.id && existing.status !== 'pending') {
+      throw finishedPaymentReplay(existing.status);
     }
 
     const coach = await this.prisma.user.findUnique({

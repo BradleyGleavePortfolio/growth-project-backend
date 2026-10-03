@@ -12,6 +12,7 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
+import { CLEARED_PAYMENT_SECRETS } from './admin-purchase.select';
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -701,7 +702,11 @@ export class CheckoutWebhookHandlerService {
     }
     await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
-      data: { status: 'expired', entitlement_active: false },
+      data: {
+        status: 'expired',
+        entitlement_active: false,
+        ...CLEARED_PAYMENT_SECRETS,
+      },
     });
     return { claimed: true, purchase_id: purchase.id };
   }
@@ -848,6 +853,7 @@ export class CheckoutWebhookHandlerService {
         status: 'canceled',
         entitlement_active: false,
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
+        ...CLEARED_PAYMENT_SECRETS,
       },
     });
     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
@@ -906,6 +912,9 @@ export class CheckoutWebhookHandlerService {
         status: 'paid',
         entitlement_active: true,
         last_error: null,
+        // B-SECRETS-3: the PaymentIntent is paid; its cached client
+        // credentials can never be needed again, so they are erased.
+        ...CLEARED_PAYMENT_SECRETS,
       },
     });
 

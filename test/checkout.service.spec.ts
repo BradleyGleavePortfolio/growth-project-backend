@@ -826,6 +826,43 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     expect(prisma._purchases).toHaveLength(1);
   });
 
+  // B-SECRETS-3: the payment finished and its cached credentials were erased.
+  // A replay of the same key is told what happened, never sent to wait on a
+  // reservation (PAYMENT_IN_PROGRESS) and never charged again.
+  it.each([
+    ['paid', 'PAYMENT_ALREADY_COMPLETE', /already complete/],
+    ['expired', 'PAYMENT_CHECKOUT_CLOSED', /has closed/],
+  ])('B-SECRETS-3: a replay after the payment is %s answers %s', async (status, code, copy) => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-done', email: 'c@x.com', name: 'Done', coach_id: 'coach-x' });
+    const key = '55555555-5555-4555-8555-555555555555';
+    await svc.createPaymentIntentForClient('client-done', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    // The webhook finished the payment and erased the credentials.
+    Object.assign(prisma._purchases[0], {
+      status,
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+    });
+    const err = await svc
+      .createPaymentIntentForClient('client-done', { package_id: 'pkg-x', idempotency_key: key })
+      .then(
+        () => null,
+        (e: { getStatus: () => number; getResponse: () => { error: string; message: string } }) =>
+          e,
+      );
+    expect(err).not.toBeNull();
+    expect(err!.getStatus()).toBe(409);
+    expect(err!.getResponse().error).toBe(code);
+    expect(err!.getResponse().message).toMatch(copy);
+    expect(err!.getResponse().message).not.toMatch(/[!]|\bwe\b/i);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(prisma._purchases).toHaveLength(1);
+  });
+
   it('rejects missing idempotency_key with 400', async () => {
     const { svc, prisma } = makeService();
     seedSoloCoachFixture(prisma);

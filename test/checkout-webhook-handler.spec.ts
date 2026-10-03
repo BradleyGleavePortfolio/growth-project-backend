@@ -931,3 +931,60 @@ describe('CheckoutWebhookHandlerService', () => {
     expect(result.claimed).toBe(false);
   });
 });
+
+// B-SECRETS-3 (#646 C-646-2 Opus): a finished PaymentSheet payment's cached
+// client credentials are erased at rest; a failed one keeps them so the
+// client can retry the same PaymentIntent.
+type HandleTx = Parameters<CheckoutWebhookHandlerService['handle']>[1];
+function txFixture(prisma: object): HandleTx {
+  return prisma as HandleTx;
+}
+
+describe('B-SECRETS-3 cached payment credentials are cleared on terminal states', () => {
+  const secrets = {
+    stripe_client_secret: 'pi_sec_secret_canary',
+    stripe_ephemeral_key: 'ek_test_canary',
+  };
+
+  it('payment_intent.succeeded erases the client secret and the ephemeral key', async () => {
+    const { svc, prisma } = makeHandlerWithSplits();
+    prisma._packages.push({ id: 'pkg-s1', billing_type: 'one_time' });
+    prisma._purchases.push({
+      id: 'cp-s1',
+      package_id: 'pkg-s1',
+      stripe_payment_intent_id: 'pi_s1',
+      status: 'pending',
+      entitlement_active: false,
+      created_at: new Date(),
+      ...secrets,
+    });
+    await svc.handle(
+      { id: 'evt_s1', type: 'payment_intent.succeeded', data: { object: { id: 'pi_s1' } } },
+      txFixture(prisma),
+      { chargeIdByPurchaseId: { 'cp-s1': 'ch_s1' } },
+    );
+    expect(prisma._purchases[0].status).toBe('paid');
+    expect(prisma._purchases[0].stripe_client_secret).toBeNull();
+    expect(prisma._purchases[0].stripe_ephemeral_key).toBeNull();
+  });
+
+  it('checkout.session.expired erases them too', async () => {
+    const { svc, prisma } = makeHandler();
+    prisma._purchases.push({
+      id: 'cp-s2',
+      stripe_checkout_session_id: 'cs_s2',
+      status: 'pending',
+      entitlement_active: false,
+      created_at: new Date(),
+      ...secrets,
+    });
+    await svc.handle({
+      id: 'evt_s2',
+      type: 'checkout.session.expired',
+      data: { object: { id: 'cs_s2' } },
+    });
+    expect(prisma._purchases[0].status).toBe('expired');
+    expect(prisma._purchases[0].stripe_client_secret).toBeNull();
+    expect(prisma._purchases[0].stripe_ephemeral_key).toBeNull();
+  });
+});
