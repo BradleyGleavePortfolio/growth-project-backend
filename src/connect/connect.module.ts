@@ -1,6 +1,7 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { ConnectController } from './connect.controller';
+import { ConnectOnboardingReturnController } from './connect-onboarding-return.controller';
 import { ConnectModuleState } from './connect.module-state';
 import { ConnectService } from './connect.service';
 import { FeePolicyService } from './fees/fee-policy.service';
@@ -25,7 +26,7 @@ import {
 // crash the process — the rest of the backend (SaaS billing, etc.) must
 // still boot.
 @Module({
-  controllers: [ConnectController],
+  controllers: [ConnectController, ConnectOnboardingReturnController],
   providers: [
     ConnectService,
     StripeConnectApiService,

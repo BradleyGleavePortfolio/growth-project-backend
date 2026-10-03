@@ -95,6 +95,18 @@ describe('CoachConnectService.getStatus', () => {
       account_id: null,
       last_onboarded_at: null,
       requirements_due: [],
+      // S-COACH additive fields.
+      state: 'not_started',
+      details_submitted: false,
+      disabled_reason: null,
+      action_required: false,
+      requirements: {
+        currently_due: [],
+        past_due: [],
+        eventually_due: [],
+        pending_verification: [],
+        current_deadline: null,
+      },
     });
   });
 
