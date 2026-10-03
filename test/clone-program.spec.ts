@@ -182,6 +182,30 @@ describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () =
     );
   });
 
+  it('S-MWB-2: the duplicate probe is keyed on the client, and the clone records client_id (a second client of the same master is not a false 409)', async () => {
+    const tx = makeTx();
+    prisma.$transaction.mockImplementation(
+      async (fn: (t: CloneTxMock) => unknown) => fn(tx),
+    );
+
+    await service.cloneProgramToClient(MASTER_ID, CLIENT_ID, COACH_ID);
+
+    expect(tx.workoutProgram.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          cloned_from_id: MASTER_ID,
+          client_id: CLIENT_ID,
+          is_template: false,
+        }),
+      }),
+    );
+    expect(tx.workoutProgram.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ client_id: CLIENT_ID, cloned_from_id: MASTER_ID }),
+      }),
+    );
+  });
+
   it('copies by value into a fresh non-template program with its own v1 revision', async () => {
     const tx = makeTx();
     prisma.$transaction.mockImplementation(
