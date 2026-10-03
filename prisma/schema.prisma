@@ -2410,10 +2410,65 @@ model ClientWorkoutAssignment {
   // legacy assignments have none and fall back to the live workout_plan join.
   snapshot ClientWorkoutAssignmentSnapshot? @relation()
 
+  // Roman approve-to-adjust proposals targeting this workout.
+  adjustment_proposals WorkoutAdjustmentProposal[]
+
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
   @@index([assigned_by_coach_id, approved_by_coach_at])
+}
+
+// Roman approve-to-adjust (20270227000000). A deterministic recovery rule
+// (src/roman-adjust/roman-adjust.rules.ts) proposes a change to ONE client's
+// next workout; the coach approves, edits or dismisses it. The change is
+// written to that assignment's snapshot only, never the shared plan.
+// status: pending | approved | edited | dismissed | undone | expired | withdrawn
+// RLS: service_role all; the proposing coach reads own rows; no client,
+// owner or anon access. Kill switch FEATURE_ROMAN_ADJUST_ENABLED (default off).
+model WorkoutAdjustmentProposal {
+  id                  String                   @id @default(uuid())
+  coach_id            String
+  client_id           String
+  assignment_id       String
+  assignment          ClientWorkoutAssignment  @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  rule_key            String
+  rule_version        Int
+  status              String                   @default("pending")
+  severity            String
+  signals             Json
+  proposed_change     Json
+  applied_change      Json?
+  base_fingerprint    String
+  applied_fingerprint String?
+  before_exercises    Json?
+  roman_text          String
+  decided_by_id       String?
+  decided_at          DateTime?
+  dismiss_reason      String?
+  undo_until          DateTime?
+  created_at          DateTime                 @default(now())
+  updated_at          DateTime                 @updatedAt
+  events              WorkoutAdjustmentEvent[]
+
+  @@unique([assignment_id, rule_key])
+  @@index([coach_id, status, created_at])
+  @@index([client_id, created_at])
+}
+
+// Append-only audit trail of every proposal state change (trigger rejects
+// UPDATE). action: proposed | approved | edited | dismissed | undone |
+// expired | withdrawn | apply_refused
+model WorkoutAdjustmentEvent {
+  id          String                    @id @default(uuid())
+  proposal_id String
+  proposal    WorkoutAdjustmentProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+  actor_id    String?
+  action      String
+  detail      Json?
+  created_at  DateTime                  @default(now())
+
+  @@index([proposal_id, created_at])
 }
 
 // Generic idempotency ledger for workout-builder coach-side mutations.
