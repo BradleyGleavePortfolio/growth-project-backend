@@ -74,8 +74,8 @@ describe('erasure manifest: S-MWB program copies (#640)', () => {
       { model: 'workoutProgram', op: 'deleteMany', where: { client_id: USER, is_template: false } },
     ]);
     // Masters are coach content: no delete or scrub of a template ever runs.
-    expect(
-      calls.some((c) => c.model === 'workoutProgram' && c.where.is_template === true),
-    ).toBe(false);
+    expect(calls.some((c) => c.model === 'workoutProgram' && c.where.is_template === true)).toBe(
+      false,
+    );
   });
 });
