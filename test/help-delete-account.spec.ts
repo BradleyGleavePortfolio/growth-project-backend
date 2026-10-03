@@ -233,11 +233,11 @@ describe('/help/delete-account content', () => {
     );
     expect(text).toContain('If you coach: your clients are not deleted.');
     expect(text).toContain(
-      'no copy is kept more than six months after a confirmed deletion request',
+      'database backups and copies are never kept more than six months after a confirmed deletion request',
     );
     // Same six-month backup limit the Privacy Policy publishes.
     expect(visibleText(renderTrustPage('privacy'))).toContain(
-      'never kept beyond six months after a confirmed deletion request',
+      'database backups and copies are never kept more than six months after a confirmed deletion request',
     );
   });
 

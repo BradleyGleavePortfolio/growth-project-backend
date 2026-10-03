@@ -79,9 +79,9 @@ describe('#611 restore runbook split (B-611-5, B-611-6)', () => {
       expect(text).not.toMatch(/\brestor(e|es|ed|ing)\b/i);
     }
     const privacy = visibleText(renderTrustPage('privacy'));
-    expect(privacy).toMatch(/never kept beyond six months after a confirmed deletion request/);
+    expect(privacy).toMatch(/never kept more than six months after a confirmed deletion request/);
     const health = visibleText(renderTrustPage('consumer-health'));
-    expect(health).toMatch(/never more than six months after we verify your request/);
+    expect(health).toMatch(/never kept more than six months after a confirmed deletion request/);
     // The age-out facts that make that wording true stay in the document.
     expect(DOC).toMatch(/### 1\.1 Our own database dumps/);
     expect(DOC).toMatch(/Never keep any dump for more than 90 days/);

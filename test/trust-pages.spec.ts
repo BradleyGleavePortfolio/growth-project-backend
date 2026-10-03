@@ -252,7 +252,7 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
     expect(text).toMatch(/extend that once by up to 45 more days/);
     expect(text).toMatch(/free up to twice a year/);
     expect(text).toMatch(/never need to create a new account/);
-    expect(text).toMatch(/never more than six months after we verify your request/);
+    expect(text).toMatch(/never kept more than six months after a confirmed deletion request/);
     expect(text).toMatch(/tell every service provider we shared it with/);
     expect(text).toMatch(/Appeals/);
     expect(text).toMatch(/in writing .* within 45 days of receiving your appeal/);

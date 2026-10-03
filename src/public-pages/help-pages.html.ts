@@ -716,7 +716,7 @@ function deleteAccountContent(): HelpPageContent {
           'Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details.',
           'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
           'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
-          'Backups: our providers overwrite backups on a rolling schedule, and no copy is kept more than six months after a confirmed deletion request.',
+          'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
         ],
       },

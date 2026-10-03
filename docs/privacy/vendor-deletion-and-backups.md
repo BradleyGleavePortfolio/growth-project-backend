@@ -10,7 +10,7 @@ points to the separate T4 follow-up (backend issue #662).
 The published promises this document has to make true:
 
 1. "We tell our service providers about deletion requests so they delete their copies too." (Privacy Policy, "Deleting your account")
-2. "Backups — overwritten on our providers' rolling schedule, and never kept beyond six months after a confirmed deletion request." (Privacy Policy retention list; same limit on `/help/delete-account` and in the consumer health policy, RCW 19.373.040)
+2. "Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days." (Privacy Policy retention list; same limits on `/help/delete-account` and in the consumer health policy, RCW 19.373.040. Plan-agnostic wording, owner 2026-10-03, O-611-4.)
 3. In-app deletion: 14-day cancellable grace period, then erasure within one day (`DELETION_GRACE_DAYS=14`, nightly `DELETION_FINALIZE_CRON` 03:00 UTC). By email: reply within 30 days; consumer health requests answered within 45 days.
 4. Roman conversations: "kept until you delete them or your account" (owner 2026-10-01 20:32, OR-110-1).
 
@@ -66,8 +66,9 @@ A client's own Roman chat delete erases messages immediately (`DELETE /roman/ses
 
 Supabase manages these backups. We cannot delete one person from them; they **age out** at the end of the window. With any plan above, the oldest database copy of a deleted person is gone at most 30 days after erasure, well inside the six-month promise.
 
+**Owner (2026-10-03, O-611-4):** production is on the Supabase **Free** plan today. The public pages therefore make no plan-specific backup claim (no "7-day backups"): they promise only that database backups and copies are never kept more than six months after a confirmed deletion request, and the §1.1 dump limits. If the plan changes, record the new window in §9; any window up to six months keeps the promise.
+
 **UNVERIFIED (owner):**
-- The production project's plan, whether PITR is on, and the window. `docs/soc2/policies/business-continuity-plan.md` still has `<<SUPABASE_PLAN>>` / `<<PITR_ENABLED>>` / `<<BACKUP_RETENTION_DAYS>>` placeholders. Check them in Dashboard > Project Settings > Database > Backups, and record them in the table in §9.
 - Whether a Free-plan project has any automatic backup. The vendor page states no retention for it.
 - How Supabase Storage keeps redundant or replicated copies of deleted objects internally. The vendor page does not say.
 
@@ -77,7 +78,7 @@ Supabase manages these backups. We cannot delete one person from them; they **ag
 
 **Fact (repo).** `docs/deploy-runbook.md` §2 step 3 / §3 tells the operator to `pg_dump` a reference copy before any deploy with a migration, and store it "somewhere durable (1Password vault attachment, S3 bucket, etc.)". The business continuity plan template also proposes a weekly manual export. These are full copies of personal data. **Nothing ages them out automatically.**
 
-**Procedure (PROPOSED, owner to adopt before publication):**
+**Procedure (ADOPTED by the owner 2026-10-03, O-611-4; the 30-day and 90-day limits are published on the policies):**
 - Every dump is named with its date and stored only in one owner-controlled location.
 - Delete a dump 30 days after the deploy it was taken for is verified.
 - Never keep any dump for more than 90 days. That bound alone keeps the six-month promise, even if a dump is taken the day before a deletion request.
@@ -121,12 +122,12 @@ The public pages promise no restore procedure. They promise that deleted data le
 
 **Deleted by:** Anthropic's own 30-day automatic deletion. There is no per-person delete call for API traffic, and we do not use the Files API, batches or stored sessions for client data (`src/ai-egress/`, `src/roman/`).
 
+**Owner (2026-10-03, O-611-2):** TGP has **no** ZDR agreement with Anthropic. Both policies say: "Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer."
+
 **UNVERIFIED (owner):**
-- Whether TGP has a ZDR agreement. Nothing in this repository documents one, and `docs/ai-gateway.md` only requires provider-level opt-out of training.
-- Whether the models in use are ZDR-eligible (Roman: `ROMAN_MODEL_PHASE_1` = `claude-3-7-sonnet-20250219` in `src/roman/anthropic-client.provider.ts`; coach AI: `COACH_AI_MODEL` = `claude-sonnet-4-6` in `src/ai/coach/coach-ai.constants.ts`).
+- Whether the models in use are ZDR-eligible (only relevant if a ZDR agreement is made later) (Roman: `ROMAN_MODEL_PHASE_1` = `claude-3-7-sonnet-20250219` in `src/roman/anthropic-client.provider.ts`; coach AI: `COACH_AI_MODEL` = `claude-sonnet-4-6` in `src/ai/coach/coach-ai.constants.ts`).
 - How the Usage Policy flag exception (up to 2 years) fits with the policy's statement that providers delete their copies.
 
-Without ZDR, the honest statement is "Anthropic deletes API inputs and outputs within 30 days, except where its usage policy or the law requires longer". The owner decides whether the Privacy Policy needs that sentence.
 
 **Procedure:** none per request beyond the deletion run. Anthropic's copies age out within 30 days.
 
@@ -153,7 +154,7 @@ Without ZDR, the honest statement is "Anthropic deletes API inputs and outputs w
 
 Stripe keeps the payment and tax records the law requires. The policy already says this ("Payment and tax records held by Stripe … as long as the law requires").
 
-**UNVERIFIED (owner):** whether redaction jobs are available on the account. If they are not, delete the Customer (`DELETE /v1/customers/:id`) after the open items close, and record that Stripe keeps a deleted Customer retrievable for history.
+**Owner (2026-10-03, O-611-5):** Stripe redaction jobs are used for deletion requests; Stripe keeps the payment records the law requires. The Privacy Policy says so.
 
 ---
 
@@ -185,8 +186,7 @@ Events can include health details that appear in an error, as the policy says.
 
 **Procedure (owner, on an email deletion request that asks for it, or for a consumer health request):** in Sentry, search events by the user id and delete the matching issues or events. Otherwise let them age out.
 
-**UNVERIFIED (owner):**
-- the Sentry plan, and with it the retention period.
+**Owner (2026-10-03, O-611-5):** error reports are kept 90 days (Team). The Privacy Policy retention list says so.
 
 ---
 
@@ -198,7 +198,7 @@ Events can include health details that appear in an error, as the policy says.
 
 **Fact (repo, #608):** scheduled emails stop when the deletion completes.
 
-**Procedure:** none per request; copies age out within 30 days. **UNVERIFIED (owner):** the plan, and whether any contact list or audience in Resend holds the person (we do not create audiences in code; `src/email/`).
+**Procedure:** none per request; copies age out within 30 days. **Owner (2026-10-03, O-611-5):** email logs are kept 30 days; the Privacy Policy retention list says so. **UNVERIFIED (owner):** whether any contact list or audience in Resend holds the person (we do not create audiences in code; `src/email/`).
 
 ---
 
@@ -206,9 +206,9 @@ Events can include health details that appear in an error, as the policy says.
 
 | Provider | Holds | Deleted how, by whom, when | Status |
 |---|---|---|---|
-| PostHog (product analytics) | Events keyed by our user id (mobile `identify(user.id)`, server `distinctId` = user id; `src/analytics/`) | **Procedure (owner, within 30 days of the deletion finalizing):** delete the person in PostHog (Persons, or the persons API) with their events and recordings. [PostHog: controlling data storage](https://posthog.com/docs/privacy/data-storage): deletion runs asynchronously, and event data is cleared in off-peak runs. #608 does not call PostHog. | UNVERIFIED: plan retention; whether session recording is on |
+| PostHog (product analytics) | Events keyed by our user id (mobile `identify(user.id)`, server `distinctId` = user id; `src/analytics/`) | **Procedure (owner, within 30 days of the deletion finalizing):** delete the person in PostHog (Persons, or the persons API) with their events and recordings. [PostHog: controlling data storage](https://posthog.com/docs/privacy/data-storage): deletion runs asynchronously, and event data is cleared in off-peak runs. #608 does not call PostHog. | Owner (2026-10-03, O-611-5): product analytics on, session recording **off**; a deleted person is removed within 30 days of the deletion (published) |
 | Crisp (in-app support chat) | Whatever the person tells support, plus their contact | **Procedure (owner, within 30 days):** delete the contact and conversations in the Crisp inbox. [Crisp: how to delete a conversation](https://help.crisp.chat/en/article/how-to-delete-a-conversation-1g04h7j/): history is kept until deleted. | UNVERIFIED: whether the Crisp SDK is live in the production app build |
-| Mux (coach video media) | Video assets a coach uploaded | **Fact (repo, #608 `account-deletion.storage.ts`):** Mux assets are deleted by the deletion run. | **Open:** Mux is not in the Privacy Policy vendor list. The owner decides whether it is live; if so, add it to both policies (`src/public-pages/README.md` rule) |
+| Mux (coach video media) | Video assets a coach uploaded | **Fact (repo, #608 `account-deletion.storage.ts`):** Mux assets are deleted by the deletion run. | Owner (2026-10-03, O-611-3): Mux is **live**; named in both policies with what it receives (the video files coaches upload, no name, email or account details attached) |
 | Perplexity (milestone messages, if enabled) | Only the milestone type, no personal data (policy) | Nothing to delete | UNVERIFIED: flag state |
 | Apple / Google sign-in | Their own account link to TGP | Apple: token revocation by #608 when the key is set (§0). Google: the person removes TGP in their Google account; Supabase identity is removed by the deletion run | Apple key UNVERIFIED (not created) |
 | USDA FoodData Central, Open Food Facts | Search words only (policy) | Nothing to delete | n/a |
@@ -227,25 +227,25 @@ Events can include health details that appear in an error, as the policy says.
 
 | Item to record (owner) | Value | Checked on |
 |---|---|---|
-| Supabase plan / PITR on? / window | _unverified_ | |
+| Supabase plan / PITR on? / window | Free plan; no plan-specific claim published | 2026-10-03 (owner) |
 | Supabase log retention | _unverified_ | |
 | Fly log stream configured? | _unverified_ | |
-| Anthropic ZDR agreement? Models in use ZDR-eligible? | _unverified_ | |
-| Stripe redaction jobs available? | _unverified_ | |
-| Sentry plan (retention 30 or 90 days) | _unverified_ | |
-| Resend plan (30 days) | _unverified_ | |
-| PostHog plan / recordings on? | _unverified_ | |
+| Anthropic ZDR agreement? Models in use ZDR-eligible? | No ZDR; 30-day sentence published | 2026-10-03 (owner) |
+| Stripe redaction jobs available? | Yes, used for deletion requests | 2026-10-03 (owner) |
+| Sentry plan (retention 30 or 90 days) | 90 days | 2026-10-03 (owner) |
+| Resend plan (30 days) | 30 days | 2026-10-03 (owner) |
+| PostHog plan / recordings on? | Analytics on, recordings off, person removed within 30 days | 2026-10-03 (owner) |
 | Crisp live in production build? | _unverified_ | |
-| Mux live? Policy updated? | _unverified_ | |
+| Mux live? Policy updated? | Live; both policies name it | 2026-10-03 (owner) |
 | Apple Sign in key created (revocation live)? | _no (not created)_ | |
 
 ## 10. Does each promise hold?
 
 - **"Never kept beyond six months" (backups):** holds when four things are true:
-  - the Supabase window is at most 30 days (any plan in §1, once verified);
+  - any Supabase backup window on the plan in use is at most six months (Free plan today, §1);
   - §1.1 dumps follow the 90-day limit;
   - Sentry, Resend and Fly logs age out at 90, 30 and 7 days;
-  - Anthropic deletes within 30 days, except its Usage Policy and legal exceptions (owner to decide the wording, §3).
+  - Anthropic deletes within 30 days, except its Usage Policy and legal exceptions (published, §3).
 - **"We tell our service providers so they delete their copies":** holds for Supabase, Fly, Expo, Mux and Resend through the deletion run plus age-out. It needs the manual §4 (Stripe) and §8 (PostHog, Crisp) steps, done within 30 days and recorded in the §9 log.
 - **Roman conversations "kept until you delete them or your account":** holds through #635's client delete and #608's erasure manifest. Anthropic's copy ages out within 30 days (§3).
 - **Deleted data and AI withdrawals stay that way after a restore:** no restore procedure exists; any restore must meet the §1.2 requirement, built in [#662](https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/662).

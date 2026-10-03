@@ -32,7 +32,7 @@ export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-01';
+export const POLICY_LAST_REVIEWED = '2026-10-03';
 
 // Public paths of the two privacy documents. The mobile app links to the
 // same paths (growth-project-mobile src/config/env.ts), so keep them stable.
@@ -43,6 +43,12 @@ export const CONSUMER_HEALTH_POLICY_PATH = '/consumer-health-privacy';
 // for account and data deletion without installing the app). Linked from the
 // Privacy Policy, the /help nav and the shared policy footer.
 export const DELETE_ACCOUNT_HELP_PATH = '/help/delete-account';
+
+// O-611-6 (owner 2026-10-03): de-identified data under RCW 19.373.010
+// (reasonable measures, public commitment not to re-identify, recipients
+// bound to the same). Published on /privacy and /consumer-health-privacy.
+const DEIDENTIFIED_TEXT =
+  'After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same.';
 
 
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
@@ -174,6 +180,7 @@ function privacyContent(): TrustPageContent {
         paragraphs: [],
         closing: [
           'We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models.',
+          'Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission.',
         ],
       },
       {
@@ -212,10 +219,11 @@ function privacyContent(): TrustPageContent {
           'Stripe — card payments, invoices and coach payouts.',
           'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed.',
           'Perplexity — generic milestone messages, if enabled.',
-          'PostHog — product analytics.',
+          'PostHog — product analytics. Session recording is off.',
           'Sentry — crash and performance monitoring.',
           'Crisp — in-app support chat.',
           'Resend — account and notification emails.',
+          'Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached.',
           'Expo, with Apple and Google push services — delivery of push notifications.',
           'Apple and Google — Sign in with Apple and Google sign-in, if you choose them.',
           'Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them.',
@@ -236,21 +244,32 @@ function privacyContent(): TrustPageContent {
           'Food search results — 24 hours in our cache.',
           'Payment, invoice and tax records — as long as the law requires.',
           'Security and audit logs — as long as needed to protect the service and meet legal duties.',
-          'Backups — overwritten on our providers’ rolling schedule, and never kept beyond six months after a confirmed deletion request.',
+          'Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
+          'Error reports in Sentry — 90 days.',
+          'Email logs in Resend — 30 days.',
+          'Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion.',
+          'What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer.',
         ],
         paragraphs: [],
       },
       {
         heading: 'Deleting your account',
         paragraphs: [
+          'Your information is kept while your account is open. Deletion can be started in the app or by email.',
           'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded.',
-          `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too.`,
+          `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires.`,
         ],
         links: [
           {
             label: 'How to delete your account, with or without the app',
             href: DELETE_ACCOUNT_HELP_PATH,
           },
+        ],
+      },
+      {
+        heading: 'De-identified information',
+        paragraphs: [
+          DEIDENTIFIED_TEXT,
         ],
       },
       {
@@ -341,6 +360,7 @@ function consumerHealthContent(): TrustPageContent {
         paragraphs: [],
         closing: [
           'We use consumer health data only to provide the personal training you ask for, to provide Roman and your coach’s AI drafts after you agree, to keep the service safe and secure, and to meet legal duties. We do not use it for advertising or marketing, we do not sell it, and we do not use it to train AI models.',
+          'Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission.',
         ],
       },
       {
@@ -359,7 +379,7 @@ function consumerHealthContent(): TrustPageContent {
         bullets: [
           'Your coach, and any coach on their team assigned to you — your consultation and readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. Your Roman conversations are never shared with your coach.',
           'Other members of community spaces you join — only the health information you choose to post there.',
-          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts, and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you.',
+          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts, and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
       },
@@ -406,7 +426,8 @@ function consumerHealthContent(): TrustPageContent {
       {
         heading: 'Deletion',
         paragraphs: [
-          'When we delete your consumer health data we remove it from our live systems and tell every service provider we shared it with, so they delete their copies too. Copies in backups are deleted as the backups are overwritten, and never more than six months after we verify your request. Deleting your account in the app starts a 14-day grace period you can cancel; after that, deletion is permanent.',
+          'When we delete your consumer health data we remove it from our live systems and tell every service provider we shared it with, so they delete their copies too. Database backups and copies are never kept more than six months after a confirmed deletion request; copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account in the app starts a 14-day grace period you can cancel; after that, deletion is permanent.',
+          DEIDENTIFIED_TEXT,
         ],
       },
       {

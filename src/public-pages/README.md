@@ -146,7 +146,7 @@ public pages until it is built and audited.
   app and backend ship. Features behind a default-off flag are written
   as "if enabled". Every vendor named is one the code calls (Supabase,
   Fly.io, Stripe, Anthropic, Perplexity, PostHog, Sentry, Crisp, Resend,
-  Expo push, Apple / Google sign-in, Apple Health / Health Connect,
+  Mux, Expo push, Apple / Google sign-in, Apple Health / Health Connect,
   USDA FoodData Central, Open Food Facts). Adding a vendor that receives
   personal data means updating both pages.
 - `/consumer-health-privacy` follows RCW 19.373.020 (categories,
