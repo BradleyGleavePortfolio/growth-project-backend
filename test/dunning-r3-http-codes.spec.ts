@@ -137,7 +137,7 @@ describe('S-DUNNING-R3 billing routes over real HTTP (production filter)', () =>
     expect(r1.status).toBe(503);
     expect(r1.body.code).toBe('PAYMENT_RESULT_UNKNOWN');
     expect(String(r1.body.message)).toContain(
-      'could not confirm whether your payment went through',
+      'Your payment is not confirmed yet',
     );
     expect(String(r1.body.message)).not.toMatch(/nothing (changed|was charged)/i);
 
