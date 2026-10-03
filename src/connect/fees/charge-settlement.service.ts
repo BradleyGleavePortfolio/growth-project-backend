@@ -358,6 +358,10 @@ export function payeePositionCents(
   return position;
 }
 
+// B-627-9 (c): how long the transfer sweeper waits for a charge's money lock
+// before leaving that row for the next run.
+export const SWEEP_TRANSFER_LOCK_WAIT_MS = 1_000;
+
 @Injectable()
 export class ChargeSettlementService {
   private readonly logger = new Logger(ChargeSettlementService.name);
@@ -2002,6 +2006,55 @@ export class ChargeSettlementService {
       );
       return null;
     }
+  }
+
+  /**
+   * S-FEE round 8 (B-627-9 c) — post one transfer from outside a settlement
+   * critical section (the transfer sweeper, the legacy head-coach inline
+   * attempt) under the same per-charge money lock and fence the inline
+   * settlement path takes, so the common overlap (a webhook settling the
+   * charge while the sweeper retries its transfer) is serialized. The lock is
+   * a lease, not a proof: a holder paused past its TTL can overlap the next
+   * one, which is why the transfer protocol itself also holds young markers
+   * and compare-and-sets every outcome (TransferOrchestratorService.attempt).
+   *
+   * Deadlock-free: the sweeper holds no other charge lock while it waits
+   * (rows are attempted one at a time), the wait is bounded
+   * (SWEEP_TRANSFER_LOCK_WAIT_MS), and no DB transaction is open across it.
+   * Busy or lost lock: nothing moved; the row stays due for the next run.
+   */
+  async attemptTransferUnderLock(
+    row: Pick<ConnectTransfer, 'id' | 'source_stripe_charge_id' | 'settlement_id'>,
+  ): Promise<ConnectTransfer> {
+    const chargeId = await this.chargeIdOfTransfer(row);
+    if (!chargeId) return this.transfers.attempt(row.id);
+    try {
+      return await this.chargeLock.run(
+        chargeId,
+        () => this.transfers.attempt(row.id, { beforeStripe: this.fenceFor(chargeId) }),
+        SWEEP_TRANSFER_LOCK_WAIT_MS,
+      );
+    } catch (err) {
+      if (!isRetryableMoneyError(err)) throw err;
+      this.logger.warn(
+        `SFEE_TRANSFER_DEFERRED transfer=${row.id} charge=${chargeId}: ${(err as Error).message}; nothing moved, the next sweep retries`,
+      );
+      return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+    }
+  }
+
+  // The charge whose money a transfer moves: its source charge, or (dispute
+  // reinstatements, which have none) its settlement's charge.
+  private async chargeIdOfTransfer(
+    row: Pick<ConnectTransfer, 'source_stripe_charge_id' | 'settlement_id'>,
+  ): Promise<string | null> {
+    if (row.source_stripe_charge_id) return row.source_stripe_charge_id;
+    if (!row.settlement_id) return null;
+    const settlement = await this.prisma.chargeSettlement.findUnique({
+      where: { id: row.settlement_id },
+      select: { stripe_charge_id: true },
+    });
+    return settlement?.stripe_charge_id ?? null;
   }
 
   private outcome(

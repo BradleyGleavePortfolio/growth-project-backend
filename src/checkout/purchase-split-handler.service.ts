@@ -51,14 +51,10 @@ export class PurchaseSplitHandlerService {
   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
   // (recurring). Returns null when not yet known (rare race; the webhook
   // pipeline will re-invoke us on the next event).
-  async resolveChargeIdForPurchase(
-    purchase: ClientPurchase,
-  ): Promise<string | null> {
+  async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
     if (!purchase.stripe_payment_intent_id) return null;
     try {
-      const pi = await this.stripe.retrievePaymentIntent(
-        purchase.stripe_payment_intent_id,
-      );
+      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
       const charge =
         (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
         pi.charges?.data?.[0]?.id ??
@@ -151,15 +147,13 @@ export class PurchaseSplitHandlerService {
       plan,
       platform_account_id: null,
       seller_stripe_account_id: seller.stripe_account_id,
-      head_coach_stripe_account_id:
-        headCoachAccount?.stripe_account_id ?? null,
+      head_coach_stripe_account_id: headCoachAccount?.stripe_account_id ?? null,
     });
 
     // Resolve the parent charge id so we can mark the application_fee +
     // destination slices as posted and (for sub-coach) enqueue a transfer
     // with source_transaction set.
-    const chargeId =
-      args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
 
     // Mark application_fee + destination as posted now that we know the
     // charge id. These slices moved synchronously at Stripe-charge time
@@ -177,11 +171,7 @@ export class PurchaseSplitHandlerService {
     }
 
     let transferEnqueued = false;
-    if (
-      plan.head_coach_id &&
-      plan.head_coach_split_cents > 0 &&
-      headCoachAccount
-    ) {
+    if (plan.head_coach_id && plan.head_coach_split_cents > 0 && headCoachAccount) {
       const headCoachEntry = entries.find((e) => e.kind === 'head_coach_split');
       if (headCoachEntry) {
         const transfer = await this.transfers.enqueueHeadCoachTransfer({
@@ -199,7 +189,8 @@ export class PurchaseSplitHandlerService {
         // and the sweeper picks it up.
         if (transfer.source_stripe_charge_id) {
           try {
-            await this.transfers.attempt(transfer.id);
+            // B-627-9 (c): under the charge's money lock, like the sweeper.
+            await this.settlements.attemptTransferUnderLock(transfer);
           } catch (err) {
             this.logger.warn(
               `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
@@ -259,7 +250,9 @@ export class PurchaseSplitHandlerService {
         break;
       }
       attempted += 1;
-      const updated = await this.transfers.attempt(row.id);
+      // B-627-9 (c): the sweeper takes the same per-charge money lock and
+      // fence as the inline settlement path (busy -> left for the next run).
+      const updated = await this.settlements.attemptTransferUnderLock(row);
       if (updated.status === 'succeeded') succeeded += 1;
       else if (updated.status === 'failed') failed += 1;
     }

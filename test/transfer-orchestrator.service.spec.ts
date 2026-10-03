@@ -11,7 +11,15 @@ function makePrismaStub() {
   // Round 4 (B-627-5): keyed reversal operations.
   const ops: any[] = [];
   let n = 0;
-  const matches = (row: any, where: any) => Object.entries(where).every(([k, v]) => row[k] === v);
+  // Prisma where semantics the orchestrator uses: equality (null matches a
+  // missing column), `in`, and OR.
+  const matches = (row: any, where: any): boolean =>
+    Object.entries(where).every(([k, v]: [string, any]) => {
+      if (k === 'OR') return v.some((w: any) => matches(row, w));
+      if (v === null) return row[k] === null || row[k] === undefined;
+      if (v && typeof v === 'object' && 'in' in v) return v.in.includes(row[k]);
+      return row[k] === v;
+    });
   const stub: any = {
     _transfers: transfers,
     _ledger: ledger,
@@ -90,6 +98,11 @@ function makePrismaStub() {
         Object.assign(row, data);
         return { ...row };
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const hit = ledger.filter((e) => matches(e, where));
+        for (const row of hit) Object.assign(row, data);
+        return { count: hit.length };
+      }),
     },
   };
   return stub;
@@ -149,7 +162,12 @@ describe('TransferOrchestratorService', () => {
   });
 
   it('posts a pending transfer to Stripe with source_transaction set', async () => {
-    prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
+    prisma._ledger.push({
+      id: 'le1',
+      purchase_id: 'p1',
+      kind: 'head_coach_split',
+      status: 'pending',
+    });
     const row = await svc.enqueueHeadCoachTransfer({
       purchase_id: 'p1',
       ledger_entry_id: 'le1',
@@ -175,7 +193,12 @@ describe('TransferOrchestratorService', () => {
   });
 
   it('reuses the same Stripe-Idempotency-Key on retry', async () => {
-    prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
+    prisma._ledger.push({
+      id: 'le1',
+      purchase_id: 'p1',
+      kind: 'head_coach_split',
+      status: 'pending',
+    });
     const row = await svc.enqueueHeadCoachTransfer({
       purchase_id: 'p1',
       ledger_entry_id: 'le1',
@@ -208,7 +231,12 @@ describe('TransferOrchestratorService', () => {
   });
 
   it('marks final-failed after max_attempts (B-627-8: an unknown outcome only once Stripe shows it absent)', async () => {
-    prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
+    prisma._ledger.push({
+      id: 'le1',
+      purchase_id: 'p1',
+      kind: 'head_coach_split',
+      status: 'pending',
+    });
     const row = await svc.enqueueHeadCoachTransfer({
       purchase_id: 'p1',
       ledger_entry_id: 'le1',
@@ -228,7 +256,14 @@ describe('TransferOrchestratorService', () => {
     expect(first.status).toBe('pending');
     expect(prisma._transfers[0].stripe_send_unresolved_at).toBeInstanceOf(Date);
     expect(prisma._ledger[0].status).not.toBe('failed');
-    // The next attempt reads Stripe's complete list: absent, budget spent.
+    // B-627-9: an immediate re-check is inside the in-flight window: held,
+    // never failed while the create may still execute.
+    const held = await svc.attempt(row.id);
+    expect(held.status).toBe('pending');
+    expect(prisma._ledger[0].status).not.toBe('failed');
+    // After the window, Stripe's complete list is proof: absent, budget spent.
+    const later = Date.now() + svc.inFlightWindowMs + 1_000;
+    svc.clock = () => new Date(later);
     const updated = await svc.attempt(row.id);
     expect(stripe.createTransfer).toHaveBeenCalledTimes(1);
     expect(updated.status).toBe('failed');
@@ -237,7 +272,12 @@ describe('TransferOrchestratorService', () => {
   });
 
   it('a definitive refusal (4xx) at the attempt budget is final at once', async () => {
-    prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
+    prisma._ledger.push({
+      id: 'le1',
+      purchase_id: 'p1',
+      kind: 'head_coach_split',
+      status: 'pending',
+    });
     const row = await svc.enqueueHeadCoachTransfer({
       purchase_id: 'p1',
       ledger_entry_id: 'le1',
