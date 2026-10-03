@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // B-TRIALS (OR-113-2) — free trial ends in three days (date + amount).
+  TRIAL_ENDING: 'trial-ending',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
