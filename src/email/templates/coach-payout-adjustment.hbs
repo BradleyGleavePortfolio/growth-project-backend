@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <h1 style="font-size: 22px; margin: 0 0 16px;">{{title}}</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
+    <p>{{summary}}</p>
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;">
+      <tr><td style="padding: 6px 0;">The sale</td><td style="padding: 6px 0; text-align: right;">{{charge_display}}</td></tr>
+      <tr><td style="padding: 6px 0;">What the client got back</td><td style="padding: 6px 0; text-align: right;">{{customer_refunded_display}}</td></tr>
+      <tr><td style="padding: 6px 0;">Taken back from that sale's payout</td><td style="padding: 6px 0; text-align: right;">{{reversed_display}}</td></tr>
+      {{#if reinstated_display}}<tr><td style="padding: 6px 0;">Paid back to you after the dispute</td><td style="padding: 6px 0; text-align: right;">{{reinstated_display}}</td></tr>{{/if}}
+    </table>
+    {{#if has_hold}}
+    <p>Held for this sale in total: {{held_display}}. It is made up of:</p>
+    <table style="width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 15px;">
+      {{#each held_lines}}<tr><td style="padding: 4px 0;">{{label}}</td><td style="padding: 4px 0; text-align: right;">{{display}}</td></tr>{{/each}}
+    </table>
+    {{#if held_collected_display}}<p style="font-size: 14px; color: #555;">Already taken from a later sale: {{held_collected_display}}.</p>{{/if}}
+    <p><strong>Still to be held from your next sale: {{held_open_display}}</strong>, on top of that sale's usual fees.</p>
+    <p style="font-size: 14px; color: #555;">We take it out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales you were already paid for.</p>
+    {{else}}
+    <p style="font-size: 14px; color: #555;">Nothing is held from your next sale.</p>
+    {{/if}}
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
+    <p style="font-size: 12px; color: #888;">You can see every payout change and what is still held in the app under Money.</p>
+  </body>
+</html>
