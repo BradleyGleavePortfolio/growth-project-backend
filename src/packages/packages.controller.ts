@@ -25,6 +25,7 @@ import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 import { PackageValidationFilter } from './package-validation.filter';
+import { TrialUsageService } from './trials/trial-usage.service';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
 // can list / create / update / archive their own rows. OWNER (platform
@@ -109,6 +110,7 @@ export class CoachPackagesController {
       recurring_amount_cents: body.recurring_amount_cents,
       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
+      trial_days: body.trial_days,
     });
   }
 
@@ -134,6 +136,7 @@ export class CoachPackagesController {
       recurring_amount_cents: body.recurring_amount_cents,
       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
+      trial_days: body.trial_days,
       is_active: body.is_active,
     });
   }
@@ -179,6 +182,8 @@ export class ClientPackagesController {
   constructor(
     private packages: PackagesService,
     private prisma: PrismaService,
+    // B-TRIALS (OR-113-2) — per-client trial eligibility on the buy-side reads.
+    private trials: TrialUsageService,
   ) {}
 
   // GET /v1/clients/me/coach — returns the current client's coach profile.
@@ -235,7 +240,11 @@ export class ClientPackagesController {
       return { packages: [] };
     }
     const rows = await this.packages.listPublicForCoach(coachId);
-    return { packages: rows };
+    // B-TRIALS — each package carries trial_offer for THIS client, so the
+    // sheet shows "7-day free trial, then $49 per month" only when the client
+    // would really get it (one free trial per client per coach).
+    const offers = await this.trials.offersForClient(req.user.id, rows);
+    return { packages: rows.map((row) => ({ ...row, trial_offer: offers.get(row.id) })) };
   }
 
   // Student fetches one of their assigned coach's offers for the purchase
@@ -261,6 +270,7 @@ export class ClientPackagesController {
         message: 'Package not available',
       });
     }
-    return row;
+    const offers = await this.trials.offersForClient(req.user.id, [row]);
+    return { ...row, trial_offer: offers.get(row.id) };
   }
 }

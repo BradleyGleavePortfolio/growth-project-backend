@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma.service';
 import { PackagesService } from '../packages/packages.service';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
 import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
+import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 
@@ -744,7 +745,10 @@ export class CheckoutService {
   async listForClient(
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<{ items: ClientPurchaseView[]; hasMore: boolean }> {
+  ): Promise<{
+    items: Array<ClientPurchaseView & { trial: PurchaseTrialView }>;
+    hasMore: boolean;
+  }> {
     const take = Math.min(opts.limit ?? 50, 100);
     const rows = await this.prisma.clientPurchase.findMany({
       where: { client_user_id: clientUserId },
@@ -754,7 +758,10 @@ export class CheckoutService {
       select: CLIENT_PURCHASE_SELECT,
     });
     const hasMore = rows.length > take;
-    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
+    const page = hasMore ? rows.slice(0, take) : rows;
+    // B-TRIALS (OR-113-2) — derived trial status for Home / Your plan.
+    const now = new Date();
+    return { items: page.map((row) => ({ ...row, trial: purchaseTrialView(row, now) })), hasMore };
   }
 
   // PR-15A — Buyer-visible drops feed.

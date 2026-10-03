@@ -12,6 +12,8 @@ import { DripDispatcherCron } from './drip-dispatcher.cron';
 import { DripTriggerService } from './drip-trigger.service';
 import { MilestoneService } from './milestone.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { TrialNoticeService } from './trials/trial-notice.service';
+import { TrialUsageService } from './trials/trial-usage.service';
 
 // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
 // can read packages and cache Stripe Price ids back onto rows after lazy
@@ -46,6 +48,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   providers: [
     PackagesService,
+    // B-TRIALS (OR-113-2) — one-trial-per-coach ledger + trial-ending notice.
+    TrialUsageService,
+    TrialNoticeService,
     PackageContentsService,
     PackagePushService,
     PurchaseFanoutService,
@@ -55,6 +60,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   exports: [
     PackagesService,
+    TrialUsageService,
+    TrialNoticeService,
     PackageContentsService,
     PackagePushService,
     PurchaseFanoutService,

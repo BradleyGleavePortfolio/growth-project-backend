@@ -74,6 +74,8 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
+   - `customer.subscription.trial_will_end` (package free trials: sends the
+     "your free trial ends on" notice three days before the first charge)
    - `invoice.paid`
    - `invoice.payment_failed`
    - `customer.updated`

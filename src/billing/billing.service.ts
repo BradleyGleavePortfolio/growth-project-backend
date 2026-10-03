@@ -233,6 +233,11 @@ export class BillingService {
     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
     // is captured but never executed) and Stripe's redelivery reconciles.
     let deferredSplit: DeferredSplitTask | null = null;
+    // B-TRIALS (OR-113-2) — trial-ending notice recorded inside the tx (push +
+    // email go out after commit) and a second-trial subscription to cancel
+    // after commit. Both are dropped if the tx rolls back.
+    let deferredTrialNoticeId: string | null = null;
+    let trialConflictSubscriptionId: string | null = null;
 
     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
     // PI-succeeded route is the primary trigger for converting a guest
@@ -287,6 +292,12 @@ export class BillingService {
           if (result.deferredSplit) {
             deferredSplit = result.deferredSplit;
           }
+          if (result.deferredTrialNoticeId) {
+            deferredTrialNoticeId = result.deferredTrialNoticeId;
+          }
+          if (result.trialConflictSubscriptionId) {
+            trialConflictSubscriptionId = result.trialConflictSubscriptionId;
+          }
         }
 
         // Stream 1 — give the AI credit-pack handler first refusal on
@@ -338,6 +349,11 @@ export class BillingService {
             break;
           case 'customer.updated':
             if (!claimedByCheckout) await this.applyCustomerUpdated(event, tx);
+            break;
+          case 'customer.subscription.trial_will_end':
+            // B-TRIALS (OR-113-2) — package trials only; the checkout
+            // handler records the notice above. SaaS coach plans have no
+            // trial notice, so an unclaimed event is acknowledged quietly.
             break;
           case 'checkout.session.completed':
           case 'checkout.session.expired':
@@ -648,6 +664,25 @@ export class BillingService {
       typeof this.checkoutWebhooks.runDeferredSplit === 'function'
     ) {
       await this.checkoutWebhooks.runDeferredSplit(deferredSplit);
+    }
+
+    // B-TRIALS (OR-113-2) — outer tx COMMITTED: deliver the trial-ending push
+    // + email (never throws; TrialNoticeService.sweep retries), and cancel a
+    // subscription that tried to start a second free trial with the same
+    // coach (it is trialing, so cancelling now charges nothing).
+    if (
+      deferredTrialNoticeId &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.deliverTrialNotice === 'function'
+    ) {
+      await this.checkoutWebhooks.deliverTrialNotice(deferredTrialNoticeId);
+    }
+    if (
+      trialConflictSubscriptionId &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.cancelTrialConflict === 'function'
+    ) {
+      await this.checkoutWebhooks.cancelTrialConflict(trialConflictSubscriptionId);
     }
 
     // PR-14 R2 P0-1 — BACKSTOP for recurring guest checkouts. The PI

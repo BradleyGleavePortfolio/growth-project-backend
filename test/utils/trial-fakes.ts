@@ -1,0 +1,163 @@
+// B-TRIALS (OR-113-2) — in-memory PackageTrialUsage / PackageTrialNotice
+// tables with the same unique constraints as the migration, so the
+// one-trial-per-coach rule and notice idempotency are exercised against real
+// constraint semantics (createMany + skipDuplicates = ON CONFLICT DO NOTHING;
+// updateMany = compare-and-set). Every call yields to the event loop first,
+// so Promise.all() interleaves concurrent callers the way two requests would.
+
+type Row = Record<string, unknown> & { id: string };
+
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function matches(row: Row, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, cond]) => {
+    if (key === 'OR' && Array.isArray(cond)) {
+      return cond.some((c) => matches(row, c as Record<string, unknown>));
+    }
+    const value = row[key];
+    if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
+      const c = cond as Record<string, unknown>;
+      if ('in' in c) return (c.in as unknown[]).includes(value);
+      if ('lt' in c) return compare(value, c.lt) < 0;
+      if ('gt' in c) return compare(value, c.gt) > 0;
+      if ('not' in c) return value !== c.not;
+      // compound unique key, e.g. { client_user_id_coach_user_id: {...} }
+      return matches(row, c);
+    }
+    if (cond instanceof Date) return value instanceof Date && value.getTime() === cond.getTime();
+    return value === cond;
+  });
+}
+
+function compare(a: unknown, b: unknown): number {
+  const av = a instanceof Date ? a.getTime() : (a as number);
+  const bv = b instanceof Date ? b.getTime() : (b as number);
+  return av < bv ? -1 : av > bv ? 1 : 0;
+}
+
+function applyData(row: Row, data: Record<string, unknown>) {
+  for (const [k, v] of Object.entries(data)) {
+    if (v && typeof v === 'object' && !(v instanceof Date) && 'increment' in (v as object)) {
+      row[k] = ((row[k] as number) ?? 0) + ((v as { increment: number }).increment ?? 0);
+    } else {
+      row[k] = v;
+    }
+  }
+  row.updated_at = new Date();
+}
+
+function makeTable(uniques: string[][], defaults: () => Record<string, unknown>) {
+  const rows: Row[] = [];
+  let seq = 0;
+  const violates = (candidate: Row, except?: Row) =>
+    uniques.some((cols) =>
+      rows.some((r) => r !== except && cols.every((c) => sameValue(r[c], candidate[c]))),
+    );
+  const findUnique = async ({ where }: { where: Record<string, unknown> }) => {
+    await tick();
+    const row = rows.find((r) => matches(r, where));
+    return row ? { ...row } : null;
+  };
+  return {
+    rows,
+    findUnique,
+    findFirst: findUnique,
+    findMany: async ({ where = {}, take }: { where?: Record<string, unknown>; take?: number }) => {
+      await tick();
+      const found = rows.filter((r) => matches(r, where)).map((r) => ({ ...r }));
+      return typeof take === 'number' ? found.slice(0, take) : found;
+    },
+    createMany: async ({
+      data,
+      skipDuplicates,
+    }: {
+      data: Record<string, unknown>[];
+      skipDuplicates?: boolean;
+    }) => {
+      await tick();
+      let count = 0;
+      for (const d of data) {
+        const row: Row = {
+          id: `row_${++seq}`,
+          ...defaults(),
+          created_at: new Date(),
+          updated_at: new Date(),
+          ...d,
+        };
+        if (violates(row)) {
+          if (skipDuplicates) continue;
+          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+        }
+        rows.push(row);
+        count += 1;
+      }
+      return { count };
+    },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }) => {
+      await tick();
+      let count = 0;
+      for (const row of rows.filter((r) => matches(r, where))) {
+        const next: Row = { ...row };
+        applyData(next, data);
+        if (violates(next, row)) {
+          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+        }
+        Object.assign(row, next);
+        count += 1;
+      }
+      return { count };
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }) => {
+      await tick();
+      const row = rows.find((r) => matches(r, where));
+      if (!row) throw new Error('Record to update not found');
+      applyData(row, data);
+      return { ...row };
+    },
+  };
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return a === b;
+}
+
+export function makeTrialUsageTable() {
+  return makeTable([['client_user_id', 'coach_user_id'], ['purchase_id']], () => ({
+    status: 'reserved',
+    reserved_at: new Date(),
+    started_at: null,
+    trial_ends_at: null,
+    released_at: null,
+    release_reason: null,
+  }));
+}
+
+export function makeTrialNoticeTable() {
+  return makeTable([['purchase_id', 'trial_ends_at']], () => ({
+    push_status: 'pending',
+    push_attempts: 0,
+    email_status: 'pending',
+    email_attempts: 0,
+    last_error: null,
+  }));
+}
+
+export type FakeTable = ReturnType<typeof makeTable>;
+
+/** Typed test double: hand a partial stub to a constructor parameter. */
+export function stub<T>(value: unknown): T {
+  return value as T;
+}
