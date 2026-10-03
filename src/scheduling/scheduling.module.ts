@@ -15,6 +15,7 @@ import { SchedulingProviderRegistry } from './providers/scheduling-provider.regi
 import { StubCalendarAdapter } from './providers/stub-calendar.adapter';
 import { StubVideoAdapter } from './providers/stub-video.adapter';
 import { ZoomVideoAdapter } from './providers/zoom-video.adapter';
+import { SchedulingAccessService } from './scheduling-access.service';
 import { SchedulingAvailabilityService } from './scheduling-availability.service';
 import { SchedulingController } from './scheduling.controller';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
@@ -48,6 +49,8 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     SchedulingSessionLifecycleService,
     SchedulingOpenSlotsService,
     SchedulingAvailabilityService,
+    // S-SCHED-2: who may browse/book which coach (T4 ownership rules).
+    SchedulingAccessService,
     SchedulingProviderRegistry,
     StubCalendarAdapter,
     StubVideoAdapter,

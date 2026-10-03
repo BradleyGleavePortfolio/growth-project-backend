@@ -2146,9 +2146,34 @@ model NotificationDeliveryLog {
   kind       String
   created_at DateTime        @default(now())
 
+  // S-SCHED-3 (B-634-2): recoverable delivery state (migration 20270222000000).
+  // status: sending (claimed, lease running) | retry (a channel failed; the
+  // next sweep re-sends only that channel) | sent | gave_up (attempts ran
+  // out). Rows written before this column read 'sent'. CHECK
+  // NotificationDeliveryLog_status_check keeps the value set closed.
+  status           String    @default("sent")
+  attempts         Int       @default(1)
+  // A worker that dies after claiming leaves 'sending' with an expired lease;
+  // the next sweep takes it over.
+  lease_until      DateTime?
+  // Random per-attempt token: only the current owner may settle the row.
+  claim_token      String?
+  // The session start this reminder is for; a different start is a new
+  // revision that must be reminded again.
+  session_start_at DateTime?
+  inapp_done_at    DateTime?
+  push_done_at     DateTime?
+  // In-app row written by an earlier attempt (the retried push links to it).
+  notification_id  String?
+  // Machine-readable failure summary for operators, e.g. "push:written/transport-error".
+  last_error       String?
+
   @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
   @@index([session_id])
   @@index([user_id, created_at])
+  // S-SCHED-4 (B-634-2): the reminder sweep reads unfinished work
+  // (kind, status IN ('sending','retry')) every tick.
+  @@index([kind, status])
 }
 
 // ============================================================
@@ -3259,6 +3284,17 @@ model SessionType {
   default_video_provider VideoProvider @default(stub)
   // Soft-disable so historic sessions still link back to their type.
   archived_at            DateTime?
+  // S-SCHED-2: the coach's welcome / first call type (the one Roman's
+  // tutorial offers: "Book your welcome call with <coach>"). Persistent
+  // marker, never inferred from the name. At most one active
+  // (archived_at IS NULL) welcome type per coach: partial unique index
+  // SessionType_one_active_welcome_per_coach (migration 20270222000000).
+  is_welcome             Boolean       @default(false)
+  // S-SCHED-2: the coach's own https meeting room for this type. Attached
+  // as the session's manual video link when a session of this type is
+  // confirmed without one. Never shown to clients on the type list.
+  // CHECK SessionType_default_meeting_url_https keeps it https and bounded.
+  default_meeting_url    String?
   created_at             DateTime      @default(now())
   updated_at             DateTime      @default(now()) @updatedAt
 
@@ -3384,6 +3420,13 @@ model CoachingSession {
   participants  SessionParticipant[]      @relation("SessionParticipantSession")
   delivery_logs NotificationDeliveryLog[] @relation("DeliveryLogSession")
 
+  // S-SCHED-2 no-double-booking floor (migration 20270222000000, raw SQL
+  // because Prisma cannot express it): exclusion constraint
+  // CoachingSession_no_overlapping_active_booking forbids two rows for the
+  // same coach_id whose [start_at, end_at) overlap while both are in an
+  // occupying status (requested, scheduled, pending_provider). The service
+  // also serialises writers per coach with an advisory lock and re-checks.
+  //
   // Hot paths:
   //   - "list this coach's upcoming sessions" → (coach_id, start_at)
   //   - "list this client's upcoming sessions" → (client_id, start_at)
