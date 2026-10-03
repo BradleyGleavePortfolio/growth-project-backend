@@ -6,13 +6,10 @@
  * email/user_id XOR, OWNER-coach removal protection, cross-cohort 403, and the
  * non-member 404 (non-leak) on read.
  */
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunityCohortMembersService } from '../../../src/community/cohorts/community-cohort-members.service';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import type { MembershipWithUser } from '../../../src/community/cohorts/community-cohort-members.repository';
 
 const WS_A = '11111111-1111-1111-1111-111111111111';
@@ -39,7 +36,11 @@ function membership(over: Partial<MembershipWithUser> = {}): MembershipWithUser 
     created_at: now,
     updated_at: now,
     removed_at: null,
-    user: { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Jane Client', email: 'jane@example.com' },
+    user: {
+      id: 'aaaaaaaa-0000-0000-0000-000000000001',
+      name: 'Jane Client',
+      email: 'jane@example.com',
+    },
     ...over,
   } as MembershipWithUser;
 }
@@ -56,6 +57,7 @@ describe('CommunityCohortMembersService', () => {
     findUserByEmail: jest.Mock;
     findUserById: jest.Mock;
     upsertMembership: jest.Mock;
+    liftWorkspaceBan: jest.Mock;
     removeMembership: jest.Mock;
   };
   let service: CommunityCohortMembersService;
@@ -72,9 +74,10 @@ describe('CommunityCohortMembersService', () => {
       findUserByEmail: jest.fn(),
       findUserById: jest.fn(),
       upsertMembership: jest.fn(),
+      liftWorkspaceBan: jest.fn().mockResolvedValue(false),
       removeMembership: jest.fn(),
     };
-    service = new CommunityCohortMembersService(access as never, repo as never);
+    service = new CommunityCohortMembersService(access as never, repo as never, safetyWithBlocks());
   });
 
   describe('list (roster)', () => {
@@ -97,7 +100,8 @@ describe('CommunityCohortMembersService', () => {
       repo.listMembers.mockResolvedValue([membership()]);
 
       const res = await service.list(student, COHORT_A, {} as never);
-      expect(res.members[0].display_name).toBe('Jane Client');
+      // client privacy: other members see the first name only
+      expect(res.members[0].display_name).toBe('Jane');
       expect(res.members[0].status).toBeNull();
       expect(res.members[0].email).toBeNull();
       expect(res.members[0].joined_at).toBeNull();
@@ -107,16 +111,16 @@ describe('CommunityCohortMembersService', () => {
       access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
       access.isWorkspaceCoach.mockResolvedValue(false);
       access.membershipInCohort.mockResolvedValue(null);
-      await expect(
-        service.list(student, COHORT_A, {} as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.list(student, COHORT_A, {} as never)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('404s an unknown cohort', async () => {
       access.findCohort.mockResolvedValue(null);
-      await expect(
-        service.list(coachA, COHORT_A, {} as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.list(coachA, COHORT_A, {} as never)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('emits a next_cursor when a full page is returned', async () => {
@@ -184,9 +188,7 @@ describe('CommunityCohortMembersService', () => {
         name: 'Jane Client',
         email: 'jane@example.com',
       });
-      repo.upsertMembership.mockResolvedValue(
-        membership({ status: 'invited', joined_at: null }),
-      );
+      repo.upsertMembership.mockResolvedValue(membership({ status: 'invited', joined_at: null }));
       await service.assign(coachA, COHORT_A, {
         email: 'jane@example.com',
         role: 'student',
@@ -268,9 +270,9 @@ describe('CommunityCohortMembersService', () => {
 
     it('404s an unknown membership', async () => {
       repo.findMembership.mockResolvedValue(null);
-      await expect(
-        service.remove(coachA, COHORT_A, 'nobody'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.remove(coachA, COHORT_A, 'nobody')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('403s a coach removing from a cohort they do not own (cross-cohort)', async () => {
