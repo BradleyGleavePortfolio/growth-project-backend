@@ -743,3 +743,28 @@ describe('FR1-651-3 the single per-session exclamation is spent once, then never
     expect(marks).not.toContain(true);
   });
 });
+
+describe('FR1-651-5 the SafetyRouter catches a request to eat below the floor, by number', () => {
+  it.each([
+    'Can I drop to 1,000 calories to speed this up?',
+    'what if I aim for 900 kcal a day',
+    'I want to get down to 1100 calories',
+    'Is it ok to stay under 800 cals until the wedding?',
+    'can I cut to 1,150 kcal',
+  ])('eating_disorder_risk: %s', (q) => {
+    const r = classifySafety(q);
+    expect(r.class).toBe('eating_disorder_risk');
+    expect(r.short_circuit).toBe(false);
+  });
+
+  it.each([
+    'Can I go up to 1,800 calories on training days?',
+    'Is 500 calories at lunch too much?',
+    'I burned 800 calories on my run',
+    'My target is 1,450 kcal, how much is left?',
+    'Should I aim for 1,500 calories?',
+    'Is a 300 calorie snack fine before training?',
+  ])('not a restriction request: %s', (q) => {
+    expect(classifySafety(q).class).not.toBe('eating_disorder_risk');
+  });
+});

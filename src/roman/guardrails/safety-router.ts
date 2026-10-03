@@ -114,12 +114,46 @@ export function normalizeForSafety(message: string): string {
     .trim();
 }
 
+/**
+ * The lowest daily intake Roman ever endorses (the women's floor; the post-check
+ * enforces the per-client floor on the reply). A user asking to restrict
+ * BELOW it is an eating_disorder_risk turn.
+ */
+export const ROMAN_ROUTER_SUB_FLOOR_KCAL = 1200;
+const KCAL_IN_TEXT = /\b(\d{1,2},\d{3}|\d{2,5})\s?(kcal|calories|cals?)\b/gi;
+/** Restriction framing in the words just before the number. */
+const RESTRICT_BEFORE =
+  /\b(drop(ping)?|cut(ting)?|go(ing)? down|get(ting)? down|bring(ing)? (it |myself )?down|limit(ing)?|stay(ing)? (under|below|at)|under|below|less than|fewer than|no more than|only|just|eat(ing)?|aim(ing)? for|goal|target)\b/i;
+/** A number about one meal or snack is not a daily restriction. */
+const MEAL_WORD = /\b(breakfast|lunch|dinner|supper|snack|meal)\b/i;
+
+/**
+ * A request to eat a daily amount below the floor ("Can I drop to 1,000
+ * calories?", "aim for 900 kcal"). Numbers are compared, so 1,000 is caught
+ * and 1,800 is not; a per-meal number ("500 calories at lunch") is skipped.
+ */
+export function asksForSubFloorIntake(text: string): boolean {
+  for (const m of text.matchAll(KCAL_IN_TEXT)) {
+    const n = parseInt(m[1].replace(/,/g, ''), 10);
+    if (!Number.isFinite(n) || n <= 0 || n >= ROMAN_ROUTER_SUB_FLOOR_KCAL) continue;
+    const at = m.index ?? 0;
+    const before = text.slice(Math.max(0, at - 40), at);
+    const after = text.slice(at + m[0].length, at + m[0].length + 30);
+    if (MEAL_WORD.test(before) || MEAL_WORD.test(after)) continue;
+    if (RESTRICT_BEFORE.test(before)) return true;
+  }
+  return false;
+}
+
 /** Classify one user message. Deterministic; first class in priority order wins. */
 export function classifySafety(message: string): SafetyRouteResult {
   const text = normalizeForSafety(message);
   for (const { cls, patterns, short_circuit } of ORDER) {
     for (const rx of patterns) {
       if (rx.test(text)) return { class: cls, matched: rx.source, short_circuit };
+    }
+    if (cls === 'eating_disorder_risk' && asksForSubFloorIntake(text)) {
+      return { class: cls, matched: 'sub_floor_intake', short_circuit };
     }
   }
   return { class: 'normal', matched: null, short_circuit: false };

@@ -674,17 +674,19 @@ const sample = (user_id: string, metric: string, value: number, start: string, e
 });
 
 const wearableSamples = [
-  // P1 — 2026-09-29 and 2026-09-30 (UTC day keys)
-  sample(P1, 'STEPS', 4000, '2026-09-29T08:00:00Z'),
-  sample(P1, 'STEPS', 4200, '2026-09-29T18:00:00Z'),
-  sample(P1, 'RESTING_HEART_RATE_BPM', 58, '2026-09-29T06:00:00Z'),
-  sample(P1, 'HRV_MS', 44, '2026-09-29T06:00:00Z'),
-  sample(P1, 'SLEEP_TOTAL_MIN', 402, '2026-09-28T22:30:00Z', '2026-09-29T06:00:00Z'),
-  sample(P1, 'RECOVERY_SCORE', 71, '2026-09-29T06:00:00Z'),
-  sample(P1, 'STEPS', 6100, '2026-09-30T18:00:00Z'),
-  sample(P1, 'RESTING_HEART_RATE_BPM', 60, '2026-09-30T06:00:00Z'),
-  sample(P1, 'SLEEP_TOTAL_MIN', 378, '2026-09-29T23:00:00Z', '2026-09-30T06:00:00Z'),
-  sample(P1, 'SLEEP_EFFICIENCY_PCT', 88, '2026-09-29T23:00:00Z', '2026-09-30T06:00:00Z'),
+  // P1 — 2026-09-29 and 2026-09-30 in HER local days (America/Los_Angeles,
+  // PDT = UTC-7; C-R3-1 buckets by the client's local day, sleep by the
+  // local morning it ends). NOW is 2026-09-30 17:30 PT.
+  sample(P1, 'STEPS', 4000, '2026-09-29T15:00:00Z'), // 08:00 PT 09-29
+  sample(P1, 'STEPS', 4200, '2026-09-30T01:00:00Z'), // 18:00 PT 09-29
+  sample(P1, 'RESTING_HEART_RATE_BPM', 58, '2026-09-29T13:00:00Z'),
+  sample(P1, 'HRV_MS', 44, '2026-09-29T13:00:00Z'),
+  sample(P1, 'SLEEP_TOTAL_MIN', 402, '2026-09-29T05:30:00Z', '2026-09-29T13:00:00Z'), // ends 06:00 PT 09-29
+  sample(P1, 'RECOVERY_SCORE', 71, '2026-09-29T13:00:00Z'),
+  sample(P1, 'STEPS', 6100, '2026-09-30T18:00:00Z'), // 11:00 PT 09-30
+  sample(P1, 'RESTING_HEART_RATE_BPM', 60, '2026-09-30T13:00:00Z'),
+  sample(P1, 'SLEEP_TOTAL_MIN', 378, '2026-09-30T06:00:00Z', '2026-09-30T13:00:00Z'), // last night, ends 06:00 PT 09-30
+  sample(P1, 'SLEEP_EFFICIENCY_PCT', 88, '2026-09-30T06:00:00Z', '2026-09-30T13:00:00Z'),
   // P1 — outside the 7-day window
   sample(P1, 'STEPS', 99999, '2026-09-20T18:00:00Z'),
   // P4 canary

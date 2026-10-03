@@ -19,7 +19,18 @@ import {
   type GoldenItem,
 } from './golden-set';
 import { makeWorld, runTurn, withRomanEnabled, student, clientSession } from './harness';
-import { CANARIES, INTAKE_CANARIES, P1, P2, P3, COACH_A } from '../fixtures/roman-personas';
+import { CANARIES, INTAKE_CANARIES, NOW, P1, P2, P3, COACH_A } from '../fixtures/roman-personas';
+
+// Every turn and getBundle() call builds grounding with the real clock; pin
+// Date to the fixtures' NOW (2026-09-30 17:30 PT) so "today" is deterministic.
+// Timers and microtasks stay real.
+beforeEach(() => {
+  jest.useFakeTimers({
+    now: NOW,
+    doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'],
+  });
+});
+afterEach(() => jest.useRealTimers());
 import {
   classifySafety,
   routerHintFor,

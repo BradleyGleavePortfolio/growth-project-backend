@@ -5,8 +5,6 @@
 // layers 2–4). No network, no DB.
 
 import 'reflect-metadata';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import { RomanService } from '../../src/roman/roman.service';
@@ -563,7 +561,12 @@ function makeDb(userMessage: string) {
     findFirst: jest.fn(async () => ({ content: userMessage })),
     count: jest.fn(async () => 0),
   };
-  const romanSession = { update: jest.fn(async () => ({})), findFirst: jest.fn(async () => null) };
+  const romanSession = {
+    update: jest.fn(async () => ({})),
+    // appendMessage bumps the live session with updateMany (main's contract).
+    updateMany: jest.fn(async () => ({ count: 1 })),
+    findFirst: jest.fn(async () => null),
+  };
   const aiRequestAudit = {
     create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ledger_1', ...data })),
     aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
@@ -700,7 +703,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     expect(chunks[0].text!.endsWith(ROMAN_POST_CHECK_TEMPLATES.referral_injury)).toBe(true);
     const roman = messages.find((m) => m.role === 'roman')!;
     expect(roman.content).toBe(chunks[0].text);
-    expect(prisma.romanMessage.update).toHaveBeenCalledTimes(1);
+    // main's appendMessage writes the post-checked text once (create); the
+    // turn is never patched after the fact.
+    expect(messages.filter((m) => m.role === 'roman')).toHaveLength(1);
+    expect(prisma.romanMessage.update).not.toHaveBeenCalled();
   });
 
   it('a bad model reply is rewritten before any byte is emitted; the persisted turn equals what the client saw', async () => {
@@ -718,25 +724,8 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
 
 // ─── shared guardrail fixes + DTO ────────────────────────────────────────────
 
-describe('R4 shared fixes', () => {
-  it('SendMessageDto caps a user turn at 2,000 chars', () => {
-    const src = readFileSync(join(__dirname, '..', '..', 'src', 'roman', 'roman.dto.ts'), 'utf8');
-    expect(src).toContain('@MaxLength(2000)');
-    expect(src).not.toContain('@MaxLength(8000)');
-  });
-  it('the AI Guide floor message no longer says "adult men" and the floor is sex-aware with no 0.8× scaling', () => {
-    const guard = readFileSync(
-      join(__dirname, '..', '..', 'src', 'ai', 'ai-guardrails.service.ts'),
-      'utf8',
-    );
-    expect(guard).not.toContain('adult men');
-    const ctx = readFileSync(
-      join(__dirname, '..', '..', 'src', 'ai', 'client-ai-context.service.ts'),
-      'utf8',
-    );
-    expect(ctx).not.toMatch(
-      /Math\.min\(CALORIE_FLOOR_FALLBACK, Math\.round\(prescribed\.calories \* 0\.8\)\)/,
-    );
-    expect(ctx).toContain('CALORIE_FLOOR_FEMALE = 1200');
-  });
-});
+// The June #603 "shared fixes" (SendMessageDto 8,000 -> 2,000 chars; AI Guide
+// floor note and sex-aware floor in src/ai/*) are NOT carried by this PR, so
+// their source-text assertions are not carried either. They are listed in
+// the PR body as open items to re-home before #603 is closed.
+

@@ -5,8 +5,6 @@
 // ./fixtures/roman-personas.ts; no network, no DB.
 
 import 'reflect-metadata';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   RomanClientContextService,
   localClock,
@@ -210,6 +208,7 @@ describe('R3 builder — P1 Maya golden facts', () => {
       providers: ['oura'],
       last_synced_at: '2026-09-30T14:00:00.000Z',
       last_night_sleep_hours: 6.3,
+      latest_sleep: { date: '2026-09-30', hours: 6.3 },
     });
     expect(ctx.wearables.days).toEqual([
       { date: '2026-09-29', steps: 8200, active_kcal: null, resting_hr_bpm: 58, hrv_ms: 44, sleep_hours: 6.7, sleep_efficiency_pct: null, recovery_score: 71, readiness_score: null },
@@ -428,6 +427,7 @@ describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)'
         readiness_score: null,
       },
       last_night_sleep_hours: null,
+      latest_sleep: null,
       days: [],
     });
     expect(ctx.data_quality.missing).toContain('wearables');
@@ -713,6 +713,15 @@ async function drain(gen: AsyncGenerator<unknown>) {
 }
 
 describe('R3 injection — client_data block, provenance in the spend ledger, coach JWT', () => {
+  // A full turn builds its grounding with the real clock; pin Date to the
+  // fixtures' NOW (timers and microtasks stay real) so "today" is 09-30 PT.
+  beforeEach(() => {
+    jest.useFakeTimers({
+      now: NOW,
+      doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'],
+    });
+  });
+  afterEach(() => jest.useRealTimers());
   function roman(db: ReturnType<typeof setup>['db'], anthropic: ReturnType<typeof makeAnthropic>, ctx: RomanClientContextService | null) {
     return new RomanService(fakeOf(db.prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)), ctx);
   }
@@ -790,33 +799,10 @@ describe('R3 GET /roman/context/me', () => {
   });
 });
 
-// ─── migration shape ─────────────────────────────────────────────────────────
-
-describe('R3 migration — additive provenance columns', () => {
-  const dir = join(
-    __dirname,
-    '..',
-    '..',
-    'prisma',
-    'migrations',
-    '20270202000000_roman_message_context_provenance',
-  );
-  it('adds two nullable columns to RomanMessage and nothing else', () => {
-    const sql = readFileSync(join(dir, 'migration.sql'), 'utf8');
-    const statements = sql.split('\n').filter((l) => l.trim() && !l.trim().startsWith('--'));
-    expect(statements).toEqual([
-      'ALTER TABLE "RomanMessage" ADD COLUMN "context_hash" TEXT;',
-      'ALTER TABLE "RomanMessage" ADD COLUMN "context_generated_at" TIMESTAMP(3);',
-    ]);
-    expect(readFileSync(join(dir, 'down.sql'), 'utf8')).toContain(
-      'DROP COLUMN IF EXISTS "context_hash"',
-    );
-    const schema = readFileSync(join(__dirname, '..', '..', 'prisma', 'schema.prisma'), 'utf8');
-    expect(schema).toMatch(
-      /model RomanMessage \{[\s\S]*context_hash\s+String\?[\s\S]*context_generated_at DateTime\?/,
-    );
-  });
-});
+// The June R3 migration (20270202000000 RomanMessage provenance columns) is
+// NOT carried: turn provenance lives in the existing content-free
+// AiRequestAudit.metadata (context_version, context_hash), asserted in the
+// injection tests above. No migration ships with this PR.
 
 // ─── ctx-v3: bookings (OR-113-2 per-turn grounding) ──────────────────────────
 

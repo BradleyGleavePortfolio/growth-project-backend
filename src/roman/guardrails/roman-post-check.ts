@@ -217,6 +217,7 @@ function judgeSentence(
   s: string,
   ctx: PostCheckContext | null,
   floor: number,
+  grounded: boolean,
 ): NumberVerdict {
   const directive = DIRECTIVE.test(s);
   const daily = directive && (DAILY.test(s) || !MEAL.test(s));
@@ -232,6 +233,9 @@ function judgeSentence(
     }
     if (directive) continue; // a meal-level suggestion ("about 600 kcal at dinner")
     if (!target && !fact) continue;
+    // Not a grounded turn (coach surface, or no client data was expected):
+    // there are no client facts to compare with, only the floor applies.
+    if (!grounded) continue;
     // A quoted fact of the same unit is always fine ("670 kcal left").
     if (ctx && matchesFact(n, kcalFacts(ctx))) continue;
     if (target) {
@@ -249,6 +253,7 @@ function judgeSentence(
     })),
   ];
   for (const { n, key } of macroHits) {
+    if (!grounded) continue;
     if (daily || target) {
       if (ctx && fact && matchesFact(n, macroFacts(ctx, key))) continue;
       if (target && (!ctx || ctx.targets[key] == null)) return 'ungrounded_number';
@@ -314,8 +319,13 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
 
   // 1-3. typed number checks (A-R4-3), first failing sentence decides.
   let verdict: NumberVerdict = null;
+  // Grounding checks (target mismatch, ungrounded numbers) apply only when the
+  // turn is about the client's own data: a context is present, or it was
+  // expected and could not be loaded (degraded mode). The coach surface and
+  // pre-grounding callers pass neither, so only the calorie floor applies.
+  const grounded = ctx !== null || input.contextUnavailable === true;
   for (const s of sentences) {
-    verdict = judgeSentence(s, ctx, floor);
+    verdict = judgeSentence(s, ctx, floor, grounded);
     if (verdict) break;
   }
   if (verdict) {
