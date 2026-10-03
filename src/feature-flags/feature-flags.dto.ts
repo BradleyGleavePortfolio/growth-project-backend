@@ -34,6 +34,7 @@ export const FEATURE_FLAG_KEYS = [
   'coach_community_wearable_prompts',
   'community_classroom',
   'community_events',
+  'coachless_home',
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

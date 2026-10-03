@@ -33,6 +33,7 @@ describe('FeatureFlagsController', () => {
     coach_community_wearable_prompts: true,
     community_classroom: true,
     community_events: true,
+    coachless_home: true,
   };
 
   beforeEach(() => {
