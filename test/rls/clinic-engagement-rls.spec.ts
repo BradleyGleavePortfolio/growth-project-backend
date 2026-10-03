@@ -570,20 +570,26 @@ const UPDATE_SQL: Record<Table, string> = {
   });
 
   it('B-609-4: the reminder eligibility lock blocks a concurrent deletion until the claim commits, then refuses the deleted client', async () => {
+    // A second client = a second connection pool, so the competing deletion
+    // runs on its own connection whatever connection_limit the URL sets.
+    const deleter = new PrismaClient({ datasources: { db: { url: DB_URL } } });
     try {
       await prisma.$transaction(async (tx) => {
         expect(await lockEligibleClient(tx, CLIENT)).toBe(true);
         // A deletion request on another connection cannot commit while the
         // claim transaction holds the lock.
-        const blocked = prisma.$transaction(async (other) => {
-          await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
-          await other.$executeRawUnsafe(
-            `UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`,
-            CLIENT,
-          );
-        });
+        const blocked = deleter.$transaction(
+          async (other) => {
+            await other.$executeRawUnsafe(`SET LOCAL lock_timeout = '500ms'`);
+            await other.$executeRawUnsafe(
+              `UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`,
+              CLIENT,
+            );
+          },
+          { timeout: 10_000, maxWait: 10_000 },
+        );
         expect(await sqlStateOf(blocked)).toBe('55P03');
-      });
+      }, { timeout: 15_000, maxWait: 10_000 });
       await exec(`UPDATE "User" SET deletion_scheduled_at = now() WHERE id = $1`, CLIENT);
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(false);
       await exec(`UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = now() WHERE id = $1`, CLIENT);
@@ -592,6 +598,7 @@ const UPDATE_SQL: Record<Table, string> = {
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, COACH))).toBe(false);
       expect(await prisma.$transaction((tx) => lockEligibleClient(tx, CLIENT))).toBe(true);
     } finally {
+      await deleter.$disconnect();
       await exec(
         `UPDATE "User" SET deletion_scheduled_at = NULL, deleted_at = NULL WHERE id = $1`,
         CLIENT,
