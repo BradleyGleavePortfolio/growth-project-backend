@@ -347,6 +347,11 @@ const OTHER_HEAD_COACH_ID = 'mwb3-lt-other-head-coach';
 const OTHER_TEAM_SUBCOACH_ID = 'mwb3-lt-other-team-subcoach';
 const STUDENT_ID = 'mwb3-lt-student';
 const PLAN_ID = '33333333-3333-4333-8333-333333333333';
+// S-MWB-3 (OR-112-18): PLAN_ID is a day of a library master the in-team
+// sub-coach authored (the case a sub-coach may edit). HEAD_PLAN_ID is a
+// standalone plan of the head coach, which the sub-coach must NOT edit.
+const SUB_PROGRAM_ID = '44444444-4444-4444-8444-444444444444';
+const HEAD_PLAN_ID = '55555555-5555-4555-8555-555555555555';
 
 liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', () => {
   let prisma: PrismaClient;
@@ -385,6 +390,7 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
     await prisma.workoutPlan.deleteMany({});
+    await prisma.workoutProgram.deleteMany({ where: { id: SUB_PROGRAM_ID } });
     await prisma.user.deleteMany({
       where: {
         id: {
@@ -470,13 +476,52 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
       },
     });
 
+    await prisma.workoutProgram.create({
+      data: {
+        id: SUB_PROGRAM_ID,
+        coach_id: HEAD_COACH_ID,
+        owner_user_id: IN_TEAM_SUBCOACH_ID,
+        visibility: 'tenant_shared',
+        name: 'Sub-coach block',
+        weeks: 1,
+        days_per_week: 1,
+        is_template: true,
+      },
+    });
     await prisma.workoutPlan.create({
       data: {
         id: PLAN_ID,
         coach_id: HEAD_COACH_ID,
         name: 'Pull Day',
         type: 'strength',
+        program_id: SUB_PROGRAM_ID,
+        week_index: 0,
+        day_index: 0,
+        is_template: true,
       },
+    });
+    await prisma.workoutPlan.create({
+      data: {
+        id: HEAD_PLAN_ID,
+        coach_id: HEAD_COACH_ID,
+        name: 'Head coach push day',
+        type: 'strength',
+      },
+    });
+    const headInitial = await prisma.workoutPlanRevision.create({
+      data: {
+        workout_plan_id: HEAD_PLAN_ID,
+        revision_index: 0,
+        exercises_json: [],
+        plan_meta_json: {},
+        author_id: HEAD_COACH_ID,
+        author_kind: 'coach',
+        cause: 'initial',
+      },
+    });
+    await prisma.workoutPlan.update({
+      where: { id: HEAD_PLAN_ID },
+      data: { head_revision_id: headInitial.id },
     });
     const initial = await prisma.workoutPlanRevision.create({
       data: {
@@ -518,7 +563,7 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
 
   // ── P1.1: sub-coach authorization ─────────────────────────────────────────
 
-  it('P1.1 an IN-TEAM sub-coach CAN autosave a plan owned by their head coach', async () => {
+  it('P1.1 an IN-TEAM sub-coach CAN autosave a day of a master they authored', async () => {
     const res = await autosave.applyAutosave(
       PLAN_ID,
       { userId: IN_TEAM_SUBCOACH_ID },
@@ -539,7 +584,40 @@ liveDescribe('MWB-3 P1.1/P1.2 — sub-coach auth + lock enforcement (live DB)', 
     expect(head.author_kind).toBe('sub_coach');
   }, 60_000);
 
-  it('P1.1 an IN-TEAM sub-coach CAN undo a plan owned by their head coach', async () => {
+  it('OR-112-18 an IN-TEAM sub-coach CANNOT autosave or undo a standalone head-coach plan (403, no revision written)', async () => {
+    await expect(
+      autosave.applyAutosave(
+        HEAD_PLAN_ID,
+        { userId: IN_TEAM_SUBCOACH_ID },
+        {
+          base_revision_index: 0,
+          lock_token: await tokenFor(HEAD_PLAN_ID),
+          ops: [insertOp('squat')],
+          cause: 'manual_edit',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await autosave.applyAutosave(
+      HEAD_PLAN_ID,
+      { userId: HEAD_COACH_ID },
+      {
+        base_revision_index: 0,
+        lock_token: await tokenFor(HEAD_PLAN_ID),
+        ops: [insertOp('squat')],
+        cause: 'manual_edit',
+      },
+    );
+    await expect(
+      autosave.applyUndo(
+        HEAD_PLAN_ID,
+        { userId: IN_TEAM_SUBCOACH_ID },
+        { to_revision_index: 0 },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await revisionCount(HEAD_PLAN_ID)).toBe(2);
+  }, 60_000);
+
+  it('P1.1 an IN-TEAM sub-coach CAN undo a day of a master they authored', async () => {
     // Owner advances head 0 -> 1 first so there is an earlier index to restore.
     await autosave.applyAutosave(
       PLAN_ID,

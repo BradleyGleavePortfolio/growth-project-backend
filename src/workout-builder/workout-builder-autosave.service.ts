@@ -106,6 +106,11 @@ export interface AutosaveActor {
   isAi?: boolean;
 }
 
+/** Stable 403 code for a plan the actor may not edit (S-MWB-3, OR-112-18). */
+export const PLAN_NOT_EDITABLE_CODE = 'workout_plan_not_editable';
+export const PLAN_NOT_EDITABLE_MESSAGE =
+  'This workout belongs to a program another coach made, so it cannot be edited from your account. Duplicate the program to make your own copy, or ask its owner to make the change.';
+
 @Injectable()
 export class WorkoutBuilderAutosaveService implements OnModuleInit {
   constructor(
@@ -456,19 +461,24 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
   }
 
   /**
-   * Authorise the actor against the plan's OWNERSHIP. A WorkoutPlan.coach_id is
-   * a coach/head-coach FK (NOT a client/student id), so the correct gate is:
-   *   1. the acting user IS the plan's head coach (direct owner), OR
-   *   2. the acting user is a sub-coach whose head coach IS plan.coach_id
-   *      (an in-team sub-coach editing a plan owned by their head coach).
-   * Anything else (a foreign coach, or a sub-coach on a different head coach's
-   * team) is a 403. A non-existent plan is a 404.
-   *
-   * This replaces the prior assertCanAccessClient(actingUserId, plan.coach_id)
-   * call, which was semantically wrong: assertCanAccessClient expects a
-   * client/student id, and SubCoachScopeService.canAccessClient only returns
-   * true for assigned STUDENT ids — never for the head coach id a plan carries
-   * — so a valid in-scope sub-coach was incorrectly denied (audit P1.1).
+   * Authorise the actor to EDIT the plan (autosave and undo share this gate).
+   * A WorkoutPlan.coach_id is the tenant (head coach) id, never a client id.
+   * The actor may edit when:
+   *   1. they ARE the plan's tenant owner (plan.coach_id === actor): the same
+   *      rule as the explicit-Save path (WorkoutBuilderService
+   *      .assertPlanOwnership), so autosave never grants more than Save; or
+   *   2. they are an in-team sub-coach of that tenant (membership-checked via
+   *      SubCoachScopeService, never a bare coach_id) AND the plan is a day of
+   *      a library master in the same tenant that THEY authored
+   *      (owner_user_id === actor). This mirrors the Programs library's edit
+   *      rule (loadEditable): a tenant_shared master is readable by the team
+   *      but editable only by its author, and an owner_only master of the head
+   *      coach or another sub-coach is closed.
+   * Anything else is a 403 (never a 404 leak for an existing plan): a foreign
+   * coach, a sub-coach of another tenant, a student, or an in-team sub-coach
+   * reaching for a standalone head-coach plan, a client copy, or a master they
+   * did not author (S-MWB-3, OR-112-18: before this gate, any in-team
+   * sub-coach could autosave or undo ANY plan in the tenant).
    */
   private async authorisePlanAccess(
     planId: string,
@@ -476,19 +486,37 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
   ): Promise<void> {
     const plan = await this.prisma.workoutPlan.findUnique({
       where: { id: planId },
-      select: { coach_id: true },
+      select: { coach_id: true, program_id: true },
     });
     if (!plan) throw new NotFoundException('Workout plan not found');
-    // (1) Head coach / owner editing their own plan: direct ownership.
+    // (1) The tenant owner editing their own plan.
     if (plan.coach_id === actingUserId) return;
-    // (2) In-team sub-coach: resolve the acting user's head coach and require it
-    // to BE the plan's owner. Returns null for non-sub-coaches (foreign head
-    // coaches, students), so they fall through to the 403 below.
+    // (2) An in-team sub-coach editing a day of a master they authored.
+    if (await this.canEditTeamProgramDay(actingUserId, plan)) return;
+    throw new ForbiddenException({
+      error: 'Forbidden',
+      code: PLAN_NOT_EDITABLE_CODE,
+      message: PLAN_NOT_EDITABLE_MESSAGE,
+    });
+  }
+
+  private async canEditTeamProgramDay(
+    actingUserId: string,
+    plan: { coach_id: string; program_id: string | null },
+  ): Promise<boolean> {
+    if (!plan.program_id) return false;
+    // Returns null for non-sub-coaches (foreign head coaches, students) and for
+    // a sub-coach whose seat or delegation is closed.
     const headCoachId =
       await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId);
-    if (headCoachId !== null && headCoachId === plan.coach_id) return;
-    // Out of scope: an existing-but-forbidden plan is a 403, never a 404 leak.
-    throw new ForbiddenException('No access to this workout plan');
+    if (headCoachId === null || headCoachId !== plan.coach_id) return false;
+    const program = await this.prisma.workoutProgram.findUnique({
+      where: { id: plan.program_id },
+      select: { coach_id: true, owner_user_id: true, is_template: true },
+    });
+    if (!program || !program.is_template) return false;
+    if (program.coach_id !== plan.coach_id) return false;
+    return program.owner_user_id === actingUserId;
   }
 
   /**
