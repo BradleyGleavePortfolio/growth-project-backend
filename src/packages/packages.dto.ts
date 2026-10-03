@@ -78,6 +78,17 @@ export class CreatePackageDto {
   @Min(1)
   recurring_interval_count?: number;
 
+  // B-TRIALS (OR-113-2) — free trial length in days for a RECURRING package
+  // (0 = no trial; 3, 7, 14 or 30 are the recommended presets). Shape only
+  // here; PackagesService refuses an out-of-range value with
+  // PACKAGE_TRIAL_DAYS_OUT_OF_RANGE and a trial on a one-time, combo or free
+  // package with PACKAGE_TRIAL_REQUIRES_RECURRING / PACKAGE_TRIAL_NOT_ON_FREE.
+  @IsOptional()
+  @IsInt({
+    message: 'trial_days must be a whole number of days, for example 7, or 0 for no trial.',
+  })
+  trial_days?: number;
+
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
@@ -155,6 +166,13 @@ export class UpdatePackageDto {
   @IsInt()
   @Min(1)
   recurring_interval_count?: number | null;
+
+  // B-TRIALS — free trial days; null or 0 clears the trial. See CreatePackageDto.
+  @IsOptional()
+  @IsInt({
+    message: 'trial_days must be a whole number of days, for example 7, or 0 for no trial.',
+  })
+  trial_days?: number | null;
 
   @IsOptional()
   @IsBoolean()

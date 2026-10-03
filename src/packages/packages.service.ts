@@ -9,6 +9,7 @@ import type { CoachPackage, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
 
 // CoachPackage CRUD. Owns coach offers / packages.
 //
@@ -57,6 +58,8 @@ export interface CreatePackageInput {
   recurring_amount_cents?: number | null;
   recurring_interval?: 'week' | 'month' | 'year' | null;
   recurring_interval_count?: number | null;
+  // B-TRIALS (OR-113-2) — free trial days (recurring packages only).
+  trial_days?: number;
 }
 
 export interface UpdatePackageInput {
@@ -71,6 +74,8 @@ export interface UpdatePackageInput {
   recurring_amount_cents?: number | null;
   recurring_interval?: 'week' | 'month' | 'year' | null;
   recurring_interval_count?: number | null;
+  // B-TRIALS — null or 0 = no trial.
+  trial_days?: number | null;
   is_active?: boolean;
 }
 
@@ -167,6 +172,7 @@ export class PackagesService {
           input.recurring_amount_cents != null ? (input.recurring_interval ?? 'month') : null,
         recurring_interval_count:
           input.recurring_amount_cents != null ? (input.recurring_interval_count ?? 1) : null,
+        trial_days: input.trial_days ?? TRIAL_DAYS_NONE,
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
@@ -205,6 +211,11 @@ export class PackagesService {
     if (input.recurring_interval_count !== undefined)
       data.recurring_interval_count = input.recurring_interval_count;
     if (input.is_active != null) data.is_active = input.is_active;
+    // B-TRIALS (OR-113-2) — null clears the trial. A package that stops being
+    // a plain paid recurring plan (switched to one-time, made free, or given a
+    // one-time companion) drops its trial in the same PATCH unless the coach
+    // sent trial_days explicitly, in which case the rules below decide.
+    if (input.trial_days !== undefined) data.trial_days = input.trial_days ?? TRIAL_DAYS_NONE;
 
     // Validate the merged shape. B-629-4: a key present in `data` wins, even
     // when its value is null (`??` used to fall back to the stored interval,
@@ -244,6 +255,23 @@ export class PackagesService {
         enforceRecurringMinimum: recurringConfigChanged(row, data),
       },
     );
+    if (!('trial_days' in data) && (row.trial_days ?? TRIAL_DAYS_NONE) > TRIAL_DAYS_NONE) {
+      const stillTrialable =
+        merged('billing_type') === 'recurring' &&
+        (merged('amount_cents') as number) > 0 &&
+        merged('recurring_amount_cents') == null &&
+        merged('recurring_interval') == null &&
+        merged('recurring_interval_count') == null;
+      if (!stillTrialable) data.trial_days = TRIAL_DAYS_NONE;
+    }
+    assertValidTrial({
+      trial_days: (merged('trial_days') as number | null | undefined) ?? TRIAL_DAYS_NONE,
+      amount_cents: merged('amount_cents') as number,
+      billing_type: merged('billing_type') as string,
+      recurring_amount_cents: merged('recurring_amount_cents') as number | null,
+      recurring_interval: merged('recurring_interval') as string | null,
+      recurring_interval_count: merged('recurring_interval_count') as number | null,
+    });
 
     // If price-shaping fields changed, clear the cached Stripe Price id so
     // the next checkout mints a fresh one. The Stripe Product is kept (the
@@ -426,6 +454,7 @@ export class PackagesService {
         enforceRecurringMinimum: !hasBeenOnSale(row),
       },
     );
+    assertValidTrial({ ...row, trial_days: row.trial_days ?? TRIAL_DAYS_NONE });
     // TODO(PR-8): once content-attach lands, gate sellable packages
     // here on `is_sellable === false || contents.length > 0`. Allowed
     // for now so the editor flow ships before PR-8.
@@ -614,6 +643,11 @@ export class PackagesService {
       recurring_amount_cents?: number | null;
       recurring_interval?: string | null;
       recurring_interval_count?: number | null;
+      // B-TRIALS: present on create input only. Validated here, after the
+      // price, so every create path (create, and an Idempotency-Key create
+      // that builds its own data) applies the trial rules. update and
+      // publish check the merged trial separately.
+      trial_days?: number | null;
     },
     opts: PricingFloorOptions = ENFORCE_ALL_FLOORS,
   ) {
@@ -775,6 +809,9 @@ export class PackagesService {
           message: 'recurring_interval_count must be an integer ≥ 1',
         });
       }
+    }
+    if (input.trial_days != null) {
+      assertValidTrial({ ...input, trial_days: input.trial_days });
     }
   }
 }
