@@ -331,6 +331,58 @@ export class RefundDisputeHandlerService {
       // No-op: we'll see the parent charge.refunded shortly.
       return { claimed: false, reason: 'no_known_refund' };
     }
+    // B-641-6 (S-COACH-BE-4): a refund that was pending when charge.refunded
+    // arrived completes through THIS event (Stripe does not resend
+    // charge.refunded). Book it exactly like a succeeded refund on
+    // charge.refunded: stamp the first success time (posted_at, which the
+    // coach Money page and tax export window by), apply the ledger reversal
+    // once, and alert the coach once. Without this the refund kept
+    // posted_at = null (booked at request time) and never reversed the ledger.
+    if (refund.status === 'succeeded' && !existing.ledger_reversed) {
+      const purchase = await this.prisma.clientPurchase.findUnique({
+        where: { id: existing.purchase_id },
+      });
+      if (purchase) {
+        const amount = typeof refund.amount === 'number' ? refund.amount : existing.amount_cents;
+        const outcome = await this.upsertAndApplyRefund({
+          purchase,
+          stripe_refund_id: refund.id,
+          stripe_charge_id: existing.stripe_charge_id,
+          amount_cents: amount,
+          status: 'succeeded',
+          reason: existing.reason,
+        });
+        if (existing.failure_reason) {
+          // A succeeded refund carries no failure reason.
+          await this.prisma.chargeRefund.update({
+            where: { stripe_refund_id: refund.id },
+            data: { failure_reason: null },
+          });
+        }
+        if (outcome.ledger_just_reversed) {
+          // Same once-per-refund downstream signals as charge.refunded. The
+          // full-refund entitlement flip already ran there: Stripe's
+          // amount_refunded counts pending refunds.
+          const fresh = await this.prisma.clientPurchase.findUnique({
+            where: { id: purchase.id },
+          });
+          if (fresh?.status !== 'refunded' && this.partialRefundDecisions) {
+            await this.partialRefundDecisions.onPartialRefund({
+              client_purchase_id: purchase.id,
+              stripe_refund_id: refund.id,
+            });
+          }
+          await this.emitRefundCoachAlert({
+            purchase,
+            amount_cents: amount,
+            stripe_refund_id: refund.id,
+            stripe_charge_id: existing.stripe_charge_id,
+            reason: existing.reason,
+          });
+        }
+        return { claimed: true, purchase_id: existing.purchase_id };
+      }
+    }
     await this.prisma.chargeRefund.update({
       where: { stripe_refund_id: refund.id },
       data: {

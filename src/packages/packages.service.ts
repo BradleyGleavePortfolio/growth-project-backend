@@ -261,7 +261,7 @@ export class PackagesService {
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
       return {
-        pkg: await this.replayCreate(coachUserId, actorUserId, key, requestHash),
+        pkg: await this.replayCreate(coachUserId, actorUserId, key, requestHash, err),
         replayed: true,
       };
     }
@@ -272,6 +272,7 @@ export class PackagesService {
     actorUserId: string,
     key: string,
     requestHash: string,
+    uniqueViolation: unknown,
   ): Promise<CoachPackage> {
     const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
       where: {
@@ -282,8 +283,14 @@ export class PackagesService {
         },
       },
     });
-    const claim = existing ? readClaim(existing.response_json) : null;
-    if (!existing || existing.status !== 'completed' || !claim?.package_id) {
+    // S-COACH-BE-4: a unique violation with NO committed claim did not come
+    // from the claim (a concurrent same-key insert blocks until the first
+    // transaction ends; a rollback lets the retry create). It came from
+    // another constraint inside the create, so surface that error as is
+    // rather than telling the coach the package is still being saved.
+    if (!existing) throw uniqueViolation;
+    const claim = readClaim(existing.response_json);
+    if (existing.status !== 'completed' || !claim?.package_id) {
       // Not reachable with the single-transaction claim (an uncommitted
       // claim is invisible and blocks the retry's insert), kept so a
       // future change can never fall through to a second create.

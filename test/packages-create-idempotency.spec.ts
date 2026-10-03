@@ -33,6 +33,8 @@ function makeDb() {
   const packages: Row[] = [];
   const ledger: Row[] = [];
   let seq = 0;
+  // S-COACH-BE-4: lets a test make the PACKAGE insert hit a unique index.
+  const flags = { packageUniqueViolation: false };
   // key -> promise resolved when the transaction holding it ends
   const pendingKeys = new Map<string, Promise<void>>();
   const ledgerKey = (d: Record<string, unknown>) =>
@@ -45,6 +47,7 @@ function makeDb() {
     return {
       coachPackage: {
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          if (flags.packageUniqueViolation) throw p2002();
           const row: Row = { ...data, id: `pkg-${++seq}`, created_at: new Date() };
           if (tx) tx.pkgs.push(row);
           else packages.push(row);
@@ -116,7 +119,7 @@ function makeDb() {
       }
     }),
   };
-  return { root, packages, ledger };
+  return { root, packages, ledger, flags };
 }
 
 const INPUT = {
@@ -259,6 +262,23 @@ describe('OR-112-16 package create is idempotent per Idempotency-Key', () => {
     await expect(svc.createIdempotent('coach-1', INPUT, 'key-iiiiiiii')).rejects.toBeInstanceOf(
       GoneException,
     );
+  });
+
+  it('a unique violation from the package insert itself is surfaced, never reported as "still being saved"', async () => {
+    const db = makeDb();
+    const svc = service(db);
+    db.flags.packageUniqueViolation = true;
+    const err = await svc
+      .createIdempotent('coach-1', INPUT, 'key-jjjjjjjj')
+      .catch((e: unknown) => e);
+    // The claim rolled back with the package, so no key is burned and the
+    // error is the real constraint error, not 409 IDEMPOTENCY_IN_PROGRESS.
+    expect(err).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(db.ledger).toHaveLength(0);
+    db.flags.packageUniqueViolation = false;
+    const ok = await svc.createIdempotent('coach-1', INPUT, 'key-jjjjjjjj');
+    expect(ok.replayed).toBe(false);
+    expect(db.packages).toHaveLength(1);
   });
 
   it('the request hash is over the normalised body (case of currency does not matter)', () => {

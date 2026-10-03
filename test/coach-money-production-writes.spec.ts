@@ -418,3 +418,79 @@ describe('B-641-6 — a refund is booked when it succeeds, not when it was reque
     expect(nowCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['refund']);
   });
 });
+
+describe('B-641-6 — a pending refund that completes through charge.refund.updated', () => {
+  afterEach(() => jest.useRealTimers());
+
+  // Stripe sends charge.refunded once, when the refund is created (pending
+  // counts in amount_refunded); the later success arrives ONLY as
+  // charge.refund.updated. That event must book the refund at success time,
+  // reverse the ledger once and alert the coach once.
+  it('books the refund when it succeeds, reverses the ledger once and alerts the coach once', async () => {
+    const db = store();
+    const now = new Date();
+    seedPaidPurchase(db, 'p-upd', 'client-1', 'ch_upd', new Date(now.getTime() - 50 * DAY));
+    const svc = money(db);
+    const lastMonth = {
+      from: new Date(now.getTime() - 60 * DAY),
+      to: new Date(now.getTime() - 30 * DAY),
+    };
+    const notifications = { createNotification: jest.fn(async () => undefined) };
+    const real = Reflect.construct(RefundDisputeHandlerService, [
+      db,
+      { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },
+      Reflect.construct(SplitLedgerService, [db]),
+      { reverse: jest.fn(async () => null) },
+      { recordPayoutEvent: jest.fn(async () => null) },
+      notifications,
+    ]);
+    const updated = (id: string) => ({
+      id,
+      type: 'charge.refund.updated',
+      data: { object: { id: 're_upd', charge: 'ch_upd', amount: 4900, status: 'succeeded' } },
+    });
+    jest.useFakeTimers({
+      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+    });
+
+    jest.setSystemTime(new Date(now.getTime() - 40 * DAY));
+    await real.handle({
+      id: 'evt_created',
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_upd',
+          amount: 4900,
+          amount_refunded: 4900,
+          refunded: true,
+          refunds: { data: [{ id: 're_upd', amount: 4900, status: 'pending' }] },
+        },
+      },
+    });
+    const dest = () => db.state.splitLedgerEntry.find((e) => e.id === 'p-upd-destination')!;
+    expect(dest().reversed_cents).toBe(0);
+    expect(notifications.createNotification).not.toHaveBeenCalled();
+
+    jest.setSystemTime(now);
+    await real.handle(updated('evt_upd_1'));
+    const row = () => db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_upd')!;
+    expect(row()).toMatchObject({ status: 'succeeded', ledger_reversed: true });
+    expect(row().posted_at).toEqual(now);
+    expect(dest().reversed_cents).toBe(4802);
+
+    // A redelivery two days later neither moves the booking nor reverses twice.
+    jest.setSystemTime(new Date(now.getTime() + 2 * DAY));
+    await real.handle(updated('evt_upd_2'));
+    jest.useRealTimers();
+    expect(row().posted_at).toEqual(now);
+    expect(dest().reversed_cents).toBe(4802);
+    expect(notifications.createNotification).toHaveBeenCalledTimes(1);
+
+    const after = await svc.getSummary(COACH, last30(now), lastMonth, now);
+    expect(after.compare_totals?.net_cents).toBe(4802);
+    expect(after.compare_totals?.refunded_cents).toBe(0);
+    expect(after.totals).toMatchObject({ net_cents: -4802, refunded_cents: 4802 });
+    const nowCsv = (await svc.exportCsv(COACH, last30(now))).trim().split('\r\n');
+    expect(nowCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['refund']);
+  });
+});
