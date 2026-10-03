@@ -91,6 +91,7 @@ function makePrefsResponse(): CoachBriefPreferencesResponse {
     notification_time: '07:00',
     timezone: 'America/Los_Angeles',
     enabled: true,
+    honorific: 'first_name',
     created_at: new Date('2026-05-01T00:00:00Z').toISOString(),
     updated_at: new Date('2026-05-25T00:00:00Z').toISOString(),
   };

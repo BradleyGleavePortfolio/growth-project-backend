@@ -6,6 +6,7 @@
 
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -16,6 +17,7 @@ import {
   Validate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import type { RomanHonorific } from './roman/roman-highlights';
 import { IsValidTimezone } from '../../common/validators/is-valid-timezone.validator';
 
 export class BriefHistoryQueryDto {
@@ -78,4 +80,12 @@ export class UpdateBriefPreferencesDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+
+  // A5-COACH-BRIEF — how Roman addresses the coach in the brief. Mirrors the
+  // CHECK constraint in migration 20270305000000.
+  @IsOptional()
+  @IsIn(['first_name', 'sir', 'maam'], {
+    message: 'honorific must be one of first_name, sir, maam',
+  })
+  honorific?: RomanHonorific;
 }

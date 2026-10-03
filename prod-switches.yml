@@ -1339,6 +1339,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: community
     description: "Community coach-ack envelope feature flag (v2-2). Read via process.env[FEATURE_COMMUNITY_ACKS_ENV]; default OFF until rollout."
+  - name: FEATURE_COACH_BRIEF_ROMAN
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: coach-brief
+    description: "A5-COACH-BRIEF Roman brief highlights + consent-gated reply drafts. Read via process.env[FEATURE_COACH_BRIEF_ROMAN_ENV]; default OFF (kill-switch)."
   - name: FEATURE_COMMUNITY_AI_TRIAGE
     tier: feature
     prod_default: OFF

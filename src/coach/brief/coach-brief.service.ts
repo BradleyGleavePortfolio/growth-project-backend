@@ -35,6 +35,19 @@ import {
   noClientDataSubject,
 } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
+import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
+import { coachBriefRomanEnabled } from './roman/roman-brief.feature';
+import { RomanReplyDraftsService } from './roman/roman-reply-drafts.service';
+import {
+  COACH_PAYOUT_LEDGER_KINDS,
+  ROMAN_MONEY_WINDOW_MS,
+  RomanBriefPayload,
+  SETTLED_LEDGER_STATUSES,
+  composeRomanBrief,
+  isRomanBriefPayload,
+  isRomanHonorific,
+  reconcileCollected,
+} from './roman/roman-highlights';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -64,7 +77,12 @@ import {
 // out to the public API.
 export const BRIEF_ANTHROPIC_CLIENT_TOKEN = 'BRIEF_ANTHROPIC_CLIENT';
 
-export const BRIEF_CLAUDE_MODEL = 'claude-3-5-sonnet-20241022';
+// Operator note (agent 113, S-ROMAN-DATA): the former literal
+// claude-3-5-sonnet-20241022 is retired by the provider, so every brief call
+// failed into the deterministic fallback. The brief now follows the shared
+// model config (COACH_AI_MODEL, src/ai/coach/coach-ai.constants.ts) instead
+// of carrying its own id; test/coach-brief/brief-model-config.spec.ts pins it.
+export const BRIEF_CLAUDE_MODEL: string = COACH_AI_MODEL;
 export const BRIEF_MAX_TOKENS = 300;
 export const BRIEF_TEMPERATURE = 0.6;
 export const BRIEF_ANTHROPIC_TIMEOUT_MS = 15_000;
@@ -710,6 +728,10 @@ export class CoachBriefService {
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: AnthropicHandle,
+    // A5-COACH-BRIEF — Roman reply drafts (FEATURE_COACH_BRIEF_ROMAN). Optional
+    // so the flag-off brief and legacy unit tests construct without it.
+    @Optional()
+    private readonly romanDrafts?: RomanReplyDraftsService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -1759,6 +1781,8 @@ export class CoachBriefService {
       let actionItems: ActionItem[] | HeadCoachActionItem[];
       // R2b — what the AI may see (null = deterministic narrative only).
       let aiInput: BriefAiInput | null;
+      // A5 — the client scope (solo / sub-coach) for the Roman layer.
+      let romanClientIds: string[] = [];
 
       if (briefMode === 'head_coach') {
         // P1-3: head-coach is business-only. No client scope queries,
@@ -1775,6 +1799,7 @@ export class CoachBriefService {
         aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
       } else {
         const clientIds = await this.resolveClientScope(coachId, briefMode);
+        romanClientIds = clientIds;
         const agg = await this.aggregateSoloContext(
           coachId,
           clientIds,
@@ -1804,6 +1829,13 @@ export class CoachBriefService {
 
       const { narrative, generated_by } = await this.callClaude(context, aiInput);
 
+      // A5-COACH-BRIEF — Roman layer, only while the flag is on. Built inside
+      // the generation claim, so it runs once per coach per day across
+      // restarts; never fails the brief (null on any error).
+      const roman = coachBriefRomanEnabled()
+        ? await this.buildRoman(coachId, briefMode, timezone, context, romanClientIds)
+        : null;
+
       const updated = await this.prisma.coachBrief.update({
         where: {
           CoachBrief_coach_date_key: {
@@ -1822,6 +1854,7 @@ export class CoachBriefService {
           action_items: actionItems as unknown as Prisma.JsonArray,
           generated_by,
           brief_mode: briefMode,
+          ...(roman ? { roman: toJsonValue(roman) } : {}),
         },
       });
 
@@ -2004,6 +2037,102 @@ export class CoachBriefService {
   }
 
   // ── Map Prisma row → HTTP response shape.
+  // ── A5-COACH-BRIEF — Roman butler highlights ─────────────────────────
+  // Deterministic (no model call): money from the settlement ledger, who
+  // messaged, which reply drafts are ready (consent-gated, see
+  // RomanReplyDraftsService), and what waits for review.
+  private async buildRoman(
+    coachId: string,
+    briefMode: BriefMode,
+    timezone: string,
+    context: BriefContext | BriefContextHeadCoach,
+    clientIds: string[],
+  ): Promise<RomanBriefPayload | null> {
+    try {
+      const windowEnd = new Date();
+      const windowStart = new Date(windowEnd.getTime() - ROMAN_MONEY_WINDOW_MS);
+      const [prefs, ledger] = await Promise.all([
+        this.prisma.coachBriefPreferences.findUnique({
+          where: { coach_id: coachId },
+          select: { honorific: true },
+        }),
+        this.prisma.splitLedgerEntry.findMany({
+          where: {
+            payee_user_id: coachId,
+            kind: { in: [...COACH_PAYOUT_LEDGER_KINDS] },
+            status: { in: [...SETTLED_LEDGER_STATUSES] },
+            posted_at: { gte: windowStart, lt: windowEnd },
+          },
+          select: {
+            purchase_id: true,
+            kind: true,
+            status: true,
+            payee_user_id: true,
+            amount_cents: true,
+            reversed_cents: true,
+            currency: true,
+            posted_at: true,
+          },
+        }),
+      ]);
+      const money = reconcileCollected(ledger, coachId, windowStart, windowEnd);
+      const honorific = isRomanHonorific(prefs?.honorific) ? prefs.honorific : 'first_name';
+
+      const messages = {
+        clients: 0,
+        drafted: 0,
+        drafts_failed: 0,
+        without_ai_consent_clients: 0,
+        without_ai_consent_messages: 0,
+      };
+      let names: Array<string | null> = [];
+      let checkInsToReview = 0;
+      if (context.brief_mode !== 'head_coach' && clientIds.length > 0) {
+        if (this.romanDrafts) {
+          const prepared = await this.romanDrafts.prepareDrafts(
+            coachId,
+            context.coach_name,
+            clientIds,
+            {
+              deadlineMs: ROMAN_BRIEF_DRAFT_BUDGET_MS,
+            },
+          );
+          messages.clients = prepared.clients;
+          messages.drafted = prepared.drafted;
+          messages.drafts_failed = prepared.drafts_failed;
+          messages.without_ai_consent_clients = prepared.without_ai_consent_clients;
+          messages.without_ai_consent_messages = prepared.without_ai_consent_messages;
+          names = prepared.client_names;
+        }
+        checkInsToReview = await this.prisma.checkIn.count({
+          where: {
+            user_id: { in: clientIds },
+            reviewed_by_coach: false,
+            logged_at: { gte: new Date(windowEnd.getTime() - CHECK_IN_REVIEW_WINDOW_MS) },
+          },
+        });
+      }
+
+      return composeRomanBrief({
+        mode: briefMode,
+        honorific,
+        coachFirstName: context.coach_first_name,
+        localHour: localHourIn(windowEnd, timezone),
+        money,
+        messageClientNames: names,
+        messages,
+        checkInsToReview,
+        workoutsToApprove:
+          context.brief_mode === 'head_coach' ? 0 : context.workouts_pending_approval,
+        dunningInProgress: context.brief_mode === 'head_coach' ? context.dunning_in_progress : 0,
+        newClients24h: context.brief_mode === 'head_coach' ? context.new_clients_last_24h : 0,
+      });
+    } catch (err) {
+      this.logger.error(`CoachBrief roman layer failed coach=${coachId}: ${errorMessageOf(err)}`);
+      return null;
+    }
+  }
+
   private toResponse(row: {
     id: string;
     coach_id: string;
@@ -2015,6 +2144,7 @@ export class CoachBriefService {
     action_items: Prisma.JsonValue | null;
     generated_by: string | null;
     brief_mode: string | null;
+    roman?: Prisma.JsonValue | null;
     created_at: Date;
   }): CoachBriefResponse {
     // A5-P1-6 — surface 'generating' explicitly so mobile can
@@ -2059,6 +2189,8 @@ export class CoachBriefService {
             ? (row.action_items as unknown as HeadCoachActionItem[])
             : (row.action_items as unknown as ActionItem[]),
         generated_by: generatedBy,
+        // A5 — the kill switch hides a stored Roman layer immediately.
+        roman: coachBriefRomanEnabled() && isRomanBriefPayload(row.roman) ? row.roman : null,
       };
     }
 
@@ -2208,4 +2340,31 @@ function readWallClockInTz(d: Date, timeZone: string): WallClock {
     second: pick('second'),
     ms: d.getUTCMilliseconds(),
   };
+}
+
+// ─── A5-COACH-BRIEF helpers ─────────────────────────────────────────────
+
+/** Wall-clock budget for starting Roman drafts inside brief generation. */
+export const ROMAN_BRIEF_DRAFT_BUDGET_MS = 60_000;
+/** Check-ins logged within this window and not yet reviewed are "waiting". */
+export const CHECK_IN_REVIEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The coach's local hour (0-23) at `at`; UTC on an invalid zone. */
+export function localHourIn(at: Date, timeZone: string): number {
+  try {
+    const h = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(at);
+    const n = Number.parseInt(h, 10);
+    return Number.isFinite(n) ? n % 24 : at.getUTCHours();
+  } catch {
+    return at.getUTCHours();
+  }
+}
+
+/** Plain JSON copy for a Prisma Json column (drops undefined, no casts). */
+function toJsonValue(v: RomanBriefPayload): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(v));
 }

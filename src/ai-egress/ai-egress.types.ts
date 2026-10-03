@@ -85,6 +85,7 @@ export type AiEgressSurface =
   | 'coach_ai.health_probe'
   | 'coach.brief'
   | 'coach.churn_draft'
+  | 'coach.reply_draft'
   | 'gateway'
   | 'wearables.insight'
   | 'first_win'

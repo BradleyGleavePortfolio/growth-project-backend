@@ -5,6 +5,8 @@
 // canonical shape — never cast `brief_context as any` and never read the
 // JSON column without going through one of these types.
 
+import type { RomanBriefPayload } from './roman/roman-highlights';
+
 export type BriefMode = 'solo_coach' | 'head_coach' | 'sub_coach';
 
 // A5-P1-6 — `generating` is a real DB status (the in-flight claim
@@ -136,6 +138,9 @@ export interface BriefSummary {
   // ruling). Mobile branches on brief_mode to render the correct shape.
   action_items: ActionItem[] | HeadCoachActionItem[];
   generated_by: BriefGeneratedBy;
+  // A5-COACH-BRIEF — Roman butler highlights. Null while
+  // FEATURE_COACH_BRIEF_ROMAN is off or when the layer could not be built.
+  roman: RomanBriefPayload | null;
 }
 
 export interface CoachBriefResponse {
@@ -186,6 +191,8 @@ export interface CoachBriefPreferencesResponse {
   notification_time: string;
   timezone: string;
   enabled: boolean;
+  // A5-COACH-BRIEF — how Roman addresses the coach.
+  honorific: 'first_name' | 'sir' | 'maam';
   created_at: string | null;
   updated_at: string | null;
 }

@@ -450,6 +450,9 @@ model User {
   coach_daily_logs        CoachDailyLog[]        @relation("CoachDailyLogCoach")
   coach_brief_preferences CoachBriefPreferences? @relation("CoachBriefPrefsCoach")
   coach_brief_push_ledger CoachBriefPushLedger?  @relation("CoachBriefPushLedgerCoach")
+  // A5-COACH-BRIEF — Roman reply-draft claims (server-only table).
+  roman_reply_drafts_as_coach  RomanReplyDraft[] @relation("RomanReplyDraftCoach")
+  roman_reply_drafts_as_client RomanReplyDraft[] @relation("RomanReplyDraftClient")
 
   // R46 — Coach Landing Page Builder. A coach owns many landing pages and
   // many CRM integrations. Both relations are optional; only users with
@@ -1251,6 +1254,9 @@ model CoachMessage {
   // produce two CoachMessage rows; the second INSERT trips P2002 and
   // the materialiser falls through to its "already_materialised" branch.
   ai_draft_id String? @unique
+
+  // A5-COACH-BRIEF — Roman reply drafts generated for this message.
+  roman_reply_drafts RomanReplyDraft[] @relation("RomanReplyDraftSource")
 
   @@index([coach_id])
   @@index([client_id])
@@ -2720,6 +2726,8 @@ model AiActionDraft {
   decided_at       DateTime?
   decision_note    String?
   audit_row        AiRequestAudit? @relation("AiAuditDraft")
+  // A5-COACH-BRIEF — set when Roman originated this draft for an unread client message.
+  roman_reply_draft RomanReplyDraft? @relation("RomanReplyDraftAiDraft")
   expires_at       DateTime?
   // PR AI-3 PRODUCT-1: when capability materialisation succeeds (e.g.
   // draft.coach_message → sendAsCoach), this timestamp is set. It is the
@@ -4741,6 +4749,9 @@ model CoachBrief {
   action_items          Json?
   generated_by          String?
   brief_mode            String?
+  // A5-COACH-BRIEF — deterministic Roman butler highlights (RomanBriefPayload).
+  // Null when FEATURE_COACH_BRIEF_ROMAN was off at generation time.
+  roman                 Json?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
 
@@ -4774,10 +4785,43 @@ model CoachBriefPreferences {
   notification_time String   @default("05:00")
   timezone          String   @default("America/Los_Angeles")
   enabled           Boolean  @default(true)
+  // A5-COACH-BRIEF — how Roman addresses the coach: first_name | sir | maam
+  // (CHECK constraint in 20270305000000).
+  honorific         String   @default("first_name")
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
   @@index([enabled, notification_time])
+}
+
+// A5-COACH-BRIEF — Roman reply-draft claim + triage metadata. One row per
+// (coach, unread source message): the unique key makes generation idempotent
+// across restarts, devices and the daily brief. The draft text and the
+// approve/send pipeline live in AiActionDraft (draft.coach_message) so there
+// is exactly one AI-draft send path. Server-only (RLS forced, service_role
+// bypass only). status: generating | ready | failed | superseded.
+model RomanReplyDraft {
+  id                    String         @id @default(uuid())
+  coach_id              String
+  coach                 User           @relation("RomanReplyDraftCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id             String
+  client                User           @relation("RomanReplyDraftClient", fields: [client_id], references: [id], onDelete: Cascade)
+  source_message_id     String
+  source_message        CoachMessage   @relation("RomanReplyDraftSource", fields: [source_message_id], references: [id], onDelete: Cascade)
+  ai_draft_id           String?        @unique
+  ai_draft              AiActionDraft? @relation("RomanReplyDraftAiDraft", fields: [ai_draft_id], references: [id], onDelete: Cascade)
+  status                String         @default("generating")
+  category              String?
+  urgency               String?
+  failure_code          String?
+  generation_started_at DateTime?
+  generated_at          DateTime?
+  created_at            DateTime       @default(now())
+  updated_at            DateTime       @default(now()) @updatedAt
+
+  @@unique([coach_id, source_message_id])
+  @@index([coach_id, status])
+  @@index([client_id])
 }
 
 // R43 — Server-only push-dedup ledger. last_push_attempt_date and

@@ -1923,6 +1923,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community acknowledgements.',
   },
   {
+    name: 'FEATURE_COACH_BRIEF_ROMAN',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A5-COACH-BRIEF — Roman butler highlights in the coach daily brief plus box-2-consent-gated Roman reply drafts (/coach/brief/drafts). Kill switch: off hides the layer and 404s the drafts routes.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_AI_TRIAGE',
     values: ['true', 'false'],
     unsetIs: 'off',

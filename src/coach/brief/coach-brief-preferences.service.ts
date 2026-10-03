@@ -11,6 +11,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CoachBriefPreferencesResponse } from './coach-brief.types';
+import { RomanHonorific, isRomanHonorific } from './roman/roman-highlights';
 
 // R43 / A5-P1-1 — the operator-locked default is "05:00". Decacorn-grade
 // fitness coaches start their day before clients hit the gym; a 07:00
@@ -20,6 +21,9 @@ import { CoachBriefPreferencesResponse } from './coach-brief.types';
 // the three-way agreement at every CI run (R51).
 const DEFAULT_NOTIFICATION_TIME = '05:00';
 const DEFAULT_TIMEZONE = 'America/Los_Angeles';
+// A5-COACH-BRIEF — address by first name until the coach picks Sir / Ma'am.
+// Must agree with the schema @default and the migration DEFAULT.
+const DEFAULT_HONORIFIC: RomanHonorific = 'first_name';
 
 @Injectable()
 export class CoachBriefPreferencesService {
@@ -35,6 +39,7 @@ export class CoachBriefPreferencesService {
         notification_time: DEFAULT_NOTIFICATION_TIME,
         timezone: DEFAULT_TIMEZONE,
         enabled: true,
+        honorific: DEFAULT_HONORIFIC,
         created_at: null,
         updated_at: null,
       };
@@ -48,6 +53,7 @@ export class CoachBriefPreferencesService {
       notification_time?: string;
       timezone?: string;
       enabled?: boolean;
+      honorific?: RomanHonorific;
     },
   ): Promise<CoachBriefPreferencesResponse> {
     const row = await this.prisma.coachBriefPreferences.upsert({
@@ -57,6 +63,7 @@ export class CoachBriefPreferencesService {
         notification_time: patch.notification_time ?? DEFAULT_NOTIFICATION_TIME,
         timezone: patch.timezone ?? DEFAULT_TIMEZONE,
         enabled: patch.enabled ?? true,
+        honorific: patch.honorific ?? DEFAULT_HONORIFIC,
       },
       update: {
         ...(patch.notification_time !== undefined && {
@@ -64,6 +71,7 @@ export class CoachBriefPreferencesService {
         }),
         ...(patch.timezone !== undefined && { timezone: patch.timezone }),
         ...(patch.enabled !== undefined && { enabled: patch.enabled }),
+        ...(patch.honorific !== undefined && { honorific: patch.honorific }),
       },
     });
     return this.toResponse(row);
@@ -74,6 +82,7 @@ export class CoachBriefPreferencesService {
     notification_time: string;
     timezone: string;
     enabled: boolean;
+    honorific?: string | null;
     created_at: Date;
     updated_at: Date;
   }): CoachBriefPreferencesResponse {
@@ -82,6 +91,7 @@ export class CoachBriefPreferencesService {
       notification_time: row.notification_time,
       timezone: row.timezone,
       enabled: row.enabled,
+      honorific: isRomanHonorific(row.honorific) ? row.honorific : DEFAULT_HONORIFIC,
       created_at: row.created_at.toISOString(),
       updated_at: row.updated_at.toISOString(),
     };

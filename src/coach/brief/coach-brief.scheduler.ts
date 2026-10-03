@@ -375,7 +375,11 @@ export class CoachBriefScheduler implements OnModuleInit {
         return;
       }
 
-      const notifBody = brief.summary.narrative.slice(0, 160);
+      // A5-COACH-BRIEF — with the Roman layer on, the push carries Roman's
+      // name-free butler line (lock-screen privacy); otherwise the narrative.
+      const notifBody = brief.summary.roman
+        ? brief.summary.roman.push_text
+        : brief.summary.narrative.slice(0, 160);
 
       // P2-6: AbortController feeds the same signal into pushToUser AND
       // the timeout, so when the 10s deadline trips we actually cancel
