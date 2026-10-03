@@ -121,12 +121,15 @@ function makeDb(userMessage: string) {
     aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
     update: jest.fn(async () => ({})),
   };
+  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+  const $executeRaw = jest.fn(async () => 1);
   const prisma = {
     romanMessage,
     romanSession,
     aiRequestAudit,
+    $executeRaw,
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ romanMessage, romanSession }),
+      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
   return { prisma, messages };
@@ -203,8 +206,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     });
     expect(audit.write).toHaveBeenCalledTimes(1);
     const row = audit.write.mock.calls[0][0];
+    // OR-115-1: one neutral action; the closed reason code only in metadata.
     expect(row).toMatchObject({
-      action: 'roman.safety_emergency',
+      action: 'roman.safety_route',
+      metadata: { route_reason: 'call_911' },
       actorId: 'user-A',
       targetType: 'RomanSession',
       targetId: 'sess_1',
@@ -220,7 +225,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
     expect(chunks[0].text).toContain('988');
-    expect(audit.write.mock.calls[0][0]).toMatchObject({ action: 'roman.safety_self_harm' });
+    expect(audit.write.mock.calls[0][0]).toMatchObject({
+      action: 'roman.safety_route',
+      metadata: { route_reason: 'call_988' },
+    });
   });
 
   it('the explicit userMessage option is preferred over the DB lookup', async () => {
