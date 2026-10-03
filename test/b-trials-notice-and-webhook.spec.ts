@@ -508,6 +508,37 @@ describe('B-TRIALS — webhook trial lifecycle', () => {
     expect(w.usage.rows[0].status).toBe('released');
   });
 
+  it('B-TRIALS-2: a started trial keeps access to its end when the card is later removed (no charge: Stripe cancels at trial end)', async () => {
+    const w = world();
+    w.purchases[0].entitlement_active = false;
+    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
+    expect(w.purchases[0].entitlement_active).toBe(true);
+    await w.handler.handle(
+      event('customer.subscription.updated', trialSub({ default_payment_method: null }), 'evt_2'),
+      w.tx,
+    );
+    expect(w.purchases[0].entitlement_active).toBe(true);
+    expect(w.usage.rows[0]).toMatchObject({ status: 'started', purchase_id: 'pur-1' });
+  });
+
+  it('B-TRIALS-2: a reserved (never started) trial without a card still grants nothing', async () => {
+    const w = world();
+    w.purchases[0].entitlement_active = false;
+    await w.usageSvc.reserve(stub<Parameters<TrialUsageService['reserve']>[0]>(w.prisma), {
+      clientUserId: 'client-1',
+      coachUserId: 'coach-1',
+      packageId: 'pkg-1',
+      purchaseId: 'pur-1',
+      trialDays: 7,
+    });
+    await w.handler.handle(
+      event('customer.subscription.updated', trialSub({ default_payment_method: null })),
+      w.tx,
+    );
+    expect(w.purchases[0].entitlement_active).toBe(false);
+    expect(w.usage.rows[0].status).toBe('reserved');
+  });
+
   it('invoice.paid for the $0 trial invoice does not grant access without a card', async () => {
     const w = world();
     w.purchases[0].entitlement_active = false;

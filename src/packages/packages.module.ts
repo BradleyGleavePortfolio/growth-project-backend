@@ -14,6 +14,7 @@ import { MilestoneService } from './milestone.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TrialNoticeService } from './trials/trial-notice.service';
 import { TrialUsageService } from './trials/trial-usage.service';
+import { TrialCheckoutCapability } from './trials/trial-checkout-capability';
 
 // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
 // can read packages and cache Stripe Price ids back onto rows after lazy
@@ -51,6 +52,7 @@ import { TrialUsageService } from './trials/trial-usage.service';
     // B-TRIALS (OR-113-2) — one-trial-per-coach ledger + trial-ending notice.
     TrialUsageService,
     TrialNoticeService,
+    TrialCheckoutCapability,
     PackageContentsService,
     PackagePushService,
     PurchaseFanoutService,
@@ -62,6 +64,7 @@ import { TrialUsageService } from './trials/trial-usage.service';
     PackagesService,
     TrialUsageService,
     TrialNoticeService,
+    TrialCheckoutCapability,
     PackageContentsService,
     PackagePushService,
     PurchaseFanoutService,

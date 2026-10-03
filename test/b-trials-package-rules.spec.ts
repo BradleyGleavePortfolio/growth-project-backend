@@ -18,6 +18,10 @@ import {
 } from '../src/packages/trials/trial-rules';
 import { ClientPackagesController } from '../src/packages/packages.controller';
 import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
+import {
+  SUBSCRIPTION_CHECKOUT_OWNER,
+  TrialCheckoutCapability,
+} from '../src/packages/trials/trial-checkout-capability';
 import { makeTrialUsageTable, stub } from './utils/trial-fakes';
 
 type PkgRow = Record<string, unknown> & { id: string };
@@ -310,8 +314,12 @@ describe('B-TRIALS — client package reads carry trial_offer for this client', 
       });
     }
     const prisma = { packageTrialUsage: table };
+    // The #654 subscription checkout registers itself at boot.
+    const capability = new TrialCheckoutCapability();
+    capability.register(SUBSCRIPTION_CHECKOUT_OWNER);
     const trials = new TrialUsageService(
       stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
+      capability,
     );
     const pkg = {
       id: 'pkg-1',

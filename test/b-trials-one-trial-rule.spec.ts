@@ -6,16 +6,24 @@ import {
   TRIAL_RESERVATION_STALE_MS,
   TrialUsageService,
 } from '../src/packages/trials/trial-usage.service';
+import {
+  SUBSCRIPTION_CHECKOUT_OWNER,
+  TrialCheckoutCapability,
+} from '../src/packages/trials/trial-checkout-capability';
+import { PackagesModule } from '../src/packages/packages.module';
 import { makeTrialUsageTable, stub } from './utils/trial-fakes';
 
-function setup() {
+function setup(opts: { checkoutReady?: boolean } = {}) {
   const table = makeTrialUsageTable();
   const prisma = { packageTrialUsage: table };
+  const capability = new TrialCheckoutCapability();
+  if (opts.checkoutReady !== false) capability.register(SUBSCRIPTION_CHECKOUT_OWNER);
   const service = new TrialUsageService(
     stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
+    capability,
   );
   const db = stub<Parameters<TrialUsageService['reserve']>[0]>(prisma);
-  return { table, service, db };
+  return { table, service, db, capability };
 }
 
 const base = { clientUserId: 'client-1', coachUserId: 'coach-1', packageId: 'pkg-1', trialDays: 7 };
@@ -235,5 +243,61 @@ describe('B-TRIALS — offersForClient', () => {
     // A pending (reserved, not started) attempt still shows the trial.
     const other = await service.offersForClient('client-2', pkgs);
     expect(other.get('pkg-1')?.available).toBe(true);
+  });
+});
+
+describe('B-TRIALS-2 — a trial is advertised only when a checkout honors it (#654 either merge order)', () => {
+  const pkgs = [
+    { id: 'pkg-1', coach_id: 'coach-1', trial_days: 7 },
+    { id: 'pkg-2', coach_id: 'coach-1', trial_days: 0 },
+  ];
+
+  it('no subscription checkout registered: the trial is not offered (the hosted checkout would charge at once)', async () => {
+    const { service } = setup({ checkoutReady: false });
+    const offers = await service.offersForClient('client-1', pkgs);
+    expect(offers.get('pkg-1')).toEqual({
+      trial_days: 7,
+      available: false,
+      reason: 'not_offered_yet',
+    });
+    expect(offers.get('pkg-2')).toEqual({ trial_days: 0, available: false, reason: 'none' });
+  });
+
+  it('legacy wiring without the capability never advertises a trial', async () => {
+    const table = makeTrialUsageTable();
+    const service = new TrialUsageService(
+      stub<ConstructorParameters<typeof TrialUsageService>[0]>({ packageTrialUsage: table }),
+    );
+    const offers = await service.offersForClient('client-1', pkgs);
+    expect(offers.get('pkg-1')?.available).toBe(false);
+    expect(offers.get('pkg-1')?.reason).toBe('not_offered_yet');
+  });
+
+  it('once the subscription checkout registers, eligibility decides (offered, then already_used)', async () => {
+    const { service, db, capability } = setup({ checkoutReady: false });
+    capability.register(SUBSCRIPTION_CHECKOUT_OWNER);
+    capability.register(SUBSCRIPTION_CHECKOUT_OWNER); // idempotent
+    expect(capability.registeredBy()).toBe('subscription-checkout');
+    expect((await service.offersForClient('client-1', pkgs)).get('pkg-1')?.reason).toBe('offered');
+    await service.markStarted(db, { ...base, purchaseId: 'pur-1', trialEndsAt: new Date() });
+    expect((await service.offersForClient('client-1', pkgs)).get('pkg-1')?.reason).toBe(
+      'already_used',
+    );
+  });
+
+  it('PackagesModule provides and exports one capability instance for CheckoutModule to register with', () => {
+    const providers = Reflect.getMetadata('providers', PackagesModule) as unknown[];
+    const exported = Reflect.getMetadata('exports', PackagesModule) as unknown[];
+    expect(providers).toContain(TrialCheckoutCapability);
+    expect(exported).toContain(TrialCheckoutCapability);
+  });
+
+  it('hasStarted is true only for a started trial on that purchase', async () => {
+    const { service, db } = setup();
+    await service.reserve(db, { ...base, purchaseId: 'pur-1' });
+    expect(await service.hasStarted(db, 'pur-1')).toBe(false);
+    await service.markStarted(db, { ...base, purchaseId: 'pur-1', trialEndsAt: new Date() });
+    expect(await service.hasStarted(db, 'pur-1')).toBe(true);
+    expect(await service.hasStarted(db, 'pur-2')).toBe(false);
   });
 });

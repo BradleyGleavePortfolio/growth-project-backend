@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import type { CoachPackage, PackageTrialUsage, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { TRIAL_DAYS_MAX, TrialErrorCode } from './trial-rules';
+import { TrialCheckoutCapability } from './trial-checkout-capability';
 
 // B-TRIALS (OR-113-2) — one free trial per client per coach, enforced in the
 // database.
@@ -70,8 +71,15 @@ export interface TrialOffer {
   trial_days: number;
   /** True when this client would get the trial if they subscribed now. */
   available: boolean;
-  /** none = no trial on this package; already_used = had one with this coach. */
-  reason: 'offered' | 'none' | 'already_used';
+  /**
+   * offered         — the client gets the trial if they subscribe now;
+   * none            — the package has no trial;
+   * already_used    — the client already had a free trial with this coach;
+   * not_offered_yet — the package has trial days but no checkout on this
+   *                   server sends a trial to Stripe yet (#654 not wired), so
+   *                   the app shows the regular price only.
+   */
+  reason: 'offered' | 'none' | 'already_used' | 'not_offered_yet';
 }
 
 export function trialAlreadyUsedError(): ConflictException {
@@ -96,7 +104,12 @@ export function trialInProgressError(): ConflictException {
 export class TrialUsageService {
   private readonly logger = new Logger(TrialUsageService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // B-TRIALS-2 — absent (legacy wiring) = no checkout honors trials, so no
+    // trial is ever advertised.
+    @Optional() private readonly checkout?: TrialCheckoutCapability,
+  ) {}
 
   /** Trial offers for one client across a list of packages (one query). */
   async offersForClient(
@@ -118,8 +131,9 @@ export class TrialUsageService {
         })
       : [];
     const usedWith = new Set(started.map((r) => r.coach_user_id));
+    const sellable = this.checkout?.isReady() === true;
     for (const p of packages) {
-      offers.set(p.id, offerFor(p, usedWith.has(p.coach_id)));
+      offers.set(p.id, offerFor(p, usedWith.has(p.coach_id), sellable));
     }
     return offers;
   }
@@ -296,6 +310,20 @@ export class TrialUsageService {
     return 'conflict';
   }
 
+  /**
+   * True when this purchase's trial already started (card was saved and the
+   * subscription was trialing). Used by the webhook so a started trial keeps
+   * access to its end even if the card is later removed: Stripe then cancels
+   * at the trial end (missing_payment_method=cancel) and nothing is charged.
+   */
+  async hasStarted(db: Db, purchaseId: string): Promise<boolean> {
+    const row = await db.packageTrialUsage.findUnique({
+      where: { purchase_id: purchaseId },
+      select: { status: true },
+    });
+    return row?.status === 'started';
+  }
+
   /** Test seam / support read. */
   async findForPurchase(purchaseId: string): Promise<PackageTrialUsage | null> {
     return this.prisma.packageTrialUsage.findUnique({ where: { purchase_id: purchaseId } });
@@ -305,10 +333,12 @@ export class TrialUsageService {
 export function offerFor(
   pkg: Pick<CoachPackage, 'trial_days'>,
   usedWithCoach: boolean,
+  sellable = true,
 ): TrialOffer {
   const days = pkg.trial_days ?? 0;
   if (days <= 0) return { trial_days: 0, available: false, reason: 'none' };
   if (usedWithCoach) return { trial_days: days, available: false, reason: 'already_used' };
+  if (!sellable) return { trial_days: days, available: false, reason: 'not_offered_yet' };
   return { trial_days: days, available: true, reason: 'offered' };
 }
 

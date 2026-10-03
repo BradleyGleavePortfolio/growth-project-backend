@@ -831,16 +831,22 @@ export class CheckoutWebhookHandlerService {
     });
 
     const status = this.normalizeSubscriptionStatus(sub.status);
-    let entitlementActive = subscriptionGrantsEntitlement(status, sub);
     const currentPeriodEnd = this.toDate(sub.current_period_end);
     const canceledAt = this.toDate(sub.canceled_at);
 
     // B-TRIALS (OR-113-2) — trial bookkeeping. A trialing subscription with a
     // saved card starts the client's one trial with this coach; if another
     // purchase already holds it, this one gets no free access and is
-    // cancelled after commit (never charged).
-    const trial = await this.applyTrialState(db, purchase, status, sub, entitlementActive);
-    if (trial.conflict) entitlementActive = false;
+    // cancelled after commit (never charged). A trial that already started
+    // keeps access to its end even if the card is later removed.
+    const trial = await this.applyTrialState(
+      db,
+      purchase,
+      status,
+      sub,
+      subscriptionGrantsEntitlement(status, sub),
+    );
+    const entitlementActive = trial.entitled;
 
     const accessExpiresAt = this.computeAccessExpiry(
       pkg,
@@ -888,7 +894,7 @@ export class CheckoutWebhookHandlerService {
     status: string,
     sub: { trial_start?: number | null; trial_end?: number | null; default_payment_method?: unknown },
     entitled: boolean,
-  ): Promise<{ data: Prisma.ClientPurchaseUpdateInput; conflict: boolean }> {
+  ): Promise<{ data: Prisma.ClientPurchaseUpdateInput; conflict: boolean; entitled: boolean }> {
     const trialEndsAt = this.toDate(sub.trial_end ?? null);
     const trialStart = this.toDate(sub.trial_start ?? null);
     const data: Prisma.ClientPurchaseUpdateInput = {};
@@ -897,7 +903,17 @@ export class CheckoutWebhookHandlerService {
       const days = Math.round((trialEndsAt.getTime() - trialStart.getTime()) / 86_400_000);
       if (days >= 1 && days <= 30) data.trial_days = days;
     }
-    if (!this.trialUsage) return { data, conflict: false };
+    if (!this.trialUsage) return { data, conflict: false, entitled };
+    if (status === 'trialing' && !entitled) {
+      // B-TRIALS-2 — no card on the subscription right now. Before the trial
+      // started that means no access (card up front). After it started
+      // (the card was saved, then removed) the client keeps the trial they
+      // were promised until its end; Stripe cancels at the trial end
+      // (missing_payment_method=cancel), so nothing is ever charged. Same
+      // rule as B-RECUR's purchase-aware subscriptionGrantsAccess (#654).
+      const started = await this.trialUsage.hasStarted(db, purchase.id);
+      return { data, conflict: false, entitled: started };
+    }
     if (status === 'trialing' && entitled) {
       const outcome = await this.trialUsage.markStarted(db, {
         purchaseId: purchase.id,
@@ -907,12 +923,13 @@ export class CheckoutWebhookHandlerService {
         trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days ?? 0,
         trialEndsAt,
       });
-      return { data, conflict: outcome === 'conflict' };
+      const conflict = outcome === 'conflict';
+      return { data, conflict, entitled: !conflict };
     }
     if (status === 'canceled' || status === 'incomplete_expired') {
       await this.trialUsage.release(db, purchase.id, `subscription_${status}`);
     }
-    return { data, conflict: false };
+    return { data, conflict: false, entitled };
   }
 
   /**
@@ -1243,9 +1260,10 @@ export class CheckoutWebhookHandlerService {
             data: {
               status,
               // B-TRIALS — a $0 trial invoice is "paid" before any card is
-              // saved; trialing grants access only with a saved card, and
-              // never to a subscription that lost the one-trial race.
-              entitlement_active: subscriptionGrantsEntitlement(status, sub) && !trial.conflict,
+              // saved; trialing grants access only with a saved card (or a
+              // trial that already started), and never to a subscription
+              // that lost the one-trial race.
+              entitlement_active: trial.entitled,
               current_period_end: currentPeriodEnd,
               access_expires_at: this.computeAccessExpiry(
                 pkg,
