@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import { Injectable, Logger } from '@nestjs/common';
 import type { ConnectTransfer, Prisma, TransferReversalOp } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -405,6 +406,11 @@ export class TransferOrchestratorService {
   //     answer to any late request with the key, and no late request can
   //     start past its budget); anything else stays pending with an alert
   //     and is adopted again after the window and the backoff.
+  // Bound: a request already handed to the HTTP client is cut by the Stripe
+  // client timeout and, while Stripe keeps its idempotency key (at least
+  // 24 h), collapses with any adopted send of the same key. Only a process
+  // frozen inside fetch for longer than that is outside the bound; its late
+  // result is then caught by SFEE_TRANSFER_RECOVERED / SFEE_TRANSFER_DUPLICATE.
   async attempt(
     transferId: string,
     opts: { beforeStripe?: MoneyFence } = {},
@@ -456,6 +462,9 @@ export class TransferOrchestratorService {
     if (opts.beforeStripe) await opts.beforeStripe();
     const attemptCount = adopt ? row.attempts : row.attempts + 1;
     const sentAt = this.clock();
+    // Round 9: the start budget is also measured on the monotonic clock, so
+    // a wall-clock step backward during a pause cannot shorten it.
+    const sentMono = performance.now();
     // Durable "sent" marker, written before Stripe is called. The CAS on the
     // claim identity (attempts + marker) lets exactly one worker send this
     // attempt; a worker that loses it returns the row and leaves the result
@@ -500,7 +509,7 @@ export class TransferOrchestratorService {
 
     // Round 9: re-prove the charge lease and this claim after the awaited
     // claim, right before the external call.
-    const abandoned = await this.reproveSendClaim(sent, opts.beforeStripe);
+    const abandoned = await this.reproveSendClaim(sent, sentMono, opts.beforeStripe);
     if (abandoned) return abandoned;
 
     let stripeTransferId: string;
@@ -524,7 +533,7 @@ export class TransferOrchestratorService {
         metadata,
         idempotencyKey: row.idempotency_key,
         // Round 9: the last synchronous check before the request starts.
-        beforeSend: () => this.assertSendStartable(sent),
+        beforeSend: () => this.assertSendStartable(sent, sentMono),
       });
       stripeTransferId = transfer.id;
     } catch (err) {
@@ -605,6 +614,7 @@ export class TransferOrchestratorService {
   // still throws ChargeLockLostError (retryable) after the claim is parked.
   private async reproveSendClaim(
     sent: ConnectTransfer,
+    sentMono: number,
     fence?: MoneyFence,
   ): Promise<ConnectTransfer | null> {
     if (fence) {
@@ -643,7 +653,7 @@ export class TransferOrchestratorService {
       return live;
     }
     try {
-      this.assertSendStartable(sent);
+      this.assertSendStartable(sent, sentMono);
     } catch (err) {
       if (err instanceof TransferSendExpiredError) return this.abandonSend(sent, err.message);
       throw err;
@@ -653,9 +663,14 @@ export class TransferOrchestratorService {
 
   // Throws TransferSendExpiredError when the claim is older than the start
   // budget. Synchronous: StripeConnectApiService calls it right before fetch.
-  private assertSendStartable(sent: ConnectTransfer): void {
+  // The age is the larger of the wall-clock age (counts a suspended machine,
+  // and is what other workers compare the marker with) and the monotonic age
+  // (immune to a wall-clock step backward).
+  private assertSendStartable(sent: ConnectTransfer, sentMono: number): void {
     const claimedAt = sent.stripe_send_unresolved_at?.getTime() ?? 0;
-    const age = this.clock().getTime() - claimedAt;
+    const wallAge = this.clock().getTime() - claimedAt;
+    const monoAge = Math.round(performance.now() - sentMono);
+    const age = Math.max(wallAge, monoAge);
     if (age > this.sendStartBudgetMs) {
       throw new TransferSendExpiredError(sent.id, age, this.sendStartBudgetMs);
     }

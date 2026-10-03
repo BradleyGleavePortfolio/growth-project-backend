@@ -21,6 +21,7 @@
 // on cd332bfa. No live Stripe or DB.
 // This file imports only symbols that exist at cd332bfa, so the failing-before
 // run fails on assertions, not on compilation.
+import { performance } from 'node:perf_hooks';
 import { Logger } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
@@ -412,6 +413,25 @@ describe('B-627-9 narrowed: the send-start budget', () => {
     expect(paid.status).toBe('succeeded');
     expect(c.reinstatements()).toHaveLength(1);
     expect(c.stripe.netTo('acct_coach')).toBe(9_480);
+  });
+
+  it('a wall-clock step backward during the pause does not extend the start budget (monotonic age)', async () => {
+    const { c, r, t0 } = await agedRow(2);
+    let mono = performance.now();
+    jest.spyOn(performance, 'now').mockImplementation(() => mono);
+    const p = c.pauseAfterClaim();
+    const a = c.transfers.attempt(r.id);
+    await p.isClaimed;
+    // 31 s really pass, while the wall clock is stepped back to the claim.
+    mono += SEND_START_BUDGET_MS + 1_000;
+    c.transfers.clock = () => new Date(t0.getTime());
+    p.release();
+    const aRes = await a;
+
+    expect(aRes.status).toBe('pending');
+    expect(c.reinstatements()).toHaveLength(0);
+    expect(String(c.row().last_error)).toMatch(/^SFEE_TRANSFER_SEND_ABANDONED: /);
+    expect(repayAlerts()).toHaveLength(0);
   });
 
   it('(control) a sender inside its start budget sends normally', async () => {
