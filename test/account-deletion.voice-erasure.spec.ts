@@ -213,9 +213,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     // Bytes: both row keys and the owner folder's leftovers are removed.
     expect(client.storage.from).toHaveBeenCalledWith('voice-notes');
     const flat = removed.flat();
-    expect(flat).toEqual(
-      expect.arrayContaining([KEY_A, KEY_B, `${USER_ID}/orphan-upload.m4a`]),
-    );
+    expect(flat).toEqual(expect.arrayContaining([KEY_A, KEY_B, `${USER_ID}/orphan-upload.m4a`]));
     expect(listed).toContain(USER_ID);
 
     // After commit each work row is completed only after verification.
@@ -267,8 +265,13 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
       message: `User ${USER_ID} has been permanently deleted.`,
     });
     expect(client.auth.admin.deleteUser).toHaveBeenCalled();
+    // Attempt updates only (conditional on completed_at IS NULL), so a
+    // separate re-open of completed work (#652 C-610-12) is not counted.
     const updates = calls.filter(
-      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'updateMany',
+      (c) =>
+        c.delegate === 'communityVoiceErasure' &&
+        c.method === 'updateMany' &&
+        (c.args as { where: { completed_at?: unknown } }).where.completed_at === null,
     );
     expect(updates).toHaveLength(3);
     for (const u of updates) {

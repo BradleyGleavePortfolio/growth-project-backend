@@ -21,6 +21,7 @@ import { executeErasureManifest } from './account-deletion.manifest';
 import {
   TOMBSTONE_AUTH_PREFIX,
   RECEIPT_KEY_PREFIX,
+  LEGACY_RECEIPT_KEY_PREFIX,
   deletionReceiptKey,
   receiptCutoff,
 } from './deletion-receipt';
@@ -660,7 +661,8 @@ export class AccountDeletionService {
     try {
       receiptsDropped = await this.prisma.$executeRaw`
         UPDATE "User" SET "supabase_id" = ${TOMBSTONE_AUTH_PREFIX} || "id"
-         WHERE "supabase_id" LIKE ${`${RECEIPT_KEY_PREFIX}%`}
+         WHERE ("supabase_id" LIKE ${`${RECEIPT_KEY_PREFIX}%`}
+                OR "supabase_id" LIKE ${`${LEGACY_RECEIPT_KEY_PREFIX}%`})
            AND "deleted_at" < ${receiptCutoff()}
       `;
     } catch (err) {
@@ -690,7 +692,8 @@ export class AccountDeletionService {
       async (
         tx,
       ): Promise<
-        { skipped: FinalizeSkipReason } | { supabaseId: string | null; voiceWork: VoiceErasureRow[] }
+        | { skipped: FinalizeSkipReason }
+        | { supabaseId: string | null; voiceWork: VoiceErasureRow[] }
       > => {
         const user = await this.lockUser(tx, userId, 'skip');
         if (!user) {
@@ -895,13 +898,21 @@ export class AccountDeletionService {
       return 'pending';
     }
 
-    // B-608-10: keep a hashed completion receipt instead of forgetting the
-    // auth id at once, so the person's own token gets 403 ACCOUNT_DELETED
-    // (and the receipt endpoint answers) rather than a bare 401. The nightly
-    // cron drops the receipt after DELETION_RECEIPT_DAYS.
+    // B-608-10: keep a keyed completion receipt (C-608-7: HMAC r2, see
+    // deletion-receipt.ts) instead of forgetting the auth id at once, so the
+    // person's own token gets 403 ACCOUNT_DELETED (and the receipt endpoint
+    // answers) rather than a bare 401. The nightly cron drops the receipt
+    // after DELETION_RECEIPT_DAYS. With no usable receipt secret the
+    // tombstone forgets the auth id instead (never an unkeyed digest).
+    const receiptKey = deletionReceiptKey(supabaseId);
+    if (!receiptKey) {
+      this.logger.error(
+        `account deletion: no usable DELETION_RECEIPT_SECRET / RECENT_AUTH_SECRET; user=${userId} gets no completion receipt`,
+      );
+    }
     await this.prisma.user.update({
       where: { id: userId },
-      data: { supabase_id: deletionReceiptKey(supabaseId) },
+      data: { supabase_id: receiptKey ?? `${TOMBSTONE_AUTH_PREFIX}${userId}` },
     });
     await this.insertDeletionAudit(this.prisma, {
       subjectId: crypto.randomUUID(),

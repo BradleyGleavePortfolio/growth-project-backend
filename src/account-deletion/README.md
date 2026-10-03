@@ -76,8 +76,16 @@ signs out.
 
 Removing the Supabase identity used to set `supabase_id` to `deleted-<id>`,
 so the person's own token got 401 "User not found" before the 403 above.
-Now the tombstone keeps `deleted-r1:<sha256("tgp-deletion-receipt:v1:" +
-auth id)>` for `DELETION_RECEIPT_DAYS` (30) after `deleted_at`:
+Now the tombstone keeps a keyed receipt for `DELETION_RECEIPT_DAYS` (30)
+after `deleted_at` (C-608-7):
+`deleted-r2:<HMAC-SHA256(secret, "tgp-deletion-receipt:v2:" + auth id)>`.
+The secret is `DELETION_RECEIPT_SECRET` (32+ characters) when set, else a key
+derived from `RECENT_AUTH_SECRET`; a database snapshot plus a list of known
+auth ids cannot be joined to a receipt without it. To rotate, move the old
+value to `DELETION_RECEIPT_SECRET_PREVIOUS` for 30 days (lookups try current,
+then previous). Legacy unkeyed `deleted-r1:<sha256>` receipts are never
+written again but still match until the cron drains them. With no usable
+secret no receipt is written: the tombstone forgets the auth id.
 
 - `JwtAuthGuard`: an unknown `sub` whose receipt key matches a live receipt
   gets 403 `ACCOUNT_DELETED`. Any other unknown subject stays 401
@@ -87,7 +95,7 @@ auth id)>` for `DELETION_RECEIPT_DAYS` (30) after `deleted_at`:
   as usual, but a token that expired up to 30 days ago is accepted
   (`JwksVerifierService.verifyForDeletionReceipt`). The only answer is
   `deleted` or 404. An active account looks the same as an unknown one.
-- The nightly cron replaces receipts older than 30 days with `deleted-<id>`.
+- The nightly cron replaces receipts (r2 and legacy r1) older than 30 days with `deleted-<id>`.
   The raw auth id is never stored after removal.
 
 ## State machine and concurrency

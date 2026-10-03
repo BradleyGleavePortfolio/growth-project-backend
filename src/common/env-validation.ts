@@ -532,6 +532,21 @@ export const ENV_RULES: EnvRule[] = [
     },
   },
   {
+    name: 'DELETION_RECEIPT_SECRET',
+    tier: 'optional',
+    default:
+      'derived from RECENT_AUTH_SECRET (HMAC with a fixed label); neither usable -> no completion receipt is written (the tombstone forgets the auth id)',
+    reason:
+      'C-608-7 (#608) — HMAC key for account-deletion completion receipts (deleted-r2:, src/account-deletion/deletion-receipt.ts). Without it a database snapshot plus a list of known auth ids cannot be joined to a receipt. 32+ random characters; shorter values are ignored. To rotate, move the old value to DELETION_RECEIPT_SECRET_PREVIOUS for 30 days.',
+  },
+  {
+    name: 'DELETION_RECEIPT_SECRET_PREVIOUS',
+    tier: 'optional',
+    default: 'unset (lookups use the current key and legacy r1 only)',
+    reason:
+      'C-608-7 (#608) — previous receipt HMAC key, used for lookups only while receipts written with it are inside their 30-day window (rotation). 32+ characters; shorter values are ignored. Remove it 30 days after a rotation.',
+  },
+  {
     name: 'RECENT_AUTH_TTL_MS',
     tier: 'prod',
     reason:

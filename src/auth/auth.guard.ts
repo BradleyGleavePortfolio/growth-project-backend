@@ -13,7 +13,7 @@ import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletio
 import { PtmService } from '../ptm/ptm.service';
 import {
   ACCOUNT_DELETED_BODY,
-  deletionReceiptKey,
+  findDeletionReceipt,
   isReceiptLive,
 } from '../account-deletion/deletion-receipt';
 
@@ -113,13 +113,10 @@ export class JwtAuthGuard implements CanActivate {
 
     if (!user) {
       // B-608-10: a finalized account whose auth identity was removed keeps
-      // a hashed completion receipt for a limited time. The person's own
+      // a keyed completion receipt for a limited time. The person's own
       // token then gets the terminal 403 instead of a bare 401. Any other
       // unknown subject stays a 401.
-      const receipt = await this.prisma.user.findUnique({
-        where: { supabase_id: deletionReceiptKey(supabaseId) },
-        select: { deleted_at: true },
-      });
+      const receipt = await findDeletionReceipt(this.prisma, supabaseId);
       if (receipt && isReceiptLive(receipt.deleted_at)) {
         throw new ForbiddenException({ ...ACCOUNT_DELETED_BODY });
       }

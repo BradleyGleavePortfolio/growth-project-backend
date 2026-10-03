@@ -11,7 +11,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma.service';
 import { JwksVerifierService } from '../auth/jwks.service';
-import { deletionReceiptKey, isReceiptLive } from './deletion-receipt';
+import { findDeletionReceipt, isReceiptLive } from './deletion-receipt';
 
 /**
  * Deletion completion receipt (B-608-10, mobile #313 B-313-5).
@@ -74,10 +74,7 @@ export class DeletionReceiptController {
       select: { deleted_at: true },
     });
     if (direct?.deleted_at) return { state: 'deleted' };
-    const receipt = await this.prisma.user.findUnique({
-      where: { supabase_id: deletionReceiptKey(sub) },
-      select: { deleted_at: true },
-    });
+    const receipt = await findDeletionReceipt(this.prisma, sub);
     if (receipt && isReceiptLive(receipt.deleted_at)) return { state: 'deleted' };
     throw new NotFoundException({
       statusCode: 404,

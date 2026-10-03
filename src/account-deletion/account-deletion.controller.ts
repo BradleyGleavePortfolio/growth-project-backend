@@ -219,7 +219,7 @@ export class AccountDeletionController {
     name: 'X-Recent-Auth-Token',
     required: true,
     description:
-      "Single-use step-up token for the calling owner, valid 5 minutes (POST /auth/recent-auth-token).",
+      'Single-use step-up token for the calling owner, valid 5 minutes (POST /auth/recent-auth-token).',
   })
   @ApiResponse({ status: 200, description: 'User deleted (or already deleted).' })
   @ApiResponse({

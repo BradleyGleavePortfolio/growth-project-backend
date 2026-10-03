@@ -210,9 +210,7 @@ export class RecentAuthGuard implements CanActivate {
     try {
       const expectedBuf = Buffer.from(expectedHmac, 'hex');
       const actualBuf = Buffer.from(tokenHmac, 'hex');
-      match =
-        expectedBuf.length === actualBuf.length &&
-        timingSafeEqual(expectedBuf, actualBuf);
+      match = expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf);
     } catch {
       match = false;
     }
@@ -239,10 +237,7 @@ export class RecentAuthGuard implements CanActivate {
         },
       });
     } catch (e: unknown) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         this.logger.warn(
           `RecentAuthGuard: replay detected for user=${authedUserId} hmac_suffix=${hmacSuffix}`,
         );
@@ -284,9 +279,7 @@ export function issueRecentAuthToken(userId: string, secret: string): string {
     );
   }
   const issuedAt = Date.now().toString();
-  const hmac = createHmac('sha256', secret)
-    .update(`${userId}:${issuedAt}`)
-    .digest('hex');
+  const hmac = createHmac('sha256', secret).update(`${userId}:${issuedAt}`).digest('hex');
   return `${userId}.${issuedAt}.${hmac}`;
 }
 

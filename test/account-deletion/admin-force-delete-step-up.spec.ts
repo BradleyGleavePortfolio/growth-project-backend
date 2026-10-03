@@ -176,7 +176,11 @@ describe('POST /admin/users/:id/delete requires step-up re-auth (B-608-13)', () 
     expect(adminForceDelete).toHaveBeenCalledTimes(1);
     expect(adminForceDelete).toHaveBeenCalledWith(
       TARGET,
-      expect.objectContaining({ actorId: 'owner-a', actorRole: 'owner', reason: 'support ticket 42' }),
+      expect.objectContaining({
+        actorId: 'owner-a',
+        actorRole: 'owner',
+        reason: 'support ticket 42',
+      }),
     );
   });
 
