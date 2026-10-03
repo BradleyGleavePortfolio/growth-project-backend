@@ -220,8 +220,13 @@ describe('account deletion erases community voice notes (B-610-5)', () => {
     ).toBe(true);
     expect(client.auth.admin.deleteUser).toHaveBeenCalled();
     // Nothing was marked complete; every row was rescheduled with the error.
+    // Attempt updates only (where completed_at IS NULL); the C-610-12
+    // re-open of completed work is its own conditional updateMany.
     const erasureUpdates = calls.filter(
-      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'updateMany',
+      (c) =>
+        c.delegate === 'communityVoiceErasure' &&
+        c.method === 'updateMany' &&
+        (c.args as { where: { completed_at?: unknown } }).where.completed_at === null,
     );
     expect(erasureUpdates).toHaveLength(3);
     for (const u of erasureUpdates) {
