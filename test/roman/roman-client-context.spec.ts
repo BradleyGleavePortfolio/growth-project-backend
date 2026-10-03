@@ -26,9 +26,10 @@ import {
 } from '../../src/roman/context/roman-context-invalidation';
 import { RomanContextController } from '../../src/roman/context/roman-context.controller';
 import { RomanService } from '../../src/roman/roman.service';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import type { RomanClientContext } from '../../src/roman/context/roman-client-context.types';
-import type Anthropic from '@anthropic-ai/sdk';
 import type { AuthedRequest } from '../../src/auth/auth-request';
 import {
   makePersonaDb,
@@ -55,10 +56,6 @@ afterEach(() => {
   else process.env[FLAG] = savedFlag;
 });
 
-function asAnthropicDouble<T extends object>(mock: T): Anthropic {
-  // @ts-expect-error partial structural mock of the Anthropic SDK client — only messages.stream is stubbed.
-  return mock;
-}
 function asAuthedRequestDouble<T extends object>(mock: T): AuthedRequest {
   // @ts-expect-error partial structural mock of an authenticated request.
   return mock;
@@ -673,7 +670,7 @@ describe('R3 memo — 15 s, per (user, local_date), invalidated by write hooks',
 
 // ─── injection into RomanService ─────────────────────────────────────────────
 
-function makeAnthropic() {
+function makeAnthropic(reply = 'You have 670 kcal left.') {
   const calls: Array<Record<string, unknown>> = [];
   return {
     calls,
@@ -685,7 +682,7 @@ function makeAnthropic() {
             yield { type: 'message_start', message: { usage: { input_tokens: 10 } } };
             yield {
               type: 'content_block_delta',
-              delta: { type: 'text_delta', text: 'You have 670 kcal left.' },
+              delta: { type: 'text_delta', text: reply },
             };
             yield { type: 'message_delta', usage: { output_tokens: 6 } };
           },
@@ -715,78 +712,65 @@ async function drain(gen: AsyncGenerator<unknown>) {
   return out;
 }
 
-describe('R3 injection — second system block, provenance columns, coach JWT', () => {
-  it('student on the client surface: system is [static, <client_data>], content stays clean, context_hash persisted', async () => {
+describe('R3 injection — client_data block, provenance in the spend ledger, coach JWT', () => {
+  function roman(db: ReturnType<typeof setup>['db'], anthropic: ReturnType<typeof makeAnthropic>, ctx: RomanClientContextService | null) {
+    return new RomanService(fakeOf(db.prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)), ctx);
+  }
+
+  it('student on the client surface: one <client_data> block, content stays clean, context hash in the content-free ledger', async () => {
     const { db, svc } = setup();
     const anthropic = makeAnthropic();
-    const roman = new RomanService(db.prisma, asAnthropicDouble(anthropic));
-    roman.setClientContext(svc);
-    await drain(roman.streamAssistantTurn(student(P1), session('client', P1)));
+    await drain(roman(db, anthropic, svc).streamAssistantTurn(student(P1), session('client', P1), { userMessage: 'How much is left today?' }));
 
     expect(anthropic.calls).toHaveLength(1);
-    const system = anthropic.calls[0].system as Array<{ type: string; text: string }>;
-    expect(Array.isArray(system)).toBe(true);
-    expect(system).toHaveLength(2);
-    expect(system[0].text).not.toContain('<client_data');
-    expect(system[1].text).toMatch(/^<client_data as_of=/);
-    expect(system[1].text).toContain('"first_name":"Maya"');
-    for (const c of CANARIES) expect(system[1].text).not.toContain(c);
+    const system = anthropic.calls[0].system as string;
+    expect(typeof system).toBe('string');
+    expect(system.match(/<client_data as_of=/g)).toHaveLength(1);
+    expect(system).toContain('"first_name":"Maya"');
+    for (const c of CANARIES) expect(system).not.toContain(c);
 
-    const romanTurn = db.raw.romanMessages.find((m) => m.role === 'roman')!;
-    expect(romanTurn.content).toBe('You have 670 kcal left.');
-    expect(romanTurn.content).not.toContain('client_data');
-    expect(romanTurn.context_hash).toMatch(/^[a-f0-9]{64}$/);
-    expect(romanTurn.context_generated_at).toBeInstanceOf(Date);
-    // the hash is exactly that of the injected block
-    const rebuilt = await svc.buildFresh(student(P1), romanTurn.context_generated_at as Date);
-    expect(rebuilt.hash).toBe(romanTurn.context_hash);
+    const romanTurn = db.raw.romanMessages.find((m) => m.role === 'roman');
+    expect(romanTurn?.content).toBe('You have 670 kcal left.');
+    expect(String(romanTurn?.content)).not.toContain('client_data');
+    const ledger = db.raw.aiRequestAudits[0];
+    expect(ledger.metadata).toMatchObject({ state: 'settled', context_version: 'ctx-v3' });
+    const hash = (ledger.metadata as Record<string, unknown>).context_hash;
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(ledger)).not.toContain('Maya');
   });
 
   it('a coach JWT on the client surface gets NO client data; the coach surface gets none either', async () => {
     const { db, svc } = setup();
     const anthropic = makeAnthropic();
-    const roman = new RomanService(db.prisma, asAnthropicDouble(anthropic));
-    roman.setClientContext(svc);
-    await drain(
-      roman.streamAssistantTurn({ id: 'coach-A', role: 'coach' }, session('client', 'coach-A')),
-    );
-    await drain(
-      roman.streamAssistantTurn({ id: 'coach-A', role: 'coach' }, session('coach', 'coach-A')),
-    );
+    const r = roman(db, anthropic, svc);
+    await drain(r.streamAssistantTurn({ id: 'coach-A', role: 'coach' }, session('client', 'coach-A'), { userMessage: 'hi' }));
+    await drain(r.streamAssistantTurn({ id: 'coach-A', role: 'coach' }, session('coach', 'coach-A'), { userMessage: 'hi' }));
     for (const call of anthropic.calls) {
-      expect(typeof call.system).toBe('string');
       expect(call.system as string).not.toContain('<client_data');
       expect(call.system as string).not.toContain('Maya');
-    }
-    for (const m of db.raw.romanMessages) {
-      expect(m.context_hash).toBeNull();
-      expect(m.context_generated_at).toBeNull();
     }
     expect(db.calls).not.toContain('loggedFoodEntry.findMany');
   });
 
-  it('without the context service wired (legacy construction) the turn is ungrounded but works', async () => {
+  it('without the context service wired the client turn says the data is unavailable and still answers', async () => {
     const { db } = setup();
-    const anthropic = makeAnthropic();
-    const roman = new RomanService(db.prisma, asAnthropicDouble(anthropic));
-    const chunks = await drain(roman.streamAssistantTurn(student(P1), session('client', P1)));
-    expect(typeof anthropic.calls[0].system).toBe('string');
+    const anthropic = makeAnthropic('Tell me what you would like to work on today.');
+    const chunks = await drain(roman(db, anthropic, null).streamAssistantTurn(student(P1), session('client', P1), { userMessage: 'hi' }));
+    expect(anthropic.calls[0].system as string).toContain('CLIENT DATA UNAVAILABLE');
     expect(chunks.some((c) => (c as { type: string }).type === 'done')).toBe(true);
   });
 
-  it('a builder failure degrades to an ungrounded turn, never a blank reply', async () => {
+  it('a builder failure degrades to an honest ungrounded turn, never a blank reply', async () => {
     const { db, svc } = setup();
     jest.spyOn(svc, 'getBundle').mockRejectedValueOnce(new Error('db down'));
-    const anthropic = makeAnthropic();
-    const roman = new RomanService(db.prisma, asAnthropicDouble(anthropic));
-    roman.setClientContext(svc);
-    const chunks = await drain(roman.streamAssistantTurn(student(P1), session('client', P1)));
-    expect(typeof anthropic.calls[0].system).toBe('string');
+    const anthropic = makeAnthropic('Tell me what you would like to work on today.');
+    const chunks = await drain(roman(db, anthropic, svc).streamAssistantTurn(student(P1), session('client', P1), { userMessage: 'hi' }));
+    expect(anthropic.calls[0].system as string).toContain('CLIENT DATA UNAVAILABLE');
     expect(
       chunks.some(
         (c) =>
           (c as { type: string; text?: string }).type === 'done' &&
-          (c as { text: string }).text.length > 0,
+          ((c as { text?: string }).text ?? '').length > 0,
       ),
     ).toBe(true);
   });

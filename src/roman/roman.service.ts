@@ -69,7 +69,6 @@ import {
   ROMAN_CAPACITY_REACHED_MESSAGE,
   ROMAN_CAPACITY_UNKNOWN_MESSAGE,
   ROMAN_DAILY_COST_CAP_USD_DEFAULT,
-  ROMAN_DAILY_COST_CAP_USD_ENV,
   ROMAN_ERROR_CAPACITY_REACHED,
   ROMAN_ERROR_MODEL_UNAVAILABLE,
   ROMAN_LEDGER_CAPABILITY,
@@ -87,6 +86,7 @@ import {
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
+import { AuditService } from '../audit/audit.service';
 import type {
   RomanClientContext,
   RomanClientContextBundle,
@@ -198,6 +198,10 @@ export class RomanService {
     // missing builder means degraded mode (no personal facts), never silence.
     @Optional()
     private readonly clientContext: RomanClientContextService | null = null,
+    // Content-free audit row for every emergency / self-harm short-circuit
+    // (ids and the route class only, never the message text).
+    @Optional()
+    private readonly audit: AuditService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -953,6 +957,13 @@ export class RomanService {
       this.logger.warn(
         `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=false`,
       );
+      await this.audit?.write({
+        action: route.class === 'emergency' ? 'roman.safety_emergency' : 'roman.safety_self_harm',
+        actorId: caller.id,
+        actorRole: caller.role,
+        targetType: 'RomanSession',
+        targetId: session.id,
+      });
       yield { type: 'delta', text };
       yield { type: 'done', text, messageId: persisted.id, interrupted: false };
       return;
@@ -1125,7 +1136,7 @@ export class RomanService {
 
   /** The configured cap; an invalid value falls back to the default (never "no cap"). */
   dailyCostCapUsd(env: NodeJS.ProcessEnv = process.env): number {
-    const raw = env[ROMAN_DAILY_COST_CAP_USD_ENV];
+    const raw = env.ROMAN_DAILY_COST_CAP_USD;
     if (raw === undefined || raw.trim() === '') return ROMAN_DAILY_COST_CAP_USD_DEFAULT;
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : ROMAN_DAILY_COST_CAP_USD_DEFAULT;

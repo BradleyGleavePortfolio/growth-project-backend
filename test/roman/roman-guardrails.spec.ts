@@ -7,10 +7,11 @@
 import 'reflect-metadata';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type Anthropic from '@anthropic-ai/sdk';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import { RomanService } from '../../src/roman/roman.service';
+import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { buildRomanSystemPrompt, ROMAN_VOICE_CONTRACT } from '../../src/roman/roman.prompts';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import {
@@ -44,19 +45,6 @@ afterEach(() => {
   if (saved === undefined) delete process.env[FLAG];
   else process.env[FLAG] = saved;
 });
-
-function asPrismaDouble<T extends object>(mock: T): PrismaService {
-  // @ts-expect-error partial structural mock of PrismaService — only the Roman delegates are stubbed.
-  return mock;
-}
-function asAnthropicDouble<T extends object>(mock: T): Anthropic {
-  // @ts-expect-error partial structural mock of the Anthropic SDK client — only messages.stream is stubbed.
-  return mock;
-}
-function asAuditDouble<T extends object>(mock: T): AuditService {
-  // @ts-expect-error partial structural mock of AuditService — only write() is stubbed.
-  return mock;
-}
 
 // ─── layer 2: prompt assembly ────────────────────────────────────────────────
 
@@ -576,9 +564,15 @@ function makeDb(userMessage: string) {
     count: jest.fn(async () => 0),
   };
   const romanSession = { update: jest.fn(async () => ({})), findFirst: jest.fn(async () => null) };
+  const aiRequestAudit = {
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ledger_1', ...data })),
+    aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
+    update: jest.fn(async () => ({})),
+  };
   const prisma = {
     romanMessage,
     romanSession,
+    aiRequestAudit,
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({ romanMessage, romanSession }),
     ),
@@ -626,14 +620,23 @@ async function drain(gen: AsyncGenerator<unknown>) {
   return out;
 }
 
+function romanWith(prisma: object, anthropic: object, audit?: object) {
+  return new RomanService(
+    fakeOf<PrismaService>(prisma),
+    grantAllEgress(),
+    AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
+    null,
+    audit ? fakeOf<AuditService>(audit) : null,
+  );
+}
+
 describe('R4 wiring — router short-circuit, buffered emit, post-check, audit', () => {
   it('G17 emergency: fixed 911 reply, ZERO model calls, audit row, turn persisted with model_id safety-router', async () => {
     const { prisma, messages } = makeDb('I have chest pain right now');
     const anthropic = makeAnthropic(['never']);
     const audit = { write: jest.fn(async (_input: Record<string, unknown>) => undefined) };
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
-    svc.setAudit(asAuditDouble(audit));
-    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION));
+    const svc = romanWith(prisma, anthropic, audit);
+    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
 
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
     expect(chunks.map((c) => c.type)).toEqual(['delta', 'done']);
@@ -661,9 +664,8 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     const { prisma } = makeDb("I don't want to live anymore");
     const anthropic = makeAnthropic(['never']);
     const audit = { write: jest.fn(async (_input: Record<string, unknown>) => undefined) };
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
-    svc.setAudit(asAuditDouble(audit));
-    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION));
+    const svc = romanWith(prisma, anthropic, audit);
+    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
     expect(chunks[0].text).toContain('988');
     expect(audit.write.mock.calls[0][0]).toMatchObject({ action: 'roman.safety_self_harm' });
@@ -672,35 +674,28 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
   it('the explicit userMessage option is preferred over the DB lookup', async () => {
     const { prisma } = makeDb('what is my protein target');
     const anthropic = makeAnthropic(['x']);
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
+    const svc = romanWith(prisma, anthropic);
     await drain(svc.streamAssistantTurn(CALLER, SESSION, { userMessage: 'I want to kill myself' }));
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
   });
 
-  it('normal turn: model stream is buffered into ONE delta + done; the raw per-token stream stays on streamModelTurn', async () => {
+  it('normal turn: the model stream is buffered into ONE delta + done (no unvalidated token reaches the client)', async () => {
     const { prisma } = makeDb('what is my protein target');
     const anthropic = makeAnthropic(['You ', 'have ', '53 g left.']);
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
-    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION));
+    const svc = romanWith(prisma, anthropic);
+    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(chunks.map((c) => c.type)).toEqual(['delta', 'done']);
     expect(chunks[0].text).toBe('You have 53 g left.');
     expect(chunks[1].messageId).toBeTruthy();
     expect(anthropic.calls[0].system as string).toContain(PROMPT_VERSION);
     expect(anthropic.calls[0].system as string).not.toContain('ROUTER HINT');
-
-    const raw = await drain(svc.streamModelTurn(CALLER, SESSION));
-    expect(raw.filter((c) => c.type === 'delta').map((c) => c.text)).toEqual([
-      'You ',
-      'have ',
-      '53 g left.',
-    ]);
   });
 
   it('injury_pain turn: the router hint reaches the system prompt and the mandatory referral is enforced on the reply and in the DB', async () => {
     const { prisma, messages } = makeDb('my knee hurts when I squat');
     const anthropic = makeAnthropic(['Ease off squats for now and message your coach.']);
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
-    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION));
+    const svc = romanWith(prisma, anthropic);
+    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(anthropic.calls[0].system as string).toContain('ROUTER HINT (injury_pain)');
     expect(chunks[0].text!.endsWith(ROMAN_POST_CHECK_TEMPLATES.referral_injury)).toBe(true);
     const roman = messages.find((m) => m.role === 'roman')!;
@@ -711,8 +706,8 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
   it('a bad model reply is rewritten before any byte is emitted; the persisted turn equals what the client saw', async () => {
     const { prisma, messages } = makeDb('how do I lose faster');
     const anthropic = makeAnthropic(['Drop to 1,000 kcal a day and add SARMs!']);
-    const svc = new RomanService(asPrismaDouble(prisma), asAnthropicDouble(anthropic));
-    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION));
+    const svc = romanWith(prisma, anthropic);
+    const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(chunks[0].text).not.toContain('1,000');
     expect(chunks[0].text).not.toMatch(/SARMs/i);
     expect(chunks[0].text).toContain('1,500 kcal'); // no R3 context on this branch → fallback floor
