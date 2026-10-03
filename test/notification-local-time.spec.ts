@@ -7,7 +7,10 @@ import {
   formatDateTime,
   usableTimeZone,
 } from '../src/notifications/local-time';
-import { resolveRecipientTimeZone } from '../src/notifications/recipient-timezone';
+import {
+  resolveRecipientTimeZone,
+  resolveRecipientTimeZoneWithSource,
+} from '../src/notifications/recipient-timezone';
 import type { PrismaService } from '../src/prisma.service';
 
 describe('usableTimeZone', () => {
@@ -63,8 +66,11 @@ describe('dayLabel', () => {
 describe('resolveRecipientTimeZone', () => {
   function prisma(over: {
     prefs?: string | null;
+    /** false = a toggle-created row: the zone was never supplied. */
+    prefsStamped?: boolean;
     own?: string | null;
     sessionCoach?: string | null;
+    assignedCoach?: string | null;
     fail?: boolean;
   }): PrismaService {
     // Object.create keeps the fake typed as PrismaService without a cast.
@@ -72,16 +78,24 @@ describe('resolveRecipientTimeZone', () => {
       notificationPreferences: {
         findUnique: jest.fn(async () => {
           if (over.fail) throw new Error('db down');
-          return over.prefs === undefined ? null : { timezone: over.prefs };
+          if (over.prefs === undefined) return null;
+          return {
+            timezone: over.prefs,
+            timezone_updated_at: over.prefsStamped === false ? null : new Date('2026-05-01T00:00:00Z'),
+          };
         }),
       },
       coachProfile: {
         findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) => {
           if (where.user_id === 'u') return over.own === undefined ? null : { timezone: over.own };
+          if (where.user_id === 'assigned-coach') {
+            return over.assignedCoach === undefined ? null : { timezone: over.assignedCoach };
+          }
           return over.sessionCoach === undefined ? null : { timezone: over.sessionCoach };
         }),
       },
       coachingSession: { findUnique: jest.fn(async () => ({ coach_id: 'coach' })) },
+      user: { findUnique: jest.fn(async () => ({ coach_id: 'assigned-coach' })) },
     });
   }
 
@@ -105,5 +119,47 @@ describe('resolveRecipientTimeZone', () => {
     expect(await resolveRecipientTimeZone(prisma({}), 'u', 's')).toBeNull();
     expect(await resolveRecipientTimeZone(undefined, 'u', 's')).toBeNull();
     expect(await resolveRecipientTimeZone(prisma({ fail: true }), 'u', 's')).toBeNull();
+  });
+
+  // Opus B-647-1 / Sol B-647-2: provenance. Fails on 3a93fbde, which
+  // trusted any stored row (including the schema default).
+  it('ignores a stored zone that was never supplied (toggle-created default row)', async () => {
+    expect(
+      await resolveRecipientTimeZone(
+        prisma({ prefs: 'America/Los_Angeles', prefsStamped: false, own: 'America/New_York' }),
+        'u',
+        's',
+      ),
+    ).toBe('America/New_York');
+    expect(
+      await resolveRecipientTimeZone(
+        prisma({ prefs: 'America/Los_Angeles', prefsStamped: false }),
+        'u',
+        's',
+      ),
+    ).toBeNull();
+  });
+
+  it('honours a genuinely supplied LA zone', async () => {
+    expect(
+      await resolveRecipientTimeZone(
+        prisma({ prefs: 'America/Los_Angeles', own: 'America/New_York' }),
+        'u',
+        's',
+      ),
+    ).toBe('America/Los_Angeles');
+  });
+
+  it('outside a booking, a client falls back to their own coach zone, with the source named', async () => {
+    expect(
+      await resolveRecipientTimeZoneWithSource(prisma({ assignedCoach: 'America/Denver' }), 'u'),
+    ).toEqual({ timeZone: 'America/Denver', source: 'assigned_coach' });
+    expect(
+      await resolveRecipientTimeZoneWithSource(
+        prisma({ sessionCoach: 'America/Phoenix', assignedCoach: 'America/Denver' }),
+        'u',
+        's',
+      ),
+    ).toEqual({ timeZone: 'America/Phoenix', source: 'booking_coach' });
   });
 });

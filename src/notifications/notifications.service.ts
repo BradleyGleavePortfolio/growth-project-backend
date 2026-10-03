@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 // expo-server-sdk v6 is ESM-only and exports `Expo` as a NAMED export
@@ -9,7 +15,12 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
+import {
+  UpdateNotificationPreferencesDto,
+  GetNotificationsQueryDto,
+  TimeZoneSource,
+} from './notifications.dto';
+import { usableTimeZone } from './local-time';
 import { NotificationKindValue } from './notification-kind';
 import {
   NotificationCategory,
@@ -97,6 +108,10 @@ export class NotificationsService {
         quiet_hours_start: '22:00',
         quiet_hours_end: '06:00',
         timezone: 'America/Los_Angeles',
+        // B-NOTIF-4: no zone has been supplied yet (provenance unset), so
+        // notification copy does not trust the `timezone` default above.
+        timezone_source: null,
+        timezone_updated_at: null,
         // Phase 9 defaults
         muted: false,
         milestone_email: true,
@@ -180,7 +195,9 @@ export class NotificationsService {
       new_client_alerts: data.new_client_alerts,
       quiet_hours_start: data.quiet_hours_start,
       quiet_hours_end: data.quiet_hours_end,
-      timezone: data.timezone,
+      timezone: undefined as string | undefined,
+      timezone_source: undefined as TimeZoneSource | undefined,
+      timezone_updated_at: undefined as Date | undefined,
       // Phase 9 fields
       muted: data.muted,
       milestone_email: data.milestone_email,
@@ -231,6 +248,17 @@ export class NotificationsService {
       nudge_inactive_inapp: data.nudge_inactive_inapp,
     };
 
+    // B-NOTIF-4: an explicit zone in a preferences PATCH is validated and
+    // stamped with provenance ('settings'), the same as PUT /timezone.
+    if (data.timezone !== undefined) {
+      const zone = this.validateTimeZone(data.timezone);
+      if (zone) {
+        fields.timezone = zone;
+        fields.timezone_source = 'settings';
+        fields.timezone_updated_at = new Date();
+      }
+    }
+
     // Strip undefined entries so Prisma does not try to set them to NULL.
     const definedFields = Object.fromEntries(
       Object.entries(fields).filter(([, v]) => v !== undefined),
@@ -272,6 +300,80 @@ export class NotificationsService {
   }
 
   // ── Notification center ───────────────────────────────────────────────────
+
+  /**
+   * B-NOTIF-4: validate an IANA zone name. Returns the trimmed name, or null
+   * for a UTC alias (the mobile app reports 'UTC' when the device zone is
+   * unknown, so it is never stored over a real zone). Throws a 400 with the
+   * stable code TIMEZONE_INVALID for anything the runtime does not know.
+   */
+  private validateTimeZone(raw: string): string | null {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    let known = false;
+    if (trimmed.length > 0 && trimmed.length <= 64) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: trimmed });
+        known = true;
+      } catch {
+        known = false;
+      }
+    }
+    if (!known) {
+      throw new BadRequestException({
+        code: 'TIMEZONE_INVALID',
+        message:
+          'That time zone is not recognised. Check the date and time settings on your phone, then open the app again.',
+      });
+    }
+    return usableTimeZone(trimmed);
+  }
+
+  /**
+   * B-NOTIF-4 (Opus B-647-1, Sol B-647-2): store the recipient's own zone
+   * with provenance. Idempotent: the same zone again only refreshes
+   * timezone_updated_at. A UTC alias is acknowledged but not stored
+   * (`stored: false`), so a device that cannot report its zone never
+   * overwrites a real one. Creates the preferences row when needed (the
+   * other columns take their schema defaults).
+   */
+  async setTimeZone(
+    userId: string,
+    timezone: string,
+    source: TimeZoneSource = 'device',
+  ): Promise<{
+    timezone: string | null;
+    timezone_source: string | null;
+    timezone_updated_at: Date | null;
+    stored: boolean;
+  }> {
+    const zone = this.validateTimeZone(timezone);
+    if (!zone) {
+      const current = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: userId },
+        select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+      });
+      const trusted = current?.timezone_updated_at ? current : null;
+      return {
+        timezone: trusted?.timezone ?? null,
+        timezone_source: trusted?.timezone_source ?? null,
+        timezone_updated_at: trusted?.timezone_updated_at ?? null,
+        stored: false,
+      };
+    }
+    const now = new Date();
+    const row = await this.prisma.notificationPreferences.upsert({
+      where: { user_id: userId },
+      create: {
+        user_id: userId,
+        timezone: zone,
+        timezone_source: source,
+        timezone_updated_at: now,
+      },
+      update: { timezone: zone, timezone_source: source, timezone_updated_at: now },
+      select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+    });
+    return { ...row, stored: true };
+  }
 
   /**
    * Write one notification row. Called by every emitter.

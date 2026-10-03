@@ -32,8 +32,17 @@ const FIXED_REQUESTED_AT = new Date('2026-06-01T12:00:00Z');
 const FIXED_SCHEDULED_AT = new Date('2026-06-02T15:30:00Z');
 const FIXED_NEW_SCHEDULED_AT = new Date('2026-06-03T16:00:00Z');
 
+// C-647-2: Prisma is a required dependency. This stub knows no zone, so
+// copy is written without a clock time (the no-zone branch).
+const noZonePrisma = Object.create({
+  notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
+  coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+  coachingSession: { findUnique: jest.fn().mockResolvedValue(null) },
+  user: { findUnique: jest.fn().mockResolvedValue(null) },
+});
+
 describe('BookingEmitter', () => {
-  const emitter = new BookingEmitter(mockNotificationsService);
+  const emitter = new BookingEmitter(mockNotificationsService, noZonePrisma);
 
   it('emitRequested: targets the coach with ONE booking_requested inbox row', async () => {
     await emitter.emitRequested({
@@ -209,10 +218,14 @@ describe('BookingEmitter', () => {
   it('B-643-1: lifecycle copy uses the recipient\'s stored zone, with the zone named', async () => {
     const prisma = {
       notificationPreferences: {
-        findUnique: jest.fn().mockResolvedValue({ timezone: 'America/Los_Angeles' }),
+        findUnique: jest.fn().mockResolvedValue({
+          timezone: 'America/Los_Angeles',
+          timezone_updated_at: new Date('2026-05-01T00:00:00Z'),
+        }),
       },
       coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
       coachingSession: { findUnique: jest.fn().mockResolvedValue(null) },
+      user: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const zoned = new BookingEmitter(mockNotificationsService, Object.create(prisma));
     await zoned.emitConfirmed({

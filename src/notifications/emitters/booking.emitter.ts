@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
 import { PrismaService } from '../../prisma.service';
@@ -72,9 +72,9 @@ export class BookingEmitter {
 
   constructor(
     private readonly notifications: NotificationsService,
-    // Optional so thin unit tests can build the emitter without DI; without
-    // it no zone is known and copy is written without a clock time.
-    @Optional() private readonly prisma?: PrismaService,
+    // C-647-2: required. PrismaModule is @Global; a lost provider must fail
+    // at boot, not silently drop every clock time from booking copy.
+    private readonly prisma: PrismaService,
   ) {}
 
   private zoneFor(userId: string, sessionId: string): Promise<string | null> {

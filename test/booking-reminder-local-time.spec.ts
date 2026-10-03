@@ -18,6 +18,7 @@ import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import type { PrismaService } from '../src/prisma.service';
+import { reminderClaimLedger } from './utils/reminder-claim-fake';
 
 interface Row {
   id: string;
@@ -34,11 +35,13 @@ const NOW = new Date('2026-06-02T00:30:00Z'); // Jun 1, 5:30 PM in Los Angeles
 const START = new Date('2026-06-03T00:30:00Z'); // Jun 2, 5:30 PM PDT / 8:30 PM EDT
 
 function buildWorld(opts: {
+  /** Zones the person actually supplied (timezone_updated_at stamped). */
   prefsZones?: Record<string, string>;
+  /** Rows created by a preference toggle: schema-default zone, never supplied. */
+  unstampedPrefsUsers?: string[];
   coachProfileZones?: Record<string, string | null>;
 }) {
   const rows: Row[] = [];
-  const claims: Array<{ session_id: string; user_id: string; kind: string }> = [];
   const session = {
     id: 'sess-1',
     coach_id: 'coach-1',
@@ -48,6 +51,7 @@ function buildWorld(opts: {
     end_at: new Date(START.getTime() + 30 * 60_000),
   };
   const names: Record<string, string> = { 'coach-1': 'Coach K', 'client-1': 'Jamie' };
+  const ledger = reminderClaimLedger((id) => (id === session.id ? session : undefined));
   const prisma = {
     coachingSession: {
       findMany: jest.fn(async ({ where }: { where: { start_at: { gte: Date; lte: Date } } }) =>
@@ -59,24 +63,7 @@ function buildWorld(opts: {
         where.id === session.id ? { coach_id: session.coach_id } : null,
       ),
     },
-    notificationDeliveryLog: {
-      create: jest.fn(
-        async ({ data }: { data: { session_id: string; user_id: string; kind: string } }) => {
-          if (
-            claims.some(
-              (c) =>
-                c.session_id === data.session_id &&
-                c.user_id === data.user_id &&
-                c.kind === data.kind,
-            )
-          ) {
-            throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
-          }
-          claims.push(data);
-          return { id: `claim-${claims.length}` };
-        },
-      ),
-    },
+    $transaction: ledger.$transaction,
     user: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
         names[where.id] ? { name: names[where.id] } : null,
@@ -85,7 +72,25 @@ function buildWorld(opts: {
     notificationPreferences: {
       findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) => {
         const tz = opts.prefsZones?.[where.user_id];
-        return tz === undefined ? null : { user_id: where.user_id, timezone: tz, muted: false };
+        if (tz !== undefined) {
+          return {
+            user_id: where.user_id,
+            timezone: tz,
+            timezone_updated_at: new Date('2026-05-01T00:00:00Z'),
+            muted: false,
+          };
+        }
+        if (opts.unstampedPrefsUsers?.includes(where.user_id)) {
+          // What a toggle-created row looks like: the schema default zone,
+          // with no provenance.
+          return {
+            user_id: where.user_id,
+            timezone: 'America/Los_Angeles',
+            timezone_updated_at: null,
+            muted: false,
+          };
+        }
+        return null;
       }),
     },
     coachProfile: {
@@ -216,5 +221,48 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
       expect([user, await w.notifications.getUnreadCount(user)]).toEqual([user, 1]);
     }
     expect(w.rows.every((r) => r.channel === 'inapp')).toBe(true);
+  });
+
+  // Opus B-647-1 / Sol B-647-2: a stored preferences row is not proof of
+  // the zone. Both cases fail on 3a93fbde (it trusted the default LA zone).
+  it('a toggle-created preferences row (default LA, never supplied) does not override the coach zone', async () => {
+    const w = buildWorld({
+      unstampedPrefsUsers: ['client-1', 'coach-1'],
+      coachProfileZones: { 'coach-1': 'America/Denver' },
+    });
+    await w.job.runTwentyFourHourReminderSweep();
+    const client = await w.notifications.listNotifications('client-1', {});
+    const coach = await w.notifications.listNotifications('coach-1', {});
+    expect(client.items.map((r) => r.body)).toEqual([
+      'Reminder: your session with Coach K is tomorrow at 6:30 PM MDT.',
+    ]);
+    expect(coach.items.map((r) => r.body)).toEqual([
+      'Reminder: your session with Jamie is tomorrow at 6:30 PM MDT.',
+    ]);
+  });
+
+  it('an explicitly supplied zone wins over the coach zone, and a supplied LA zone is honoured', async () => {
+    const w = buildWorld({
+      prefsZones: { 'client-1': 'America/New_York', 'coach-1': 'America/Los_Angeles' },
+      coachProfileZones: { 'coach-1': 'America/Denver' },
+    });
+    await w.job.runTwentyFourHourReminderSweep();
+    const client = await w.notifications.listNotifications('client-1', {});
+    const coach = await w.notifications.listNotifications('coach-1', {});
+    expect(client.items.map((r) => r.body)).toEqual([
+      'Reminder: your session with Coach K is tomorrow at 8:30 PM EDT.',
+    ]);
+    expect(coach.items.map((r) => r.body)).toEqual([
+      'Reminder: your session with Jamie is tomorrow at 5:30 PM PDT.',
+    ]);
+  });
+
+  it('a client with no supplied zone and no coach zone gets copy without a clock time, not Pacific', async () => {
+    const w = buildWorld({ unstampedPrefsUsers: ['client-1'] });
+    await w.job.runTwentyFourHourReminderSweep();
+    const client = await w.notifications.listNotifications('client-1', {});
+    expect(client.items.map((r) => r.body)).toEqual([
+      'Reminder: your session with Coach K is in about 24 hours.',
+    ]);
   });
 });
