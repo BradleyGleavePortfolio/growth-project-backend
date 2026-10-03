@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { romanContextInvalidate } from '../roman/context/roman-context-invalidation';
 import { sanitizePromptInput } from './utils/sanitize-prompt-input';
 import {
   ClientAIContext,
@@ -106,6 +107,8 @@ export class ClientAIContextService {
   // message events so the next chat sees fresh data without waiting for TTL.
   invalidateForUser(userId: string): void {
     this.cache.delete(userId);
+    // Roman's per-turn grounding memo shares every write-path hook.
+    romanContextInvalidate(userId);
   }
 
   // Test seam — bypasses cache, used by tests asserting on raw output.
