@@ -3,7 +3,8 @@
 --
 -- 1) PushOutbox: one row per device push. Written by the emitter (inside its
 --    transaction when it has one) and sent by the PushDeliveryService worker
---    (FOR UPDATE SKIP LOCKED leases), so no request waits on Expo (B-648-6),
+--    (one row per FOR UPDATE SKIP LOCKED lease, fenced by lease_token and
+--    handed_off_at: B-648-8), so no request waits on Expo (B-648-6),
 --    a restart drops nothing (C-648-5), quiet hours 21:00-08:00 in the
 --    recipient's zone defer non-urgent pushes to 08:00 local (OR-113-5), and
 --    distinct events are never dropped by a rate limit (B-648-1). The table
@@ -47,10 +48,13 @@ CREATE TABLE IF NOT EXISTS "PushOutbox" (
     "data" JSONB NOT NULL,
     "context" JSONB,
     "urgent" BOOLEAN NOT NULL DEFAULT false,
+    "time_zone" TEXT,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "not_before" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deferred_reason" TEXT,
     "lease_until" TIMESTAMP(3),
+    "lease_token" TEXT,
+    "handed_off_at" TIMESTAMP(3),
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "result_code" TEXT,
     "ticket_id" TEXT,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
@@ -13,16 +14,33 @@ import {
 } from './expo-push-client';
 import { PushContext, lockScreenCopy } from './lock-screen-copy';
 import { quietHoursFor } from './push-quiet-hours';
+import { pushAllowedByPreferences } from './push-preferences';
+import { usableTimeZone } from '../local-time';
+import { resolveRecipientTimeZone } from '../recipient-timezone';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
 //
 // enqueue() writes one PushOutbox row (inside the caller's transaction when
 // it has one) and returns. Nothing in a request waits on Expo. The worker
-// (drain) leases due rows with FOR UPDATE SKIP LOCKED, so any number of
-// replicas send each row once, and calls Expo with a cancelling deadline.
+// (drain) leases ONE due row at a time with FOR UPDATE SKIP LOCKED, right
+// before it works on it, so any number of replicas send each row once, and
+// calls Expo with a cancelling deadline.
 //
 // Guarantees:
+//   - Lease authority (B-648-8). Every claim gets a fresh lease_token, and
+//     every write the worker makes afterwards is a compare-and-set on it.
+//     Right before the Expo call the worker renews the lease and stamps
+//     handed_off_at in one CAS; if that fails (another worker took the row
+//     back) it does not send. A lapsed lease WITHOUT handed_off_at was never
+//     started and goes back to pending; WITH it the send is unknown and the
+//     row is closed (at most once). A lost CAS is never reported as sent.
+//   - Every decision is re-made at the moment of sending, not only at
+//     enqueue (B-648-9, B-648-10): the recipient's current preferences
+//     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
+//     and the burst cap. A push whose switch was turned off while it waited
+//     is suppressed; one that would now land inside quiet hours waits for
+//     08:00 local again, without spending a provider retry attempt.
 //   - Distinct events are never dropped by a rate limit (B-648-1). A booking
 //     event has an exactly-once identity (dedupe_key: kind, session, start
 //     time). Repeats in one conversation collapse: while a push for the same
@@ -62,7 +80,8 @@ export const RECEIPT_DEADLINE_MS = 15_000;
 export const LEASE_MS = 2 * 60_000;
 export const MAX_ATTEMPTS = 3;
 export const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 10 * 60_000];
-export const BATCH_SIZE = 50;
+/** Rows one drain works through at most (the next sweep takes the rest). */
+export const MAX_ROWS_PER_DRAIN = 500;
 export const RETENTION_MS = 30 * 24 * 60 * 60_000;
 
 export type EnqueueCode = 'queued' | 'deferred' | 'duplicate' | 'collapsed';
@@ -103,7 +122,10 @@ export type SendOutcome =
   | 'obsolete'
   | 'lease-expired'
   | 'retry-scheduled'
-  | 'burst-deferred';
+  | 'burst-deferred'
+  | 'quiet-deferred'
+  | 'preference-off'
+  | 'lease-lost';
 
 interface OutboxRow {
   id: string;
@@ -114,7 +136,9 @@ interface OutboxRow {
   data: Prisma.JsonValue;
   context: Prisma.JsonValue | null;
   urgent: boolean;
+  time_zone: string | null;
   attempts: number;
+  lease_token: string;
 }
 
 type Db = Pick<PrismaService, 'pushOutbox'> | Prisma.TransactionClient;
@@ -184,10 +208,9 @@ export class PushDeliveryService {
       urgent: push.urgent,
       now,
     });
-    // Exempt from the burst cap: explicit urgency, a quiet-hours bypass, and
-    // every booking event (time-critical by nature, never more than a few).
-    const urgent =
-      push.urgent === true || quiet.reason === 'urgent' || push.kind.startsWith('booking_');
+    // The row keeps only the caller's explicit urgency; quiet hours and the
+    // burst cap are re-decided when it is sent (B-648-10).
+    const urgent = push.urgent === true;
     const row = {
       user_id: push.userId,
       kind: push.kind,
@@ -198,6 +221,7 @@ export class PushDeliveryService {
       data: { ...push.data, kind: push.kind } as Prisma.InputJsonValue,
       context: (push.context ?? undefined) as Prisma.InputJsonValue | undefined,
       urgent,
+      time_zone: usableTimeZone(push.timeZone),
       not_before: quiet.deliverAt,
       deferred_reason: quiet.deferred ? 'quiet_hours' : null,
     };
@@ -257,8 +281,12 @@ export class PushDeliveryService {
     return { sent, expired };
   }
 
-  /** Send every due row, in leased batches. Returns the number sent. */
-  async drain(maxBatches = 20): Promise<number> {
+  /**
+   * Send every due row. Each row is leased just before it is worked on
+   * (B-648-8), so a lease never has to outlive a batch. Returns the number
+   * whose send was recorded (a lost compare-and-set never counts).
+   */
+  async drain(maxRows = MAX_ROWS_PER_DRAIN): Promise<number> {
     if (this.draining) {
       this.drainAgain = true;
       return 0;
@@ -266,13 +294,10 @@ export class PushDeliveryService {
     this.draining = true;
     let sent = 0;
     try {
-      for (let i = 0; i < maxBatches; i += 1) {
-        const rows = await this.claimBatch();
-        if (rows.length === 0) break;
-        for (const row of rows) {
-          if ((await this.sendOne(row)) === 'sent') sent += 1;
-        }
-        if (rows.length < BATCH_SIZE) break;
+      for (let i = 0; i < maxRows; i += 1) {
+        const row = await this.claimNext();
+        if (!row) break;
+        if ((await this.sendOne(row)) === 'sent') sent += 1;
       }
     } finally {
       this.draining = false;
@@ -284,34 +309,67 @@ export class PushDeliveryService {
     return sent;
   }
 
-  private async claimBatch(): Promise<OutboxRow[]> {
+  /** Lease the next due row (one row, a fresh lease_token). */
+  private async claimNext(): Promise<OutboxRow | null> {
     const now = this.now();
     const leaseUntil = new Date(now.getTime() + LEASE_MS);
-    return this.prisma.$queryRaw<OutboxRow[]>`
+    const leaseToken = randomUUID();
+    const rows = await this.prisma.$queryRaw<OutboxRow[]>`
       UPDATE "PushOutbox"
-      SET "status" = 'sending', "lease_until" = ${leaseUntil}, "attempts" = "attempts" + 1, "updated_at" = ${now}
-      WHERE "id" IN (
+      SET "status" = 'sending', "lease_until" = ${leaseUntil}, "lease_token" = ${leaseToken},
+          "handed_off_at" = NULL, "attempts" = "attempts" + 1, "updated_at" = ${now}
+      WHERE "id" = (
         SELECT "id" FROM "PushOutbox"
         WHERE "status" = 'pending' AND "not_before" <= ${now}
         ORDER BY "not_before" ASC
-        LIMIT ${BATCH_SIZE}
+        LIMIT 1
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING "id", "user_id", "kind", "title", "body", "data", "context", "urgent", "attempts"`;
+      RETURNING "id", "user_id", "kind", "title", "body", "data", "context", "urgent", "time_zone",
+                "attempts", "lease_token"`;
+    return rows[0] ?? null;
   }
 
   /**
-   * A row still `sending` after its lease belongs to a process that died
-   * mid-send. Expo may have accepted it, so it is closed, never re-sent.
+   * A row still `sending` after its lease (B-648-8):
+   *   - never handed to Expo (handed_off_at null): the worker stopped before
+   *     sending, so it goes back to pending and its attempt is not counted;
+   *   - handed to Expo: Expo may have accepted it, so it is closed as
+   *     lease-expired, never re-sent (at most once).
    */
   private async expireLeases(): Promise<number> {
     const now = this.now();
-    const res = await this.prisma.pushOutbox.updateMany({
-      where: { status: 'sending', lease_until: { lt: now } },
+    const released = await this.prisma.pushOutbox.updateMany({
+      where: { status: 'sending', lease_until: { lt: now }, handed_off_at: null },
+      data: {
+        status: 'pending',
+        lease_until: null,
+        lease_token: null,
+        result_code: 'lease-released',
+        attempts: { decrement: 1 },
+      },
+    });
+    const closed = await this.prisma.pushOutbox.updateMany({
+      where: { status: 'sending', lease_until: { lt: now }, handed_off_at: { not: null } },
       data: { status: 'dropped', result_code: 'lease-expired', lease_until: null },
     });
-    if (res.count > 0) this.logger.warn(`push outbox: ${res.count} expired lease(s) closed`);
-    return res.count;
+    if (released.count > 0) {
+      this.logger.warn(`push outbox: ${released.count} unstarted lease(s) returned to the queue`);
+    }
+    if (closed.count > 0) {
+      this.logger.warn(`push outbox: ${closed.count} expired in-flight lease(s) closed`);
+    }
+    return released.count + closed.count;
+  }
+
+  /** The fence every worker write uses: this claim, still in flight. */
+  private fence(row: OutboxRow): Prisma.PushOutboxWhereInput {
+    return { id: row.id, status: 'sending', lease_token: row.lease_token };
+  }
+
+  private lost(row: OutboxRow, step: string): SendOutcome {
+    this.logger.warn(`push outbox: lease lost row=${row.id} step=${step} (another worker owns it)`);
+    return 'lease-lost';
   }
 
   private async finish(
@@ -320,36 +378,69 @@ export class PushDeliveryService {
     code: SendOutcome,
     extra: Prisma.PushOutboxUpdateManyMutationInput = {},
   ): Promise<SendOutcome> {
-    await this.prisma.pushOutbox.updateMany({
-      where: { id: row.id, status: 'sending' },
-      data: { status, result_code: code, lease_until: null, ...extra },
-    });
-    return code;
+    const data = { status, result_code: code, lease_until: null, ...extra };
+    const res = await this.prisma.pushOutbox.updateMany({ where: this.fence(row), data });
+    if (res.count === 1) return code;
+    if (status === 'sent') {
+      // Expo accepted it, but a sweep closed the row as lease-expired while
+      // the call ran. Still this claim's row: record the truth (and the
+      // ticket, so its receipt is read). Nobody re-sends a closed row.
+      const late = await this.prisma.pushOutbox.updateMany({
+        where: {
+          id: row.id,
+          lease_token: row.lease_token,
+          status: 'dropped',
+          result_code: 'lease-expired',
+        },
+        data,
+      });
+      if (late.count === 1) return code;
+    }
+    return this.lost(row, `finish:${code}`);
   }
 
   private async later(
     row: OutboxRow,
     notBefore: Date,
-    reason: 'burst_cap' | 'provider_retry',
+    reason: 'burst_cap' | 'provider_retry' | 'quiet_hours' | 'worker_retry',
     code: SendOutcome,
   ): Promise<SendOutcome> {
-    await this.prisma.pushOutbox.updateMany({
-      where: { id: row.id, status: 'sending' },
+    const res = await this.prisma.pushOutbox.updateMany({
+      where: this.fence(row),
       data: {
         status: 'pending',
         not_before: notBefore,
         deferred_reason: reason,
         lease_until: null,
+        lease_token: null,
+        handed_off_at: null,
         result_code: code,
-        ...(reason === 'burst_cap' ? { attempts: { decrement: 1 } } : {}),
+        // Waiting for room or for the morning is not a delivery attempt.
+        ...(reason === 'burst_cap' || reason === 'quiet_hours'
+          ? { attempts: { decrement: 1 } }
+          : {}),
       },
     });
-    return code;
+    return res.count === 1 ? code : this.lost(row, `later:${reason}`);
+  }
+
+  /**
+   * Renew the lease and record the handoff in one CAS, right before the
+   * Expo call (B-648-8). False: this worker no longer owns the row.
+   */
+  private async handOff(row: OutboxRow): Promise<boolean> {
+    const now = this.now();
+    const res = await this.prisma.pushOutbox.updateMany({
+      where: { ...this.fence(row), lease_until: { gt: now } },
+      data: { handed_off_at: now, lease_until: new Date(now.getTime() + LEASE_MS) },
+    });
+    return res.count === 1;
   }
 
   async sendOne(row: OutboxRow): Promise<SendOutcome> {
     const now = this.now();
     const context = asContext(row.context);
+    let handedOff = false;
     try {
       // A reminder that waited (quiet hours, burst cap, retry) is only sent
       // if the session is still scheduled at that time and still ahead.
@@ -369,7 +460,34 @@ export class PushDeliveryService {
         }
       }
 
-      if (!row.urgent) {
+      // B-648-9: the recipient's CURRENT switches, the same rule as enqueue.
+      const prefs = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: row.user_id },
+      });
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind)) {
+        return await this.finish(row, 'dropped', 'preference-off');
+      }
+
+      // B-648-10: quiet hours at the moment of sending, in the recipient's
+      // CURRENT zone (falling back to the zone known at enqueue).
+      const timeZone =
+        (await resolveRecipientTimeZone(this.prisma, row.user_id, context?.sessionId)) ??
+        usableTimeZone(row.time_zone);
+      const quiet = quietHoursFor({
+        kind: row.kind,
+        timeZone,
+        context,
+        urgent: row.urgent,
+        now,
+      });
+      if (quiet.deferred) {
+        return await this.later(row, quiet.deliverAt, 'quiet_hours', 'quiet-deferred');
+      }
+
+      // Exempt from the burst cap: explicit urgency, a quiet-hours bypass,
+      // and every booking event (time-critical, never more than a few).
+      const capExempt = row.urgent || quiet.reason === 'urgent' || row.kind.startsWith('booking_');
+      if (!capExempt) {
         const windowStart = new Date(now.getTime() - USER_WINDOW_MS);
         const recent = await this.prisma.pushOutbox.findMany({
           where: { user_id: row.user_id, status: 'sent', sent_at: { gt: windowStart } },
@@ -397,7 +515,12 @@ export class PushDeliveryService {
       }
 
       const copy = context
-        ? lockScreenCopy(row.kind, row.body, context, now)
+        ? lockScreenCopy(
+            row.kind,
+            row.body,
+            { ...context, timeZone: timeZone ?? context.timeZone },
+            now,
+          )
         : { title: row.title, body: row.body };
       const message: ExpoPushMessage = {
         to: token,
@@ -408,6 +531,10 @@ export class PushDeliveryService {
         channelId: 'default',
         priority: 'high',
       };
+
+      // B-648-8: prove and renew authority right before the handoff.
+      if (!(await this.handOff(row))) return this.lost(row, 'handoff');
+      handedOff = true;
 
       let ticket: ExpoPushTicket | undefined;
       const deadline = deadlineSignal(this.sendDeadlineMs);
@@ -441,9 +568,22 @@ export class PushDeliveryService {
         `push send failed: row=${row.id} user=${row.user_id} kind=${row.kind} error=${errorName(err)}`,
       );
       try {
+        // Before the handoff nothing reached Expo: a database hiccup gets a
+        // bounded retry instead of losing the push. After it, delivery is
+        // unknown, so the row is closed (at most once).
+        if (!handedOff && row.attempts < MAX_ATTEMPTS) {
+          const wait = RETRY_BACKOFF_MS[Math.min(row.attempts - 1, RETRY_BACKOFF_MS.length - 1)];
+          return await this.later(
+            row,
+            new Date(this.now().getTime() + wait),
+            'worker_retry',
+            'retry-scheduled',
+          );
+        }
         return await this.finish(row, 'dropped', 'transport-error');
       } catch {
-        // The lease expires and expireLeases() closes the row.
+        // The lease lapses; expireLeases() returns an unstarted row to the
+        // queue and closes a handed-off one.
         return 'transport-error';
       }
     }
@@ -539,11 +679,12 @@ export class PushDeliveryService {
                 )
               : 'rejected';
           }
-          await this.prisma.pushOutbox.updateMany({
-            where: { id: entry.id },
+          // Another replica may have read the same receipt: count only ours.
+          const res = await this.prisma.pushOutbox.updateMany({
+            where: { id: entry.id, receipt_checked_at: null },
             data: { receipt_checked_at: now, result_code: code },
           });
-          checked += 1;
+          if (res.count === 1) checked += 1;
         }
       }
       await this.prisma.pushOutbox.deleteMany({

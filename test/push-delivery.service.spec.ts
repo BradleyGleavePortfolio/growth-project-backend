@@ -429,6 +429,8 @@ describe('tokens, Android without the FCM key, receipts', () => {
     const w = setup({});
     await w.svc.enqueue(base());
     w.rows[0].status = 'sending';
+    // B-648-8: it had been handed to Expo (an unstarted claim is re-queued instead).
+    w.rows[0].handed_off_at = new Date(NOON_UTC.getTime() - 60_000);
     w.rows[0].lease_until = new Date(NOON_UTC.getTime() - 1);
     expect(await w.svc.sweep()).toEqual({ sent: 0, expired: 1 });
     expect(w.rows[0].result_code).toBe('lease-expired');

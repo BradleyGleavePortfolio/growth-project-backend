@@ -35,6 +35,7 @@ import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
 import { PushContext, lockScreenCopy } from './push/lock-screen-copy';
 import { resolveRecipientTimeZone } from './recipient-timezone';
+import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
@@ -535,25 +536,19 @@ export class NotificationsService implements OnModuleInit {
     if (!this.pushDelivery) return null;
     try {
       const prefs = await this.getPreferences(input.user_id, tx);
-      if ((prefs as Record<string, unknown>).muted) return null;
-      const key = `${this._kindToPrefsPrefix(input.kind)}_push` as keyof typeof prefs;
-      if (prefs[key] === false) return null;
+      // Same rule the push worker re-checks right before sending (B-648-9).
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown>, input.kind)) return null;
       const copy = lockScreenCopy(input.kind, input.body, input.context);
       const timeZone =
         input.context?.timeZone ??
         (await resolveRecipientTimeZone(tx ?? this.prisma, input.user_id, input.context?.sessionId));
-      const sessionId = input.context?.sessionId;
       return await this.pushDelivery.enqueue(
         {
           userId: input.user_id,
           kind: input.kind,
           title: copy.title,
           body: copy.body,
-          data: {
-            actionScreen: input.kind.startsWith('message') ? 'Messages' : 'NotificationCenter',
-            ...(input.deep_link ? { deepLink: input.deep_link } : {}),
-            ...(sessionId ? { sessionId } : {}),
-          },
+          data: pushTapData(input.kind, input.deep_link, input.context?.sessionId),
           context: input.context ?? null,
           dedupeKey: input.dedupe_key ?? null,
           collapseKey: `${input.kind}:${input.deep_link ?? ''}`,
@@ -956,51 +951,35 @@ export class NotificationsService implements OnModuleInit {
    * E.g. 'milestone_reached' → 'milestone'
    */
   private _kindToPrefsPrefix(kind: string): string {
-    // NUDGE-V1 — most specific match wins. Nudge kinds are 'nudge_<trigger>'
-    // so the prefs prefix maps 1:1 (e.g. nudge_missed_checkin_inapp). Tested
-    // separately so a stray rename here fails the suite loudly.
-    if (kind === 'nudge_missed_checkin') return 'nudge_missed_checkin';
-    // Streak-broken kind maps to 'practice_paused' column prefix (doctrine).
-    if (kind === 'nudge_streak_broken') return 'nudge_practice_paused';
-    if (kind === 'nudge_onboarding_abandoned') return 'nudge_onboarding_abandoned';
-    if (kind === 'nudge_inactive') return 'nudge_inactive';
-    if (kind.startsWith('milestone')) return 'milestone';
-    if (kind.startsWith('message')) return 'message';
-    if (kind.startsWith('missed_checkin')) return 'missed_checkin';
-    if (kind.startsWith('weight_trend')) return 'weight_trend';
-    if (kind.startsWith('checkin_submitted')) return 'checkin_submitted';
-    if (kind.startsWith('build_week')) return 'build_week';
-    if (kind.startsWith('coach_alert')) return 'coach_alert';
-    if (kind.startsWith('booking')) return 'booking';
-    // PR-10 — DRIP_RELEASED (buyer content-unlocked alert). Routes to
-    // the `drip_released_*` prefs columns (migration
-    // 20261205000000_pr10_scheduled_drop_retry_lock); defaults are
-    // push+inapp ON, email OFF. Without this branch the kind fell
-    // through to the 'digest' safe-default whose _inapp + _push
-    // defaults are FALSE, silently short-circuiting every in-app row
-    // write — the PR-10 R1 P2 fix.
-    if (kind.startsWith('drip_released')) return 'drip_released';
-    // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
-    // coach_new_purchase_* prefs columns (migration
-    // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp
-    // ON, email OFF. Without this branch the kind falls through to the
-    // 'digest' safe-default (push+inapp default FALSE), silently
-    // short-circuiting every COACH_NEW_PURCHASE row write — the exact
-    // PR-10 R1 P2 bug the brief calls out.
-    if (kind.startsWith('coach_new_purchase')) return 'coach_new_purchase';
-    // Roman P4 (Option C) — FIRST_PAYMENT. Code-level kind with NO
-    // NotificationPreferences migration (the first-payment celebration is a
-    // once-ever coach moment that is not opt-out-able), so this prefix has no
-    // matching `first_payment_*` prefs columns. Returning a dedicated prefix
-    // (rather than letting it fall through to the 'digest' safe-default, whose
-    // _push / _inapp defaults are FALSE) means the per-kind gate reads
-    // `prefs['first_payment_<channel>']` which is `undefined` — and the gate
-    // only blocks on an explicit `=== false`, so the row is written. Without
-    // this branch FIRST_PAYMENT would silently short-circuit on the 'digest'
-    // false defaults (the PR-10 R1 P2 silent-drop bug, 50-Failures #36).
-    if (kind.startsWith('first_payment')) return 'first_payment';
-    if (kind.startsWith('fasting')) return 'fasting';
-    if (kind.includes('digest')) return 'digest';
-    return 'digest'; // safe default — falls back to digest prefs
+    // B-NOTIF-6: one mapping shared with the push worker (push-preferences.ts).
+    return notificationPrefsPrefix(kind);
   }
+}
+
+/**
+ * Tap routing a device push carries (ids and enums only, never user text).
+ * C-648-3: a booking push opens that session (`SessionDetail` with
+ * `actionParams.sessionId`); a build without that route falls back to the
+ * notification center (the mobile tap router's unknown-screen rule). A
+ * message opens Messages; everything else opens the notification center.
+ * `deepLink` and the top-level `sessionId` stay for builds that read them.
+ */
+export function pushTapData(
+  kind: string,
+  deepLink: string | undefined,
+  sessionId: string | undefined,
+): Record<string, unknown> {
+  const prefix = notificationPrefsPrefix(kind);
+  const booking = prefix === 'booking' && typeof sessionId === 'string' && sessionId.length > 0;
+  const actionScreen = booking
+    ? 'SessionDetail'
+    : prefix === 'message'
+      ? 'Messages'
+      : 'NotificationCenter';
+  return {
+    actionScreen,
+    ...(booking ? { actionParams: { sessionId } } : {}),
+    ...(deepLink ? { deepLink } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  };
 }

@@ -2136,13 +2136,22 @@ model PushOutbox {
   // Booking context (sessionId, scheduledAt, timeZone, otherPartyDisplayName)
   // so a deferred push is re-rendered and re-checked when it is sent.
   context            Json?
+  // The caller's explicit urgency only. Quiet hours and the burst cap are
+  // re-decided at every send from the kind, the context and the clock.
   urgent             Boolean   @default(false)
+  // The recipient's zone at enqueue; the worker prefers the current one.
+  time_zone          String?
   // pending | sending | sent | dropped
   status             String    @default("pending")
   not_before         DateTime  @default(now())
-  // quiet_hours | burst_cap | provider_retry (why not_before is later)
+  // quiet_hours | burst_cap | provider_retry | worker_retry (why not_before is later)
   deferred_reason    String?
   lease_until        DateTime?
+  // Fences every write of the worker that claimed the row (B-648-8).
+  lease_token        String?
+  // Set right before the Expo call. A lapsed lease without it was never
+  // started (back to pending); with it the send is unknown (closed).
+  handed_off_at      DateTime?
   attempts           Int       @default(0)
   // Last outcome code (sent, no-token, device-not-registered, ...).
   result_code        String?
