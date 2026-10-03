@@ -12,6 +12,15 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
+import { TrialUsageService } from '../packages/trials/trial-usage.service';
+import {
+  hasSavedPaymentMethod,
+  subscriptionHasPaymentMethod,
+  TrialNoticeService,
+  type TrialWillEndSubscription,
+} from '../packages/trials/trial-notice.service';
+import { TrialConflictService } from '../packages/trials/trial-conflict.service';
+import { trialErrorClass } from '../packages/trials/trial-diagnostics';
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -79,6 +88,31 @@ export interface CheckoutWebhookResult {
   // because the caller held an outer $transaction. BillingService runs these
   // after the outer tx commits (see runDeferredSplit below).
   deferredSplit?: DeferredSplitTask;
+  // B-TRIALS (OR-113-2) — a trial-ending notice recorded inside the tx whose
+  // push + email BillingService delivers after commit (deliverTrialNotice).
+  deferredTrialNoticeId?: string;
+  // B-TRIALS — a trialing subscription that tried to start a second free
+  // trial with the same coach. BillingService cancels it after commit
+  // (cancelTrialConflict) so the client is never charged for it.
+  trialConflictSubscriptionId?: string;
+}
+
+/**
+ * B-TRIALS (OR-113-2) — does this Stripe subscription state grant access?
+ * active / past_due always do (past_due = dunning grace). trialing does only
+ * once a card is saved on the subscription: "card collected up front" is a
+ * server rule, so an abandoned PaymentSheet never yields free access.
+ */
+export function subscriptionGrantsEntitlement(
+  status: string,
+  sub: object | null | undefined,
+): boolean {
+  if (status === 'active' || status === 'past_due') return true;
+  if (status === 'trialing') {
+    const pm = sub && 'default_payment_method' in sub ? sub.default_payment_method : null;
+    return hasSavedPaymentMethod({ default_payment_method: pm });
+  }
+  return false;
 }
 
 // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
@@ -141,6 +175,12 @@ export class CheckoutWebhookHandlerService {
     // never reads or writes state. @Optional() so legacy unit-test wiring that
     // hand-constructs the handler without the full container still works.
     @Optional() private coachFirstPaymentService?: CoachFirstPaymentService,
+    // B-TRIALS (OR-113-2) — one trial per client per coach + trial notices.
+    // @Optional() so legacy unit-test wiring still constructs the handler.
+    @Optional() private trialUsage?: TrialUsageService,
+    @Optional() private trialNotices?: TrialNoticeService,
+    // B-TRIALS-3 (B-656-1) — durable cancellation of a second trial.
+    @Optional() private trialConflicts?: TrialConflictService,
   ) {}
 
   /**
@@ -195,6 +235,9 @@ export class CheckoutWebhookHandlerService {
         return this.applySubscriptionUpdated(event, tx);
       case 'customer.subscription.deleted':
         return this.applySubscriptionDeleted(event, tx);
+      // B-TRIALS (OR-113-2) — three days before a free trial ends.
+      case 'customer.subscription.trial_will_end':
+        return this.applyTrialWillEnd(event, tx);
       case 'payment_intent.succeeded':
         return this.applyPaymentIntentSucceeded(event, tx, prefetched);
       case 'payment_intent.payment_failed':
@@ -718,6 +761,10 @@ export class CheckoutWebhookHandlerService {
       cancel_at_period_end?: boolean;
       canceled_at?: number | null;
       metadata?: Record<string, string>;
+      trial_start?: number | null;
+      trial_end?: number | null;
+      default_payment_method?: unknown;
+      default_source?: unknown;
     };
     if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
 
@@ -790,9 +837,23 @@ export class CheckoutWebhookHandlerService {
     });
 
     const status = this.normalizeSubscriptionStatus(sub.status);
-    const entitlementActive = ['active', 'trialing', 'past_due'].includes(status);
     const currentPeriodEnd = this.toDate(sub.current_period_end);
     const canceledAt = this.toDate(sub.canceled_at);
+
+    // B-TRIALS (OR-113-2) — trial bookkeeping. A trialing subscription with a
+    // saved card starts the client's one trial with this coach; if another
+    // purchase already holds it, this one gets no free access and is
+    // cancelled after commit (never charged). A trial that already started
+    // keeps access to its end even if the card is later removed.
+    const trial = await this.applyTrialState(
+      db,
+      purchase,
+      status,
+      sub,
+      subscriptionGrantsEntitlement(status, sub),
+      event.id,
+    );
+    const entitlementActive = trial.entitled;
 
     const accessExpiresAt = this.computeAccessExpiry(
       pkg,
@@ -819,10 +880,186 @@ export class CheckoutWebhookHandlerService {
           current_period_end: currentPeriodEnd,
           canceled_at: canceledAt,
           access_expires_at: accessExpiresAt,
+          ...trial.data,
         },
       }),
     );
-    return { claimed: true, purchase_id: purchase.id };
+    return {
+      claimed: true,
+      purchase_id: purchase.id,
+      ...(trial.conflict ? { trialConflictSubscriptionId: sub.id } : {}),
+      ...(trial.noticeId ? { deferredTrialNoticeId: trial.noticeId } : {}),
+    };
+  }
+
+  /**
+   * B-TRIALS (OR-113-2) — trial columns to write for a subscription event and
+   * the one-trial-per-coach transition. Runs on the webhook tx.
+   *
+   * B-TRIALS-3: also mirrors whether the subscription holds a card
+   * (card_on_file, B-656-5), records the trial-ending notice when a trial
+   * starts inside the warning window (B-656-3), and turns a lost one-trial
+   * race into a durable owed cancellation that vetoes trial access on every
+   * later event (B-656-1).
+   */
+  private async applyTrialState(
+    db: WebhookTx | PrismaService,
+    purchase: ClientPurchase,
+    status: string,
+    sub: TrialWillEndSubscription & { id?: string; trial_start?: number | null },
+    entitled: boolean,
+    eventId?: string,
+  ): Promise<{
+    data: Prisma.ClientPurchaseUpdateInput;
+    conflict: boolean;
+    entitled: boolean;
+    noticeId?: string;
+  }> {
+    const trialEndsAt = this.toDate(sub.trial_end ?? null);
+    const trialStart = this.toDate(sub.trial_start ?? null);
+    const data: Prisma.ClientPurchaseUpdateInput = {};
+    if (trialEndsAt) data.trial_ends_at = trialEndsAt;
+    if (trialEndsAt && trialStart && !purchase.trial_days) {
+      const days = Math.round((trialEndsAt.getTime() - trialStart.getTime()) / 86_400_000);
+      if (days >= 1 && days <= 30) data.trial_days = days;
+    }
+    // B-656-5 — card state is billing truth, kept apart from access.
+    if (sub && ('default_payment_method' in sub || 'default_source' in sub)) {
+      data.card_on_file = subscriptionHasPaymentMethod(sub);
+    }
+    if (!this.trialUsage) return { data, conflict: false, entitled };
+
+    // B-656-1 — this purchase already lost the one-trial race.
+    const owed = this.trialConflicts ? await this.trialConflicts.find(db, purchase.id) : null;
+    if (owed && this.trialConflicts) {
+      if (status === 'canceled' || status === 'incomplete_expired') {
+        await this.trialConflicts.markCancelled(db, purchase.id);
+        return { data, conflict: false, entitled: false };
+      }
+      if (owed.status === 'superseded') return { data, conflict: false, entitled };
+      if (owed.status === 'owed' && status === 'active') {
+        // Every cancel failed through the whole trial and Stripe billed the
+        // regular price: the client paid, so the plan is a regular paid plan
+        // sold without a trial; support is alerted by the sweep (refund).
+        await this.trialConflicts.supersede(db, purchase.id);
+        return { data, conflict: false, entitled };
+      }
+      // trialing (or past_due: no money taken yet): never any access, and
+      // the owed cancel is re-armed after this commit.
+      return { data, conflict: owed.status === 'owed', entitled: false };
+    }
+
+    if (status === 'trialing' && !entitled) {
+      // B-TRIALS-2 — no card on the subscription right now. Before the trial
+      // started that means no access (card up front). After it started
+      // (the card was saved, then removed) the client keeps the trial they
+      // were promised until its end; Stripe cancels at the trial end
+      // (missing_payment_method=cancel), so nothing is ever charged. Same
+      // rule as B-RECUR's purchase-aware subscriptionGrantsAccess (#654).
+      const started = await this.trialUsage.hasStarted(db, purchase.id);
+      return { data, conflict: false, entitled: started };
+    }
+    if (status === 'trialing' && entitled) {
+      const outcome = await this.trialUsage.markStarted(db, {
+        purchaseId: purchase.id,
+        clientUserId: purchase.client_user_id,
+        coachUserId: purchase.coach_user_id,
+        packageId: purchase.package_id,
+        trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days ?? 0,
+        trialEndsAt,
+      });
+      if (outcome === 'conflict') {
+        if (this.trialConflicts && sub.id) {
+          await this.trialConflicts.owe(db, { purchaseId: purchase.id, subscriptionId: sub.id });
+        }
+        return { data, conflict: true, entitled: false };
+      }
+      // B-656-3 — a trial that starts inside the warning window gets its
+      // notice now (its trial_will_end event may have come before the card).
+      const noticeId = this.trialNotices
+        ? await this.trialNotices.recordIfDue(db, {
+            purchase,
+            sub,
+            trialEndsAt,
+            eventId: eventId ?? null,
+          })
+        : null;
+      return { data, conflict: false, entitled: true, ...(noticeId ? { noticeId } : {}) };
+    }
+    if (status === 'canceled' || status === 'incomplete_expired') {
+      await this.trialUsage.release(db, purchase.id, `subscription_${status}`);
+    }
+    return { data, conflict: false, entitled };
+  }
+
+  /**
+   * B-TRIALS (OR-113-2) — customer.subscription.trial_will_end. Records the
+   * trial-ending notice (ledger + in-app row) on the webhook tx and hands the
+   * notice id back so push + email go out after commit.
+   */
+  private async applyTrialWillEnd(
+    event: StripeEvent,
+    tx?: WebhookTx,
+  ): Promise<CheckoutWebhookResult> {
+    const sub = event.data.object as TrialWillEndSubscription;
+    if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+    const purchase = await db.clientPurchase.findUnique({
+      where: { stripe_subscription_id: sub.id },
+    });
+    if (!purchase) return { claimed: false };
+    if (!this.trialNotices) return { claimed: true, purchase_id: purchase.id };
+    // The ledger row and the in-app row share the caller's tx when one is
+    // held (BillingService always threads it); legacy callers autocommit.
+    const noticeId = await this.trialNotices.recordTrialWillEnd(db, {
+      purchase,
+      sub,
+      eventId: event.id,
+    });
+    return {
+      claimed: true,
+      purchase_id: purchase.id,
+      ...(noticeId ? { deferredTrialNoticeId: noticeId } : {}),
+    };
+  }
+
+  /** B-TRIALS — post-commit push + email for a trial notice. Never throws. */
+  async deliverTrialNotice(noticeId: string): Promise<void> {
+    if (!this.trialNotices) return;
+    await this.trialNotices.deliver(noticeId);
+  }
+
+  /**
+   * B-TRIALS — post-commit: cancel a subscription that tried to start a second
+   * free trial with the same coach. It is trialing, so cancelling now means no
+   * invoice and no charge. B-TRIALS-3 (B-656-1): the obligation is the
+   * PackageTrialConflict row written in the webhook tx; this settles it once
+   * now, and TrialConflictService.sweep retries it until Stripe confirms.
+   * Never throws.
+   */
+  async cancelTrialConflict(subscriptionId: string): Promise<void> {
+    if (this.trialConflicts) {
+      try {
+        const rows = await this.prisma.packageTrialConflict.findMany({
+          where: { stripe_subscription_id: subscriptionId, status: 'owed' },
+          select: { purchase_id: true },
+        });
+        for (const row of rows) await this.trialConflicts.settle(row.purchase_id);
+      } catch (err) {
+        this.logger.error(
+          `trial conflict: settle lookup failed (sweep retries): ${trialErrorClass(err)}`,
+        );
+      }
+      return;
+    }
+    try {
+      await this.stripeConnect.cancelSubscription(subscriptionId);
+      this.logger.warn(`trial conflict: cancelled subscription ${subscriptionId} (TRIAL_ALREADY_USED)`);
+    } catch (err) {
+      this.logger.error(
+        `trial conflict: cancel failed for subscription ${subscriptionId} (TRIAL_ALREADY_USED, cancel by hand): ${trialErrorClass(err)}`,
+      );
+    }
   }
 
   private async applySubscriptionDeleted(
@@ -850,6 +1087,16 @@ export class CheckoutWebhookHandlerService {
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
       },
     });
+    // B-TRIALS (OR-113-2) — a trial that never started (no card saved) gives
+    // the client their trial back; a started trial stays used.
+    if (this.trialUsage) {
+      await this.trialUsage.release(db, purchase.id, 'subscription_deleted');
+    }
+    // B-TRIALS-3 (B-656-1) — Stripe confirmed the end: an owed conflict
+    // cancellation is settled.
+    if (this.trialConflicts) {
+      await this.trialConflicts.markCancelled(db, purchase.id);
+    }
     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
     // the SAME outer $transaction as the entitlement flip (when caller
     // provides a tx) so revoke + cancel commit-or-rollback together.
@@ -1049,6 +1296,8 @@ export class CheckoutWebhookHandlerService {
     // Resync subscription state from Stripe so current_period_end and
     // entitlement window are fresh after a renewal.
     let updated = purchase;
+    let trialConflictSubscriptionId: string | undefined;
+    let trialNoticeId: string | undefined;
     try {
       // PR-18 B1 — NEVER perform Stripe HTTP while a DB transaction is held.
       // When BillingService threads its outer tx, it ALSO pre-resolves the
@@ -1075,6 +1324,16 @@ export class CheckoutWebhookHandlerService {
       });
       const status = this.normalizeSubscriptionStatus(sub.status);
       const currentPeriodEnd = this.toDate(sub.current_period_end);
+      const trial = await this.applyTrialState(
+        db,
+        purchase,
+        status,
+        sub as TrialWillEndSubscription & { id?: string; trial_start?: number | null },
+        subscriptionGrantsEntitlement(status, sub),
+        event.id,
+      );
+      if (trial.conflict) trialConflictSubscriptionId = sub.id;
+      if (trial.noticeId) trialNoticeId = trial.noticeId;
       updated = await this.activateUnderPackageLock(
         tx,
         purchase.package_id,
@@ -1083,9 +1342,11 @@ export class CheckoutWebhookHandlerService {
             where: { id: purchase.id },
             data: {
               status,
-              entitlement_active: ['active', 'trialing', 'past_due'].includes(
-                status,
-              ),
+              // B-TRIALS — a $0 trial invoice is "paid" before any card is
+              // saved; trialing grants access only with a saved card (or a
+              // trial that already started), and never to a subscription
+              // that lost the one-trial race.
+              entitlement_active: trial.entitled,
               current_period_end: currentPeriodEnd,
               access_expires_at: this.computeAccessExpiry(
                 pkg,
@@ -1094,6 +1355,7 @@ export class CheckoutWebhookHandlerService {
                 currentPeriodEnd,
               ),
               last_error: null,
+              ...trial.data,
             },
           }),
       );
@@ -1137,7 +1399,13 @@ export class CheckoutWebhookHandlerService {
         );
       }
     }
-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+    return {
+      claimed: true,
+      purchase_id: purchase.id,
+      deferredSplit,
+      ...(trialConflictSubscriptionId ? { trialConflictSubscriptionId } : {}),
+      ...(trialNoticeId ? { deferredTrialNoticeId: trialNoticeId } : {}),
+    };
   }
 
   private async applyInvoicePaymentFailed(
