@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { Injectable, Logger } from '@nestjs/common';
-import type { ConnectTransfer, Prisma, TransferReversalOp } from '@prisma/client';
+import { Prisma, type ConnectTransfer, type TransferReversalOp } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import {
   STRIPE_CONNECT_TIMEOUT_MS,
@@ -161,6 +161,27 @@ export class TransferSendExpiredError extends Error {
     );
     this.name = 'TransferSendExpiredError';
   }
+}
+
+// Round 10 (B-627-10, Sol): a log line names a park failure only by this
+// closed vocabulary, never by the error's name, message or code (all of them
+// are free text a library or caller can set).
+export type ParkFailureKind = 'db_request' | 'db_unavailable' | 'db_validation' | 'unknown';
+export function parkFailureKind(err: unknown): ParkFailureKind {
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError ||
+    err instanceof Prisma.PrismaClientUnknownRequestError
+  ) {
+    return 'db_request';
+  }
+  if (
+    err instanceof Prisma.PrismaClientInitializationError ||
+    err instanceof Prisma.PrismaClientRustPanicError
+  ) {
+    return 'db_unavailable';
+  }
+  if (err instanceof Prisma.PrismaClientValidationError) return 'db_validation';
+  return 'unknown';
 }
 
 function sameInstant(a: Date | null | undefined, b: Date | null | undefined): boolean {
@@ -626,8 +647,8 @@ export class TransferOrchestratorService {
           await this.abandonSend(sent, 'the charge lock was lost after the claim');
         } catch (parkErr) {
           this.logger.warn(
-            `${TRANSFER_SEND_ABANDONED_CODE} transfer=${sent.id}: parking the claim failed ` +
-              `(${(parkErr as Error)?.name ?? 'unknown'}); it is due for the sweeper as it is`,
+            `${TRANSFER_SEND_ABANDONED_CODE} transfer=${sent.id} park_error=${parkFailureKind(parkErr)}: ` +
+              'parking the claim failed; it is due for the sweeper as it is',
           );
         }
         throw err;

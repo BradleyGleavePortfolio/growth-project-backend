@@ -23,7 +23,8 @@
 // run fails on assertions, not on compilation.
 import { performance } from 'node:perf_hooks';
 import { Logger } from '@nestjs/common';
-import type { ClientPurchase } from '@prisma/client';
+import { Prisma, type ClientPurchase } from '@prisma/client';
+import { ChargeLockLostError } from '../src/connect/fees/charge-lock';
 import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
@@ -445,5 +446,80 @@ describe('B-627-9 narrowed: the send-start budget', () => {
     expect(aRes.status).toBe('succeeded');
     expect(c.reinstatements()).toHaveLength(1);
     expect(lines(warnLog).some((l) => /SFEE_TRANSFER_SEND_ABANDONED/.test(l))).toBe(false);
+  });
+});
+
+// Round 10 — B-627-10 (Sol, 3a5338d7): when the charge lock is lost after
+// the claim and parking the claim then fails too, the log line named the
+// park error by its Error.name (free text). It must use a closed code.
+describe('B-627-10: a failed park is logged with a closed code only', () => {
+  const CANARY = 'AUDIT_CANARY_name_contact_at_example_invalid';
+  async function lockLostThenParkFails(parkError: Error) {
+    const { c, r } = await agedRow(2);
+    const lost = new ChargeLockLostError('ch_1', 'taken_over');
+    let broken = false;
+    // First fence (before the claim) passes; the re-proof after it fails.
+    const fence = jest
+      .fn<Promise<void>, []>()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async () => {
+        broken = true;
+        throw lost;
+      });
+    const update = c.prisma.connectTransfer.updateMany.getMockImplementation()!;
+    c.prisma.connectTransfer.updateMany.mockImplementation(async (args) =>
+      broken ? { count: 0 } : update(args),
+    );
+    const read = c.prisma.connectTransfer.findUniqueOrThrow.getMockImplementation()!;
+    c.prisma.connectTransfer.findUniqueOrThrow.mockImplementation(async (args) => {
+      if (broken) throw parkError;
+      return read(args);
+    });
+    const callsBefore = c.stripe.createTransfer.mock.calls.length;
+    const outcome = await c.transfers.attempt(r.id, { beforeStripe: fence }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    const logged = [...lines(warnLog), ...lines(errorLog)];
+    const sent = c.stripe.createTransfer.mock.calls.length - callsBefore;
+    return { c, lost, outcome, logged, sent };
+  }
+
+  it('a custom error name, message and code never reach the log; the lock loss still surfaces and nothing is sent', async () => {
+    const custom = Object.assign(new Error(`${CANARY} message`), {
+      name: CANARY,
+      code: 'P9999_canary',
+    });
+    const { c, lost, outcome, logged, sent } = await lockLostThenParkFails(custom);
+    expect(outcome).toBe(lost);
+    expect(sent).toBe(0);
+    expect(c.reinstatements()).toHaveLength(0);
+    expect(logged.filter((l) => /CANARY|canary|P9999/.test(l))).toEqual([]);
+    expect(
+      logged.some((l) =>
+        /^SFEE_TRANSFER_SEND_ABANDONED transfer=\S+ park_error=unknown: parking the claim failed/.test(
+          l,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('an unrecognized database error code is logged as db_request, without its code or message', async () => {
+    const dbError = new Prisma.PrismaClientKnownRequestError(`${CANARY} db message`, {
+      code: 'P9999',
+      clientVersion: 'canary',
+    });
+    const { c, lost, outcome, logged, sent } = await lockLostThenParkFails(dbError);
+    expect(outcome).toBe(lost);
+    expect(sent).toBe(0);
+    expect(c.reinstatements()).toHaveLength(0);
+    expect(logged.filter((l) => /CANARY|canary|P9999/.test(l))).toEqual([]);
+    expect(
+      logged.some((l) =>
+        /^SFEE_TRANSFER_SEND_ABANDONED transfer=\S+ park_error=db_request: parking the claim failed/.test(
+          l,
+        ),
+      ),
+    ).toBe(true);
   });
 });
