@@ -60,7 +60,7 @@ export interface ReminderSweepResult {
  * errors (which can embed query arguments) collapse to their safe code;
  * anything else keeps its message.
  */
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
   const safe = safeDiagnostic(err);
   if (safe instanceof Error) return `${safe.name}: ${safe.message}`.slice(0, 200);
   return 'unknown error';
@@ -93,7 +93,13 @@ const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_pro
 // NotificationDeliveryLog_status_check (migration 20270222000000) must allow
 // exactly this set; test/scheduling-delivery-status-contract.spec.ts pins it
 // and the in-memory test DB enforces the migration's own list.
-export const REMINDER_DELIVERY_STATUSES = ['sending', 'retry', 'sent', 'gave_up', 'parked'] as const;
+export const REMINDER_DELIVERY_STATUSES = [
+  'sending',
+  'retry',
+  'sent',
+  'gave_up',
+  'parked',
+] as const;
 export type ReminderDeliveryStatus = (typeof REMINDER_DELIVERY_STATUSES)[number];
 
 interface ReminderClaim {

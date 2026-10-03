@@ -58,6 +58,53 @@ export const MAX_BOOKING_HORIZON_DAYS = 120;
 // Bounds slot holding by unapproved requests.
 export const MAX_PENDING_REQUESTS_PER_COACH = 3;
 
+// ---------------------------------------------------------------------------
+// S-SCHED-5 auto-expiry (OR-112-5): a pending request has one clear time by
+// which the coach must answer. At or after it the request is closed as
+// `expired` (both sides get a calm notice and the slot is free again).
+// ---------------------------------------------------------------------------
+
+/** A coach has at most this long after a request to answer it. */
+export const REQUEST_RESPONSE_WINDOW_HOURS = 48;
+/** ...and must answer at least this long before the session starts. */
+export const REQUEST_ANSWER_BY_BEFORE_START_MINUTES = 60;
+/**
+ * Short-notice requests: when the two rules above would leave the coach less
+ * than this to answer, the request stays open until the session starts
+ * (approval already stops at the start).
+ */
+export const REQUEST_MIN_ANSWER_WINDOW_MINUTES = 30;
+
+/** The clear time a request made (or re-asked) at `requestedAt` closes. */
+export function requestExpiresAt(requestedAt: Date, startAt: Date): Date {
+  const byWindow = requestedAt.getTime() + REQUEST_RESPONSE_WINDOW_HOURS * 3_600_000;
+  const byStart = startAt.getTime() - REQUEST_ANSWER_BY_BEFORE_START_MINUTES * 60_000;
+  const deadline = Math.min(byWindow, byStart);
+  if (deadline < requestedAt.getTime() + REQUEST_MIN_ANSWER_WINDOW_MINUTES * 60_000) {
+    return new Date(startAt.getTime());
+  }
+  return new Date(deadline);
+}
+
+/**
+ * True when a still-`requested` row has reached its clear time. Such a row is
+ * treated as expired everywhere (reads, approve/decline/cancel/move, open
+ * slots) even before the sweep writes `expired`, so the clear time is exact.
+ */
+export function isLapsedRequest(
+  row: { status: string; request_expires_at?: Date | null },
+  now: Date = new Date(),
+): boolean {
+  return (
+    row.status === 'requested' &&
+    row.request_expires_at instanceof Date &&
+    row.request_expires_at.getTime() <= now.getTime()
+  );
+}
+
+/** end_reason written when a request expires. */
+export const REQUEST_EXPIRED_END_REASON = 'request_expired';
+
 // Stable machine codes for scheduling failures. Every BadRequest/Conflict the
 // booking surface throws carries one of these as `code` (and, for older
 // clients, as `error`) plus a human message.
@@ -87,6 +134,9 @@ export const SchedulingErrorCode = {
   // S-SCHED-3 (B-634-4 / C-634-3): a list cursor or status filter that the
   // server cannot read.
   INVALID_LIST_QUERY: 'INVALID_LIST_QUERY',
+  // S-SCHED-5: the request reached its clear time without an answer and is
+  // closed (or is about to be closed by the sweep); the slot is free again.
+  REQUEST_EXPIRED: 'REQUEST_EXPIRED',
 } as const;
 export type SchedulingErrorCodeValue =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
