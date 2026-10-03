@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -27,6 +28,10 @@ import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+// A6-PHOTOS: photo attachments (upload/finalize live in src/message-photos;
+// this service links them on send and decorates thread reads).
+import { MessagePhotosService, type PhotoThread } from '../message-photos/message-photos.service';
+import { photoError } from '../message-photos/message-photos.errors';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -46,6 +51,8 @@ export interface VoicePayload {
 export interface SendMessagePayload {
   body?: string;
   voice?: VoicePayload;
+  /** A6-PHOTOS: finalized photo ids, in display order. */
+  photo_ids?: string[];
 }
 
 // v3-3: the signed-upload request/response shapes now live with the extracted
@@ -103,7 +110,58 @@ export class MessagingService {
     // lazily build one from the already-injected SupabaseService, so behaviour
     // is identical whether or not DI supplied it.
     @Optional() private voiceUpload: VoiceUploadProvider | null = null,
+    // A6-PHOTOS. @Optional for the legacy positional test constructions; when
+    // absent, sends with photo_ids are refused (never silently dropped) and
+    // reads carry no photos.
+    // Explicit token: `T | null` is emitted as Object without strictNullChecks.
+    @Optional() @Inject(MessagePhotosService) private photos: MessagePhotosService | null = null,
   ) {}
+
+  // ---- A6-PHOTOS thread resolution (shared tenancy for the photo routes) ----
+
+  /** Authorize a coach (head or assigned sub-coach) for a client's thread. */
+  async resolveCoachThread(
+    coachId: string,
+    clientId: string,
+  ): Promise<{ coachId: string; clientId: string }> {
+    const client = await this.assertClientOfCoach(coachId, clientId);
+    return { coachId: client.coach_id ?? coachId, clientId };
+  }
+
+  /** The client's thread with their assigned coach (409 NO_COACH_ASSIGNED without one). */
+  async resolveClientThread(clientId: string): Promise<{ coachId: string; clientId: string }> {
+    return { coachId: await this.requireClientCoachId(clientId), clientId };
+  }
+
+  private async photoIdsFor(thread: PhotoThread, ids: string[] | undefined): Promise<string[]> {
+    if (!ids || ids.length === 0) return [];
+    if (!this.photos) throw photoError('message_photo.disabled');
+    return this.photos.assertAttachable(thread, ids);
+  }
+
+  // Create the message and link its photos in one transaction, so a photo is
+  // never attached to a message that failed and a message never claims a
+  // photo another send already took.
+  private async createWithPhotos(
+    data: Prisma.CoachMessageUncheckedCreateInput,
+    thread: PhotoThread,
+    photoIds: string[],
+  ) {
+    if (photoIds.length === 0 || !this.photos) {
+      return this.prisma.coachMessage.create({ data });
+    }
+    const photos = this.photos;
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.coachMessage.create({ data });
+      await photos.attachInTx(tx, thread, photoIds, created.id);
+      return created;
+    });
+  }
+
+  private async withPhotos<T extends { id: string }>(viewerId: string, rows: T[]) {
+    if (!this.photos) return rows;
+    return this.photos.decorate(viewerId, rows);
+  }
 
   // Resolve the extracted signed-upload provider, lazily constructing one from
   // the injected SupabaseService when DI did not supply it (legacy unit-test
@@ -202,7 +260,8 @@ export class MessagingService {
       typeof payload.body === 'string' ? payload.body.trim() : '';
     const hasBody = trimmedBody.length > 0;
     const hasVoice = !!payload.voice;
-    if (!hasBody && !hasVoice) {
+    const hasPhotos = (payload.photo_ids?.length ?? 0) > 0;
+    if (!hasBody && !hasVoice && !hasPhotos) {
       throw new BadRequestException({ error: 'MESSAGE_EMPTY' });
     }
     if (hasVoice && payload.voice) {
@@ -365,13 +424,13 @@ export class MessagingService {
     // returned in client.coach_id by assertClientOfCoach.
     const threadCoachId = client.coach_id ?? coachId;
     const rows = await this.listThread(threadCoachId, clientId, opts);
-    return this.filterBlockedAuthors(coachId, clientId, rows);
+    return this.withPhotos(coachId, await this.filterBlockedAuthors(coachId, clientId, rows));
   }
 
   async listThreadForClient(clientId: string, opts: ListOpts) {
     const coachId = await this.requireClientCoachId(clientId);
     const rows = await this.listThread(coachId, clientId, opts);
-    return this.filterBlockedAuthors(clientId, coachId, rows);
+    return this.withPhotos(clientId, await this.filterBlockedAuthors(clientId, coachId, rows));
   }
 
   /**
@@ -438,8 +497,15 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
-    const created = await this.prisma.coachMessage.create({
-      data: {
+    const photoThread: PhotoThread = {
+      coachId: threadCoachId,
+      clientId,
+      actorId: coachId,
+      actorRole: 'coach',
+    };
+    const photoIds = await this.photoIdsFor(photoThread, normalized.photo_ids);
+    const created = await this.createWithPhotos(
+      {
         coach_id: threadCoachId,
         client_id: clientId,
         sender_id: coachId,
@@ -449,7 +515,9 @@ export class MessagingService {
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+      photoThread,
+      photoIds,
+    );
     // Realtime ping to the recipient (the client). No body is sent over the
     // wire — just a refresh signal. The mobile client refetches via the
     // authenticated REST endpoint when it receives the ping. Fire-and-
@@ -472,9 +540,10 @@ export class MessagingService {
       targetId: created.id,
       tenantCoachId: coachId,
       metadata: {
-        message_kind: voice ? 'voice' : 'text',
+        message_kind: voice ? 'voice' : photoIds.length > 0 ? 'photo' : 'text',
         body_length: body?.length ?? 0,
         voice_duration_sec: voice?.duration_sec ?? null,
+        photo_count: photoIds.length,
       },
     });
     this.analytics.capture(coachId, Events.COACH_MESSAGE_SENT, {
@@ -504,7 +573,7 @@ export class MessagingService {
     // M2 — bust the client's AI context cache so the next chat reflects the
     // new coach message in last_coach_message_excerpt.
     this.aiContext.invalidateForUser(clientId);
-    return created;
+    return photoIds.length > 0 ? (await this.withPhotos(coachId, [created]))[0] : created;
   }
 
   async sendAsClient(clientId: string, payload: SendMessagePayload | string) {
@@ -529,8 +598,15 @@ export class MessagingService {
       }
     }
 
-    const created = await this.prisma.coachMessage.create({
-      data: {
+    const photoThread: PhotoThread = {
+      coachId,
+      clientId,
+      actorId: clientId,
+      actorRole: 'student',
+    };
+    const photoIds = await this.photoIdsFor(photoThread, normalized.photo_ids);
+    const created = await this.createWithPhotos(
+      {
         coach_id: coachId,
         client_id: clientId,
         sender_id: clientId,
@@ -540,7 +616,9 @@ export class MessagingService {
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+      photoThread,
+      photoIds,
+    );
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
     // Push notification — block check already ran above.
@@ -559,9 +637,10 @@ export class MessagingService {
       targetId: created.id,
       tenantCoachId: coachId,
       metadata: {
-        message_kind: voice ? 'voice' : 'text',
+        message_kind: voice ? 'voice' : photoIds.length > 0 ? 'photo' : 'text',
         body_length: body?.length ?? 0,
         voice_duration_sec: voice?.duration_sec ?? null,
+        photo_count: photoIds.length,
       },
     });
     this.analytics.capture(clientId, Events.CLIENT_MESSAGE_SENT, {
@@ -581,7 +660,7 @@ export class MessagingService {
         voice: false,
       });
     }
-    return created;
+    return photoIds.length > 0 ? (await this.withPhotos(clientId, [created]))[0] : created;
   }
 
   // ---- voice upload (signed URL) ----

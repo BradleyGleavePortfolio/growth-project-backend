@@ -16,6 +16,13 @@ import { MessagingService } from './messaging.service';
 // here so production DI injects the shared, typed provider into MessagingService
 // (the @Optional ctor param). SupabaseService is global, so no extra import.
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
+// A6-PHOTOS: photo service (exported by MessagePhotosModule) + the thread
+// photo routes, which reuse MessagingService's tenancy checks.
+import { MessagePhotosModule } from '../message-photos/message-photos.module';
+import {
+  ClientMessagePhotosController,
+  CoachMessagePhotosController,
+} from '../message-photos/message-photos.controller';
 
 // PrismaService / SupabaseService are provided globally. Providing the guards
 // locally (rather than `imports: [AuthModule]`) follows the same pattern as
@@ -29,8 +36,19 @@ import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 // ClientAIContextService.invalidateForUser when a coach message is sent
 // (M2 — bust the client's AI context cache).
 @Module({
-  imports: [NotificationsModule, AuditModule, AiModule, MessagesSafetyModule],
-  controllers: [CoachMessagingController, ClientMessagingController],
+  imports: [
+    NotificationsModule,
+    AuditModule,
+    AiModule,
+    MessagesSafetyModule,
+    MessagePhotosModule,
+  ],
+  controllers: [
+    CoachMessagingController,
+    ClientMessagingController,
+    ClientMessagePhotosController,
+    CoachMessagePhotosController,
+  ],
   providers: [
     MessagingService,
     VoiceUploadProvider,

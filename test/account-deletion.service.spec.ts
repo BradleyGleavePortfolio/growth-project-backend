@@ -126,6 +126,22 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
         ),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      // Step 10c (A6-PHOTOS): message photos are erased the same way.
+      messagePhoto: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      messagePhotoErasure: {
+        upsert: jest
+          .fn()
+          .mockImplementation(async (args: { create: { kind: string; target: string } }) => ({
+            id: `photo-erasure-${args.create.target}`,
+            kind: args.create.kind,
+            target: args.create.target,
+            attempts: 0,
+          })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $executeRaw: jest.fn().mockResolvedValue(1),
       $transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         return fn(txProxy);

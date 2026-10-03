@@ -58,6 +58,7 @@ export class CoachMessagingController {
     return this.messaging.sendAsCoach(req.user.id, clientId, {
       body: body.body,
       voice: body.voice,
+      photo_ids: body.photo_ids,
     });
   }
 

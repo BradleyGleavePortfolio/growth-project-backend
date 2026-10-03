@@ -351,6 +351,9 @@ jobs:
     # and never ran in CI (green-by-skip). Voice notes launch ON, so the
     # report -> review -> action loop, the wins RLS proof (A-610-2) and the
     # community e2e suites must execute against a real database.
+    # A6-PHOTOS (T4 CI gate change): the message_photos RLS proof
+    # (test/messaging/message-photos-rls.live.spec.ts) runs here too, on the
+    # same migrated database.
     #
     # Same Postgres 15 service as rls-live-tests. Unlike that job's scoped
     # bootstrap, this one applies the Supabase-equivalent bootstrap and then
@@ -417,6 +420,7 @@ jobs:
           npx jest
           test/community/rls/community-wins-rls.live.spec.ts
           test/community/rls/community-message-shape.live.spec.ts
+          test/messaging/message-photos-rls.live.spec.ts
           test/community/community-moderation.e2e.spec.ts
           test/community/community-reactions.e2e.spec.ts
           test/community/community-dms.e2e.spec.ts

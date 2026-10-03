@@ -1,11 +1,14 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -71,6 +74,16 @@ export class CreateMessageDto {
   @ValidateNested()
   @Type(() => CreateMessageVoiceDto)
   voice?: CreateMessageVoiceDto;
+
+  // A6-PHOTOS: ids of finalized photos (POST .../messages/photos, then
+  // .../finalize) to send with this message, in display order. The service
+  // re-checks each one (uploader, thread, ready, unsent) and answers with a
+  // specific message_photo.* code; the DTO only rejects malformed input.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  photo_ids?: string[];
 }
 
 export class ListThreadQueryDto {

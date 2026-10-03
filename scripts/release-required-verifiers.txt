@@ -16,3 +16,6 @@
 # That is the intended composition order: S1 + S2 land together or S1 first.
 
 20261224000000_rls_close_public_exposure
+
+# A6-PHOTOS: private message-photos bucket + RLS fence (message_photos_api_roles_fence).
+20270306000000_message_photos

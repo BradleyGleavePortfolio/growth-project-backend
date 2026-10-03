@@ -18,6 +18,8 @@ import {
   objectTargets,
   recordVoiceErasures,
 } from '../community/voice/voice-erasure';
+import { MessagePhotoStorage } from '../message-photos/message-photo-storage';
+import { eraseMessagePhotosForAccount } from '../message-photos/message-photos.service';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
@@ -733,6 +735,20 @@ export class AccountDeletionService {
     // storage faults after that do not block the rest of the deletion: the
     // open erasure work is retried until verified.
     await this.eraseCommunityVoice(userId, now);
+
+    // ── 10c. Message photos (A6-PHOTOS, Apple 5.1.1(v)) ────────────────────
+    // Every photo the user sent, every photo in a thread where they are the
+    // client, and everything under their `message-photos/<uid>/` folder
+    // (unfinished uploads included). Erasure work is recorded durably first:
+    // a failed record throws and aborts finalization for a retry; storage
+    // faults after that are retried by the photo sweep until verified.
+    await eraseMessagePhotosForAccount(
+      this.prisma,
+      new MessagePhotoStorage(this.supabase),
+      userId,
+      now,
+      this.logger,
+    );
 
     // ── 11. Revoke Supabase auth identity ──────────────────────────────────
     // Best-effort: a failure here is logged but does not block local deletion.

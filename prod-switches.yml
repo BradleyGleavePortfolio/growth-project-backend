@@ -1365,6 +1365,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: community
     description: "Community voice-notes feature flag (v3-3). Read via process.env[FEATURE_COMMUNITY_VOICE_NOTES]; default OFF until rollout."
+  - name: FEATURE_MESSAGE_PHOTOS
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: messaging
+    description: "Photos in coach-client messages (A6-PHOTOS). Read via process.env[FEATURE_MESSAGE_PHOTOS] on every request; only 'true' turns it on. Gates upload intent, finalize and send with photos; reads, delete and erasure stay on. Default OFF until the security audit and a device pass."
   - name: FEATURE_WEARABLES_CLOUD_CONNECTORS
     tier: feature
     prod_default: OFF

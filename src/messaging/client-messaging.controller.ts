@@ -61,6 +61,7 @@ export class ClientMessagingController {
     return this.messaging.sendAsClient(req.user.id, {
       body: body.body,
       voice: body.voice,
+      photo_ids: body.photo_ids,
     });
   }
 

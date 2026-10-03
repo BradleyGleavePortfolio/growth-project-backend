@@ -1836,6 +1836,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_MESSAGE_PHOTOS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'Photos in coach-client messages (A6-PHOTOS); gates upload, finalize and send, reads stay on.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SCHEMA',
     values: ['true', 'false'],
     unsetIs: 'on',

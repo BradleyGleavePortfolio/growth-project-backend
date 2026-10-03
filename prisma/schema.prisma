@@ -1243,6 +1243,9 @@ model CoachMessage {
   read_at            DateTime?
   // Apple 1.2 safety — reverse relation for MessageReport.
   reports            MessageReport[] @relation("MessageReportTarget")
+  // A6-PHOTOS: photo attachments (src/message-photos). SetNull on a hard
+  // delete so the sweep can still find and erase the bytes.
+  photos             MessagePhoto[]
 
   // Stream 2 — AI execution capabilities. Set by `CoachMessageMaterializer`
   // when a `draft.coach_message` (or merged `draft.client_message`) is
@@ -7374,4 +7377,68 @@ model AiProcessingConsentEvent {
   created_at      DateTime @default(now())
 
   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+}
+
+/// A6-PHOTOS — photo attachments on coach <-> client messages (CoachMessage).
+/// Bytes live in the PRIVATE `message-photos` bucket and are only reachable
+/// through 5-minute signed URLs minted per request for a thread party. The
+/// raw upload (staging_key) is never signed for reading; the sanitized copy
+/// (storage_key, EXIF/GPS stripped) is written only after the server parsed
+/// it. status: pending | processing | ready | rejected | removed.
+/// RLS: thread participants SELECT non-removed rows; writes are server-only.
+model MessagePhoto {
+  id                    String        @id @default(uuid()) @db.Uuid
+  uploader_id           String
+  coach_id              String
+  client_id             String
+  message_id            String?
+  message               CoachMessage? @relation(fields: [message_id], references: [id], onDelete: SetNull)
+  status                String        @default("pending")
+  staging_key           String        @unique
+  storage_key           String?       @unique
+  declared_content_type String
+  declared_size_bytes   Int
+  content_type          String?
+  size_bytes            Int?
+  width                 Int?
+  height                Int?
+  sha256                String?
+  position              Int?
+  reject_code           String?
+  scanner               String?
+  removed_reason        String?
+  upload_expires_at     DateTime      @db.Timestamptz(6)
+  processing_at         DateTime?     @db.Timestamptz(6)
+  created_at            DateTime      @default(now()) @db.Timestamptz(6)
+  finalized_at          DateTime?     @db.Timestamptz(6)
+  attached_at           DateTime?     @db.Timestamptz(6)
+  removed_at            DateTime?     @db.Timestamptz(6)
+
+  @@index([message_id])
+  @@index([coach_id, client_id])
+  @@index([uploader_id, created_at])
+  @@index([client_id])
+  @@index([status, upload_expires_at])
+  @@map("message_photos")
+}
+
+/// A6-PHOTOS — durable photo-erasure work (same contract as
+/// community_voice_erasures, B-610-5). Recorded BEFORE a photo row is marked
+/// removed or storage is touched; completed only after storage proves the
+/// object (or owner folder) is gone. No FK to User, so it survives account
+/// finalization. Server-only table (deny-all RLS for API roles).
+model MessagePhotoErasure {
+  id              String    @id @default(uuid()) @db.Uuid
+  kind            String
+  target          String
+  reason          String
+  attempts        Int       @default(0)
+  last_error      String?
+  next_attempt_at DateTime  @default(now()) @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+
+  @@unique([kind, target])
+  @@index([completed_at, next_attempt_at])
+  @@map("message_photo_erasures")
 }
