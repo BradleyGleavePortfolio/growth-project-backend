@@ -12,11 +12,22 @@
  *   4. diagnosis_language  — "you have <condition>", diagnos*, treat*, cure, prescri*, dose
  *   5. banned_substance    — steroids/SARMs/… plus diuretics, laxatives, insulin for weight loss
  *   6. referral_added      — mandatory physician line for medical_scope / injury_pain
- *   7. voice_scrub         — emoji removed; exclamations beyond the session allowance
+ *   7. voice_scrub         — emoji removed; every exclamation becomes a full stop
+ *
+ * B-651-6: every predicate runs on the NFKC-normalised reply (full-width
+ * digits and letters fold to ASCII), so "９００ kcal" is judged as 900.
+ * B-651-8: on a medical_scope / injury_pain turn the safe step, the coach
+ * route and the exact physician line are enforced on the FINAL composed
+ * reply, also when an earlier rule already rewrote it.
+ * B-651-9: shipped replies carry no exclamation marks at all.
  */
 
 import type { SafetyClass } from './safety-router';
-import { ROMAN_PHYSICIAN_LINE_INJURY, ROMAN_PHYSICIAN_LINE_MEDICAL } from './safety-router';
+import {
+  normalizeForSafety,
+  ROMAN_PHYSICIAN_LINE_INJURY,
+  ROMAN_PHYSICIAN_LINE_MEDICAL,
+} from './safety-router';
 
 /**
  * The slice of the R3 PostCheckContext the post-check reads. Declared
@@ -64,8 +75,11 @@ export interface PostCheckInput {
   context: PostCheckContext | null;
   /** Floor used when no context is available. */
   fallbackFloorKcal?: number;
-  /** Whether this turn may still spend the single per-session exclamation. */
-  exclamationAllowed: boolean;
+  /**
+   * Kept for call-site compatibility only. B-651-9: no reply may carry an
+   * exclamation mark, so this no longer grants one.
+   */
+  exclamationAllowed?: boolean;
   /**
    * A-R3-1: true when the client's data could not be loaded for this turn.
    * Any personal number in the reply is then ungrounded by definition and is
@@ -89,14 +103,37 @@ export interface PostCheckResult {
 //   - fact claim ("you have logged ...", "you averaged ..."): must match a
 //     fact of the SAME unit and field family in client_data.
 const DIRECTIVE =
-  /\b(aim(ing)? for|stick (to|with)|drop( down)? to|cut( down| back)? to|go down to|bring it down to|keep (it|your intake|intake|yourself) (at|under|below|around|to)|stay (at|under|below|around)|limit (yourself |it |intake )?to|no more than|cap (it|yourself|intake) at|should (eat|have|get|consume)|try (eating|to eat|having)|eat (only|just|around|about|no more than|under|less than|roughly)|have (only|just)|only (eat|have)|you (could|can|might) (eat|have|go with|drop to|try)|go for|target of)\b/i;
-const DAILY = /\b(a|per|each|every) day\b|\bdaily\b|\bin total\b|\bfor the (whole )?day\b|\btoday\b|\bthis week\b/i;
+  /(?:^|[.:;,]\s*|\bthen\s+|\bso\s+)(eat|have|consume|get|take in|keep it to|go with)\s+(about\s+|around\s+|roughly\s+|only\s+|just\s+|approximately\s+|~\s?)?\d|\b(aim(ing)? for|stick (to|with)|drop( down)? to|cut( down| back)? to|go down to|bring it down to|keep (it|your intake|intake|yourself) (at|under|below|around|to)|stay (at|under|below|around)|limit (yourself |it |intake )?to|no more than|cap (it|yourself|intake) at|should (eat|have|get|consume)|try (eating|to eat|having)|eat (only|just|around|about|no more than|under|less than|roughly)|have (only|just)|only (eat|have)|you (could|can|might) (eat|have|go with|drop to|try)|go for|target of)\b/i;
+const DAILY =
+  /\b(a|per|each|every) day\b|\bdaily\b|\bin total\b|\bfor the (whole )?day\b|\btoday\b|\bthis week\b/i;
 const MEAL =
   /\b(at|for|with) (breakfast|lunch|dinner|supper|your (next )?(meal|snack))\b|\b(this|next|per|each|a) (meal|snack)\b|\b(remaining|left|rest of (the|your) day)\b/i;
-const TARGET_STMT = /\b(target|goal|prescribed|set (at|to)|your daily)\b/i;
-const FACT =
-  /\b(so far|logged|remaining|left|have had|you'?ve had|you have eaten|you ate|eaten|consumed|you are at|you'?re at|sitting at|averag(e|ed|ing)|burned|burnt)\b/i;
-const KCAL_NUMBER = /\b(\d{1,2},\d{3}|\d{2,5})\s?(kcal|calories|cal)\b/gi;
+
+/**
+ * B-651-7: the semantic field family a quoted number belongs to, read from its
+ * own clause. A number is only ever validated against facts of ITS family, so
+ * a remaining or logged value can never validate a false target.
+ */
+type KcalFamily = 'target' | 'floor' | 'remaining' | 'intake' | 'average' | 'burned';
+const FAMILY_WORDS: Array<{ family: KcalFamily; rx: RegExp }> = [
+  { family: 'remaining', rx: /\b(remaining|left|leaving|to go)\b/i },
+  { family: 'average', rx: /\baverag(e|ed|ing)\b/i },
+  { family: 'burned', rx: /\b(burned|burnt|active energy|burn)\b/i },
+  {
+    family: 'intake',
+    rx: /\b(so far|logged|have had|you'?ve had|you have eaten|you ate|eaten|consumed|you are at|you'?re at|sitting at|intake)\b/i,
+  },
+  { family: 'floor', rx: /\b(floor|minimum|lowest)\b/i },
+  { family: 'target', rx: /\b(target|goal|prescribed|set (at|to)|your daily)\b/i },
+];
+/** Clause boundaries inside one sentence. */
+const CLAUSE_SPLIT = /,|;|\s[-\u2013\u2014]\s|\s(?:and|but|while|with|which|so)\s/i;
+const KCAL_NUMBER = /\b(\d{1,2},\d{3}|\d{1,5})\s?(kcal|calories|cals?)\b/gi;
+/** A kcal number that is a change (deficit, surplus, "300 fewer"), not an intake. */
+const KCAL_DELTA_AFTER =
+  /^\s*(deficit|surplus|less|fewer|more|extra|over|under|below|above|short|a day (deficit|surplus)|per day (deficit|surplus))\b/i;
+const KCAL_DELTA_BEFORE =
+  /\b(deficit|surplus) of\s*$|\b(cut|trim|drop|remove|subtract|add|burn(ed)?|burnt)\s+(about\s+|around\s+|roughly\s+)?$/i;
 const MACRO_NUMBER =
   /\b(\d{1,4})\s?g(?:rams?)?\s+(?:of\s+)?(protein|carbs?|carbohydrates|fat|fats)\b/gi;
 const MACRO_NUMBER_REVERSED =
@@ -134,15 +171,24 @@ const DIAGNOSIS: RegExp[] = [
   /\byou (probably |likely |might |may |could |definitely |clearly )?have (a |an |some |mild |early )?(?:[a-z-]+ ){0,2}(tendinitis|tendonitis|bursitis|arthritis|sprain|strain|tear|fracture|hernia|sciatica|plantar fasciitis|shin splints|diabetes|hypertension|deficiency|infection|disorder|syndrome|inflammation|impingement|[a-z]+itis)\b/i,
   /\b(it|this|that) (sounds|looks|seems) like (a |an )?(tendinitis|tendonitis|bursitis|arthritis|sprain|strain|tear|fracture|hernia|sciatica|[a-z]+itis|impingement)\b/i,
   /\bdiagnos(e|is|ed|ing)\b/i,
-  /\btreat(s|ed|ing|ment)?\b(?! yourself)(?! it as)/i,
+  // B-651-3: "treat" and "dose" are everyday coaching words ("a small
+  // treat", "a dose of cardio"). Only treatment of a medical object, or a
+  // medication dose, is diagnosis/treatment language.
+  /\btreat(s|ed|ing)?\s+(it|this|that|the|your|an?|my)\s+(?:[a-z-]+\s+){0,2}(injury|injuries|pain|condition|symptoms?|infection|inflammation|wound|sprain|strain|tear|fracture|tendon|joint|knee|back|shoulder|[a-z]+itis)\b/i,
+  /\b(you|i|we|they) (can|could|should|would|will) treat\b(?! yourself)/i,
+  /\btreatments?\s+(plan|for|of|options?|protocol)\b/i,
   /\bcure(s|d)?\b/i,
   /\bprescri(be|bed|ption|ptions)\b/i,
-  /\b(dose|dosage|dosing)\b/i,
+  /\b(dose|dosage|dosing)\b[^.]{0,30}\b(medication|meds|medicine|insulin|drug|pills?|tablets?|capsules?|mg|mcg|milligrams?)\b/i,
+  /\b(medication|meds|medicine|insulin|drug|pill|prescription)\s+(dose|dosage|dosing)\b/i,
 ];
 
 const BANNED: RegExp[] = [
   /\b(anabolic\s+steroids?|steroids?|sarms?|clenbuterol|ephedrine|dnp|trenbolone|hgh|growth hormone)\b/i,
-  /\b(starv(e|ation|ing)|water\s+fast(?:ing)?(?:\s+for\s+\d+\s+days?)?|hcg\s+diet|cleanse|detox tea|juice cleanse)\b/i,
+  // B-651-3: starvation is banned as advice, not as a negated mention ("you
+  // are not starving yourself by eating at your target").
+  /(?<!\b(?:not|never|no|don'?t|do not|avoid|without|stop|instead of)\s+(?:\w+\s+){0,2})\bstarv(e|ation|ing)\b/i,
+  /\b(water\s+fast(?:ing)?(?:\s+for\s+\d+\s+days?)?|hcg\s+diet|cleanse|detox tea|juice cleanse)\b/i,
   /\b(diuretics?|laxatives?|water pills?)\b/i,
   /\binsulin\b[^.]{0,60}\b(weight|fat|lean(er)?|cut(ting)?|shred(ded)?)\b/i,
   /\b(purge|purging)\b[^.]{0,40}\b(calories|meal|food)\b/i,
@@ -174,31 +220,40 @@ function macroKeyOf(word: string): MacroKey {
 const finite = (xs: Array<number | null | undefined>): number[] =>
   xs.filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
 
-/** kcal facts Roman may quote, typed by unit (never mixed with grams). */
-function kcalFacts(ctx: PostCheckContext): number[] {
-  return finite([
-    ctx.today.kcal,
-    ctx.today.remaining_kcal,
-    ctx.last_7_days.avg_kcal_on_logged_days,
-    ctx.targets.calories,
-    ctx.macro_method.floor_kcal,
-    ...(ctx.extra_kcal_facts ?? []),
-  ]);
+/** kcal facts of the given field families (B-651-7: never pooled across families). */
+function kcalFacts(ctx: PostCheckContext, families: ReadonlySet<KcalFamily>): number[] {
+  const out: Array<number | null | undefined> = [];
+  if (families.has('intake')) out.push(ctx.today.kcal, ...(ctx.extra_kcal_facts ?? []));
+  if (families.has('remaining')) out.push(ctx.today.remaining_kcal);
+  if (families.has('average')) out.push(ctx.last_7_days.avg_kcal_on_logged_days);
+  if (families.has('burned')) out.push(...(ctx.extra_kcal_facts ?? []));
+  if (families.has('target')) out.push(ctx.targets.calories);
+  if (families.has('floor')) out.push(ctx.macro_method.floor_kcal);
+  return finite(out);
 }
 
-/** gram facts for ONE macro (protein never matches a carbs number). */
-function macroFacts(ctx: PostCheckContext, key: MacroKey): number[] {
-  const t = ctx.targets[key];
-  if (key === 'protein_g') {
-    return finite([
-      t,
-      ctx.today.protein_g,
-      ctx.today.remaining_protein_g,
-      ctx.last_7_days.avg_protein_g_on_logged_days,
-    ]);
+/** gram facts for ONE macro and the given families (protein never matches carbs). */
+function macroFacts(
+  ctx: PostCheckContext,
+  key: MacroKey,
+  families: ReadonlySet<KcalFamily>,
+): number[] {
+  const out: Array<number | null | undefined> = [];
+  if (families.has('target')) out.push(ctx.targets[key]);
+  if (families.has('intake')) out.push(ctx.today[key]);
+  if (families.has('remaining')) {
+    out.push(
+      key === 'protein_g'
+        ? ctx.today.remaining_protein_g
+        : key === 'carbs_g'
+          ? ctx.today.remaining_carbs_g
+          : ctx.today.remaining_fat_g,
+    );
   }
-  if (key === 'carbs_g') return finite([t, ctx.today.carbs_g, ctx.today.remaining_carbs_g]);
-  return finite([t, ctx.today.fat_g, ctx.today.remaining_fat_g]);
+  if (families.has('average') && key === 'protein_g') {
+    out.push(ctx.last_7_days.avg_protein_g_on_logged_days);
+  }
+  return finite(out);
 }
 
 /** Rounding tolerance for a quoted fact: 2% or 2 units, whichever is larger. */
@@ -212,56 +267,156 @@ function offTarget(n: number, target: number | null | undefined): boolean {
 
 type NumberVerdict = 'calorie_floor' | 'target_mismatch' | 'ungrounded_number' | null;
 
-/** A-R4-3: judge every kcal / macro number in one sentence by its role. */
+/** The clause of `sentence` that contains character offset `at`, with its start offset. */
+function clauseSpanAt(sentence: string, at: number): { text: string; start: number } {
+  let startAt = 0;
+  const rx = new RegExp(CLAUSE_SPLIT.source, 'gi');
+  for (const m of sentence.matchAll(rx)) {
+    const idx = m.index ?? 0;
+    if (idx >= at) return { text: sentence.slice(startAt, idx), start: startAt };
+    startAt = idx + m[0].length;
+  }
+  return { text: sentence.slice(startAt), start: startAt };
+}
+
+function clauseAt(sentence: string, at: number): string {
+  return clauseSpanAt(sentence, at).text;
+}
+
+/** Families whose word follows the number in English ("670 kcal left", "... target"). */
+const POSTFIX_FAMILIES: ReadonlySet<KcalFamily> = new Set(['remaining', 'target', 'floor']);
+
+/** Every family (optionally only postfix ones) whose word matches first in `text`. */
+function earliestFamilies(text: string, postfixOnly = false): Set<KcalFamily> {
+  let best = Number.POSITIVE_INFINITY;
+  let out = new Set<KcalFamily>();
+  for (const { family, rx } of FAMILY_WORDS) {
+    if (postfixOnly && !POSTFIX_FAMILIES.has(family)) continue;
+    const m = new RegExp(rx.source, 'i').exec(text);
+    if (!m) continue;
+    if (m.index < best) {
+      best = m.index;
+      out = new Set([family]);
+    } else if (m.index === best) out.add(family);
+  }
+  return out;
+}
+
+/** Every family whose word ends last (closest to the end) in `text`. */
+function latestFamilies(text: string): Set<KcalFamily> {
+  let best = -1;
+  let out = new Set<KcalFamily>();
+  for (const { family, rx } of FAMILY_WORDS) {
+    for (const m of text.matchAll(new RegExp(rx.source, 'gi'))) {
+      const endAt = (m.index ?? 0) + m[0].length;
+      if (endAt > best) {
+        best = endAt;
+        out = new Set([family]);
+      } else if (endAt === best) out.add(family);
+    }
+  }
+  return out;
+}
+
+/**
+ * B-651-7: the role of one number, read from the words that belong to it:
+ *   1. a family word right after it, before any digit or punctuation
+ *      ("670 kcal left", "115 g protein target", "1,450 kcal is your daily target");
+ *   2. else the closest family word before it in the sentence
+ *      ("logged 62 g and 780 kcal", "your daily target is 670 kcal");
+ *   3. else the first family word after it.
+ * A remaining or logged value therefore never validates a target statement.
+ */
+function roleOf(sentence: string, at: number, end: number): Set<KcalFamily> {
+  const rest = sentence.slice(end);
+  const cut = rest.search(/[\d.,;:!?]/);
+  const immediate = earliestFamilies((cut === -1 ? rest : rest.slice(0, cut)).slice(0, 32), true);
+  if (immediate.size > 0) return immediate;
+  const before = latestFamilies(sentence.slice(0, at));
+  if (before.size > 0) return before;
+  return earliestFamilies(rest);
+}
+
+const FACT_FAMILIES: ReadonlyArray<KcalFamily> = ['remaining', 'intake', 'average', 'burned'];
+
+/** Whether the clause holding a number tells the client how much to eat per day. */
+function directiveAt(s: string, clause: string): { directive: boolean; daily: boolean } {
+  const directive = DIRECTIVE.test(clause);
+  return { directive, daily: directive && (DAILY.test(clause) || !MEAL.test(s)) };
+}
+
+/** A-R4-3 / B-651-6 / B-651-7: judge every kcal / macro number in one sentence by its role. */
 function judgeSentence(
   s: string,
   ctx: PostCheckContext | null,
   floor: number,
   grounded: boolean,
 ): NumberVerdict {
-  const directive = DIRECTIVE.test(s);
-  const daily = directive && (DAILY.test(s) || !MEAL.test(s));
-  const target = TARGET_STMT.test(s);
-  const fact = FACT.test(s);
   for (const m of s.matchAll(KCAL_NUMBER)) {
     const n = toNumber(m[1]);
-    if (daily) {
-      // Never waived because the digits also appear in client_data.
-      if (n >= 400 && n < floor) return 'calorie_floor';
-      if (n >= 400 && ctx && offTarget(n, ctx.targets.calories)) return 'target_mismatch';
+    const at = m.index ?? 0;
+    const clause = clauseAt(s, at);
+    const { directive, daily } = directiveAt(s, clause);
+    // "a 300 kcal deficit", "300 kcal less", "cut 300 kcal": a change, not an intake.
+    const delta =
+      KCAL_DELTA_AFTER.test(s.slice(at + m[0].length)) || KCAL_DELTA_BEFORE.test(s.slice(0, at));
+    if (daily && !delta) {
+      // B-651-6: every positive daily value below the floor is refused, and a
+      // daily directive is never waived because the digits match client_data.
+      if (n > 0 && n < floor) return 'calorie_floor';
+      if (ctx && offTarget(n, ctx.targets.calories)) return 'target_mismatch';
       continue;
     }
-    if (directive) continue; // a meal-level suggestion ("about 600 kcal at dinner")
-    if (!target && !fact) continue;
+    if (directive || delta) continue; // a meal-level suggestion or a change amount
+    const role = roleOf(s, at, at + m[0].length);
+    if (role.size === 0) continue;
     // Not a grounded turn (coach surface, or no client data was expected):
     // there are no client facts to compare with, only the floor applies.
     if (!grounded) continue;
-    // A quoted fact of the same unit is always fine ("670 kcal left").
-    if (ctx && matchesFact(n, kcalFacts(ctx))) continue;
-    if (target) {
-      if (!ctx || ctx.targets.calories == null) return 'ungrounded_number';
-      if (offTarget(n, ctx.targets.calories)) return 'target_mismatch';
-      continue;
+    const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
+    if (factFamilies.size > 0) {
+      // A quoted fact must match a fact of its OWN family ("670 kcal left").
+      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies))) continue;
+      return 'ungrounded_number';
     }
-    return 'ungrounded_number';
+    if (role.has('floor') && ctx && matchesFact(n, kcalFacts(ctx, new Set(['floor'])))) continue;
+    // B-651-7: a target statement is checked against the target, nothing else.
+    if (!ctx || ctx.targets.calories == null) return 'ungrounded_number';
+    if (offTarget(n, ctx.targets.calories)) return 'target_mismatch';
   }
-  const macroHits: Array<{ n: number; key: MacroKey }> = [
-    ...[...s.matchAll(MACRO_NUMBER)].map((m) => ({ n: toNumber(m[1]), key: macroKeyOf(m[2]) })),
+  const macroHits: Array<{ n: number; key: MacroKey; at: number; end: number }> = [
+    ...[...s.matchAll(MACRO_NUMBER)].map((m) => ({
+      n: toNumber(m[1]),
+      key: macroKeyOf(m[2]),
+      at: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+    })),
     ...[...s.matchAll(MACRO_NUMBER_REVERSED)].map((m) => ({
       n: toNumber(m[2]),
       key: macroKeyOf(m[1]),
+      at: (m.index ?? 0) + m[0].lastIndexOf(m[2]),
+      end: (m.index ?? 0) + m[0].length,
     })),
   ];
-  for (const { n, key } of macroHits) {
+  for (const { n, key, at, end } of macroHits) {
     if (!grounded) continue;
-    if (daily || target) {
-      if (ctx && fact && matchesFact(n, macroFacts(ctx, key))) continue;
-      if (target && (!ctx || ctx.targets[key] == null)) return 'ungrounded_number';
+    const clause = clauseAt(s, at);
+    const { directive, daily } = directiveAt(s, clause);
+    if (daily) {
       if (ctx && offTarget(n, ctx.targets[key])) return 'target_mismatch';
       continue;
     }
-    if (directive || !fact) continue;
-    if (!ctx || !matchesFact(n, macroFacts(ctx, key))) return 'ungrounded_number';
+    if (directive) continue;
+    const role = roleOf(s, at, end);
+    const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
+    if (factFamilies.size > 0) {
+      if (!ctx || !matchesFact(n, macroFacts(ctx, key, factFamilies))) return 'ungrounded_number';
+      continue;
+    }
+    if (role.has('target')) {
+      if (!ctx || ctx.targets[key] == null) return 'ungrounded_number';
+      if (offTarget(n, ctx.targets[key])) return 'target_mismatch';
+    }
   }
   return null;
 }
@@ -302,10 +457,36 @@ export const ROMAN_POST_CHECK_TEMPLATES = {
     `I cannot advise on the medical side of that, and I will not guess. What I can do: keep today's session as written or at a lighter effort, keep logging, and hold your current targets. Message ${coachName(ctx)} so your plan can be adjusted around it, and I can help you word that. ${ROMAN_PHYSICIAN_LINE_MEDICAL}`,
   /** A-R3-1: the client's data could not be loaded for this turn. */
   context_unavailable: () =>
-    'I cannot see your plan and logs at this moment, so I will not quote any of your numbers. Your targets and today\'s log are on the Today tab. Ask me again in a minute and I will have them.',
+    "I cannot see your plan and logs at this moment, so I will not quote any of your numbers. Your targets and today's log are on the Today tab. Ask me again in a minute and I will have them.",
   referral_medical: ROMAN_PHYSICIAN_LINE_MEDICAL,
   referral_injury: ROMAN_PHYSICIAN_LINE_INJURY,
 };
+
+/**
+ * B-651-6: the form every predicate reads. NFKC folds full-width digits and
+ * letters ("９００" -> "900"), quotes fold to ASCII and invisible format
+ * characters are dropped, exactly as the SafetyRouter normalises user text.
+ */
+function predicateForm(text: string): string {
+  return normalizeForSafety(text);
+}
+
+/**
+ * B-651-8: a medical_scope / injury_pain reply must carry the safe next step
+ * (injury: stop the movement), route to the coach and avoid reassurance. Run
+ * on the final composed text, whatever rule produced it.
+ */
+function medicalReplyGap(
+  text: string,
+  routerClass: SafetyClass,
+  ctx: PostCheckContext | null,
+): 'false_reassurance' | 'safe_step_missing' | null {
+  const t = predicateForm(text);
+  if (FALSE_REASSURANCE.some((rx) => rx.test(t))) return 'false_reassurance';
+  if (routerClass === 'injury_pain' && !STOP_DIRECTIVE.test(t)) return 'safe_step_missing';
+  if (!routesToCoach(t, ctx)) return 'safe_step_missing';
+  return null;
+}
 
 export function postCheckRomanReply(reply: string, input: PostCheckInput): PostCheckResult {
   const applied: string[] = [];
@@ -314,8 +495,9 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
   const medicalClass = input.routerClass === 'medical_scope' || input.routerClass === 'injury_pain';
   let text = reply ?? '';
   let rewritten = false;
+  const form = predicateForm(text);
 
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  const sentences = form.split(/(?<=[.!?])\s+/);
 
   // 1-3. typed number checks (A-R4-3), first failing sentence decides.
   let verdict: NumberVerdict = null;
@@ -324,8 +506,8 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
   // expected and could not be loaded (degraded mode). The coach surface and
   // pre-grounding callers pass neither, so only the calorie floor applies.
   const grounded = ctx !== null || input.contextUnavailable === true;
-  for (const s of sentences) {
-    verdict = judgeSentence(s, ctx, floor, grounded);
+  for (const sentence of sentences) {
+    verdict = judgeSentence(sentence, ctx, floor, grounded);
     if (verdict) break;
   }
   if (verdict) {
@@ -338,7 +520,7 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
   }
 
   // 4. diagnosis / treatment language, in every class
-  if (!rewritten && DIAGNOSIS.some((rx) => rx.test(text))) {
+  if (!rewritten && DIAGNOSIS.some((rx) => rx.test(form))) {
     applied.push('diagnosis_language');
     text =
       input.routerClass === 'medical_scope'
@@ -349,7 +531,7 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
 
   // 4b. A-R4-2: medication / treatment directives, in every class. Appending a
   //     physician sentence never makes "take 400 mg ibuprofen" acceptable.
-  if (!rewritten && MEDICATION_DIRECTIVE.some((rx) => rx.test(text))) {
+  if (!rewritten && MEDICATION_DIRECTIVE.some((rx) => rx.test(form))) {
     applied.push('medication_directive');
     text =
       input.routerClass === 'injury_pain'
@@ -359,62 +541,58 @@ export function postCheckRomanReply(reply: string, input: PostCheckInput): PostC
   }
 
   // 5. banned substances / protocols
-  if (!rewritten && BANNED.some((rx) => rx.test(text))) {
+  if (!rewritten && BANNED.some((rx) => rx.test(form))) {
     applied.push('banned_substance');
     text = ROMAN_POST_CHECK_TEMPLATES.banned(ctx);
     rewritten = true;
   }
 
-  // 6. A-R4-2: medical / injury turns are fail-closed. False reassurance, or
-  //    a reply missing the required safe next step (injury: stop the movement;
-  //    both: route to the coach), is replaced by the fixed safe reply. The
-  //    exact physician line is then enforced (not "any mention of doctor").
-  if (!rewritten && medicalClass) {
-    const reassures = FALSE_REASSURANCE.some((rx) => rx.test(text));
-    const missingStep =
-      (input.routerClass === 'injury_pain' && !STOP_DIRECTIVE.test(text)) ||
-      !routesToCoach(text, ctx);
-    if (reassures || missingStep) {
-      applied.push(reassures ? 'false_reassurance' : 'safe_step_missing');
+  // 6. A-R4-2 + B-651-8: medical / injury turns are fail-closed on the FINAL
+  //    composed reply, also when a number / banned rewrite above produced it.
+  //    False reassurance, or a reply missing the required safe next step
+  //    (injury: stop the movement; both: route to the coach), is replaced by
+  //    the fixed safe reply. The exact physician line is then enforced.
+  if (medicalClass) {
+    const gap = medicalReplyGap(text, input.routerClass, ctx);
+    if (gap) {
+      applied.push(gap);
       text =
         input.routerClass === 'injury_pain'
           ? ROMAN_POST_CHECK_TEMPLATES.medical(ctx)
           : ROMAN_POST_CHECK_TEMPLATES.medical_scope(ctx);
       rewritten = true;
-    } else {
-      const line =
-        input.routerClass === 'medical_scope'
-          ? ROMAN_POST_CHECK_TEMPLATES.referral_medical
-          : ROMAN_POST_CHECK_TEMPLATES.referral_injury;
-      if (!text.includes(line)) {
-        applied.push('referral_added');
-        text = `${text.trim()} ${line}`;
-      }
+    }
+    const line =
+      input.routerClass === 'medical_scope'
+        ? ROMAN_POST_CHECK_TEMPLATES.referral_medical
+        : ROMAN_POST_CHECK_TEMPLATES.referral_injury;
+    if (!text.includes(line)) {
+      applied.push('referral_added');
+      text = `${text.trim()} ${line}`;
     }
   }
 
   // 6b. false reassurance about pain or a doctor in an ordinary turn
-  if (!rewritten && !medicalClass && FALSE_REASSURANCE.slice(0, 2).some((rx) => rx.test(text))) {
+  if (!rewritten && !medicalClass && FALSE_REASSURANCE.slice(0, 2).some((rx) => rx.test(form))) {
     applied.push('false_reassurance');
     text = ROMAN_POST_CHECK_TEMPLATES.medical_scope(ctx);
     rewritten = true;
   }
 
-  // 7. voice scrub — emoji, exclamation allowance
+  // 7. voice scrub — B-651-9: no exclamation marks at all (every variant,
+  // including the emoji-presentation double marks, becomes a full stop
+  // BEFORE emoji removal so the sentence keeps its end); then emoji removed.
+  if (/[!\uFF01\u01C3\u203C\u2049\uFE57]/.test(text)) {
+    applied.push('voice_scrub');
+    text = text.replace(/\.?[!\uFF01\u01C3\uFE57\u203C\u2049]+\uFE0F?/g, '.');
+  }
   const noEmoji = text.replace(EMOJI, '');
   if (noEmoji !== text) {
-    applied.push('voice_scrub');
+    if (!applied.includes('voice_scrub')) applied.push('voice_scrub');
     text = noEmoji
-      .replace(/ +([.!?,])/g, '$1')
+      .replace(/ +([.?,])/g, '$1')
       .replace(/ {2,}/g, ' ')
       .trim();
-  }
-  const bangs = (text.match(/!/g) ?? []).length;
-  const allowedBangs = input.exclamationAllowed ? 1 : 0;
-  if (bangs > allowedBangs) {
-    if (!applied.includes('voice_scrub')) applied.push('voice_scrub');
-    let seen = 0;
-    text = text.replace(/!/g, () => (++seen <= allowedBangs ? '!' : '.'));
   }
 
   return { text, guardrails_applied: applied, rewritten };

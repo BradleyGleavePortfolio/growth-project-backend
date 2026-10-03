@@ -22,9 +22,23 @@ const EMERGENCY: RegExp[] = [
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
   /\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b/i,
   /\b(i'?m|i am) not breathing\b/i,
-  /\b(fainted|passed out|passing out|blacked out|blacking out|about to pass out|going to faint)\b/i,
-  /\b(stroke|face (is )?droop(ing)?|slurr(ed|ing) (my )?speech|one side of my (body|face) (is )?(numb|weak|drooping))\b/i,
-  /\b(anaphyla|allergic reaction|throat (is )?(closing|swelling)|epi ?pen|lips (are )?swelling)\b/i,
+  // B-651-2: loss of consciousness only when it is happening now, is about to,
+  // or happened to someone just now. A past or near-miss report ("I almost
+  // passed out after leg day") goes to the model with the medical hint.
+  /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
+  /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
+  /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
+  /\b(someone|somebody|he|she|they|my (friend|partner|wife|husband|son|daughter|mom|mum|dad|brother|sister|client|training partner)) (just |has |is )?(fainted|passed out|blacked out|collapsed|unconscious|unresponsive|not breathing)\b/i,
+  /\b(unconscious|unresponsive)\b/i,
+  // B-651-2: "stroke" alone is training vocabulary (rowing stroke rate, back
+  // stroke). Emergency needs acute stroke context or the FAST symptoms.
+  /\b((i'?m|i am|he'?s|she'?s|they'?re|is|am|are|might be|could be|think i'?m|think (he|she|they)'?s?( is| are)?) having|signs of|symptoms of|is (this|it|that) a|could (this|it|that) be a|i think it'?s a) (a )?stroke\b/i,
+  /\bstroke (symptoms|signs)\b/i,
+  /\b(face (is )?droop(ing)?|slurr(ed|ing) (my |his |her )?speech|one side of (my|his|her) (body|face) (is |went |feels )?(numb|weak|drooping))\b/i,
+  // B-651-2: a past allergic reaction is history, not an emergency; an acute
+  // one (or its airway signs) is.
+  /\b(anaphyla|throat (is )?(closing|swelling)|epi ?pen|lips (are )?swelling|tongue (is )?swelling)\b/i,
+  /\b((i'?m|i am|think i'?m|might be|he'?s|she'?s) having|having) an allergic reaction\b|\ballergic reaction (right )?now\b/i,
   /\b(overdos(e|ed|ing)|poison(ed|ing))\b/i,
   /\b(heart attack|cardiac arrest)\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
@@ -75,6 +89,11 @@ const MEDICAL_SCOPE: RegExp[] = [
   /\b(ozempic|wegovy|semaglutide|mounjaro|tirzepatide|metformin|phentermine|adderall|antidepressant|ssri)\b/i,
   /\b(symptom|symptoms)\b/i,
   /\b(disorder|syndrome|disease)\b/i,
+  // B-651-2: history or near-miss reports the emergency router leaves to the
+  // model: the medical hint makes the reply route to the coach and physician.
+  /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|dizzy|dizziness|light-?headed)\b/i,
+  /\b(had|have had|history of|after|since) (a |my )?stroke\b/i,
+  /\ballergic reaction\b|\ballerg(y|ies|ic) to\b/i,
 ];
 
 const INJURY_PAIN: RegExp[] = [
@@ -214,7 +233,7 @@ export const ROMAN_ROUTER_HINTS: Record<
     'Stay within general fitness and nutrition; do not interpret, diagnose or advise on the medical matter itself, and do not change or time any medication. ' +
     'Be genuinely useful first, in this order: ' +
     '(1) give the general, non-diagnostic principle that applies to anyone (for example: keep effort at a level you could hold a conversation at, build intensity gradually, drink water through the day, eat regular meals with protein, and do not change food, water or training sharply around a medication without the prescriber); ' +
-    '(2) name one safe next step inside their current plan (keep today\'s session as written or at a lower intensity, keep logging, hold the coach-set targets); ' +
+    "(2) name one safe next step inside their current plan (keep today's session as written or at a lower intensity, keep logging, hold the coach-set targets); " +
     '(3) offer to help them message their coach so the plan can be adjusted around it; ' +
     `(4) then close with this exact line: "${ROMAN_PHYSICIAN_LINE_MEDICAL}" ` +
     'Warm and composed; no alarm, no lecture.',

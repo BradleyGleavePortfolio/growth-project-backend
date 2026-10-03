@@ -108,10 +108,12 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
 /**
  * Daily spend cap for all Roman turns together (UTC day), in US dollars.
  * Env ROMAN_DAILY_COST_CAP_USD (registered in ENV_RULES); default 25. A turn
- * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
- * capability `roman.chat`) before the provider call and settles the actual
- * tokens after it, so concurrent turns see each other. Fail closed: when
- * today's spend cannot be read, no paid call is made.
+ * RESERVES the upper bound of its exact payload plus max output in the
+ * content-free ledger (AiRequestAudit, capability `roman.chat`) under a
+ * per-day advisory lock before the provider call (B-651-4/5), and settles
+ * the known tokens after it, keeping the reserved value for any side whose
+ * usage the provider never reported (B-651-1). Fail closed: when today's
+ * spend cannot be read, no paid call is made.
  */
 export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
 export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 25;
@@ -119,6 +121,19 @@ export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 25;
 export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
 /** The content-free ledger capability for one Roman turn. */
 export const ROMAN_LEDGER_CAPABILITY = 'roman.chat';
+
+/**
+ * B-651-10: GET /roman/context/me could not read the client's plan and logs
+ * (503). Says what happened and the working next step; only the client
+ * (students) reaches this route.
+ */
+export const ROMAN_ERROR_CONTEXT_UNAVAILABLE = 'ROMAN_CONTEXT_UNAVAILABLE';
+export const ROMAN_CONTEXT_UNAVAILABLE_MESSAGE =
+  'The view of what Roman can see could not load just now. Your plan and logs are safe. Try again in a moment, or open the Today tab to see them there.';
+/** B-651-10: an unexpected (non-transient) context read failure (500). */
+export const ROMAN_ERROR_CONTEXT_FAILED = 'ROMAN_CONTEXT_FAILED';
+export const ROMAN_CONTEXT_FAILED_MESSAGE =
+  'The view of what Roman can see could not load. Your plan and logs are safe and still open from the Today tab. If this keeps happening, contact support and quote the reference shown with this message.';
 
 /**
  * Who a Roman failure message is written for. Roman serves clients
@@ -135,7 +150,10 @@ const ROMAN_COACH_NEXT_STEP = 'Your clients, messages and the rest of the app wo
 /** 429: the caller used their rolling 24 h Roman turns. */
 export function romanRateLimitMessage(retryAfterSeconds: number, role: string = 'student'): string {
   const hours = Math.max(1, Math.round(retryAfterSeconds / 3600));
-  const when = retryAfterSeconds < 3600 ? 'within the hour' : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const when =
+    retryAfterSeconds < 3600
+      ? 'within the hour'
+      : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
   const next =
     romanAudienceOf(role) === 'client'
       ? 'Your coach is in Messages any time, and your plan and logs work as usual.'
@@ -163,19 +181,20 @@ export const ROMAN_SWITCHED_OFF_MESSAGE =
   'Roman is switched off at the moment. Your coach is in Messages any time.';
 
 // Coach-audience variants (coach surface; the owner reads the same copy).
-export const ROMAN_CAPACITY_REACHED_MESSAGE_COACH =
-  `Roman has reached his limit of conversations for today and will be back tomorrow. ${ROMAN_COACH_NEXT_STEP}`;
-export const ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH =
-  `Roman cannot check his daily limit at this moment, so he is not answering yet. Send your message again in a few minutes. ${ROMAN_COACH_NEXT_STEP}`;
-export const ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH =
-  `Roman could not reach his language service just now, so this message has no reply yet. Your message is saved. Send it again in a minute. ${ROMAN_COACH_NEXT_STEP}`;
-export const ROMAN_NOT_CONFIGURED_MESSAGE_COACH =
-  `Roman is not set up on this server yet, and the support team has been told. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_CAPACITY_REACHED_MESSAGE_COACH = `Roman has reached his limit of conversations for today and will be back tomorrow. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH = `Roman cannot check his daily limit at this moment, so he is not answering yet. Send your message again in a few minutes. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH = `Roman could not reach his language service just now, so this message has no reply yet. Your message is saved. Send it again in a minute. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_NOT_CONFIGURED_MESSAGE_COACH = `Roman is not set up on this server yet, and the support team has been told. ${ROMAN_COACH_NEXT_STEP}`;
 export const ROMAN_SWITCHED_OFF_MESSAGE_COACH = `Roman is switched off at the moment. ${ROMAN_COACH_NEXT_STEP}`;
 
 /** The failure copy for one machine code, written for the caller's audience. */
 export function romanFailureMessage(
-  kind: 'capacity_reached' | 'capacity_unknown' | 'model_unavailable' | 'not_configured' | 'switched_off',
+  kind:
+    | 'capacity_reached'
+    | 'capacity_unknown'
+    | 'model_unavailable'
+    | 'not_configured'
+    | 'switched_off',
   role: string | null | undefined,
 ): string {
   const client = romanAudienceOf(role) === 'client';

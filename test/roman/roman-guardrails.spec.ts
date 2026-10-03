@@ -8,7 +8,10 @@ import 'reflect-metadata';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import { RomanService } from '../../src/roman/roman.service';
-import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import {
+  AnthropicHandle,
+  type AnthropicMessagesClient,
+} from '../../src/ai-egress/ai-egress.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { buildRomanSystemPrompt, ROMAN_VOICE_CONTRACT } from '../../src/roman/roman.prompts';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
@@ -267,7 +270,9 @@ describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then
       expect(t).not.toMatch(CONTRACTIONS);
       expect(t).not.toMatch(HYPE);
       // No promise of an action Roman does not perform.
-      expect(t).not.toMatch(/I (have|will) (told|tell|notify|notified|alert|alerted|contact|contacted)/i);
+      expect(t).not.toMatch(
+        /I (have|will) (told|tell|notify|notified|alert|alerted|contact|contacted)/i,
+      );
     }
   });
 
@@ -338,11 +343,14 @@ describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then
     for (const line of [ROMAN_PHYSICIAN_LINE_MEDICAL, ROMAN_PHYSICIAN_LINE_INJURY]) {
       expect(line).toMatch(/\b(physician|doctor)\b/i);
     }
-    const r = postCheckRomanReply('Please stop that movement for today and tell your coach how it feels.', {
-      context: null,
-      routerClass: 'injury_pain',
-      exclamationAllowed: false,
-    });
+    const r = postCheckRomanReply(
+      'Please stop that movement for today and tell your coach how it feels.',
+      {
+        context: null,
+        routerClass: 'injury_pain',
+        exclamationAllowed: false,
+      },
+    );
     expect(r.guardrails_applied).toContain('referral_added');
     expect(r.text.endsWith(ROMAN_PHYSICIAN_LINE_INJURY)).toBe(true);
   });
@@ -494,10 +502,13 @@ describe('R4 post-check — rewrite, never append', () => {
     });
     expect(r1.guardrails_applied).toEqual(['referral_added']);
     expect(r1.text.endsWith(ROMAN_POST_CHECK_TEMPLATES.referral_injury)).toBe(true);
-    const r2 = postCheckRomanReply('I can only speak to general nutrition here; Alex is the right person for the rest.', {
-      ...base,
-      routerClass: 'medical_scope',
-    });
+    const r2 = postCheckRomanReply(
+      'I can only speak to general nutrition here; Alex is the right person for the rest.',
+      {
+        ...base,
+        routerClass: 'medical_scope',
+      },
+    );
     expect(r2.text.endsWith(ROMAN_POST_CHECK_TEMPLATES.referral_medical)).toBe(true);
     // already present → untouched
     const fine = `Stop that movement for now and tell Alex. ${ROMAN_POST_CHECK_TEMPLATES.referral_injury}`;
@@ -506,13 +517,14 @@ describe('R4 post-check — rewrite, never append', () => {
     ).toEqual([]);
   });
 
-  it('7. voice scrub: emoji removed; exclamations beyond the session allowance become periods', () => {
+  it('7. voice scrub: emoji removed; B-651-9: every exclamation becomes a period', () => {
     const r = postCheckRomanReply('Great work today 💪🔥! You crushed it! Keep going!', {
       ...base,
       exclamationAllowed: true,
     });
     expect(r.guardrails_applied).toEqual(['voice_scrub']);
-    expect(r.text).toBe('Great work today ! You crushed it. Keep going.'.replace(' !', '!'));
+    // B-651-9: the old one-per-session allowance is gone, even when granted.
+    expect(r.text).toBe('Great work today. You crushed it. Keep going.');
     const none = postCheckRomanReply('Great work today! Keep going!', {
       ...base,
       exclamationAllowed: false,
@@ -568,16 +580,24 @@ function makeDb(userMessage: string) {
     findFirst: jest.fn(async () => null),
   };
   const aiRequestAudit = {
-    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ledger_1', ...data })),
-    aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'ledger_1',
+      ...data,
+    })),
+    aggregate: jest.fn(async () => ({
+      _sum: { prompt_token_estimate: 0, response_token_estimate: 0 },
+    })),
     update: jest.fn(async () => ({})),
   };
+  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+  const $executeRaw = jest.fn(async () => 1);
   const prisma = {
     romanMessage,
     romanSession,
     aiRequestAudit,
+    $executeRaw,
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ romanMessage, romanSession }),
+      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
   return { prisma, messages };
@@ -654,13 +674,16 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     });
     expect(audit.write).toHaveBeenCalledTimes(1);
     const row = audit.write.mock.calls[0][0];
+    // OR-115-1: one neutral action; the closed reason code only in metadata.
     expect(row).toMatchObject({
-      action: 'roman.safety_emergency',
+      action: 'roman.safety_route',
       actorId: 'user-A',
       targetType: 'RomanSession',
       targetId: 'sess_1',
+      metadata: { route_reason: 'call_911' },
     });
     expect(JSON.stringify(row)).not.toContain('chest pain'); // never the message text
+    expect(JSON.stringify(row)).not.toMatch(/emergency|self_harm|crisis|suicid/i);
   });
 
   it('G18 self-harm: fixed 988 reply, ZERO model calls, audit row', async () => {
@@ -671,7 +694,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
     const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
     expect(chunks[0].text).toContain('988');
-    expect(audit.write.mock.calls[0][0]).toMatchObject({ action: 'roman.safety_self_harm' });
+    expect(audit.write.mock.calls[0][0]).toMatchObject({
+      action: 'roman.safety_route',
+      metadata: { route_reason: 'call_988' },
+    });
   });
 
   it('the explicit userMessage option is preferred over the DB lookup', async () => {
@@ -728,4 +754,3 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
 // floor note and sex-aware floor in src/ai/*) are NOT carried by this PR, so
 // their source-text assertions are not carried either. They are listed in
 // the PR body as open items to re-home before #603 is closed.
-
