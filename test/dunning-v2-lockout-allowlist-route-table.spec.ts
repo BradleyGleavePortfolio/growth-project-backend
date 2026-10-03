@@ -183,6 +183,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
   'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
   'me/data-export/download', // DataExportController — account rights (S-DUNNING F8)
+  'me/data-export/download-link', // main: signed download link for the same export (account rights)
   'me/data-export/request',
   'me/data-export/status',
   'me/delete-account', // AccountDeletionController — account rights (S-DUNNING F8)
