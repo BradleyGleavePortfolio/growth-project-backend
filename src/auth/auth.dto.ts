@@ -498,9 +498,11 @@ export class IssueRecentAuthTokenDto {
 
   @ApiPropertyOptional({
     description: 'Provider for provider_token. Required when provider_token is provided.',
-    enum: ['google', 'apple'],
+    enum: ['google', 'apple', 'google_session'],
   })
   @IsOptional()
-  @IsIn(['google', 'apple'])
-  provider?: 'google' | 'apple';
+  // google_session: the access token of a Supabase session created by a
+  // Google OAuth sign-in moments ago (mobile has no Google client id).
+  @IsIn(['google', 'apple', 'google_session'])
+  provider?: 'google' | 'apple' | 'google_session';
 }

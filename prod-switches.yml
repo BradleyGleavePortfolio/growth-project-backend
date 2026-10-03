@@ -428,6 +428,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Data export download link lifetime in seconds (default 300, clamped 60..900). Leave unset in prod."
   - name: DATA_EXPORT_DOWNLOAD_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
@@ -452,6 +458,18 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: DATA_EXPORT_STALE_RUN_MINUTES
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Minutes after which a PENDING/RUNNING data export is failed as a crashed run (default 30, min 5)."
+  - name: DATA_EXPORT_STORAGE
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: platform
+    description: "Data export archive store: supabase (private data-exports bucket, forced in production) or local (dev/test). Leave unset in prod; local is refused there."
   - name: DATA_EXPORT_TOKEN_SECRET
     tier: optional
     prod_default: STUB_ALLOWED
