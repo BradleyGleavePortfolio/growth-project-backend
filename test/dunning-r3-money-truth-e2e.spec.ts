@@ -1526,6 +1526,21 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
     });
   });
 
+  it('client-facing billing copy never speaks as "we" / "our" (Quiet Luxury rule: no first person in error copy)', () => {
+    const src = readFileSync(
+      join(__dirname, '..', 'src', 'checkout', 'client-billing.service.ts'),
+      'utf8',
+    );
+    const offenders = src
+      .split('\n')
+      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+      .filter(({ line }) => !/^(\/\/|\*|\/\*)/.test(line))
+      .filter(({ line }) => /['`"]/.test(line))
+      .filter(({ line }) => /\b(we|our|us)\b/i.test(line.replace(/\/\/.*$/, '')))
+      .map(({ n, line }) => `${n}: ${line}`);
+    expect(offenders).toEqual([]);
+  });
+
   it('mergeDisputeObligations: a final status on either record wins; a not-in-favour final status beats a won one', () => {
     const merged = mergeDisputeObligations(
       [

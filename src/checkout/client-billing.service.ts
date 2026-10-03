@@ -1134,14 +1134,14 @@ export class ClientBillingService {
         break;
       case 'payment_uncertain':
         parts.push(
-          `We could not confirm whether the payment${dueText ? ` of ${dueText}` : ''}${other} went through. Wait a minute, then pull down to refresh. Trying again never charges you twice.`,
+          `The payment${dueText ? ` of ${dueText}` : ''}${other} is not confirmed yet. Wait a minute, then pull down to refresh. Trying again never charges you twice.`,
         );
         break;
       case 'failed':
         parts.push(
           anyPaid
-            ? `The payment${dueText ? ` of ${dueText}` : ''}${other} did not go through because our payment provider could not complete it, so that amount was not charged. Try again in a minute.`
-            : `The payment${dueText ? ` of ${dueText}` : ''} did not go through because our payment provider could not complete it, so nothing was charged. Try again in a minute.`,
+            ? `The payment${dueText ? ` of ${dueText}` : ''}${other} did not go through because the payment provider could not complete it, so that amount was not charged. Try again in a minute.`
+            : `The payment${dueText ? ` of ${dueText}` : ''} did not go through because the payment provider could not complete it, so nothing was charged. Try again in a minute.`,
         );
         break;
       case 'in_progress':
@@ -1982,8 +1982,8 @@ export class ClientBillingService {
       error: 'CANCEL_INCOMPLETE',
       message:
         voidedCount > 0
-          ? 'Your unpaid invoice is canceled, so you will not be charged for it, but your plan did not finish ending. We finish it automatically within the hour, or tap End my plan again in a minute.'
-          : 'Your plan did not finish ending, and nothing was charged. We finish it automatically within the hour, or tap End my plan again in a minute.',
+          ? 'Your unpaid invoice is canceled, so you will not be charged for it, but your plan did not finish ending. It finishes automatically within the hour, or tap End my plan again in a minute.'
+          : 'Your plan did not finish ending, and nothing was charged. It finishes automatically within the hour, or tap End my plan again in a minute.',
     });
   }
 
@@ -1993,8 +1993,8 @@ export class ClientBillingService {
       error: 'PLAN_CHANGE_RESULT_UNKNOWN',
       message:
         voidedCount > 0
-          ? 'Your unpaid invoice is canceled, but we could not confirm the rest of the change with our payment provider. We finish it automatically within the hour; pull down to refresh.'
-          : 'We could not confirm your plan with our payment provider, so nothing changed yet. Wait a minute, then try again. Repeating it is safe and never charges you.',
+          ? 'Your unpaid invoice is canceled, but the payment provider has not confirmed the rest of the change yet. It finishes automatically within the hour; pull down to refresh.'
+          : 'The payment provider did not confirm your plan, so nothing changed yet. Wait a minute, then try again. Repeating it is safe and never charges you.',
     });
   }
 
@@ -2141,8 +2141,8 @@ export class ClientBillingService {
           code: 'STRIPE_REQUEST_FAILED',
           error: 'STRIPE_REQUEST_FAILED',
           message: planStep
-            ? 'Our payment provider could not complete this plan change, so your plan is unchanged. Try again, or contact support with the reference below.'
-            : 'Our payment provider could not complete this change, so nothing was charged. Try again, or contact support with the reference below.',
+            ? 'The payment provider could not complete this plan change, so your plan is unchanged. Try again, or contact support with the reference below.'
+            : 'The payment provider could not complete this change, so nothing was charged. Try again, or contact support with the reference below.',
         },
         HttpStatus.BAD_GATEWAY,
       );
@@ -2189,7 +2189,7 @@ export class ClientBillingService {
         code: 'PAYMENT_RESULT_UNKNOWN',
         error: 'PAYMENT_RESULT_UNKNOWN',
         message:
-          'We could not confirm whether your payment went through. Wait a minute, then pull down to refresh. Trying again never charges you twice.',
+          'Your payment is not confirmed yet. Wait a minute, then pull down to refresh. Trying again never charges you twice.',
       });
     }
     if (step === 'invoice_void' || step === 'cancel' || step === 'cancel_schedule') {
@@ -2197,14 +2197,14 @@ export class ClientBillingService {
         code: 'PLAN_CHANGE_RESULT_UNKNOWN',
         error: 'PLAN_CHANGE_RESULT_UNKNOWN',
         message:
-          'We could not confirm that your plan change went through. We finish it automatically within the hour; pull down to refresh, or try again. Repeating it is safe and never charges you.',
+          'Your plan change is not confirmed yet. It finishes automatically within the hour; pull down to refresh, or try again. Repeating it is safe and never charges you.',
       });
     }
     return new ServiceUnavailableException({
       code: 'STRIPE_UNAVAILABLE',
       error: 'STRIPE_UNAVAILABLE',
       message:
-        'Our payment provider did not respond, so nothing changed. Wait a minute, then try again.',
+        'The payment provider did not respond, so nothing changed. Wait a minute, then try again.',
     });
   }
 
