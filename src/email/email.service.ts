@@ -62,6 +62,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'payment-final-notice':
     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
   'payment-recovered': "You're all set — payment received",
+  // B-TRIALS (OR-113-2) — plain and exact: the date, no urgency.
+  'trial-ending': 'Your free trial ends on {{trial_end_date}}',
 };
 
 // EmailService is the single entry point for sending transactional email.
