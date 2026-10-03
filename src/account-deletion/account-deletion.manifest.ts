@@ -244,6 +244,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Notification', field: 'user_id', action: del },
   { model: 'NotificationDigestLog', field: 'user_id', action: del },
   { model: 'NotificationDeliveryLog', field: 'user_id', action: del },
+  // B-NOTIF-5: queued and sent device pushes (lock-screen copy, the push
+  // token used, receipts). Erased with the account; nothing is retained.
+  { model: 'PushOutbox', field: 'user_id', action: del },
   { model: 'NudgeLog', field: 'user_id', action: del },
   { model: 'PaymentReminder', field: 'recipient_user_id', action: del },
   { model: 'EmailSendLog', field: 'recipient_email', action: del, match: 'email' },

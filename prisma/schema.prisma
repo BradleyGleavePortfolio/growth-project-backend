@@ -356,6 +356,7 @@ model User {
   notifications              Notification[]
   digest_logs                NotificationDigestLog[]
   notification_delivery_logs NotificationDeliveryLog[]
+  push_outbox                PushOutbox[]
   // NUDGE-V1 — behavioral nudge ledger (one row per decision: sent / suppressed / deferred).
   nudge_logs                 NudgeLog[]
 
@@ -2114,9 +2115,75 @@ model Notification {
   // Stream 2 ai_draft_id columns.
   ai_draft_id String? @unique
 
+  // B-648-7: true only for a proven duplicate: a `push` row written next to
+  // an `inapp` row for the same event (same user, kind, deep link and text,
+  // within seconds). The inbox and unread counts skip these; a sole push row
+  // (coach-AI, community, assignments) is never hidden. Set at write time by
+  // NotificationsService.createNotification and backfilled once by
+  // 20270307000000_push_outbox_quiet_hours.
+  inbox_hidden Boolean @default(false)
+
   @@index([user_id, created_at])
   @@index([user_id, read_at])
   @@index([kind, created_at])
+}
+
+// B-NOTIF-5 (#648): the durable device-push outbox. Every inbox
+// notification that should reach a phone is one row here, written in the
+// emitter's request (or transaction) and sent by PushDeliveryService's
+// worker, so a request never waits on Expo (B-648-6) and a restart loses
+// nothing. Quiet hours (OR-113-5, 21:00-08:00 in the recipient's zone) set
+// not_before to 08:00 local for non-urgent kinds (B-648-1: distinct events
+// are never dropped; a per-user burst cap defers instead of dropping).
+// Receipts are tracked on the row (C-648-5). Account deletion cascades.
+model PushOutbox {
+  id                 String    @id @default(uuid())
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  kind               String
+  // Exactly-once identity for events that have one (a booking event for a
+  // session at a start time). NULL for events that collapse instead.
+  dedupe_key         String?
+  // Same-conversation repeats collapse into one unsent push (latest copy).
+  collapse_key       String
+  title              String
+  body               String
+  // Tap routing for the mobile pushTapRouter: ids and enums only.
+  data               Json
+  // Booking context (sessionId, scheduledAt, timeZone, otherPartyDisplayName)
+  // so a deferred push is re-rendered and re-checked when it is sent.
+  context            Json?
+  // The caller's explicit urgency only. Quiet hours and the burst cap are
+  // re-decided at every send from the kind, the context and the clock.
+  urgent             Boolean   @default(false)
+  // The recipient's zone at enqueue; the worker prefers the current one.
+  time_zone          String?
+  // pending | sending | sent | dropped
+  status             String    @default("pending")
+  not_before         DateTime  @default(now())
+  // quiet_hours | burst_cap | provider_retry | worker_retry (why not_before is later)
+  deferred_reason    String?
+  lease_until        DateTime?
+  // Fences every write of the worker that claimed the row (B-648-8).
+  lease_token        String?
+  // Set right before the Expo call. A lapsed lease without it was never
+  // started (back to pending); with it the send is unknown (closed).
+  handed_off_at      DateTime?
+  attempts           Int       @default(0)
+  // Last outcome code (sent, no-token, device-not-registered, ...).
+  result_code        String?
+  ticket_id          String?
+  token              String?
+  sent_at            DateTime?
+  receipt_checked_at DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  @@unique([user_id, dedupe_key])
+  @@index([status, not_before])
+  @@index([user_id, collapse_key, created_at])
+  @@index([user_id, sent_at])
+  @@index([sent_at, receipt_checked_at])
 }
 
 model NotificationDigestLog {
