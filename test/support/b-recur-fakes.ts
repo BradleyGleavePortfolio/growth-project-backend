@@ -4,6 +4,12 @@
 // $transaction (models the per-(client, coach) advisory lock), and a
 // Stripe double that records every write so specs can prove "no duplicate
 // Stripe objects".
+//
+// B-RECUR-3 (B-654-5): the Stripe double now models Stripe's idempotency
+// contract fully: the same key with the SAME parameters returns the first
+// object; the same key with DIFFERENT parameters is rejected with a 400
+// `idempotency_error` (https://docs.stripe.com/api/idempotent_requests).
+import { StripeConnectApiError } from '../../src/connect/stripe-connect-api.service';
 
 type Row = Record<string, any>;
 
@@ -136,8 +142,10 @@ export function makeFakePrisma() {
           access_expires_at: null,
           trial_days: null,
           trial_started_at: null,
+          checkout_terms: null,
           last_error: null,
           created_at: new Date(Date.now() + seq),
+          updated_at: new Date(),
           ...data,
         };
         purchases.push(row);
@@ -146,12 +154,12 @@ export function makeFakePrisma() {
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => p.id === where.id);
         if (!row) throw new Error('not found');
-        Object.assign(row, data);
+        Object.assign(row, data, { updated_at: new Date() });
         return { ...row };
       }),
       updateMany: jest.fn(async ({ where, data }: any) => {
         const rows = purchases.filter((p) => matchWhere(p, where));
-        rows.forEach((r) => Object.assign(r, data));
+        rows.forEach((r) => Object.assign(r, data, { updated_at: new Date() }));
         return { count: rows.length };
       }),
       deleteMany: jest.fn(async ({ where }: any) => {
@@ -172,6 +180,8 @@ export function makeFakePrisma() {
 export interface FakeSub {
   id: string;
   status: string;
+  customer?: string;
+  metadata?: Record<string, string>;
   current_period_end: number;
   default_payment_method: string | null;
   items: { data: Array<{ price: { id: string } }> };
@@ -182,6 +192,15 @@ export interface FakeSub {
 /** Stripe double: Idempotency-Key collapses like Stripe (same key -> same object). */
 export function makeFakeStripe() {
   const subsByKey = new Map<string, FakeSub>();
+  // Parameters of the first request per Idempotency-Key (Stripe compares).
+  const paramsByKey = new Map<string, string>();
+  const fingerprint = (args: Record<string, unknown>) =>
+    JSON.stringify(
+      Object.keys(args)
+        .filter((k) => k !== 'idempotencyKey' && args[k] !== undefined)
+        .sort()
+        .map((k) => [k, args[k]]),
+    );
   const subs = new Map<string, FakeSub>();
   // SetupIntents by id. A trial subscription's pending_setup_intent is the
   // SAME object while pending; `_saveTrialCard` models Stripe after the
@@ -201,13 +220,25 @@ export function makeFakeStripe() {
       sub.pending_setup_intent = null;
     },
     createSubscription: jest.fn(async (args: any) => {
+      const seen = paramsByKey.get(args.idempotencyKey);
+      if (seen !== undefined && seen !== fingerprint(args)) {
+        throw new StripeConnectApiError(
+          'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+          400,
+          null,
+          'idempotency_error',
+        );
+      }
       const hit = subsByKey.get(args.idempotencyKey);
       if (hit) return hit;
+      paramsByKey.set(args.idempotencyKey, fingerprint(args));
       n += 1;
       const trial = (args.trialPeriodDays ?? 0) > 0;
       const sub: FakeSub = {
         id: `sub_${n}`,
         status: trial ? 'trialing' : 'incomplete',
+        customer: args.customer,
+        metadata: { ...(args.metadata ?? {}) },
         current_period_end:
           Math.floor(Date.now() / 1000) + (trial ? args.trialPeriodDays : 30) * 86400,
         default_payment_method: null,
@@ -243,6 +274,10 @@ export function makeFakeStripe() {
       if (!sub) throw new Error('no such subscription');
       return sub;
     }),
+    listSubscriptionsForCustomer: jest.fn(async (customer: string) => ({
+      data: [...subs.values()].filter((s) => s.customer === customer).reverse(),
+      has_more: false,
+    })),
     retrieveSetupIntent: jest.fn(async (id: string) => {
       const si = setups.get(id);
       if (!si) throw new Error('no such setup intent');

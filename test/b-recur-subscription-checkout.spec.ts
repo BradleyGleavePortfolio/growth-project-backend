@@ -267,20 +267,25 @@ describe('POST /v1/checkout/subscription-intent — recurring package', () => {
     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
-  it('a Stripe failure frees the key; the same-key retry creates the subscription once', async () => {
+  it('a failure after the create keeps the attempt bound; the same-key retry finishes the same subscription', async () => {
+    // B-RECUR-3 (B-654-5): the reservation is no longer dropped once Stripe
+    // has the subscription (a new reservation id would change the pinned
+    // request, which Stripe rejects for a retained Idempotency-Key).
     const { svc, stripe, prisma } = setup();
     stripe.createEphemeralKey.mockRejectedValueOnce(new Error('socket hang up'));
     await expect(
       svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 }),
     ).rejects.toThrow('socket hang up');
-    expect(prisma._purchases).toHaveLength(0);
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0].stripe_subscription_id).toBe('sub_1');
     const out = await svc.createSubscriptionIntent(CLIENT, {
       package_id: PKG,
       idempotency_key: KEY1,
     });
-    // Stripe's Idempotency-Key collapsed the retry onto the first subscription.
     expect(out.subscription_id).toBe('sub_1');
+    expect(out.client_secret).toBe('pi_1_secret_x');
     expect(stripe._subs.size).toBe(1);
+    expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
   it('price shown in the app differs -> 409 PACKAGE_PRICE_CHANGED with the current price, no Stripe call', async () => {
