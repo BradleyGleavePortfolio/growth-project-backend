@@ -14,9 +14,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Matches, Max, Min } from 'class-validator';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
@@ -68,6 +69,12 @@ export class CreateSubscriptionIntentDto {
   @Min(0)
   @Max(100_000_000)
   expected_one_time_cents?: number;
+
+  // The share-link token when the purchase starts from a share link. Only
+  // explains a refusal (PACKAGE_COACH_NOT_CONNECTED); never widens access.
+  @IsOptional()
+  @Matches(SHARE_TOKEN_REGEX)
+  share_token?: string;
 }
 
 export class ResumePlanDto {

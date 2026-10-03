@@ -93,6 +93,13 @@ export interface SubscriptionIntentInput {
   expected_amount_cents?: number;
   /** A combo's one-time part the app showed (0 or absent for a pure recurring plan). */
   expected_one_time_cents?: number;
+  /**
+   * The share-link token the client opened, when the purchase starts from a
+   * share link. Used only to say WHY a package of a coach the client is not
+   * connected with cannot be bought here (PACKAGE_COACH_NOT_CONNECTED); it
+   * never widens who can buy.
+   */
+  share_token?: string;
 }
 
 export interface PlanPrice {
@@ -207,6 +214,18 @@ export function planPriceFor(pkg: CoachPackage, trialDays: number): PlanPrice {
   };
 }
 
+/**
+ * R1-10 — true when `token` is this package's live share-link token (same
+ * rules as the public join route: enabled, not revoked, not expired).
+ */
+export function shareLinkMatches(pkg: CoachPackage, token: string | undefined): boolean {
+  if (typeof token !== 'string' || token.length === 0) return false;
+  if (!pkg.share_token || pkg.share_token !== token) return false;
+  if (!pkg.share_link_enabled || pkg.share_link_revoked_at) return false;
+  if (pkg.share_link_expires_at && pkg.share_link_expires_at.getTime() <= Date.now()) return false;
+  return true;
+}
+
 function iso(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null;
 }
@@ -251,14 +270,20 @@ export class SubscriptionCheckoutService {
     const pkg = await this.packages.getById(input.package_id);
     // Same visibility rule as the one-time path: unpublished, archived,
     // inactive, or another coach's package is a non-leaking 404.
-    if (
-      !pkg ||
-      !pkg.is_active ||
-      pkg.archived_at ||
-      !pkg.published_at ||
-      !client.coach_id ||
-      pkg.coach_id !== client.coach_id
-    ) {
+    if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
+      throw this.packageUnavailable();
+    }
+    if (!client.coach_id || pkg.coach_id !== client.coach_id) {
+      // R1-10 — the in-app paths (payment-intent and this route) sell only
+      // the client's own coach's packages; a client who is not connected
+      // with the package's coach is refused, exactly like payment-intent.
+      // When the client opened this package's live share link (the link
+      // already shows the package publicly), the refusal says why, with a
+      // working next step. Without a matching live token it stays the
+      // non-leaking 404, so no package id is ever confirmed to a stranger.
+      if (shareLinkMatches(pkg, input.share_token)) {
+        throw this.coachNotConnected(client.coach_id ? 'other_coach' : 'no_coach');
+      }
       throw this.packageUnavailable();
     }
     // $0 packages and invite-code grants never create Stripe objects. A
@@ -1053,6 +1078,18 @@ export class SubscriptionCheckoutService {
       purchase_id: row.id,
       included_by: includedBy,
       access_expires_at: iso(row.access_expires_at),
+    });
+  }
+
+  private coachNotConnected(reason: 'no_coach' | 'other_coach'): HttpException {
+    return new ConflictException({
+      code: 'PACKAGE_COACH_NOT_CONNECTED',
+      error: 'PACKAGE_COACH_NOT_CONNECTED',
+      message:
+        reason === 'no_coach'
+          ? 'This plan is from a coach you are not connected with yet, so it cannot be started from this account. Nothing was charged. Ask that coach for their invite code, join with it, then open the link again.'
+          : 'This plan is from a different coach than yours, so it cannot be started from this account. Nothing was charged. Message the coach who shared the link.',
+      reason,
     });
   }
 
