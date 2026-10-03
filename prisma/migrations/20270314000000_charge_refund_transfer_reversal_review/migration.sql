@@ -8,6 +8,12 @@
 -- while this is under 23 hours old.
 -- transfer_reversal_review_at: set once when a reversal is still owed past that
 -- window; the row leaves automatic retry and an operator reconciles it.
+-- transfer_reversal_last_attempt_at (B-641-8): the latest admitted attempt; the
+-- retry sweep takes never-attempted rows first, then the least recently
+-- attempted, so persistent failures never hold later refunds back.
+-- transfer_reversal_stripe_id (B-641-9): the Stripe reversal (trr_...) an owner
+-- reconcile recorded for this refund; unique, so one Stripe reversal settles at
+-- most one refund. An id, not free text.
 --
 -- Additive and nullable; no RLS change (ChargeRefund policies are row-level and
 -- cover every column). No user id, email or free text is added, so the #608
@@ -19,6 +25,8 @@
 -- than the window then go to operator review instead of being resent.
 ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_first_attempt_at" TIMESTAMP(3);
 ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_review_at" TIMESTAMP(3);
+ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_last_attempt_at" TIMESTAMP(3);
+ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_stripe_id" TEXT;
 
 UPDATE "ChargeRefund"
 SET "transfer_reversal_first_attempt_at" = COALESCE("posted_at", "created_at")
@@ -28,3 +36,6 @@ WHERE "ledger_reversed" = true
 
 CREATE INDEX IF NOT EXISTS "ChargeRefund_transfer_reversed_transfer_reversal_review_at_idx"
     ON "ChargeRefund"("transfer_reversed", "transfer_reversal_review_at");
+
+CREATE UNIQUE INDEX IF NOT EXISTS "ChargeRefund_transfer_reversal_stripe_id_key"
+    ON "ChargeRefund"("transfer_reversal_stripe_id");

@@ -49,12 +49,50 @@ export const REFUND_TRANSFER_REVERSAL_RUNBOOK = 'docs/runbooks/refund-transfer-r
 export type RefundTransferReversalOutcome =
   'reversed' | 'nothing_owed' | 'already_done' | 'pending' | 'needs_review';
 
-// Machine code of a failed reversal attempt for logs (never the message).
+// B-641-11 (Sol): Stripe error codes a transfer reversal can answer with.
+// Anything else logs as `other`; an error's name or message never reaches a
+// log line (both are free text an exception can carry).
+const STRIPE_REVERSAL_ERROR_CODES = new Set([
+  'amount_too_large',
+  'api_key_expired',
+  'balance_insufficient',
+  'idempotency_key_in_use',
+  'idempotency_error',
+  'insufficient_funds',
+  'lock_timeout',
+  'parameter_invalid_integer',
+  'parameter_missing',
+  'rate_limit',
+  'resource_missing',
+  'transfer_already_reversed',
+]);
+
+// Machine code of a failed reversal attempt for logs, from a closed catalog.
 function transferReversalErrorCode(err: unknown): string {
   if (err instanceof StripeConnectApiError) {
-    return `stripe_${err.httpStatus}_${err.stripeCode ?? 'none'}`;
+    const status =
+      Number.isInteger(err.httpStatus) && err.httpStatus >= 100 && err.httpStatus <= 599
+        ? err.httpStatus
+        : 0;
+    const code =
+      err.stripeCode === null
+        ? 'none'
+        : STRIPE_REVERSAL_ERROR_CODES.has(err.stripeCode)
+          ? err.stripeCode
+          : 'other';
+    return `stripe_${status}_${code}`;
   }
-  return err instanceof Error ? err.name : 'unknown';
+  return 'error';
+}
+
+// B-641-9: the named Stripe reversal already settles another refund.
+function transferReversalAssignedElsewhere(): ConflictException {
+  return new ConflictException({
+    code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
+    error: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
+    message:
+      'That reversal is already recorded for a different refund. Pick the reversal for this refund, or reconcile without an id.',
+  });
 }
 
 // A276 P0-2 + P1-1 (refix) — deep-link routes for coach in-app alerts.
@@ -566,11 +604,17 @@ export class RefundDisputeHandlerService {
   private markTransferReversalDone(
     db: Prisma.TransactionClient,
     refundRowId: string,
+    stripeTransferReversalId?: string,
   ): Promise<boolean> {
     return db.chargeRefund
       .updateMany({
         where: { id: refundRowId, transfer_reversed: false },
-        data: { transfer_reversed: true },
+        data: {
+          transfer_reversed: true,
+          ...(stripeTransferReversalId
+            ? { transfer_reversal_stripe_id: stripeTransferReversalId }
+            : {}),
+        },
       })
       .then((r) => r.count === 1);
   }
@@ -615,6 +659,11 @@ export class RefundDisputeHandlerService {
     if (row.transfer_reversal_review_at) return 'needs_review';
     const firstAttempt = row.transfer_reversal_first_attempt_at ?? now;
     if (now.getTime() - firstAttempt.getTime() <= REFUND_TRANSFER_RETRY_WINDOW_MS) {
+      // B-641-8 (narrowed): the sweep orders by this, least recent first.
+      await this.prisma.chargeRefund.updateMany({
+        where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
+        data: { transfer_reversal_last_attempt_at: now },
+      });
       return 'admitted';
     }
     await this.moveTransferReversalToReview(row, now);
@@ -687,23 +736,13 @@ export class RefundDisputeHandlerService {
 
     let retried = 0;
     let reversed = 0;
-    // Keyset paging on (created_at, id), not a Prisma cursor: a reversed row
-    // leaves the owed set, so a cursor on it points outside the filter (the
-    // page came back empty here, and with skip: 1 Postgres would drop a real
-    // row). Rows that fail stay owed but sit behind the key, so one run never
-    // retries the same row twice.
-    let after: { created_at: Date; id: string } | null = null;
+    // B-641-8 (narrowed, Sol): fair across runs. Never-attempted rows come
+    // first, then the least recently attempted, so rows that keep failing go
+    // to the back of the next run instead of filling its bounded pages again.
+    // Every row a run touches either leaves the owed set (reversed, nothing
+    // owed, review) or is stamped with this run's `now` on admission, so the
+    // `last attempt before now` filter moves each page past it (no cursor).
     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
-      const keyset: Prisma.ChargeRefundWhereInput[] = after
-        ? [
-            {
-              OR: [
-                { created_at: { gt: after.created_at } },
-                { created_at: after.created_at, id: { gt: after.id } },
-              ],
-            },
-          ]
-        : [];
       const rows = await this.prisma.chargeRefund.findMany({
         where: {
           ...owed,
@@ -714,10 +753,18 @@ export class RefundDisputeHandlerService {
                 { transfer_reversal_first_attempt_at: { gte: cutoff } },
               ],
             },
-            ...keyset,
+            {
+              OR: [
+                { transfer_reversal_last_attempt_at: null },
+                { transfer_reversal_last_attempt_at: { lt: now } },
+              ],
+            },
           ],
         },
-        orderBy: order,
+        orderBy: [
+          { transfer_reversal_last_attempt_at: { sort: 'asc', nulls: 'first' } },
+          ...order,
+        ],
         take: limit,
       });
       for (const row of rows) {
@@ -732,8 +779,6 @@ export class RefundDisputeHandlerService {
         if (outcome === 'needs_review') needsReview++;
       }
       if (rows.length < limit) break;
-      const last: { created_at: Date; id: string } = rows[rows.length - 1];
-      after = { created_at: last.created_at, id: last.id };
     }
 
     const inReview = await this.prisma.chargeRefund.count({
@@ -873,12 +918,48 @@ export class RefundDisputeHandlerService {
       return claimed;
     };
     if (match) {
-      const amount = Math.min(match.amount, owed.amount_cents);
-      await this.transfers.recordReconciledReversal({
-        transfer_row_id: owed.transfer.id,
-        amount_cents: amount,
-        claim,
+      const receipt = match;
+      // B-641-10 (Sol): a receipt smaller than this refund's share does not
+      // settle it. Nothing is recorded and the row stays in review.
+      if (receipt.amount < owed.amount_cents) {
+        throw new ConflictException({
+          code: 'TRANSFER_REVERSAL_UNDERSIZED',
+          error: 'TRANSFER_REVERSAL_UNDERSIZED',
+          message:
+            "That reversal is smaller than this refund's head-coach share, so it does not settle it. Nothing was recorded; the refund stays in review.",
+          reversal_amount_cents: receipt.amount,
+          owed_cents: owed.amount_cents,
+        });
+      }
+      // B-641-9 (Sol): one Stripe reversal settles at most one refund. The id
+      // is bound to this refund in the same transaction that claims it (a
+      // unique column), so a second refund, or a concurrent owner request for
+      // another refund, is refused instead of counting the money twice.
+      const bound = await this.prisma.chargeRefund.findFirst({
+        where: { transfer_reversal_stripe_id: receipt.id, NOT: { id: row.id } },
       });
+      if (bound) throw transferReversalAssignedElsewhere();
+      // Stripe is the truth for the transfer: record what the receipt moved,
+      // capped by what is left on the transfer.
+      const amount = Math.min(
+        receipt.amount,
+        owed.transfer.amount_cents - owed.transfer.reversed_amount_cents,
+      );
+      try {
+        await this.transfers.recordReconciledReversal({
+          transfer_row_id: owed.transfer.id,
+          amount_cents: amount,
+          claim: async (tx) => {
+            claimed = await this.markTransferReversalDone(tx, row.id, receipt.id);
+            return claimed;
+          },
+        });
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'P2002') {
+          throw transferReversalAssignedElsewhere();
+        }
+        throw err;
+      }
       return {
         charge_refund_id: row.id,
         outcome: claimed ? 'recorded_from_stripe' : 'already_recorded',
