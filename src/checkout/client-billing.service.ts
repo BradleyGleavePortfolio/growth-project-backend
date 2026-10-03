@@ -929,9 +929,16 @@ export class ClientBillingService {
 
   /**
    * Re-ask an unrecorded pay call with its own key. Only a successful paid
-   * answer credits this update; only a definitive refusal (4xx other than
-   * 409 "key in use" / 429, or an idempotency error) proves our call did not
-   * pay; everything else is unknown.
+   * answer credits this update. Only an answer produced by executing the pay
+   * proves our call did not pay: Stripe caches the result of every request
+   * that began executing, so inside the key window a 402 (the original's
+   * cached decline / bank step) or a 400 invalid_request_error (a new
+   * execution refused because the invoice is already settled, i.e. the
+   * original never executed) is definitive. Everything else is unknown
+   * (B-628-11 R8): 401 / 403 are refused before execution and say nothing
+   * about the original; 404, 409 "key in use", 429, an idempotency error,
+   * 5xx and transport errors likewise. An unknown line keeps its intent and
+   * the operation stays open until an authoritative answer arrives.
    */
   private async replayPay(
     inv: StripeInvoiceObject,
@@ -952,11 +959,8 @@ export class ClientBillingService {
     } catch (err) {
       const definitive =
         err instanceof StripeConnectApiError &&
-        err.httpStatus >= 400 &&
-        err.httpStatus < 500 &&
-        err.httpStatus !== 409 &&
-        err.httpStatus !== 429 &&
-        err.stripeType !== 'idempotency_error';
+        (err.httpStatus === 402 ||
+          (err.httpStatus === 400 && err.stripeType === 'invalid_request_error'));
       if (!definitive) {
         this.logger.warn(
           `card update: pay replay not definitive invoice=${inv.id}: ${

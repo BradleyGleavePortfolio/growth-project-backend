@@ -1163,6 +1163,71 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       expect(w.stripe.charges).toHaveLength(1);
     });
 
+    // B-628-11 (R8, Sol @ 9b48d91e): a refusal issued before the pay executes
+    // (authentication, permission, lookup) says nothing about the original
+    // call, so it never terminalizes the collected 15000 cents.
+    const notExecuted: Array<[number, string | null, string]> = [
+      [401, null, 'Invalid API Key provided.'],
+      [403, 'secret_key_required', 'The provided key does not have the required permissions.'],
+      [404, 'resource_missing', 'No such invoice.'],
+    ];
+
+    it.each(notExecuted)(
+      'foreground: a replay refused with %i keeps the paid intent open (uncertain, never already_paid); the later authorized replay reports the 15000 cents',
+      async (status, code, message) => {
+        const { approved, setupId } = await payThenLoseReceipt(80 + (status % 100));
+        expect(purchaseRow(w)?.status).toBe('past_due');
+        w.stripe.payErrors.push(
+          new StripeConnectApiError(message, status, code, 'invalid_request_error'),
+        );
+        const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+        expect(retry.outcome).toBe('payment_uncertain');
+        expect(retry.plans[0]).toMatchObject({
+          outcome: 'uncertain',
+          error_code: 'PAYMENT_RESULT_UNKNOWN',
+          invoices: [expect.objectContaining({ result: 'uncertain', amount_due_cents: 15000 })],
+        });
+        expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+        expect(cardOp(setupId)?.lines).toEqual([
+          expect.objectContaining({
+            result: 'paying',
+            amount_paid_cents: 0,
+            amount_due_cents: 15000,
+            idempotency_key: `tgp-1a-pay-in_dv2_renewal_1-${setupId}`,
+          }),
+        ]);
+        const later = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+        expect(later).toMatchObject({ outcome: 'paid', amount_paid_cents: 15000 });
+        expect(cardOp(setupId)?.lines).toEqual([
+          expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+        ]);
+        expect(w.stripe.charges).toHaveLength(1);
+      },
+    );
+
+    it.each(notExecuted)(
+      'background: a replay refused with %i keeps the paid intent open; the next authorized run records the 15000 cents',
+      async (status, code, message) => {
+        const { setupId } = await payThenLoseReceipt(90 + (status % 100));
+        w.stripe.payErrors.push(
+          new StripeConnectApiError(message, status, code, 'invalid_request_error'),
+        );
+        jest.setSystemTime(at(2 * DAY + 10 * MIN));
+        await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+        expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+        expect(cardOp(setupId)?.lines).toEqual([
+          expect.objectContaining({ result: 'paying', amount_paid_cents: 0 }),
+        ]);
+        jest.setSystemTime(at(2 * DAY + 80 * MIN));
+        await w.billing.reconcile(at(2 * DAY + 80 * MIN));
+        expect(cardOp(setupId)?.completed_at).toBeInstanceOf(Date);
+        expect(cardOp(setupId)?.lines).toEqual([
+          expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+        ]);
+        expect(w.stripe.charges).toHaveLength(1);
+      },
+    );
+
     it("an unknown-result pay that never reached Stripe, then Stripe's own retry pays: the key replay proves it was not this update (already_paid, 0 cents credited)", async () => {
       await failRenewal(w);
       jest.setSystemTime(at(2 * DAY));
