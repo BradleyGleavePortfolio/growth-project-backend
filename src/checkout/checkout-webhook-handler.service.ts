@@ -25,6 +25,33 @@ import { CoachFirstPaymentService } from '../notifications/coach-first-payment.s
 // @unique is unchanged.
 type WebhookTx = Prisma.TransactionClient;
 
+/** Purchase states of a subscription attempt that has not started yet. */
+const NOT_STARTED_STATUSES: ReadonlySet<string> = new Set([
+  'pending',
+  'incomplete',
+  'payment_failed',
+  'trialing',
+]);
+
+/**
+ * S-DUNNING-R6 (B-RECUR #654 seam): is this `invoice.payment_failed` on an
+ * attempt that never granted access? The first invoice of a subscription
+ * (`subscription_create`, e.g. a native default_incomplete subscription paid
+ * in the PaymentSheet) never is a renewal. Any other invoice is a first
+ * attempt only while the purchase has never been entitled and is still in a
+ * not-started state: an unpaid attempt, or a native trial whose card was
+ * never saved (it never granted access, so its trial-end charge is not a
+ * missed renewal either). A purchase that is (or was, and is now past_due /
+ * locked) running always enters dunning.
+ */
+export function isNeverEntitledPaymentAttempt(
+  purchase: { status: string; entitlement_active: boolean },
+  billingReason: string | null,
+): boolean {
+  if (billingReason === 'subscription_create') return true;
+  return !purchase.entitlement_active && NOT_STARTED_STATUSES.has(purchase.status);
+}
+
 // Lifecycle:
 //
 //   pending  -- checkout.session.completed   --> paid (one_time) / active (recurring)
@@ -1225,14 +1252,13 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_subscription_id: inv.subscription },
     });
     if (!purchase) return { claimed: false };
-    // S-DUNNING-R5 (B-RECUR seam): the FIRST invoice of a subscription
-    // created natively (payment_behavior=default_incomplete; the client pays
-    // it in the in-app PaymentSheet) can fail before the plan ever started.
-    // That is a checkout failure the sheet explains on the spot, not a missed
-    // renewal: no past_due flip, no dunning cycle, no Day 0-9 banner or
-    // lockout. Dunning starts only for a plan that was running (renewals and
-    // any later invoice), however its subscription was created.
-    if (inv.billing_reason === 'subscription_create' || purchase.status === 'pending') {
+    // S-DUNNING-R5/R6 (B-RECUR seam, #654): a payment that fails before the
+    // plan ever granted access is a checkout failure the PaymentSheet
+    // explains on the spot, not a missed renewal: no past_due flip, no
+    // dunning cycle, no Day 0-9 banner or lockout. Dunning starts only for a
+    // plan that was running (renewals, including the first charge after a
+    // trial that granted access), however its subscription was created.
+    if (isNeverEntitledPaymentAttempt(purchase, inv.billing_reason ?? null)) {
       await this.prisma.clientPurchase.update({
         where: { id: purchase.id },
         data: { last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed' },

@@ -3,7 +3,10 @@ import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
-import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import {
+  CheckoutWebhookHandlerService,
+  isNeverEntitledPaymentAttempt,
+} from '../src/checkout/checkout-webhook-handler.service';
 import {
   ApprovedInvoice,
   CardUpdateResult,
@@ -1516,6 +1519,62 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       await flush();
       expect(purchaseRow(w)?.status).toBe('active');
       expect(stateRow(w)?.status ?? 'none').not.toBe('active');
+    });
+
+    // S-DUNNING-R6 (#654 seam): never-entitled attempts are decided by the
+    // purchase, not only by the invoice's billing_reason.
+    it.each([
+      ['incomplete', 'manual'],
+      ['payment_failed', 'subscription_update'],
+      ['trialing', 'subscription_cycle'],
+    ])(
+      'a never-entitled %s attempt (billing_reason %s; trialing = a native trial whose card was never saved) is not dunning',
+      async (status, billingReason) => {
+        const p = purchaseRow(w)!;
+        Object.assign(p, { status, entitlement_active: false });
+        w.push.mockClear();
+        w.email.mockClear();
+        await w.handler.handle(
+          fixture('invoice.payment_failed', { billing_reason: billingReason, attempt_count: 1 }),
+        );
+        await flush();
+        expect(purchaseRow(w)).toMatchObject({ status, entitlement_active: false });
+        expect(stateRow(w)?.status ?? 'none').not.toBe('active');
+        expect(w.fake.rows('dunningNoticeDelivery')).toHaveLength(0);
+        expect(w.push).not.toHaveBeenCalled();
+        expect(w.email).not.toHaveBeenCalled();
+        expect((await w.v2.getClientStatus('client-1')).state).toBe('none');
+      },
+    );
+
+    it('the first charge after a trial that granted access is a renewal: it enters the v2 cycle on Day 0', async () => {
+      const p = purchaseRow(w)!;
+      Object.assign(p, { status: 'trialing', entitlement_active: true });
+      await w.handler.handle(
+        fixture('invoice.payment_failed', {
+          billing_reason: 'subscription_cycle',
+          attempt_count: 1,
+        }),
+      );
+      await flush();
+      expect(purchaseRow(w)).toMatchObject({ status: 'past_due', entitlement_active: true });
+      expect(stateRow(w)).toMatchObject({ status: 'active', step_index: 0 });
+    });
+
+    it('isNeverEntitledPaymentAttempt: running, past_due and locked plans always dun; only never-started attempts do not', () => {
+      const f = isNeverEntitledPaymentAttempt;
+      expect(f({ status: 'active', entitlement_active: true }, 'subscription_create')).toBe(true);
+      expect(f({ status: 'pending', entitlement_active: false }, 'subscription_cycle')).toBe(true);
+      expect(f({ status: 'incomplete', entitlement_active: false }, null)).toBe(true);
+      expect(f({ status: 'trialing', entitlement_active: false }, 'subscription_cycle')).toBe(true);
+      expect(f({ status: 'trialing', entitlement_active: true }, 'subscription_cycle')).toBe(false);
+      expect(f({ status: 'active', entitlement_active: true }, 'subscription_cycle')).toBe(false);
+      expect(f({ status: 'past_due', entitlement_active: true }, 'subscription_cycle')).toBe(false);
+      // A Day-10 lockout turns access off while the plan stays past_due.
+      expect(f({ status: 'past_due', entitlement_active: false }, 'subscription_cycle')).toBe(
+        false,
+      );
+      expect(f({ status: 'unpaid', entitlement_active: false }, null)).toBe(false);
     });
 
     it('a renewal (subscription_cycle) of a natively created subscription (no Checkout session) enters the v2 cycle on Day 0', async () => {
