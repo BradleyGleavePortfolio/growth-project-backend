@@ -24,7 +24,10 @@
  * - Strings pass `sanitizePromptInput` plus a length clamp; lists use recency
  *   windows so the block stays inside the renderer's token cap.
  * - Excluded by construction: other users' data (every query is scoped to
- *   the caller), coach-private notes (CoachingSession is never read), email,
+ *   the caller), coach-private notes (CoachingSession is read ONLY for the
+ *   client's own upcoming bookings with the current coach, with a narrow
+ *   select of title, start/end time and status; notes, links and coach-private
+ *   fields are never selected), email,
  *   phone, last name, raw ids, exact DOB, bloodwork, payments, wearable
  *   credentials/tokens (WearableConnection is read for provider + status only).
  */
@@ -61,6 +64,8 @@ import {
 import { onRomanContextInvalidate } from './roman-context-invalidation';
 
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
+/** C-651-4: hard bound on memoised bundles held in process memory. */
+export const ROMAN_CONTEXT_MEMO_MAX_ENTRIES = 500;
 export const ROMAN_CONTEXT_MAX_QUERIES = 16;
 
 /** Recency windows / caps (ruling #6 scope, kept inside the token budget). */
@@ -177,7 +182,6 @@ const firstName = (name: string | null | undefined): string => {
 };
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-
 const clampQA = (xs: RomanCtxQA[] | null | undefined, max: number): RomanCtxQA[] =>
   (xs ?? [])
     .map((qa) => ({
@@ -206,6 +210,12 @@ export class RomanClientContextService {
    * reads are this turn's reads) but is never stored for the next one.
    */
   private readonly generation = new Map<string, number>();
+  /**
+   * C-651-4: builds in flight per user. A generation entry is only needed
+   * while a build for that user is in flight; it is pruned when the last one
+   * settles, so neither map grows with every client ever served.
+   */
+  private readonly inFlight = new Map<string, number>();
   private readonly intake: RomanSafetyIntakeSource;
 
   constructor(
@@ -222,7 +232,29 @@ export class RomanClientContextService {
   /** Drop the memo for one user (write paths call this via the global hook). */
   invalidateForUser(userId: string): void {
     this.memo.delete(userId);
-    this.generation.set(userId, (this.generation.get(userId) ?? 0) + 1);
+    // Only a build in flight can be stale; with none, nothing needs fencing.
+    if (this.inFlight.has(userId)) {
+      this.generation.set(userId, (this.generation.get(userId) ?? 0) + 1);
+    } else {
+      this.generation.delete(userId);
+    }
+  }
+
+  /** C-651-4: entries held right now (memo, generation fences, builds in flight). */
+  retainedEntryCounts(): { memo: number; generation: number; inFlight: number } {
+    return { memo: this.memo.size, generation: this.generation.size, inFlight: this.inFlight.size };
+  }
+
+  /** C-651-4: drop every expired memo entry so private bundles do not linger. */
+  private evictExpired(nowMs: number): void {
+    for (const [userId, entry] of this.memo) {
+      if (entry.expires_at <= nowMs) this.memo.delete(userId);
+    }
+    while (this.memo.size > ROMAN_CONTEXT_MEMO_MAX_ENTRIES) {
+      const oldest = this.memo.keys().next();
+      if (oldest.done) break;
+      this.memo.delete(oldest.value);
+    }
   }
 
   /**
@@ -233,16 +265,33 @@ export class RomanClientContextService {
     caller: { id: string; role: string },
     now: Date = new Date(),
   ): Promise<RomanClientContextBundle> {
+    this.evictExpired(now.getTime());
     const hit = this.memo.get(caller.id);
     if (hit && hit.expires_at > now.getTime()) {
       // A day boundary in the client's timezone invalidates "today".
       const clock = localClock(now, hit.bundle.context.identity.timezone);
       if (clock.local_date === hit.local_date) return hit.bundle;
     }
+    if (hit) this.memo.delete(caller.id);
+    this.inFlight.set(caller.id, (this.inFlight.get(caller.id) ?? 0) + 1);
     const startedAt = this.generation.get(caller.id) ?? 0;
-    const bundle = await this.buildFresh(caller, now);
-    // Invalidated while building: do not memoise data that predates the write.
-    if ((this.generation.get(caller.id) ?? 0) !== startedAt) return bundle;
+    let stale = true;
+    let bundle: RomanClientContextBundle;
+    try {
+      bundle = await this.buildFresh(caller, now);
+    } finally {
+      // Invalidated while building: do not memoise data that predates the write.
+      stale = (this.generation.get(caller.id) ?? 0) !== startedAt;
+      const left = (this.inFlight.get(caller.id) ?? 1) - 1;
+      if (left > 0) {
+        this.inFlight.set(caller.id, left);
+      } else {
+        this.inFlight.delete(caller.id);
+        this.generation.delete(caller.id);
+      }
+    }
+    if (stale) return bundle;
+    this.memo.delete(caller.id);
     this.memo.set(caller.id, {
       local_date: bundle.context.identity.local_date,
       expires_at: now.getTime() + ROMAN_CONTEXT_MEMO_TTL_MS,
@@ -768,7 +817,10 @@ export class RomanClientContextService {
         date: c.local_date,
         weekday: c.local_weekday,
         local_time: c.local_time,
-        duration_minutes: Math.max(0, Math.round((b.end_at.getTime() - b.start_at.getTime()) / 60000)),
+        duration_minutes: Math.max(
+          0,
+          Math.round((b.end_at.getTime() - b.start_at.getTime()) / 60000),
+        ),
         title: clamp(b.title, 80) ?? 'Coaching session',
         status: b.status === 'requested' ? 'requested' : 'confirmed',
       };
@@ -779,7 +831,10 @@ export class RomanClientContextService {
     const safety_intake = {
       completed: consult.safety_intake.completed === true,
       clearance_recommended: consult.safety_intake.clearance_recommended === true,
-      screen_answers: clampQA(consult.safety_intake.screen_answers, ROMAN_CTX_LIMITS.screen_answers),
+      screen_answers: clampQA(
+        consult.safety_intake.screen_answers,
+        ROMAN_CTX_LIMITS.screen_answers,
+      ),
     };
     const consultation = {
       completed: consult.consultation.completed === true,
@@ -1110,7 +1165,12 @@ export function emptyWearables(): RomanCtxWearables {
 }
 
 /** Sum metrics accumulate across a day; the rest are averaged. */
-const SUM_METRICS = new Set(['STEPS', 'ACTIVE_ENERGY_KCAL', 'SLEEP_TOTAL_MIN', 'SLEEP_DURATION_MIN']);
+const SUM_METRICS = new Set([
+  'STEPS',
+  'ACTIVE_ENERGY_KCAL',
+  'SLEEP_TOTAL_MIN',
+  'SLEEP_DURATION_MIN',
+]);
 
 /**
  * Daily aggregates for the last 7 local days, oldest first. Sleep is keyed to
