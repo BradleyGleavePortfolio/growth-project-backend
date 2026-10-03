@@ -20,9 +20,18 @@ const USER_ID = '66666666-6666-4666-8666-666666666666';
 const KEY_A = `${USER_ID}/1700000000000-0123456789abcdef.m4a`;
 const KEY_B = `${USER_ID}/1700000000001-0123456789abcdef-0123456789abcdef0123456789abcdef.m4a`;
 
-type Call = { delegate: string; method: string; args: unknown };
+/**
+ * One recorded call. `tx` is the id of the interactive transaction it ran in
+ * (undefined = the root client); `rolledBack` marks a write whose transaction
+ * threw, so it never committed. Storage calls are logged as delegate
+ * 'storage' so their order against the database writes can be asserted.
+ */
+type Call = { delegate: string; method: string; args: unknown; tx?: number; rolledBack?: boolean };
 
-function permissivePrisma(calls: Call[], opts: { failErasureRecord?: boolean } = {}) {
+function permissivePrisma(
+  calls: Call[],
+  opts: { failErasureRecord?: boolean; failNoteSoftDelete?: boolean } = {},
+) {
   const user = {
     id: USER_ID,
     email: 'member@example.com',
@@ -33,14 +42,21 @@ function permissivePrisma(calls: Call[], opts: { failErasureRecord?: boolean } =
     deletion_confirmed_at: new Date(),
     coach_id: null,
   };
-  const delegate = (name: string) =>
+  const delegate = (name: string, tx?: number) =>
     new Proxy(
       {},
       {
         get: (_t, method: string) =>
           jest.fn(async (args: unknown) => {
-            calls.push({ delegate: name, method, args });
+            calls.push({ delegate: name, method, args, tx });
             if (name === 'user' && (method === 'findUnique' || method === 'findFirst')) return user;
+            if (
+              opts.failNoteSoftDelete &&
+              name === 'communityVoiceNote' &&
+              method === 'updateMany'
+            ) {
+              throw new Error('voice note table locked');
+            }
             if (name === 'communityVoiceErasure' && method === 'upsert') {
               if (opts.failErasureRecord) throw new Error('erasure table unavailable');
               const create = (args as { create: { kind: string; target: string } }).create;
@@ -59,29 +75,44 @@ function permissivePrisma(calls: Call[], opts: { failErasureRecord?: boolean } =
           }),
       },
     );
-  const root: Record<string, unknown> = {};
-  const prisma: Record<string, unknown> = new Proxy(root, {
-    get: (_t, prop: string) => {
-      if (prop === '$transaction') {
-        return async (fn: unknown) =>
-          typeof fn === 'function' ? fn(prisma) : Promise.all(fn as unknown[]);
-      }
-      if (prop === '$executeRaw' || prop === '$executeRawUnsafe' || prop === '$queryRaw') {
-        return jest.fn(async () => 1);
-      }
-      if (prop === 'then') return undefined;
-      return delegate(prop);
-    },
-  });
-  return prisma;
+  let txSeq = 0;
+  const client = (tx?: number): Record<string, unknown> =>
+    new Proxy(
+      {},
+      {
+        get: (_t, prop: string) => {
+          if (prop === '$transaction') {
+            return async (fn: unknown) => {
+              if (typeof fn !== 'function') return Promise.all(fn as unknown[]);
+              const id = ++txSeq;
+              try {
+                return await (fn as (c: Record<string, unknown>) => Promise<unknown>)(client(id));
+              } catch (err) {
+                // A throw rolls the whole transaction back: none of its
+                // writes committed.
+                for (const c of calls) if (c.tx === id) c.rolledBack = true;
+                throw err;
+              }
+            };
+          }
+          if (prop === '$executeRaw' || prop === '$executeRawUnsafe' || prop === '$queryRaw') {
+            return jest.fn(async () => 1);
+          }
+          if (prop === 'then') return undefined;
+          return delegate(prop, tx);
+        },
+      },
+    );
+  return client();
 }
 
-function storageClient(opts: { failRemove?: boolean } = {}) {
+function storageClient(opts: { failRemove?: boolean; log?: Call[] } = {}) {
   const removed: string[][] = [];
   const listed: string[] = [];
   let folder = ['orphan-upload.m4a'];
   const bucket = {
     remove: jest.fn(async (keys: string[]) => {
+      opts.log?.push({ delegate: 'storage', method: 'remove', args: keys });
       removed.push(keys);
       if (opts.failRemove) return { data: null, error: { message: 'storage down' } };
       folder = folder.filter((n) => !keys.includes(`${USER_ID}/${n}`));
@@ -237,5 +268,77 @@ describe('account deletion erases community voice notes (B-610-5)', () => {
       });
       expect((u.args as { data: Record<string, unknown> }).data.completed_at).toBeUndefined();
     }
+  });
+  // ── C-610-10, account-deletion half (B-UGC-8) ─────────────────────────
+  // Before: the erasure work committed first and the note soft delete ran
+  // afterwards in its own writes, with a failure only logged. A crash or a
+  // failed write between them (or a cancelled deletion after that point)
+  // left LIVE notes with open erasure work, so the retry cron erased the
+  // audio of notes still shown in the feed. Now the work and the soft
+  // deletes commit together, and storage runs only after that commit.
+
+  it('C-610-10: the erasure work and the note + search soft deletes commit in ONE transaction, before any storage call', async () => {
+    const calls: Call[] = [];
+    const { client } = storageClient({ log: calls });
+    const service = await build(permissivePrisma(calls), client);
+    await service.adminForceDelete(USER_ID, {
+      actorId: 'admin-1',
+      actorRole: 'owner',
+      actorEmail: null,
+    });
+
+    const upserts = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
+    );
+    expect(upserts).toHaveLength(3);
+    const tx = upserts[0].tx;
+    expect(tx).toEqual(expect.any(Number));
+    for (const u of upserts) expect(u.tx).toBe(tx);
+    const noteDelete = calls.find(
+      (c) => c.delegate === 'communityVoiceNote' && c.method === 'updateMany',
+    );
+    const searchDelete = calls.find(
+      (c) => c.delegate === 'communitySearchEntry' && c.method === 'updateMany',
+    );
+    expect(noteDelete?.tx).toBe(tx);
+    expect(searchDelete?.tx).toBe(tx);
+    expect(calls.some((c) => c.tx === tx && c.rolledBack)).toBe(false);
+
+    // Storage only after the transaction's last write.
+    const lastTxWrite = calls.map((c) => c.tx).lastIndexOf(tx);
+    const firstStorage = calls.findIndex((c) => c.delegate === 'storage');
+    expect(firstStorage).toBeGreaterThan(lastTxWrite);
+  });
+
+  it('C-610-10: a failed note soft delete rolls the erasure work back and stops finalization (retried next run); storage is never called', async () => {
+    const calls: Call[] = [];
+    const { client, removed } = storageClient({ log: calls });
+    const service = await build(permissivePrisma(calls, { failNoteSoftDelete: true }), client);
+    await expect(
+      service.adminForceDelete(USER_ID, {
+        actorId: 'admin-1',
+        actorRole: 'owner',
+        actorEmail: null,
+      }),
+    ).rejects.toThrow('voice note table locked');
+
+    // No erasure work committed for notes that are still live.
+    const upserts = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
+    );
+    expect(upserts.length).toBeGreaterThan(0);
+    for (const u of upserts) expect(u.rolledBack).toBe(true);
+    // Nothing was erased from storage and the account is not tombstoned, so
+    // the finalize cron picks the whole user up again.
+    expect(removed).toEqual([]);
+    expect(client.auth.admin.deleteUser).not.toHaveBeenCalled();
+    expect(
+      calls.some(
+        (c) =>
+          c.delegate === 'user' &&
+          c.method === 'update' &&
+          (c.args as { data?: { deleted_at?: Date } }).data?.deleted_at instanceof Date,
+      ),
+    ).toBe(false);
   });
 });

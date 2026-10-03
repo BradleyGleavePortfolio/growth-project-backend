@@ -86,52 +86,59 @@ function buildPrismaMock(userRow: ReturnType<typeof buildUserRow>) {
     userProfile: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
 
-  return {
-    txProxy,
-    destructiveMethods,
-    prisma: {
-      user: {
-        findUnique: jest.fn().mockResolvedValue(userRow),
-        findMany: jest.fn().mockResolvedValue([userRow]),
-      },
-      coachMessage: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      auditLog: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      mealPlan: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      diagnosticSubmission: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      recipe: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      lesson: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      workoutRoutine: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      coachGuideline: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      coachNudge: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      coachAlert: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      activityEvent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      messageDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      communityWin: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      // Step 10b (B-610-5 round 5): the voice erasure is recorded durably
-      // before anything else, so finalization reads the user's voice notes
-      // and records the owner-folder erasure even when they have none.
-      communityVoiceNote: {
-        findMany: jest.fn().mockResolvedValue([]),
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-      },
-      communitySearchEntry: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      communityVoiceErasure: {
-        upsert: jest.fn().mockImplementation(
-          async (args: { create: { kind: string; target: string } }) => ({
-            id: `erasure-${args.create.target}`,
-            kind: args.create.kind,
-            target: args.create.target,
-            attempts: 0,
-          }),
-        ),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      $executeRaw: jest.fn().mockResolvedValue(1),
-      $transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        return fn(txProxy);
-      }),
+  const prisma = {
+    user: {
+      findUnique: jest.fn().mockResolvedValue(userRow),
+      findMany: jest.fn().mockResolvedValue([userRow]),
     },
+    coachMessage: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    auditLog: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    mealPlan: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    diagnosticSubmission: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    recipe: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    lesson: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    workoutRoutine: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    coachGuideline: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    coachNudge: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    coachAlert: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    activityEvent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    messageDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    communityWin: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    // Step 10b (B-610-5 round 5): the voice erasure is recorded durably
+    // before anything else, so finalization reads the user's voice notes
+    // and records the owner-folder erasure even when they have none.
+    communityVoiceNote: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    communitySearchEntry: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    communityVoiceErasure: {
+      upsert: jest
+        .fn()
+        .mockImplementation(async (args: { create: { kind: string; target: string } }) => ({
+          id: `erasure-${args.create.target}`,
+          kind: args.create.kind,
+          target: args.create.target,
+          attempts: 0,
+        })),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    $transaction: jest.fn(),
   };
+  // Two interactive transactions run on the normal path: step 10b's voice
+  // erasure transaction (C-610-10: erasure work + note soft deletes) and the
+  // final scrub/tombstone. Both get the tx proxy plus the community voice
+  // delegates.
+  prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      ...txProxy,
+      communityVoiceNote: prisma.communityVoiceNote,
+      communitySearchEntry: prisma.communitySearchEntry,
+      communityVoiceErasure: prisma.communityVoiceErasure,
+    }),
+  );
+  return { txProxy, destructiveMethods, prisma };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -160,7 +167,7 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
   };
 
   async function buildService(userRow: ReturnType<typeof buildUserRow>) {
-    const { prisma } = buildPrismaMock(userRow);
+    const { prisma, txProxy } = buildPrismaMock(userRow);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -175,6 +182,7 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     return {
       service: module.get<AccountDeletionService>(AccountDeletionService),
       prisma,
+      txProxy,
     };
   }
 
@@ -194,12 +202,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
 
     // Drive the cron (it uses findMany to get candidates, then calls finalize)
     // We can also test the private method directly via type-cast:
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     expect(result).toEqual({ skipped: 'cancelled' });
 
@@ -213,12 +223,14 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     const alreadyDeletedUser = buildUserRow({ deleted_at: new Date() });
     const { service: svc, prisma } = await buildService(alreadyDeletedUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     expect(result).toEqual({ skipped: 'already-deleted' });
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -228,35 +240,46 @@ describe('AccountDeletionService.finalizeUserDeletion — cancel-mid-cron race (
     const confirmedUser = buildUserRow({
       deletion_confirmed_at: new Date(Date.now() - 15 * 86400 * 1000),
     });
-    const { service: svc, prisma } = await buildService(confirmedUser);
+    const { service: svc, prisma, txProxy } = await buildService(confirmedUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: false });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: false });
 
     // Returns void (no skipped key) on the normal path
     expect(result).toBeUndefined();
-    // Transaction was entered
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Both transactions were entered: the voice erasure one (C-610-10) and
+    // the final scrub, which tombstoned the user.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(txProxy.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deleted_at: expect.any(Date) }) }),
+    );
   });
 
   it('admin-force-delete bypasses the cancel check even when deletion_confirmed_at=null', async () => {
     const cancelledUser = buildUserRow({ deletion_confirmed_at: null });
-    const { service: svc, prisma } = await buildService(cancelledUser);
+    const { service: svc, prisma, txProxy } = await buildService(cancelledUser);
 
-    const result = await (svc as unknown as {
-      finalizeUserDeletion: (
-        id: string,
-        opts: { isAdminForced: boolean },
-      ) => Promise<{ skipped?: string } | void>;
-    }).finalizeUserDeletion('user-1', { isAdminForced: true });
+    const result = await (
+      svc as unknown as {
+        finalizeUserDeletion: (
+          id: string,
+          opts: { isAdminForced: boolean },
+        ) => Promise<{ skipped?: string } | void>;
+      }
+    ).finalizeUserDeletion('user-1', { isAdminForced: true });
 
     // Admin path should proceed — no skipped result
     expect(result).toBeUndefined();
-    // Transaction was entered for the scrub
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Both transactions were entered (voice erasure, then the scrub).
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(txProxy.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deleted_at: expect.any(Date) }) }),
+    );
   });
 });
