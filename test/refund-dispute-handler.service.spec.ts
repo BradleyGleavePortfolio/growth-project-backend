@@ -125,8 +125,22 @@ function makePrismaStub() {
     },
     chargeRefund: {
       findUnique: jest.fn(async ({ where }: any) =>
-        refunds.find((r) => r.stripe_refund_id === where.stripe_refund_id) ?? null,
+        refunds.find((r) =>
+          where.id ? r.id === where.id : r.stripe_refund_id === where.stripe_refund_id,
+        ) ?? null,
       ),
+      // B-641-7: the once-only reversal claims ledger_reversed /
+      // transfer_reversed with a guarded updateMany.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        for (const r of refunds) {
+          if (Object.entries(where).every(([k, v]) => r[k] === v)) {
+            Object.assign(r, data);
+            count++;
+          }
+        }
+        return { count };
+      }),
       findMany: jest.fn(async ({ where = {}, take = 50 }: any) =>
         refunds
           .filter((r) =>

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ClientPurchase, SplitLedgerEntry } from '@prisma/client';
+import type { ClientPurchase, Prisma, SplitLedgerEntry } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { SplitPlan } from './fee-policy.service';
 
@@ -121,12 +121,17 @@ export class SplitLedgerService {
   // Apply a (possibly partial) reversal to a ledger entry. Tracks the
   // cumulative reversed_cents — when it reaches amount_cents we flip
   // status=reversed.
-  async applyReversal(args: {
-    entry_id: string;
-    reversed_cents: number;
-    stripe_transfer_id?: string | null;
-  }): Promise<SplitLedgerEntry> {
-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+  // `db` lets a caller apply the reversal inside its own transaction, next to
+  // the claim that makes it happen exactly once (B-641-7).
+  async applyReversal(
+    args: {
+      entry_id: string;
+      reversed_cents: number;
+      stripe_transfer_id?: string | null;
+    },
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<SplitLedgerEntry> {
+    const current = await db.splitLedgerEntry.findUniqueOrThrow({
       where: { id: args.entry_id },
     });
     const newReversed = Math.min(
@@ -134,7 +139,7 @@ export class SplitLedgerService {
       current.reversed_cents + args.reversed_cents,
     );
     const fullyReversed = newReversed >= current.amount_cents;
-    return this.prisma.splitLedgerEntry.update({
+    return db.splitLedgerEntry.update({
       where: { id: args.entry_id },
       data: {
         reversed_cents: newReversed,
@@ -146,8 +151,11 @@ export class SplitLedgerService {
     });
   }
 
-  async findByPurchase(purchaseId: string): Promise<SplitLedgerEntry[]> {
-    return this.prisma.splitLedgerEntry.findMany({
+  async findByPurchase(
+    purchaseId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<SplitLedgerEntry[]> {
+    return db.splitLedgerEntry.findMany({
       where: { purchase_id: purchaseId },
       orderBy: [{ kind: 'asc' }, { created_at: 'asc' }],
     });

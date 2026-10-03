@@ -574,6 +574,54 @@ export class AdminPaymentOpsController {
     });
   }
 
+  // B-641-7 (B-COACH-5) — head-coach transfer reversals still owed after the
+  // 23-hour Stripe idempotency window. They leave automatic retry, alert once
+  // in Sentry (code REFUND_TRANSFER_REVERSAL_REVIEW) and are reconciled here.
+  // Runbook: docs/runbooks/refund-transfer-reversal-review.md.
+  @Get('refund-reversals/review')
+  @ApiOperation({ summary: 'List head-coach transfer reversals waiting for operator review' })
+  async listRefundReversalsInReview(@Query('limit') limitRaw?: string) {
+    const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
+    return { refunds: await this.refundDispute.listTransferReversalsInReview(limit) };
+  }
+
+  @Post('refund-reversals/:id/reconcile')
+  @ApiOperation({
+    summary:
+      'Reconcile one reversal in review against Stripe: record the reversal Stripe holds, or send one new reversal when Stripe holds none',
+  })
+  @ApiResponse({ status: 400, description: 'RECONCILE_BODY_INVALID' })
+  @ApiResponse({ status: 404, description: 'REFUND_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED | REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW | TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND | TRANSFER_REVERSAL_UNATTRIBUTED | TRANSFER_NOT_IN_STRIPE',
+  })
+  @ApiResponse({ status: 422, description: 'TRANSFER_REVERSAL_NOT_FOUND' })
+  async reconcileRefundReversal(
+    @Param('id') chargeRefundId: string,
+    @Body()
+    body: { stripe_transfer_reversal_id?: unknown; confirm_none_in_stripe?: unknown } = {},
+  ) {
+    const id = body?.stripe_transfer_reversal_id;
+    const confirm = body?.confirm_none_in_stripe;
+    if (
+      (id !== undefined && (typeof id !== 'string' || !/^trr_[A-Za-z0-9]{1,250}$/.test(id))) ||
+      (confirm !== undefined && typeof confirm !== 'boolean')
+    ) {
+      throw new BadRequestException({
+        code: 'RECONCILE_BODY_INVALID',
+        error: 'RECONCILE_BODY_INVALID',
+        message:
+          'stripe_transfer_reversal_id must be a Stripe reversal id (trr_...) and confirm_none_in_stripe must be true or false.',
+      });
+    }
+    return this.refundDispute.reconcileTransferReversal(chargeRefundId, {
+      stripe_transfer_reversal_id: id as string | undefined,
+      confirm_none_in_stripe: confirm === true,
+    });
+  }
+
   // --- Phase 7 — Enterprise rollup ---
 
   // Big enterprise rollup. Accepts ?from=ISO&to=ISO&groupBy=day|month|coach.

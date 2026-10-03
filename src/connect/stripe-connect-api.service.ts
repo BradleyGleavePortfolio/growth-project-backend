@@ -729,6 +729,31 @@ export class StripeConnectApiService {
     );
   }
 
+  // B-COACH-5 (B-641-7 review): the reversals Stripe holds on one transfer,
+  // newest first, for the owner reconcile path (canonical truth after the
+  // idempotency window has passed).
+  async listTransferReversals(args: {
+    transfer_id: string;
+    limit?: number;
+    starting_after?: string;
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount: number;
+      metadata?: Record<string, string> | null;
+      [k: string]: unknown;
+    }>;
+    has_more: boolean;
+  }> {
+    const qs = new URLSearchParams({
+      limit: String(Math.min(Math.max(args.limit ?? 100, 1), 100)),
+    });
+    if (args.starting_after) qs.set('starting_after', args.starting_after);
+    return this.get(
+      `/transfers/${encodeURIComponent(args.transfer_id)}/reversals?${qs.toString()}`,
+    );
+  }
+
   // Phase 5: cancel a subscription (used by the dunning sweeper when
   // grace period elapses).
   async cancelSubscription(subId: string): Promise<{
