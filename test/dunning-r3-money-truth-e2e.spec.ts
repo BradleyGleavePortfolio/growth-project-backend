@@ -1259,6 +1259,8 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       });
       expect(res.plans.map((p) => p.outcome).sort()).toEqual(['in_progress', 'paid']);
       expect(w.stripe.charges).toHaveLength(1);
+      // R5: the journal's Stripe idempotency keys never reach the client.
+      expect(JSON.stringify(res)).not.toContain('idempotency_key');
       if (process.env['DUMP_R4_CONTRACT']) {
         // eslint-disable-next-line no-console
         console.log(`R4_CONTRACT ${JSON.stringify(res)}`);

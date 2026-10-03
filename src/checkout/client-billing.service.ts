@@ -1035,7 +1035,11 @@ export class ClientBillingService {
       due_totals: dueTotals,
       access_restored: accessState === 'restored',
       access_state: accessState,
-      plans,
+      // The journal's Stripe idempotency keys stay server-side.
+      plans: plans.map((p) => ({
+        ...p,
+        invoices: p.invoices.map(({ idempotency_key: _key, ...line }) => line),
+      })),
       quote,
       payment_intent_client_secret:
         outcome === 'requires_action' && focus ? (secrets.get(focus.purchase_id) ?? null) : null,
