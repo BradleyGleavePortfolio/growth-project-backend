@@ -2,9 +2,12 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { z } from 'zod';
@@ -101,6 +104,12 @@ export class CreateVoiceNoteDto {
   // The storage key returned by upload-url. Free-form opaque key; the service
   // re-derives + re-asserts the owner namespace prefix so a forged key for
   // another principal's path is rejected (bucket-binding, not client-trusted).
+  // Decorated so the global ValidationPipe (whitelist + forbidNonWhitelisted)
+  // keeps it: without a decorator every create was rejected with
+  // "property storage_key should not exist".
+  @IsString()
+  @MinLength(1)
+  @MaxLength(512)
   storage_key!: string;
 
   @IsInt()
@@ -172,9 +181,7 @@ export const VoiceNoteViewSchema = z
   .strict();
 export type VoiceNoteView = z.infer<typeof VoiceNoteViewSchema>;
 
-export const VoiceNoteResponseSchema = z
-  .object({ voice_note: VoiceNoteViewSchema })
-  .strict();
+export const VoiceNoteResponseSchema = z.object({ voice_note: VoiceNoteViewSchema }).strict();
 export type VoiceNoteResponse = z.infer<typeof VoiceNoteResponseSchema>;
 
 export const VoiceNoteFeedResponseSchema = z

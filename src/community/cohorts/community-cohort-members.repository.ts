@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  CommunityMembership,
-  CommunityMembershipRole,
-  User,
-} from '@prisma/client';
+import type { CommunityMembership, CommunityMembershipRole, User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { liftWorkspaceBan } from '../community-ban';
 
 /**
  * Data access for cohort membership administration (list / assign / remove).
@@ -67,10 +64,7 @@ export class CommunityCohortMembersRepository {
   }
 
   /** A single membership in a cohort (any status) joined to its user, or null. */
-  async findMembership(
-    cohortId: string,
-    userId: string,
-  ): Promise<MembershipWithUser | null> {
+  async findMembership(cohortId: string, userId: string): Promise<MembershipWithUser | null> {
     return this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
       include: { user: { select: { id: true, name: true, email: true } } },
@@ -87,18 +81,14 @@ export class CommunityCohortMembersRepository {
    * user. `mode: 'insensitive'` (Postgres ILIKE-equivalent) matches regardless
    * of casing; findFirst because an insensitive predicate is not a unique key.
    */
-  async findUserByEmail(
-    email: string,
-  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+  async findUserByEmail(email: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
     return this.prisma.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
       select: { id: true, name: true, email: true },
     });
   }
 
-  async findUserById(
-    userId: string,
-  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+  async findUserById(userId: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
     return this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true },
@@ -112,6 +102,18 @@ export class CommunityCohortMembersRepository {
    * yet joined; the service passes the resolved values. Uses upsert keyed on
    * the (cohort_id, user_id) unique so re-assign is a no-op-shaped update.
    */
+  /**
+   * B-610-2: explicit reinstatement. The workspace coach adding a member to a
+   * cohort lifts that member's durable community ban in the workspace.
+   */
+  async liftWorkspaceBan(
+    workspaceId: string,
+    userId: string,
+    liftedById: string,
+  ): Promise<boolean> {
+    return liftWorkspaceBan(this.prisma, { workspaceId, userId, liftedById, at: new Date() });
+  }
+
   async upsertMembership(params: {
     workspaceId: string;
     cohortId: string;
@@ -142,10 +144,7 @@ export class CommunityCohortMembersRepository {
   }
 
   /** Soft-remove: status='removed' + removed_at, preserving history. */
-  async removeMembership(
-    cohortId: string,
-    userId: string,
-  ): Promise<MembershipWithUser> {
+  async removeMembership(cohortId: string, userId: string): Promise<MembershipWithUser> {
     return this.prisma.communityMembership.update({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
       data: { status: 'removed', removed_at: new Date() },

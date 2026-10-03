@@ -19,6 +19,7 @@ import { NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunitySearchService } from '../community-search.service';
 import { COMMUNITY_TELEMETRY_EVENTS } from '../../community-events';
+import { safetyWithBlocks } from '../../../../test/community/safety/safety-test-helpers';
 
 const WS = '11111111-1111-1111-1111-111111111111';
 const COHORT_VISIBLE = '22222222-2222-2222-2222-222222222222';
@@ -47,6 +48,7 @@ function build(opts?: {
   isCoach?: boolean;
   accessibleCohorts?: string[];
   searchRows?: ReturnType<typeof row>[];
+  blocks?: Array<[string, string]>;
 }) {
   const access = {
     canAccessWorkspace: jest.fn().mockResolvedValue(opts?.canAccess ?? true),
@@ -63,11 +65,22 @@ function build(opts?: {
     repo as never,
     access as never,
     analytics as never,
+    safetyWithBlocks(opts?.blocks ?? []),
   );
   return { service, access, repo, analytics };
 }
 
 describe('CommunitySearchService.search', () => {
+  it('hides results authored by users the caller blocked (Apple 1.2)', async () => {
+    const other = { ...row('b'), author_id: 'author-2' };
+    const { service } = build({
+      searchRows: [row('a'), other],
+      blocks: [[USER_ID, 'author-1']],
+    });
+    const res = await service.search(user('student'), WS, { q: 'title' });
+    expect(res.results.map((r) => r.id)).toEqual(['b']);
+  });
+
   const ORIGINAL = process.env.FEATURE_COMMUNITY_TELEMETRY;
   afterEach(() => {
     process.env.FEATURE_COMMUNITY_TELEMETRY = ORIGINAL;
@@ -76,9 +89,9 @@ describe('CommunitySearchService.search', () => {
 
   it('404s a non-member before any search runs (no term or workspace leakage)', async () => {
     const { service, repo } = build({ canAccess: false });
-    await expect(
-      service.search(user('student'), WS, { q: 'secret' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.search(user('student'), WS, { q: 'secret' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(repo.search).not.toHaveBeenCalled();
   });
 
