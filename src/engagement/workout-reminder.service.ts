@@ -12,6 +12,7 @@ import {
   decideReminder,
   reminderCopy,
   resolveTimezone,
+  sendWindowOpen,
 } from './workout-reminder.policy';
 
 // C05 item 7 — workout reminders.
@@ -23,7 +24,8 @@ import {
 //      and workout_reminder_inapp false -> nothing (Settings > Notifications >
 //      Workout reminders, default on). The two channels are independent
 //      (C-609-6): push off still writes the in-app row and vice versa;
-//   2. decideReminder(): client-local date/time (NotificationPreferences.timezone)
+//   2. sendWindowOpen() first (C-609-4: no plan/log query outside the local
+//      send window), then decideReminder(): client-local date/time (NotificationPreferences.timezone)
 //      is the first session day (C1) or a day with a scheduled plan workout,
 //      and local time is inside [slot, slot + 3h] for their S2 answer;
 //   3. skip when that day's session is already logged (assignment completed
@@ -200,14 +202,13 @@ export class WorkoutReminderService {
     if (p.muted === true || (!pushOn && !inappOn)) return 'opted_out';
     const timezone = resolveTimezone(p.timezone);
 
+    // C-609-4: outside the client's local send window (or before C1) nothing
+    // can go out, so skip the plan and workout-log queries entirely.
+    const clockInput = { now, timezone, preferredTime, firstSessionDate };
+    if (!sendWindowOpen(clockInput)) return 'not_due';
+
     // Pass 1: which local day is it, and does it carry a plan workout?
-    const probe = decideReminder({
-      now,
-      timezone,
-      preferredTime,
-      firstSessionDate,
-      planDates: new Set<string>(),
-    });
+    const probe = decideReminder({ ...clockInput, planDates: new Set<string>() });
     const dayStart = dateFromKey(probe.localDate);
     const dayEnd = new Date(dayStart.getTime() + DAY_MS);
     const assignments = await this.prisma.clientWorkoutAssignment.findMany({

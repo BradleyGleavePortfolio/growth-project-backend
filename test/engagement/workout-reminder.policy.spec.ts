@@ -9,6 +9,7 @@ import {
   localClock,
   reminderCopy,
   resolveTimezone,
+  sendWindowOpen,
   slotFor,
 } from '../../src/engagement/workout-reminder.policy';
 
@@ -163,5 +164,33 @@ describe("copy (Roman's butler voice)", () => {
       ['2026-10-07', '2026-10-08', '2026-10-09'].map((d) => reminderCopy(d, false).body),
     );
     expect(bodies.size).toBe(3);
+  });
+});
+
+describe('sendWindowOpen (C-609-4 pre-filter)', () => {
+  const base = { timezone: LA, preferredTime: 'morning', firstSessionDate: '2026-10-05' };
+
+  it('is open only inside [slot, slot + window] local time, and never before C1', () => {
+    expect(sendWindowOpen({ ...base, now: new Date('2026-10-07T13:59:00Z') })).toBe(false); // 06:59
+    expect(sendWindowOpen({ ...base, now: new Date('2026-10-07T14:00:00Z') })).toBe(true); // 07:00
+    expect(sendWindowOpen({ ...base, now: new Date('2026-10-07T17:00:00Z') })).toBe(true); // 10:00
+    expect(sendWindowOpen({ ...base, now: new Date('2026-10-07T17:01:00Z') })).toBe(false); // 10:01
+    expect(sendWindowOpen({ ...base, now: new Date('2026-10-04T14:30:00Z') })).toBe(false); // before C1
+  });
+
+  it('agrees with decideReminder on a plan day at every five-minute tick of the local day', () => {
+    for (const preferredTime of ['morning', 'midday', 'evening', 'varies', null]) {
+      for (let m = 0; m < 24 * 60; m += 5) {
+        const now = new Date(Date.parse('2026-10-07T07:00:00Z') + m * 60_000); // 00:00 PDT + m
+        const open = sendWindowOpen({ ...base, preferredTime, now });
+        const d = decideReminder({
+          ...base,
+          preferredTime,
+          now,
+          planDates: new Set(['2026-10-07']),
+        });
+        expect([preferredTime, m, open]).toEqual([preferredTime, m, d.send]);
+      }
+    }
   });
 });

@@ -182,6 +182,21 @@ describe('WorkoutReminderService', () => {
     );
   });
 
+  it('C-609-4: outside the local send window no plan or workout-log query runs', async () => {
+    const h = harness();
+    await seed(h);
+    const plan = jest.spyOn(h.assignments, 'findMany');
+    const logs = jest.spyOn(h.sessions, 'findFirst');
+    const out = await h.svc.runOnce(new Date('2026-10-07T20:00:00Z')); // 13:00 PDT, morning slot closed
+    expect(out.not_due).toBe(1);
+    expect(plan).not.toHaveBeenCalled();
+    expect(logs).not.toHaveBeenCalled();
+    expect(h.pushToUser).not.toHaveBeenCalled();
+    const inside = await h.svc.runOnce(new Date('2026-10-07T14:05:00Z')); // 07:05 PDT
+    expect(inside.sent).toBe(1);
+    expect(plan).toHaveBeenCalledTimes(1);
+  });
+
   it('skips the day when the assigned session is already completed', async () => {
     const h = harness();
     await seed(h);

@@ -97,6 +97,22 @@ export type ReminderDecision =
       localDate: string;
     };
 
+/**
+ * C-609-4: the part of decideReminder() that needs no database read. False
+ * before the first session day (C1) and whenever the client-local time is
+ * outside [slot, slot + REMINDER_SEND_WINDOW_MINUTES]; the tick then skips the
+ * client's plan and workout-log queries, so they run only inside the ~3 h send
+ * window instead of on every five-minute tick. For a plan day it agrees with
+ * decideReminder(): decideReminder(...).send === sendWindowOpen(...) whenever
+ * the local date is C1 or carries a plan workout.
+ */
+export function sendWindowOpen(input: Omit<ReminderInputs, 'planDates'>): boolean {
+  const clock = localClock(input.now, input.timezone);
+  if (input.firstSessionDate && clock.date < input.firstSessionDate) return false;
+  const target = REMINDER_SLOT_MINUTES[slotFor(input.preferredTime)];
+  return clock.minutes >= target && clock.minutes <= target + REMINDER_SEND_WINDOW_MINUTES;
+}
+
 export function decideReminder(input: ReminderInputs): ReminderDecision {
   const clock = localClock(input.now, input.timezone);
   const slot = slotFor(input.preferredTime);
