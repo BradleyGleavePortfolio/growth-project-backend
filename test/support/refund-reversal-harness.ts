@@ -28,6 +28,8 @@ export function refundRow(id: string, purchaseId: string, at: Date, extra: Row =
     transfer_reversed: false,
     transfer_reversal_first_attempt_at: at,
     transfer_reversal_review_at: null,
+    transfer_reversal_last_attempt_at: null,
+    transfer_reversal_stripe_id: null,
     created_at: at,
     reason: null,
     note: null,
@@ -98,11 +100,13 @@ export function harness() {
   db.model('user');
   db.model('coachPackage');
   db.model('clientPurchase');
-  db.model('chargeRefund', [['id'], ['stripe_refund_id']], () => ({
+  db.model('chargeRefund', [['id'], ['stripe_refund_id'], ['transfer_reversal_stripe_id']], () => ({
     ledger_reversed: false,
     transfer_reversed: false,
     transfer_reversal_first_attempt_at: null,
     transfer_reversal_review_at: null,
+    transfer_reversal_last_attempt_at: null,
+    transfer_reversal_stripe_id: null,
   }));
   db.model('splitLedgerEntry');
   db.model('connectTransfer');

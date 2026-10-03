@@ -187,20 +187,26 @@ export class Model {
   findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
     let rows = this.rows.filter((r) => matchWhere(r, where));
     if (orderBy) {
-      const keys: Array<[string, string]> = (Array.isArray(orderBy) ? orderBy : [orderBy]).map(
-        (o: Row) => Object.entries(o)[0] as [string, string],
-      );
-      const cmp = (a: any, b: any): number => {
-        const an = a === null || a === undefined;
-        const bn = b === null || b === undefined;
-        if (an || bn) return an && bn ? 0 : an ? 1 : -1;
-        const av = a instanceof Date ? a.getTime() : a;
-        const bv = b instanceof Date ? b.getTime() : b;
-        return av < bv ? -1 : av > bv ? 1 : 0;
-      };
+      // { field: 'asc' | 'desc' } or { field: { sort, nulls } }; without
+      // `nulls`, Postgres puts nulls last ascending and first descending.
+      const keys: Array<[string, string, string | undefined]> = (
+        Array.isArray(orderBy) ? orderBy : [orderBy]
+      ).map((o: Row) => {
+        const [k, spec] = Object.entries(o)[0] as [string, any];
+        return typeof spec === 'string' ? [k, spec, undefined] : [k, spec.sort, spec.nulls];
+      });
       rows = [...rows].sort((a, b) => {
-        for (const [k, dir] of keys) {
-          const c = cmp(a[k], b[k]) * (dir === 'desc' ? -1 : 1);
+        for (const [k, dir, nulls] of keys) {
+          const an = a[k] === null || a[k] === undefined;
+          const bn = b[k] === null || b[k] === undefined;
+          if (an || bn) {
+            if (an && bn) continue;
+            const nullsFirst = nulls ? nulls === 'first' : dir === 'desc';
+            return an === nullsFirst ? -1 : 1;
+          }
+          const av = a[k] instanceof Date ? a[k].getTime() : a[k];
+          const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
+          const c = (av < bv ? -1 : av > bv ? 1 : 0) * (dir === 'desc' ? -1 : 1);
           if (c !== 0) return c;
         }
         return 0;
@@ -243,7 +249,10 @@ export class Model {
     let count = 0;
     this.rows.forEach((r, i) => {
       if (matchWhere(r, where)) {
-        this.rows[i] = applyData(r, data);
+        const next = applyData(r, data);
+        // Postgres enforces unique columns on UPDATE too (B-641-9).
+        if (this.violates(next, r)) throw this.uniqueError();
+        this.rows[i] = next;
         count++;
       }
     });

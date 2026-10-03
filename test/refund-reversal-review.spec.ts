@@ -12,6 +12,8 @@
 
 import 'reflect-metadata';
 import * as Sentry from '@sentry/node';
+import { Logger } from '@nestjs/common';
+import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import {
   HOUR,
   harness,
@@ -151,8 +153,8 @@ describe('B-641-8 — expired rows never starve fresh recoverable refunds', () =
   it('pages past rows that leave the owed set and rows that stay owed, each retried once per run', async () => {
     // Every third Stripe call fails, so a page mixes rows that leave the set
     // (reversed) with rows that stay owed (pending). A cursor on a row that
-    // left the filter returned an empty page at 183ed462; keyset paging on
-    // (created_at, id) reaches all 120 and never retries a row twice.
+    // left the filter returned an empty page at 183ed462; the last-attempt
+    // filter reaches all 120 and never retries a row twice in one run.
     const h = harness();
     const at = new Date(Date.now() - HOUR);
     for (let i = 0; i < 120; i++) {
@@ -173,5 +175,102 @@ describe('B-641-8 — expired rows never starve fresh recoverable refunds', () =
     const keys = h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey);
     expect(keys).toHaveLength(120);
     expect(new Set(keys).size).toBe(120);
+  });
+});
+
+// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
+describe('B-641-8 (narrowed) — persistent failures never hold later refunds back across runs', () => {
+  function backlog(failing: number) {
+    const h = harness();
+    const at = new Date(Date.now() - HOUR);
+    for (let i = 0; i < failing; i++) {
+      const id = String(i).padStart(2, '0');
+      seedPurchase(h.db, `p-a-${id}`, at);
+      h.db.state.chargeRefund.push(refundRow(`r-a-${id}`, `p-a-${id}`, new Date(at.getTime() + i)));
+    }
+    // Newest and last by id, so neither creation order nor id puts it first.
+    seedPurchase(h.db, 'p-z-fresh', new Date(at.getTime() + 100));
+    h.db.state.chargeRefund.push(refundRow('r-z-fresh', 'p-z-fresh', new Date(at.getTime() + 100)));
+    const real = h.reverseTransfer.getMockImplementation();
+    h.reverseTransfer.mockImplementation(async (args) => {
+      if (args.transfer_id !== 'tr_p-z-fresh') throw new Error('Synthetic provider failure');
+      return (real as NonNullable<typeof real>)(args);
+    });
+    return h;
+  }
+
+  it('Sol probe: 20 failing rows fill a run of 20 one-row pages; the next run reaches the fresh refund', async () => {
+    const h = backlog(20);
+    const first = await h.svc.retryPendingTransferReversals(new Date(), 1);
+    expect(first).toMatchObject({ retried: 20, reversed: 0 });
+    await h.svc.retryPendingTransferReversals(new Date(Date.now() + 15 * 60_000), 1);
+    expect({
+      external: h.stripeTotal('tr_p-z-fresh'),
+      local: h.headCoach('p-z-fresh'),
+      done: h.refund('r-z-fresh').transfer_reversed,
+    }).toEqual({ external: 122, local: 122, done: true });
+  });
+
+  it('more failures than the page budget: every owed row is tried within a bounded number of runs', async () => {
+    // 45 failing rows, 20 tries a run: runs take 20, 20, then the rest and
+    // the fresh row, never the same 20 again while others wait.
+    const h = backlog(45);
+    const tried = new Set<string>();
+    for (let run = 0; run < 3; run++) {
+      h.reverseTransfer.mockClear();
+      await h.svc.retryPendingTransferReversals(new Date(Date.now() + run * 15 * 60_000), 1);
+      for (const c of h.reverseTransfer.mock.calls) tried.add(c[0].transfer_id);
+    }
+    expect(tried.size).toBe(46);
+    expect(h.refund('r-z-fresh').transfer_reversed).toBe(true);
+    expect(h.stripeTotal('tr_p-z-fresh')).toBe(122);
+  });
+});
+
+describe('B-641-11 — reversal failure logs carry ids and closed codes only', () => {
+  async function failOnce(err: Error): Promise<string> {
+    const h = harness();
+    const at = new Date(Date.now() - HOUR);
+    seedPurchase(h.db, 'p-log', at);
+    h.db.state.chargeRefund.push(refundRow('r-log', 'p-log', at));
+    h.reverseTransfer.mockRejectedValueOnce(err);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      await h.svc.retryPendingTransferReversals();
+      return warn.mock.calls.map((c) => String(c[0])).join('\n');
+    } finally {
+      warn.mockRestore();
+    }
+  }
+
+  it('Sol probe: an arbitrary Error.name never reaches the logger', async () => {
+    const error = new Error('synthetic non-code');
+    error.name = 'AUDIT_FREE_TEXT_CANARY_contact_at_example_invalid';
+    const logged = await failOnce(error);
+    expect(logged).toContain('refund=r-log');
+    expect(logged).toContain('code=error');
+    expect(logged).not.toContain('AUDIT_FREE_TEXT_CANARY');
+  });
+
+  it('an unknown Stripe code or a bad status is logged as a closed fallback', async () => {
+    const logged = await failOnce(
+      new StripeConnectApiError(
+        'Card holder jane@example.test',
+        402,
+        'audit_free_text_canary_contact_at_example_invalid',
+        'invalid_request_error',
+      ),
+    );
+    expect(logged).toContain('code=stripe_402_other');
+    expect(logged).not.toMatch(/canary|example/);
+    expect(await failOnce(new StripeConnectApiError('x', 99999, 'rate_limit', null))).toContain(
+      'code=stripe_0_rate_limit',
+    );
+    expect(
+      await failOnce(new StripeConnectApiError('x', 400, 'balance_insufficient', null)),
+    ).toContain('code=stripe_400_balance_insufficient');
+    expect(await failOnce(new StripeConnectApiError('x', 500, null, null))).toContain(
+      'code=stripe_500_none',
+    );
   });
 });

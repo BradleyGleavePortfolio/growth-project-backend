@@ -194,3 +194,107 @@ describe('B-641-7 — owner reconcile route', () => {
     ]);
   });
 });
+
+// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
+describe('B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full', () => {
+  function review(ids: string[], purchase = 'p-r') {
+    const h = harness();
+    const at = new Date(Date.now() - 25 * HOUR);
+    seedPurchase(h.db, purchase, at);
+    for (const id of ids) {
+      h.db.state.chargeRefund.push(
+        refundRow(id, purchase, at, { transfer_reversal_review_at: new Date() }),
+      );
+    }
+    return h;
+  }
+
+  it('Sol probe: the same unattributed reversal cannot settle two refunds', async () => {
+    const h = review(['r-one', 'r-two']);
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
+    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
+    await expect(
+      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
+    ).rejects.toMatchObject({ response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' } });
+    expect({
+      external: h.stripeTotal('tr_p-r'),
+      local: h.headCoach('p-r'),
+      firstBound: h.refund('r-one').transfer_reversal_stripe_id,
+      secondDone: h.refund('r-two').transfer_reversed,
+    }).toEqual({ external: 122, local: 122, firstBound: 'trr_1', secondDone: false });
+  });
+
+  it('two owners assigning one reversal to two refunds at once record it once', async () => {
+    const h = review(['r-one', 'r-two']);
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
+    const out = await Promise.allSettled([
+      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
+      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
+    ]);
+    expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    const refused = out.find((o) => o.status === 'rejected') as PromiseRejectedResult;
+    expect(refused.reason).toMatchObject({
+      response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' },
+    });
+    expect(h.headCoach('p-r')).toBe(122);
+    expect([h.refund('r-one'), h.refund('r-two')].filter((r) => r.transfer_reversed)).toHaveLength(
+      1,
+    );
+  });
+
+  it('two refunds on one transfer each settle with their own reversal (multiple receipts)', async () => {
+    const h = review(['r-one', 'r-two']);
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-2' });
+    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
+    await h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_2' });
+    expect(h.stripeTotal('tr_p-r')).toBe(244);
+    expect(h.headCoach('p-r')).toBe(244);
+    expect(h.refund('r-two').transfer_reversal_stripe_id).toBe('trr_2');
+  });
+
+  it('a replayed receipt for the same refund adds nothing', async () => {
+    const h = review(['r-one']);
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
+    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
+    await expect(
+      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
+    ).rejects.toMatchObject({ response: { code: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED' } });
+    expect(h.headCoach('p-r')).toBe(122);
+  });
+
+  it('Sol probe: an undersized receipt is refused and the refund stays owed in review', async () => {
+    const h = review(['r-partial']);
+    await h.reverseTransfer({
+      transfer_id: 'tr_p-r',
+      amount: 10,
+      idempotencyKey: 'partial',
+      metadata: { tgp_charge_refund_id: 'r-partial' },
+    });
+    await expect(h.svc.reconcileTransferReversal('r-partial')).rejects.toMatchObject({
+      response: {
+        code: 'TRANSFER_REVERSAL_UNDERSIZED',
+        reversal_amount_cents: 10,
+        owed_cents: 122,
+      },
+    });
+    expect({
+      external: h.stripeTotal('tr_p-r'),
+      local: h.headCoach('p-r'),
+      done: h.refund('r-partial').transfer_reversed,
+      inReview: h.refund('r-partial').transfer_reversal_review_at !== null,
+      bound: h.refund('r-partial').transfer_reversal_stripe_id,
+    }).toEqual({ external: 10, local: 0, done: false, inReview: true, bound: null });
+  });
+
+  it('an oversized receipt records what Stripe moved, capped by the transfer', async () => {
+    const h = review(['r-big']);
+    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 200, idempotencyKey: 'manual-big' });
+    const out = await h.svc.reconcileTransferReversal('r-big', {
+      stripe_transfer_reversal_id: 'trr_1',
+    });
+    expect(out).toMatchObject({ outcome: 'recorded_from_stripe', amount_cents: 200 });
+    expect(h.headCoach('p-r')).toBe(200);
+    expect(h.refund('r-big').transfer_reversed).toBe(true);
+  });
+});
