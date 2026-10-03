@@ -3,6 +3,7 @@ import { NotificationsService } from '../notifications.service';
 import { NotificationKind, type NotificationKindValue } from '../notification-kind';
 import { NotificationCategory } from '../notification-category.enum';
 import type { PushDeliveryCode } from '../push-delivery.types';
+import { safeDiagnostic } from '../../observability/orm-diagnostics';
 
 // Booking lifecycle notifications: one in-app row (the notification center
 // entry) plus a real push through the shared Expo transport
@@ -447,7 +448,7 @@ export class BookingEmitter {
         outcome.notificationId = notificationId;
       } catch (err) {
         this.logger.warn(
-          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${(err as Error).message}`,
+          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
         );
       }
     }
@@ -476,7 +477,7 @@ export class BookingEmitter {
       }
     } catch (err) {
       this.logger.warn(
-        `BookingEmitter ${args.kind} push failed for user=${args.userId}: ${(err as Error).message}`,
+        `BookingEmitter ${args.kind} push failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
       );
     }
     return outcome;
@@ -498,7 +499,7 @@ export class BookingEmitter {
       if (typeof tz === 'string' && isValidZone(tz)) return tz;
     } catch (err) {
       this.logger.debug(
-        `BookingEmitter zone lookup failed for user=${userId}: ${(err as Error).message}`,
+        `BookingEmitter zone lookup failed for user=${userId}: ${emitterDiagnostic(err)}`,
       );
     }
     return 'America/Los_Angeles';
@@ -511,6 +512,26 @@ export class BookingEmitter {
   private async timeFor(userId: string, d: Date): Promise<string> {
     return formatTime(d, await this.zoneFor(userId));
   }
+}
+
+/**
+ * B-634-8: the only text a BookingEmitter log line carries for an error.
+ * Booking notification bodies and payloads hold display names and private
+ * request/decline/cancel notes, and an ORM error (or any error wrapping one
+ * as a cause) can echo those query arguments in its message, stack or meta.
+ * ORM errors collapse to `DatabaseRequestError: Database request failed
+ * (P####)` through the shared safeDiagnostic; any other error keeps only its
+ * class name and a machine-shaped `code`, never its message.
+ */
+export function emitterDiagnostic(err: unknown): string {
+  const safe = safeDiagnostic(err);
+  if (!(safe instanceof Error)) return 'unknown error';
+  if (safe !== err) return `${safe.name}: ${safe.message}`;
+  const name = /^[A-Za-z][A-Za-z0-9_]{0,59}$/.test(safe.name) ? safe.name : 'Error';
+  const code: unknown = 'code' in safe ? safe.code : undefined;
+  return typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code)
+    ? `${name} (${code})`
+    : name;
 }
 
 function typeLabel(name: string | null | undefined, fallback: string): string {

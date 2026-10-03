@@ -8,6 +8,8 @@
  * session (client: CalendarSession, coach: CoachBookingInbox). Times are in
  * the recipient's zone with the zone abbreviation.
  */
+import { Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   BOOKING_PUSH_SCREEN,
   BookingEmitter,
@@ -302,5 +304,117 @@ describe('BookingEmitter delivery', () => {
     });
     expect(formatWhen(SCHEDULED_AT)).toBe('Tue, Oct 6, 10:00 AM PDT');
     expect(formatTime(SCHEDULED_AT, 'Europe/London')).toBe('6:00 PM GMT+1');
+  });
+});
+
+// B-634-8 (Sol @ bb6f3ea8): booking bodies and payloads carry display names
+// and private request/decline/cancel notes. An ORM error at any of the three
+// emitter catch sites can echo those query arguments; none of it may reach a
+// logger argument. Delivery stays nonthrowing and channel-aware.
+describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
+  const CANARY = 'PRIVATE-CANARY-note-Jamie-knee-pain-7f3a';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+
+  function ormError(): Prisma.PrismaClientKnownRequestError {
+    const err = new Prisma.PrismaClientKnownRequestError(
+      `Timed out fetching a new connection. Query: INSERT ... body = "${CANARY}"`,
+      { code: 'P2024', clientVersion: 'test', meta: { target: CANARY } },
+    );
+    err.stack = `PrismaClientKnownRequestError: ${CANARY}\n    at query (${CANARY})`;
+    return err;
+  }
+
+  function loggedText(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+  });
+
+  const requested = {
+    coachUserId: 'coach-1',
+    clientDisplayName: 'Jamie',
+    sessionId: 'sess-1',
+    sessionTypeName: 'Quick Q/A Call',
+    requestedAt: REQUESTED_AT,
+    scheduledAt: SCHEDULED_AT,
+    notes: CANARY,
+  };
+
+  it('in-app creation P2024: canary never logged; push still delivered without a notificationId', async () => {
+    const { fake, emitter } = build();
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw ormError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    expect(fake.pushes[0].data).not.toHaveProperty('notificationId');
+    const text = loggedText();
+    expect(text).toContain('booking_requested in-app write failed for user=coach-1');
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('push-preference lookup P2024: canary never logged; in-app row kept, push reported failed', async () => {
+    const { fake, emitter } = build();
+    // First read is the zone lookup (served normally), second is the push gate.
+    fake.getPreferences
+      .mockImplementationOnce(async (userId: string) => ({
+        user_id: userId,
+        timezone: 'America/Los_Angeles',
+        booking_push: true,
+        muted: false,
+      }))
+      .mockImplementationOnce(async () => {
+        throw ormError();
+      });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    expect(fake.pushToUser).not.toHaveBeenCalled();
+    const text = loggedText();
+    expect(text).toContain('booking_requested push failed for user=coach-1');
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('zone lookup P2024: canary never logged; falls back to Pacific and still delivers both channels', async () => {
+    const { fake, emitter } = build();
+    fake.getPreferences.mockImplementationOnce(async () => {
+      throw ormError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
+    expect(fake.rows[0].body).toContain('10:00 AM PDT');
+    const text = loggedText();
+    expect(text).toContain('zone lookup failed for user=coach-1');
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('an ORM error wrapped as a cause, and a non-ORM error, never log their message', async () => {
+    const { fake, emitter } = build();
+    const wrapped = Object.assign(new Error(`notification write failed: ${CANARY}`), {
+      cause: ormError(),
+    });
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw wrapped;
+    });
+    const plain = Object.assign(new TypeError(`bad payload ${CANARY}`), { code: 'ERR_X' });
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw plain;
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
+    const text = loggedText();
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).toContain('push failed for user=coach-1: TypeError (ERR_X)');
+    expect(text).not.toContain(CANARY);
   });
 });
