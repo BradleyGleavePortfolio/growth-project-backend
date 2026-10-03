@@ -915,6 +915,8 @@ export function makePersonaDb(): PersonaDb {
       }),
     },
     coachSubscription: { findUnique: jest.fn(async () => null) },
+    // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+    $executeRaw: jest.fn(async () => 1),
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     // Must never be read by the builder.
     // ctx-v3 bookings: only the selected columns ever leave this double, so a

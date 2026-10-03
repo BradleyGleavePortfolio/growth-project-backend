@@ -12,10 +12,7 @@
  *     operator decisions — the prompt is the summarised operative contract).
  */
 
-import {
-  buildRomanSystemPrompt,
-  ROMAN_VOICE_CONTRACT,
-} from '../../src/roman/roman.prompts';
+import { buildRomanSystemPrompt, ROMAN_VOICE_CONTRACT } from '../../src/roman/roman.prompts';
 
 describe('buildRomanSystemPrompt — voice contract anchors', () => {
   const base = buildRomanSystemPrompt({
@@ -43,9 +40,9 @@ describe('buildRomanSystemPrompt — voice contract anchors', () => {
     expect(base).toMatch(/NO emoji\. Ever\./);
   });
 
-  it('encodes the single-exclamation-per-session rule', () => {
-    expect(base).toContain('NO exclamation points');
-    expect(base).toContain('a single exclamation per session');
+  it('B-651-9: encodes the no-exclamation rule with no per-session exception', () => {
+    expect(base).toContain('NO exclamation points. Ever.');
+    expect(base).not.toContain('a single exclamation per session');
   });
 
   it('encodes the dry-humour ~1-in-8 frequency and never-two-in-a-row rule', () => {
@@ -104,12 +101,16 @@ describe('buildRomanSystemPrompt — surface framing', () => {
 });
 
 describe('buildRomanSystemPrompt — live session voice budget', () => {
-  it('instructs no exclamation once the per-session budget is spent', () => {
-    const p = buildRomanSystemPrompt({
-      surface: 'client',
-      voice: { quipsInSession: 1, exclamationUsed: true },
-    });
-    expect(p).toContain('already been spent');
+  it('B-651-9: instructs no exclamation on every turn, spent or not', () => {
+    for (const exclamationUsed of [true, false]) {
+      const p = buildRomanSystemPrompt({
+        surface: 'client',
+        voice: { quipsInSession: 1, exclamationUsed },
+      });
+      expect(p).toContain('Do not use an exclamation point in this reply.');
+      expect(p).not.toMatch(/may spend the single per-session exclamation/i);
+      expect(p).toContain('NO exclamation points. Ever.');
+    }
   });
 
   it('forbids a quip on the turn after a quip (never two in a row)', () => {

@@ -347,6 +347,8 @@ function makeFakePrisma() {
       })),
       update: jest.fn(async () => ({})),
     },
+    // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+    $executeRaw: jest.fn(async () => 1),
     $transaction: undefined as unknown,
     _state: { sessions, messages },
     // Opt-in rollback for sequential tests: a callback that throws restores
