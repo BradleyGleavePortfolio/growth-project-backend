@@ -346,6 +346,7 @@ function serviceWorld(clock: Date) {
     coachingSession: {
       findUnique: jest.fn(async () => ({
         coach_id: 'coach-1',
+        client_id: 'client-1',
         status: 'scheduled',
         start_at: new Date('2026-06-04T15:00:00Z'),
       })),
@@ -399,8 +400,9 @@ describe('coach messages reach the lock screen (verification)', () => {
 });
 
 describe('C-648-3: a booking push opens the session', () => {
-  it('the push names SessionDetail with the session id; a message still opens Messages', async () => {
+  it("the client's push opens CalendarSession and the coach's opens CoachBookingInbox, both with the session id", async () => {
     const w = serviceWorld(NY_AFTERNOON);
+    w.tokens['coach-1'] = TOKEN;
     const booking = new BookingEmitter(w.notifications, Object.create(w.serviceDb));
     await booking.emitConfirmed({
       clientUserId: 'client-1',
@@ -408,12 +410,35 @@ describe('C-648-3: a booking push opens the session', () => {
       sessionId: 'sess-7',
       scheduledAt: new Date('2026-06-04T15:00:00Z'),
     });
-    expect(await w.delivery.drain()).toBe(1);
-    const data = w.client.send.mock.calls[0][0][0].data as Record<string, unknown>;
-    expect(data).toMatchObject({
-      actionScreen: 'SessionDetail',
-      actionParams: { sessionId: 'sess-7' },
+    await booking.emitRequested({
+      coachUserId: 'coach-1',
+      clientDisplayName: 'Jamie',
       sessionId: 'sess-7',
+      requestedAt: new Date('2026-06-04T15:00:00Z'),
+      notes: null,
     });
+    expect(await w.delivery.drain()).toBe(2);
+    expect(w.client.send.mock.calls.map((c) => c[0][0].data?.actionScreen)).toEqual([
+      'CalendarSession',
+      'CoachBookingInbox',
+    ]);
+    const data = w.rows.map((r) => [r.user_id, r.data]);
+    expect(data).toEqual([
+      [
+        'client-1',
+        expect.objectContaining({
+          actionScreen: 'CalendarSession',
+          actionParams: { sessionId: 'sess-7' },
+          sessionId: 'sess-7',
+        }),
+      ],
+      [
+        'coach-1',
+        expect.objectContaining({
+          actionScreen: 'CoachBookingInbox',
+          actionParams: { sessionId: 'sess-7' },
+        }),
+      ],
+    ]);
   });
 });
