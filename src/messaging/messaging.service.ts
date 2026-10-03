@@ -356,6 +356,11 @@ export class MessagingService {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
+      // A4 — rich card (workout, meal plan, booking, package, check-in) as
+      // a server-validated snapshot; null for plain messages.
+      include: {
+        card: { select: { card_type: true, ref_id: true, snapshot: true } },
+      },
     });
   }
 

@@ -425,6 +425,7 @@ jobs:
           test/community/community-posts.e2e.spec.ts
           test/community/community-messages.e2e.spec.ts
           test/community/events/community-events.e2e.spec.ts
+          test/broadcasts/broadcasts-dispatch.live.spec.ts
           --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
