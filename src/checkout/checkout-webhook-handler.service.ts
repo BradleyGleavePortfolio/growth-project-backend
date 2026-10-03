@@ -12,6 +12,12 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
+import { CLEARED_PAYMENT_SECRETS } from './admin-purchase.select';
+
+// B-661-1 (Opus): the purchase statuses a payment_intent.succeeded claims. A
+// PaymentIntent that succeeded is terminal, so its success always wins over
+// an earlier decline of the same PaymentIntent.
+const PI_SUCCEEDED_CLAIMABLE = ['pending', 'payment_failed'];
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -445,8 +451,9 @@ export class CheckoutWebhookHandlerService {
       } else {
         // payment_intent.succeeded
         if (!obj.id) return {};
+        // B-661-1 (Opus): the same rows applyPaymentIntentSucceeded claims.
         const purchase = await this.prisma.clientPurchase.findFirst({
-          where: { stripe_payment_intent_id: obj.id, status: 'pending' },
+          where: { stripe_payment_intent_id: obj.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
           select: { id: true },
         });
         if (!purchase) return {};
@@ -701,7 +708,11 @@ export class CheckoutWebhookHandlerService {
     }
     await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
-      data: { status: 'expired', entitlement_active: false },
+      data: {
+        status: 'expired',
+        entitlement_active: false,
+        ...CLEARED_PAYMENT_SECRETS,
+      },
     });
     return { claimed: true, purchase_id: purchase.id };
   }
@@ -848,6 +859,7 @@ export class CheckoutWebhookHandlerService {
         status: 'canceled',
         entitlement_active: false,
         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
+        ...CLEARED_PAYMENT_SECRETS,
       },
     });
     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
@@ -895,8 +907,13 @@ export class CheckoutWebhookHandlerService {
     // Only claim if a pending purchase row references this payment intent.
     // PaymentSheet flow creates a pending ClientPurchase with the PI id set
     // by checkout.service.ts createPaymentIntentForClient().
+    // B-661-1 (Opus): a declined first attempt flips the row to
+    // `payment_failed` (applyPaymentIntentFailed) while the PaymentIntent
+    // stays payable; the client's in-sheet retry of the SAME PaymentIntent
+    // then succeeds. That success is claimed too, so the client who paid is
+    // entitled, the split is posted and the credentials are erased.
     const purchase = await db.clientPurchase.findFirst({
-      where: { stripe_payment_intent_id: pi.id, status: 'pending' },
+      where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
     });
     if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
 
@@ -906,6 +923,9 @@ export class CheckoutWebhookHandlerService {
         status: 'paid',
         entitlement_active: true,
         last_error: null,
+        // B-SECRETS-3: the PaymentIntent is paid; its cached client
+        // credentials can never be needed again, so they are erased.
+        ...CLEARED_PAYMENT_SECRETS,
       },
     });
 

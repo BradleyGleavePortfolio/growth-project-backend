@@ -37,6 +37,7 @@ import {
   COACH_PURCHASE_SELECT,
   COACH_TRANSFER_SELECT,
 } from './coach-payments.select';
+import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
@@ -150,6 +151,8 @@ export class AdminPaymentOpsController {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
+      // B-SECRETS-3: never the client's cached payment credentials.
+      omit: ADMIN_PURCHASE_OMIT,
     });
     return { purchases: rows };
   }
@@ -165,6 +168,7 @@ export class AdminPaymentOpsController {
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: purchaseId },
       include: { package: true },
+      omit: ADMIN_PURCHASE_OMIT,
     });
     if (!purchase) {
       throw new NotFoundException({

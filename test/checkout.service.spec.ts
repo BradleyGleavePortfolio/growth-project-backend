@@ -3,7 +3,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { CheckoutService } from '../src/checkout/checkout.service';
+import { CheckoutService, finishedPaymentReplay } from '../src/checkout/checkout.service';
 import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
@@ -688,6 +688,22 @@ describe('CheckoutService.hasActiveEntitlement', () => {
 // observable behavior on the prisma stub + Stripe stub — no grep theater.
 // ──────────────────────────────────────────────────────────────────────
 
+// B-661 round 2 — the rejection of a same-key replay (null when it resolved).
+type ReplayRejection = {
+  getStatus: () => number;
+  getResponse: () => { error: string; message: string };
+};
+function replayError(
+  svc: ReturnType<typeof makeService>['svc'],
+  clientId: string,
+  key: string,
+): Promise<ReplayRejection | null> {
+  return svc.createPaymentIntentForClient(clientId, { package_id: 'pkg-x', idempotency_key: key }).then(
+    () => null,
+    (e: ReplayRejection) => e,
+  );
+}
+
 function seedSoloCoachFixture(prisma: any) {
   prisma._packages.push({
     id: 'pkg-x',
@@ -824,6 +840,130 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     expect(stripe.createEphemeralKey).toHaveBeenCalledTimes(1);
     expect(second.client_secret).toBe(first.client_secret);
     expect(prisma._purchases).toHaveLength(1);
+  });
+
+  // B-SECRETS-3: the payment finished and its cached credentials were erased.
+  // A replay of the same key is told what happened, never sent to wait on a
+  // reservation (PAYMENT_IN_PROGRESS) and never charged again.
+  it.each([
+    ['paid', 'PAYMENT_ALREADY_COMPLETE', /already complete/],
+    ['expired', 'PAYMENT_CHECKOUT_CLOSED', /has closed/],
+  ])('B-SECRETS-3: a replay after the payment is %s answers %s', async (status, code, copy) => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-done', email: 'c@x.com', name: 'Done', coach_id: 'coach-x' });
+    const key = '55555555-5555-4555-8555-555555555555';
+    await svc.createPaymentIntentForClient('client-done', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    // The webhook finished the payment and erased the credentials.
+    Object.assign(prisma._purchases[0], {
+      status,
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+    });
+    const err = await svc
+      .createPaymentIntentForClient('client-done', { package_id: 'pkg-x', idempotency_key: key })
+      .then(
+        () => null,
+        (e: { getStatus: () => number; getResponse: () => { error: string; message: string } }) =>
+          e,
+      );
+    expect(err).not.toBeNull();
+    expect(err!.getStatus()).toBe(409);
+    expect(err!.getResponse().error).toBe(code);
+    expect(err!.getResponse().message).toMatch(copy);
+    expect(err!.getResponse().message).not.toMatch(/[!]|\bwe\b/i);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(prisma._purchases).toHaveLength(1);
+  });
+
+  // B-661-1 (Sol, round 2): the status is classified BEFORE any cached
+  // credential is returned. Historic finished rows still hold their
+  // credentials until the operator backfill (C-661-2); read-path safety does
+  // not depend on that cleanup.
+  it.each([
+    ['paid', 'PAYMENT_ALREADY_COMPLETE'],
+    ['active', 'PAYMENT_ALREADY_COMPLETE'],
+    ['canceled', 'PAYMENT_CHECKOUT_CLOSED'],
+    ['expired', 'PAYMENT_CHECKOUT_CLOSED'],
+    ['refunded', 'PAYMENT_REFUNDED_OR_IN_REVIEW'],
+    ['disputed', 'PAYMENT_REFUNDED_OR_IN_REVIEW'],
+    ['chargeback_lost', 'PAYMENT_REFUNDED_OR_IN_REVIEW'],
+  ])(
+    'B-661-1: a %s row that still holds its credentials answers %s and returns no credential',
+    async (status, code) => {
+      const { svc, prisma, stripe } = makeService();
+      seedSoloCoachFixture(prisma);
+      prisma._users.push({ id: 'client-old', email: 'o@x.com', name: 'Old', coach_id: 'coach-x' });
+      const key = '77777777-7777-4777-8777-777777777777';
+      const first = await svc.createPaymentIntentForClient('client-old', {
+        package_id: 'pkg-x',
+        idempotency_key: key,
+      });
+      // Finished before the erasure existed: the credentials are still at rest.
+      prisma._purchases[0].status = status;
+      expect(prisma._purchases[0].stripe_client_secret).toBe(first.client_secret);
+      const err = await replayError(svc, 'client-old', key);
+      expect(err).not.toBeNull();
+      expect(err!.getStatus()).toBe(409);
+      expect(err!.getResponse().error).toBe(code);
+      expect(JSON.stringify(err!.getResponse())).not.toContain(first.client_secret);
+      expect(JSON.stringify(err!.getResponse())).not.toContain(first.ephemeral_key);
+      expect(err!.getResponse().message).not.toMatch(/[!]|\b(we|us|our)\b/i);
+      expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+      expect(prisma._purchases).toHaveLength(1);
+    },
+  );
+
+  it('B-661-1 (control): a failed payment that holds its credentials resumes the same PaymentIntent', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-retry', email: 'r@x.com', name: 'Retry', coach_id: 'coach-x' });
+    const key = '88888888-8888-4888-8888-888888888888';
+    const first = await svc.createPaymentIntentForClient('client-retry', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    prisma._purchases[0].status = 'payment_failed'; // card declined in the sheet
+    const again = await svc.createPaymentIntentForClient('client-retry', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    expect(again.client_secret).toBe(first.client_secret);
+    expect(again.ephemeral_key).toBe(first.ephemeral_key);
+    expect(again.customer_id).toBe(first.customer_id);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('B-661-1: a failed payment whose credentials are gone answers PAYMENT_CHECKOUT_CLOSED (nothing can resume it)', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-gone', email: 'g@x.com', name: 'Gone', coach_id: 'coach-x' });
+    const key = '99999999-9999-4999-8999-999999999999';
+    await svc.createPaymentIntentForClient('client-gone', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    Object.assign(prisma._purchases[0], {
+      status: 'payment_failed',
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+    });
+    const err = await replayError(svc, 'client-gone', key);
+    expect(err!.getStatus()).toBe(409);
+    expect(err!.getResponse().error).toBe('PAYMENT_CHECKOUT_CLOSED');
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('C-661-4: a refunded or disputed payment is not called "closed"', () => {
+    for (const status of ['refunded', 'disputed', 'chargeback_lost']) {
+      const res = finishedPaymentReplay(status).getResponse() as { error: string; message: string };
+      expect(res.error).toBe('PAYMENT_REFUNDED_OR_IN_REVIEW');
+      expect(res.message).toMatch(/refunded or is under review/);
+      expect(res.message).not.toMatch(/has closed|[!]|\b(we|us|our)\b/i);
+    }
   });
 
   it('rejects missing idempotency_key with 400', async () => {
@@ -1114,6 +1254,117 @@ describe('CheckoutService.createPaymentIntentForClient — reservation failure r
     expect(out.client_secret).toMatch(/^pi_test_secret_/);
     expect(prisma._purchases).toHaveLength(1);
     expect(prisma._purchases[0].stripe_client_secret).toBe(out.client_secret);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// B-661-2 (Sol, round 2) — a race loser (P2002 on the idempotency key)
+// classifies every poll answer and its final answer before any credential.
+// Deterministic interleaving: the loser's pre-read sees the winner's
+// reservation without credentials, the loser loses the INSERT, and while it
+// polls the winner's payment settles (webhook: paid, credentials erased).
+// ──────────────────────────────────────────────────────────────────────
+describe('CheckoutService.createPaymentIntentForClient — B-661-2 race loser vs webhook settlement', () => {
+  const key = '66666666-6666-4666-8666-666666666666';
+  function seedWinnerReservation(prisma: ReturnType<typeof makeService>['prisma']) {
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-race', email: 'r@x.com', name: 'Race', coach_id: 'coach-x' });
+    const reservation = {
+      id: 'cp-winner',
+      client_user_id: 'client-race',
+      coach_user_id: 'coach-x',
+      package_id: 'pkg-x',
+      idempotency_key: `pi-client-race-${key}`,
+      status: 'pending',
+      entitlement_active: false,
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+      stripe_customer_id: null,
+      created_at: new Date(),
+    };
+    prisma._purchases.push(reservation);
+    return reservation;
+  }
+  // Applies `settle` to the reservation right after the loser's Nth read of it.
+  function settleAfterRead(
+    prisma: ReturnType<typeof makeService>['prisma'],
+    n: number,
+    settle: () => void,
+  ) {
+    const real = prisma.clientPurchase.findUnique.getMockImplementation();
+    let reads = 0;
+    prisma.clientPurchase.findUnique.mockImplementation(async (args: { where: { idempotency_key?: string } }) => {
+      const out = await real(args);
+      if (args.where.idempotency_key === `pi-client-race-${key}`) {
+        reads += 1;
+        if (reads === n) settle();
+      }
+      return out;
+    });
+  }
+
+  it('the payment settles and its credentials are erased while the loser polls: 409 PAYMENT_ALREADY_COMPLETE at once, never PAYMENT_IN_PROGRESS', async () => {
+    const { svc, prisma, stripe } = makeService();
+    const reservation = seedWinnerReservation(prisma);
+    // Read 1 = pre-read (pending, no credentials yet); read 2 = first poll.
+    settleAfterRead(prisma, 2, () =>
+      Object.assign(reservation, {
+        status: 'paid',
+        entitlement_active: true,
+        stripe_payment_intent_id: 'pi_winner',
+        stripe_client_secret: null,
+        stripe_ephemeral_key: null,
+      }),
+    );
+    const started = Date.now();
+    const err = await replayError(svc, 'client-race', key);
+    expect(err).not.toBeNull();
+    expect(err!.getStatus()).toBe(409);
+    expect(err!.getResponse().error).toBe('PAYMENT_ALREADY_COMPLETE');
+    // Answered on the settled poll, not after the 5 s poll budget.
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(prisma.clientPurchase.create).toHaveBeenCalledTimes(1); // the lost INSERT
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+  }, 15_000);
+
+  it('a finished row that still holds credentials is never returned to the loser', async () => {
+    const { svc, prisma, stripe } = makeService();
+    const reservation = seedWinnerReservation(prisma);
+    settleAfterRead(prisma, 2, () =>
+      Object.assign(reservation, {
+        status: 'canceled',
+        stripe_payment_intent_id: 'pi_winner',
+        stripe_client_secret: 'pi_winner_secret_canary',
+        stripe_ephemeral_key: 'ek_test_canary',
+      }),
+    );
+    const err = await replayError(svc, 'client-race', key);
+    expect(err).not.toBeNull();
+    expect(err!.getStatus()).toBe(409);
+    expect(err!.getResponse().error).toBe('PAYMENT_CHECKOUT_CLOSED');
+    expect(JSON.stringify(err!.getResponse())).not.toContain('canary');
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+  }, 15_000);
+
+  it('(control) the winner publishes its credentials while the loser polls: the loser resumes them', async () => {
+    const { svc, prisma, stripe } = makeService();
+    const reservation = seedWinnerReservation(prisma);
+    settleAfterRead(prisma, 2, () =>
+      Object.assign(reservation, {
+        stripe_payment_intent_id: 'pi_winner',
+        stripe_customer_id: 'cus_winner',
+        stripe_client_secret: 'pi_winner_secret_1',
+        stripe_ephemeral_key: 'ek_test_winner',
+      }),
+    );
+    const out = await svc.createPaymentIntentForClient('client-race', {
+      package_id: 'pkg-x',
+      idempotency_key: key,
+    });
+    expect(out.client_secret).toBe('pi_winner_secret_1');
+    expect(out.ephemeral_key).toBe('ek_test_winner');
+    expect(out.customer_id).toBe('cus_winner');
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
   });
 });
 

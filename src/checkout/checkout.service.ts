@@ -84,6 +84,70 @@ export interface BuyerDropView {
 // <50 in practice. 500 is well above any realistic package.
 const DROP_LIST_HARD_CAP = 500;
 
+// B-SECRETS-3 — the answer to a payment-intent request whose idempotency key
+// belongs to a payment that already finished.
+const PAID_STATUSES = new Set(['paid', 'active', 'past_due', 'trialing']);
+// B-661 round 2 (C-661-4): a refunded or disputed payment is not "closed"; it
+// may still be entitled while the dispute is open.
+const REFUNDED_OR_REVIEW_STATUSES = new Set(['refunded', 'disputed', 'chargeback_lost']);
+export function finishedPaymentReplay(status: string): ConflictException {
+  if (PAID_STATUSES.has(status)) {
+    return new ConflictException({
+      error: 'PAYMENT_ALREADY_COMPLETE',
+      message: 'This payment is already complete. Your package is ready in your account.',
+    });
+  }
+  if (REFUNDED_OR_REVIEW_STATUSES.has(status)) {
+    return new ConflictException({
+      error: 'PAYMENT_REFUNDED_OR_IN_REVIEW',
+      message:
+        'This payment was refunded or is under review, so it cannot be paid again here. ' +
+        'Its status is on the purchase in your account.',
+    });
+  }
+  return new ConflictException({
+    error: 'PAYMENT_CHECKOUT_CLOSED',
+    message: 'This checkout has closed. Start again from the package page to buy it.',
+  });
+}
+
+// B-661-1 / B-661-2 (Sol, round 2) — one classifier for every read of a
+// payment-intent reservation row (the pre-read, each poll answer, and the
+// race-loser branch), always applied BEFORE any cached credential is
+// returned:
+//   - a status other than `pending` or `payment_failed` is finished: the
+//     specific 409 answer, whatever credentials the row still holds (historic
+//     rows keep them until the operator backfill, C-661-2);
+//   - `pending` / `payment_failed` with published credentials: resume (the
+//     client retries the same PaymentIntent);
+//   - `pending` without credentials: the winner is still publishing (wait);
+//   - `payment_failed` without credentials: nothing can resume it (closed).
+const RESUMABLE_STATUSES = new Set(['pending', 'payment_failed']);
+export type PaymentReplayAnswer =
+  | { kind: 'resume'; client_secret: string; ephemeral_key: string; customer_id: string }
+  | { kind: 'wait' }
+  | { kind: 'finished'; error: ConflictException };
+export function classifyPaymentReplay(
+  row: Pick<
+    ClientPurchase,
+    'status' | 'stripe_client_secret' | 'stripe_ephemeral_key' | 'stripe_customer_id'
+  >,
+): PaymentReplayAnswer {
+  if (!RESUMABLE_STATUSES.has(row.status)) {
+    return { kind: 'finished', error: finishedPaymentReplay(row.status) };
+  }
+  if (row.stripe_client_secret) {
+    return {
+      kind: 'resume',
+      client_secret: row.stripe_client_secret,
+      ephemeral_key: row.stripe_ephemeral_key ?? '',
+      customer_id: row.stripe_customer_id ?? '',
+    };
+  }
+  if (row.status === 'pending') return { kind: 'wait' };
+  return { kind: 'finished', error: finishedPaymentReplay(row.status) };
+}
+
 @Injectable()
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
@@ -507,17 +571,15 @@ export class CheckoutService {
     const existing = await this.prisma.clientPurchase.findUnique({
       where: { idempotency_key: purchaseIdempotencyKey },
     });
-    if (
-      existing &&
-      existing.client_user_id === client.id &&
-      existing.stripe_client_secret
-    ) {
-      return {
-        client_secret: existing.stripe_client_secret,
-        ephemeral_key: existing.stripe_ephemeral_key ?? '',
-        customer_id: existing.stripe_customer_id ?? '',
-        publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
-      };
+    // B-SECRETS-3 / B-661-1: the status is classified before any cached
+    // credential is returned. A finished payment (paid, expired, ended,
+    // refunded, disputed) gets its specific answer even when its row still
+    // holds credentials; only a pending or failed-and-retryable payment
+    // resumes.
+    if (existing && existing.client_user_id === client.id) {
+      const replay = classifyPaymentReplay(existing);
+      if (replay.kind === 'finished') throw replay.error;
+      if (replay.kind === 'resume') return this.resumedPayment(replay);
     }
 
     const coach = await this.prisma.user.findUnique({
@@ -594,14 +656,6 @@ export class CheckoutService {
       // Lost the race. Another concurrent request is creating the Stripe
       // resources right now; poll briefly for it to publish its secret.
       const winner = await this.waitForReservedSecret(purchaseIdempotencyKey);
-      if (winner && winner.stripe_client_secret) {
-        return {
-          client_secret: winner.stripe_client_secret,
-          ephemeral_key: winner.stripe_ephemeral_key ?? '',
-          customer_id: winner.stripe_customer_id ?? '',
-          publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
-        };
-      }
       // P1-A: `null` means the winner failed and cleaned up its
       // reservation, so the idempotency key is now free again. Surface
       // a retryable error (not the generic "in progress") so the mobile
@@ -613,6 +667,12 @@ export class CheckoutService {
             'The previous attempt for this payment failed. Please try again.',
         });
       }
+      // B-661-2: the winner's payment may have finished (and its credentials
+      // been erased) while this request waited: answer that, never "in
+      // progress", and never return credentials of a finished payment.
+      const replay = classifyPaymentReplay(winner);
+      if (replay.kind === 'finished') throw replay.error;
+      if (replay.kind === 'resume') return this.resumedPayment(replay);
       throw new ServiceUnavailableException({
         error: 'PAYMENT_IN_PROGRESS',
         message:
@@ -706,15 +766,31 @@ export class CheckoutService {
     }
   }
 
+  private resumedPayment(replay: Extract<PaymentReplayAnswer, { kind: 'resume' }>): {
+    client_secret: string;
+    ephemeral_key: string;
+    customer_id: string;
+    publishable_key: string;
+  } {
+    return {
+      client_secret: replay.client_secret,
+      ephemeral_key: replay.ephemeral_key,
+      customer_id: replay.customer_id,
+      publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+    };
+  }
+
   // Poll for a concurrent winner's PaymentIntent client_secret to be
   // published on the reservation row. Used by losers of the
   // idempotency-key race to return the same client_secret without
   // making their own Stripe calls.
   //
-  // Returns the winner row when `stripe_client_secret` is published.
-  // Returns `null` if the reservation disappears (winner failed and
-  // cleaned up — P1-A) so the caller can surface a retryable error
-  // instead of waiting the full timeout.
+  // Returns the winner row as soon as it is settled for a replay: its
+  // credentials are published, or (B-661-2) its status is no longer one a
+  // PaymentSheet can resume (paid, expired, ended, refunded, disputed;
+  // classifyPaymentReplay). Returns `null` if the reservation disappears
+  // (winner failed and cleaned up — P1-A) so the caller can surface a
+  // retryable error instead of waiting the full timeout.
   private async waitForReservedSecret(
     idempotencyKey: string,
     timeoutMs = 5_000,
@@ -725,9 +801,9 @@ export class CheckoutService {
       const row = await this.prisma.clientPurchase.findUnique({
         where: { idempotency_key: idempotencyKey },
       });
-      if (row?.stripe_client_secret) return row;
       // Winner cleaned up after a failure — bail out early.
       if (!row) return null;
+      if (classifyPaymentReplay(row).kind !== 'wait') return row;
       await new Promise((r) => setTimeout(r, intervalMs));
     }
     return await this.prisma.clientPurchase.findUnique({
