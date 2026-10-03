@@ -1442,7 +1442,10 @@ describe('RomanService — streaming', () => {
     const abort = new AbortController();
     let interrupted: boolean | undefined;
     let count = 0;
-    for await (const c of svc.streamAssistantTurn(CALLER, s, {
+    // R4: `streamAssistantTurn` buffers the whole reply (one delta after the
+    // stream ends), so "abort after the first delta" is exercised on the raw
+    // model stream, which is where the disconnect handling lives.
+    for await (const c of svc.streamModelTurn(CALLER, s, {
       signal: abort.signal,
     })) {
       if (c.type === 'delta') {

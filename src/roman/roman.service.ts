@@ -64,6 +64,16 @@ import {
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
 import { isRomanChatEnabled } from './roman.feature';
+import { AuditService } from '../audit/audit.service';
+import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
+import {
+  classifySafety,
+  routerHintFor,
+  ROMAN_SAFETY_ROUTER_MODEL_ID,
+  ROMAN_SAFETY_TEMPLATES,
+  SafetyClass,
+} from './guardrails/safety-router';
+import { postCheckRomanReply } from './guardrails/roman-post-check';
 import {
   buildRomanSystemPrompt,
   RomanSessionVoiceState,
@@ -159,6 +169,19 @@ export function erasedDayKey(sessionId: string): string {
 @Injectable()
 export class RomanService {
   private readonly logger = new Logger(RomanService.name);
+
+  /**
+   * R4 — audit trail for short-circuited safety turns. Property-injected and
+   * optional (AuditModule is @Global) so tests constructing the service
+   * directly keep working; `setAudit` is the test seam.
+   */
+  @Optional()
+  @Inject(AuditService)
+  private audit: AuditService | null = null;
+
+  setAudit(audit: AuditService | null): void {
+    this.audit = audit;
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -878,7 +901,110 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal } = {},
+    opts: { signal?: AbortSignal; userMessage?: string } = {},
+  ): AsyncGenerator<RomanStreamChunk> {
+    // ── R4 step 5: deterministic SafetyRouter, before any model work ──
+    const userMessage = opts.userMessage ?? (await this.latestUserMessage(session.id));
+    const route = classifySafety(userMessage);
+
+    if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
+      const text = ROMAN_SAFETY_TEMPLATES[route.class];
+      const persisted = await this.appendMessage(caller, session.id, {
+        role: 'roman',
+        content: text,
+        modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
+        interrupted: false,
+      });
+      await this.writeSafetyAudit(caller, session, route.class);
+      this.logger.warn(
+        `roman turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=false guardrails_applied=["safety_template"]`,
+      );
+      yield { type: 'delta', text };
+      yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+      return;
+    }
+
+    // ── steps 7–10: model call (buffered), post-check, single emit ──
+    // Launch streams are buffered on the server (plan §2.7): the full reply
+    // is read, post-checked, and then emitted as ONE `delta` + `done`, so an
+    // unsafe reply can be replaced before any byte reaches the client. The
+    // SSE frame contract is unchanged; mobile already buffers the body.
+    let acc = '';
+    let done: RomanStreamChunk | null = null;
+    for await (const chunk of this.streamModelTurn(caller, session, {
+      signal: opts.signal,
+      routerHint: routerHintFor(route.class),
+    })) {
+      if (chunk.type === 'delta') {
+        acc += chunk.text ?? '';
+      } else if (chunk.type === 'done') {
+        done = chunk;
+      } else {
+        // Any other chunk kind (e.g. a structured error) passes straight through.
+        yield chunk;
+      }
+    }
+    if (!done) return;
+
+    const checked = postCheckRomanReply(acc, {
+      routerClass: route.class,
+      context: null, // R3 merge: pass this turn's RomanClientContext bundle here
+      exclamationAllowed: !session.exclamation_used,
+    });
+    if (checked.text !== acc) {
+      // The persisted turn must equal what the client saw.
+      if (done.messageId) {
+        await this.prisma.romanMessage.update({
+          where: { id: done.messageId },
+          data: { content: checked.text },
+        });
+      }
+    }
+    this.logger.log(
+      `roman turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=true rewritten=${checked.rewritten} guardrails_applied=${JSON.stringify(checked.guardrails_applied)}`,
+    );
+
+    yield { type: 'delta', text: checked.text };
+    yield { ...done, text: checked.text };
+  }
+
+  /** Newest user turn in the session (the controller persists it before streaming). */
+  private async latestUserMessage(sessionId: string): Promise<string> {
+    const row = await this.prisma.romanMessage.findFirst({
+      where: { session_id: sessionId, role: 'user' },
+      orderBy: { created_at: 'desc' },
+      select: { content: true },
+    });
+    return row?.content ?? '';
+  }
+
+  private async writeSafetyAudit(caller: RomanCaller, session: RomanSession, cls: SafetyClass): Promise<void> {
+    if (!this.audit) return;
+    try {
+      await this.audit.write({
+        action: `roman.safety_${cls}`,
+        actorId: caller.id,
+        actorRole: caller.role,
+        targetUserId: caller.id,
+        targetType: 'RomanSession',
+        targetId: session.id,
+        // Never the message text: class + version only.
+        metadata: { router_class: cls, prompt_version: PROMPT_VERSION, model_call: false },
+      });
+    } catch (err) {
+      this.logger.warn(`safety audit write failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * The raw model stream (pre-R4 `streamAssistantTurn`). Yields per-token
+   * deltas and persists the turn; `streamAssistantTurn` wraps it with the
+   * router and post-check. Exposed for tests only.
+   */
+  async *streamModelTurn(
+    caller: RomanCaller,
+    session: RomanSession,
+    opts: { signal?: AbortSignal; routerHint?: string | null } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -901,6 +1027,7 @@ export class RomanService {
         typeof session.subject_context_json === 'string'
           ? session.subject_context_json
           : null,
+      routerHint: opts.routerHint ?? null,
     });
     const messages = await this.buildContextTurns(session.id);
 
