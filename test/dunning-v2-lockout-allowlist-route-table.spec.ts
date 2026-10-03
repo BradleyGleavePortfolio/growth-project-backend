@@ -25,8 +25,10 @@ import {
 //
 // If this test failed: do NOT paste the new path in to make it green. Answer
 // "may a locked-out, non-paying client call this?" The only yes-answers are
-// payment recovery, auth, liveness probes, the Roman lockout explanation, and
-// the AI processing consent privacy control (/me/ai-consent, ruling on #622).
+// payment recovery, auth, liveness probes, the Roman lockout explanation, the
+// AI processing consent privacy control (/me/ai-consent, ruling on #622),
+// account rights (data export and account deletion, S-DUNNING F8), and the
+// exact 1:1 coach-thread routes so the client can contact their coach.
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
@@ -156,15 +158,21 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'auth/signup-policy',
   'auth/signup-with-code',
   'auth/validate-invite-code',
+  'billing/update-card', // PublicPagesController — dunning email landing (S-DUNNING-R2)
   'checkout', // public landing checkout page (LandingPagePublicController)
   'checkout/billing-portal', // CheckoutController owns the rest of this block
+  'checkout/dunning', // DunningStatusController — the lockout screen's status read (S-DUNNING)
   'checkout/entitlement',
   'checkout/payment-intent',
   'checkout/payment-method',
+  'checkout/payment-method/confirm', // ClientBillingController — native card update + 1A pay (S-DUNNING-R2)
+  'checkout/payment-method/quote', // ClientBillingController — every open invoice the card update would pay (S-DUNNING-R3)
+  'checkout/payment-method/setup-intent',
   'checkout/purchases',
   'checkout/purchases/:purchaseid/drops',
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
+  'checkout/subscriptions/:purchaseid/cancel', // ClientBillingController — 2A / option A cancel (S-DUNNING-R2)
   'coach/billing/portal-session', // mobile coach billing (MobileCoachBillingController)
   'coach/billing/status',
   'coach/me/billing', // v1 coach billing (CoachBillingController) — Lens A P2-1
@@ -174,6 +182,18 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'healthz',
   'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
   'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
+  'me/data-export/download', // DataExportController — account rights (S-DUNNING F8)
+  'me/data-export/download-link', // main: signed download link for the same export (account rights)
+  'me/data-export/request',
+  'me/data-export/status',
+  'me/delete-account', // AccountDeletionController — account rights (S-DUNNING F8)
+  'me/delete-account/cancel',
+  'me/delete-account/confirm',
+  'me/delete-account/status',
+  'messages', // ClientMessagingController GET + POST — contact the coach (S-DUNNING F8)
+  'messages/read',
+  'messages/report', // MessagesSafetyController — report a message
+  'messages/unread-count',
   'readyz',
   'roman/sessions',
   'roman/sessions/:id',
@@ -313,9 +333,17 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
     // The method-blind path rules never admit these paths on their own.
     expect(isAllowedWhileLocked('me/ai-consent')).toBe(false);
     expect(isAllowedWhileLocked('me/ai-consent/roman')).toBe(false);
-    // Every other /me route in the real table stays locked for every method.
+    // Every other /me route in the real table stays locked for every method,
+    // except the account-rights surfaces (data export, account deletion)
+    // that S-DUNNING F8 keeps reachable; those are pinned in the exact
+    // admitted-set test above.
+    const isAccountRights = (p: string): boolean =>
+      ['me/data-export', 'me/delete-account'].some((pre) => p === pre || p.startsWith(`${pre}/`));
     const otherMe = table.routes.filter(
-      (r) => r.normalized.startsWith('me/') && !r.normalized.startsWith('me/ai-consent'),
+      (r) =>
+        r.normalized.startsWith('me/') &&
+        !r.normalized.startsWith('me/ai-consent') &&
+        !isAccountRights(r.normalized),
     );
     expect(otherMe.length).toBeGreaterThan(0);
     expect(
