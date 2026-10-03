@@ -26,6 +26,11 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // S-DUNNING-R2 — Smart Dunning v2 notices. The body is Roman's rendered
+  // copy (`roman_body`); the button opens the native in-app card update via
+  // the https universal link (`update_card_url`). Append-only.
+  DUNNING_V2_CLIENT: 'dunning-v2-client',
+  DUNNING_V2_COACH: 'dunning-v2-coach',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
