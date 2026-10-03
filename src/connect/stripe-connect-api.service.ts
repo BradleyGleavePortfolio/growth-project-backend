@@ -723,6 +723,39 @@ export class StripeConnectApiService {
     return this.post('/transfers', form, args.idempotencyKey);
   }
 
+  // S-FEE round 7 (B-627-8) — one page of the platform's transfers to one
+  // connected account in one transfer group, created at or after
+  // `created_gte` (unix seconds), newest first. Used to establish whether a
+  // transfer whose response or receipt was lost exists at Stripe: every TGP
+  // transfer carries metadata[tgp_transfer_op] = its idempotency key.
+  async listTransfers(args: {
+    destination: string;
+    transfer_group?: string;
+    created_gte?: number;
+    limit?: number;
+    starting_after?: string | null;
+  }): Promise<{
+    data: Array<{
+      id: string;
+      amount: number;
+      destination?: string | null;
+      source_transaction?: string | null;
+      transfer_group?: string | null;
+      metadata?: Record<string, string> | null;
+      [k: string]: unknown;
+    }>;
+    has_more?: boolean;
+  }> {
+    const params = new URLSearchParams({ destination: args.destination });
+    if (args.transfer_group) params.set('transfer_group', args.transfer_group);
+    if (typeof args.created_gte === 'number') {
+      params.set('created[gte]', String(Math.max(0, Math.floor(args.created_gte))));
+    }
+    params.set('limit', String(Math.min(Math.max(args.limit ?? 100, 1), 100)));
+    if (args.starting_after) params.set('starting_after', args.starting_after);
+    return this.get(`/transfers?${params.toString()}`);
+  }
+
   async retrieveTransfer(transferId: string): Promise<{
     id: string;
     amount: number;

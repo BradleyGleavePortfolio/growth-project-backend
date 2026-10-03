@@ -41,6 +41,14 @@ const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
 interface ChannelResult {
   status: string;
   notification_id?: string;
+  // The channel's receipt was already written with the delivery itself.
+  receipt_saved?: boolean;
+}
+
+class InAppAlreadyRecorded extends Error {
+  constructor() {
+    super('in-app receipt already recorded by another attempt');
+  }
 }
 
 /** The EmailService idempotency key of one email attempt of a notice. */
@@ -183,12 +191,15 @@ export class PayoutNoticeService {
       held_dispute_fee_cents: row.held_dispute_fee_cents,
       held_not_reversed_cents: row.held_not_reversed_cents,
     };
-    // Each channel's outcome is written as soon as it is known, so a crash
-    // or a failed write later in this attempt never repeats a finished one.
+    // Each channel's outcome is written as soon as it is known, so a channel
+    // whose receipt was persisted is never repeated. The in-app row and its
+    // receipt commit together (C-627-8 Sol, round 7); push and email are
+    // at least once across a receipt write that fails after the provider
+    // accepted them (email additionally dedupes on its own attempt key).
     const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
       ? { status: row.inapp_status }
       : await this.deliverInApp(row, payload);
-    if (inapp.status !== row.inapp_status || inapp.notification_id) {
+    if (!inapp.receipt_saved && (inapp.status !== row.inapp_status || inapp.notification_id)) {
       await this.saveChannel(row.id, {
         inapp_status: inapp.status,
         ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
@@ -246,17 +257,43 @@ export class PayoutNoticeService {
     n: PayoutAdjustmentNotice,
     payload: Record<string, unknown>,
   ): Promise<ChannelResult> {
+    // C-627-8 (Sol, round 7): the inbox row and the notice's in-app receipt
+    // are one transaction. A receipt write that fails rolls the inbox row
+    // back, so the retry creates exactly one inbox row for the notice.
     try {
-      const created = await this.notifications.createNotification({
-        user_id: n.payee_user_id,
-        kind: NotificationKind.COACH_ALERT,
-        body: n.body,
-        payload,
-        deep_link: PAYOUT_NOTICE_DEEP_LINK,
-        channel: 'inapp',
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await this.notifications.createNotification(
+          {
+            user_id: n.payee_user_id,
+            kind: NotificationKind.COACH_ALERT,
+            body: n.body,
+            payload,
+            deep_link: PAYOUT_NOTICE_DEEP_LINK,
+            channel: 'inapp',
+          },
+          tx,
+        );
+        const result: ChannelResult = created
+          ? { status: 'sent', notification_id: created.id }
+          : { status: 'off' };
+        const receipt = await tx.payoutAdjustmentNotice.updateMany({
+          where: { id: n.id, inapp_status: n.inapp_status },
+          data: {
+            inapp_status: result.status,
+            ...(result.notification_id ? { inapp_notification_id: result.notification_id } : {}),
+          },
+        });
+        if (receipt.count !== 1) {
+          // Another worker recorded this channel first: roll this row back.
+          throw new InAppAlreadyRecorded();
+        }
+        return { ...result, receipt_saved: true };
       });
-      return created ? { status: 'sent', notification_id: created.id } : { status: 'off' };
     } catch (err) {
+      if (err instanceof InAppAlreadyRecorded) {
+        const fresh = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
+        return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
+      }
       this.logger.warn(
         `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
       );

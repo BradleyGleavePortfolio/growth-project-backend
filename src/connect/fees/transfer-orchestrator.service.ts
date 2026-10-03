@@ -33,8 +33,10 @@ import { SplitLedgerService } from './split-ledger.service';
 // Retry: on Stripe-side failure (network, balance-not-available because
 // the charge hasn't settled yet, etc.) the row stays in `pending` with
 // next_attempt_at = now + exponential backoff. A scheduled sweeper picks
-// up due rows and re-tries via the same Stripe-Idempotency-Key so
-// double-pays are impossible.
+// up due rows and re-tries via the same Stripe-Idempotency-Key. Stripe may
+// prune a key after 24 h, so (round 7, B-627-8) a create whose result was
+// never recorded is first looked up at Stripe and only re-sent when a
+// complete listing proves it absent.
 
 // S-FEE — log / alert codes for a failed transfer attempt.
 export const TRANSFER_FAILURE_CODES = {
@@ -99,6 +101,44 @@ export interface SettlementTransferInput {
 
 function isReinstateKind(kind: string): boolean {
   return kind === 'coach_reinstate' || kind === 'head_coach_reinstate';
+}
+
+// B-627-8 (round 7): the result of a sent transfer create is not established.
+export const TRANSFER_UNCERTAIN_CODE = 'SFEE_TRANSFER_UNCERTAIN';
+
+// B-627-8: the reconciliation lookup of one transfer create.
+export type TransferLookup =
+  | { kind: 'found'; id: string; amount: number }
+  | { kind: 'absent' }
+  | { kind: 'unknown'; reason: string };
+
+function transferGroupOf(row: Pick<ConnectTransfer, 'purchase_id'>): string {
+  return `purchase_${row.purchase_id}`;
+}
+
+// A Stripe transfer is this row's operation when it carries the row's key in
+// metadata.tgp_transfer_op. Transfers created before round 7 carry no key;
+// those match on everything the old create sent (purchase, kind, amount and
+// source charge), which is one transfer per legacy row.
+export function isTransferOf(
+  t: {
+    amount: number;
+    source_transaction?: string | null;
+    metadata?: Record<string, string> | null;
+  },
+  row: Pick<
+    ConnectTransfer,
+    'idempotency_key' | 'purchase_id' | 'kind' | 'amount_cents' | 'source_stripe_charge_id'
+  >,
+): boolean {
+  const op = t.metadata?.tgp_transfer_op;
+  if (op) return op === row.idempotency_key;
+  return (
+    t.metadata?.tgp_purchase_id === row.purchase_id &&
+    t.metadata?.tgp_kind === row.kind &&
+    t.amount === row.amount_cents &&
+    (t.source_transaction ?? null) === (row.source_stripe_charge_id ?? null)
+  );
 }
 
 function describeTransfer(row: ConnectTransfer): string {
@@ -171,6 +211,8 @@ export class TransferOrchestratorService {
   private static readonly BACKOFF_MINUTES = [1, 5, 15, 60, 240, 1440];
   // Reversal listing pages (100 each) read before the lookup is 'unknown'.
   static readonly REVERSAL_LIST_MAX_PAGES = 10;
+  // Transfer listing pages (100 each) read before the lookup is 'unknown'.
+  static readonly TRANSFER_LIST_MAX_PAGES = 10;
 
   constructor(
     private prisma: PrismaService,
@@ -242,6 +284,25 @@ export class TransferOrchestratorService {
   // Try to post a pending transfer to Stripe. Updates the
   // ConnectTransfer row + corresponding ledger entry on success or
   // failure. Returns the updated transfer row.
+  //
+  // S-FEE round 7 (B-627-8) — every create is a durable, recoverable
+  // operation, like round 6's reversals. The row is the operation record: its
+  // idempotency_key is the stable operation identity, sent to Stripe both as
+  // the Idempotency-Key and as metadata.tgp_transfer_op. Before Stripe is
+  // called, `stripe_send_unresolved_at` is set (CAS on `attempts`, so only one
+  // worker sends per attempt). It is cleared only once the result is known:
+  //   - Stripe returned the transfer      -> ledger + receipt written;
+  //   - a definitive refusal (4xx)        -> nothing moved, retried later;
+  //   - anything else (timeout, 5xx, lost response, a receipt write that
+  //     failed after Stripe moved the money) leaves it set.
+  // While it is set, the next attempt first reads Stripe's transfer list:
+  //   found   -> the receipt is repaired, nothing is sent;
+  //   unknown -> listing failed or was incomplete: nothing is sent, the row
+  //              stays pending and SFEE_TRANSFER_UNCERTAIN alerts (an unknown
+  //              payment is never treated as failed, so no repay alert);
+  //   absent  -> a complete listing proves it never executed: sent again.
+  // Stripe may prune an idempotency key after 24 h, after which the same key
+  // creates a new transfer; the lookup is what makes an aged retry safe.
   async attempt(
     transferId: string,
     opts: { beforeStripe?: MoneyFence } = {},
@@ -258,27 +319,52 @@ export class TransferOrchestratorService {
       // pipeline will re-enqueue once it has it.
       return row;
     }
+
+    // B-627-8: an earlier create's result is not established. Establish it
+    // at Stripe before anything else (including the attempt budget: a
+    // transfer that may exist is never reported as failed).
+    if (row.stripe_send_unresolved_at) {
+      const lookup = await this.findStripeTransfer(row);
+      if (lookup.kind === 'found') return this.recordPosted(row, lookup.id, 'reconciled');
+      if (lookup.kind === 'unknown') {
+        return this.holdUncertain(row, `transfer lookup unavailable: ${lookup.reason}`, false);
+      }
+      // absent: a complete listing shows no transfer for this operation.
+    }
+
     if (row.attempts >= row.max_attempts) {
       return this.markFailed(row, 'max_attempts_exhausted', /*final=*/ true);
     }
 
-    // B-627-2: a stale lock holder never starts a Stripe transfer. (The
-    // transfer itself is keyed per row, so a holder paused past this point
-    // collapses onto the same Stripe transfer.)
+    // B-627-2: a stale lock holder never starts a Stripe transfer.
     if (opts.beforeStripe) await opts.beforeStripe();
     const attemptCount = row.attempts + 1;
-    await this.prisma.connectTransfer.update({
-      where: { id: row.id },
-      data: {
-        last_attempt_at: new Date(),
-        attempts: attemptCount,
-      },
+    const sentAt = new Date();
+    // Durable "sent" marker, written before Stripe is called. The CAS on
+    // attempts lets exactly one worker send this attempt; a worker that loses
+    // it returns the row and leaves the result to the winner.
+    const claim = await this.prisma.connectTransfer.updateMany({
+      where: { id: row.id, status: row.status, attempts: row.attempts },
+      data: { attempts: attemptCount, last_attempt_at: sentAt, stripe_send_unresolved_at: sentAt },
     });
+    if (claim.count !== 1) {
+      return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+    }
+    const sent: ConnectTransfer = {
+      ...row,
+      attempts: attemptCount,
+      last_attempt_at: sentAt,
+      stripe_send_unresolved_at: sentAt,
+    };
 
+    let stripeTransferId: string;
     try {
       const metadata: Record<string, string> = {
         tgp_purchase_id: row.purchase_id,
         tgp_kind: row.kind,
+        // B-627-8: the operation identity the reconciliation lookup matches.
+        tgp_transfer_op: row.idempotency_key,
+        tgp_transfer_row: row.id,
       };
       if (row.settlement_id) metadata.tgp_settlement_id = row.settlement_id;
       const transfer = await this.stripe.createTransfer({
@@ -287,47 +373,185 @@ export class TransferOrchestratorService {
         destination: row.destination_stripe_account_id,
         // Reinstatements have no source charge (its funds already moved once).
         source_transaction: row.source_stripe_charge_id ?? undefined,
-        transfer_group: `purchase_${row.purchase_id}`,
+        transfer_group: transferGroupOf(row),
         description: describeTransfer(row),
         metadata,
         idempotencyKey: row.idempotency_key,
       });
+      stripeTransferId = transfer.id;
+    } catch (err) {
+      const message = (err as Error)?.message ?? 'unknown transfer error';
+      const code = transferFailureCode(err);
+      if (isDefinitiveStripeRefusal(err)) {
+        // Proven not executed: the marker is cleared and the row is retried
+        // (or finally failed) like before.
+        const final =
+          attemptCount >= row.max_attempts ||
+          ((err as StripeConnectApiError).httpStatus === 400 && /no such/i.test(message));
+        // S-FEE — every failure is logged with a specific code. Codes that
+        // need a person (platform balance, restricted account) and final
+        // failures are logged at error level with alert=true.
+        const needsPerson = final || code !== TRANSFER_FAILURE_CODES.failed;
+        const line =
+          `${code}${final ? '_FINAL' : ''} transfer=${row.id} kind=${row.kind} ` +
+          `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
+          `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
+        if (needsPerson) this.logger.error(line);
+        else this.logger.warn(line);
+        return this.markFailed(sent, `${code}: ${message}`, final, { resolved: true });
+      }
+      // The outcome is unknown: Stripe may have moved the money. Look first.
+      const lookup = await this.findStripeTransfer(sent);
+      if (lookup.kind === 'found') return this.recordPosted(sent, lookup.id, 'reconciled');
+      if (lookup.kind === 'unknown') {
+        return this.holdUncertain(
+          sent,
+          `${message}; transfer lookup unavailable: ${lookup.reason}`,
+          true,
+        );
+      }
+      // Not visible yet. The request may still be completing at Stripe, so
+      // this is never final: the marker stays and the next attempt looks
+      // again before it may re-send the same key.
+      const needsPerson = code !== TRANSFER_FAILURE_CODES.failed;
+      const line =
+        `${code} transfer=${row.id} kind=${row.kind} ` +
+        `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
+        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}; ` +
+        'not visible at Stripe yet, re-checked before any re-send';
+      if (needsPerson) this.logger.error(line);
+      else this.logger.warn(line);
+      return this.markFailed(sent, `${code}: ${message}`, false, { resolved: false });
+    }
+    return this.recordPosted(sent, stripeTransferId, 'created');
+  }
+
+  // B-627-8 — record a transfer Stripe holds. Ledger first, then the
+  // ConnectTransfer receipt (the commit point that clears the unresolved
+  // marker). If either write fails the marker stays set, the row stays
+  // pending, and the next attempt finds the transfer at Stripe and records
+  // it again; it never sends a second one.
+  private async recordPosted(
+    row: ConnectTransfer,
+    stripeTransferId: string,
+    how: 'created' | 'reconciled',
+  ): Promise<ConnectTransfer> {
+    try {
+      if (row.ledger_entry_id) {
+        await this.ledger.markPosted({
+          entry_id: row.ledger_entry_id,
+          stripe_transfer_id: stripeTransferId,
+          stripe_charge_id: row.source_stripe_charge_id ?? undefined,
+        });
+      }
       const posted = await this.prisma.connectTransfer.update({
         where: { id: row.id },
         data: {
           status: 'succeeded',
-          stripe_transfer_id: transfer.id,
+          stripe_transfer_id: stripeTransferId,
           posted_at: new Date(),
           last_error: null,
+          next_attempt_at: null,
+          stripe_send_unresolved_at: null,
         },
       });
-      if (row.ledger_entry_id) {
-        await this.ledger.markPosted({
-          entry_id: row.ledger_entry_id,
-          stripe_transfer_id: transfer.id,
-          stripe_charge_id: row.source_stripe_charge_id ?? undefined,
-        });
+      if (how === 'reconciled') {
+        this.logger.log(
+          `SFEE_TRANSFER_RECONCILED transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId}: found at Stripe, receipt recorded, nothing re-sent`,
+        );
       }
       return posted;
     } catch (err) {
-      const isStripe = err instanceof StripeConnectApiError;
-      const message = (err as Error)?.message ?? 'unknown transfer error';
-      const code = transferFailureCode(err);
-      const finalFailure = attemptCount >= row.max_attempts;
-      const final =
-        finalFailure ||
-        (isStripe && (err as StripeConnectApiError).httpStatus === 400 && /no such/i.test(message));
-      // S-FEE — every failure is logged with a specific code. Codes that need
-      // a person (platform balance, restricted account) and final failures
-      // are logged at error level with alert=true for the log-based alerts.
-      const needsPerson = final || code !== TRANSFER_FAILURE_CODES.failed;
-      const line =
-        `${code}${final ? '_FINAL' : ''} transfer=${row.id} kind=${row.kind} ` +
-        `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
-        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
-      if (needsPerson) this.logger.error(line);
-      else this.logger.warn(line);
-      return this.markFailed({ ...row, attempts: attemptCount }, `${code}: ${message}`, final);
+      const message = (err as Error)?.message ?? 'unknown receipt error';
+      this.logger.error(
+        `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${message}); the next attempt records it from Stripe and sends nothing`,
+      );
+      await this.scheduleRecheck(row, `SFEE_TRANSFER_RECEIPT_PENDING: ${message}`);
+      return { ...row, last_error: `SFEE_TRANSFER_RECEIPT_PENDING: ${message}`.slice(0, 500) };
+    }
+  }
+
+  // B-627-8 — the result of a sent create cannot be established (Stripe's
+  // transfer list could not be read in full). Nothing is sent; the row stays
+  // pending with its marker and is looked up again on the next sweep.
+  private async holdUncertain(
+    row: ConnectTransfer,
+    message: string,
+    justSent: boolean,
+  ): Promise<ConnectTransfer> {
+    this.logger.error(
+      `SFEE_TRANSFER_UNCERTAIN alert=true transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
+        `settlement=${row.settlement_id ?? 'none'} op=${row.idempotency_key} amount=${row.amount_cents} ` +
+        `unresolved_since=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: ${message}; ` +
+        (justSent ? 'outcome unknown' : 'not re-sent') +
+        ', looked up again before any re-send',
+    );
+    return this.scheduleRecheck(row, `${TRANSFER_UNCERTAIN_CODE}: ${message}`);
+  }
+
+  private async scheduleRecheck(row: ConnectTransfer, message: string): Promise<ConnectTransfer> {
+    const delay =
+      TransferOrchestratorService.BACKOFF_MINUTES[
+        Math.min(row.attempts, TransferOrchestratorService.BACKOFF_MINUTES.length - 1)
+      ];
+    const data = {
+      last_error: message.slice(0, 500),
+      next_attempt_at: new Date(Date.now() + delay * 60_000),
+    };
+    try {
+      await this.prisma.connectTransfer.updateMany({
+        where: { id: row.id, status: 'pending' },
+        data,
+      });
+    } catch (err) {
+      // The row is still pending with its marker; the sweeper picks it up.
+      this.logger.warn(
+        `could not schedule the transfer re-check transfer=${row.id}: ${(err as Error)?.message}`,
+      );
+    }
+    return { ...row, ...data };
+  }
+
+  // B-627-8 — Stripe's transfers to the row's destination in its transfer
+  // group, matched by the operation key. Three answers, like reversals:
+  // 'absent' only when the full list was read (has_more false); a list error
+  // or a list longer than the page budget is 'unknown'.
+  private async findStripeTransfer(row: ConnectTransfer): Promise<TransferLookup> {
+    try {
+      // The Stripe object is created after the row; one hour of slack covers
+      // clock skew between the database and Stripe.
+      const createdGte = Math.floor(row.created_at.getTime() / 1000) - 3600;
+      let startingAfter: string | null = null;
+      for (let page = 0; page < TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES; page += 1) {
+        const res = await this.stripe.listTransfers({
+          destination: row.destination_stripe_account_id,
+          transfer_group: transferGroupOf(row),
+          created_gte: createdGte,
+          limit: 100,
+          starting_after: startingAfter,
+        });
+        const data = res.data ?? [];
+        const hit = data.find((t) => isTransferOf(t, row));
+        if (hit) return { kind: 'found', id: hit.id, amount: hit.amount };
+        if (!res.has_more) return { kind: 'absent' };
+        if (data.length === 0) {
+          return {
+            kind: 'unknown',
+            reason: 'Stripe reported more transfers but sent an empty page',
+          };
+        }
+        startingAfter = data[data.length - 1].id;
+      }
+      return {
+        kind: 'unknown',
+        reason: `more than ${TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES * 100} transfers listed without a match`,
+      };
+    } catch (err) {
+      const reason = (err as Error)?.message ?? 'unknown listing error';
+      this.logger.warn(
+        `listing transfers for transfer=${row.id} op=${row.idempotency_key} failed: ${reason}`,
+      );
+      return { kind: 'unknown', reason: `listing failed: ${reason}` };
     }
   }
 
@@ -642,6 +866,9 @@ export class TransferOrchestratorService {
     row: ConnectTransfer,
     message: string,
     finalFailure: boolean,
+    // B-627-8: resolved = the last create is proven not executed (definitive
+    // refusal), so its unresolved marker is cleared. Unresolved keeps it.
+    send: { resolved: boolean } = { resolved: true },
   ): Promise<ConnectTransfer> {
     const status = finalFailure ? 'failed' : 'pending';
     const nextDelay =
@@ -655,6 +882,7 @@ export class TransferOrchestratorService {
         status,
         last_error: message,
         next_attempt_at: nextAttempt,
+        ...(send.resolved ? { stripe_send_unresolved_at: null } : {}),
       },
     });
     if (finalFailure && row.ledger_entry_id) {

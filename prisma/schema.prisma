@@ -3827,6 +3827,11 @@ model ConnectTransfer {
   // S-FEE round 4 — reversal operations started on this transfer (CAS slot:
   // at most one TransferReversalOp in flight per transfer).
   reversal_seq                  Int            @default(0)
+  // S-FEE round 7 (B-627-8) — set before every Stripe create, cleared once
+  // its result is known (posted, or a definitive 4xx refusal). While set, the
+  // next attempt reconciles against Stripe's transfer list (matched by
+  // metadata.tgp_transfer_op = idempotency_key) before it may send again.
+  stripe_send_unresolved_at     DateTime?
   created_at                    DateTime       @default(now())
   updated_at                    DateTime       @updatedAt
 

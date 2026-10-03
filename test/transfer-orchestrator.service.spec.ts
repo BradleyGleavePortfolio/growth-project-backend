@@ -66,6 +66,7 @@ function makePrismaStub() {
           max_attempts: 6,
           reversed_amount_cents: 0,
           reversal_seq: 0,
+          created_at: new Date(),
           ...create,
         };
         transfers.push(row);
@@ -107,6 +108,8 @@ class StripeStub extends StripeConnectApiService {
     amount: args.amount ?? 0,
   }));
   listTransferReversals = jest.fn(async () => ({ data: [], has_more: false }));
+  // B-627-8 (round 7): nothing at Stripe unless a test says otherwise.
+  listTransfers = jest.fn(async () => ({ data: [] as any[], has_more: false }));
 }
 
 describe('TransferOrchestratorService', () => {
@@ -204,7 +207,7 @@ describe('TransferOrchestratorService', () => {
     expect(attempt.status).toBe('succeeded');
   });
 
-  it('marks final-failed after max_attempts', async () => {
+  it('marks final-failed after max_attempts (B-627-8: an unknown outcome only once Stripe shows it absent)', async () => {
     prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
     const row = await svc.enqueueHeadCoachTransfer({
       purchase_id: 'p1',
@@ -220,9 +223,42 @@ describe('TransferOrchestratorService', () => {
     stripe.createTransfer.mockRejectedValue(
       new StripeConnectApiError('boom', 500, 'api_error', 'api_error'),
     );
+    // A 500 may have executed: never final on the attempt that sent it.
+    const first = await svc.attempt(row.id);
+    expect(first.status).toBe('pending');
+    expect(prisma._transfers[0].stripe_send_unresolved_at).toBeInstanceOf(Date);
+    expect(prisma._ledger[0].status).not.toBe('failed');
+    // The next attempt reads Stripe's complete list: absent, budget spent.
+    const updated = await svc.attempt(row.id);
+    expect(stripe.createTransfer).toHaveBeenCalledTimes(1);
+    expect(updated.status).toBe('failed');
+    expect(prisma._transfers[0].stripe_send_unresolved_at).toBeNull();
+    expect(prisma._ledger[0].status).toBe('failed');
+  });
+
+  it('a definitive refusal (4xx) at the attempt budget is final at once', async () => {
+    prisma._ledger.push({ id: 'le1', purchase_id: 'p1', kind: 'head_coach_split' });
+    const row = await svc.enqueueHeadCoachTransfer({
+      purchase_id: 'p1',
+      ledger_entry_id: 'le1',
+      destination_stripe_account_id: 'acct_head',
+      destination_user_id: 'head-1',
+      amount_cents: 500,
+      currency: 'usd',
+      source_stripe_charge_id: 'ch_abc',
+    });
+    prisma._transfers[0].max_attempts = 1;
+    stripe.createTransfer.mockRejectedValue(
+      new StripeConnectApiError(
+        'balance not available',
+        400,
+        'balance_insufficient',
+        'invalid_request_error',
+      ),
+    );
     const updated = await svc.attempt(row.id);
     expect(updated.status).toBe('failed');
-    expect(prisma._ledger[0].status).toBe('failed');
+    expect(stripe.listTransfers).not.toHaveBeenCalled();
   });
 
   it('reverses a posted transfer (partial then full)', async () => {
