@@ -310,6 +310,7 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
     '.github/workflows/fly-feature-flags-set.yml',
     '.github/workflows/fly-launch-env-set.yml',
     '.github/workflows/fly-recent-auth-set.yml',
+    '.github/workflows/fly-apple-signin-set.yml',
     '.github/workflows/fly-secrets-set.yml',
     '.github/workflows/fly-logs.yml',
     '.github/workflows/fly-secrets-list.yml',
@@ -361,7 +362,7 @@ describe('fly-deploy.yml — recovery and migration evidence (S2-B6 / S2-B7 / S2
 });
 
 describe('production-mutating Fly operator workflows are bound to the production environment (S2-B10)', () => {
-  for (const f of ['fly-db-secrets-set', 'fly-feature-flags-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set']) {
+  for (const f of ['fly-apple-signin-set', 'fly-db-secrets-set', 'fly-feature-flags-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set']) {
     it(`${f}.yml has environment: production`, () => {
       expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production$/m);
     });
@@ -687,6 +688,7 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
     'fly-launch-env-set',
     'fly-logs',
     'fly-recent-auth-set',
+    'fly-apple-signin-set',
     'fly-secrets-list',
     'fly-secrets-set',
   ];
