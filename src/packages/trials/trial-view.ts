@@ -31,7 +31,7 @@ export interface PurchaseTrialFields {
   amount_cents: number;
   currency: string;
   cancel_at_period_end: boolean;
-  trial_days: number;
+  trial_days: number | null;
   trial_ends_at: Date | null;
 }
 

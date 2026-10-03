@@ -1,6 +1,6 @@
 -- B-TRIALS (OR-113-2, owner 2026-10-02 16:34 "Real free trials on packages: yes").
 --
--- Additive only: new defaulted columns on CoachPackage and ClientPurchase,
+-- Additive only: new defaulted/nullable columns on CoachPackage and ClientPurchase,
 -- two new tables, CHECK constraints, and RLS on the two new tables. No
 -- shipped migration is altered.
 -- Reverse: down.sql (drops only what this file creates).
@@ -11,8 +11,9 @@
 --    first with coded 400s; the CHECK is the last line of defence).
 --    CoachPackage RLS is unchanged: its policies are row-level and cover
 --    every column.
--- 2. ClientPurchase.trial_days / trial_ends_at — the trial snapshot of a
---    purchase and the Stripe trial_end mirror. ClientPurchase RLS unchanged.
+-- 2. ClientPurchase.trial_days (shared with B-RECUR, NULL = no trial) /
+--    trial_ends_at — the trial snapshot of a purchase and the Stripe
+--    trial_end mirror. ClientPurchase RLS unchanged.
 -- 3. PackageTrialUsage — one free trial per client per coach. The unique
 --    (client_user_id, coach_user_id) index is the race guard.
 -- 4. PackageTrialNotice — the trial-ending notice ledger, unique per
@@ -49,12 +50,13 @@ ALTER TABLE "CoachPackage"
 -- =====================================================================
 -- 2) ClientPurchase trial snapshot
 -- =====================================================================
-ALTER TABLE "ClientPurchase" ADD COLUMN "trial_days" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN "trial_ends_at" TIMESTAMP(3);
-
-ALTER TABLE "ClientPurchase"
-    ADD CONSTRAINT "ClientPurchase_trial_days_check"
-    CHECK ("trial_days" BETWEEN 0 AND 30);
+-- trial_days is SHARED with lane B-RECUR (#654,
+-- 20270225000000_native_subscription_trials), which declares the same
+-- nullable INTEGER column and its range CHECK. IF NOT EXISTS makes the two
+-- migrations order-independent on a fresh database (theirs sorts first);
+-- this file adds no CHECK on it so the two never disagree. NULL = no trial.
+ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;
+ALTER TABLE "ClientPurchase" ADD COLUMN "trial_ends_at" TIMESTAMP(3);
 
 -- =====================================================================
 -- 3) PackageTrialUsage

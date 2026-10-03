@@ -3775,10 +3775,11 @@ model ClientPurchase {
   grant_metadata Json?
 
   // B-TRIALS (OR-113-2) — the free trial this purchase was sold with.
-  // trial_days is the snapshot taken when the subscription was created (0 =
-  // no trial); trial_ends_at mirrors the Stripe subscription's trial_end and
-  // drives the app's "Trial ends Oct 12" line and the trial-ending notice.
-  trial_days    Int       @default(0)
+  // trial_days is the snapshot taken when the subscription was created (null =
+  // no trial; shared with B-RECUR #654, which declares the same column);
+  // trial_ends_at mirrors the Stripe subscription's trial_end and drives the
+  // app's "Trial ends Oct 12" line and the trial-ending notice.
+  trial_days    Int?
   trial_ends_at DateTime?
 
   @@index([client_user_id, status])

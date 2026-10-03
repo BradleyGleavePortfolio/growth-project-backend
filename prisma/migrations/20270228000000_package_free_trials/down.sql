@@ -3,8 +3,9 @@
 SET lock_timeout = '5s';
 DROP TABLE IF EXISTS "PackageTrialNotice";
 DROP TABLE IF EXISTS "PackageTrialUsage";
-ALTER TABLE "ClientPurchase" DROP CONSTRAINT IF EXISTS "ClientPurchase_trial_days_check";
-ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_ends_at", DROP COLUMN IF EXISTS "trial_days";
+-- ClientPurchase.trial_days is shared with B-RECUR (20270225000000) and is
+-- left in place; dropping it here would break their checkout.
+ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_ends_at";
 ALTER TABLE "CoachPackage" DROP CONSTRAINT IF EXISTS "CoachPackage_trial_days_check";
 ALTER TABLE "CoachPackage" DROP COLUMN IF EXISTS "trial_days";
 RESET lock_timeout;

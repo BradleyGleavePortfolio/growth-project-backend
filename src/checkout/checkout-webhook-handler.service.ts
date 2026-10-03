@@ -904,7 +904,7 @@ export class CheckoutWebhookHandlerService {
         clientUserId: purchase.client_user_id,
         coachUserId: purchase.coach_user_id,
         packageId: purchase.package_id,
-        trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days,
+        trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days ?? 0,
         trialEndsAt,
       });
       return { data, conflict: outcome === 'conflict' };

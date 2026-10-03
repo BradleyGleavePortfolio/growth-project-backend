@@ -369,6 +369,19 @@ describe('B-TRIALS — migration', () => {
     expect(sql).toMatch(/"trial_days" BETWEEN 0 AND 30/);
     expect(sql).toMatch(/"billing_type" = 'recurring'/);
   });
+  it('shares ClientPurchase.trial_days with B-RECUR (#654) without a conflicting definition', () => {
+    expect(sql).toContain(
+      'ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;',
+    );
+    expect(sql).not.toMatch(/ClientPurchase_trial_days/);
+    const down = fs.readFileSync(
+      path.join(__dirname, '../prisma/migrations/20270228000000_package_free_trials/down.sql'),
+      'utf8',
+    );
+    expect(down).not.toMatch(/"ClientPurchase"[^;]*"trial_days"/);
+    expect(down).toContain('ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_ends_at";');
+  });
+
   it('enforces one trial per client per coach with a unique index', () => {
     expect(sql).toMatch(
       /CREATE UNIQUE INDEX "PackageTrialUsage_client_user_id_coach_user_id_key" ON "PackageTrialUsage"\("client_user_id", "coach_user_id"\);/,
