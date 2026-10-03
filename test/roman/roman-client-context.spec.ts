@@ -656,6 +656,26 @@ describe('R3 memo — 15 s, per (user, local_date), invalidated by write hooks',
     expect(z.rendered).not.toContain('Maya');
   });
 
+  // FIX ROUND 1 (S-B1, #651) FR1-651-8: a build in flight when a write path
+  // invalidates the user must not be memoised (it would serve pre-write data
+  // to the next turn for up to 15 s).
+  it('an invalidation during an in-flight build is not undone by that build', async () => {
+    const { svc, db } = setup();
+    const inFlight = svc.getBundle(student(P1), NOW); // reads start, not finished
+    db.raw.loggedFood.push({
+      user_id: P1,
+      date: new Date('2026-09-30T00:00:00Z'),
+      logged_at: new Date('2026-09-30T23:00:00Z'),
+      quantity_multiplier: 1,
+      food_item: { calories: 400, protein_g: 40, carbs_g: 30, fat_g: 10 },
+    });
+    romanContextInvalidate(P1); // the write lands while the build is running
+    await inFlight;
+    const next = await svc.getBundle(student(P1), new Date(NOW.getTime() + 1_000));
+    expect(db.calls.filter((c) => c === 'user.findUnique')).toHaveLength(2);
+    expect(next.context.today.kcal).toBe(1180);
+  });
+
   it('a local-day rollover invalidates the memo even inside 15 s', async () => {
     const { svc, db } = setup();
     const t1 = new Date('2026-10-01T06:59:55.000Z'); // 23:59:55 PT 09/30

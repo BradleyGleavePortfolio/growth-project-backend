@@ -200,6 +200,12 @@ interface MemoEntry {
 export class RomanClientContextService {
   private readonly logger = new Logger(RomanClientContextService.name);
   private readonly memo = new Map<string, MemoEntry>();
+  /**
+   * Per-user invalidation generation. A build that was in flight when a write
+   * path invalidated the user is stale: it still answers its own turn (its
+   * reads are this turn's reads) but is never stored for the next one.
+   */
+  private readonly generation = new Map<string, number>();
   private readonly intake: RomanSafetyIntakeSource;
 
   constructor(
@@ -216,6 +222,7 @@ export class RomanClientContextService {
   /** Drop the memo for one user (write paths call this via the global hook). */
   invalidateForUser(userId: string): void {
     this.memo.delete(userId);
+    this.generation.set(userId, (this.generation.get(userId) ?? 0) + 1);
   }
 
   /**
@@ -232,7 +239,10 @@ export class RomanClientContextService {
       const clock = localClock(now, hit.bundle.context.identity.timezone);
       if (clock.local_date === hit.local_date) return hit.bundle;
     }
+    const startedAt = this.generation.get(caller.id) ?? 0;
     const bundle = await this.buildFresh(caller, now);
+    // Invalidated while building: do not memoise data that predates the write.
+    if ((this.generation.get(caller.id) ?? 0) !== startedAt) return bundle;
     this.memo.set(caller.id, {
       local_date: bundle.context.identity.local_date,
       expires_at: now.getTime() + ROMAN_CONTEXT_MEMO_TTL_MS,

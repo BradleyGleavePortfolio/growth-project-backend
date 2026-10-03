@@ -622,7 +622,12 @@ describe('FR1-651-1 Roman failure logs are content-free for every error class, n
     });
     expect(romanErrorTag(orm)).toBe('DatabaseRequestError code=P2002');
     const odd = Object.assign(new Error('x'), { name: 'Bad name: maya@example.com' });
-    expect(romanErrorTag(odd)).toBe('Error');
+    expect(romanErrorTag(odd)).toBe('OtherError');
+    // Canary (pre-push checklist (a)): an identifier-shaped private string in
+    // `name` is not a known class, so it never reaches a log or Sentry.
+    const canary = Object.assign(new Error('x'), { name: 'MayaPrivateCanary4417' });
+    expect(romanErrorTag(canary)).toBe('OtherError');
+    expect(romanSanitizedError('roman.spend_settle_failed', canary).message).not.toContain('Canary');
     const sentry = romanSanitizedError('roman.context_failed', new Error('SELECT maya@example.com'));
     expect(sentry.message).toBe('roman.context_failed: Error');
     expect(sentry.name).toBe('RomanSanitizedError');
@@ -766,5 +771,28 @@ describe('FR1-651-5 the SafetyRouter catches a request to eat below the floor, b
     'Is a 300 calorie snack fine before training?',
   ])('not a restriction request: %s', (q) => {
     expect(classifySafety(q).class).not.toBe('eating_disorder_risk');
+  });
+});
+
+// FIX ROUND 1 (S-B1, #651) FR1-651-9: the chat is deleted while the model is
+// answering. Nothing is stored (main's 404 contract) and the spend ledger
+// settles with the real usage instead of keeping the reservation estimate.
+describe('FR1-651-9 a chat deleted during the model call settles the ledger and stores nothing', () => {
+  it('404 ROMAN_SESSION_NOT_FOUND, no Roman turn, ledger settled session_gone with the real tokens', async () => {
+    const { prisma, stored, audits } = makePrisma();
+    prisma.romanSession.updateMany.mockResolvedValueOnce({ count: 0 });
+    const a = makeAnthropic('You have 670 kcal left.');
+    const svc = new RomanService(fakeOf(prisma), grantAllEgress(), a.handle);
+    await expect(
+      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' })),
+    ).rejects.toMatchObject({ response: { code: 'ROMAN_SESSION_NOT_FOUND' } });
+    expect(stored).toEqual([]);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      prompt_token_estimate: 1000,
+      response_token_estimate: 50,
+      metadata: { state: 'settled', outcome: 'session_gone' },
+    });
+    expect(JSON.stringify(audits[0])).not.toContain('670');
   });
 });

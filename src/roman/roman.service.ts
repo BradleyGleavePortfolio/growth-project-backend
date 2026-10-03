@@ -1075,18 +1075,30 @@ export class RomanService {
     });
 
     // Persisted ONCE, already checked: what is stored is what the client sees.
-    const persisted = await this.appendMessage(caller, session.id, {
-      role: 'roman',
-      content: checked.text,
-      promptTokens,
-      completionTokens,
-      modelId: ROMAN_MODEL_PHASE_1,
-      interrupted,
-      // The voice contract allows ONE exclamation per session: once a stored
-      // reply carries it, the session records it so the next turn's prompt
-      // and post-check allow none.
-      spendsExclamation: !session.exclamation_used && checked.text.includes('!'),
-    });
+    let persisted: RomanMessage;
+    try {
+      persisted = await this.appendMessage(caller, session.id, {
+        role: 'roman',
+        content: checked.text,
+        promptTokens,
+        completionTokens,
+        modelId: ROMAN_MODEL_PHASE_1,
+        interrupted,
+        // The voice contract allows ONE exclamation per session: once a stored
+        // reply carries it, the session records it so the next turn's prompt
+        // and post-check allow none.
+        spendsExclamation: !session.exclamation_used && checked.text.includes('!'),
+      });
+    } catch (err) {
+      // The chat was deleted (or the write failed) while the model answered:
+      // nothing is stored, but the tokens were spent, so the ledger settles
+      // with the real usage instead of keeping the reservation estimate.
+      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+        outcome: err instanceof NotFoundException ? 'session_gone' : 'persist_failed',
+        router_class: route.class,
+      });
+      throw err;
+    }
     await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
       outcome: interrupted ? 'interrupted' : 'ok',
       router_class: route.class,
@@ -1339,10 +1351,46 @@ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
  * arguments, client facts or transcript text, and `safeDiagnostic` only
  * redacts ORM errors.
  */
+/** Error class names that may appear in Roman logs and Sentry; anything else is `OtherError`. */
+export const ROMAN_LOGGABLE_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'AbortError',
+  'TimeoutError',
+  'DatabaseRequestError',
+  'PrismaClientKnownRequestError',
+  'PrismaClientUnknownRequestError',
+  'PrismaClientInitializationError',
+  'PrismaClientValidationError',
+  'PrismaClientRustPanicError',
+  'APIError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'APIUserAbortError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'ConflictError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+  'OverloadedError',
+  'HttpException',
+  'ServiceUnavailableException',
+  'NotFoundException',
+  'ForbiddenException',
+]);
+
 export function romanErrorTag(err: unknown): string {
   const d = safeDiagnostic(err);
   if (!(d instanceof Error)) return 'NonError';
-  const name = /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(d.name) ? d.name : 'Error';
+  // Closed allowlist (pre-push checklist (a)): an error's `name` is set by
+  // code, but a thrown object can carry any string there.
+  const name = ROMAN_LOGGABLE_ERROR_NAMES.has(d.name) ? d.name : 'OtherError';
   const prismaCode = name === 'DatabaseRequestError' ? /\((P\d{4})\)/.exec(d.message)?.[1] : undefined;
   const status = (err as { status?: unknown } | null)?.status;
   return [
