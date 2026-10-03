@@ -302,8 +302,10 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
     await prisma.$executeRaw`
       INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
       VALUES (${forged}, ${id.stranger}, ${id.coach}, 'x', 'y', 'circle')`;
-    const seen = await as(id.bob, async (tx) =>
-      tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
+    const seen = await as(
+      id.bob,
+      async (tx) =>
+        tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
     );
     expect(seen).toEqual([]);
   });
@@ -312,7 +314,10 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
 
   it('C-610-11: a signed-in role cannot call the coach lookup (no user -> coach resolution)', async () => {
     await expect(
-      as(id.stranger, (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`),
+      as(
+        id.stranger,
+        (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`,
+      ),
     ).rejects.toThrow(/42501|permission denied/);
     // Not even for their own id: the lookup is server-only now.
     await expect(

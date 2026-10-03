@@ -104,8 +104,7 @@ describe('B-UGC-5: author delete is atomic; reopened erasure work starts fresh',
   let noteId: string;
 
   const note = () => db.table('communityVoiceNote').find((r) => r.id === noteId);
-  const searchRow = () =>
-    db.table('communitySearchEntry').find((r) => r.targetId === noteId);
+  const searchRow = () => db.table('communitySearchEntry').find((r) => r.targetId === noteId);
   const erasures = () => db.table('communityVoiceErasure');
 
   beforeEach(() => {
@@ -115,7 +114,11 @@ describe('B-UGC-5: author delete is atomic; reopened erasure work starts fresh',
     author = stub<User>(
       db.seed('user', { id: AUTHOR_ID, role: 'student', name: 'Bob', deleted_at: null }),
     );
-    const ws = db.seed('communityWorkspace', { coach_id: 'coach-1', name: 'Hall', archived_at: null });
+    const ws = db.seed('communityWorkspace', {
+      coach_id: 'coach-1',
+      name: 'Hall',
+      archived_at: null,
+    });
     const row = db.seed('communityVoiceNote', {
       workspace_id: ws.id,
       cohort_id: null,
@@ -268,7 +271,12 @@ describe('B-UGC-5: author delete is atomic; reopened erasure work starts fresh',
         completed_at: new Date('2026-09-01T00:00:00Z'),
       });
       const now = new Date('2026-10-02T12:00:00Z');
-      const rows = await recordVoiceErasures(stub<PrismaService>(db), [{ kind: 'object', target: KEY }], 'author_delete', now);
+      const rows = await recordVoiceErasures(
+        stub<PrismaService>(db),
+        [{ kind: 'object', target: KEY }],
+        'author_delete',
+        now,
+      );
       expect(rows).toEqual([expect.objectContaining({ kind: 'object', target: KEY, attempts: 0 })]);
       expect(erasures()[0]).toMatchObject({
         attempts: 0,
@@ -294,7 +302,12 @@ describe('B-UGC-5: author delete is atomic; reopened erasure work starts fresh',
         next_attempt_at: new Date('2026-10-02T20:00:00Z'),
       });
       const now = new Date('2026-10-02T12:00:00Z');
-      const rows = await recordVoiceErasures(stub<PrismaService>(db), [{ kind: 'object', target: KEY }], 'author_delete', now);
+      const rows = await recordVoiceErasures(
+        stub<PrismaService>(db),
+        [{ kind: 'object', target: KEY }],
+        'author_delete',
+        now,
+      );
       expect(rows[0].attempts).toBe(4);
       expect(erasures()[0]).toMatchObject({
         attempts: 4,
