@@ -444,7 +444,15 @@ describe('C-627-8 (Sol) the in-app inbox row and its notice receipt commit toget
       }
       return update(args);
     });
-    await notices.dispatchForCharge('ch_1').catch(() => undefined);
+    // The failed receipt is absorbed: the in-app channel is marked failed and
+    // retried, nothing is thrown to the money path.
+    let firstError: unknown = null;
+    try {
+      await notices.dispatchForCharge('ch_1');
+    } catch (err) {
+      firstError = err;
+    }
+    expect(firstError).toBeNull();
     expect(inboxRows.filter((r) => r.channel === 'inapp')).toHaveLength(0);
     await notices.dispatchPending(new Date(Date.now() + 10 * 60_000));
     expect(inboxRows.filter((r) => r.channel === 'inapp')).toHaveLength(1);
