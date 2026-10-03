@@ -13,6 +13,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import type { PushAudience, PushMode } from './package-contents.dto';
+import { SHIPPED_STATUSES } from './drop-status';
 
 // PR-17 B2 — package PUSH / BACKFILL service (decision-set in
 // PR17_EXPANSION_PLAN.md §2.2). Pushes ONE authored CoachPackageContent
@@ -86,8 +87,8 @@ import type { PushAudience, PushMode } from './package-contents.dto';
 // stamps 'fired'; the cron stamps 'delivered'. BOTH mean the buyer already
 // received this content, so the skip / resend logic must treat them
 // identically. Centralised here as the single source of truth.
-export const SHIPPED_STATUSES = ['fired', 'delivered'] as const;
-export type ShippedStatus = (typeof SHIPPED_STATUSES)[number];
+// The constant now lives in ./drop-status (shared with the buyer read model).
+export { SHIPPED_STATUSES, type ShippedStatus } from './drop-status';
 
 function isShipped(status: string): boolean {
   return (SHIPPED_STATUSES as readonly string[]).includes(status);
@@ -393,6 +394,10 @@ export class PackagePushService {
           d.status !== 'canceled',
       );
 
+      // C-640-13: every drop of one push carries the same asset, so whether it
+      // defers to the dispatcher is decided once per asset, not once per buyer
+      // (up to MAX_PUSH_AUDIENCE lookups inside this transaction).
+      const deferByAsset = new Map<string, boolean>();
       for (const drop of dueNow) {
         const purchase = purchaseById.get(drop.client_purchase_id);
         if (!purchase) continue;
@@ -405,7 +410,7 @@ export class PackagePushService {
         // pair IFF push_seq === 0; for a re-send (push_seq > 0) pass ONLY the
         // per-drop scheduledDropId so the resolver produces a FRESH delivery.
         const isResend = drop.push_seq > 0;
-        const result = await this.resolvers.materialise(drop.asset_type, {
+        const materialiseInput = {
           clientId: purchase.client_user_id,
           coachId: purchase.coach_user_id,
           assetId: drop.asset_id,
@@ -416,7 +421,22 @@ export class PackagePushService {
           clientPurchaseId: isResend ? null : purchase.id,
           contentId: isResend ? null : drop.content_id,
           tx: tx as Prisma.TransactionClient,
-        });
+        };
+        // S-MWB Programs (B-640-4): a push of a whole program to up to
+        // MAX_PUSH_AUDIENCE buyers must not copy every program inside this one
+        // interactive transaction (Prisma's 5 s default would roll back the
+        // whole push). The drop is seeded `pending` (due now) and the drip
+        // dispatcher delivers each buyer in its own transaction with retries;
+        // the inline alert below skips it (it re-reads status 'fired'), and the
+        // dispatcher alerts the buyer when the program lands.
+        const assetKey = `${drop.asset_type}:${drop.asset_id}`;
+        let defer = deferByAsset.get(assetKey);
+        if (defer === undefined) {
+          defer = await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput);
+          deferByAsset.set(assetKey, defer);
+        }
+        if (defer) continue;
+        const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
 
         await tx.scheduledDrop.update({
           where: { id: drop.id },
