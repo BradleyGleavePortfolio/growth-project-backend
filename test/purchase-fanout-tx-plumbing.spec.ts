@@ -52,9 +52,14 @@ function makePrisma() {
           return false;
         }) ?? null,
       ),
+      // B-661-1: `{ in: [...] }` is the status match payment_intent.succeeded uses.
       findFirst: jest.fn(async ({ where }: any) =>
         purchases.find((p) =>
-          Object.entries(where).every(([k, v]) => p[k] === v),
+          Object.entries(where).every(([k, v]) =>
+            v && typeof v === 'object' && 'in' in v
+              ? (v as { in: unknown[] }).in.includes(p[k])
+              : p[k] === v,
+          ),
         ) ?? null,
       ),
       update: jest.fn(async ({ where, data }: any) => {

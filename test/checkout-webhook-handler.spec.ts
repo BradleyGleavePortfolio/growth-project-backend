@@ -62,6 +62,10 @@ function makePrisma() {
         purchases.find((p) =>
           Object.entries(where).every(([k, v]) => {
             if (v === null) return p[k] === null;
+            // B-661-1: `{ in: [...] }` is the status match payment_intent.succeeded uses.
+            if (v && typeof v === 'object' && 'in' in v) {
+              return (v as { in: unknown[] }).in.includes(p[k]);
+            }
             return p[k] === v;
           }),
         ) ?? null,
@@ -986,5 +990,74 @@ describe('B-SECRETS-3 cached payment credentials are cleared on terminal states'
     expect(prisma._purchases[0].status).toBe('expired');
     expect(prisma._purchases[0].stripe_client_secret).toBeNull();
     expect(prisma._purchases[0].stripe_ephemeral_key).toBeNull();
+  });
+});
+
+// B-661-1 (Opus, round 2): a declined first attempt flips the row to
+// payment_failed while the PaymentIntent stays payable; the client's in-sheet
+// retry of the SAME PaymentIntent succeeds. That success must be claimed.
+describe('B-661-1 decline, then a successful retry of the same PaymentIntent', () => {
+  const secrets = {
+    stripe_client_secret: 'pi_r1_secret_canary',
+    stripe_ephemeral_key: 'ek_test_canary',
+  };
+  const succeeded = {
+    id: 'evt_r1b',
+    type: 'payment_intent.succeeded',
+    data: { object: { id: 'pi_r1', latest_charge: 'ch_r1' } },
+  };
+
+  it('ends paid and entitled, erases the credentials and defers the split with the charge id', async () => {
+    const { svc, prisma, splits } = makeHandlerWithSplits();
+    prisma._packages.push({ id: 'pkg-r1', billing_type: 'one_time' });
+    prisma._purchases.push({
+      id: 'cp-r1',
+      package_id: 'pkg-r1',
+      stripe_payment_intent_id: 'pi_r1',
+      status: 'pending',
+      entitlement_active: false,
+      created_at: new Date(),
+      ...secrets,
+    });
+    await svc.handle(
+      {
+        id: 'evt_r1a',
+        type: 'payment_intent.payment_failed',
+        data: { object: { id: 'pi_r1', last_payment_error: { message: 'card_declined' } } },
+      },
+      txFixture(prisma),
+    );
+    expect(prisma._purchases[0].status).toBe('payment_failed');
+    // Kept for the retry of the same PaymentIntent.
+    expect(prisma._purchases[0].stripe_client_secret).toBe(secrets.stripe_client_secret);
+
+    const prefetched = await svc.prefetchForOuterTx(succeeded);
+    expect(prefetched.chargeIdByPurchaseId).toEqual({ 'cp-r1': 'ch_r1' });
+    const result = await svc.handle(succeeded, txFixture(prisma), prefetched);
+
+    expect(result.claimed).toBe(true);
+    expect(prisma._purchases[0].status).toBe('paid');
+    expect(prisma._purchases[0].entitlement_active).toBe(true);
+    expect(prisma._purchases[0].last_error).toBeNull();
+    expect(prisma._purchases[0].stripe_client_secret).toBeNull();
+    expect(prisma._purchases[0].stripe_ephemeral_key).toBeNull();
+    expect(splits.onChargeSucceeded).not.toHaveBeenCalled();
+    expect(result.deferredSplit!.charge_id).toBe('ch_r1');
+    expect(result.deferredSplit!.purchase.id).toBe('cp-r1');
+  });
+
+  it('(control) a paid row is not claimed again by a redelivered success', async () => {
+    const { svc, prisma } = makeHandlerWithSplits();
+    prisma._packages.push({ id: 'pkg-r2', billing_type: 'one_time' });
+    prisma._purchases.push({
+      id: 'cp-r2',
+      package_id: 'pkg-r2',
+      stripe_payment_intent_id: 'pi_r1',
+      status: 'paid',
+      entitlement_active: true,
+      created_at: new Date(),
+    });
+    const result = await svc.handle(succeeded, txFixture(prisma), {});
+    expect(result.claimed).toBe(false);
   });
 });
