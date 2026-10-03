@@ -66,6 +66,9 @@ export class FeatureFlagsService {
         communityReachable && envOn('FEATURE_COMMUNITY_CLASSROOM_POSTS'),
       community_events:
         communityReachable && envOn('FEATURE_COMMUNITY_EVENTS'),
+      // A1-COACHLESS — a client-only surface (coachless Home banner, code
+      // sheet, Roman card). Coaches and owners always read it as OFF.
+      coachless_home: ctx.role === 'student' && envOn('FEATURE_COACHLESS_HOME'),
     };
   }
 

@@ -200,6 +200,11 @@ model User {
   signup_ref                String?
 
   profile                        UserProfile?
+  // A1-COACHLESS — featured-coach config rows naming this coach, the user's
+  // coach-code redemption ledger and the coachless Roman card state.
+  featured_coach_configs         FeaturedCoachConfig[]    @relation("FeaturedCoachConfigCoach")
+  coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
+  coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
   logged_entries                 LoggedFoodEntry[]
   workouts                       WorkoutSession[]
   fasting_windows                FastingWindow[]
@@ -3405,6 +3410,8 @@ model CoachPackage {
   // C01 — invite codes / permanent coach codes bound to this package.
   bound_invite_codes    InviteCode[]   @relation("InviteCodePackage")
   bound_coach_profiles  CoachProfile[] @relation("CoachProfileInviteCodePackage")
+  // A1-COACHLESS — featured-coach configs that sell this package.
+  featured_coach_configs FeaturedCoachConfig[] @relation("FeaturedCoachConfigPackage")
 
   // R43 Storefront Phase 1 — guest-checkout share links.
   // share_token is minted on demand via POST /packages/:id/share-link and
@@ -7374,4 +7381,71 @@ model AiProcessingConsentEvent {
   created_at      DateTime @default(now())
 
   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+}
+
+// ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
+//
+// FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
+// the platform's featured-coach offer shown to coachless clients: the code,
+// the banner/offer/Roman copy and the Roman card frequency caps. Edited only
+// by the platform owner through PUT /admin/featured-coach (audited). The
+// "accepting clients" state served to clients is this row's switch AND the
+// featured coach being able to accept clients (code resolves, coach role,
+// CoachSubscription active/trialing/grandfathered).
+model FeaturedCoachConfig {
+  id                      String        @id @default("default")
+  coach_user_id           String?
+  coach                   User?         @relation("FeaturedCoachConfigCoach", fields: [coach_user_id], references: [id], onDelete: SetNull)
+  code                    String?
+  package_id              String?
+  package                 CoachPackage? @relation("FeaturedCoachConfigPackage", fields: [package_id], references: [id], onDelete: SetNull)
+  banner_title            String
+  offer_text              String?
+  roman_pitch_text        String?
+  accepting_clients       Boolean       @default(false)
+  roman_enabled           Boolean       @default(false)
+  roman_min_hours_between Int           @default(24)
+  roman_max_per_week      Int           @default(3)
+  roman_snooze_days       Int           @default(14)
+  roman_max_not_now       Int           @default(2)
+  updated_by_user_id      String?
+  created_at              DateTime      @default(now())
+  updated_at              DateTime      @updatedAt
+}
+
+// Idempotency ledger + attempt record for POST /coachless/coach-code/redeem.
+// One row per (user, Idempotency-Key). 'completed' rows replay their stored
+// response; 'failed' rows may be reclaimed by a retry of the same key;
+// 'in_progress' rows older than the stale window may be reclaimed after a
+// crash. Rows cascade with the user (account erasure).
+model CoachCodeRedemption {
+  id              String   @id @default(uuid())
+  user_id         String
+  user            User     @relation("CoachCodeRedemptionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  idempotency_key String
+  request_hash    String
+  status          String   @default("in_progress")
+  outcome         String?
+  coach_id        String?
+  http_status     Int?
+  response        Json?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@unique([user_id, idempotency_key])
+  @@index([user_id, created_at])
+}
+
+// Per-user state of the scripted coachless Roman card: impression counts for
+// the frequency cap and the persisted "Not now". Cascades with the user.
+model CoachlessPromptState {
+  user_id                 String    @id
+  user                    User      @relation("CoachlessPromptStateUser", fields: [user_id], references: [id], onDelete: Cascade)
+  roman_seen_count        Int       @default(0)
+  roman_window_started_at DateTime?
+  roman_last_seen_at      DateTime?
+  roman_not_now_count     Int       @default(0)
+  roman_not_now_at        DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
 }
