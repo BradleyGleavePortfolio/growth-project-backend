@@ -44,6 +44,18 @@ export class CoachConnectController {
     return this.svc.getStatus(req.user.id);
   }
 
+  // POST /coach/connect/status/refresh — S-COACH: the app calls this when
+  // the coach comes back from Stripe-hosted onboarding so the status it
+  // shows is Stripe's, not a webhook-lagged mirror. Throttled because every
+  // call is a Stripe read.
+  @Roles('coach', 'owner')
+  @Post('status/refresh')
+  @Throttle({ default: { ttl: 60_000, limit: 12 } })
+  @HttpCode(HttpStatus.OK)
+  async refreshStatus(@Req() req: AuthedRequest) {
+    return this.svc.refreshStatus(req.user.id);
+  }
+
   // GET /coach/connect/metrics — the requesting coach's MRR / payout
   // metrics. Scoped by req.user.id. Sub-coaches blocked by class-level
   // NoActiveSubCoachGuard (financial surface).
