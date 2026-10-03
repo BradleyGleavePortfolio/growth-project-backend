@@ -19,6 +19,11 @@ function matchValue(actual: any, cond: any): boolean {
   if (typeof cond === 'object' && !Array.isArray(cond)) {
     const ops: Row = cond;
     for (const [op, v] of Object.entries(ops)) {
+      // SQL: a range comparison against NULL is never true (JS would coerce
+      // null to 0 and call it smaller than any date).
+      if (['lt', 'lte', 'gt', 'gte'].includes(op) && (actual === null || actual === undefined)) {
+        return false;
+      }
       switch (op) {
         case 'lt':
           if (!(actual < v)) return false;
@@ -175,8 +180,40 @@ export class Model {
     }
     return pick(rows[0] ?? null, select, include, this.db);
   };
-  findMany = async ({ where, select }: any = {}) =>
-    this.rows.filter((r) => matchWhere(r, where)).map((r) => pick(r, select) as Row);
+  // Honors orderBy (object or array; nulls sort last ascending, as Postgres),
+  // cursor (+ skip) and take, so a service's batch selection is exercised as
+  // production Prisma runs it (B-641-8: a fixture that ignored take/orderBy
+  // hid a starved retry batch).
+  findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
+    let rows = this.rows.filter((r) => matchWhere(r, where));
+    if (orderBy) {
+      const keys: Array<[string, string]> = (Array.isArray(orderBy) ? orderBy : [orderBy]).map(
+        (o: Row) => Object.entries(o)[0] as [string, string],
+      );
+      const cmp = (a: any, b: any): number => {
+        const an = a === null || a === undefined;
+        const bn = b === null || b === undefined;
+        if (an || bn) return an && bn ? 0 : an ? 1 : -1;
+        const av = a instanceof Date ? a.getTime() : a;
+        const bv = b instanceof Date ? b.getTime() : b;
+        return av < bv ? -1 : av > bv ? 1 : 0;
+      };
+      rows = [...rows].sort((a, b) => {
+        for (const [k, dir] of keys) {
+          const c = cmp(a[k], b[k]) * (dir === 'desc' ? -1 : 1);
+          if (c !== 0) return c;
+        }
+        return 0;
+      });
+    }
+    if (cursor) {
+      const idx = rows.findIndex((r) => matchWhere(r, cursor));
+      rows = idx < 0 ? [] : rows.slice(idx);
+    }
+    if (typeof skip === 'number') rows = rows.slice(skip);
+    if (typeof take === 'number') rows = rows.slice(0, take);
+    return rows.map((r) => pick(r, select) as Row);
+  };
   count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where)).length;
   create = async ({ data, select }: any) => {
     const row = {

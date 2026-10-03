@@ -199,6 +199,9 @@ export class TransferOrchestratorService {
     amount_cents?: number; // omit = full reversal
     idempotency_key?: string;
     claim?: (tx: Prisma.TransactionClient) => Promise<boolean>;
+    // B-COACH-5: ids only (e.g. tgp_charge_refund_id), so an operator and the
+    // reconcile path can attribute each reversal in Stripe to its refund.
+    metadata?: Record<string, string>;
   }): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
@@ -213,7 +216,7 @@ export class TransferOrchestratorService {
     await this.stripe.reverseTransfer({
       transfer_id: row.stripe_transfer_id,
       amount,
-      metadata: { tgp_purchase_id: row.purchase_id },
+      metadata: { ...(args.metadata ?? {}), tgp_purchase_id: row.purchase_id },
       idempotencyKey,
     });
     const claim = args.claim;
@@ -223,6 +226,25 @@ export class TransferOrchestratorService {
         return tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
       }
       return this.recordReversal(tx, row.id, amount);
+    });
+  }
+
+  // B-COACH-5 (B-641-7 review): record a reversal that already exists in
+  // Stripe (found by the owner reconcile path), with no Stripe call. Recorded
+  // only when `claim` returns true inside the same transaction.
+  async recordReconciledReversal(args: {
+    transfer_row_id: string;
+    amount_cents: number;
+    claim: (tx: Prisma.TransactionClient) => Promise<boolean>;
+  }): Promise<ConnectTransfer> {
+    if (!Number.isInteger(args.amount_cents) || args.amount_cents <= 0) {
+      return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (!(await args.claim(tx))) {
+        return tx.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
+      }
+      return this.recordReversal(tx, args.transfer_row_id, args.amount_cents);
     });
   }
 

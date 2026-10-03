@@ -225,9 +225,9 @@ describe('B-641-7 — one refund, one reversal', () => {
     expect(h.alerts).toHaveBeenCalledTimes(1);
 
     const first = await h.svc.retryPendingTransferReversals();
-    expect(first).toEqual({ retried: 1, reversed: 1, needs_review: 0 });
+    expect(first).toEqual({ retried: 1, reversed: 1, needs_review: 0, in_review: 0 });
     const second = await h.svc.retryPendingTransferReversals();
-    expect(second).toEqual({ retried: 0, reversed: 0, needs_review: 0 });
+    expect(second).toEqual({ retried: 0, reversed: 0, needs_review: 0, in_review: 0 });
 
     expect(headCoach(h.db)).toBe(122);
     expect(stripeTotal(h)).toBe(122);
@@ -292,7 +292,7 @@ describe('B-641-7 — one refund, one reversal', () => {
     await h.svc.handle(refundUpdated);
     const later = new Date(Date.now() + REFUND_TRANSFER_RETRY_WINDOW_MS + 60_000);
     const out = await h.svc.retryPendingTransferReversals(later);
-    expect(out).toEqual({ retried: 0, reversed: 0, needs_review: 1 });
+    expect(out).toEqual({ retried: 0, reversed: 0, needs_review: 1, in_review: 1 });
     expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
     expect(headCoach(h.db)).toBe(0);
   });
@@ -307,6 +307,7 @@ describe('B-641-7 — one refund, one reversal', () => {
       retried: 0,
       reversed: 0,
       needs_review: 0,
+      in_review: 0,
     });
   });
 });
