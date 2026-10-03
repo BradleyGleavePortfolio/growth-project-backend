@@ -40,8 +40,8 @@ describe('Dunning v2 cadence constants (operator-locked)', () => {
     expect(DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS).toBe(3);
   });
 
-  it('sweep cron is the fixed 02:00 UTC daily expression', () => {
-    expect(DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION).toBe('0 2 * * *');
+  it('sweep cron is hourly at minute 7 UTC (S-DUNNING: lock within an hour of Day 10)', () => {
+    expect(DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION).toBe('7 * * * *');
   });
 
   it('exposes the stable LOCKED 403 code', () => {
