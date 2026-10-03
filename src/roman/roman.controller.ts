@@ -125,6 +125,9 @@ export class RomanController {
     // ai_consent_required (Settings > Privacy) before the turn is stored or
     // the stream opens.
     await this.roman.assertMayUseAi(caller);
+    // OR-113-2 — daily spend cap, checked before the turn is stored (coded
+    // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
+    await this.roman.assertDailyCapacity();
     await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,
@@ -156,6 +159,7 @@ export class RomanController {
     try {
       for await (const chunk of this.roman.streamAssistantTurn(caller, session, {
         signal: abort.signal,
+        userMessage: dto.content,
       })) {
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         if (chunk.type === 'done') break;

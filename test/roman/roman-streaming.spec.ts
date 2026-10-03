@@ -144,14 +144,34 @@ function makePrisma(sessionOwner = 'user-A') {
     }),
   };
 
+  // OR-113-2: the content-free spend ledger (reserve, then settle).
+  const audits: Array<Record<string, unknown>> = [];
+  const aiRequestAudit = {
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      audits.push({ ...data });
+      return data;
+    }),
+    aggregate: jest.fn(async () => ({
+      _sum: { prompt_token_estimate: 0, response_token_estimate: 0 },
+    })),
+    update: jest.fn(
+      async ({ where, data }: { where: { request_id: string }; data: Record<string, unknown> }) => {
+        const row = audits.find((a) => a.request_id === where.request_id);
+        if (row) Object.assign(row, data);
+        return row;
+      },
+    ),
+  };
+
   const prisma = {
     romanSession,
     romanMessage,
+    aiRequestAudit,
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ romanMessage, romanSession }),
     ),
   };
-  return { prisma, session, messages, romanMessage };
+  return { prisma, session, messages, romanMessage, audits };
 }
 
 // ─── fake Anthropic client ────────────────────────────────────────────────────
@@ -247,7 +267,8 @@ describe('Roman SSE streaming — happy path', () => {
     const deltas = (frames as Array<{ type: string; text?: string }>).filter(
       (f) => f.type === 'delta',
     );
-    expect(deltas.map((d) => d.text)).toEqual(['Push ', 'harder', '.']);
+    // A-R4-4: the reply is buffered, post-checked, then emitted ONCE.
+    expect(deltas.map((d) => d.text)).toEqual(['Push harder.']);
 
     const done = (frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>).find(
       (f) => f.type === 'done',
@@ -285,7 +306,7 @@ describe('Roman SSE streaming — happy path', () => {
     const deltaTexts = frames
       .filter((f) => f.event === 'message' && f.data?.type === 'delta')
       .map((f) => f.data.text);
-    expect(deltaTexts).toEqual(['Let', "'s go"]);
+    expect(deltaTexts).toEqual(["Let's go"]);
     const done = frames.find((f) => f.data?.type === 'done');
     expect(done?.data.interrupted).toBe(false);
     expect(isEnded()).toBe(true);
