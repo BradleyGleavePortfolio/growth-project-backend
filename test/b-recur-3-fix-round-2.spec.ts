@@ -14,6 +14,7 @@
 //           a payment already processing) was canceled as "missing sheet";
 //   B-654-7 a same-key replay returned the old intent labelled with the
 //           package's NEW terms.
+import { Logger } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
@@ -522,5 +523,29 @@ describe('B-334-3 support: the plan read reports what Stripe shows for a confirm
       ...v,
     }));
     expect(list[0].checkout_state).toBeNull();
+  });
+
+  it('(failed before) checklist (a): a caught error is logged by its code, never by its message', async () => {
+    const { svc, stripe } = setup();
+    const out = await buy(svc, KEY1);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      stripe.retrieveSubscriptionForCheckout.mockRejectedValueOnce(
+        new StripeConnectApiError(
+          'No such customer for client a.person@example.test',
+          404,
+          'resource_missing',
+          'invalid_request_error',
+        ),
+      );
+      expect(await checkoutStateOf(svc, out.purchase_id)).toBe('unknown');
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain(out.purchase_id);
+      expect(logged).not.toContain('example.test');
+      expect(logged).not.toContain('No such customer');
+      expect(logged).toContain('resource_missing');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
