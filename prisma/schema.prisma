@@ -991,6 +991,15 @@ model NotificationPreferences {
   quiet_hours_start      String  @default("22:00")
   quiet_hours_end        String  @default("06:00")
   timezone               String  @default("America/Los_Angeles")
+  // B-647-1 / B-647-2 (zone provenance): `timezone` above has a schema
+  // default, so a stored row is not proof of the person's zone. These two are
+  // set only when the zone was actually supplied: 'device' (the mobile app
+  // sends the device IANA zone on sign-in, on foreground when it changed, and
+  // at onboarding) or 'settings' (an explicit PATCH). NULL = never supplied:
+  // notification copy and quiet hours ignore `timezone` and fall back to the
+  // coach's zone (recipient-timezone.ts), never silently to Pacific.
+  timezone_source        String?
+  timezone_updated_at    DateTime?
 
   // Phase 9 — Per-kind × per-channel preference flags.
   // muted=true overrides all per-kind settings (master kill switch).
@@ -2144,9 +2153,14 @@ model NotificationDeliveryLog {
   session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
   // kind matches NotificationKind values, e.g. booking_reminder_24h.
   kind       String
+  // Sol B-647-1: the session start time this claim was made for (the schedule
+  // generation). A reschedule changes start_at, so the new time gets a new
+  // claim without deleting the old one, a stale sweep holding the old time can
+  // never suppress the new reminder, and a no-op reschedule cannot re-send.
+  start_at   DateTime
   created_at DateTime        @default(now())
 
-  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
+  @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
   @@index([session_id])
   @@index([user_id, created_at])
 }
