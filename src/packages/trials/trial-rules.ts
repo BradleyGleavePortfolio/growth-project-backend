@@ -64,7 +64,7 @@ export function assertValidTrial(input: TrialShape): void {
     throw new BadRequestException({
       error: TrialErrorCode.NOT_ON_FREE,
       code: TrialErrorCode.NOT_ON_FREE,
-      message: 'A free package has nothing to try first. Set the trial to 0 days, or set a price.',
+      message: 'A free package has nothing to try first. Remove the trial, or set a price.',
       field: 'trial_days',
     });
   }
@@ -77,8 +77,8 @@ export function assertValidTrial(input: TrialShape): void {
       error: TrialErrorCode.REQUIRES_RECURRING,
       code: TrialErrorCode.REQUIRES_RECURRING,
       message: hasCompanion
-        ? 'Free trials work on plans that renew with no charge today. Remove the one-time price, or set the trial to 0 days.'
-        : 'Free trials work on plans that renew. Make this package renew, or set the trial to 0 days.',
+        ? 'Free trials work on plans that renew with no charge today. Remove the one-time price or the trial.'
+        : 'Free trials work on plans that renew. Make this package renew, or remove the trial.',
       field: 'trial_days',
     });
   }

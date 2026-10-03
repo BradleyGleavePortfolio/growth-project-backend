@@ -25,6 +25,7 @@ import {
   trialConflictBackoffMs,
 } from '../src/packages/trials/trial-conflict.service';
 import { trialEndingCopy, willChargeCard } from '../src/packages/trials/trial-copy';
+import { assertValidTrial } from '../src/packages/trials/trial-rules';
 import {
   TRIAL_NOTICE_LEAD_MS,
   TRIAL_NOTICE_LEASE_MS,
@@ -760,6 +761,27 @@ describe('B-656-5 — card removed mid-trial: access kept, the truth told', () =
       expect(text).not.toMatch(/!/);
       expect(text).not.toMatch(/\b(we|us|our)\b/i);
       expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
+  });
+});
+
+describe('C-338-2 (Opus, mobile #338) — refusal copy names a fix the editor offers', () => {
+  it('no trial refusal tells the coach to "set the trial to 0 days" (the editor offers None)', () => {
+    const shapes = [
+      { trial_days: 7, amount_cents: 0, billing_type: 'recurring' },
+      { trial_days: 7, amount_cents: 4900, billing_type: 'one_time' },
+      { trial_days: 7, amount_cents: 4900, billing_type: 'recurring', recurring_amount_cents: 900 },
+    ];
+    for (const shape of shapes) {
+      let message = '';
+      try {
+        assertValidTrial(stub<Parameters<typeof assertValidTrial>[0]>(shape));
+      } catch (err) {
+        const body = (err as { getResponse?: () => unknown }).getResponse?.();
+        message = String((body as { message?: unknown } | undefined)?.message ?? '');
+      }
+      expect(message).toMatch(/remove the trial|or the trial/i);
+      expect(message).not.toMatch(/0 days/);
     }
   });
 });
