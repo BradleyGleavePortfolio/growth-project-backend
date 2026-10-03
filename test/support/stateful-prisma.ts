@@ -19,6 +19,11 @@ function matchValue(actual: any, cond: any): boolean {
   if (typeof cond === 'object' && !Array.isArray(cond)) {
     const ops: Row = cond;
     for (const [op, v] of Object.entries(ops)) {
+      // SQL: a range comparison against NULL is never true (JS would coerce
+      // null to 0 and call it smaller than any date).
+      if (['lt', 'lte', 'gt', 'gte'].includes(op) && (actual === null || actual === undefined)) {
+        return false;
+      }
       switch (op) {
         case 'lt':
           if (!(actual < v)) return false;
@@ -34,6 +39,9 @@ function matchValue(actual: any, cond: any): boolean {
           break;
         case 'in':
           if (!(v as unknown[]).includes(actual)) return false;
+          break;
+        case 'notIn':
+          if ((v as unknown[]).includes(actual)) return false;
           break;
         case 'not':
           if (matchValue(actual, v)) return false;
@@ -71,7 +79,7 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
       !(cond instanceof Date) &&
       !Array.isArray(cond) &&
       Object.keys(cond).some(
-        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'not', 'equals'].includes(op),
+        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals'].includes(op),
       )
     ) {
       // compound unique selector, e.g. { user_id_code: { user_id, code } }
@@ -153,6 +161,15 @@ export class Model {
     this.db.hit(this.name, 'findUnique', where);
     return pick(this.rows.find((r) => matchWhere(r, where)) ?? null, select, include, this.db);
   };
+  findUniqueOrThrow = async (args: any) => {
+    const row = await this.findUnique(args);
+    if (!row) {
+      const e: any = new Error(`${this.name} not found`);
+      e.code = 'P2025';
+      throw e;
+    }
+    return row;
+  };
   findFirst = async ({ where, select, include, orderBy }: any = {}) => {
     let rows = this.rows.filter((r) => matchWhere(r, where));
     if (orderBy) {
@@ -163,8 +180,46 @@ export class Model {
     }
     return pick(rows[0] ?? null, select, include, this.db);
   };
-  findMany = async ({ where, select }: any = {}) =>
-    this.rows.filter((r) => matchWhere(r, where)).map((r) => pick(r, select) as Row);
+  // Honors orderBy (object or array; nulls sort last ascending, as Postgres),
+  // cursor (+ skip) and take, so a service's batch selection is exercised as
+  // production Prisma runs it (B-641-8: a fixture that ignored take/orderBy
+  // hid a starved retry batch).
+  findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
+    let rows = this.rows.filter((r) => matchWhere(r, where));
+    if (orderBy) {
+      // { field: 'asc' | 'desc' } or { field: { sort, nulls } }; without
+      // `nulls`, Postgres puts nulls last ascending and first descending.
+      const keys: Array<[string, string, string | undefined]> = (
+        Array.isArray(orderBy) ? orderBy : [orderBy]
+      ).map((o: Row) => {
+        const [k, spec] = Object.entries(o)[0] as [string, any];
+        return typeof spec === 'string' ? [k, spec, undefined] : [k, spec.sort, spec.nulls];
+      });
+      rows = [...rows].sort((a, b) => {
+        for (const [k, dir, nulls] of keys) {
+          const an = a[k] === null || a[k] === undefined;
+          const bn = b[k] === null || b[k] === undefined;
+          if (an || bn) {
+            if (an && bn) continue;
+            const nullsFirst = nulls ? nulls === 'first' : dir === 'desc';
+            return an === nullsFirst ? -1 : 1;
+          }
+          const av = a[k] instanceof Date ? a[k].getTime() : a[k];
+          const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
+          const c = (av < bv ? -1 : av > bv ? 1 : 0) * (dir === 'desc' ? -1 : 1);
+          if (c !== 0) return c;
+        }
+        return 0;
+      });
+    }
+    if (cursor) {
+      const idx = rows.findIndex((r) => matchWhere(r, cursor));
+      rows = idx < 0 ? [] : rows.slice(idx);
+    }
+    if (typeof skip === 'number') rows = rows.slice(skip);
+    if (typeof take === 'number') rows = rows.slice(0, take);
+    return rows.map((r) => pick(r, select) as Row);
+  };
   count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where)).length;
   create = async ({ data, select }: any) => {
     const row = {
@@ -194,7 +249,10 @@ export class Model {
     let count = 0;
     this.rows.forEach((r, i) => {
       if (matchWhere(r, where)) {
-        this.rows[i] = applyData(r, data);
+        const next = applyData(r, data);
+        // Postgres enforces unique columns on UPDATE too (B-641-9).
+        if (this.violates(next, r)) throw this.uniqueError();
+        this.rows[i] = next;
         count++;
       }
     });

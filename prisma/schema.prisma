@@ -4376,6 +4376,22 @@ model ChargeRefund {
   // Whether we've reversed the matching ledger entry / head-coach transfer.
   ledger_reversed      Boolean        @default(false)
   transfer_reversed    Boolean        @default(false)
+  // B-641-7/8 (B-COACH-5): the first time a head-coach transfer reversal for
+  // this refund was (or may have been) sent to Stripe under the refund-scoped
+  // key. Stripe keeps a key for 24 hours from its first request, so a retry is
+  // admitted only while this is under 23 hours old, for every caller.
+  transfer_reversal_first_attempt_at DateTime?
+  // Set once when a reversal is still owed past that window: the row leaves
+  // automatic retry, an operator alert fires once, and an owner reconciles it
+  // (POST /v1/admin/payments/refund-reversals/:id/reconcile).
+  transfer_reversal_review_at        DateTime?
+  // B-641-8 (narrowed): the latest admitted attempt. The retry sweep takes
+  // never-attempted rows first, then the least recently attempted, so rows
+  // that keep failing never hold later refunds back across runs.
+  transfer_reversal_last_attempt_at  DateTime?
+  // B-641-9: the Stripe transfer reversal an owner reconcile recorded for
+  // this refund. Unique, so one Stripe reversal settles at most one refund.
+  transfer_reversal_stripe_id        String?   @unique
   posted_at            DateTime?
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
@@ -4383,6 +4399,7 @@ model ChargeRefund {
   @@index([purchase_id])
   @@index([status])
   @@index([stripe_charge_id])
+  @@index([transfer_reversed, transfer_reversal_review_at])
 }
 
 // F2 — Partial-refund coach-decision surface.
