@@ -5,8 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { CoachPackage, ClientPurchase } from '@prisma/client';
+import type { CoachPackage, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // CoachPackage CRUD. Owns coach offers / packages.
@@ -73,8 +74,13 @@ export interface UpdatePackageInput {
   is_active?: boolean;
 }
 
+/** A subscriber row as a coach may see it (C-641-2: no client Stripe secrets). */
+export type CoachSubscriberRow = Prisma.ClientPurchaseGetPayload<{
+  select: typeof COACH_PURCHASE_SELECT;
+}>;
+
 export interface SubscribersPage {
-  subscribers: ClientPurchase[];
+  subscribers: CoachSubscriberRow[];
   next_offset: number | null;
   total_returned: number;
 }
@@ -518,6 +524,9 @@ export class PackagesService {
       orderBy: { created_at: 'desc' },
       skip: offset,
       take: limit + 1, // peek for next page
+      // C-641-2: allow-listed fields only — never the client's Stripe
+      // client_secret / ephemeral key or internal Stripe ids.
+      select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;

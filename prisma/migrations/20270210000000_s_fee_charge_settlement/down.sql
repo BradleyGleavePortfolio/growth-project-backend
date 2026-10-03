@@ -13,6 +13,12 @@ BEGIN
     RAISE EXCEPTION 'S-FEE down refused: settlement rows exist; fix forward';
   END IF;
   IF EXISTS (
+    SELECT 1 FROM "ConnectTransfer"
+    WHERE "stripe_send_unresolved_at" IS NOT NULL AND "status" = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'S-FEE down refused: a transfer has an unresolved Stripe create; dropping the marker could re-send it';
+  END IF;
+  IF EXISTS (
     SELECT 1 FROM "SplitLedgerEntry"
     GROUP BY "purchase_id", "kind", "payee_user_id"
     HAVING COUNT(*) > 1
@@ -28,6 +34,7 @@ DROP TABLE IF EXISTS "TransferReversalOp";
 DROP TABLE IF EXISTS "PayoutAdjustmentNotice";
 DROP TABLE "PayeeRecovery";
 DROP TABLE "ChargeSettlement";
+ALTER TABLE "ConnectTransfer" DROP COLUMN "stripe_send_unresolved_at";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "reversal_seq";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "netted_recovery_cents";
 ALTER TABLE "ConnectTransfer" DROP COLUMN "kind";

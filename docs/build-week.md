@@ -17,7 +17,7 @@ an in-place UPDATE of the seeded rows. The current arc:
 
 | Day | Title          | Focus area                       |
 | --- | -------------- | -------------------------------- |
-| 1   | Audit          | Diagnostic + Baseline            |
+| 1   | Audit          | Consultation + Baseline          |
 | 2   | Strategy       | 90-Day Arc + Calendar Cuts       |
 | 3   | Income Setup   | Offer + Outreach                 |
 | 4   | Body Protocol  | Macros + Training + Sleep        |

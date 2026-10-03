@@ -25,6 +25,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityEventsController } from '../../../src/community/events/community-events.controller';
 import { CommunityEventsService } from '../../../src/community/events/community-events.service';
@@ -41,14 +42,14 @@ import { SupabaseService } from '../../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { NotificationsService } from '../../../src/notifications/notifications.service';
 import { liveDbUrl } from '../_support/community-db';
+import { insertLiveUsers } from '../_support/community-live-seed';
+import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-events] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-events] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -81,10 +82,8 @@ itLive('community v2-3 events (live DB)', () => {
       const req = ctx.switchToHttp().getRequest();
       const userId = req.headers[H_USER] as string | undefined;
       if (!userId) throw new UnauthorizedException();
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       req.user = user;
       return true;
@@ -139,6 +138,7 @@ itLive('community v2-3 events (live DB)', () => {
       controllers: [CommunityEventsController],
       providers: [
         CommunityEventsService,
+        CommunitySafetyService,
         CommunityEventsRepository,
         CommunityAccessService,
         CommunityFeatureFlagGuard,
@@ -190,19 +190,14 @@ itLive('community v2-3 events (live DB)', () => {
     ids.studentB = randomUUID();
     ids.studentA2 = randomUUID();
 
-    const users: Array<[string, string, string, string | null]> = [
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
       [ids.studentA2, 'student', 'Student A2', ids.coachA],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: { coach_id: ids.coachA, name: 'WS A', slug: `ws-a-${tag}` },
@@ -246,13 +241,9 @@ itLive('community v2-3 events (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [
-      ids.coachA,
-      ids.coachB,
-      ids.studentA,
-      ids.studentB,
-      ids.studentA2,
-    ].filter(Boolean);
+    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB, ids.studentA2].filter(
+      Boolean,
+    );
     const wsIds = [ids.wsA, ids.wsB].filter(Boolean);
     await prisma.communityEventRsvp.deleteMany({
       where: { workspace_id: { in: wsIds } },
@@ -270,9 +261,7 @@ itLive('community v2-3 events (live DB)', () => {
   const futureIso = (hoursFromNow: number) =>
     new Date(Date.now() + hoursFromNow * 3600_000).toISOString();
 
-  async function createEventAsCoach(
-    over: Record<string, unknown> = {},
-  ): Promise<string> {
+  async function createEventAsCoach(over: Record<string, unknown> = {}): Promise<string> {
     const res = await call(
       'POST',
       `/api/community/workspaces/${ids.wsA}/events`,
@@ -325,35 +314,25 @@ itLive('community v2-3 events (live DB)', () => {
     expect(declined.status).toBe(201);
     expect(declined.body.rsvp.status).toBe('declined');
 
-    const detail = await call(
-      'GET',
-      `/api/community/events/${eventId}`,
-      asUser(ids.studentA),
-    );
+    const detail = await call('GET', `/api/community/events/${eventId}`, asUser(ids.studentA));
     expect(detail.body.event.viewer_rsvp_status).toBe('declined');
     expect(detail.body.event.rsvp_counts.declined).toBe(1);
   });
 
   it('4. client cannot self-assert attended → 400', async () => {
     const eventId = await createEventAsCoach();
-    const res = await call(
-      'POST',
-      `/api/community/events/${eventId}/rsvp`,
-      asUser(ids.studentA),
-      { status: 'attended' },
-    );
+    const res = await call('POST', `/api/community/events/${eventId}/rsvp`, asUser(ids.studentA), {
+      status: 'attended',
+    });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('community.event.invalid_rsvp_status');
   });
 
   it('5. lifecycle: live → replay (external link) → reflected', async () => {
     const eventId = await createEventAsCoach();
-    const live = await call(
-      'PATCH',
-      `/api/community/events/${eventId}`,
-      asUser(ids.coachA),
-      { state: 'live' },
-    );
+    const live = await call('PATCH', `/api/community/events/${eventId}`, asUser(ids.coachA), {
+      state: 'live',
+    });
     expect(live.body.event.state).toBe('live');
 
     const replay = await call(
@@ -382,12 +361,9 @@ itLive('community v2-3 events (live DB)', () => {
     await call('PATCH', `/api/community/events/${eventId}`, asUser(ids.coachA), {
       state: 'live',
     });
-    const back = await call(
-      'PATCH',
-      `/api/community/events/${eventId}`,
-      asUser(ids.coachA),
-      { state: 'scheduled' },
-    );
+    const back = await call('PATCH', `/api/community/events/${eventId}`, asUser(ids.coachA), {
+      state: 'scheduled',
+    });
     expect(back.status).toBe(400);
     expect(back.body.code).toBe('community.event.illegal_transition');
   });
@@ -409,33 +385,23 @@ itLive('community v2-3 events (live DB)', () => {
 
   it('8. cross-tenant: foreign student cannot read event → 404', async () => {
     const eventId = await createEventAsCoach();
-    const res = await call(
-      'GET',
-      `/api/community/events/${eventId}`,
-      asUser(ids.studentB),
-    );
+    const res = await call('GET', `/api/community/events/${eventId}`, asUser(ids.studentB));
     expect(res.status).toBe(404);
   });
 
   it('9. cross-tenant: foreign student cannot RSVP → 404', async () => {
     const eventId = await createEventAsCoach();
-    const res = await call(
-      'POST',
-      `/api/community/events/${eventId}/rsvp`,
-      asUser(ids.studentB),
-      { status: 'going' },
-    );
+    const res = await call('POST', `/api/community/events/${eventId}/rsvp`, asUser(ids.studentB), {
+      status: 'going',
+    });
     expect(res.status).toBe(404);
   });
 
   it('10. cross-tenant: foreign coach cannot transition another tenant event → 403', async () => {
     const eventId = await createEventAsCoach();
-    const res = await call(
-      'PATCH',
-      `/api/community/events/${eventId}`,
-      asUser(ids.coachB),
-      { state: 'live' },
-    );
+    const res = await call('PATCH', `/api/community/events/${eventId}`, asUser(ids.coachB), {
+      state: 'live',
+    });
     // coachB has no access to wsA → resolves as 404 (existence not leaked).
     expect(res.status).toBe(404);
   });
@@ -466,11 +432,7 @@ itLive('community v2-3 events (live DB)', () => {
         asUser(ids.studentA),
       );
       expect(read.status).toBe(200);
-      const detail = await call(
-        'GET',
-        `/api/community/events/${eventId}`,
-        asUser(ids.studentA),
-      );
+      const detail = await call('GET', `/api/community/events/${eventId}`, asUser(ids.studentA));
       expect(detail.status).toBe(200);
     } finally {
       process.env.FEATURE_COMMUNITY_EVENTS = 'true';
@@ -502,41 +464,28 @@ itLive('community v2-3 events (live DB)', () => {
     });
 
     it('getOne: bad eventId → 400', async () => {
-      const res = await call(
-        'GET',
-        `/api/community/events/${BAD}`,
-        asUser(ids.studentA),
-      );
+      const res = await call('GET', `/api/community/events/${BAD}`, asUser(ids.studentA));
       expect(res.status).toBe(400);
     });
 
     it('update: bad eventId → 400', async () => {
-      const res = await call(
-        'PATCH',
-        `/api/community/events/${BAD}`,
-        asUser(ids.coachA),
-        { state: 'live' },
-      );
+      const res = await call('PATCH', `/api/community/events/${BAD}`, asUser(ids.coachA), {
+        state: 'live',
+      });
       expect(res.status).toBe(400);
     });
 
     it('rsvp: bad eventId → 400', async () => {
-      const res = await call(
-        'POST',
-        `/api/community/events/${BAD}/rsvp`,
-        asUser(ids.studentA),
-        { status: 'going' },
-      );
+      const res = await call('POST', `/api/community/events/${BAD}/rsvp`, asUser(ids.studentA), {
+        status: 'going',
+      });
       expect(res.status).toBe(400);
     });
 
     it('replay: bad eventId → 400', async () => {
-      const res = await call(
-        'POST',
-        `/api/community/events/${BAD}/replay`,
-        asUser(ids.coachA),
-        { replay_url: 'https://vimeo.com/1' },
-      );
+      const res = await call('POST', `/api/community/events/${BAD}/replay`, asUser(ids.coachA), {
+        replay_url: 'https://vimeo.com/1',
+      });
       expect(res.status).toBe(400);
     });
 
@@ -589,12 +538,9 @@ itLive('community v2-3 events (live DB)', () => {
   // ── F5: RSVP eligibility (client/student members only) + closure at ends_at.
   it('14. coach/owner cannot RSVP → 403 rsvp_not_eligible (F5a)', async () => {
     const eventId = await createEventAsCoach();
-    const res = await call(
-      'POST',
-      `/api/community/events/${eventId}/rsvp`,
-      asUser(ids.coachA),
-      { status: 'going' },
-    );
+    const res = await call('POST', `/api/community/events/${eventId}/rsvp`, asUser(ids.coachA), {
+      status: 'going',
+    });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('community.event.rsvp_not_eligible');
   });
@@ -609,12 +555,9 @@ itLive('community v2-3 events (live DB)', () => {
       starts_at: startsAt,
       ends_at: endsAt,
     });
-    const res = await call(
-      'POST',
-      `/api/community/events/${eventId}/rsvp`,
-      asUser(ids.studentA),
-      { status: 'going' },
-    );
+    const res = await call('POST', `/api/community/events/${eventId}/rsvp`, asUser(ids.studentA), {
+      status: 'going',
+    });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('community.event.rsvp_closed');
   });
@@ -625,12 +568,9 @@ itLive('community v2-3 events (live DB)', () => {
       starts_at: futureIso(1),
       ends_at: futureIso(3),
     });
-    const res = await call(
-      'POST',
-      `/api/community/events/${eventId}/rsvp`,
-      asUser(ids.studentA),
-      { status: 'going' },
-    );
+    const res = await call('POST', `/api/community/events/${eventId}/rsvp`, asUser(ids.studentA), {
+      status: 'going',
+    });
     expect(res.status).toBe(201);
     expect(res.body.rsvp.status).toBe('going');
   });

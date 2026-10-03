@@ -3,7 +3,8 @@
 -- Additive except for one index swap on SplitLedgerEntry:
 --   * new tables ChargeSettlement, PayeeRecovery, TransferReversalOp, CronLease,
 --     PayoutAdjustmentNotice (RLS enabled + forced);
---   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents
+--   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents /
+--     reversal_seq / stripe_send_unresolved_at
 --     (defaults keep every existing row valid: kind='head_coach_split');
 --   * SplitLedgerEntry's (purchase_id, kind, payee_user_id) unique is replaced
 --     by (purchase_id, kind, payee_user_id, stripe_charge_id) so each renewal
@@ -24,6 +25,15 @@ ALTER TABLE "ConnectTransfer" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'head_coac
 ALTER TABLE "ConnectTransfer" ADD COLUMN "netted_recovery_cents" INTEGER NOT NULL DEFAULT 0;
 -- Round 4: reversal operation slot (B-627-5).
 ALTER TABLE "ConnectTransfer" ADD COLUMN "reversal_seq" INTEGER NOT NULL DEFAULT 0;
+-- Round 7 (B-627-8): set before every Stripe create, cleared when its result
+-- is established. While set, the transfer is reconciled against Stripe's
+-- transfer list before anything is sent again (Stripe idempotency keys can
+-- expire after 24 h). Existing pending rows that were already tried once are
+-- treated as unresolved, so a lost earlier result is looked up, not re-sent.
+ALTER TABLE "ConnectTransfer" ADD COLUMN "stripe_send_unresolved_at" TIMESTAMP(3);
+UPDATE "ConnectTransfer"
+   SET "stripe_send_unresolved_at" = COALESCE("last_attempt_at", "updated_at")
+ WHERE "status" = 'pending' AND "attempts" > 0 AND "stripe_transfer_id" IS NULL;
 
 -- SplitLedgerEntry: per-charge uniqueness. The old 3-column unique is named
 -- "SplitLedgerEntry_purchase_kind_payee_idx" by the migration chain

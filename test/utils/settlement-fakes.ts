@@ -341,6 +341,7 @@ export function settlementTables(db: SettlementDb) {
         reversed_amount_cents: 0,
         netted_recovery_cents: 0,
         reversal_seq: 0,
+        stripe_send_unresolved_at: null,
         kind: 'head_coach_split',
         settlement_id: null,
         stripe_transfer_id: null,
@@ -460,6 +461,18 @@ export function makeCharge(args: {
   };
 }
 
+export interface FakeTransfer {
+  [k: string]: unknown;
+  id: string;
+  amount: number;
+  currency: string;
+  destination: string;
+  source_transaction?: string;
+  transfer_group: string | null;
+  metadata: Record<string, string>;
+  created: number;
+}
+
 export interface FakeReversal {
   [k: string]: unknown;
   id: string;
@@ -474,10 +487,30 @@ export interface FakeReversal {
  */
 export class FakeStripe extends StripeConnectApiService {
   charges = new Map<string, StripeChargeObject>();
-  transfersByKey = new Map<
-    string,
-    { id: string; amount: number; destination: string; source_transaction?: string }
-  >();
+  /**
+   * B-627-8 (round 7): Stripe's durable transfer objects (never forgotten)
+   * are kept apart from the idempotency-key cache for creates, which expires
+   * with `expireIdempotencyKeys()` like every other key. A create re-sent with
+   * an expired key makes a second transfer, like Stripe would.
+   */
+  transfers: FakeTransfer[] = [];
+  transferKeyCache = new Map<string, FakeTransfer>();
+  /** Every transfer Stripe holds, by id (values() for totals). */
+  get transfersByKey(): Map<string, FakeTransfer> {
+    return new Map(this.transfers.map((t) => [t.id, t]));
+  }
+  /** Network failure BEFORE Stripe executes the next N transfer creates. */
+  transferNetworkFailures = 0;
+  /** Stripe EXECUTES the next N transfer creates, then the response is lost. */
+  transferResponsesLost = 0;
+  /** Listing transfers fails (Stripe unavailable). */
+  failListTransfers = false;
+  /** Transfer listing always says has_more (an endless / incomplete listing). */
+  transferListAlwaysHasMore = false;
+  /** Transfer listing pages hold this many transfers (Stripe's limit, or smaller). */
+  transferListPageSize = 100;
+  /** Seconds since the epoch; tests may move Stripe's clock. */
+  nowSeconds = (): number => Math.floor(Date.now() / 1000);
   /**
    * B-627-5 (round 6): Stripe's durable reversal objects (never forgotten)
    * are kept apart from its idempotency-key cache, which expires (Stripe
@@ -493,6 +526,7 @@ export class FakeStripe extends StripeConnectApiService {
   }
   expireIdempotencyKeys(): void {
     this.reversalKeyCache.clear();
+    this.transferKeyCache.clear();
   }
   /** Listing pages hold this many reversals (Stripe's limit, or smaller). */
   reversalListPageSize = 100;
@@ -539,18 +573,67 @@ export class FakeStripe extends StripeConnectApiService {
       amount: number;
       destination: string;
       source_transaction?: string;
+      transfer_group?: string;
+      metadata?: Record<string, string>;
       idempotencyKey: string;
     }) => {
-      const existing = this.transfersByKey.get(args.idempotencyKey);
-      if (existing) return { ...existing, currency: 'usd' };
-      const t = {
-        id: `tr_${this.transfersByKey.size + 1}`,
+      if (this.transferNetworkFailures > 0) {
+        this.transferNetworkFailures -= 1;
+        throw new StripeConnectApiError(
+          'Stripe API timed out after 10000ms on /transfers',
+          503,
+          'request_timeout',
+          'api_connection_error',
+        );
+      }
+      const existing = this.transferKeyCache.get(args.idempotencyKey);
+      if (existing) return { ...existing };
+      const t: FakeTransfer = {
+        id: `tr_${this.transfers.length + 1}`,
         amount: args.amount,
+        currency: 'usd',
         destination: args.destination,
         source_transaction: args.source_transaction,
+        transfer_group: args.transfer_group ?? null,
+        metadata: args.metadata ?? {},
+        created: this.nowSeconds(),
       };
-      this.transfersByKey.set(args.idempotencyKey, t);
-      return { ...t, currency: 'usd' };
+      this.transfers.push(t);
+      this.transferKeyCache.set(args.idempotencyKey, t);
+      if (this.transferResponsesLost > 0) {
+        this.transferResponsesLost -= 1;
+        throw new Error('socket closed after transfer execution');
+      }
+      return { ...t };
+    },
+  );
+
+  listTransfers = jest.fn(
+    async (args: {
+      destination: string;
+      transfer_group?: string;
+      created_gte?: number;
+      limit?: number;
+      starting_after?: string | null;
+    }) => {
+      if (this.failListTransfers) {
+        throw new StripeConnectApiError('Stripe API 500', 500, null, 'api_error');
+      }
+      // Newest first, filtered and paginated by starting_after, like Stripe.
+      const all = this.transfers
+        .filter(
+          (t) =>
+            t.destination === args.destination &&
+            (args.transfer_group === undefined || t.transfer_group === args.transfer_group) &&
+            (args.created_gte === undefined || t.created >= args.created_gte),
+        )
+        .reverse();
+      const start = args.starting_after
+        ? all.findIndex((t) => t.id === args.starting_after) + 1
+        : 0;
+      const size = Math.min(args.limit ?? 100, this.transferListPageSize);
+      const data = all.slice(start, start + size).map((t) => ({ ...t }));
+      return { data, has_more: this.transferListAlwaysHasMore || start + size < all.length };
     },
   );
 
