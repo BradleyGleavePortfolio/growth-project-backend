@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -62,7 +63,7 @@ export class RequestDeletionDto {
  *   POST   /me/delete-account/cancel       → cancel during grace period
  *   GET    /me/delete-account/status       → machine-readable state
  *
- * Admin-initiated (OWNER role only, audited):
+ * Admin-initiated (OWNER role + fresh X-Recent-Auth-Token, audited; B-608-13):
  *   POST   /admin/users/:id/delete         → immediate hard-delete, no grace period
  */
 @ApiTags('account-deletion')
@@ -209,18 +210,38 @@ export class AccountDeletionController {
   // ── Admin endpoint ────────────────────────────────────────────────────────
 
   @ApiOperation({
-    summary: 'Admin: force-delete a user account (OWNER only)',
+    summary: 'Admin: force-delete a user account (OWNER only, step-up re-auth)',
     description:
-      'Immediately scrubs PII and marks the account deleted. Bypasses the confirmation email and 14-day grace period. Every call is written to both deletion_audit and AuditLog. Returns 200 if already deleted (idempotent).',
+      'Immediately and irreversibly erases the account: the full finalization (every erasure-manifest table, Storage purge, Apple token revocation, deletion receipt). Bypasses the 14-day grace period. Requires a fresh, single-use X-Recent-Auth-Token minted for the calling owner by POST /auth/recent-auth-token (B-608-13): a stolen or replayed owner session alone cannot erase anyone. Every call is written to both deletion_audit and AuditLog. Returns 200 if already deleted (idempotent).',
   })
   @ApiParam({ name: 'id', description: 'Target user UUID.' })
+  @ApiHeader({
+    name: 'X-Recent-Auth-Token',
+    required: true,
+    description:
+      "Single-use step-up token for the calling owner, valid 5 minutes (POST /auth/recent-auth-token).",
+  })
   @ApiResponse({ status: 200, description: 'User deleted (or already deleted).' })
-  @ApiResponse({ status: 403, description: 'Not authorized — OWNER role required.' })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Step-up re-auth missing, expired or invalid (code RECENT_AUTH_REQUIRED, RECENT_AUTH_TOKEN_EXPIRED or RECENT_AUTH_TOKEN_INVALID). Mint a new token and retry.',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Not an owner (Insufficient role), or the token belongs to someone else or was already used (code RECENT_AUTH_TOKEN_USER_MISMATCH or RECENT_AUTH_TOKEN_ALREADY_USED).',
+  })
   @ApiResponse({ status: 404, description: 'User not found.' })
   @Post('admin/users/:id/delete')
   @HttpCode(200)
   @Roles('owner')
-  @UseGuards(RolesGuard)
+  // B-608-13: this route is an immediate, irreversible full erasure of any
+  // user id, so an owner bearer token alone is not enough. RecentAuthGuard
+  // (fresh, single-use, bound to the calling owner) is the step-up factor.
+  // Order matters: RolesGuard first (the global RolesGuard also runs before
+  // method guards), so a non-owner is refused before its nonce is consumed.
+  @UseGuards(RolesGuard, RecentAuthGuard)
   adminForceDelete(
     @Request() req: AuditableRequest & AuthedRequest,
     @Param('id') targetId: string,

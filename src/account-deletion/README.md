@@ -46,8 +46,17 @@ period, and a nightly finalization that erases the person's data.
 | `GET`  | `/me/delete-account/confirm` | Bearer (any role), legacy email link      | `{ message, purge_after }`          |
 | `POST` | `/me/delete-account/cancel`  | Bearer (any role)                         | `{ message }`; 409 while finalizing |
 | `GET`  | `/me/delete-account/status`  | Bearer (any role)                         | `DeletionStatus`                    |
-| `POST` | `/admin/users/:id/delete`    | Bearer, `owner` role                      | `{ message }`                       |
+| `POST` | `/admin/users/:id/delete`    | Bearer, `owner` role + `X-Recent-Auth-Token` (B-608-13) | `{ message }`         |
 | `POST` | `/account-deletion/receipt`  | Public; Bearer may be expired (30 days)   | `{ state: 'deleted' }`; 404 `NO_DELETION_RECEIPT`; 401 `RECEIPT_TOKEN_MISSING` / `RECEIPT_TOKEN_INVALID` |
+
+The admin force-delete is an immediate, irreversible full erasure of any user
+id, so it needs the same fresh, single-use step-up token as self-deletion,
+minted for the calling owner (`POST /auth/recent-auth-token`). `RolesGuard`
+runs first, so a non-owner is refused (403 `Insufficient role`) before its
+token is consumed. Every RecentAuthGuard failure carries a stable `code`
+(`RECENT_AUTH_REQUIRED`, `RECENT_AUTH_TOKEN_EXPIRED`, `RECENT_AUTH_TOKEN_INVALID`,
+`RECENT_AUTH_TOKEN_USER_MISMATCH`, `RECENT_AUTH_TOKEN_ALREADY_USED`,
+`RECENT_AUTH_SESSION_REQUIRED`, `RECENT_AUTH_UNAVAILABLE`).
 
 "Any role" means no `@Roles` decorator: `JwtAuthGuard` authenticates and the
 service scopes every call by `req.user.id` (B-608-7, sub-coaches included).
