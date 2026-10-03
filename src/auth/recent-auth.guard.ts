@@ -71,6 +71,37 @@ export const RECENT_AUTH_HEADER = 'x-recent-auth-token';
  *  reasons to clients (R17). The real reason is logged server-side. */
 const GENERIC_CONFIG_ERROR_MESSAGE = 'Sensitive action temporarily unavailable';
 
+/**
+ * Stable machine codes on every guard failure (additive: status and message
+ * are unchanged, HttpExceptionFilter forwards `code`). Clients map these to
+ * specific copy and a working next action (confirm again, sign in again)
+ * instead of reading message text. RECENT_AUTH_TOKEN_ALREADY_USED keeps its
+ * legacy `error` field too, which the mobile app already reads.
+ */
+export const RECENT_AUTH_ERROR_CODES = {
+  /** Server-side misconfiguration or nonce-store failure (403). */
+  unavailable: 'RECENT_AUTH_UNAVAILABLE',
+  /** No X-Recent-Auth-Token header (401). */
+  required: 'RECENT_AUTH_REQUIRED',
+  /** Malformed token, bad timestamp, future timestamp or bad HMAC (401). */
+  invalid: 'RECENT_AUTH_TOKEN_INVALID',
+  /** Token older than the TTL (401). */
+  expired: 'RECENT_AUTH_TOKEN_EXPIRED',
+  /** No authenticated user on the request (401). */
+  sessionRequired: 'RECENT_AUTH_SESSION_REQUIRED',
+  /** Token minted for another user (403). */
+  userMismatch: 'RECENT_AUTH_TOKEN_USER_MISMATCH',
+  /** Token already presented once (403). */
+  alreadyUsed: 'RECENT_AUTH_TOKEN_ALREADY_USED',
+} as const;
+
+function configError(): ForbiddenException {
+  return new ForbiddenException({
+    message: GENERIC_CONFIG_ERROR_MESSAGE,
+    code: RECENT_AUTH_ERROR_CODES.unavailable,
+  });
+}
+
 /** Clock skew tolerance: allow tokens issued up to 30s in the future. */
 const CLOCK_SKEW_TOLERANCE_MS = 30_000;
 
@@ -92,27 +123,35 @@ export class RecentAuthGuard implements CanActivate {
       this.logger.error(
         `RECENT_AUTH_SECRET is not configured or is shorter than ${RECENT_AUTH_SECRET_MIN_LENGTH} characters — sensitive action blocked`,
       );
-      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
+      throw configError();
     }
 
     const req = context.switchToHttp().getRequest();
     const rawHeader: string | undefined = req.headers?.[RECENT_AUTH_HEADER];
     if (!rawHeader) {
-      throw new UnauthorizedException(
-        `${RECENT_AUTH_HEADER} header is required for this action. ` +
+      throw new UnauthorizedException({
+        message:
+          `${RECENT_AUTH_HEADER} header is required for this action. ` +
           'Call POST /auth/recent-auth-token to obtain a token.',
-      );
+        code: RECENT_AUTH_ERROR_CODES.required,
+      });
     }
 
     const parts = rawHeader.split('.');
     if (parts.length !== 3) {
-      throw new UnauthorizedException('Recent-auth token format invalid (expected user_id.issued_at.hmac)');
+      throw new UnauthorizedException({
+        message: 'Recent-auth token format invalid (expected user_id.issued_at.hmac)',
+        code: RECENT_AUTH_ERROR_CODES.invalid,
+      });
     }
 
     const [tokenUserId, issuedAtStr, tokenHmac] = parts;
     const issuedAt = parseInt(issuedAtStr, 10);
     if (!Number.isFinite(issuedAt) || issuedAt <= 0) {
-      throw new UnauthorizedException('Recent-auth token issued_at is not a valid timestamp');
+      throw new UnauthorizedException({
+        message: 'Recent-auth token issued_at is not a valid timestamp',
+        code: RECENT_AUTH_ERROR_CODES.invalid,
+      });
     }
 
     const now = Date.now();
@@ -127,31 +166,39 @@ export class RecentAuthGuard implements CanActivate {
       this.logger.error(
         `RECENT_AUTH_TTL_MS is not a finite positive integer in the safe range [${RECENT_AUTH_TTL_MIN_MS}, ${RECENT_AUTH_TTL_MAX_MS}] — sensitive action blocked. Got: ${typeof rawTtl}=${String(rawTtl)}`,
       );
-      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
+      throw configError();
     }
 
     // Reject expired tokens.
     if (now - issuedAt > ttl) {
-      throw new UnauthorizedException(
-        'Recent-auth token has expired. Re-authenticate and retry.',
-      );
+      throw new UnauthorizedException({
+        message: 'Recent-auth token has expired. Re-authenticate and retry.',
+        code: RECENT_AUTH_ERROR_CODES.expired,
+      });
     }
 
     // Reject tokens from the future (beyond clock-skew tolerance).
     if (issuedAt - now > CLOCK_SKEW_TOLERANCE_MS) {
-      throw new UnauthorizedException('Recent-auth token issued_at is in the future');
+      throw new UnauthorizedException({
+        message: 'Recent-auth token issued_at is in the future',
+        code: RECENT_AUTH_ERROR_CODES.invalid,
+      });
     }
 
     // Token must be bound to the authenticated user.
     const authedUserId: string | undefined = req.user?.id;
     if (!authedUserId) {
       // JwtAuthGuard must run before this guard.
-      throw new UnauthorizedException('Authenticated user required');
+      throw new UnauthorizedException({
+        message: 'Authenticated user required',
+        code: RECENT_AUTH_ERROR_CODES.sessionRequired,
+      });
     }
     if (tokenUserId !== authedUserId) {
-      throw new ForbiddenException(
-        'Recent-auth token was issued for a different user',
-      );
+      throw new ForbiddenException({
+        message: 'Recent-auth token was issued for a different user',
+        code: RECENT_AUTH_ERROR_CODES.userMismatch,
+      });
     }
 
     // Validate HMAC using constant-time comparison to prevent timing attacks.
@@ -163,15 +210,16 @@ export class RecentAuthGuard implements CanActivate {
     try {
       const expectedBuf = Buffer.from(expectedHmac, 'hex');
       const actualBuf = Buffer.from(tokenHmac, 'hex');
-      match =
-        expectedBuf.length === actualBuf.length &&
-        timingSafeEqual(expectedBuf, actualBuf);
+      match = expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf);
     } catch {
       match = false;
     }
 
     if (!match) {
-      throw new UnauthorizedException('Recent-auth token HMAC invalid');
+      throw new UnauthorizedException({
+        message: 'Recent-auth token HMAC invalid',
+        code: RECENT_AUTH_ERROR_CODES.invalid,
+      });
     }
 
     // Single-use enforcement (A1-C5-P1-3): persist a nonce keyed by the first
@@ -189,23 +237,21 @@ export class RecentAuthGuard implements CanActivate {
         },
       });
     } catch (e: unknown) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         this.logger.warn(
           `RecentAuthGuard: replay detected for user=${authedUserId} hmac_suffix=${hmacSuffix}`,
         );
         throw new ForbiddenException({
           error: 'RECENT_AUTH_TOKEN_ALREADY_USED',
           message: 'This authentication token has already been used. Request a new one.',
+          code: RECENT_AUTH_ERROR_CODES.alreadyUsed,
         });
       }
       // Unexpected DB error — fail closed
       this.logger.error(
         `RecentAuthGuard: nonce write failed for user=${authedUserId}: ${e instanceof Error ? e.message : String(e)}`,
       );
-      throw new ForbiddenException(GENERIC_CONFIG_ERROR_MESSAGE);
+      throw configError();
     }
 
     return true;
@@ -233,9 +279,7 @@ export function issueRecentAuthToken(userId: string, secret: string): string {
     );
   }
   const issuedAt = Date.now().toString();
-  const hmac = createHmac('sha256', secret)
-    .update(`${userId}:${issuedAt}`)
-    .digest('hex');
+  const hmac = createHmac('sha256', secret).update(`${userId}:${issuedAt}`).digest('hex');
   return `${userId}.${issuedAt}.${hmac}`;
 }
 

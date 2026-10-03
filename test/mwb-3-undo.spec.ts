@@ -282,4 +282,34 @@ liveDescribe('Real undo / redo (live DB, MWB-3 §5.1)', () => {
       autosave.applyUndo(PLAN_ID, { userId: COACH_ID }, { to_revision_index: 1 }),
     ).rejects.toBeInstanceOf(NotFoundException);
   }, 60_000);
+  // ── S-MWB-2: undo of a rename restores the plan row's name / type ─────────
+  it('undo after a plan_meta rename puts the earlier name and type back on the plan row', async () => {
+    const rename = async (base: number, name: string, type: 'strength' | 'cardio') =>
+      autosave.applyAutosave(
+        PLAN_ID,
+        { userId: COACH_ID },
+        {
+          base_revision_index: base,
+          lock_token: await tokenFor(PLAN_ID),
+          ops: [{ op: 'plan_meta' as const, meta: { name, type } }],
+          cause: 'manual_edit',
+        },
+      );
+    await rename(0, 'Lower body A', 'strength'); // rev 1
+    await rename(1, 'Conditioning', 'cardio'); // rev 2 (head)
+    const res = await autosave.applyUndo(
+      PLAN_ID,
+      { userId: COACH_ID },
+      { to_revision_index: 1 },
+    );
+    expect(res.head_revision_index).toBe(3);
+    const plan = await prisma.workoutPlan.findUniqueOrThrow({
+      where: { id: PLAN_ID },
+      select: { name: true, type: true },
+    });
+    expect(plan).toEqual({ name: 'Lower body A', type: 'strength' });
+    // The returned lock token still matches the persisted state, so the next
+    // autosave after an undo is accepted.
+    expect(res.lock_token).toBe(await tokenFor(PLAN_ID));
+  }, 60_000);
 });

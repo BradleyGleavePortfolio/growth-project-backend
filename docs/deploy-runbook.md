@@ -678,6 +678,45 @@ When to re-run:
   Update the workflow file in the same PR — the values are intentionally
   in source so the change is reviewable.
 
+### 7b.1 Sign in with Apple revocation key (account deletion)
+
+Workflow file: `.github/workflows/fly-apple-signin-set.yml`
+Workflow name: **Fly Apple Sign-In Secrets Set (operator)**
+
+Account deletion (backend #608) revokes the app's Sign in with Apple tokens
+when the server holds the Sign in with Apple key. Until it does, deletion
+still completes, the outcome `not_configured` is logged and recorded in
+`deletion_audit`, and the app tells the person they can also remove the app
+from their Apple ID settings. It never claims revocation happened.
+
+| Variable | Source |
+| --- | --- |
+| `APPLE_SIGNIN_KEY_ID` | GitHub Actions secret of the same name (10-character key id from Apple Developer → Keys) |
+| `APPLE_SIGNIN_PRIVATE_KEY` | GitHub Actions secret of the same name: the full `.p8` file contents, pasted as-is (multi-line PEM, `-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) |
+
+`APPLE_TEAM_ID` must already be set; it is not touched here.
+`APPLE_SIGNIN_CLIENT_ID` is the client id the device's authorization code was
+issued to, which for the native app is the iOS bundle id. It is optional and
+defaults to `com.growthproject.app` (`DEFAULT_APPLE_SIGNIN_CLIENT_ID`); set it
+only if the bundle id changes. It is no longer derived from `APPLE_AUDIENCES`.
+Without the key id and private key the outcome stays `not_configured`.
+
+The workflow is `workflow_dispatch` only, bound to the `production`
+environment, accepts only `app=backend-spring-lake-3890` and `confirm=SET`,
+passes inputs through `env:` only, runs with `set +x`, fails if either secret
+is missing or the key is not a PEM, and sets both names in one
+`flyctl secrets import` call with the PEM on stdin (never on a command line,
+never echoed). It then checks both names appear in `flyctl secrets list`.
+
+```sh
+gh workflow run "Fly Apple Sign-In Secrets Set (operator)" \
+  -f app=backend-spring-lake-3890 \
+  -f confirm=SET
+```
+
+After it runs, verify with one real deletion on a test Apple account that
+`deletion_audit` records `apple_revocation` with outcome `revoked`.
+
 ---
 
 ## 7c. Cross-product federation token rotation

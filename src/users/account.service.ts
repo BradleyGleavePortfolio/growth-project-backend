@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DataExportStatus } from '@prisma/client';
+import { DataExportStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 
@@ -51,9 +52,24 @@ export class AccountService {
       throw new ForbiddenException('Account has been deleted');
     }
 
-    const request = await this.prisma.dataExportRequest.create({
-      data: { user_id: userId, status: DataExportStatus.PENDING },
-    });
+    let request: Awaited<ReturnType<typeof this.prisma.dataExportRequest.create>>;
+    try {
+      request = await this.prisma.dataExportRequest.create({
+        data: { user_id: userId, status: DataExportStatus.PENDING },
+      });
+    } catch (err) {
+      // One active export per user (data_export_request_one_active_per_user):
+      // an export from POST /v1/me/data-export/request is pending or ready.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException({
+          code: 'DATA_EXPORT_IN_PROGRESS',
+          message:
+            'You already have a data export in progress or ready. Open Request my data in Settings ' +
+            'to check on it or download it.',
+        });
+      }
+      throw err;
+    }
 
     await this.audit.write({
       action: AuditAction.USER_DATA_EXPORT_REQUESTED,
@@ -94,9 +110,7 @@ export class AccountService {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Data export assembly failed for user=${userId}: ${message}`,
-      );
+      this.logger.error(`Data export assembly failed for user=${userId}: ${message}`);
       await this.prisma.dataExportRequest.update({
         where: { id: request.id },
         data: { status: DataExportStatus.FAILED },
@@ -224,8 +238,7 @@ export class AccountService {
 
   private deletionStatusResponse(scheduledAt: Date) {
     const purgeAt = new Date(
-      scheduledAt.getTime() +
-        DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+      scheduledAt.getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000,
     );
     return {
       scheduled: true,

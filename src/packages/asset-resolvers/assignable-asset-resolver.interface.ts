@@ -142,4 +142,16 @@ export interface AssignableAssetResolver {
   materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult>;
+
+  /**
+   * S-MWB Programs (B-640-4): true when this drop must NOT be materialised
+   * inside the caller's shared inline transaction (paid checkout, $0 invite
+   * grant, free-package claim, push to existing buyers) because its delivery
+   * is unbounded in size (a whole multi-week program). The caller then leaves
+   * the due-now drop `pending`; the one-minute drip dispatcher delivers it in
+   * its own transaction, with retries and a coach alert on permanent failure,
+   * so a large or broken program can never time out or roll back the purchase,
+   * the grant or the push. Optional: resolvers without it are never deferred.
+   */
+  deferInline?(input: AssignableAssetMaterialiseInput): Promise<boolean>;
 }

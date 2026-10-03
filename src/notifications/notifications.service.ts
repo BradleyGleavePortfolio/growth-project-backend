@@ -11,14 +11,8 @@ import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
 import { NotificationKindValue } from './notification-kind';
-import {
-  NotificationCategory,
-  DEFAULT_NOTIFICATION_CATEGORY,
-} from './notification-category.enum';
-import {
-  PushAbortedError,
-  PushDeliveryResult,
-} from './push-delivery.types';
+import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
+import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
@@ -129,6 +123,9 @@ export class NotificationsService {
         drip_released_email: false,
         drip_released_push: true,
         drip_released_inapp: true,
+        // C05 item 7 — workout reminders default ON (schema default).
+        workout_reminder_push: true,
+        workout_reminder_inapp: true,
         // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
         // selling coach gets push + in-app on every new entitlement,
         // email off (no transactional channel today).
@@ -229,6 +226,9 @@ export class NotificationsService {
       nudge_inactive_email: data.nudge_inactive_email,
       nudge_inactive_push: data.nudge_inactive_push,
       nudge_inactive_inapp: data.nudge_inactive_inapp,
+      // C05 item 7 — workout reminders (Settings > Notifications toggle).
+      workout_reminder_push: data.workout_reminder_push,
+      workout_reminder_inapp: data.workout_reminder_inapp,
     };
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
@@ -254,7 +254,9 @@ export class NotificationsService {
     // the keys that changed — not their new values, to avoid storing
     // potentially-sensitive preference data in the audit log.
     const changedKeys = (Object.keys(definedFields) as Array<keyof typeof fields>).filter(
-      (k) => existing == null || (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
+      (k) =>
+        existing == null ||
+        (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
     );
     void this.audit?.write({
       action: AuditAction.NOTIFICATION_PREF_CHANGE,
@@ -294,10 +296,7 @@ export class NotificationsService {
    * behaviour is unchanged (autocommit on `this.prisma`), so every existing
    * callsite keeps working.
    */
-  async createNotification(
-    input: CreateNotificationInput,
-    tx?: Prisma.TransactionClient,
-  ) {
+  async createNotification(input: CreateNotificationInput, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
@@ -333,9 +332,7 @@ export class NotificationsService {
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
       if (now - last < 60_000) {
-        this.logger.debug(
-          `push rate-limited: user=${input.user_id} kind=${input.kind}`,
-        );
+        this.logger.debug(`push rate-limited: user=${input.user_id} kind=${input.kind}`);
         return null;
       }
       recentPushes.set(key, now);
@@ -510,10 +507,7 @@ export class NotificationsService {
       await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.error(
-        `pushToCoach failed for coach=${coachId}: ${(err as Error).message}`,
-        err,
-      );
+      this.logger.error(`pushToCoach failed for coach=${coachId}: ${(err as Error).message}`, err);
       return false;
     }
   }
@@ -553,9 +547,7 @@ export class NotificationsService {
         // R17 / Hard Rule — no raw new Error. Throw a typed domain error
         // carrying a stable code so observability can branch on the
         // abort path without string-matching.
-        throw new PushAbortedError(
-          typeof reason === 'string' ? reason : undefined,
-        );
+        throw new PushAbortedError(typeof reason === 'string' ? reason : undefined);
       }
     };
     try {
@@ -592,9 +584,7 @@ export class NotificationsService {
       // the message and we must NOT report delivered=true.
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(
-            `pushToUser ticket error for user ${userId}: ${ticket.message}`,
-          );
+          this.logger.error(`pushToUser ticket error for user ${userId}: ${ticket.message}`);
           // Poll receipts on a best-effort basis so stale tokens get
           // cleared even though we report failure to the caller.
           await this.pollReceipts(tickets, userId);
@@ -630,10 +620,7 @@ export class NotificationsService {
    * Poll Expo receipts for a batch of tickets and clear any tokens that
    * Expo reports as DeviceNotRegistered. Called after every pushToCoach send.
    */
-  private async pollReceipts(
-    tickets: ExpoPushTicket[],
-    userId: string,
-  ): Promise<void> {
+  private async pollReceipts(tickets: ExpoPushTicket[], userId: string): Promise<void> {
     const receiptIds: string[] = [];
     for (const ticket of tickets) {
       if ('id' in ticket) receiptIds.push(ticket.id);
@@ -762,6 +749,8 @@ export class NotificationsService {
     // defaults are FALSE, silently short-circuiting every in-app row
     // write — the PR-10 R1 P2 fix.
     if (kind.startsWith('drip_released')) return 'drip_released';
+    // C05 item 7 — WORKOUT_REMINDER routes to workout_reminder_* (default ON).
+    if (kind.startsWith('workout_reminder')) return 'workout_reminder';
     // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
     // coach_new_purchase_* prefs columns (migration
     // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp
