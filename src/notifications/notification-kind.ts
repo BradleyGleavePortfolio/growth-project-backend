@@ -66,6 +66,9 @@ export const NotificationKind = {
   // draft. The notification deep-links into the assigned row so the
   // client can see what their coach just queued for them.
   WORKOUT_ASSIGNED: 'workout_assigned',
+  // C05 item 7 — Client: workout reminder at their preferred training time on
+  // a plan day (WorkoutReminderService). Prefs: workout_reminder_push/_inapp.
+  WORKOUT_REMINDER: 'workout_reminder',
   MEAL_PLAN_ASSIGNED: 'meal_plan_assigned',
 
   // PR-10 — Buyer: a scheduled package drop just unlocked. Decision #9
