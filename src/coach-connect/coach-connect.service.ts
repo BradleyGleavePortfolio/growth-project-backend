@@ -126,6 +126,21 @@ export function deriveConnectState(a: {
   return 'pending_verification';
 }
 
+/**
+ * C-332-14 (Opus): what the mobile Money page shows under a payout. A failed
+ * payout's line is its reason, so Stripe's failure_message wins there; any
+ * other payout shows its description.
+ */
+export function payoutReason(
+  status: string,
+  description: unknown,
+  failureMessage: string | null | undefined,
+): string | null {
+  const desc = typeof description === 'string' && description.length > 0 ? description : null;
+  const failure = failureMessage && failureMessage.length > 0 ? failureMessage : null;
+  return status === 'failed' ? (failure ?? desc) : (desc ?? failure);
+}
+
 @Injectable()
 export class CoachConnectService {
   private readonly logger = new Logger(CoachConnectService.name);
@@ -293,10 +308,14 @@ export class CoachConnectService {
                 ((p as Record<string, unknown>)['created'] as number) * 1000,
               ).toISOString()
             : new Date(0).toISOString(),
-        description:
-          (p as Record<string, unknown>)['description']?.toString() ??
-          p.failure_message ??
-          null,
+        // C-332-14 (Opus): the app shows a failed payout's description as its
+        // reason, so a failed payout carries Stripe's failure_message first;
+        // other payouts keep their own description.
+        description: payoutReason(
+          this.normalizePayoutStatus(p.status),
+          (p as Record<string, unknown>)['description'],
+          p.failure_message,
+        ),
       }));
     } catch (err) {
       if (err instanceof StripeConnectApiError) {
