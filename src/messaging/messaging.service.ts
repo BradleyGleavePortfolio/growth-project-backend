@@ -4,10 +4,12 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  HttpStatus,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { CoachMessage } from '@prisma/client';
 import {
   VoiceUploadProvider,
   type SignedVoiceUploadRequest as ProviderSignedVoiceUploadRequest,
@@ -27,6 +29,12 @@ import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+import { isMessagingCoreV2Enabled } from './messaging-core.feature';
+import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
+import {
+  broadcastThreadUpdated,
+  type ThreadUpdateKind,
+} from './messaging-realtime';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -46,6 +54,47 @@ export interface VoicePayload {
 export interface SendMessagePayload {
   body?: string;
   voice?: VoicePayload;
+  // A3-MSG-CORE: device-minted idempotency key (offline send queue). A replay
+  // with the same (sender, key) returns the original row with no side effects.
+  client_message_id?: string;
+  // A3-MSG-CORE: swipe-reply target, validated to be in the same thread and
+  // not deleted. Requires FEATURE_MESSAGING_CORE_V2.
+  reply_to_id?: string;
+}
+
+/**
+ * A3-MSG-CORE — a resolved canonical 1:1 thread from one participant's side.
+ * `coachId` is the THREAD coach (the head coach for sub-coach threads);
+ * `actorId` is the caller; `otherPartyId` is who receives pings and pushes.
+ */
+export interface ResolvedThread {
+  coachId: string;
+  clientId: string;
+  actorId: string;
+  actorSide: 'coach' | 'client';
+  otherPartyId: string;
+}
+
+/** Max quoted-preview length carried on `reply_to` (characters). */
+export const REPLY_PREVIEW_MAX = 160;
+
+/** Wire shape of the quoted message on a reply (null when unavailable). */
+export interface ReplyPreview {
+  id: string;
+  sender_id: string | null;
+  kind: 'text' | 'voice' | 'deleted' | 'unavailable';
+  preview: string;
+}
+
+type ReplyRow = Pick<
+  CoachMessage,
+  'id' | 'sender_id' | 'body' | 'voice_url' | 'deleted_at'
+>;
+
+/** Collapse whitespace and cap a body for a quoted/inbox preview. */
+export function previewText(body: string | null, max: number): string {
+  const text = (body ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 // v3-3: the signed-upload request/response shapes now live with the extracted
@@ -339,6 +388,242 @@ export class MessagingService {
     return me.coach_id;
   }
 
+  // ---- A3-MSG-CORE: shared thread resolution ----
+
+  /**
+   * Resolve the thread a coach (head coach, sub-coach with an open assignment,
+   * never a foreign coach) has with `clientId`. 404 for a foreign client,
+   * exactly like every other coach-side thread route.
+   */
+  async resolveThreadForCoach(
+    coachId: string,
+    clientId: string,
+  ): Promise<ResolvedThread> {
+    const client = await this.assertClientOfCoach(coachId, clientId);
+    return {
+      coachId: client.coach_id ?? coachId,
+      clientId,
+      actorId: coachId,
+      actorSide: 'coach',
+      otherPartyId: clientId,
+    };
+  }
+
+  /** Resolve the client's single thread (409 NO_COACH_ASSIGNED when none). */
+  async resolveThreadForClient(clientId: string): Promise<ResolvedThread> {
+    const coachId = await this.requireClientCoachId(clientId);
+    return {
+      coachId,
+      clientId,
+      actorId: clientId,
+      actorSide: 'client',
+      otherPartyId: coachId,
+    };
+  }
+
+  /** Users `callerId` has blocked (empty when the optional dep is absent). */
+  async blockedIdsFor(callerId: string): Promise<string[]> {
+    if (!this.safety) return [];
+    return this.safety.getBlockedIdsFor(callerId);
+  }
+
+  /** True when either side of the pair has blocked the other. */
+  async isEitherSideBlocked(a: string, b: string): Promise<boolean> {
+    if (!this.safety) return false;
+    return this.safety.isEitherSideBlocked(a, b);
+  }
+
+  /**
+   * After a thread mutation that is not a new message (edit, delete, pin,
+   * read): ping the other participant with an ID-only `thread-updated` event
+   * and, when coach-authored content changed, bust the client's AI context
+   * cache so Roman never quotes an edited or deleted coach message.
+   * Fire-and-forget; never fails the request.
+   */
+  notifyThreadUpdated(
+    thread: ResolvedThread,
+    kind: ThreadUpdateKind,
+    messageId: string | null,
+    opts: { coachContentChanged?: boolean } = {},
+  ): void {
+    void broadcastThreadUpdated(this.supabase, thread.otherPartyId, {
+      kind,
+      thread_client_id: thread.clientId,
+      message_id: messageId,
+    });
+    if (opts.coachContentChanged) {
+      this.aiContext.invalidateForUser(thread.clientId);
+    }
+  }
+
+  /**
+   * Map a stored row to its wire shape for the v2 thread surface: the quoted
+   * message preview on replies (hidden when the caller blocked its author or
+   * it was deleted) and an explicit `deleted` flag. Content columns of a
+   * tombstone are already NULL in the database; nothing is re-derived here.
+   */
+  serializeMessage<T extends CoachMessage & { reply_to?: ReplyRow | null }>(
+    row: T,
+    blocked: ReadonlySet<string>,
+  ): Omit<T, 'reply_to'> & { reply_to: ReplyPreview | null; deleted: boolean } {
+    const { reply_to: target, ...rest } = row;
+    let reply: ReplyPreview | null = null;
+    if (row.reply_to_id) {
+      if (!target || (target.sender_id && blocked.has(target.sender_id))) {
+        reply = { id: row.reply_to_id, sender_id: null, kind: 'unavailable', preview: '' };
+      } else if (target.deleted_at) {
+        reply = { id: target.id, sender_id: target.sender_id, kind: 'deleted', preview: '' };
+      } else {
+        reply = {
+          id: target.id,
+          sender_id: target.sender_id,
+          kind: target.body ? 'text' : target.voice_url ? 'voice' : 'text',
+          preview: previewText(target.body, REPLY_PREVIEW_MAX),
+        };
+      }
+    }
+    return { ...rest, reply_to: reply, deleted: row.deleted_at !== null };
+  }
+
+  /** Whether `userId` has this thread muted right now (v2 only). */
+  private async isThreadMutedFor(
+    userId: string,
+    coachId: string,
+    clientId: string,
+  ): Promise<boolean> {
+    try {
+      const state = await this.prisma.coachThreadState.findUnique({
+        where: {
+          CoachThreadState_user_thread_key: {
+            user_id: userId,
+            coach_id: coachId,
+            client_id: clientId,
+          },
+        },
+        select: { muted_until: true },
+      });
+      return !!state?.muted_until && state.muted_until.getTime() > Date.now();
+    } catch (err) {
+      // Fail OPEN to delivery: a lookup failure must never swallow a push.
+      this.logger.warn(
+        `mute lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Push the new-message notification unless the recipient muted the thread
+   * (v2). With the flag OFF this is exactly the legacy emit.
+   */
+  private notifyNewMessage(
+    recipientId: string,
+    senderId: string,
+    coachId: string,
+    clientId: string,
+  ): void {
+    const emit = () =>
+      this.resolveSenderName(senderId).then((senderName) =>
+        this.messageReceived.emit(recipientId, {
+          senderName,
+          threadId: clientId,
+        }),
+      );
+    if (!isMessagingCoreV2Enabled()) {
+      void emit();
+      return;
+    }
+    void this.isThreadMutedFor(recipientId, coachId, clientId).then((muted) =>
+      muted ? undefined : emit(),
+    );
+  }
+
+  /**
+   * Idempotent, reply-validated insert shared by both send paths.
+   *
+   * - `client_message_id` set: an existing row for (sender, key) in the SAME
+   *   thread is returned as a replay (no side effects run); in another thread
+   *   it is 409 `messaging.idempotency_key_reused`. A concurrent duplicate that
+   *   loses the unique-index race (P2002) re-reads and replays the winner.
+   * - `reply_to_id` set: requires the v2 flag; the target must be a live
+   *   message in the same thread, else 409 `messaging.reply_target_unavailable`.
+   */
+  private async insertThreadMessage(
+    thread: { coachId: string; clientId: string },
+    senderId: string,
+    data: Omit<Prisma.CoachMessageUncheckedCreateInput, 'coach_id' | 'client_id' | 'sender_id'>,
+    payload: SendMessagePayload,
+  ): Promise<{ row: CoachMessage; replayed: boolean }> {
+    const key = payload.client_message_id;
+    const findReplay = async (): Promise<CoachMessage | null> => {
+      if (!key) return null;
+      const existing = await this.prisma.coachMessage.findFirst({
+        where: { sender_id: senderId, client_message_id: key },
+      });
+      if (!existing) return null;
+      if (
+        existing.coach_id !== thread.coachId ||
+        existing.client_id !== thread.clientId
+      ) {
+        throw messagingError(
+          HttpStatus.CONFLICT,
+          MESSAGING_ERRORS.IDEMPOTENCY_KEY_REUSED,
+        );
+      }
+      return existing;
+    };
+    const replay = await findReplay();
+    if (replay) return { row: replay, replayed: true };
+
+    if (payload.reply_to_id) {
+      if (!isMessagingCoreV2Enabled()) {
+        throw messagingError(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          MESSAGING_ERRORS.FEATURE_DISABLED,
+        );
+      }
+      const target = await this.prisma.coachMessage.findFirst({
+        where: {
+          id: payload.reply_to_id,
+          coach_id: thread.coachId,
+          client_id: thread.clientId,
+          deleted_at: null,
+        },
+        select: { id: true },
+      });
+      if (!target) {
+        throw messagingError(
+          HttpStatus.CONFLICT,
+          MESSAGING_ERRORS.REPLY_TARGET_UNAVAILABLE,
+        );
+      }
+    }
+
+    try {
+      const row = await this.prisma.coachMessage.create({
+        data: {
+          coach_id: thread.coachId,
+          client_id: thread.clientId,
+          sender_id: senderId,
+          ...data,
+          ...(key ? { client_message_id: key } : {}),
+          ...(payload.reply_to_id ? { reply_to_id: payload.reply_to_id } : {}),
+        },
+      });
+      return { row, replayed: false };
+    } catch (err) {
+      if (
+        key &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const winner = await findReplay();
+        if (winner) return { row: winner, replayed: true };
+      }
+      throw err;
+    }
+  }
+
   // ---- thread read ----
 
   // Paginated thread, newest-first. `before` is a strict `<` on created_at so
@@ -356,7 +641,34 @@ export class MessagingService {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
+      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only, so the
+      // flag-OFF query is byte-identical to the legacy one).
+      ...(isMessagingCoreV2Enabled()
+        ? {
+            include: {
+              reply_to: {
+                select: {
+                  id: true,
+                  sender_id: true,
+                  body: true,
+                  voice_url: true,
+                  deleted_at: true,
+                },
+              },
+            },
+          }
+        : {}),
     });
+  }
+
+  // A3-MSG-CORE: v2 adds `reply_to` + `deleted` to each row (flag-gated).
+  private async serializeThreadPage(
+    callerId: string,
+    rows: Awaited<ReturnType<MessagingService['listThread']>>,
+  ) {
+    if (!isMessagingCoreV2Enabled()) return rows;
+    const blocked = new Set(await this.blockedIdsFor(callerId));
+    return rows.map((r) => this.serializeMessage(r, blocked));
   }
 
   async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
@@ -365,13 +677,15 @@ export class MessagingService {
     // returned in client.coach_id by assertClientOfCoach.
     const threadCoachId = client.coach_id ?? coachId;
     const rows = await this.listThread(threadCoachId, clientId, opts);
-    return this.filterBlockedAuthors(coachId, clientId, rows);
+    const visible = await this.filterBlockedAuthors(coachId, clientId, rows);
+    return this.serializeThreadPage(coachId, visible);
   }
 
   async listThreadForClient(clientId: string, opts: ListOpts) {
     const coachId = await this.requireClientCoachId(clientId);
     const rows = await this.listThread(coachId, clientId, opts);
-    return this.filterBlockedAuthors(clientId, coachId, rows);
+    const visible = await this.filterBlockedAuthors(clientId, coachId, rows);
+    return this.serializeThreadPage(clientId, visible);
   }
 
   /**
@@ -438,31 +752,29 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
-    const created = await this.prisma.coachMessage.create({
-      data: {
-        coach_id: threadCoachId,
-        client_id: clientId,
-        sender_id: coachId,
+    const { row: created, replayed } = await this.insertThreadMessage(
+      { coachId: threadCoachId, clientId },
+      coachId,
+      {
         body,
         voice_url: voice?.url ?? null,
         voice_duration_sec: voice?.duration_sec ?? null,
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+      normalized,
+    );
+    // A3-MSG-CORE: an idempotent replay returns the original row and runs NO
+    // side effects (no second ping, push, audit, analytics or PTM signal).
+    if (replayed) return created;
     // Realtime ping to the recipient (the client). No body is sent over the
     // wire — just a refresh signal. The mobile client refetches via the
     // authenticated REST endpoint when it receives the ping. Fire-and-
     // forget so a Realtime hiccup never delays the API response.
     void this.supabase.broadcastNewMessage(clientId);
-    // Push notification — block check already ran above, so we can emit
-    // unconditionally here. Fire-and-forget.
-    void this.resolveSenderName(coachId).then((senderName) =>
-      this.messageReceived.emit(clientId, {
-        senderName,
-        threadId: clientId,
-      }),
-    );
+    // Push notification — block check already ran above. Skipped when the
+    // client muted this thread (v2). Fire-and-forget.
+    this.notifyNewMessage(clientId, coachId, threadCoachId, clientId);
     void this.audit.write({
       action: 'messaging.sent',
       actorId: coachId,
@@ -529,27 +841,25 @@ export class MessagingService {
       }
     }
 
-    const created = await this.prisma.coachMessage.create({
-      data: {
-        coach_id: coachId,
-        client_id: clientId,
-        sender_id: clientId,
+    const { row: created, replayed } = await this.insertThreadMessage(
+      { coachId, clientId },
+      clientId,
+      {
         body,
         voice_url: voice?.url ?? null,
         voice_duration_sec: voice?.duration_sec ?? null,
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+      normalized,
+    );
+    // A3-MSG-CORE: replay → original row, no side effects (see sendAsCoach).
+    if (replayed) return created;
     // Ping the coach.
     void this.supabase.broadcastNewMessage(coachId);
-    // Push notification — block check already ran above.
-    void this.resolveSenderName(clientId).then((senderName) =>
-      this.messageReceived.emit(coachId, {
-        senderName,
-        threadId: clientId,
-      }),
-    );
+    // Push notification — block check already ran above. Skipped when the
+    // coach muted this thread (v2).
+    this.notifyNewMessage(coachId, clientId, coachId, clientId);
     void this.audit.write({
       action: 'messaging.sent',
       actorId: clientId,
@@ -617,18 +927,38 @@ export class MessagingService {
   // Mark every message from the *other* party in this thread as read. We only
   // touch rows where read_at IS NULL so repeated calls are idempotent and the
   // original read timestamp survives.
-  async markReadByCoach(coachId: string, clientId: string) {
+  async markReadByCoach(
+    coachId: string,
+    clientId: string,
+    opts: { upToMessageId?: string } = {},
+  ) {
     const client = await this.assertClientOfCoach(coachId, clientId);
     const threadCoachId = client.coach_id ?? coachId;
+    const upTo = await this.readCutoff(threadCoachId, clientId, opts.upToMessageId);
     const result = await this.prisma.coachMessage.updateMany({
       where: {
         coach_id: threadCoachId,
         client_id: clientId,
         sender_id: clientId,
         read_at: null,
+        ...(upTo ? { created_at: { lte: upTo } } : {}),
       },
       data: { read_at: new Date() },
     });
+    // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
+    if (result.count > 0 && isMessagingCoreV2Enabled()) {
+      this.notifyThreadUpdated(
+        {
+          coachId: threadCoachId,
+          clientId,
+          actorId: coachId,
+          actorSide: 'coach',
+          otherPartyId: clientId,
+        },
+        'read',
+        opts.upToMessageId ?? null,
+      );
+    }
     // ED.6 — stamp the per-thread coach-review marker so the client
     // CompetencePill can show "Your coach reviewed this thread {relative}.".
     // Most-recent semantics: every coach read re-stamps coach_reviewed_at to
@@ -692,8 +1022,39 @@ export class MessagingService {
     };
   }
 
-  async markReadByClient(clientId: string) {
+  /**
+   * A3-MSG-CORE read-up-to: resolve the cutoff timestamp for a partial read
+   * (the message the reader scrolled to). v2 only; the message must be in this
+   * thread, else 404 `messaging.message_not_found`. No id → mark everything.
+   */
+  private async readCutoff(
+    coachId: string,
+    clientId: string,
+    upToMessageId: string | undefined,
+  ): Promise<Date | null> {
+    if (!upToMessageId) return null;
+    if (!isMessagingCoreV2Enabled()) {
+      throw messagingError(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        MESSAGING_ERRORS.FEATURE_DISABLED,
+      );
+    }
+    const target = await this.prisma.coachMessage.findFirst({
+      where: { id: upToMessageId, coach_id: coachId, client_id: clientId },
+      select: { created_at: true },
+    });
+    if (!target) {
+      throw messagingError(HttpStatus.NOT_FOUND, MESSAGING_ERRORS.MESSAGE_NOT_FOUND);
+    }
+    return target.created_at;
+  }
+
+  async markReadByClient(
+    clientId: string,
+    opts: { upToMessageId?: string } = {},
+  ) {
     const coachId = await this.requireClientCoachId(clientId);
+    const upTo = await this.readCutoff(coachId, clientId, opts.upToMessageId);
     // Mark every non-client sender's message read in this thread. Filtering on
     // sender_id = coachId would miss sub-coach messages, since sub-coaches
     // send with sender_id = subCoachId (the head coach still owns the thread).
@@ -703,9 +1064,24 @@ export class MessagingService {
         client_id: clientId,
         sender_id: { not: clientId },
         read_at: null,
+        ...(upTo ? { created_at: { lte: upTo } } : {}),
       },
       data: { read_at: new Date() },
     });
+    // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
+    if (result.count > 0 && isMessagingCoreV2Enabled()) {
+      this.notifyThreadUpdated(
+        {
+          coachId,
+          clientId,
+          actorId: clientId,
+          actorSide: 'client',
+          otherPartyId: coachId,
+        },
+        'read',
+        opts.upToMessageId ?? null,
+      );
+    }
     return { updated: result.count };
   }
 
@@ -759,6 +1135,8 @@ export class MessagingService {
         read_at: null,
         ...(clientFilter ? { client_id: clientFilter } : {}),
         ...senderFilter,
+        // A3-MSG-CORE: a message deleted for everyone never counts as unread.
+        ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
       },
       _count: { _all: true },
     });
@@ -815,6 +1193,8 @@ export class MessagingService {
         client_id: clientId,
         sender_id: { not: clientId },
         read_at: null,
+        // A3-MSG-CORE: a message deleted for everyone never counts as unread.
+        ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
       },
     });
     return { total };

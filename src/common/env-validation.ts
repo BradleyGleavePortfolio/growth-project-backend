@@ -2091,6 +2091,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
   },
   {
+    name: 'FEATURE_MESSAGING_CORE_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A3-MSG-CORE kill switch: unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread (CoachMessage). Off until audit and device pass.',
+  },
+  {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
