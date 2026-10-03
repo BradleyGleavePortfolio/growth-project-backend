@@ -287,7 +287,7 @@ function settlementSetup() {
 
 describe('sweep retries a failed coach transfer with backoff, exactly once', () => {
   it('first attempt fails (SFEE_TRANSFER_FAILED, backoff), two overlapping sweeps pay $46.30 once', async () => {
-    const { db, stripe, settlements, splits, purchase } = settlementSetup();
+    const { db, stripe, settlements, splits, transfers, purchase } = settlementSetup();
     stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
     stripe.createTransfer.mockRejectedValueOnce(
       new StripeConnectApiError('Stripe is temporarily unavailable', 503, null, 'api_error'),
@@ -310,6 +310,9 @@ describe('sweep retries a failed coach transfer with backoff, exactly once', () 
     // them; the coach is paid once.
     // First retry backoff is 5 minutes (BACKOFF_MINUTES[1]).
     const later = new Date(Date.now() + 6 * 60_000);
+    // Round 8 (B-627-9): 6 minutes later is past the 5 minute in-flight
+    // window of the first (unresolved) send.
+    transfers.clock = () => later;
     await Promise.all([splits.runTransferSweeper(later), splits.runTransferSweeper(later)]);
     expect(stripe.netTo('acct_coach')).toBe(4_630);
     expect(new Set(stripe.createTransfer.mock.calls.map((c) => c[0].idempotencyKey)).size).toBe(1);

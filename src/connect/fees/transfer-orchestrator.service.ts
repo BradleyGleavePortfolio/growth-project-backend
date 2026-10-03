@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ConnectTransfer, Prisma, TransferReversalOp } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { StripeConnectApiError, StripeConnectApiService } from '../stripe-connect-api.service';
+import {
+  STRIPE_CONNECT_TIMEOUT_MS,
+  StripeConnectApiError,
+  StripeConnectApiService,
+} from '../stripe-connect-api.service';
 import { ReversalUncertainError } from './money-errors';
 import { SplitLedgerService } from './split-ledger.service';
 
@@ -105,6 +109,26 @@ function isReinstateKind(kind: string): boolean {
 
 // B-627-8 (round 7): the result of a sent transfer create is not established.
 export const TRANSFER_UNCERTAIN_CODE = 'SFEE_TRANSFER_UNCERTAIN';
+
+// B-627-9 (round 8): a create another worker sent recently may still be in
+// flight (travelling to Stripe, executing there, or its response travelling
+// back), so a listing that does not show it yet proves nothing. A marker
+// younger than the in-flight window is held: nothing is sent, nothing is
+// failed, and the row is looked up again once the window has passed. The
+// window is the Stripe client timeout (after which the sender has stopped
+// waiting) plus a margin for Stripe-side execution, listing visibility, and
+// a sender process paused between its claim and its request.
+export const TRANSFER_IN_FLIGHT_CODE = 'SFEE_TRANSFER_IN_FLIGHT';
+export const TRANSFER_IN_FLIGHT_MARGIN_MS = 290_000;
+export function transferInFlightWindowMs(stripeTimeoutMs: number): number {
+  const timeout =
+    Number.isFinite(stripeTimeoutMs) && stripeTimeoutMs > 0
+      ? stripeTimeoutMs
+      : STRIPE_CONNECT_TIMEOUT_MS;
+  return timeout + TRANSFER_IN_FLIGHT_MARGIN_MS;
+}
+// B-627-9: an outcome write lost its compare-and-set to another worker.
+export const TRANSFER_SUPERSEDED_CODE = 'SFEE_TRANSFER_OUTCOME_SUPERSEDED';
 
 // B-627-8: the reconciliation lookup of one transfer create.
 export type TransferLookup =
@@ -214,11 +238,20 @@ export class TransferOrchestratorService {
   // Transfer listing pages (100 each) read before the lookup is 'unknown'.
   static readonly TRANSFER_LIST_MAX_PAGES = 10;
 
+  // B-627-9: how long a sent create is treated as in flight (5 min at the
+  // default 10 s Stripe timeout).
+  readonly inFlightWindowMs: number;
+  // Wall clock for the transfer-create protocol. Tests move it forward to
+  // model a later sweep; production always reads the real time.
+  clock: () => Date = () => new Date();
+
   constructor(
     private prisma: PrismaService,
     private stripe: StripeConnectApiService,
     private ledger: SplitLedgerService,
-  ) {}
+  ) {
+    this.inFlightWindowMs = transferInFlightWindowMs(stripe?.requestTimeoutMs);
+  }
 
   // Idempotently create a ConnectTransfer row for the head-coach split.
   // Safe to call on every webhook firing — collapses on idempotency_key.
@@ -300,9 +333,19 @@ export class TransferOrchestratorService {
   //   unknown -> listing failed or was incomplete: nothing is sent, the row
   //              stays pending and SFEE_TRANSFER_UNCERTAIN alerts (an unknown
   //              payment is never treated as failed, so no repay alert);
-  //   absent  -> a complete listing proves it never executed: sent again.
+  //   absent  -> a complete listing proves it never executed: sent again,
+  //              or (attempt budget spent) failed with a repay alert.
   // Stripe may prune an idempotency key after 24 h, after which the same key
   // creates a new transfer; the lookup is what makes an aged retry safe.
+  //
+  // S-FEE round 8 (B-627-9) — "absent" is proof only once the create can no
+  // longer be in flight. A marker younger than inFlightWindowMs (Stripe
+  // client timeout + margin, 5 min by default) belongs to a create that may
+  // still execute (another worker may be awaiting it): the row is held —
+  // nothing sent, nothing failed, no alert — and looked up again when the
+  // window ends. Every outcome write (markFailed, scheduleRecheck,
+  // recordPosted) is a compare-and-set; a lost CAS re-reads the row and
+  // leaves the winner's result in place.
   async attempt(
     transferId: string,
     opts: { beforeStripe?: MoneyFence } = {},
@@ -326,10 +369,18 @@ export class TransferOrchestratorService {
     if (row.stripe_send_unresolved_at) {
       const lookup = await this.findStripeTransfer(row);
       if (lookup.kind === 'found') return this.recordPosted(row, lookup.id, 'reconciled');
+      // B-627-9: a create sent inside the in-flight window may still execute
+      // (another worker may be waiting on it right now). Its absence from the
+      // listing proves nothing yet: hold, never send and never fail.
+      const inFlightUntil = row.stripe_send_unresolved_at.getTime() + this.inFlightWindowMs;
+      if (this.clock().getTime() < inFlightUntil) {
+        return this.holdInFlight(row, new Date(inFlightUntil), lookup);
+      }
       if (lookup.kind === 'unknown') {
         return this.holdUncertain(row, `transfer lookup unavailable: ${lookup.reason}`, false);
       }
-      // absent: a complete listing shows no transfer for this operation.
+      // absent: a complete listing, read after the in-flight window, shows no
+      // transfer for this operation.
     }
 
     if (row.attempts >= row.max_attempts) {
@@ -339,19 +390,27 @@ export class TransferOrchestratorService {
     // B-627-2: a stale lock holder never starts a Stripe transfer.
     if (opts.beforeStripe) await opts.beforeStripe();
     const attemptCount = row.attempts + 1;
-    const sentAt = new Date();
+    const sentAt = this.clock();
     // Durable "sent" marker, written before Stripe is called. The CAS on
     // attempts lets exactly one worker send this attempt; a worker that loses
-    // it returns the row and leaves the result to the winner.
+    // it returns the row and leaves the result to the winner. B-627-9: never
+    // for a row that already has a Stripe transfer, and the row being sent is
+    // pending (every outcome write below is a CAS on pending + this attempt).
     const claim = await this.prisma.connectTransfer.updateMany({
-      where: { id: row.id, status: row.status, attempts: row.attempts },
-      data: { attempts: attemptCount, last_attempt_at: sentAt, stripe_send_unresolved_at: sentAt },
+      where: { id: row.id, status: row.status, attempts: row.attempts, stripe_transfer_id: null },
+      data: {
+        status: 'pending',
+        attempts: attemptCount,
+        last_attempt_at: sentAt,
+        stripe_send_unresolved_at: sentAt,
+      },
     });
     if (claim.count !== 1) {
       return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
     }
     const sent: ConnectTransfer = {
       ...row,
+      status: 'pending',
       attempts: attemptCount,
       last_attempt_at: sentAt,
       stripe_send_unresolved_at: sentAt,
@@ -412,7 +471,7 @@ export class TransferOrchestratorService {
       }
       // Not visible yet. The request may still be completing at Stripe, so
       // this is never final: the marker stays and the next attempt looks
-      // again before it may re-send the same key.
+      // again (after the in-flight window) before it may re-send the same key.
       const needsPerson = code !== TRANSFER_FAILURE_CODES.failed;
       const line =
         `${code} transfer=${row.id} kind=${row.kind} ` +
@@ -426,48 +485,130 @@ export class TransferOrchestratorService {
     return this.recordPosted(sent, stripeTransferId, 'created');
   }
 
-  // B-627-8 — record a transfer Stripe holds. Ledger first, then the
-  // ConnectTransfer receipt (the commit point that clears the unresolved
-  // marker). If either write fails the marker stays set, the row stays
-  // pending, and the next attempt finds the transfer at Stripe and records
-  // it again; it never sends a second one.
+  // B-627-9 — the compare-and-set every outcome write of one claimed attempt
+  // uses: the row is still pending, has no Stripe transfer recorded, and is
+  // still on the attempt this worker read or claimed. A newer claim, a
+  // receipt written by another worker, or a final status all make it miss.
+  private openOutcomeWhere(row: ConnectTransfer): Prisma.ConnectTransferWhereInput {
+    return { id: row.id, status: 'pending', stripe_transfer_id: null, attempts: row.attempts };
+  }
+
+  // B-627-9 — an outcome write lost its CAS: another worker moved the row
+  // first. Re-read it; its recorded state stands and nothing here overwrites
+  // it (no failure, no repay alert, no second receipt).
+  private async reconcileLostOutcome(
+    row: ConnectTransfer,
+    wanted: 'failed' | 'retry' | 'recheck' | 'posted',
+    stripeTransferId?: string,
+  ): Promise<ConnectTransfer> {
+    const fresh = await this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+    if (
+      wanted === 'posted' &&
+      stripeTransferId &&
+      fresh.stripe_transfer_id &&
+      fresh.stripe_transfer_id !== stripeTransferId
+    ) {
+      this.logger.error(
+        `SFEE_TRANSFER_DUPLICATE alert=true transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
+          `recorded_stripe_transfer=${fresh.stripe_transfer_id} also_at_stripe=${stripeTransferId} amount=${row.amount_cents} ` +
+          `currency=${row.currency}: Stripe holds two transfers for one payout row; reverse ${stripeTransferId} once confirmed`,
+      );
+      return fresh;
+    }
+    this.logger.warn(
+      `${TRANSFER_SUPERSEDED_CODE} transfer=${row.id} kind=${row.kind} wanted=${wanted} attempt=${row.attempts}: ` +
+        `the row moved first (status=${fresh.status} attempts=${fresh.attempts} ` +
+        `stripe_transfer=${fresh.stripe_transfer_id ?? 'none'}); its recorded result stands`,
+    );
+    return fresh;
+  }
+
+  // B-627-8 / B-627-9 — record a transfer Stripe holds. The receipt and the
+  // ledger slice commit in one transaction (the commit point that clears the
+  // unresolved marker). Compare-and-set, independent of the caller's
+  // snapshot: only a row still pending (or marked failed by a superseded
+  // worker) with no other Stripe transfer becomes succeeded; a succeeded,
+  // reversed or netted row is never regressed or re-dated. If the write
+  // fails the marker stays set, the row stays pending, and the next attempt
+  // finds the transfer at Stripe and records it again; it never sends a
+  // second one.
   private async recordPosted(
     row: ConnectTransfer,
     stripeTransferId: string,
     how: 'created' | 'reconciled',
   ): Promise<ConnectTransfer> {
+    const postedAt = this.clock();
+    const data = {
+      status: 'succeeded',
+      stripe_transfer_id: stripeTransferId,
+      posted_at: postedAt,
+      last_error: null,
+      next_attempt_at: null,
+      stripe_send_unresolved_at: null,
+    };
+    const sameTransfer = [{ stripe_transfer_id: null }, { stripe_transfer_id: stripeTransferId }];
+    let recorded: 'from_pending' | 'from_failed' | null;
     try {
-      if (row.ledger_entry_id) {
-        await this.ledger.markPosted({
-          entry_id: row.ledger_entry_id,
-          stripe_transfer_id: stripeTransferId,
-          stripe_charge_id: row.source_stripe_charge_id ?? undefined,
+      recorded = await this.prisma.$transaction(async (tx) => {
+        const fromPending = await tx.connectTransfer.updateMany({
+          where: { id: row.id, status: 'pending', OR: sameTransfer },
+          data,
         });
-      }
-      const posted = await this.prisma.connectTransfer.update({
-        where: { id: row.id },
-        data: {
-          status: 'succeeded',
-          stripe_transfer_id: stripeTransferId,
-          posted_at: new Date(),
-          last_error: null,
-          next_attempt_at: null,
-          stripe_send_unresolved_at: null,
-        },
+        let won: 'from_pending' | 'from_failed' | null =
+          fromPending.count === 1 ? 'from_pending' : null;
+        if (!won) {
+          const fromFailed = await tx.connectTransfer.updateMany({
+            where: { id: row.id, status: 'failed', OR: sameTransfer },
+            data,
+          });
+          if (fromFailed.count === 1) won = 'from_failed';
+        }
+        if (won && row.ledger_entry_id) {
+          await this.ledger.markTransferPosted(
+            {
+              entry_id: row.ledger_entry_id,
+              stripe_transfer_id: stripeTransferId,
+              stripe_charge_id: row.source_stripe_charge_id,
+            },
+            tx,
+            postedAt,
+          );
+        }
+        return won;
       });
-      if (how === 'reconciled') {
-        this.logger.log(
-          `SFEE_TRANSFER_RECONCILED transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId}: found at Stripe, receipt recorded, nothing re-sent`,
-        );
-      }
-      return posted;
     } catch (err) {
       const message = (err as Error)?.message ?? 'unknown receipt error';
       this.logger.error(
         `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${message}); the next attempt records it from Stripe and sends nothing`,
       );
-      await this.scheduleRecheck(row, `SFEE_TRANSFER_RECEIPT_PENDING: ${message}`);
-      return { ...row, last_error: `SFEE_TRANSFER_RECEIPT_PENDING: ${message}`.slice(0, 500) };
+      return this.scheduleRecheck(row, { message: `SFEE_TRANSFER_RECEIPT_PENDING: ${message}` });
+    }
+    if (!recorded) return this.reconcileLostOutcome(row, 'posted', stripeTransferId);
+    if (recorded === 'from_failed') {
+      this.logger.error(
+        `SFEE_TRANSFER_RECOVERED alert=true transfer=${row.id} kind=${row.kind} settlement=${row.settlement_id ?? 'none'} ` +
+          `payee=${row.destination_user_id ?? 'unknown'} stripe_transfer=${stripeTransferId} amount=${row.amount_cents} ` +
+          `currency=${row.currency}: Stripe holds this transfer although the row had been marked failed; recorded as paid. ` +
+          'Do not repay; cancel any repayment started from the earlier SFEE_TRANSFER_FAILED alert',
+      );
+    } else if (how === 'reconciled') {
+      this.logger.log(
+        `SFEE_TRANSFER_RECONCILED transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId}: found at Stripe, receipt recorded, nothing re-sent`,
+      );
+    }
+    return this.readBack(row, data);
+  }
+
+  // The row after a write this worker won (falls back to the written values
+  // when the read itself fails; the write already committed).
+  private async readBack(
+    row: ConnectTransfer,
+    data: Partial<ConnectTransfer>,
+  ): Promise<ConnectTransfer> {
+    try {
+      return await this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+    } catch {
+      return { ...row, ...data };
     }
   }
 
@@ -486,32 +627,69 @@ export class TransferOrchestratorService {
         (justSent ? 'outcome unknown' : 'not re-sent') +
         ', looked up again before any re-send',
     );
-    return this.scheduleRecheck(row, `${TRANSFER_UNCERTAIN_CODE}: ${message}`);
+    return this.scheduleRecheck(row, { message: `${TRANSFER_UNCERTAIN_CODE}: ${message}` });
   }
 
-  private async scheduleRecheck(row: ConnectTransfer, message: string): Promise<ConnectTransfer> {
-    const delay =
-      TransferOrchestratorService.BACKOFF_MINUTES[
-        Math.min(row.attempts, TransferOrchestratorService.BACKOFF_MINUTES.length - 1)
-      ];
-    const data = {
-      last_error: message.slice(0, 500),
-      next_attempt_at: new Date(Date.now() + delay * 60_000),
+  // B-627-9 — a create sent inside the in-flight window is not visible at
+  // Stripe yet. Nothing is sent and nothing is failed (the sender records the
+  // result); the row is looked up again once the window has passed. Not an
+  // alert: this is the normal shape of two workers overlapping on one row.
+  private async holdInFlight(
+    row: ConnectTransfer,
+    until: Date,
+    lookup: TransferLookup,
+  ): Promise<ConnectTransfer> {
+    const sentAt = row.stripe_send_unresolved_at;
+    this.logger.warn(
+      `${TRANSFER_IN_FLIGHT_CODE} transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
+        `op=${row.idempotency_key} attempt=${row.attempts}/${row.max_attempts} ` +
+        `sent_at=${sentAt?.toISOString() ?? 'unknown'} hold_until=${until.toISOString()} lookup=${lookup.kind}: ` +
+        'a create sent inside the in-flight window may still execute at Stripe; nothing sent, nothing failed, looked up again after the window',
+    );
+    return this.scheduleRecheck(row, { at: until });
+  }
+
+  // B-627-9 — CAS on the attempt that was read or claimed. A lost CAS means
+  // another worker moved the row (a newer claim, a receipt, a final status):
+  // re-read and leave its state alone.
+  private async scheduleRecheck(
+    row: ConnectTransfer,
+    opts: { message?: string; at?: Date },
+  ): Promise<ConnectTransfer> {
+    const data: { next_attempt_at: Date; last_error?: string } = {
+      next_attempt_at: opts.at ?? this.retryAt(row),
     };
+    if (opts.message) data.last_error = opts.message.slice(0, 500);
+    let won: boolean;
     try {
-      await this.prisma.connectTransfer.updateMany({
-        where: { id: row.id, status: 'pending' },
+      const res = await this.prisma.connectTransfer.updateMany({
+        where: this.openOutcomeWhere(row),
         data,
       });
+      won = res.count === 1;
     } catch (err) {
       // The row is still pending with its marker; the sweeper picks it up.
       this.logger.warn(
         `could not schedule the transfer re-check transfer=${row.id}: ${(err as Error)?.message}`,
       );
+      return { ...row, ...data };
     }
+    if (!won) return this.reconcileLostOutcome(row, 'recheck');
     return { ...row, ...data };
   }
 
+  // Next retry time: the backoff for this attempt, and never inside the
+  // in-flight window of a create whose result is still unresolved.
+  private retryAt(row: ConnectTransfer, unresolvedSince?: Date | null): Date {
+    const delay =
+      TransferOrchestratorService.BACKOFF_MINUTES[
+        Math.min(row.attempts, TransferOrchestratorService.BACKOFF_MINUTES.length - 1)
+      ];
+    const backoff = this.clock().getTime() + delay * 60_000;
+    const marker = unresolvedSince === undefined ? row.stripe_send_unresolved_at : unresolvedSince;
+    const window = marker ? marker.getTime() + this.inFlightWindowMs : 0;
+    return new Date(Math.max(backoff, window));
+  }
   // B-627-8 — Stripe's transfers to the row's destination in its transfer
   // group, matched by the operation key. Three answers, like reversals:
   // 'absent' only when the full list was read (has_more false); a list error
@@ -862,6 +1040,10 @@ export class TransferOrchestratorService {
     return { status: 'refused', transfer, op_id: op.id, error: message };
   }
 
+  // B-627-9 — every write is a CAS on the attempt that was read or claimed
+  // (openOutcomeWhere). The ledger slice and the final status commit in one
+  // transaction, and the repay alert is raised only by the worker that won:
+  // a row another worker recorded (or is still sending) is never failed.
   private async markFailed(
     row: ConnectTransfer,
     message: string,
@@ -871,23 +1053,24 @@ export class TransferOrchestratorService {
     send: { resolved: boolean } = { resolved: true },
   ): Promise<ConnectTransfer> {
     const status = finalFailure ? 'failed' : 'pending';
-    const nextDelay =
-      TransferOrchestratorService.BACKOFF_MINUTES[
-        Math.min(row.attempts, TransferOrchestratorService.BACKOFF_MINUTES.length - 1)
-      ];
-    const nextAttempt = finalFailure ? null : new Date(Date.now() + nextDelay * 60_000);
-    const updated = await this.prisma.connectTransfer.update({
-      where: { id: row.id },
-      data: {
-        status,
-        last_error: message,
-        next_attempt_at: nextAttempt,
-        ...(send.resolved ? { stripe_send_unresolved_at: null } : {}),
-      },
+    const nextAttempt = finalFailure
+      ? null
+      : this.retryAt(row, send.resolved ? null : row.stripe_send_unresolved_at);
+    const data = {
+      status,
+      last_error: message,
+      next_attempt_at: nextAttempt,
+      ...(send.resolved ? { stripe_send_unresolved_at: null } : {}),
+    };
+    const won = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.connectTransfer.updateMany({ where: this.openOutcomeWhere(row), data });
+      if (res.count !== 1) return false;
+      if (finalFailure && row.ledger_entry_id) {
+        await this.ledger.markTransferFailed(row.ledger_entry_id, message, tx);
+      }
+      return true;
     });
-    if (finalFailure && row.ledger_entry_id) {
-      await this.ledger.markFailed(row.ledger_entry_id, message);
-    }
+    if (!won) return this.reconcileLostOutcome(row, finalFailure ? 'failed' : 'retry');
     if (finalFailure && row.settlement_id) {
       // C-627-6 (round 6): exact amounts for the operator. Netted cents stay
       // collected (they settled another charge's debt); only amount_cents is
@@ -896,6 +1079,6 @@ export class TransferOrchestratorService {
         `SFEE_TRANSFER_FAILED alert=true transfer=${row.id} settlement=${row.settlement_id} payee=${row.destination_user_id ?? 'unknown'} owed_cents=${row.amount_cents} netted_cents=${row.netted_recovery_cents} currency=${row.currency}: repay owed_cents only; the netted cents already settled an earlier hold`,
       );
     }
-    return updated;
+    return this.readBack(row, data);
   }
 }

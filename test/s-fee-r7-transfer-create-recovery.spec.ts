@@ -116,9 +116,10 @@ function setup(opts: { headCoach?: boolean } = {}) {
   // Lose the local receipt (P2024) the first time each listed row is marked
   // succeeded, after Stripe already moved the money.
   const loseReceiptOnce = (kinds: string[]) => {
-    const update = prisma.connectTransfer.update.getMockImplementation()!;
+    // Round 8: the receipt is a compare-and-set (updateMany).
+    const update = prisma.connectTransfer.updateMany.getMockImplementation()!;
     const lost = new Set<string>();
-    prisma.connectTransfer.update.mockImplementation(async (args) => {
+    prisma.connectTransfer.updateMany.mockImplementation(async (args) => {
       const row = db.transfers.find((t) => t.id === args.where.id);
       if (
         row &&
@@ -137,7 +138,10 @@ function setup(opts: { headCoach?: boolean } = {}) {
   };
   // The sweeper, `hours` from now.
   const sweepAt = async (hours: number) => {
-    const due = await transfers.findDueTransfers(new Date(Date.now() + hours * HOUR));
+    // Round 8 (B-627-9): the orchestrator's clock is the sweep's time too.
+    const at = new Date(Date.now() + hours * HOUR);
+    transfers.clock = () => at;
+    const due = await transfers.findDueTransfers(at);
     for (const t of due) await transfers.attempt(t.id);
     return due;
   };
@@ -368,6 +372,9 @@ describe('B-627-8 a lost reinstatement result is looked up, never paid twice', (
     await c.win();
     const [row] = c.reinstateRows();
     c.stripe.expireIdempotencyKeys();
+    // Round 8: aged = past the in-flight window of the lost send.
+    const aged = new Date(Date.now() + 25 * HOUR);
+    c.transfers.clock = () => aged;
     await Promise.all([c.transfers.attempt(row.id), c.transfers.attempt(row.id)]);
     expect(c.createsFor(row.idempotency_key)).toBe(2); // the lost one + exactly one re-send
     expect(c.stripeReinstatements()).toHaveLength(1);

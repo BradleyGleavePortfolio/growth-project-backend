@@ -46,9 +46,7 @@ export class SplitLedgerService {
 
   // Create the pending ledger rows for a purchase. Safe to call multiple
   // times — composite unique collapses retries to the same set.
-  async ensurePendingEntries(
-    inputs: SplitLedgerInputs,
-  ): Promise<SplitLedgerEntry[]> {
+  async ensurePendingEntries(inputs: SplitLedgerInputs): Promise<SplitLedgerEntry[]> {
     const { purchase, plan } = inputs;
     const rows: Array<Promise<SplitLedgerEntry>> = [];
 
@@ -236,6 +234,42 @@ export class SplitLedgerService {
     });
   }
 
+  // S-FEE round 8 (B-627-9) — record a transfer slice as posted, inside the
+  // transaction that writes the transfer receipt. Compare-and-set: only a
+  // slice still pending (or marked failed by a superseded worker) moves to
+  // posted; a posted or reversed slice is never regressed or re-dated.
+  async markTransferPosted(
+    args: { entry_id: string; stripe_transfer_id: string; stripe_charge_id?: string | null },
+    db: Pick<PrismaService, 'splitLedgerEntry'>,
+    postedAt: Date,
+  ): Promise<boolean> {
+    const res = await db.splitLedgerEntry.updateMany({
+      where: { id: args.entry_id, status: { in: ['pending', 'failed'] } },
+      data: {
+        status: 'posted',
+        stripe_charge_id: args.stripe_charge_id ?? undefined,
+        stripe_transfer_id: args.stripe_transfer_id,
+        posted_at: postedAt,
+        last_error: null,
+      },
+    });
+    return res.count === 1;
+  }
+
+  // S-FEE round 8 (B-627-9) — the final-failure twin of markTransferPosted:
+  // only a pending slice becomes failed (never a posted or reversed one).
+  async markTransferFailed(
+    entryId: string,
+    message: string,
+    db: Pick<PrismaService, 'splitLedgerEntry'>,
+  ): Promise<boolean> {
+    const res = await db.splitLedgerEntry.updateMany({
+      where: { id: entryId, status: 'pending' },
+      data: { status: 'failed', last_error: message },
+    });
+    return res.count === 1;
+  }
+
   async markFailed(entryId: string, message: string): Promise<SplitLedgerEntry> {
     return this.prisma.splitLedgerEntry.update({
       where: { id: entryId },
@@ -265,8 +299,7 @@ export class SplitLedgerService {
         reversed_cents: newReversed,
         status: fullyReversed ? 'reversed' : current.status,
         reversed_at: fullyReversed ? new Date() : current.reversed_at,
-        stripe_transfer_id:
-          args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
+        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
       },
     });
   }

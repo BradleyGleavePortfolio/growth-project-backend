@@ -150,6 +150,9 @@ export interface StripeChargeObject {
   [k: string]: unknown;
 }
 
+// Client-side deadline for every Stripe Connect API call (ms).
+export const STRIPE_CONNECT_TIMEOUT_MS = 10_000;
+
 @Injectable()
 export class StripeConnectApiService {
   private readonly logger = new Logger(StripeConnectApiService.name);
@@ -157,7 +160,14 @@ export class StripeConnectApiService {
   // Timeout for all Stripe API calls. Stripe's p99 is well under 5s;
   // 10s gives headroom for retries without tying up a Fly worker indefinitely.
   // Overridable in tests via subclass.
-  protected readonly stripeTimeoutMs = 10_000;
+  protected readonly stripeTimeoutMs: number = STRIPE_CONNECT_TIMEOUT_MS;
+
+  // S-FEE round 8 (B-627-9): the configured client timeout, read by the
+  // transfer orchestrator to size how long a sent create may still be in
+  // flight at Stripe.
+  get requestTimeoutMs(): number {
+    return this.stripeTimeoutMs;
+  }
 
   // Overridable in tests via subclass to avoid monkey-patching globalThis.fetch.
   // Wraps every call with an AbortController so hung Stripe connections never
