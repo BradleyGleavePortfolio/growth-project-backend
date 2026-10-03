@@ -16,6 +16,14 @@
 # branches are short-lived feature/audit/agent branches that are merged or
 # deleted within hours. Protection on `main` alone covers the security model.
 #
+# Live mirror (operator 112, 2026-10-02 13:35): the payload below matches live
+# protection on main exactly. required_linear_history=false: live is off, and a
+# change to it needs the owner's explicit words for that exact change.
+# required_conversation_resolution=false: audits are posted as issue comments,
+# so resolution gating would stall merges without adding a control.
+# test/ci/branch-protection-checks.spec.ts evaluates the payload (jq only, no
+# network) and pins every field.
+#
 # Q4 decision: enforce_admins=true. Owner is included; admins cannot bypass the
 # protection itself. The required review still needs a second approver — see the
 # single-maintainer bypass note below for how a solo owner satisfies that.
@@ -85,7 +93,8 @@ fi
 #
 # ALWAYS-RUN (no paths filter) — eligible to be REQUIRED:
 #   ci.yml              (pull_request, no paths): build-and-test,
-#                        rls-floor-guard, rls-live-tests, mwb-3-live-tests
+#                        rls-floor-guard, rls-live-tests, mwb-3-live-tests,
+#                        community-live-tests
 #   danger.yml          (pull_request: branches:[main], no paths): danger
 #   r100-quality-gate.yml (pull_request: branches:[main], no paths):
 #                        Banned cast tokens (LOC budget / Test density retired
@@ -95,8 +104,30 @@ fi
 #                        since 2026-09-20 (no continue-on-error / GHAS fallback)
 #   sbom.yml            (pull_request: branches:[main], no paths): build-sbom
 #   dependency-audit.yml (pull_request, no paths): npm audit (high+critical, whole graph)
+#   schema-parity.yml   (pull_request + push to main, no paths):
+#                        "Schema parity (migrations match schema.prisma)"
+#                        (mandatory merge gate per operator ruling OR-110-3;
+#                        the 10th required check on live main since 2026-10-01)
+#   ci.yml              community-live-tests: the DB-backed community
+#                        moderation/safety suites (C-610-4); the 11th required
+#                        check on live main since 2026-10-02 16:41 PDT (owner
+#                        16:38: "Add community-live-tests as a required check
+#                        on backend main")
+#
+# The list below is EXACTLY the 11 contexts live branch protection on main
+# requires (read back with
+#   gh api repos/BradleyGleavePortfolio/growth-project-backend/branches/main/protection
+# on 2026-10-02 after 16:41 PDT), in the order GitHub returns them.
+# test/ci/branch-protection-checks.spec.ts pins it to that list; change both
+# together, and only after the live protection itself has changed.
+#
+# PR-ELIGIBLE BUT INFORMATIONAL — not required on live main, so not listed:
 #   h4-readiness.yml    (pull_request, no paths): test-deploy-readiness
-#                        (the PR-mode deploy-readiness board; PR-eligible)
+#                        (the PR-mode deploy-readiness board). It stays an
+#                        informational check (see the header of
+#                        h4-readiness.yml and docs/runbooks/deploy-readiness.md);
+#                        adding it here would make the script require a check
+#                        the live configuration does not.
 #
 # NOT PR-ELIGIBLE — intentionally EXCLUDED from required checks:
 #   h4-readiness.yml    deploy-readiness-gate — runs ONLY on workflow_dispatch
@@ -125,22 +156,25 @@ REQUIRED_CHECKS=(
   "rls-floor-guard"
   "rls-live-tests"
   "mwb-3-live-tests"
-  # danger.yml — runs on every PR to main (no paths filter)
-  "danger"
-  # r100-quality-gate.yml — runs on every PR to main (no paths filter)
-  "Banned cast tokens (R75 / R100.A2)"
-  # codeql.yml — runs on every PR to main; matrix job name as reported
-  "CodeQL JS/TS (javascript-typescript)"
-  # h4-readiness.yml — runs on every PR (no paths filter). PR-eligible; the
-  # non-PR strict gate (deploy-readiness-gate) is deliberately NOT listed here.
-  "test-deploy-readiness"
-  # sbom.yml — runs on every PR to main since 2026-09-20; proves the
-  # production dependency closure before merge.
-  "build-sbom"
   # dependency-audit.yml — runs on every PR (no paths filter); composed from
   # the S3 lane (job name as of its head 5c7b42b3). Required check names are
   # bound to CHECKS_APP_ID, so a renamed job blocks merges until updated here.
   "npm audit (high+critical, whole graph)"
+  # codeql.yml — runs on every PR to main; matrix job name as reported
+  "CodeQL JS/TS (javascript-typescript)"
+  # r100-quality-gate.yml — runs on every PR to main (no paths filter)
+  "Banned cast tokens (R75 / R100.A2)"
+  # sbom.yml — runs on every PR to main since 2026-09-20; proves the
+  # production dependency closure before merge.
+  "build-sbom"
+  # danger.yml — runs on every PR to main (no paths filter)
+  "danger"
+  # schema-parity.yml — runs on every PR and push to main (no paths filter);
+  # migrations must build the database schema.prisma declares (OR-110-3).
+  "Schema parity (migrations match schema.prisma)"
+  # ci.yml — runs on every PR (no paths filter); the community live suites
+  # against the full migration chain (owner 2026-10-02 16:38).
+  "community-live-tests"
 )
 
 : "${REQUIRED_APPROVING_REVIEW_COUNT:?set to 0 (recorded single-maintainer decision) or 1+ (second human maintainer); see header}"
@@ -170,11 +204,11 @@ PAYLOAD=$(jq -n \
       require_last_push_approval: ($count >= 1)
     },
     restrictions: null,
-    required_linear_history: true,
+    required_linear_history: false,
     allow_force_pushes: false,
     allow_deletions: false,
     block_creations: false,
-    required_conversation_resolution: true,
+    required_conversation_resolution: false,
     lock_branch: false,
     allow_fork_syncing: false
   }')
