@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 /** The two Roman surfaces. Mirrors the Prisma `RomanSurface` enum. */
 export const ROMAN_SURFACES = ['client', 'coach'] as const;
@@ -45,9 +46,20 @@ export class ListMessagesQueryDto {
   @MaxLength(64)
   cursor?: string;
 
+  // Query strings arrive as text; convert before @IsInt (the global
+  // ValidationPipe has transform on but no implicit conversion), so
+  // `?limit=30` is accepted rather than a 400.
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;
 }
+
+/**
+ * GET /roman/sessions?cursor=&limit=&surface= is NOT validated by a DTO: the
+ * global ValidationPipe would reject a bad value with an uncoded 400 before
+ * any route code runs (Sol B-635-5). `parseListSessionsQuery` in
+ * roman-chats.query.ts is the route-owned validator with coded errors.
+ */

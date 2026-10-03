@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 /**
@@ -82,6 +83,37 @@ export class SubCoachScopeService {
       );
     }
     return null;
+  }
+
+  /**
+   * The same explicit-membership rule as `getHeadCoachIdForSubCoach`, decided
+   * INSIDE the caller's transaction and held until it ends (#607 A-607-4).
+   *
+   * `u` must be the caller's already-locked `User` row (`FOR SHARE`), so a
+   * change of the coach pointer or role waits for, or is seen by, the caller.
+   * The membership row that proves the head (an open team seat, else an open
+   * delegation) is read `FOR SHARE` too: a seat archival or the close of the
+   * last delegation, which main commits WITHOUT touching `User`, either
+   * committed first (and the row no longer matches, so no head) or waits until
+   * the caller commits. A membership added after this read serialises after
+   * the caller, which is consistent with the null it saw.
+   */
+  async lockMembershipHeadCoachIdInTx(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    u: { role: string; coach_id: string | null } | null,
+  ): Promise<string | null> {
+    if (!u || u.role !== 'coach' || !u.coach_id) return null;
+    const seat = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "TeamSubCoachAssignment"
+      WHERE "head_coach_id" = ${u.coach_id} AND "sub_coach_id" = ${userId} AND "archived_at" IS NULL
+      LIMIT 1 FOR SHARE`;
+    if (seat.length > 0) return u.coach_id;
+    const delegation = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "SubCoachAssignment"
+      WHERE "head_coach_id" = ${u.coach_id} AND "sub_coach_id" = ${userId} AND "unassigned_at" IS NULL
+      LIMIT 1 FOR SHARE`;
+    return delegation.length > 0 ? u.coach_id : null;
   }
 
   /** True if this coach user is a sub-coach (has a parent head coach). */

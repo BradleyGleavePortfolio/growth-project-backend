@@ -1,8 +1,8 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
 import { PrismaService } from '../../prisma.service';
-import { dayLabel, formatClock, formatDateTime } from '../local-time';
+import { formatClock, formatDateTime } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
 
 // All booking emitters share the same write shape: ONE in-app inbox row for
@@ -72,9 +72,9 @@ export class BookingEmitter {
 
   constructor(
     private readonly notifications: NotificationsService,
-    // Optional so thin unit tests can build the emitter without DI; without
-    // it no zone is known and copy is written without a clock time.
-    @Optional() private readonly prisma?: PrismaService,
+    // C-647-2: required. PrismaModule is @Global; a lost provider must fail
+    // at boot, not silently drop every clock time from booking copy.
+    private readonly prisma: PrismaService,
   ) {}
 
   private zoneFor(userId: string, sessionId: string): Promise<string | null> {
@@ -193,7 +193,10 @@ export class BookingEmitter {
     const tz = await this.zoneFor(payload.recipientUserId, payload.sessionId);
     const body = (
       tz
-        ? `Reminder: your session with ${payload.otherPartyDisplayName} is ${dayLabel(payload.scheduledAt, tz)} at ${formatClock(payload.scheduledAt, tz)}.`
+        ? // C-647-3: the stored inbox body names the date, not "tomorrow",
+          // so it is still true when read the next day. The lock-screen push
+          // renders the relative day at the moment it is sent.
+          `Reminder: your session with ${payload.otherPartyDisplayName} is on ${formatDateTime(payload.scheduledAt, tz)}.`
         : `Reminder: your session with ${payload.otherPartyDisplayName} is in about 24 hours.`
     ).slice(0, 160);
     await this.writeInbox({

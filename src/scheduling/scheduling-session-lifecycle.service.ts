@@ -327,14 +327,11 @@ export class SchedulingSessionLifecycleService {
               message: 'Time slot is not available.',
             });
           }
-          // B-643-1: re-arm the 24 h / 1 h reminders for the new time. The
-          // reminder claim is keyed (session, user, kind), so without this a
-          // session moved after its reminder fired would never be reminded
-          // at the new time. Same transaction as the move, so a failed move
-          // keeps the old claims.
-          await tx.notificationDeliveryLog.deleteMany({
-            where: { session_id: sessionId },
-          });
+          // B-643-1 / Sol B-647-1: reminders re-arm for the new time without
+          // touching the claim ledger. Claims are keyed (session, user, kind,
+          // start_at), so the new start time has no claim yet, and the
+          // reminder job only claims while the session still has the start
+          // time it selected (reminder.job.ts claimDelivery).
           return tx.coachingSession.update({
             where: { id: sessionId },
             data: { start_at: start, end_at: end },

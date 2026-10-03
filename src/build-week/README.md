@@ -8,7 +8,7 @@ sequenced beat the user must clear before the next unlocks.
 
 | Day | Title          | Focus area                       | Expected artifact                                                                  |
 | --- | -------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
-| 1   | Audit          | Diagnostic + Baseline            | Diagnostic + baseline snapshot (weight, income, hours, 90-day success statement). |
+| 1   | Audit          | Consultation + Baseline          | Consultation + baseline snapshot (weight, income, hours, 90-day success statement). |
 | 2   | Strategy       | 90-Day Arc + Calendar Cuts       | Confirmed income lever and a written list of calendar cuts for the week.           |
 | 3   | Income Setup   | Offer + Outreach                 | Offer brief, LinkedIn headline, five outreach sends, populated tracker link.       |
 | 4   | Body Protocol  | Macros + Training + Sleep        | Macro targets, training schedule, sleep audit, Week 1 body target.                 |

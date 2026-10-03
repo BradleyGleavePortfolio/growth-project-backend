@@ -11,10 +11,20 @@ import { PrismaService } from '../../prisma.service';
 //   24h reminder — runs every 15 minutes, sweeps [now+23h45m, now+24h15m].
 //
 // Idempotency: every fan-out INSERTs a NotificationDeliveryLog row first,
-// keyed (session_id, user_id, kind). A unique-constraint violation means
-// the reminder already went out for this (session, user, kind); the
-// dispatcher then skips. This means two replicas can run the cron in
+// keyed (session_id, user_id, kind, start_at). An existing row means the
+// reminder already went out for this (session, user, kind) at this start
+// time; the dispatcher then skips. Two replicas can run the cron in
 // parallel without double-sending.
+//
+// Generation fence (Sol B-647-1): the claim carries the start time the
+// sweep selected, and it is only written while the session row, locked
+// FOR SHARE in the same transaction, still has that start time and is
+// still `scheduled`. A reschedule that committed after the sweep's read
+// makes the claim (and the obsolete-time reminder) a no-op; a reschedule
+// that is still in flight waits for the claim, or the claim waits for it
+// and then sees the new time. Claims for the old time never block the new
+// time's reminder, so a reschedule no longer deletes claims, and a no-op
+// reschedule (same time) cannot re-send.
 //
 // The sweeps are deliberately wider than the cron interval so a missed
 // tick from a redeploy still catches every session.
@@ -139,7 +149,7 @@ export class SessionReminderJob {
       });
 
       for (const p of participants) {
-        const claimed = await this.claimDelivery(session.id, p.userId, args.kind);
+        const claimed = await this.claimDelivery(session, p.userId, args.kind);
         if (!claimed) {
           skipped += 1;
           continue;
@@ -165,21 +175,41 @@ export class SessionReminderJob {
   }
 
   // Returns true when the claim row was inserted (caller should
-  // dispatch). Returns false when a duplicate already exists
-  // (idempotent skip).
-  private async claimDelivery(
-    sessionId: string,
+  // dispatch). Returns false when the reminder was already claimed for this
+  // start time, or when the session no longer has the start time / status
+  // the sweep selected (stale snapshot: never emit an obsolete time).
+  async claimDelivery(
+    session: Pick<CoachingSession, 'id' | 'start_at'>,
     userId: string,
     kind: string,
   ): Promise<boolean> {
     try {
-      await this.prisma.notificationDeliveryLog.create({
-        data: { session_id: sessionId, user_id: userId, kind },
+      return await this.prisma.$transaction(async (tx) => {
+        const current = await tx.$queryRaw<Array<{ start_at: Date; status: string }>>`
+          SELECT "start_at", "status"::text AS "status"
+          FROM "CoachingSession"
+          WHERE "id" = ${session.id}
+          FOR SHARE`;
+        const row = current[0];
+        if (
+          !row ||
+          row.status !== 'scheduled' ||
+          new Date(row.start_at).getTime() !== session.start_at.getTime()
+        ) {
+          return false;
+        }
+        const inserted = await tx.notificationDeliveryLog.createMany({
+          data: [{ session_id: session.id, user_id: userId, kind, start_at: session.start_at }],
+          skipDuplicates: true,
+        });
+        return inserted.count === 1;
       });
-      return true;
-    } catch {
-      // Unique-violation = already claimed by an earlier sweep or a
-      // concurrent replica.
+    } catch (err) {
+      // A failed claim skips this tick; the next sweep (the window is wider
+      // than the cron interval) tries again. Never emits without a claim.
+      this.logger.warn(
+        `reminder claim failed: session=${session.id} user=${userId} kind=${kind} err=${(err as Error).name}`,
+      );
       return false;
     }
   }

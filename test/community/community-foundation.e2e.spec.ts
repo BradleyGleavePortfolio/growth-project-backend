@@ -4,8 +4,8 @@
  * Boots the real Nest HTTP layer (CommunityController + CommunityService +
  * CommunityRepository + the real RolesGuard / CommunityFeatureFlagGuard) wired
  * to the real PrismaService, and drives it over HTTP against a live, disposable
- * Postgres (the rls_fn_test database that already carries the User /
- * ClientPurchase / community_* tables).
+ * Postgres migrated with the real chain (`prisma migrate deploy`; CI job
+ * community-live-tests).
  *
  * GATE INTENT (R69): this suite is env-gated on COMMUNITY_TEST_DATABASE_URL.
  * When the var is unset the whole live block is `describe.skip`-ed and a reason
@@ -35,9 +35,11 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityController } from '../../src/community/community.controller';
 import { CommunityService } from '../../src/community/community.service';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
@@ -45,14 +47,13 @@ import { RolesGuard } from '../../src/auth/roles.guard';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-foundation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-foundation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 // Header used by the JwtAuthGuard stub to identify the caller. Two special
@@ -90,15 +91,8 @@ itLive('community v1-2 foundation (live DB)', () => {
       const userId = req.headers[H_USER] as string | undefined;
       // Mirror the real JwtAuthGuard: a missing/invalid token is 401, not 403.
       if (!userId) throw new UnauthorizedException();
-      // The rls_fn_test "User" table is minimal (id/role/name/coach_id only),
-      // so a typed findUnique would emit a SELECT on the absent supabase_id
-      // column. Read only the columns that exist via raw SQL and reconstruct
-      // the subset of the Prisma User the controller/service actually touch
-      // (id, role, coach_id).
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       if (req.headers[H_NOROLE] === 'true') {
         // Forge a JWT-minus-role-claim: strip the role before RolesGuard runs.
@@ -116,23 +110,19 @@ itLive('community v1-2 foundation (live DB)', () => {
     headers: Record<string, string> = {},
   ): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
-      const req = http.request(
-        `${baseUrl}${path}`,
-        { method, headers },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => (data += c));
-          res.on('end', () => {
-            let body: any = null;
-            try {
-              body = data.length ? JSON.parse(data) : null;
-            } catch {
-              body = data;
-            }
-            resolve({ status: res.statusCode ?? 0, body });
-          });
-        },
-      );
+      const req = http.request(`${baseUrl}${path}`, { method, headers }, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let body: any = null;
+          try {
+            body = data.length ? JSON.parse(data) : null;
+          } catch {
+            body = data;
+          }
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      });
       req.on('error', reject);
       req.end();
     });
@@ -162,6 +152,7 @@ itLive('community v1-2 foundation (live DB)', () => {
       providers: [
         CommunityService,
         CommunityRepository,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         ClientEntitlementGuard,
         Reflector,
@@ -198,24 +189,15 @@ itLive('community v1-2 foundation (live DB)', () => {
     ids.student = randomUUID();
     ids.noRoleUser = randomUUID();
 
-    // The disposable rls_fn_test database carries a MINIMAL "User" table
-    // (id/role/name/coach_id only — no supabase_id/email, and id is TEXT not
-    // uuid). Prisma's typed user.createMany requires the full model, so users
-    // are seeded with parameterized raw SQL against the columns that exist.
-    // Community FKs are uuid columns with no enforced FK to User here, so
-    // uuid-format string ids work as both the TEXT User.id and the uuid refs.
-    const users: Array<[string, string, string, string | null]> = [
+    // Full "User" rows (the DB runs the real migration chain); uuid-format
+    // string ids serve as both the TEXT User.id and the uuid community refs.
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.student, 'student', 'Sam Member', ids.coachA],
       [ids.noRoleUser, 'student', 'No Role', null],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: {
@@ -257,9 +239,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.student, ids.noRoleUser].filter(
-      Boolean,
-    );
+    const userIds = [ids.coachA, ids.coachB, ids.student, ids.noRoleUser].filter(Boolean);
     // Workspaces cascade to cohorts + memberships; deleting them clears all
     // community rows this suite created. Users go last.
     await prisma.communityMembership.deleteMany({
@@ -311,11 +291,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   it('3. workspace fetch — member access → 200 access:member', async () => {
     // ensure the student is bootstrapped
     await call('GET', '/api/community/me', asUser(ids.student));
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsA}`,
-      asUser(ids.student),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.student));
     expect(res.status).toBe(200);
     expect(res.body.access).toBe('member');
     expect(res.body.owner_coach_user_id).toBe(ids.coachA);
@@ -323,33 +299,21 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 4 — Workspace fetch, owner access.
   it('4. workspace fetch — owner access → 200 access:owner', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsA}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.coachA));
     expect(res.status).toBe(200);
     expect(res.body.access).toBe('owner');
   });
 
   // 5 — Workspace fetch, foreign workspace → 403 structured.
   it('5. workspace fetch — foreign workspace → 403 structured', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${ids.wsB}`,
-      asUser(ids.student),
-    );
+    const res = await call('GET', `/api/community/workspaces/${ids.wsB}`, asUser(ids.student));
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('community.workspace.no_access');
   });
 
   // 6 — Workspace fetch, nonexistent → 404.
   it('6. workspace fetch — nonexistent → 404', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/workspaces/${randomUUID()}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/workspaces/${randomUUID()}`, asUser(ids.coachA));
     expect(res.status).toBe(404);
   });
 
@@ -374,11 +338,7 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 9 — Cohort detail, foreign cohort denial.
   it('9. cohort detail — foreign cohort → 403', async () => {
-    const res = await call(
-      'GET',
-      `/api/community/cohorts/${ids.cohortB}`,
-      asUser(ids.coachA),
-    );
+    const res = await call('GET', `/api/community/cohorts/${ids.cohortB}`, asUser(ids.coachA));
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('community.cohort.no_access');
   });
@@ -401,11 +361,7 @@ itLive('community v1-2 foundation (live DB)', () => {
 
   // 11 — Today envelope, no membership case.
   it('11. today — no membership → empty_reason no_membership', async () => {
-    const res = await call(
-      'GET',
-      '/api/community/today',
-      asUser(ids.noRoleUser),
-    );
+    const res = await call('GET', '/api/community/today', asUser(ids.noRoleUser));
     expect(res.status).toBe(200);
     expect(res.body.empty_reason).toBe('no_membership');
     expect(res.body.cohort).toBeNull();
@@ -438,11 +394,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   it('14. flag OFF on /workspaces/:id → 503 typed disabled body', async () => {
     process.env.FEATURE_COMMUNITY_API = 'false';
     try {
-      const res = await call(
-        'GET',
-        `/api/community/workspaces/${ids.wsA}`,
-        asUser(ids.coachA),
-      );
+      const res = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.coachA));
       expect(res.status).toBe(503);
       expect(res.body.disabled).toBe(true);
       expect(res.body.retry_after).toBeNull();

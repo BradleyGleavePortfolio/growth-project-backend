@@ -16,12 +16,12 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
-import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
-import { CommunityModerationService } from './community-moderation.service';
 import {
-  ActOnItemDto,
-  CreateReportDto,
-} from '../dto/community-moderation.dto';
+  CommunityAlwaysReachable,
+  CommunityFeatureFlagGuard,
+} from '../community-feature-flag.guard';
+import { CommunityModerationService } from './community-moderation.service';
+import { ActOnItemDto, CreateReportDto } from '../dto/community-moderation.dto';
 
 /**
  * Report → review → action moderation.
@@ -41,14 +41,14 @@ export class CommunityModerationController {
 
   @Post('moderation/reports')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  // B-610-1: reporting and the review queue stay reachable wherever member
+  // wins are live (wins do not depend on FEATURE_COMMUNITY_API).
+  @CommunityAlwaysReachable()
   @Roles('student', 'coach', 'owner')
   @Throttle({
     default: { ttl: 300_000, limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_REPORTS_PER_5MIN },
   })
-  async report(
-    @Request() req: AuthedRequest,
-    @Body() body: CreateReportDto,
-  ) {
+  async report(@Request() req: AuthedRequest, @Body() body: CreateReportDto) {
     return this.moderation.report(
       req.user,
       body.target_type,
@@ -60,6 +60,9 @@ export class CommunityModerationController {
 
   @Get('workspaces/:workspaceId/moderation/queue')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  // B-610-1: reporting and the review queue stay reachable wherever member
+  // wins are live (wins do not depend on FEATURE_COMMUNITY_API).
+  @CommunityAlwaysReachable()
   @Roles('student', 'coach', 'owner')
   async queue(
     @Request() req: AuthedRequest,
@@ -70,8 +73,26 @@ export class CommunityModerationController {
     return this.moderation.listQueue(req.user, workspaceId, { status, limit });
   }
 
+  /**
+   * GET /community/moderation/flagged — open reports across the coach's
+   * workspaces, enriched for the mobile review queue. Coach/owner only (the
+   * service rejects students with 403 not_moderator).
+   */
+  @Get('moderation/flagged')
+  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  // B-610-1: reporting and the review queue stay reachable wherever member
+  // wins are live (wins do not depend on FEATURE_COMMUNITY_API).
+  @CommunityAlwaysReachable()
+  @Roles('coach', 'owner')
+  async flagged(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
+    return this.moderation.listFlagged(req.user, { limit });
+  }
+
   @Patch('moderation/items/:itemId')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
+  // B-610-1: reporting and the review queue stay reachable wherever member
+  // wins are live (wins do not depend on FEATURE_COMMUNITY_API).
+  @CommunityAlwaysReachable()
   @Roles('student', 'coach', 'owner')
   async act(
     @Request() req: AuthedRequest,

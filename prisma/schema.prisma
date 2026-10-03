@@ -507,6 +507,7 @@ model User {
   community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
   community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
   community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
+  community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
 
   // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
   // session per (userId, surface) day-key). Each session holds an ordered
@@ -516,6 +517,10 @@ model User {
   // src/roman/roman.feature.ts. RLS scopes every row to userId at the DB
   // layer (migration 20261216000000_add_roman_chat).
   roman_sessions RomanSession[] @relation("RomanSessionUser")
+  // C05/C07 clinic onboarding (additive virtual back-relations).
+  onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
+  onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
+  clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
@@ -980,6 +985,15 @@ model NotificationPreferences {
   quiet_hours_start      String  @default("22:00")
   quiet_hours_end        String  @default("06:00")
   timezone               String  @default("America/Los_Angeles")
+  // B-647-1 / B-647-2 (zone provenance): `timezone` above has a schema
+  // default, so a stored row is not proof of the person's zone. These two are
+  // set only when the zone was actually supplied: 'device' (the mobile app
+  // sends the device IANA zone on sign-in, on foreground when it changed, and
+  // at onboarding) or 'settings' (an explicit PATCH). NULL = never supplied:
+  // notification copy and quiet hours ignore `timezone` and fall back to the
+  // coach's zone (recipient-timezone.ts), never silently to Pacific.
+  timezone_source        String?
+  timezone_updated_at    DateTime?
 
   // Phase 9 — Per-kind × per-channel preference flags.
   // muted=true overrides all per-kind settings (master kill switch).
@@ -1386,6 +1400,9 @@ model CommunityWin {
   description String
   visibility  String   @default("circle") // "circle" | "public"
   created_at  DateTime @default(now())
+  // Set when a coach or the TGP team hides the win from the moderation queue
+  // (App Review 1.2). Hidden wins never appear in any feed.
+  hidden_at   DateTime?
 
   @@index([user_id])
   @@index([coach_id, created_at])
@@ -2099,9 +2116,14 @@ model NotificationDeliveryLog {
   session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
   // kind matches NotificationKind values, e.g. booking_reminder_24h.
   kind       String
+  // Sol B-647-1: the session start time this claim was made for (the schedule
+  // generation). A reschedule changes start_at, so the new time gets a new
+  // claim without deleting the old one, a stale sweep holding the old time can
+  // never suppress the new reminder, and a no-op reschedule cannot re-send.
+  start_at   DateTime
   created_at DateTime        @default(now())
 
-  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
+  @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
   @@index([session_id])
   @@index([user_id, created_at])
 }
@@ -2436,6 +2458,106 @@ model MacroTarget {
 
   @@index([client_id, effective_from])
   @@index([coach_id, created_at])
+}
+
+// ─── C05/C07: clinic consultation intake + program set (additive) ─────────
+// One row per client. Holds the full versioned consultation answer set,
+// including the P1-P7 readiness screening. RLS: the client owns the row; the
+// client's CURRENT coach may read it (app.is_current_coach_of); Roman reads it
+// only in that client's own request context. Never exposed to anyone else.
+model ClientOnboardingIntake {
+  id                        String    @id @default(uuid())
+  client_id                 String    @unique
+  client                    User      @relation("OnboardingIntakeClient", fields: [client_id], references: [id], onDelete: Cascade)
+  // Consultation contract version, e.g. "consult-v1".
+  version                   String
+  // { <screen_key>: <value> } exactly as validated by consultation-answers.ts.
+  answers                   Json
+  completed_chapters        String[]  @default([])
+  // Server-stamped P0 acknowledgement (copy version + server time).
+  disclaimer_version        String?
+  disclaimer_accepted_at    DateTime?
+  // True when any P1-P7 answer is "yes" (or T3 injury is yes); drives the
+  // coach flag. Recomputed on every save.
+  screening_any_yes         Boolean   @default(false)
+  screening_flagged_at      DateTime?
+  saved_at                  DateTime  @default(now())
+  // Head of the append-only revision history (ClientOnboardingIntakeRevision).
+  current_revision          Int       @default(0)
+  // Engagement inputs (C1 first session date, S2 preferred time), denormalised
+  // for the engagement jobs (welcome message, reminders) so they need not
+  // parse the answer JSON.
+  first_session_date        DateTime? @db.Date
+  preferred_training_time   String?
+  // Completion claim (idempotency/concurrency) and the frozen result.
+  // completion_claim_token is the fencing token of the attempt holding the
+  // claim; finalisation is conditional on (token, current_revision) so a
+  // worker whose lease expired can never write completion effects.
+  completion_claimed_at     DateTime?
+  completion_claim_token    String?
+  completion_claim_revision Int?
+  selected_program_key      String?
+  completed_at              DateTime?
+  completion_result         Json?
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
+
+  revisions ClientOnboardingIntakeRevision[]
+
+  @@index([screening_any_yes, screening_flagged_at])
+  @@index([completed_at])
+}
+
+// Append-only history: every save of the consultation writes a new revision;
+// rows are never updated or deleted (owner ruling: forms are kept as
+// submitted, edits create a new version). RLS mirrors the intake (client
+// insert + read, current coach read), with no UPDATE/DELETE policy at all.
+model ClientOnboardingIntakeRevision {
+  id                     String                 @id @default(uuid())
+  intake_id              String
+  intake                 ClientOnboardingIntake @relation(fields: [intake_id], references: [id], onDelete: Cascade)
+  client_id              String
+  client                 User                   @relation("OnboardingIntakeRevisionClient", fields: [client_id], references: [id], onDelete: Cascade)
+  revision               Int
+  version                String
+  answers                Json
+  completed_chapters     String[]               @default([])
+  disclaimer_version     String?
+  disclaimer_accepted_at DateTime?
+  screening_any_yes      Boolean                @default(false)
+  // "save" for PUT /me/onboarding/consultation, "complete" when frozen by
+  // POST /me/onboarding/complete.
+  cause                  String
+  created_at             DateTime               @default(now())
+
+  @@unique([intake_id, revision])
+  @@index([client_id, created_at(sort: Desc)])
+}
+
+// One row per (coach, fixture version): the seeded master programs and the
+// community spaces for the clinic, written only by scripts/seed-clinic-programs.ts.
+// Read server-side by onboarding complete. RLS: the owning coach may read;
+// no client or public writes.
+model ClinicProgramSet {
+  id                    String   @id @default(uuid())
+  coach_id              String
+  coach                 User     @relation("ClinicProgramSetCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  fixture_version       String
+  fixture_sha256        String
+  approval_status       String
+  workspace_id          String   @db.Uuid
+  all_members_cohort_id String   @db.Uuid
+  // { <program_key>: { program_id, cohort_id, name } }
+  programs              Json
+  // Materialisation inputs copied from the fixture at seed time
+  // (frequency_variants, equipment_overrides, overlays, why templates).
+  materialisation       Json
+  active                Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@unique([coach_id, fixture_version])
+  @@index([coach_id, active])
 }
 
 // ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
@@ -5733,6 +5855,8 @@ enum CommunityModerationTargetType {
   event
   challenge
   member
+  voice_note
+  win
 }
 
 enum CommunityModerationStatus {
@@ -5792,6 +5916,52 @@ model CommunityVoiceNote {
   @@map("community_voice_notes")
 }
 
+// B-610-2: durable community ban, one row per (workspace, member). A ban from
+// the moderation queue writes it; every community read/write path, the
+// default-cohort bootstrap and the member wins feed/post honour it, whatever
+// cohorts are created, archived or re-ordered later. Only an explicit
+// reinstatement by the workspace coach (adding the member to a cohort) or the
+// TGP team sets lifted_at. Server-only table (RLS: service_role only).
+model CommunityWorkspaceBan {
+  id                   String    @id @default(uuid()) @db.Uuid
+  workspace_id         String    @db.Uuid
+  user_id              String
+  banned_by_id         String?
+  moderation_action_id String?   @db.Uuid
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  lifted_at            DateTime? @db.Timestamptz(6)
+  lifted_by_id         String?
+
+  workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      User               @relation("CommunityWorkspaceBanUser", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, user_id])
+  @@index([user_id])
+  @@map("community_workspace_bans")
+}
+
+// B-610-5 (fix round 5): durable voice-recording erasure work. One row per
+// exact storage key (kind 'object') or owner folder (kind 'owner_folder'),
+// written BEFORE the note rows or storage are touched; completed only after a
+// verified removal, retried by VoiceErasureService with backoff until then.
+// No relation to User: the work outlives account finalization. Server-only
+// table (RLS: service_role only).
+model CommunityVoiceErasure {
+  id              String    @id @default(uuid()) @db.Uuid
+  kind            String
+  target          String
+  reason          String
+  attempts        Int       @default(0)
+  last_error      String?
+  next_attempt_at DateTime  @default(now()) @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+
+  @@unique([kind, target])
+  @@index([completed_at, next_attempt_at])
+  @@map("community_voice_erasures")
+}
+
 model CommunityWorkspace {
   id                 String    @id @default(uuid()) @db.Uuid
   coach_id           String
@@ -5818,6 +5988,7 @@ model CommunityWorkspace {
   challenge_participations CommunityChallengeParticipation[]
   moderation_actions       CommunityModerationAction[]
   voice_notes              CommunityVoiceNote[]
+  bans                     CommunityWorkspaceBan[]
 
   // Coach dashboard: list a coach's non-archived workspaces.
   @@index([coach_id, archived_at])

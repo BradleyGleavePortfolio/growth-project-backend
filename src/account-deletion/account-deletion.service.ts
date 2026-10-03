@@ -12,6 +12,12 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
+import {
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+} from '../community/voice/voice-erasure';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 // User-initiated two-phase deletion:
@@ -49,8 +55,7 @@ export const DeletionAuditEvent = {
   ADMIN_FORCE_DELETE: 'admin_force_delete',
 } as const;
 
-export type DeletionAuditEventValue =
-  (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
+export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -130,7 +135,8 @@ export class AccountDeletionService {
       user.deletion_requested_at
     ) {
       return {
-        message: 'A deletion request is already pending for your account. You can cancel it from Settings.',
+        message:
+          'A deletion request is already pending for your account. You can cancel it from Settings.',
         expires_at: user.deletion_token_expires_at.toISOString(),
       };
     }
@@ -198,9 +204,7 @@ export class AccountDeletionService {
 
   // ── Step 2: Confirm via one-time email link ───────────────────────────────────
 
-  async confirmDeletion(
-    token: string,
-  ): Promise<{ message: string; purge_after: string }> {
+  async confirmDeletion(token: string): Promise<{ message: string; purge_after: string }> {
     const hash = this.hashToken(token);
 
     const user = await this.prisma.user.findFirst({
@@ -374,7 +378,10 @@ export class AccountDeletionService {
    * dual write is intentional so GDPR auditors and security teams each
    * have their own query surface.
    */
-  async adminForceDelete(targetUserId: string, opts: AdminDeleteOptions): Promise<{ message: string }> {
+  async adminForceDelete(
+    targetUserId: string,
+    opts: AdminDeleteOptions,
+  ): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.deleted_at) {
@@ -442,9 +449,7 @@ export class AccountDeletionService {
   async runFinalizeCron(): Promise<void> {
     this.logger.log('AccountDeletion finalize cron: starting');
 
-    const cutoff = new Date(
-      Date.now() - this.graceDays * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - this.graceDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.user.findMany({
       where: {
@@ -499,9 +504,7 @@ export class AccountDeletionService {
         finalized += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`,
-        );
+        this.logger.error(`AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`);
         errors.push({ userId: candidate.id, error: msg });
       }
     }
@@ -592,9 +595,7 @@ export class AccountDeletionService {
       if (!preCheck) return { skipped: 'user-not-found' };
       if (preCheck.deleted_at) return { skipped: 'already-deleted' };
       if (!preCheck.deletion_confirmed_at) {
-        this.logger.warn(
-          `finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`,
-        );
+        this.logger.warn(`finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`);
         return { skipped: 'cancelled' };
       }
     }
@@ -658,9 +659,7 @@ export class AccountDeletionService {
 
     // ── 6. Delete Lesson rows where this user was the coach ──────────
     // coach_id is non-nullable. LessonCompletion rows cascade via their FK.
-    await this.prisma.lesson
-      .deleteMany({ where: { coach_id: userId } })
-      .catch(() => undefined);
+    await this.prisma.lesson.deleteMany({ where: { coach_id: userId } }).catch(() => undefined);
 
     // ── 7. Delete WorkoutRoutine rows created by this user ────────────
     // creator_id is non-nullable. RoutineExercise rows cascade.
@@ -723,6 +722,18 @@ export class AccountDeletionService {
       .updateMany({ where: { coach_id: userId }, data: { coach_id: null } })
       .catch(() => undefined);
 
+    // ── 10b. Community voice notes (B-610-5, OR-110-1, Apple 5.1.1(v)) ─────
+    // Every voice note the user recorded is soft-deleted with its transcript
+    // search row (no feed, queue or search shows it and nothing signs it
+    // again), then the recordings are erased from storage: the exact keys on
+    // their rows plus everything else in their `voice-notes/<uid>/` folder
+    // (unpublished uploads, DM voice uploads). The User row is tombstoned,
+    // not deleted, so no FK cascade would do this. The erasure is recorded
+    // durably first (a failed record aborts finalization for a retry);
+    // storage faults after that do not block the rest of the deletion: the
+    // open erasure work is retried until verified.
+    await this.eraseCommunityVoice(userId, now);
+
     // ── 11. Revoke Supabase auth identity ──────────────────────────────────
     // Best-effort: a failure here is logged but does not block local deletion.
     // Placed OUTSIDE the $transaction because Supabase is an external call.
@@ -731,10 +742,7 @@ export class AccountDeletionService {
         where: { id: userId },
         select: { supabase_id: true },
       });
-      if (
-        originalUser?.supabase_id &&
-        !originalUser.supabase_id.startsWith('deleted-')
-      ) {
+      if (originalUser?.supabase_id && !originalUser.supabase_id.startsWith('deleted-')) {
         const adminClient = this.supabase.getClient();
         await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
       }
@@ -848,6 +856,68 @@ export class AccountDeletionService {
     });
   }
 
+  /**
+   * B-610-5: erase the user's community voice recordings.
+   *
+   * Round 5: the erasure work (every exact key on their notes plus their
+   * owner folder) is recorded durably in community_voice_erasures FIRST. If
+   * that write fails this throws, the account is NOT finalized and the next
+   * finalize run retries the whole user, so a recording is never left behind
+   * by an acknowledged deletion. Then the rows are soft-deleted (nothing signs
+   * them again) and storage is tried; any removal not verified stays open and
+   * VoiceErasureService retries it after the account is tombstoned (the work
+   * table has no FK to User, so finalization never drops it).
+   */
+  private async eraseCommunityVoice(userId: string, now: Date): Promise<void> {
+    const notes = await this.prisma.communityVoiceNote.findMany({
+      where: { author_id: userId },
+      select: { id: true, storage_key: true },
+    });
+    const work = await recordVoiceErasures(
+      this.prisma,
+      [
+        ...objectTargets(notes.map((n) => n.storage_key)),
+        { kind: 'owner_folder', target: userId },
+      ],
+      'account_deletion',
+      now,
+    );
+    if (notes.length > 0) {
+      // Rows next: once soft-deleted nothing signs them again. Both writes
+      // are idempotent, so a retried deletion converges.
+      try {
+        await this.prisma.communityVoiceNote.updateMany({
+          where: { author_id: userId, soft_deleted_at: null },
+          data: { soft_deleted_at: now },
+        });
+        await this.prisma.communitySearchEntry.updateMany({
+          where: {
+            kind: 'voice_note_transcript',
+            targetId: { in: notes.map((n) => n.id) },
+            softDeletedAt: null,
+          },
+          data: { softDeletedAt: now },
+        });
+      } catch (err) {
+        this.logger.error(
+          `finalizeUserDeletion: voice note soft-delete failed for ${userId}: ${(err as Error).message}; recordings are still erased (work recorded)`,
+        );
+      }
+    }
+    const outcome = await attemptVoiceErasures(
+      this.prisma,
+      new VoiceUploadProvider(this.supabase),
+      work,
+      this.logger,
+    );
+    if (outcome.pending > 0) {
+      this.logger.warn(
+        `finalizeUserDeletion: ${outcome.pending} voice erasure(s) for ${userId} not yet verified; ` +
+          'recorded in community_voice_erasures and retried by VoiceErasureService.',
+      );
+    }
+  }
+
   // ── Email ─────────────────────────────────────────────────────────────────────
 
   private async sendConfirmationEmail(
@@ -870,7 +940,9 @@ export class AccountDeletionService {
     // Do not send a second email after confirmation — the mobile client
     // shows the in-app status instead.
     // Do not log email, name, token, or any URL derived from the token.
-    void email; void name; void token;
+    void email;
+    void name;
+    void token;
     this.logger.warn(
       `AccountDeletion: confirmation pending — email not yet configured. ` +
         `Token stored in DB, expires ${expiresAt.toISOString()}. ` +

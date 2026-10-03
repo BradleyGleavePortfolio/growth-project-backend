@@ -6,6 +6,7 @@ import type {
   CommunityWorkspace,
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { isBannedFromWorkspace } from './community-ban';
 
 /**
  * Shared authorization queries for the v1-3 write surfaces.
@@ -32,9 +33,7 @@ export class CommunityAccessService {
    * input is the caller's concern; passing an empty list short-circuits to no
    * query at all.
    */
-  async findCohortsByIds(
-    ids: string[],
-  ): Promise<Array<Pick<CommunityCohort, 'id' | 'name'>>> {
+  async findCohortsByIds(ids: string[]): Promise<Array<Pick<CommunityCohort, 'id' | 'name'>>> {
     if (ids.length === 0) return [];
     return this.prisma.communityCohort.findMany({
       where: { id: { in: ids } },
@@ -53,10 +52,7 @@ export class CommunityAccessService {
   }
 
   /** The caller's membership row in a cohort (any status), or null. */
-  async membershipInCohort(
-    cohortId: string,
-    userId: string,
-  ): Promise<CommunityMembership | null> {
+  async membershipInCohort(cohortId: string, userId: string): Promise<CommunityMembership | null> {
     return this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
     });
@@ -70,10 +66,8 @@ export class CommunityAccessService {
    * public cursor token). An empty result means the member sees only
    * workspace-wide (cohort_id = null) challenges.
    */
-  async listAccessibleCohortIds(
-    workspaceId: string,
-    userId: string,
-  ): Promise<string[]> {
+  async listAccessibleCohortIds(workspaceId: string, userId: string): Promise<string[]> {
+    if (await this.isBanned(workspaceId, userId)) return [];
     const rows = await this.prisma.communityMembership.findMany({
       where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
       select: { cohort_id: true },
@@ -86,16 +80,22 @@ export class CommunityAccessService {
     workspaceId: string,
     userId: string,
   ): Promise<CommunityMembership | null> {
+    if (await this.isBanned(workspaceId, userId)) return null;
     return this.prisma.communityMembership.findFirst({
       where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
     });
   }
 
+  /**
+   * B-610-2: an active durable ban (community_workspace_bans) denies every
+   * member read/write in the workspace, whatever membership rows say.
+   */
+  async isBanned(workspaceId: string, userId: string): Promise<boolean> {
+    return isBannedFromWorkspace(this.prisma, workspaceId, userId);
+  }
+
   /** True when the user owns (coaches) the workspace. */
-  async isWorkspaceCoach(
-    workspaceId: string,
-    userId: string,
-  ): Promise<boolean> {
+  async isWorkspaceCoach(workspaceId: string, userId: string): Promise<boolean> {
     const ws = await this.prisma.communityWorkspace.findFirst({
       where: { id: workspaceId, coach_id: userId },
       select: { id: true },
@@ -113,6 +113,7 @@ export class CommunityAccessService {
   ): Promise<boolean> {
     if (user.role === 'owner') return true;
     if (await this.isWorkspaceCoach(cohort.workspace_id, user.id)) return true;
+    if (await this.isBanned(cohort.workspace_id, user.id)) return false;
     const m = await this.membershipInCohort(cohort.id, user.id);
     return m?.status === 'active';
   }
