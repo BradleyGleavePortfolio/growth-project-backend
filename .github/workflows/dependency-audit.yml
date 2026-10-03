@@ -7,9 +7,19 @@ name: Dependency Audit
 # Weekly npm is partial R94 coverage, not Socket/Snyk, ownership or CVE-age triage.
 #
 # Bounded decision: any high/critical advisory blocks immediately. That is
-# STRICTER than R113's seven-day grace; advisory age is NOT measured and no
-# suppression/exception mechanism exists or is read here. Rationale, limits and
-# unverified states are recorded in the private lane checkpoint.
+# STRICTER than R113's seven-day grace; advisory age is NOT measured.
+#
+# Exceptions (operator ruling OR-114-2, 2026-10-02): the ONLY exception
+# mechanism is .github/audit-exceptions.json, evaluated by the checked-in
+# scripts/ci/audit-gate.mjs over the JSON of this same whole-graph audit. An
+# entry applies only to its exact GHSA id and package, only before its expiry
+# (at most 31 days out), only if EVERY lockfile copy of the package and every
+# lockfile node of every covered finding is dev-only, only up to max_version,
+# and only while the registry has no patched release (a patch FAILS the job:
+# upgrade and delete the exception). A finding is covered only if every
+# advisory in its via chain is excepted. Applied exceptions are printed as
+# warnings. Moderate/low stay non-blocking. Contract: test/ci/audit-gate.spec.ts
+# and test/ci/dependency-audit.spec.ts. Edits to any of these files are T4.
 
 on:
   pull_request:
@@ -58,8 +68,16 @@ jobs:
           # NODE_ENV=production config, and --package-lock-only audits the
           # committed lockfile without needing node_modules — so nothing
           # installs and no dependency lifecycle script runs just to audit it.
-          # No fallback: any nonzero exit fails the job.
           # Flags per npm v10 docs: https://docs.npmjs.com/cli/v10/commands/npm-audit/
+          # npm's exit code is CAPTURED, never discarded: the gate fails on any
+          # exit other than 0/1, on unreadable/error JSON, and on an exit that
+          # disagrees with the findings. The gate's own exit is the verdict
+          # (set -e): no fallback, no soft-fail.
+          audit_json="${RUNNER_TEMP:?RUNNER_TEMP is not set}/npm-audit.json"
+          audit_exit=0
           timeout 300 npm audit --package-lock-only \
             --include=prod --include=dev --include=optional --include=peer \
-            --audit-level=high
+            --audit-level=high --json >"$audit_json" || audit_exit=$?
+          node scripts/ci/audit-gate.mjs \
+            --audit "$audit_json" --audit-exit "$audit_exit" \
+            --lockfile package-lock.json --exceptions .github/audit-exceptions.json
