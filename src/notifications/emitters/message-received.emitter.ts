@@ -26,9 +26,7 @@ export class MessageReceivedEmitter {
   async emit(recipientUserId: string, payload: MessageReceivedPayload): Promise<void> {
     try {
       const body = `New message from ${payload.senderName}`.slice(0, 160);
-      const deepLink = payload.threadId
-        ? `tgp://messages/${payload.threadId}`
-        : 'tgp://messages';
+      const deepLink = payload.threadId ? `tgp://messages/${payload.threadId}` : 'tgp://messages';
 
       await this.notifications.createNotification({
         user_id: recipientUserId,
@@ -39,13 +37,13 @@ export class MessageReceivedEmitter {
         channel: 'inapp',
       });
 
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: recipientUserId,
         kind: NotificationKind.MESSAGE_RECEIVED,
         body,
-        payload: { senderName: payload.senderName, threadId: payload.threadId },
         deep_link: deepLink,
-        channel: 'push',
       });
     } catch (err) {
       this.logger.warn(
