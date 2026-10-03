@@ -2534,3 +2534,100 @@ describe('C-634-6: catch-up coverage is keyed on the current start time', () => 
     expect(notifications.pushes).toHaveLength(0);
   });
 });
+
+// Pre-push checklist (a) over the whole PR: provider and reminder error paths
+// log only IDs and machine codes. A synthetic private string in an error
+// message (provider SDK text, ORM query text) never reaches a logger argument.
+describe('checklist (a): scheduling error logs carry no free-form error text', () => {
+  const CANARY = 'PRIVATE-CANARY-meet-link-Jamie-notes-91c2';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    jest.setSystemTime(NOW);
+  });
+  function logged(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function ormCanary(): Prisma.PrismaClientKnownRequestError {
+    return new Prisma.PrismaClientKnownRequestError(`Query failed: ${CANARY}`, {
+      code: 'P2024',
+      clientVersion: 'test',
+      meta: { target: CANARY },
+    });
+  }
+
+  it.each([
+    { label: 'a provider SDK error', make: () => new TypeError(`calendar said: ${CANARY}`) },
+    { label: 'an ORM error', make: () => ormCanary() },
+  ])(
+    'provisioning failure ($label): booking stands, log has the session id only',
+    async ({ make }) => {
+      const { svc, providers } = harness();
+      const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+      providers.resolveCalendar('stub').createEvent = async () => {
+        throw make();
+      };
+      const final = await svc.approveSession(COACH, s.id);
+      expect(final.status).toBe('scheduled');
+      const text = logged();
+      expect(text).toContain(`provider provisioning failed for session=${s.id}`);
+      expect(text).not.toContain(CANARY);
+    },
+  );
+
+  it('provider cancellation and superseded-artifact cleanup failures never log the provider message', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const adapter = providers.resolveCalendar('stub');
+    const original = adapter.createEvent.bind(adapter);
+    const gate = pausePoint();
+    adapter.createEvent = async (input) => {
+      await gate.hit();
+      await original(input);
+      return { externalEventId: 'gcal-evt-9', resolvedProvider: 'google_calendar' };
+    };
+    providers.resolveCalendar('google_calendar').cancelEvent = async () => {
+      throw new TypeError(`google said: ${CANARY}`);
+    };
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.cancelSession(CLIENT, s.id, { reason: 'plans changed' });
+    gate.release();
+    expect((await approving).status).toBe('canceled');
+    const text = logged();
+    expect(text).toMatch(/(superseded artifact cleanup|Provider cancellation) failed for session=/);
+    expect(text).toContain('TypeError');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('a reminder dispatch that throws a non-ORM error logs its class only', async () => {
+    const { db, reminder, emitter } = harness();
+    const start = new Date(NOW.getTime() + 57 * 60_000);
+    db.addSession({
+      id: 'canary-reminder',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * 60_000),
+      video_url: 'https://meet.example.com/a',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+    });
+    jest.spyOn(emitter, 'emitReminder1h').mockImplementation(async () => {
+      throw new RangeError(`render failed: ${CANARY}`);
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    const text = logged();
+    expect(text).toContain('session=canary-reminder');
+    expect(text).toContain('RangeError');
+    expect(text).not.toContain(CANARY);
+  });
+});

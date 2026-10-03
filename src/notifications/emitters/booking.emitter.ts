@@ -3,7 +3,7 @@ import { NotificationsService } from '../notifications.service';
 import { NotificationKind, type NotificationKindValue } from '../notification-kind';
 import { NotificationCategory } from '../notification-category.enum';
 import type { PushDeliveryCode } from '../push-delivery.types';
-import { safeDiagnostic } from '../../observability/orm-diagnostics';
+import { safeLogDiagnostic } from '../../observability/orm-diagnostics';
 
 // Booking lifecycle notifications: one in-app row (the notification center
 // entry) plus a real push through the shared Expo transport
@@ -524,14 +524,7 @@ export class BookingEmitter {
  * class name and a machine-shaped `code`, never its message.
  */
 export function emitterDiagnostic(err: unknown): string {
-  const safe = safeDiagnostic(err);
-  if (!(safe instanceof Error)) return 'unknown error';
-  if (safe !== err) return `${safe.name}: ${safe.message}`;
-  const name = /^[A-Za-z][A-Za-z0-9_]{0,59}$/.test(safe.name) ? safe.name : 'Error';
-  const code: unknown = 'code' in safe ? safe.code : undefined;
-  return typeof code === 'string' && /^[A-Za-z0-9_.-]{1,40}$/.test(code)
-    ? `${name} (${code})`
-    : name;
+  return safeLogDiagnostic(err);
 }
 
 function typeLabel(name: string | null | undefined, fallback: string): string {

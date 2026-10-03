@@ -10,7 +10,7 @@ import {
 import type { BookingDeliveryOutcome } from '../../notifications/emitters/booking.emitter';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { PrismaService } from '../../prisma.service';
-import { safeDiagnostic } from '../../observability/orm-diagnostics';
+import { safeLogDiagnostic } from '../../observability/orm-diagnostics';
 import { hasUsableLink } from '../scheduling.types';
 
 // Per-recipient context the sweep hands to the emitter (S-SCHED-2): which
@@ -61,9 +61,7 @@ export interface ReminderSweepResult {
  * anything else keeps its message.
  */
 function describeError(err: unknown): string {
-  const safe = safeDiagnostic(err);
-  if (safe instanceof Error) return `${safe.name}: ${safe.message}`.slice(0, 200);
-  return 'unknown error';
+  return safeLogDiagnostic(err).slice(0, 200);
 }
 
 // S-SCHED-3 (B-634-2) delivery-claim tuning. The lease is shorter than the

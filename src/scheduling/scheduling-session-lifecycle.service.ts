@@ -21,6 +21,7 @@ import { randomUUID } from 'crypto';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { BookingEmitter } from '../notifications/emitters/booking.emitter';
 import { NotificationKind } from '../notifications/notification-kind';
+import { safeLogDiagnostic } from '../observability/orm-diagnostics';
 import { PrismaService } from '../prisma.service';
 import type {
   AttachManualVideoLinkDto,
@@ -886,7 +887,7 @@ export class SchedulingSessionLifecycleService {
       return await this.runProviderProvisioning(sessionId, actor);
     } catch (err) {
       this.logger.error(
-        `provider provisioning failed for session=${sessionId}: ${(err as Error).message}`,
+        `provider provisioning failed for session=${sessionId}: ${safeLogDiagnostic(err)}`,
       );
       return this.loadSessionOrThrow(sessionId);
     }
@@ -1068,7 +1069,7 @@ export class SchedulingSessionLifecycleService {
         },
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeLogDiagnostic(err);
       this.logger.error(`superseded artifact cleanup failed for session=${session.id}: ${msg}`);
     }
   }
@@ -1101,7 +1102,7 @@ export class SchedulingSessionLifecycleService {
       });
     } catch (err) {
       // Provider cancellation failure must not roll back the local cancel.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeLogDiagnostic(err);
       this.logger.error(`Provider cancellation failed for session=${session.id}: ${msg}`);
     }
   }
