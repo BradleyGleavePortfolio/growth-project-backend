@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Service } from './dunning-v2/dunning-v2.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { attachTrialCard } from './trial-card';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
@@ -182,6 +183,11 @@ export interface CheckoutWebhookPrefetch {
   // (rare settling race); the split handler no-ops the transfer and the
   // sweeper picks it up. undefined entry = no pre-resolution attempted.
   chargeIdByPurchaseId?: Record<string, string | null>;
+  // B-654-1 — setup_intent.succeeded for a native trial attempt: the saved
+  // card was made the subscription's default out-of-tx. null = the
+  // SetupIntent is not a native trial's; ok=false = the Stripe write failed
+  // (the handler throws so Stripe redelivers the event).
+  trialCard?: { purchaseId: string; ok: boolean } | null;
 }
 
 @Injectable()
@@ -289,6 +295,8 @@ export class CheckoutWebhookHandlerService {
         return this.applyInvoicePaid(event, tx, prefetched);
       case 'invoice.payment_failed':
         return this.applyInvoicePaymentFailed(event);
+      case 'setup_intent.succeeded':
+        return this.applySetupIntentSucceeded(event, tx, prefetched);
       case 'customer.updated':
         return this.applyCustomerUpdated(event);
       // Phase 6 — refund / dispute / transfer / payout events. Delegated
@@ -455,6 +463,9 @@ export class CheckoutWebhookHandlerService {
     ) {
       return this.prefetchChargeIdForActivation(event);
     }
+    if (event.type === 'setup_intent.succeeded') {
+      return { trialCard: await this.attachNativeTrialCard(event) };
+    }
     if (
       event.type !== 'invoice.paid' &&
       event.type !== 'invoice.payment_succeeded'
@@ -491,6 +502,92 @@ export class CheckoutWebhookHandlerService {
    * inside the outer $transaction. Best-effort and never throws — a null entry
    * means the split handler will no-op the transfer and the sweeper retries.
    */
+  /**
+   * B-654-1 — a native trial's SetupIntent succeeded (the client saved a
+   * card in the PaymentSheet). Stripe does not reliably make that card the
+   * subscription's default for a $0 trial, so set it here: the row is found
+   * by the SetupIntent id (the prefix of the stored client secret), and the
+   * write is idempotent per (subscription, card). Stripe then sends
+   * customer.subscription.updated with the default, which grants the trial
+   * through subscriptionGrantsAccess. Runs before the outer tx (Stripe
+   * HTTP); never throws.
+   */
+  private async attachNativeTrialCard(
+    event: StripeEvent,
+  ): Promise<{ purchaseId: string; ok: boolean } | null> {
+    const si = event.data.object as {
+      id?: unknown;
+      payment_method?: unknown;
+      customer?: unknown;
+      status?: unknown;
+    };
+    if (typeof si.id !== 'string' || !si.id.startsWith('seti_')) return null;
+    const paymentMethod = typeof si.payment_method === 'string' ? si.payment_method : null;
+    let row: ClientPurchase | null;
+    try {
+      row = await this.prisma.clientPurchase.findFirst({
+        where: {
+          stripe_client_secret: { startsWith: `${si.id}_secret_` },
+          billing_type: 'recurring',
+          stripe_subscription_id: { not: null },
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`setup_intent.succeeded lookup failed si=${si.id}: ${(err as Error).message}`);
+      return null;
+    }
+    if (!row || !row.stripe_subscription_id) return null;
+    if (
+      typeof si.customer === 'string' &&
+      row.stripe_customer_id &&
+      si.customer !== row.stripe_customer_id
+    ) {
+      this.logger.warn(`setup_intent.succeeded customer mismatch purchase=${row.id}`);
+      return null;
+    }
+    if (row.entitlement_active || row.trial_started_at || !paymentMethod) {
+      return { purchaseId: row.id, ok: true };
+    }
+    try {
+      const sub = await this.stripeConnect.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
+      if (sub.status === 'trialing' && !sub.default_payment_method) {
+        await attachTrialCard(this.stripeConnect, sub.id, paymentMethod);
+        this.logger.log(`billing.trial_card_attached purchase=${row.id} via=webhook`);
+      }
+      return { purchaseId: row.id, ok: true };
+    } catch (err) {
+      this.logger.warn(
+        `setup_intent.succeeded trial card attach failed purchase=${row.id}: ${(err as Error).message}`,
+      );
+      return { purchaseId: row.id, ok: false };
+    }
+  }
+
+  /**
+   * B-654-1 — claims a native trial's setup_intent.succeeded. The Stripe
+   * write ran in prefetchForOuterTx; a failed write throws so the outer tx
+   * rolls back (dedup row included) and Stripe redelivers the event.
+   */
+  private async applySetupIntentSucceeded(
+    event: StripeEvent,
+    tx: WebhookTx | undefined,
+    prefetched: CheckoutWebhookPrefetch | undefined,
+  ): Promise<CheckoutWebhookResult> {
+    const trialCard =
+      prefetched && prefetched.trialCard !== undefined
+        ? prefetched.trialCard
+        : tx
+          ? null
+          : await this.attachNativeTrialCard(event);
+    if (!trialCard) return { claimed: false };
+    if (!trialCard.ok) {
+      throw new Error(
+        `setup_intent.succeeded: trial card not attached for purchase=${trialCard.purchaseId}; redeliver`,
+      );
+    }
+    return { claimed: true, reason: 'native_trial_card_attached' };
+  }
+
   private async prefetchChargeIdForActivation(
     event: StripeEvent,
   ): Promise<CheckoutWebhookPrefetch> {

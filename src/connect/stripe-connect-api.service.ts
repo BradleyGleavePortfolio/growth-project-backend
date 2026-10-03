@@ -148,6 +148,16 @@ export interface StripeSubscriptionCheckoutObject extends StripeSubscriptionObje
     | null;
 }
 
+// B-RECUR — a SetupIntent as the trial-card path reads it. `payment_method`
+// is the id when not expanded.
+export interface StripeSetupIntentObject {
+  id: string;
+  status?: string;
+  payment_method?: string | null;
+  customer?: string | null;
+  [k: string]: unknown;
+}
+
 // Stripe BalanceTransaction (subset). `amount` / `fee` / `net` are in the
 // settlement `currency`; `fee` is Stripe's ACTUAL processing fee for the charge.
 export interface StripeBalanceTransactionObject {
@@ -869,6 +879,15 @@ export class StripeConnectApiService {
       `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
       { cancel_at_period_end: 'false' },
       args.idempotencyKey,
+    );
+  }
+
+  // B-RECUR — read a SetupIntent by id. A subscription's
+  // `pending_setup_intent` is null once the SetupIntent succeeded, so the
+  // trial-card path reads the SetupIntent itself (id from the stored secret).
+  async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
+    return this.get<StripeSetupIntentObject>(
+      `/setup_intents/${encodeURIComponent(setupIntentId)}`,
     );
   }
 

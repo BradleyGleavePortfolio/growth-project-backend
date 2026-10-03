@@ -18,6 +18,13 @@ import {
 import { PackagesService } from '../packages/packages.service';
 import { PrismaService } from '../prisma.service';
 import { CheckoutService, isRecurringPackage } from './checkout.service';
+import {
+  attachTrialCard,
+  readTrialSetup,
+  setupIntentIdOf,
+  trialCardSaved,
+  type TrialSetupState,
+} from './trial-card';
 
 // B-RECUR (agent 113; OR-113-1 + OR-113-2) — native subscription checkout.
 //
@@ -345,6 +352,11 @@ export class SubscriptionCheckoutService {
       if (replay.entitlement_active || replay.trial_started_at) throw this.alreadyActive(replay);
       if (ENDED_ATTEMPT_STATUSES.has(replay.status)) throw this.attemptExpired();
       if (replay.stripe_client_secret && replay.stripe_subscription_id) {
+        // C-654-3 — the secret may be spent: the card was saved or the first
+        // invoice paid a moment ago, before the webhook. Never hand it back.
+        const state = await this.replaySecretState(replay);
+        if (state === 'settled') throw this.alreadyActive(replay);
+        if (state === 'dead') throw this.attemptExpired();
         return this.resultFromRow(replay, pkg, true);
       }
       const winner = await this.waitForSecret(purchaseKey);
@@ -401,7 +413,11 @@ export class SubscriptionCheckoutService {
     // `trialing` on Stripe until the trial ends (Stripe expires only
     // `incomplete` ones after 23 h). Retire the stale ones now. Best effort:
     // it never blocks this checkout.
-    await this.retireStaleTrialAttempts(client.id, coach.id);
+    const cardSaved = await this.retireStaleTrialAttempts(client.id, coach.id);
+    // B-654-1 — a stale trial of THIS package whose card turned out saved is
+    // the client's plan (the webhook grants it); never start a second one.
+    const savedHere = cardSaved.find((r) => r.package_id === pkg.id);
+    if (savedHere) throw this.alreadyActive(savedHere);
 
     // Decide under the per-(client, coach) lock. At most two passes: the
     // second runs only after a stale open attempt was retired.
@@ -497,21 +513,11 @@ export class SubscriptionCheckoutService {
     }
     try {
       const sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
-      const si = sub.pending_setup_intent;
-      if (
-        sub.status === 'trialing' &&
-        !sub.default_payment_method &&
-        si &&
-        typeof si === 'object' &&
-        si.status === 'succeeded' &&
-        typeof si.payment_method === 'string'
-      ) {
-        await this.stripe.setSubscriptionDefaultPaymentMethod({
-          subscriptionId: sub.id,
-          paymentMethodId: si.payment_method,
-          idempotencyKey: `tgp-trial-card-${sub.id}-${si.payment_method}`,
-        });
-      }
+      if (sub.status !== 'trialing' || sub.default_payment_method) return;
+      // B-654-1 — read the SetupIntent itself: Stripe returns
+      // pending_setup_intent = null once it succeeded.
+      const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
+      if (trialCardSaved(setup)) await attachTrialCard(this.stripe, sub.id, setup.payment_method);
     } catch (err) {
       this.logger.warn(`trial card sync skipped purchase=${row.id}: ${(err as Error).message}`);
     }
@@ -790,6 +796,25 @@ export class SubscriptionCheckoutService {
       // Paid (or card saved) a moment ago; the webhook will grant access.
       throw this.alreadyActive({ ...open, status: sub.status });
     }
+    if (sub.status === 'trialing') {
+      // B-654-1 — the card may be saved although the subscription has no
+      // default yet (pending_setup_intent is null after success). Such a
+      // trial is never reused or retired: the card becomes the default and
+      // the webhook grants the trial.
+      let setup: TrialSetupState | null;
+      try {
+        setup = await readTrialSetup(this.stripe, open.stripe_client_secret, sub);
+      } catch (err) {
+        throw this.stripeFailure(err);
+      }
+      if (trialCardSaved(setup)) {
+        await this.attachTrialCardQuietly(sub.id, setup.payment_method, open.id);
+        throw this.alreadyActive({ ...open, status: sub.status });
+      }
+      if (setup && setup.status === 'processing') {
+        throw this.alreadyActive({ ...open, status: sub.status });
+      }
+    }
     const secret = this.sheetSecret(sub);
     const expectedPrice =
       pkg.billing_type !== 'recurring' ? pkg.recurring_stripe_price_id : pkg.stripe_price_id;
@@ -802,9 +827,13 @@ export class SubscriptionCheckoutService {
       sub.status !== 'incomplete' ||
       typeof invoice?.amount_due !== 'number' ||
       invoice.amount_due === planPriceFor(pkg, 0).first_charge_cents;
+    // C-654-2 — a trial attempt is reusable only while the package still
+    // offers that same trial (the coach removed or changed it: start over).
+    const trialUnchanged = open.trial_days == null || open.trial_days === packageTrialDays(pkg);
     const stillPayable =
       (sub.status === 'incomplete' || sub.status === 'trialing') &&
       !!secret &&
+      trialUnchanged &&
       open.amount_cents === planPriceFor(pkg, 0).amount_cents &&
       firstChargeMatches &&
       (!expectedPrice || !itemPrice || expectedPrice === itemPrice);
@@ -998,7 +1027,11 @@ export class SubscriptionCheckoutService {
    * never throws: a failure leaves the attempt to end with its trial
    * (`missing_payment_method=cancel`), exactly as before.
    */
-  private async retireStaleTrialAttempts(clientId: string, coachId: string): Promise<void> {
+  private async retireStaleTrialAttempts(
+    clientId: string,
+    coachId: string,
+  ): Promise<ClientPurchase[]> {
+    const cardSaved: ClientPurchase[] = [];
     try {
       const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
       const stale = await this.prisma.clientPurchase.findMany({
@@ -1019,22 +1052,105 @@ export class SubscriptionCheckoutService {
       });
       for (const row of stale) {
         if (!row.stripe_subscription_id) continue;
-        const sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
-        const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
-        const abandonedTrial = sub.status === 'trialing' && !sub.default_payment_method;
-        if (!ended && !abandonedTrial) continue;
-        if (abandonedTrial) await this.stripe.cancelSubscription(sub.id);
-        await this.prisma.clientPurchase.updateMany({
-          where: { id: row.id, entitlement_active: false, trial_started_at: null },
-          data: { status: 'expired', stripe_client_secret: null, stripe_ephemeral_key: null },
-        });
-        this.logger.log(
-          `billing.trial_attempt_retired purchase=${row.id} stripe_status=${sub.status}`,
-        );
+        try {
+          const outcome = await this.retireOneStaleTrial(row, row.stripe_subscription_id);
+          if (outcome === 'card_saved') cardSaved.push(row);
+        } catch (err) {
+          // One unreadable attempt never stops the others or the checkout.
+          this.logger.warn(
+            `stale trial attempt kept purchase=${row.id}: ${(err as Error).message}`,
+          );
+        }
       }
     } catch (err) {
       this.logger.warn(
         `stale trial attempt cleanup skipped client=${clientId}: ${(err as Error).message}`,
+      );
+    }
+    return cardSaved;
+  }
+
+  /**
+   * B-654-1 — retire one stale trial attempt. Cancels on Stripe only when the
+   * trial's SetupIntent shows no card was ever saved (requires_payment_method
+   * or canceled). A saved card (succeeded) is made the default instead, and
+   * any other or unreadable state leaves the attempt alone.
+   */
+  private async retireOneStaleTrial(
+    row: ClientPurchase,
+    subscriptionId: string,
+  ): Promise<'kept' | 'card_saved' | 'retired'> {
+    const sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
+    const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
+    if (!ended) {
+      if (sub.status !== 'trialing') return 'kept';
+      if (sub.default_payment_method) return 'card_saved';
+      const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
+      if (trialCardSaved(setup)) {
+        await attachTrialCard(this.stripe, sub.id, setup.payment_method);
+        this.logger.log(`billing.trial_card_attached purchase=${row.id} via=retire`);
+        return 'card_saved';
+      }
+      if (!setup || (setup.status !== 'requires_payment_method' && setup.status !== 'canceled')) {
+        return 'kept';
+      }
+      await this.stripe.cancelSubscription(sub.id);
+    }
+    await this.prisma.clientPurchase.updateMany({
+      where: { id: row.id, entitlement_active: false, trial_started_at: null },
+      data: { status: 'expired', stripe_client_secret: null, stripe_ephemeral_key: null },
+    });
+    this.logger.log(`billing.trial_attempt_retired purchase=${row.id} stripe_status=${sub.status}`);
+    return 'retired';
+  }
+
+  /**
+   * C-654-3 — is a replayed attempt's stored sheet secret still usable?
+   * 'settled': the card was saved / the first invoice paid or is processing
+   * (the webhook grants access); 'dead': the intent was canceled or the
+   * subscription ended; 'usable' otherwise, and on a Stripe read error (the
+   * previous behaviour: hand back the stored secret).
+   */
+  private async replaySecretState(row: ClientPurchase): Promise<'usable' | 'settled' | 'dead'> {
+    const subscriptionId = row.stripe_subscription_id;
+    if (!subscriptionId || !this.state.ready) return 'usable';
+    try {
+      if (setupIntentIdOf(row.stripe_client_secret)) {
+        const setup = await readTrialSetup(this.stripe, row.stripe_client_secret);
+        if (trialCardSaved(setup)) {
+          await this.attachTrialCardQuietly(subscriptionId, setup.payment_method, row.id);
+          return 'settled';
+        }
+        if (setup?.status === 'processing') return 'settled';
+        if (setup?.status === 'canceled') return 'dead';
+        return 'usable';
+      }
+      const sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
+      if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'dead';
+      if (sub.status === 'active' || sub.status === 'past_due') return 'settled';
+      const inv = sub.latest_invoice;
+      const pi = inv && typeof inv === 'object' ? inv.payment_intent : null;
+      const piStatus = pi && typeof pi === 'object' ? pi.status : undefined;
+      if (piStatus === 'succeeded' || piStatus === 'processing') return 'settled';
+      if (piStatus === 'canceled') return 'dead';
+      return 'usable';
+    } catch (err) {
+      this.logger.warn(`replay secret check skipped purchase=${row.id}: ${(err as Error).message}`);
+      return 'usable';
+    }
+  }
+
+  /** attachTrialCard that only logs on failure (the webhook path retries). */
+  private async attachTrialCardQuietly(
+    subscriptionId: string,
+    paymentMethodId: string,
+    purchaseId: string,
+  ): Promise<void> {
+    try {
+      await attachTrialCard(this.stripe, subscriptionId, paymentMethodId);
+    } catch (err) {
+      this.logger.warn(
+        `trial card attach deferred purchase=${purchaseId}: ${(err as Error).message}`,
       );
     }
   }

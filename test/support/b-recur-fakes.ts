@@ -183,9 +183,23 @@ export interface FakeSub {
 export function makeFakeStripe() {
   const subsByKey = new Map<string, FakeSub>();
   const subs = new Map<string, FakeSub>();
+  // SetupIntents by id. A trial subscription's pending_setup_intent is the
+  // SAME object while pending; `_saveTrialCard` models Stripe after the
+  // client saves a card: SetupIntent succeeded, the subscription's
+  // pending_setup_intent null, and NO default_payment_method (Stripe does
+  // not promise one for a $0 trial).
+  const setups = new Map<string, any>();
   let n = 0;
   const stripe: any = {
     _subs: subs,
+    _setups: setups,
+    _saveTrialCard: (subId: string, pm = 'pm_card') => {
+      const sub = subs.get(subId);
+      if (!sub) throw new Error('no such subscription');
+      const si = setups.get(`seti_${subId.slice(4)}`);
+      if (si) Object.assign(si, { status: 'succeeded', payment_method: pm });
+      sub.pending_setup_intent = null;
+    },
     createSubscription: jest.fn(async (args: any) => {
       const hit = subsByKey.get(args.idempotencyKey);
       if (hit) return hit;
@@ -220,12 +234,19 @@ export function makeFakeStripe() {
       };
       subsByKey.set(args.idempotencyKey, sub);
       subs.set(sub.id, sub);
+      const pending = sub.pending_setup_intent;
+      if (pending && typeof pending === 'object') setups.set(pending.id, pending);
       return sub;
     }),
     retrieveSubscriptionForCheckout: jest.fn(async (id: string) => {
       const sub = subs.get(id);
       if (!sub) throw new Error('no such subscription');
       return sub;
+    }),
+    retrieveSetupIntent: jest.fn(async (id: string) => {
+      const si = setups.get(id);
+      if (!si) throw new Error('no such setup intent');
+      return si;
     }),
     createEphemeralKey: jest.fn(async (_c: string, key: string) => ({
       secret: `ek_${key.length}`,
