@@ -25,6 +25,53 @@ import { CoachFirstPaymentService } from '../notifications/coach-first-payment.s
 // @unique is unchanged.
 type WebhookTx = Prisma.TransactionClient;
 
+/**
+ * B-RECUR — does this Stripe subscription state grant access? active /
+ * trialing / past_due do, except a native trial whose card has not been
+ * saved yet (trial_days set, no default_payment_method): that trial starts
+ * only when the PaymentSheet SetupIntent succeeds.
+ */
+export function subscriptionGrantsAccess(
+  purchase: Pick<ClientPurchase, 'trial_days' | 'trial_started_at' | 'entitlement_active'>,
+  sub: { status?: string; default_payment_method?: unknown },
+): boolean {
+  const status = sub.status ?? 'pending';
+  if (!['active', 'trialing', 'past_due'].includes(status)) return false;
+  if (
+    status === 'trialing' &&
+    purchase.trial_days != null &&
+    !purchase.trial_started_at &&
+    !purchase.entitlement_active &&
+    !sub.default_payment_method
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** B-RECUR — stamp trial_started_at the first time a trial grants access. */
+function trialStartPatch(
+  purchase: Pick<ClientPurchase, 'trial_days' | 'trial_started_at'>,
+  status: string,
+  entitled: boolean,
+): { trial_started_at?: Date } {
+  if (entitled && status === 'trialing' && purchase.trial_days != null && !purchase.trial_started_at) {
+    return { trial_started_at: new Date() };
+  }
+  return {};
+}
+
+/** B-RECUR — an unpaid subscription attempt that never granted access. */
+export function isNeverEntitledAttempt(
+  purchase: Pick<ClientPurchase, 'status' | 'entitlement_active' | 'trial_started_at'>,
+): boolean {
+  return (
+    !purchase.entitlement_active &&
+    !purchase.trial_started_at &&
+    ['pending', 'incomplete', 'payment_failed'].includes(purchase.status)
+  );
+}
+
 // Lifecycle:
 //
 //   pending  -- checkout.session.completed   --> paid (one_time) / active (recurring)
@@ -738,6 +785,7 @@ export class CheckoutWebhookHandlerService {
       current_period_end?: number;
       cancel_at_period_end?: boolean;
       canceled_at?: number | null;
+      default_payment_method?: string | null;
       metadata?: Record<string, string>;
     };
     if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
@@ -811,7 +859,8 @@ export class CheckoutWebhookHandlerService {
     });
 
     const status = this.normalizeSubscriptionStatus(sub.status);
-    const entitlementActive = ['active', 'trialing', 'past_due'].includes(status);
+    // B-RECUR — a native trial grants access only once its card is saved.
+    const entitlementActive = subscriptionGrantsAccess(purchase, sub);
     const currentPeriodEnd = this.toDate(sub.current_period_end);
     const canceledAt = this.toDate(sub.canceled_at);
 
@@ -830,7 +879,7 @@ export class CheckoutWebhookHandlerService {
     // When BillingService threads its outer tx through handle(event, tx) the
     // lock + activation run on that tx (no nested $transaction); otherwise
     // the helper opens its own short $transaction.
-    await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
+    const updated = await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
       client.clientPurchase.update({
         where: { id: purchase.id },
         data: {
@@ -840,10 +889,61 @@ export class CheckoutWebhookHandlerService {
           current_period_end: currentPeriodEnd,
           canceled_at: canceledAt,
           access_expires_at: accessExpiresAt,
+          ...trialStartPatch(purchase, status, entitlementActive),
         },
       }),
     );
+    // B-RECUR — first grant of a native subscription (a trial whose card was
+    // just saved, or a first invoice whose subscription event won the race
+    // with invoice.paid): seed content + first-payment notice. Idempotent.
+    if (entitlementActive && !purchase.entitlement_active && updated) {
+      await this.onSubscriptionFirstEntitled(updated, tx, event.id);
+    }
     return { claimed: true, purchase_id: purchase.id };
+  }
+
+  /**
+   * B-RECUR — side effects of a subscription purchase's FIRST entitlement
+   * (content fan-out + first-payment notice). Both are idempotent
+   * (PurchaseFanout @unique on purchase_id; CoachFirstPaymentNotification
+   * @unique on coach), so invoice.paid and customer.subscription.updated may
+   * both call this for the same purchase in either order.
+   */
+  private async onSubscriptionFirstEntitled(
+    purchase: ClientPurchase,
+    tx: WebhookTx | undefined,
+    eventId: string,
+  ): Promise<void> {
+    await this.maybeEmitFirstPayment(purchase, tx, eventId);
+    if (!this.fanout) return;
+    if (tx) {
+      await this.fanout.onPurchaseEntitled(
+        purchase,
+        {
+          entrypoint: 'in_app_ps',
+          coachId: purchase.coach_user_id,
+          clientId: purchase.client_user_id,
+          purchaseTime: new Date(),
+        },
+        tx,
+      );
+      return;
+    }
+    try {
+      await this.fanout.onPurchaseEntitled(
+        purchase,
+        {
+          entrypoint: 'in_app_ps',
+          coachId: purchase.coach_user_id,
+          clientId: purchase.client_user_id,
+        },
+        this.prisma,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Fanout seam failed for purchase=${purchase.id} (no-tx subscription path): ${(err as Error).message}`,
+      );
+    }
   }
 
   private async applySubscriptionDeleted(
@@ -920,6 +1020,13 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_payment_intent_id: pi.id, status: 'pending' },
     });
     if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+    // B-RECUR — the PaymentIntent of a native subscription's first invoice.
+    // invoice.paid is the single owner of that purchase's entitlement and
+    // settlement; flipping it to a one-time 'paid' here would mislabel a
+    // renewing plan and settle it from a second path.
+    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
+      return { claimed: true, purchase_id: purchase.id, reason: 'subscription_invoice_owned_by_invoice_paid' };
+    }
 
     const updated = await db.clientPurchase.update({
       where: { id: purchase.id },
@@ -1083,6 +1190,14 @@ export class CheckoutWebhookHandlerService {
       // refreshed on this delivery; a later event or the reconciler will).
       let sub = prefetched?.invoiceSubscription ?? null;
       if (!sub) {
+        if (tx && !purchase.entitlement_active) {
+          // B-RECUR — never mark the FIRST paid invoice processed without
+          // granting access: throw so the outer tx rolls back and Stripe
+          // redelivers (the prefetch is retried out-of-tx next time).
+          throw new Error(
+            `invoice.paid for not-yet-entitled purchase ${purchase.id}: subscription prefetch unavailable; retry`,
+          );
+        }
         if (tx) {
           this.logger.warn(
             `invoice.paid resync skipped for sub=${inv.subscription}: outer tx held without a prefetched subscription (no Stripe HTTP in tx)`,
@@ -1096,6 +1211,7 @@ export class CheckoutWebhookHandlerService {
       });
       const status = this.normalizeSubscriptionStatus(sub.status);
       const currentPeriodEnd = this.toDate(sub.current_period_end);
+      const entitled = subscriptionGrantsAccess(purchase, sub);
       updated = await this.activateUnderPackageLock(
         tx,
         purchase.package_id,
@@ -1104,9 +1220,8 @@ export class CheckoutWebhookHandlerService {
             where: { id: purchase.id },
             data: {
               status,
-              entitlement_active: ['active', 'trialing', 'past_due'].includes(
-                status,
-              ),
+              entitlement_active: entitled,
+              ...trialStartPatch(purchase, status, entitled),
               current_period_end: currentPeriodEnd,
               access_expires_at: this.computeAccessExpiry(
                 pkg,
@@ -1119,9 +1234,15 @@ export class CheckoutWebhookHandlerService {
           }),
       );
     } catch (err) {
+      if (!purchase.entitlement_active) throw err;
       this.logger.warn(
         `invoice.paid resync failed for sub=${inv.subscription}: ${(err as Error).message}`,
       );
+    }
+    // B-RECUR — first grant (first invoice paid, or a trial's $0 invoice
+    // after its card was saved): content fan-out + first-payment notice.
+    if (updated.entitlement_active && !purchase.entitlement_active) {
+      await this.onSubscriptionFirstEntitled(updated, tx, event.id);
     }
     // Phase 4 — per-renewal split: each invoice.paid mints (or
     // re-collapses-onto) the head-coach Transfer for that invoice.
@@ -1176,6 +1297,17 @@ export class CheckoutWebhookHandlerService {
       where: { stripe_subscription_id: inv.subscription },
     });
     if (!purchase) return { claimed: false };
+    // B-RECUR — a declined card on a subscription nobody has paid for yet
+    // (the client is still in the PaymentSheet, or abandoned it) is not a
+    // renewal failure: no past_due, no dunning emails, no lockout. The sheet
+    // already told the client; Stripe expires the attempt after 23 h.
+    if (isNeverEntitledAttempt(purchase)) {
+      await this.prisma.clientPurchase.update({
+        where: { id: purchase.id },
+        data: { last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed' },
+      });
+      return { claimed: true, purchase_id: purchase.id, reason: 'first_attempt_declined' };
+    }
     const updated = await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
       data: {

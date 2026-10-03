@@ -3655,6 +3655,14 @@ model ClientPurchase {
   source         String?
   grant_metadata Json?
 
+  // B-RECUR (OR-113-2) — free trial granted by the native subscription
+  // checkout. trial_days is set when the trial is offered (null = no trial);
+  // trial_started_at is set by the webhook when the trial's entitlement is
+  // granted (card saved). One trial per client per coach is decided from
+  // these two columns under a per-(client, coach) advisory lock.
+  trial_days       Int?
+  trial_started_at DateTime?
+
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
   @@index([package_id])
