@@ -1,4 +1,13 @@
-# Diagnostic engine — operator runbook
+# Diagnostic engine — operator runbook (switched off)
+
+> **Switched off in this backend (B-QUIZ-OFF, owner 2026-10-01 15:25).** The
+> diagnostic quiz belongs to TGP Finance, not this fitness product.
+> `DiagnosticModule` is not imported by `AppModule`, so none of the routes
+> below are mounted (they answer 404) and the AI roadmap call cannot run.
+> The `diagnostic_submissions` / `ai_roadmaps` tables are kept (no drops);
+> existing rows stay covered by data export and account deletion.
+> `test/diagnostic-quiz-off.spec.ts` fails if the module or a `/diagnostic`
+> route comes back. The rest of this page describes the code as it was.
 
 Phase 3. The 40-point diagnostic is a public lead-capture funnel. A
 visitor answers 40 Likert questions, the system computes scores + an

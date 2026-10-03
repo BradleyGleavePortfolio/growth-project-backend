@@ -26,15 +26,19 @@ import {
 } from '../../src/ai-consent/ai-consent.constants';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
-// D2 contract (ops/CONSENT_D2_CONTRACT.md, DRAFT v2) — copied verbatim.
+// D2 contract (ops/CONSENT_D2_CONTRACT.md, DRAFT v2) — copied verbatim, with the
+// client-ai-v4 retention sentence (owner 2026-10-01 20:32, OR-110-1).
 const CONTRACT_PARAGRAPH_4 =
-  "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions and your coach can use AI drafts about your training. Only your own data is used, never another client's, and never your coach's private notes. Your conversations with Roman are private from your coach, kept for 180 days, and you can delete them at any time.";
+  "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions and your coach can use AI drafts about your training. Only your own data is used, never another client's, and never your coach's private notes. Your conversations with Roman are private from your coach and are kept until you delete them or delete your account.";
 const CONTRACT_BOX_2_LABEL =
   "Optional: I allow Roman and my coach's AI tools to use my information, processed by Anthropic.";
 // Pinned digests (computed independently from the contract text).
-const PARAGRAPH_SHA = '77c0e7062adb29cf59a532b130e50d5b373789c3564972cc309d8361bf57227b';
+const PARAGRAPH_SHA = '56d14fb96b9f7b6abdd43242f5ce9eaee419bc0d9fb4302bc283ecc1529d430b';
 const LABEL_SHA = '77da153df7f06a045e1abbbb83b771f8a33941d47268e276becc6b4ffe5e5eba';
-const COPY_SHA = 'd8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f';
+const COPY_SHA = 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4';
+// The superseded client-ai-v3 copy ("kept for 180 days"): grants of it stay in
+// the history but never count.
+const V3_COPY_SHA = 'd8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f';
 
 const CANARY = 'CANARY-7f3a-secret-db-detail';
 
@@ -91,19 +95,19 @@ describe('AiConsentService (R2a ledger)', () => {
     else process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = OLD_FLAG;
   });
 
-  const grantDto = { version: 'client-ai-v3' };
+  const grantDto = { version: 'client-ai-v4' };
 
   describe('server copy', () => {
     it('is the D2 contract paragraph 4 and box 2 label, byte for byte', () => {
       expect(CLIENT_AI_CONSENT_PARAGRAPH).toBe(CONTRACT_PARAGRAPH_4);
       expect(CLIENT_AI_CONSENT_BOX_LABEL).toBe(CONTRACT_BOX_2_LABEL);
-      expect(CLIENT_AI_CONSENT_VERSION).toBe('client-ai-v3');
+      expect(CLIENT_AI_CONSENT_VERSION).toBe('client-ai-v4');
     });
 
     it('GET returns the text and pinned sha256 values', async () => {
       const s = await service.getStatus('u_a');
       expect(s.copy).toEqual({
-        version: 'client-ai-v3',
+        version: 'client-ai-v4',
         processor: 'anthropic',
         paragraph: { text: CONTRACT_PARAGRAPH_4, sha256: PARAGRAPH_SHA },
         box_label: { text: CONTRACT_BOX_2_LABEL, sha256: LABEL_SHA },
@@ -135,7 +139,7 @@ describe('AiConsentService (R2a ledger)', () => {
         version: null,
         granted_at: null,
         withdrawn_at: null,
-        current_version: 'client-ai-v3',
+        current_version: 'client-ai-v4',
         needs_reconsent: false,
       });
     });
@@ -160,7 +164,7 @@ describe('AiConsentService (R2a ledger)', () => {
         purpose: 'client_ai_processing',
         seq: 1,
         action: 'grant',
-        consent_version: 'client-ai-v3',
+        consent_version: 'client-ai-v4',
         copy_sha256: COPY_SHA,
         platform: 'ios',
         app_version: '1.0.0',
@@ -175,14 +179,15 @@ describe('AiConsentService (R2a ledger)', () => {
 
     it.each([
       ['an older version', { version: 'client-ai-v2' }],
-      ['an unknown version', { version: 'client-ai-v4' }],
-      ['a different copy sha256', { version: 'client-ai-v3', copy_sha256: 'a'.repeat(64) }],
+      ['the superseded 180-day version', { version: 'client-ai-v3' }],
+      ['an unknown version', { version: 'client-ai-v5' }],
+      ['a different copy sha256', { version: 'client-ai-v4', copy_sha256: 'a'.repeat(64) }],
     ])('409 CONSENT_VERSION_MISMATCH for %s, nothing written', async (_label, dto) => {
       await expect(service.grant('u_a', dto)).rejects.toMatchObject({
         status: 409,
         response: {
           code: 'CONSENT_VERSION_MISMATCH',
-          current_version: 'client-ai-v3',
+          current_version: 'client-ai-v4',
           copy_sha256: COPY_SHA,
         },
       });
@@ -324,7 +329,7 @@ describe('AiConsentService (R2a ledger)', () => {
   // Sol B-622-3 (defence in depth behind the DTO): a null digest that somehow
   // reaches the service is a 400, never a TypeError / 500.
   it('grant with copy_sha256 null at the service is 400, nothing written', async () => {
-    const dto = JSON.parse('{"version":"client-ai-v3","copy_sha256":null}');
+    const dto = JSON.parse('{"version":"client-ai-v4","copy_sha256":null}');
     await expect(service.grant('u_a', dto)).rejects.toMatchObject({ status: 400 });
     expect(fake.calls.findFirst + fake.calls.create).toBe(0);
   });
@@ -333,14 +338,14 @@ describe('AiConsentService (R2a ledger)', () => {
     it('appends a withdraw row that refers to the grant it ends', async () => {
       await service.grant('u_a', grantDto);
       const s = await service.withdraw('u_a');
-      expect(s).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v3' });
+      expect(s).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v4' });
       expect(s.withdrawn_at).toEqual(expect.any(String));
       expect(s.granted_at).toBeNull();
       expect(fake.rows.map((r) => [r.seq, r.action])).toEqual([
         [1, 'grant'],
         [2, 'withdraw'],
       ]);
-      expect(fake.rows[1]).toMatchObject({ consent_version: 'client-ai-v3', copy_sha256: COPY_SHA });
+      expect(fake.rows[1]).toMatchObject({ consent_version: 'client-ai-v4', copy_sha256: COPY_SHA });
     });
 
     it('is idempotent: no history -> nothing written, 200 status', async () => {
@@ -392,6 +397,109 @@ describe('AiConsentService (R2a ledger)', () => {
       await service.grant('u_a', grantDto);
       expect(fake.rows).toHaveLength(2);
       expect(await reader.hasClientAiConsent('u_a')).toBe(true);
+    });
+  });
+
+  describe('client-ai-v4 retention bump: how client-ai-v3 grants are treated', () => {
+    const V3_PARAGRAPH =
+      "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions and your coach can use AI drafts about your training. Only your own data is used, never another client's, and never your coach's private notes. Your conversations with Roman are private from your coach, kept for 180 days, and you can delete them at any time.";
+
+    it('the pinned v3 sha256 is the superseded 180-day text (proves which grants go stale)', () => {
+      const v3 = createHash('sha256').update(`${V3_PARAGRAPH}\n\n${CONTRACT_BOX_2_LABEL}`, 'utf8').digest('hex');
+      expect(v3).toBe(V3_COPY_SHA);
+      expect(CLIENT_AI_CONSENT_COPY_SHA256).not.toBe(V3_COPY_SHA);
+    });
+
+    it('the current copy states the true retention and no time limit', () => {
+      expect(CLIENT_AI_CONSENT_VERSION).toBe('client-ai-v4');
+      expect(CLIENT_AI_CONSENT_PARAGRAPH).toContain(
+        'kept until you delete them or delete your account.',
+      );
+      expect(CLIENT_AI_CONSENT_PARAGRAPH).not.toMatch(/\b\d+\s*days?\b/i);
+    });
+
+    it('a live v3 grant on file is kept in history but is not consent: needs_reconsent, reader false', async () => {
+      fake.plant({
+        user_id: 'u_a',
+        seq: 1,
+        action: 'grant',
+        consent_version: 'client-ai-v3',
+        copy_sha256: V3_COPY_SHA,
+      });
+      const s = await service.getStatus('u_a');
+      expect(s).toMatchObject({
+        granted: false,
+        state: 'needs_reconsent',
+        needs_reconsent: true,
+        version: 'client-ai-v3',
+        current_version: 'client-ai-v4',
+      });
+      expect(s.copy.sha256).toBe(COPY_SHA);
+      expect(await reader.hasClientAiConsent('u_a')).toBe(false);
+      expect(await reader.clientsWithAiConsent(['u_a'])).toEqual(new Set());
+      // The v3 row itself is never rewritten.
+      expect(fake.rows).toHaveLength(1);
+      expect(fake.rows[0]).toMatchObject({ consent_version: 'client-ai-v3', copy_sha256: V3_COPY_SHA });
+      expect(fake.calls.update + fake.calls.delete + fake.calls.upsert).toBe(0);
+    });
+
+    it('a POST that still names client-ai-v3 is 409 CONSENT_VERSION_MISMATCH with the v4 version and sha256, nothing written', async () => {
+      await expect(
+        service.grant('u_a', { version: 'client-ai-v3', copy_sha256: V3_COPY_SHA }),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: {
+          code: 'CONSENT_VERSION_MISMATCH',
+          current_version: 'client-ai-v4',
+          copy_sha256: COPY_SHA,
+        },
+      });
+      await expect(service.grant('u_a', { version: 'client-ai-v3' })).rejects.toMatchObject({
+        status: 409,
+      });
+      // The v4 version with the stale v3 hash is refused too.
+      await expect(
+        service.grant('u_a', { version: 'client-ai-v4', copy_sha256: V3_COPY_SHA }),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(fake.rows).toHaveLength(0);
+    });
+
+    it('a withdrawal of a v3 grant is recorded against v3; a v4 grant after it counts', async () => {
+      fake.plant({
+        user_id: 'u_a',
+        seq: 1,
+        action: 'grant',
+        consent_version: 'client-ai-v3',
+        copy_sha256: V3_COPY_SHA,
+      });
+      const w = await service.withdraw('u_a');
+      expect(w).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v3' });
+      expect(fake.rows[1]).toMatchObject({
+        seq: 2,
+        action: 'withdraw',
+        consent_version: 'client-ai-v3',
+        copy_sha256: V3_COPY_SHA,
+      });
+      const g = await service.grant('u_a', { version: 'client-ai-v4', copy_sha256: COPY_SHA });
+      expect(g).toMatchObject({ granted: true, state: 'granted', version: 'client-ai-v4' });
+      expect(fake.rows[2]).toMatchObject({ seq: 3, consent_version: 'client-ai-v4', copy_sha256: COPY_SHA });
+      expect(await reader.hasClientAiConsent('u_a')).toBe(true);
+    });
+
+    it('re-consent from a v3 grant appends a v4 grant (not idempotent with the stale one)', async () => {
+      fake.plant({
+        user_id: 'u_a',
+        seq: 1,
+        action: 'grant',
+        consent_version: 'client-ai-v3',
+        copy_sha256: V3_COPY_SHA,
+      });
+      const g = await service.grant('u_a', grantDto);
+      expect(g).toMatchObject({ granted: true, state: 'granted', needs_reconsent: false });
+      expect(fake.rows.map((r) => [r.seq, r.action, r.consent_version])).toEqual([
+        [1, 'grant', 'client-ai-v3'],
+        [2, 'grant', 'client-ai-v4'],
+      ]);
     });
   });
 
@@ -476,7 +584,7 @@ describe('AiConsentService (R2a ledger)', () => {
     await service.grant('u_a', grantDto);
     await service.withdraw('u_a');
     const logs = logLines.join('\n');
-    expect(logs).toContain('ai_consent.grant user=u_a version=client-ai-v3 seq=1');
+    expect(logs).toContain('ai_consent.grant user=u_a version=client-ai-v4 seq=1');
     expect(logs).not.toContain('Anthropic so Roman');
     expect(logs).not.toContain('Optional: I allow');
   });

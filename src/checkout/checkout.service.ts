@@ -16,6 +16,8 @@ import {
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from '../packages/packages.service';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
+import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
+import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
@@ -697,16 +699,23 @@ export class CheckoutService {
   }
 
   // List purchases for a client (their own bought packages).
+  //
+  // OR-112-19: explicit allow-list, never the raw row. The row caches the
+  // PaymentIntent client_secret / ephemeral key for idempotent replay; the
+  // app never reads them from this list (it resumes a payment through
+  // createPaymentIntentForClient with the same idempotency key), so no
+  // purchase in this list carries a secret, whatever its status.
   async listForClient(
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<{ items: ClientPurchase[]; hasMore: boolean }> {
+  ): Promise<{ items: ClientPurchaseView[]; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
     const rows = await this.prisma.clientPurchase.findMany({
       where: { client_user_id: clientUserId },
       orderBy: { created_at: 'desc' },
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      select: CLIENT_PURCHASE_SELECT,
     });
     const hasMore = rows.length > take;
     return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
@@ -806,16 +815,20 @@ export class CheckoutService {
   }
 
   // List purchases on a coach's roster (for revenue / activity views).
+  //
+  // C-641-2 / OR-112-19: GET /v1/coach/purchases is a coach route, so it uses
+  // the coach allow-list; the raw row carries the CLIENT's Stripe secrets.
   async listForCoach(
     coachUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<{ items: ClientPurchase[]; hasMore: boolean }> {
+  ): Promise<{ items: CoachPurchaseView[]; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
       orderBy: { created_at: 'desc' },
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > take;
     return { items: hasMore ? rows.slice(0, take) : rows, hasMore };

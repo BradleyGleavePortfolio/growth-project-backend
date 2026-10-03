@@ -8,11 +8,16 @@ function asPrisma(m: object): PrismaService {
   return m as PrismaService;
 }
 
-function make(target: Record<string, unknown> | null, profile: Record<string, unknown> | null) {
+function make(
+  target: Record<string, unknown> | null,
+  profile: Record<string, unknown> | null,
+  intake: Record<string, unknown> | null = null,
+) {
   return new MacrosService(
     asPrisma({
       macroTarget: { findFirst: jest.fn(async () => target) },
       userProfile: { findUnique: jest.fn(async () => profile) },
+      clientOnboardingIntake: { findUnique: jest.fn(async () => intake) },
     }),
   );
 }
@@ -62,6 +67,38 @@ describe('MacrosService.getCurrentForSelf', () => {
       notes: null,
       effective_from: eff,
       source: 'profile',
+      macro_display_mode: 'full',
+      simple_until: null,
+    });
+  });
+
+  it('C05 item 8: simple display until simple_until, then full; carbs and fat still returned', async () => {
+    const target = {
+      id: 't1',
+      client_id: 'c1',
+      coach_id: 'k1',
+      calories_kcal: 1789,
+      protein_g: 150,
+      carbs_g: 185,
+      fats_g: 50,
+      fiber_g: null,
+      notes: null,
+      effective_from: eff,
+    };
+    const intake = { completion_result: { simple_until: '2026-10-08T12:00:00.000Z' } };
+    const svc = make(target, null, intake);
+    await expect(
+      svc.getCurrentForSelf('c1', new Date('2026-10-02T00:00:00Z')),
+    ).resolves.toMatchObject({
+      macro_display_mode: 'simple',
+      simple_until: '2026-10-08T12:00:00.000Z',
+      carbs_g: 185,
+      fats_g: 50,
+    });
+    await expect(
+      svc.getCurrentForSelf('c1', new Date('2026-10-09T00:00:00Z')),
+    ).resolves.toMatchObject({
+      macro_display_mode: 'full',
     });
   });
 
