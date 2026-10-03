@@ -221,7 +221,7 @@ export class SchedulingOpenSlotsService {
       throw new NotFoundException(
         schedulingError(
           SchedulingErrorCode.COACH_NOT_FOUND,
-          'We could not find that coach. Open Calendar to see who you can book with.',
+          'That coach is no longer available to book. Open Calendar to see who you can book with.',
         ),
       );
     }

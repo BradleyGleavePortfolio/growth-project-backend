@@ -38,6 +38,7 @@ import {
   MEETING_LINK_PATTERN,
   MIN_BOOKING_LEAD_MINUTES,
   OCCUPYING_SESSION_STATUSES,
+  SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
   hasUsableLink,
   schedulingError,
@@ -692,10 +693,7 @@ export class SchedulingSessionLifecycleService {
     const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
     if (!session) {
       throw new NotFoundException(
-        schedulingError(
-          SchedulingErrorCode.SESSION_NOT_FOUND,
-          'We could not find that session. It may have been removed. Open Calendar to see your sessions.',
-        ),
+        schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
       );
     }
     return session;

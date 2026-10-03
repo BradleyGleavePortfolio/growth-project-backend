@@ -91,6 +91,14 @@ export const SchedulingErrorCode = {
 export type SchedulingErrorCodeValue =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
 
+// B-634-9: the one 404 message for a session the caller cannot see. A
+// missing session and another person's session read the same (existence
+// hiding), so every SESSION_NOT_FOUND throw uses this constant. Client-facing
+// scheduling copy speaks to the reader directly: no "we"/"us", and every
+// message names a working next step.
+export const SESSION_NOT_FOUND_MESSAGE =
+  'That session is no longer available. Open Calendar to see your sessions.';
+
 export function schedulingError(
   code: SchedulingErrorCodeValue,
   message: string,

@@ -1,7 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CoachingSession, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { SchedulingErrorCode, schedulingError } from './scheduling.types';
+import {
+  SESSION_NOT_FOUND_MESSAGE,
+  SchedulingErrorCode,
+  schedulingError,
+} from './scheduling.types';
 import type { ActorContext } from './scheduling.types';
 
 // S-SCHED-2 (T4): the single answer to "which coaches may this person see and
@@ -77,7 +81,7 @@ export class SchedulingAccessService {
       throw new ForbiddenException(
         schedulingError(
           SchedulingErrorCode.COACH_NOT_BOOKABLE,
-          'You can only manage your own calendar.',
+          'You can only manage your own calendar. Open Calendar to see your own hours and sessions.',
         ),
       );
     }
@@ -131,10 +135,7 @@ export class SchedulingAccessService {
     if (actor.role === 'coach' && session.coach_id === actor.id) return;
     if (actor.role === 'student' && session.client_id === actor.id) return;
     throw new NotFoundException(
-      schedulingError(
-        SchedulingErrorCode.SESSION_NOT_FOUND,
-        'We could not find that session. It may have been removed. Open Calendar to see your sessions.',
-      ),
+      schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
     );
   }
 
@@ -178,7 +179,7 @@ export class SchedulingAccessService {
     throw new ForbiddenException(
       schedulingError(
         SchedulingErrorCode.NOT_SESSION_PARTICIPANT,
-        'Only the coach for this session can do this.',
+        'Only the coach for this session can do this. Open Calendar to see the sessions you can change.',
       ),
     );
   }
