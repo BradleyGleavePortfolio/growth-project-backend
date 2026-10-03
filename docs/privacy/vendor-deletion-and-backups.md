@@ -4,6 +4,8 @@ Status: procedure of record for the deletion and backup promises in `/privacy`,
 `/consumer-health-privacy` and `/help/delete-account` (`src/public-pages/`).
 Written 2026-10-02 for the #611 publication hold (B-611-1). The operator
 publishes #611 only after backend #608 (in-app account erasure) is live.
+Restoring a database backup is out of scope: §1.2 states the requirement and
+points to the separate T4 follow-up (backend issue #662).
 
 The published promises this document has to make true:
 
@@ -82,24 +84,15 @@ Supabase manages these backups. We cannot delete one person from them; they **ag
 - On the first working day of each month, the owner lists the stored dumps and deletes any older than these limits. The check goes in the quarterly review log (`docs/soc2/runbook-quarterly-review.md`).
 - A dump is never copied to a laptop disk outside the vault. If one is, it is deleted the same day.
 
-### 1.2 Restoring a backup without bringing deleted data back
+### 1.2 Restores: not covered by this document
 
-A restore (PITR or a daily backup) rewinds the whole database. Accounts erased after the restore point would come back. So would Roman chats deleted after it, and AI-consent withdrawals recorded after it. The restore must re-apply them.
+This document has **no restore procedure**. A restore (PITR or a daily backup) rewinds the whole database, so accounts erased, Roman chats deleted, AI-consent withdrawals recorded and deletions scheduled after the restore point would come back or be lost.
 
-**Procedure (owner, every restore; never rehearsed, UNVERIFIED in practice):**
-1. **Before** starting the restore, from the live database, save these three lists (ids and timestamps only, no content) to the incident record:
-   - accounts closed after the restore point: `SELECT id, deleted_at FROM "User" WHERE deleted_at >= '<restore point>'`. Tombstones keep `id` and `deleted_at`.
-   - Roman chats erased after it: `SELECT id, user_id FROM "RomanSession" WHERE day_key LIKE 'erased:%' AND updated_at >= '<restore point>'`.
-   - AI-consent ledger rows after it: `SELECT user_id, processor, purpose, seq, action, consent_version, created_at FROM "AiProcessingConsentEvent" WHERE created_at >= '<restore point>'`.
+**Requirement (any restore):** after the restore, and before the app or any job reads the restored data, every erasure, chat delete, AI-consent withdrawal and scheduled deletion recorded after the restore point is re-applied and the final state verified. Traffic reopens only after that.
 
-   Also note every account whose deletion was **scheduled** after the restore point (`deletion_confirmed_at >= '<restore point>'`). Its schedule is lost too.
-2. Restore.
-3. Before reopening traffic:
-   - re-finalize every account in list 1 through the owner-only deletion endpoint (`src/account-deletion/`);
-   - re-erase every chat in list 2 with the same service path the client uses;
-   - re-append the ledger rows in list 3 (withdrawals first) so nobody's AI choice is rewound;
-   - re-schedule the deletions noted in step 1.
-4. Record in the incident log what was re-applied. Delete the saved lists 30 days later.
+The procedure that meets this requirement is separate T4 work: [backend issue #662, restore without resurrection](https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/662). It must replay the AI-consent ledger with its original order, version and copy hash, never synthesize a grant, and fail closed. Until it lands, a production restore is not a planned recovery route (`docs/deploy-runbook.md` §2 step 3 and §3 step 4: recovery is forward-only).
+
+The public pages promise no restore procedure. They promise that deleted data leaves live systems and that backup copies age out (§1, §1.1); this section records the condition a restore must meet to keep those promises.
 
 ---
 
@@ -184,7 +177,7 @@ Stripe keeps the payment and tax records the law requires. The policy already sa
 
 **What it holds:**
 - Error events from the API. `src/observability/sentry-config.ts` `beforeSend` scrubs them, and ORM errors are replaced by `safeDiagnostic`.
-- Error events from the mobile app. **Fact (repo, mobile `src/services/sentry.ts`):** `setSentryUser` sets the user **id and email** on events.
+- Error events from the mobile app. **Fact (repo, mobile `src/services/sentry.ts`, mobile #330 merged 2026-10-02):** `setSentryUser` sets only the opaque user **id** on events, never the email.
 
 Events can include health details that appear in an error, as the policy says.
 
@@ -193,8 +186,7 @@ Events can include health details that appear in an error, as the policy says.
 **Procedure (owner, on an email deletion request that asks for it, or for a consumer health request):** in Sentry, search events by the user id and delete the matching issues or events. Otherwise let them age out.
 
 **UNVERIFIED (owner):**
-- the Sentry plan, and with it the retention period;
-- whether sending the email on mobile events is wanted. Recommendation: send only the id; a mobile change for the operator.
+- the Sentry plan, and with it the retention period.
 
 ---
 
@@ -256,3 +248,4 @@ Events can include health details that appear in an error, as the policy says.
   - Anthropic deletes within 30 days, except its Usage Policy and legal exceptions (owner to decide the wording, §3).
 - **"We tell our service providers so they delete their copies":** holds for Supabase, Fly, Expo, Mux and Resend through the deletion run plus age-out. It needs the manual §4 (Stripe) and §8 (PostHog, Crisp) steps, done within 30 days and recorded in the §9 log.
 - **Roman conversations "kept until you delete them or your account":** holds through #635's client delete and #608's erasure manifest. Anthropic's copy ages out within 30 days (§3).
+- **Deleted data and AI withdrawals stay that way after a restore:** no restore procedure exists; any restore must meet the §1.2 requirement, built in [#662](https://github.com/BradleyGleavePortfolio/growth-project-backend/issues/662).

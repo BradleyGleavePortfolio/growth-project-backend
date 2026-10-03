@@ -130,10 +130,15 @@ the Stripe Customer Portal. They live in `trust-pages.html.ts`.
 The deletion and backup promises on `/privacy`, `/consumer-health-privacy`
 and `/help/delete-account` are backed by
 [`docs/privacy/vendor-deletion-and-backups.md`](../../docs/privacy/vendor-deletion-and-backups.md):
-per vendor what is deleted, how, by whom and when, how backups age out, the
-restore-without-resurrection procedure, and the owner checklist of
-unverified items. Changing a deletion or retention sentence means updating
-that document in the same PR.
+per vendor what is deleted, how, by whom and when, how backups age out,
+and the owner checklist of unverified items. Changing a deletion or
+retention sentence means updating that document in the same PR.
+
+The pages promise no restore procedure, and none exists. Any database
+restore must re-apply erasures, Roman chat deletes, AI-consent withdrawals
+and scheduled deletions before the app reads the data; that procedure is
+separate T4 work (backend issue #662). Do not add restore wording to the
+public pages until it is built and audited.
 
 ### Policy accuracy rules (2026-09-30 rewrite)
 
