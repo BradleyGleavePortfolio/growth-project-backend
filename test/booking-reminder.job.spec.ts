@@ -106,7 +106,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-1', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -148,7 +148,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -172,7 +172,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-idem', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const args = {
       lowerOffsetMinutes: 55,
@@ -203,7 +203,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -232,7 +232,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -263,7 +263,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
       start_at: sessions[0].start_at,
     });
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -296,7 +296,7 @@ describe('SessionReminderJob — findDueReminders helper', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const due = await job.findDueReminders(60);
     expect(due.map((s) => s.id)).toEqual(['s-in']);
@@ -367,7 +367,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
       return snapshot;
     });
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow(window24h(emitter));
     expect(emitter.emitReminder24h).not.toHaveBeenCalled();
@@ -401,7 +401,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
       });
     }
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
     const result = await job.dispatchWindow(window24h(emitter));
     expect(result.dispatched).toBe(2);
     expect(prisma._logs).toHaveLength(4);
@@ -411,7 +411,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
     const sessions = [session({ id: 'sess-same', startsInMinutes: 60 * 24 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
     expect((await job.dispatchWindow(window24h(emitter))).dispatched).toBe(2);
     // "Reschedule" to the identical start time: the claims stay valid.
     sessions[0].start_at = new Date(sessions[0].start_at.getTime());
@@ -430,7 +430,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
       return snapshot;
     });
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
       upperOffsetMinutes: 65,
@@ -452,7 +452,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
     const prisma = buildPrismaFake(sessions);
     prisma.$transaction.mockRejectedValue(new Error('connection reset'));
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
       upperOffsetMinutes: 65,

@@ -154,10 +154,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is tomorrow at 5:30 PM PDT.',
+      'Reminder: your session with Coach K is on Tue, Jun 2 at 5:30 PM PDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is tomorrow at 8:30 PM EDT.',
+      'Reminder: your session with Jamie is on Tue, Jun 2 at 8:30 PM EDT.',
     ]);
     for (const r of w.rows) {
       expect(r.body).not.toMatch(/UTC|GMT/);
@@ -186,7 +186,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     await w.job.runTwentyFourHourReminderSweep();
     const client = await w.notifications.listNotifications('client-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is tomorrow at 7:30 PM CDT.',
+      'Reminder: your session with Coach K is on Tue, Jun 2 at 7:30 PM CDT.',
     ]);
   });
 
@@ -234,10 +234,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is tomorrow at 6:30 PM MDT.',
+      'Reminder: your session with Coach K is on Tue, Jun 2 at 6:30 PM MDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is tomorrow at 6:30 PM MDT.',
+      'Reminder: your session with Jamie is on Tue, Jun 2 at 6:30 PM MDT.',
     ]);
   });
 
@@ -250,10 +250,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is tomorrow at 8:30 PM EDT.',
+      'Reminder: your session with Coach K is on Tue, Jun 2 at 8:30 PM EDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is tomorrow at 5:30 PM PDT.',
+      'Reminder: your session with Jamie is on Tue, Jun 2 at 5:30 PM PDT.',
     ]);
   });
 
