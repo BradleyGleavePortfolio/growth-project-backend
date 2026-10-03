@@ -453,6 +453,6 @@ When neither `GOOGLE_CLIENT_ID` nor `GOOGLE_CLIENT_IDS` is set, `/auth/signup-po
 ### Future work (Phase 10)
 
 - Migrate legacy `CoachGuard` / `CoachOrOwnerGuard` / `OwnerGuard` to `@Roles(...)` to eliminate the legacy-guard allowlist in `roles-enforced.spec.ts`.
-- Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` (role changes) and the Phase 10 GDPR force-delete endpoint.
+- Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` (role changes). The admin force-delete `POST /admin/users/:id/delete` carries it since B-608-13.
 - Add biometric-auth token path on mobile (currently password-only).
 - Consider a short-lived server-side nonce store to enable re-auth token revocation if 5-minute window is too wide.

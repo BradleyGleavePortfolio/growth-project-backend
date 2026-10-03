@@ -317,7 +317,7 @@ export class PurchaseFanoutService {
           `PurchaseFanout: AssignableAssetResolverRegistry not wired; cannot materialise drop=${drop.id} type=${drop.asset_type}`,
         );
       }
-      const result = await this.resolvers.materialise(drop.asset_type, {
+      const materialiseInput = {
         clientId: purchaseRow.client_user_id,
         coachId: purchaseRow.coach_user_id,
         assetId: drop.asset_id,
@@ -335,7 +335,20 @@ export class PurchaseFanoutService {
         clientPurchaseId: purchase.id,
         contentId: drop.content_id,
         tx: tx as Prisma.TransactionClient,
-      });
+      };
+      // S-MWB Programs (B-640-4 / C-640-6): a whole program is never copied
+      // inside this checkout / $0-grant transaction. The drop stays `pending`
+      // (due now) and the one-minute drip dispatcher delivers it in its own
+      // transaction with retries + a coach alert, so a large or broken program
+      // can never time out or roll back the purchase. Its buyer alert fires
+      // when the dispatcher delivers it.
+      if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
+        this.logger.log(
+          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (program delivery runs in its own transaction)`,
+        );
+        continue;
+      }
+      const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
 
       await tx.scheduledDrop.update({
         where: { id: drop.id },
