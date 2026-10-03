@@ -20,6 +20,7 @@ import {
   type TrialWillEndSubscription,
 } from '../packages/trials/trial-notice.service';
 import { TrialConflictService } from '../packages/trials/trial-conflict.service';
+import { trialErrorClass } from '../packages/trials/trial-diagnostics';
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -1046,7 +1047,7 @@ export class CheckoutWebhookHandlerService {
         for (const row of rows) await this.trialConflicts.settle(row.purchase_id);
       } catch (err) {
         this.logger.error(
-          `trial conflict: settle lookup failed (sweep retries): ${(err as Error)?.name ?? 'error'}`,
+          `trial conflict: settle lookup failed (sweep retries): ${trialErrorClass(err)}`,
         );
       }
       return;
@@ -1056,7 +1057,7 @@ export class CheckoutWebhookHandlerService {
       this.logger.warn(`trial conflict: cancelled subscription ${subscriptionId} (TRIAL_ALREADY_USED)`);
     } catch (err) {
       this.logger.error(
-        `trial conflict: cancel failed for subscription ${subscriptionId} (TRIAL_ALREADY_USED, cancel by hand): ${(err as Error)?.name ?? 'error'}`,
+        `trial conflict: cancel failed for subscription ${subscriptionId} (TRIAL_ALREADY_USED, cancel by hand): ${trialErrorClass(err)}`,
       );
     }
   }

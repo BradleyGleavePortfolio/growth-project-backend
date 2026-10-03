@@ -11,6 +11,7 @@
 //   B-656-4  the push ignored a global mute.
 //   B-656-5  a trial whose card was removed still read will_charge:true and got
 //            no notice.
+import { Logger } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { CheckoutService } from '../src/checkout/checkout.service';
@@ -783,5 +784,274 @@ describe('C-338-2 (Opus, mobile #338) — refusal copy names a fix the editor of
       expect(message).toMatch(/remove the trial|or the trial/i);
       expect(message).not.toMatch(/0 days/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX ROUND 5 — GPT-6.1 Sol REQUEST CHANGES @ b9939d02 (B-656-3/5 narrowed,
+// B-656-6, B-656-7). Each block failed on b9939d02.
+// ---------------------------------------------------------------------------
+
+/** Started trials due inside the window; the first `noticed` already have a notice. */
+function seedDue(
+  w: World,
+  n: number,
+  opts: { noticed: number; sameEnd?: boolean; reverse?: boolean },
+) {
+  w.purchase().status = 'canceled'; // keep pur-1 out of the due set
+  const base = NOW.getTime() + 864e5;
+  const rows = Array.from({ length: n }, (_, i) => {
+    const id = `p-${String(i).padStart(4, '0')}`;
+    const end = new Date(opts.sameEnd ? base : base + i * 60_000);
+    return purchaseRow({ id, stripe_subscription_id: `sub_${id}`, trial_ends_at: end });
+  });
+  for (const row of opts.reverse ? [...rows].reverse() : rows) w.purchases.rows.push(row);
+  for (const row of rows.slice(0, opts.noticed)) {
+    w.notices.rows.push({
+      id: `n-${row.id}`,
+      purchase_id: row.id,
+      client_user_id: 'client-1',
+      trial_ends_at: new Date((row.trial_ends_at as Date).getTime()),
+      amount_cents: 4900,
+      currency: 'usd',
+      source: 'trial_will_end',
+      stripe_event_id: 'evt_x',
+      push_status: 'delivered',
+      push_attempts: 1,
+      push_lease_token: null,
+      push_lease_until: null,
+      email_status: 'sent',
+      email_attempts: 1,
+      email_lease_token: null,
+      email_lease_until: null,
+      last_error: null,
+    });
+  }
+  return rows;
+}
+
+const noticesFor = (w: World, id: string) => w.notices.rows.filter((n) => n.purchase_id === id);
+
+describe('B-656-3 (round 5) — the reconciler pages past already-noticed trials', () => {
+  it('a full first page of noticed trials does not hide the 20 due trials behind it', async () => {
+    const w = world();
+    const rows = seedDue(w, 120, { noticed: 100 });
+    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(20);
+    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
+    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(20);
+    expect(await w.noticeSvc.reconcileDue(new Date(NOW.getTime() + 600_000))).toBe(0);
+  });
+
+  it('equal trial ends (ties) page by id, whatever the insert order', async () => {
+    const w = world();
+    const rows = seedDue(w, 150, { noticed: 100, sameEnd: true, reverse: true });
+    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(50);
+    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
+  });
+
+  it('two sweeps at once record each missing notice once and push it once', async () => {
+    const w = world();
+    const rows = seedDue(w, 30, { noticed: 0 });
+    const [a, b] = await Promise.all([
+      w.noticeSvc.reconcileDue(NOW),
+      w.noticeSvc.reconcileDue(NOW),
+    ]);
+    expect(a + b).toBe(30);
+    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
+    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(30);
+  });
+});
+
+describe('B-656-5 (round 5) — an unknown card is never reported as "no card"', () => {
+  it('the customer-default read fails at delivery: nothing is sent; the next delivery tells the truth', async () => {
+    const w = world({ customerDefault: 'pm_default', purchase: { card_on_file: false } });
+    const id = await recordNotice(w, trialSub({ default_payment_method: null }));
+    expect(w.notifications.createNotification.mock.calls[0][0]).toMatchObject({ body: CHARGE });
+    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
+    lookup.findUnique.mockRejectedValueOnce(new Error('connection reset'));
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
+    expect(w.email.send).not.toHaveBeenCalled();
+    expect(w.notices.rows[0]).toMatchObject({
+      push_status: 'pending',
+      push_attempts: 0,
+      email_status: 'pending',
+      email_attempts: 0,
+    });
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(CHARGE);
+  });
+
+  it('the read fails while recording: no notice with a wrong promise; the reconciler records it once the read works', async () => {
+    const end = new Date(Date.now() + 2 * 864e5);
+    const w = world({
+      customerDefault: 'pm_default',
+      purchase: { card_on_file: false, trial_ends_at: end },
+    });
+    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
+    lookup.findUnique.mockRejectedValueOnce(new Error('connection reset'));
+    const res = await w.handler.handle(
+      event(
+        'customer.subscription.trial_will_end',
+        trialSub({ trial_end: epoch(end), default_payment_method: null }),
+      ),
+      w.tx,
+    );
+    expect(res.deferredTrialNoticeId).toBeUndefined();
+    expect(w.notices.rows).toHaveLength(0);
+    expect(await w.noticeSvc.reconcileDue(new Date())).toBe(1);
+    expect(w.notifications.createNotification.mock.calls[0][0].body).toMatch(
+      /Your card will be charged \$49 then/,
+    );
+  });
+
+  it('tri-state: confirmed present, confirmed absent, unknown', () => {
+    expect(willChargeCard(true, null)).toBe(true);
+    expect(willChargeCard(false, true)).toBe(true);
+    expect(willChargeCard(false, false)).toBe(false);
+    expect(willChargeCard(false, null)).toBeNull();
+    expect(willChargeCard(null, null)).toBeNull();
+  });
+});
+
+describe('B-656-6 — a cancel-failing alert never suppresses the billed alert', () => {
+  async function failThrice(w: World) {
+    trialAlreadyStartedElsewhere(w);
+    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
+    w.cancelSubscription.mockRejectedValue(
+      new StripeConnectApiError('down', 500, null, 'api_error'),
+    );
+    let t = Date.now();
+    for (let i = 0; i < TRIAL_CONFLICT_ALERT_AFTER; i += 1) {
+      t += 2 * 60 * 60 * 1000;
+      await w.conflictSvc.settle('pur-1', new Date(t));
+    }
+  }
+  const codes = () =>
+    jest
+      .mocked(Sentry.captureMessage)
+      .mock.calls.map((c) => (c[1] as { tags?: { code?: string } } | undefined)?.tags?.code);
+
+  it('failing alert, then billing starts: the billed alert still fires once', async () => {
+    const w = world({ purchase: { entitlement_active: false } });
+    await failThrice(w);
+    expect(codes()).toEqual(['TRIAL_CONFLICT_CANCEL_FAILING']);
+    await w.handler.handle(
+      event(
+        'customer.subscription.updated',
+        trialSub({ status: 'active', trial_end: epoch(NOW) }),
+        'evt_9',
+      ),
+      w.tx,
+    );
+    expect(w.conflicts.rows[0].status).toBe('superseded');
+    await w.conflictSvc.sweep(new Date());
+    await w.conflictSvc.sweep(new Date());
+    expect(codes()).toEqual(['TRIAL_CONFLICT_CANCEL_FAILING', 'TRIAL_CONFLICT_SUPERSEDED']);
+  });
+
+  it('two alert sweeps at once send the billed alert once', async () => {
+    const w = world({ purchase: { entitlement_active: false } });
+    await failThrice(w);
+    await w.handler.handle(
+      event(
+        'customer.subscription.updated',
+        trialSub({ status: 'active', trial_end: epoch(NOW) }),
+        'evt_9',
+      ),
+      w.tx,
+    );
+    const [a, b] = await Promise.all([
+      w.conflictSvc.alertSuperseded(),
+      w.conflictSvc.alertSuperseded(),
+    ]);
+    expect(a + b).toBe(1);
+    expect(codes().filter((c) => c === 'TRIAL_CONFLICT_SUPERSEDED')).toHaveLength(1);
+  });
+});
+
+describe('B-656-7 — trial workers log closed codes only', () => {
+  const CANARY = 'AUDIT_FREE_TEXT_NAME_contact_at_example_invalid';
+  const canary = () => Object.assign(new Error('contact@example.invalid'), { name: CANARY });
+  let lines: string[] = [];
+  beforeEach(() => {
+    lines = [];
+    for (const level of ['error', 'warn', 'log', 'debug'] as const) {
+      jest.spyOn(Logger.prototype, level).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map(String).join(' '));
+      });
+    }
+  });
+  afterEach(() => jest.restoreAllMocks());
+  const leaked = () =>
+    [...lines, JSON.stringify(jest.mocked(Sentry.captureMessage).mock.calls)].filter((l) =>
+      /contact_at_example|contact@example/.test(l),
+    );
+
+  it('cancel failures (arbitrary Error.name, Stripe code) and the alert path', async () => {
+    const w = world({ purchase: { entitlement_active: false } });
+    trialAlreadyStartedElsewhere(w);
+    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
+    w.cancelSubscription.mockRejectedValueOnce(canary());
+    await w.conflictSvc.settle('pur-1', new Date(Date.now() + 1000));
+    expect(w.conflicts.rows[0].last_error).toBe('unclassified');
+    w.cancelSubscription.mockRejectedValue(
+      new StripeConnectApiError(
+        'contact@example.invalid',
+        503,
+        'contact_at_example_invalid',
+        'api_error',
+      ),
+    );
+    let t = Date.now();
+    for (let i = 0; i < 3; i += 1) {
+      t += 2 * 60 * 60 * 1000;
+      await w.conflictSvc.settle('pur-1', new Date(t));
+    }
+    expect(w.conflicts.rows[0].last_error).toBe('http_503');
+    // the alert transport itself throws an arbitrary error
+    jest.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
+      throw canary();
+    });
+    w.conflicts.rows[0].status = 'superseded';
+    await w.conflictSvc.alertSuperseded();
+    // the handler's settle lookup fails
+    (w.prisma.packageTrialConflict as { findMany: unknown }).findMany = jest.fn(async () => {
+      throw canary();
+    });
+    await w.handler.cancelTrialConflict('sub_1');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(leaked()).toEqual([]);
+  });
+
+  it('notice reconcile, delivery, card lookup, push code and email failures', async () => {
+    const w = world();
+    const id = await recordNotice(w);
+    w.notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: CANARY });
+    w.email.send.mockRejectedValueOnce(canary());
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notices.rows[0].last_error).toBe('email:unclassified');
+    w.notices.rows[0].push_lease_token = null;
+    expect(w.notices.rows[0].push_status).toBe('pending');
+    w.notifications.getPreferences.mockRejectedValueOnce(canary());
+    await w.noticeSvc.deliver(id, NOW);
+    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
+    lookup.findUnique.mockRejectedValueOnce(canary());
+    w.purchase().card_on_file = false;
+    await w.noticeSvc.deliver(id, NOW);
+    seedDue(w, 1, { noticed: 0 });
+    (w.prisma as { $transaction: unknown }).$transaction = jest.fn(async () => {
+      throw canary();
+    });
+    await w.noticeSvc.reconcileDue(NOW);
+    expect(lines.length).toBeGreaterThan(2);
+    expect(leaked()).toEqual([]);
+  });
+
+  it('push transport codes are closed', async () => {
+    const w = world({ pushCode: CANARY });
+    const id = await recordNotice(w);
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notices.rows[0].last_error).toBe('push:unclassified');
   });
 });

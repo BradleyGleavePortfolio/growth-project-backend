@@ -26,7 +26,10 @@
 -- 3. PackageTrialConflict — durable obligation to cancel a subscription that
 --    tried to start a second free trial with the same coach (B-656-1). Written
 --    in the webhook transaction, settled after commit and by a sweep until
---    Stripe confirms the cancel. Holds no user id (purchase + subscription
+--    Stripe confirms the cancel. alerted_at is the receipt of the "cancel
+--    still failing" alert; billed_alerted_at the separate receipt of the
+--    "billed before cancel" alert (one never suppresses the other). Holds no
+--    user id (purchase + subscription
 --    ids only), so it needs no erasure-manifest entry; it is server-only:
 --    service_role all, anon restrictive deny + REVOKE, no other policy.
 
@@ -71,6 +74,7 @@ CREATE TABLE "PackageTrialConflict" (
     "lease_until" TIMESTAMP(3),
     "last_error" TEXT,
     "alerted_at" TIMESTAMP(3),
+    "billed_alerted_at" TIMESTAMP(3),
     "settled_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,

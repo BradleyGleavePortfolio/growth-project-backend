@@ -102,13 +102,17 @@ export function trialEndingCopy(input: TrialEndingCopyInput): TrialEndingCopy {
 /**
  * B-TRIALS-3 (B-656-5) — will the trial end really charge a card? The
  * subscription's own payment method (as last observed) or the customer's
- * invoice default. Unknown (never observed, no customer default) counts as a
- * card: the app never says "nothing will be charged" without evidence.
+ * invoice default. Tri-state: true, false (confirmed: no card on the
+ * subscription and no customer default), or null (unknown: the customer
+ * default could not be read). Unknown is never reported as "no card". A
+ * subscription card never observed counts as a card when the customer read
+ * succeeded: the app never says "nothing will be charged" without evidence.
  */
 export function willChargeCard(
   subscriptionCard: boolean | null | undefined,
-  customerDefault: boolean,
-): boolean {
-  if (subscriptionCard === true || customerDefault) return true;
+  customerDefault: boolean | null,
+): boolean | null {
+  if (subscriptionCard === true || customerDefault === true) return true;
+  if (customerDefault === null) return null;
   return subscriptionCard !== false;
 }

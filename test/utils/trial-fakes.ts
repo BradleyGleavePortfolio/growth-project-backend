@@ -14,6 +14,9 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
     if (key === 'OR' && Array.isArray(cond)) {
       return cond.some((c) => matches(row, c as Record<string, unknown>));
     }
+    if (key === 'AND' && Array.isArray(cond)) {
+      return cond.every((c) => matches(row, c as Record<string, unknown>));
+    }
     const value = row[key];
     if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
       const c = cond as Record<string, unknown>;
@@ -69,9 +72,35 @@ export function makeTable(uniques: string[][], defaults: () => Record<string, un
     rows,
     findUnique,
     findFirst: findUnique,
-    findMany: async ({ where = {}, take }: { where?: Record<string, unknown>; take?: number }) => {
+    findMany: async ({
+      where = {},
+      take,
+      orderBy,
+    }: {
+      where?: Record<string, unknown>;
+      take?: number;
+      orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>;
+    }) => {
       await tick();
       const found = rows.filter((r) => matches(r, where)).map((r) => ({ ...r }));
+      // B-TRIALS-3 — ORDER BY like SQL (keys in order, NULLs last).
+      const keys = (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []).flatMap((o) =>
+        Object.entries(o),
+      );
+      if (keys.length > 0) {
+        found.sort((a, b) => {
+          for (const [k, dir] of keys) {
+            const av = a[k];
+            const bv = b[k];
+            if (av === bv) continue;
+            if (av === null || av === undefined) return 1;
+            if (bv === null || bv === undefined) return -1;
+            const c = compare(av, bv);
+            if (c !== 0) return dir === 'desc' ? -c : c;
+          }
+          return 0;
+        });
+      }
       return typeof take === 'number' ? found.slice(0, take) : found;
     },
     createMany: async ({
@@ -178,6 +207,7 @@ export function makeTrialConflictTable() {
     lease_until: null,
     last_error: null,
     alerted_at: null,
+    billed_alerted_at: null,
     settled_at: null,
   }));
 }

@@ -3,6 +3,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
+import { trialErrorClass, trialHttpCode } from './trial-diagnostics';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
@@ -67,11 +68,9 @@ export function isAlreadyCancelledError(err: unknown): boolean {
 /** A short, closed error code for the row and logs (never a message body). */
 function errorCode(err: unknown): string {
   if (err instanceof TrialConflictTimeoutError) return 'timeout';
-  if (err instanceof StripeConnectApiError) {
-    if (err.stripeCode && /^[a-z_]{1,40}$/.test(err.stripeCode)) return err.stripeCode;
-    return `http_${err.httpStatus}`;
-  }
-  return 'error';
+  // B-656-7 — the HTTP status only; a Stripe code is free text to this log.
+  if (err instanceof StripeConnectApiError) return trialHttpCode(err.httpStatus);
+  return trialErrorClass(err);
 }
 
 export class TrialConflictTimeoutError extends Error {
@@ -248,14 +247,14 @@ export class TrialConflictService {
               },
             });
           } catch (err) {
-            this.logger.warn(`trial conflict alert not sent: ${(err as Error)?.name ?? 'error'}`);
+            this.logger.warn(`trial conflict alert not sent: ${trialErrorClass(err)}`);
           }
         }
       }
       return 'retry';
     } catch (err) {
       this.logger.error(
-        `trial conflict settle errored for purchase ${purchaseId}: ${(err as Error)?.name ?? 'error'}`,
+        `trial conflict settle errored for purchase ${purchaseId}: ${trialErrorClass(err)}`,
       );
       return 'retry';
     }
@@ -283,15 +282,17 @@ export class TrialConflictService {
   async alertSuperseded(): Promise<number> {
     try {
       const rows = await this.prisma.packageTrialConflict.findMany({
-        where: { status: 'superseded', alerted_at: null },
+        // B-656-6 — its own receipt: an earlier cancel-failing alert
+        // (alerted_at) never suppresses the billed alert.
+        where: { status: 'superseded', billed_alerted_at: null },
         take: SWEEP_BATCH,
         select: { id: true, purchase_id: true },
       });
       let sent = 0;
       for (const row of rows) {
         const first = await this.prisma.packageTrialConflict.updateMany({
-          where: { id: row.id, alerted_at: null },
-          data: { alerted_at: new Date() },
+          where: { id: row.id, status: 'superseded', billed_alerted_at: null },
+          data: { billed_alerted_at: new Date() },
         });
         if (first.count !== 1) continue;
         sent += 1;
@@ -304,12 +305,12 @@ export class TrialConflictService {
             tags: { code: 'TRIAL_CONFLICT_SUPERSEDED', purchase_id: row.purchase_id },
           });
         } catch (err) {
-          this.logger.warn(`trial conflict alert not sent: ${(err as Error)?.name ?? 'error'}`);
+          this.logger.warn(`trial conflict alert not sent: ${trialErrorClass(err)}`);
         }
       }
       return sent;
     } catch (err) {
-      this.logger.error(`trial conflict alert sweep failed: ${(err as Error)?.name ?? 'error'}`);
+      this.logger.error(`trial conflict alert sweep failed: ${trialErrorClass(err)}`);
       return 0;
     }
   }

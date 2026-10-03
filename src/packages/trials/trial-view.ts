@@ -86,7 +86,9 @@ export function purchaseTrialView(
     if (!row.entitlement_active) return { ...base, state: 'setup_incomplete', ...none };
     const reason = trialNoChargeReason({
       cancelAtPeriodEnd: row.cancel_at_period_end,
-      cardOnFile: willChargeCard(row.card_on_file, !!ctx.customerDefaultCard),
+      // customerDefaultCard is a completed read here (the list fails loudly
+      // otherwise), so the answer is never unknown.
+      cardOnFile: willChargeCard(row.card_on_file, !!ctx.customerDefaultCard) !== false,
     });
     return { ...base, state: 'trialing', will_charge: reason === null, no_charge_reason: reason };
   }
