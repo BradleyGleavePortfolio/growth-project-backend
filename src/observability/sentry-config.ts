@@ -49,6 +49,70 @@ export function stripSensitiveHeaders(event: Sentry.ErrorEvent): Sentry.ErrorEve
   return event;
 }
 
+/** The SDK's transaction event type, taken from the hook it is passed to. */
+export type SentryTransactionEvent = Parameters<
+  NonNullable<Sentry.NodeOptions['beforeSendTransaction']>
+>[0];
+
+/** Value shape allowed for the application-owned `code` / `stage` tags (C-636-4). */
+const SAFE_CODE_TAG = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/** Span / trace attributes that carry a full URL or a query string (C-636-5). */
+const URL_ATTRIBUTES = ['http.url', 'http.target', 'url.full', 'url', 'http.route.full'];
+const QUERY_ATTRIBUTES = ['url.query', 'http.query', 'http.query_string'];
+
+function withoutQuery(value: string): string {
+  const cut = value.search(/[?#]/);
+  return cut === -1 ? value : value.slice(0, cut);
+}
+
+function scrubSpanData<D extends object>(data: D | undefined): D | undefined {
+  if (!data) return data;
+  const out = { ...data };
+  for (const key of URL_ATTRIBUTES) {
+    const value: unknown = Reflect.get(out, key);
+    if (typeof value === 'string') Reflect.set(out, key, withoutQuery(value));
+  }
+  for (const key of QUERY_ATTRIBUTES) Reflect.deleteProperty(out, key);
+  return out;
+}
+
+/**
+ * C-636-5: trace transactions are not error events, so beforeSend never sees
+ * them. Incoming spans carry the request URL with its query string (a
+ * `?token=` download link is a live bearer credential) and outgoing HTTP
+ * spans carry signed storage URLs. Strip every query string and fragment
+ * from URL attributes, HTTP span descriptions, the transaction name and the
+ * request block; drop query attributes outright. Returns a copy.
+ */
+export function scrubTransactionEvent<T extends SentryTransactionEvent>(event: T): T {
+  const out: T = { ...event };
+  if (typeof out.transaction === 'string') out.transaction = withoutQuery(out.transaction);
+  if (out.request) {
+    const request = { ...out.request };
+    delete request.query_string;
+    if (typeof request.url === 'string') request.url = withoutQuery(request.url);
+    out.request = request;
+  }
+  if (out.contexts?.trace) {
+    out.contexts = {
+      ...out.contexts,
+      trace: { ...out.contexts.trace, data: scrubSpanData(out.contexts.trace.data) },
+    };
+  }
+  if (out.spans) {
+    out.spans = out.spans.map((span) => ({
+      ...span,
+      data: scrubSpanData(span.data) ?? span.data,
+      description:
+        typeof span.description === 'string' && (span.op ?? '').startsWith('http')
+          ? withoutQuery(span.description)
+          : span.description,
+    }));
+  }
+  return out;
+}
+
 /** Build the Sentry init options from the environment. Pure (no side effects). */
 export function buildSentryOptions(
   dsn: string,
@@ -68,6 +132,9 @@ export function buildSentryOptions(
         environment,
         ...(release ? { release } : {}),
       },
+    },
+    beforeSendTransaction(event) {
+      return scrubTransactionEvent(event);
     },
     beforeSend(event, hint) {
       const original = hint.originalException;
@@ -107,6 +174,12 @@ export function buildSentryOptions(
         'release',
       ]) {
         if (event.tags?.[key] !== undefined) tags[key] = event.tags[key];
+      }
+      // C-636-4: application-owned machine codes (e.g. DATA_EXPORT_*,
+      // STORAGE_TIMEOUT) and stage names, only when they look like a code.
+      for (const key of ['code', 'stage']) {
+        const value = event.tags?.[key];
+        if (typeof value === 'string' && SAFE_CODE_TAG.test(value)) tags[key] = value;
       }
       return {
         type: undefined,
