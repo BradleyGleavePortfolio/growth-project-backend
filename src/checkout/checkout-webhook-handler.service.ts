@@ -187,7 +187,7 @@ export interface CheckoutWebhookPrefetch {
   // card was made the subscription's default out-of-tx. null = the
   // SetupIntent is not a native trial's; ok=false = the Stripe write failed
   // (the handler throws so Stripe redelivers the event).
-  trialCard?: { purchaseId: string; ok: boolean } | null;
+  trialCard?: { purchaseId: string | null; ok: boolean } | null;
 }
 
 @Injectable()
@@ -514,7 +514,7 @@ export class CheckoutWebhookHandlerService {
    */
   private async attachNativeTrialCard(
     event: StripeEvent,
-  ): Promise<{ purchaseId: string; ok: boolean } | null> {
+  ): Promise<{ purchaseId: string | null; ok: boolean } | null> {
     const si = event.data.object as {
       id?: unknown;
       payment_method?: unknown;
@@ -533,8 +533,12 @@ export class CheckoutWebhookHandlerService {
         },
       });
     } catch (err) {
+      // B-654-1 (narrowed, Sol) — a failed lookup is NOT "no such attempt":
+      // answering unclaimed would let BillingService mark the only saved-card
+      // event processed with no card attached. Report it as a failed attach
+      // so handle() throws, the outer tx rolls back and Stripe redelivers.
       this.logger.warn(`setup_intent.succeeded lookup failed si=${si.id}: ${(err as Error).message}`);
-      return null;
+      return { purchaseId: null, ok: false };
     }
     if (!row || !row.stripe_subscription_id) return null;
     if (
@@ -582,7 +586,9 @@ export class CheckoutWebhookHandlerService {
     if (!trialCard) return { claimed: false };
     if (!trialCard.ok) {
       throw new Error(
-        `setup_intent.succeeded: trial card not attached for purchase=${trialCard.purchaseId}; redeliver`,
+        trialCard.purchaseId
+          ? `setup_intent.succeeded: trial card not attached for purchase=${trialCard.purchaseId}; redeliver`
+          : 'setup_intent.succeeded: attempt lookup failed; redeliver',
       );
     }
     return { claimed: true, reason: 'native_trial_card_attached' };
@@ -949,8 +955,13 @@ export class CheckoutWebhookHandlerService {
         return { claimed: false, reason: 'missing_binding_metadata' };
       }
 
+      // B-RECUR-3 (B-654-5) — a native checkout subscription names its own
+      // attempt (metadata.tgp_purchase_id): bind exactly that row, never a
+      // newer pending attempt of the same package.
+      const purchaseIdFromMeta = sub.metadata?.tgp_purchase_id;
       const pending = await db.clientPurchase.findFirst({
         where: {
+          ...(purchaseIdFromMeta ? { id: purchaseIdFromMeta } : {}),
           package_id: pkgIdFromMeta,
           client_user_id: clientIdFromMeta,
           coach_user_id: coachIdFromMeta,

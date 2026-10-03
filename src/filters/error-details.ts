@@ -38,6 +38,10 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
       interval: oneOf('week', 'month', 'year'),
       interval_count: count,
     },
+    // B-RECUR-3 (B-654-7) — why the attempt behind this key ended.
+    SUBSCRIPTION_ATTEMPT_EXPIRED: {
+      reason: oneOf('timed_out', 'terms_changed'),
+    },
     SUBSCRIPTION_ALREADY_ACTIVE: {
       purchase_id: uuid,
       cancel_at_period_end: bool,

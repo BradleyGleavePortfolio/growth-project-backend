@@ -3790,6 +3790,12 @@ model ClientPurchase {
   // these two columns under a per-(client, coach) advisory lock.
   trial_days       Int?
   trial_started_at DateTime?
+  // B-RECUR-3 (B-654-5 / B-654-7) — the exact Stripe request and money terms
+  // one native subscription attempt is bound to (price ids, amounts,
+  // currency, cadence, trial days). Written on the reservation before the
+  // first Subscription create; a retry resends the identical request and a
+  // replay answers these terms. No user id, email, token or secret.
+  checkout_terms   Json?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])

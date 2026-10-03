@@ -877,6 +877,21 @@ export class StripeConnectApiService {
     );
   }
 
+  // B-RECUR-3 (B-654-5) — every subscription of one platform customer, any
+  // status, newest first. The native checkout uses it to find the
+  // subscription an uncertain create may have made (matched by
+  // metadata.tgp_purchase_id) instead of creating a second one. List reads
+  // are consistent (unlike Search), so a miss means Stripe has none.
+  async listSubscriptionsForCustomer(
+    customerId: string,
+  ): Promise<{ data: StripeSubscriptionObject[]; has_more?: boolean }> {
+    const params = new URLSearchParams();
+    params.set('customer', customerId);
+    params.set('status', 'all');
+    params.set('limit', '100');
+    return this.get(`/subscriptions?${params.toString()}`);
+  }
+
   // B-RECUR — the client keeps a plan they scheduled to cancel (undo
   // cancel_at_period_end before the period ends). The idempotency key is per
   // client request, so a later cancel -> keep -> cancel cycle is never
