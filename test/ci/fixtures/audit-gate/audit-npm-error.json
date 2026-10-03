@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "ENOTFOUND",
+    "summary": "SYNTHETIC FIXTURE request to registry failed",
+    "detail": ""
+  }
+}
