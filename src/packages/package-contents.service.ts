@@ -149,6 +149,42 @@ export class PackageContentsService {
         input,
       );
 
+      // S-MWB Programs (C-640-9): serialise with ProgramLibraryService
+      // .archiveProgram on the master's row lock and re-check it is still live,
+      // so an archive cannot slip between the authoring check above and this
+      // insert (the archive takes the same FOR UPDATE lock before it reads the
+      // package list).
+      if (input.asset_type === 'workout_program') {
+        const locked = await tx.$queryRaw<Array<{ archived_at: Date | null }>>`
+          SELECT "archived_at" FROM "WorkoutProgram"
+          WHERE "id" = ${input.asset_id} AND "coach_id" = ${tenantCoachId} AND "is_template" = true
+          FOR UPDATE`;
+        if (locked.length > 0 && locked[0].archived_at) {
+          throw new UnprocessableEntityException({
+            error: 'PROGRAM_ARCHIVED',
+            code: 'program_archived',
+            message: 'This program is archived. Restore it in Programs before adding it to a package.',
+          });
+        }
+        // C-640-5: re-count the live days under the same row lock that the
+        // library clear-day route and the legacy plan archive take before
+        // removing a last day, so the program a package now delivers can never
+        // be emptied between the authoring check above and this insert.
+        if (locked.length > 0) {
+          const days = await tx.workoutPlan.count({
+            where: { program_id: input.asset_id, archived_at: null },
+          });
+          if (days === 0) {
+            throw new UnprocessableEntityException({
+              error: 'PROGRAM_EMPTY',
+              code: 'program_empty',
+              message:
+                'This program has no workouts yet. Add at least one day before adding it to a package.',
+            });
+          }
+        }
+      }
+
       const display_order =
         input.display_order ?? (await this.nextDisplayOrder(tx, packageId));
 
@@ -1053,6 +1089,37 @@ export class PackageContentsService {
     switch (assetType) {
       case 'workout_program':
       case 'workout_plan': {
+        // S-MWB Programs: a `workout_program` asset is a master WorkoutProgram
+        // of this tenant (the id the Programs library and the regimes list
+        // use). It must be live and have at least one workout, otherwise every
+        // buyer would get nothing. Archived masters are refused for NEW
+        // attachments (existing ones keep delivering).
+        if (assetType === 'workout_program') {
+          const program = await this.prisma.workoutProgram.findFirst({
+            where: { id: input.asset_id, coach_id: tenantCoachId, is_template: true },
+            select: { id: true, archived_at: true, is_regime: true },
+          });
+          if (program) {
+            if (program.archived_at) {
+              throw new UnprocessableEntityException({
+                error: program.is_regime ? 'REGIME_ARCHIVED' : 'PROGRAM_ARCHIVED',
+                code: program.is_regime ? 'regime_archived' : 'program_archived',
+                message: 'This program is archived. Restore it in Programs before adding it to a package.',
+              });
+            }
+            const days = await this.prisma.workoutPlan.count({
+              where: { program_id: program.id, archived_at: null },
+            });
+            if (days === 0) {
+              throw new UnprocessableEntityException({
+                error: 'PROGRAM_EMPTY',
+                code: 'program_empty',
+                message: 'This program has no workouts yet. Add at least one day before adding it to a package.',
+              });
+            }
+            return;
+          }
+        }
         const plan = await this.prisma.workoutPlan.findFirst({
           where: {
             id: input.asset_id,
