@@ -58,6 +58,13 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'AuthController', method: 'getMe', reason: 'JwtAuthGuard per-handler; student-accessible' },
   { controller: 'AuthController', method: 'becomeCoach', reason: 'JwtAuthGuard per-handler; student-accessible' },
   { controller: 'AuthController', method: 'issueRecentAuthToken', reason: 'JwtAuthGuard per-handler; student-accessible' },
+  { controller: 'AccountDeletionController', method: 'requestDeletion', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'confirmDeletion', reason: 'JwtAuthGuard at class level; scoped by the single-use deletion token (legacy email link), not by role; every account role incl. sub_coach (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'cancelDeletion', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'AccountDeletionController', method: 'getStatus', reason: 'JwtAuthGuard at class level; self-scoped to req.user.id; every account role incl. sub_coach may delete itself (B-608-7)' },
+  { controller: 'DataExportController', method: 'requestExport', reason: 'global JwtAuthGuard; self-scoped to req.user.id; every account role incl. sub_coach may export its own data (B-636-6)' },
+  { controller: 'DataExportController', method: 'getStatus', reason: 'global JwtAuthGuard; self-scoped to req.user.id; every account role incl. sub_coach may export its own data (B-636-6)' },
+  { controller: 'DataExportController', method: 'createDownloadLink', reason: 'global JwtAuthGuard; self-scoped to req.user.id; every account role incl. sub_coach may export its own data (B-636-6)' },
   // ── CoachController ── CoachGuard at class level enforces coach|owner ──
   { controller: 'CoachController', method: 'getDashboard', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getClients', reason: 'CoachGuard at class level' },
