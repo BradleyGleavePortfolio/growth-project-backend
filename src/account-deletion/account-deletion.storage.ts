@@ -3,6 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { SupabaseService } from '../supabase/supabase.service';
 import { exportArchivePath } from '../data-export/data-export.paths';
+import {
+  DATA_EXPORT_BUCKET,
+  LOCAL_ARCHIVE_SCHEME,
+  archiveObjectKey,
+  archiveStoreKind,
+  supabaseArchiveUrl,
+} from '../data-export/data-export-archive.store';
 import { MuxService } from '../video/mux.service';
 import { VOICE_DEFAULT_BUCKET } from '../community/voice/voice-upload.provider';
 import {
@@ -160,13 +167,17 @@ export class AccountDeletionStorageService {
     }
 
     // Every export of the user, not only finished ones (B-608-3): an export
-    // still building writes `<DATA_EXPORT_FS_DIR>/<id>.json`, so that path is
-    // removed too. An archive written after this transaction commits is
-    // removed by the export worker itself (its READY update finds no row); if
-    // that unlink fails with anything but ENOENT, the worker records a durable
-    // data_export_archive_cleanup row that the nightly cleanup drains
-    // (B-608-11), with the orphan sweep in DataExportService.expireOldExports
-    // as a second safety net.
+    // still building writes its planned archive (`<id>.json` in the private
+    // `data-exports` bucket in production, `<DATA_EXPORT_FS_DIR>/<id>.json`
+    // in development), so that object is removed too. An archive written
+    // after this transaction commits is removed by the export worker itself
+    // (its READY update finds no row); if that delete fails with anything but
+    // "already gone", the worker records a durable data_export_archive_cleanup
+    // row that the nightly cleanup drains (B-608-11), with the orphan sweep in
+    // DataExportService.expireOldExports as a second safety net. A failed
+    // removal here throws, so the transaction rolls back and the nightly
+    // finalization retries with the rows (and keys) intact.
+    const exportStore = archiveStoreKind();
     const exports = await tx.dataExportRequest.findMany({
       where: { user_id: userId },
       select: { id: true, file_url: true },
@@ -174,12 +185,19 @@ export class AccountDeletionStorageService {
     for (const e of exports) {
       const url = e.file_url ?? '';
       if (url) {
-        if (url.startsWith('local://')) push({ kind: 'local', path: url.slice('local://'.length) });
-        else
+        if (url.startsWith(LOCAL_ARCHIVE_SCHEME)) {
+          push({ kind: 'local', path: url.slice(LOCAL_ARCHIVE_SCHEME.length) });
+        } else if (url === supabaseArchiveUrl(e.id)) {
+          push({ kind: 'supabase', bucket: DATA_EXPORT_BUCKET, key: archiveObjectKey(e.id) });
+        } else {
           throw new Error('account deletion: data export archive has an unsupported storage URL');
+        }
       }
-      const planned = exportArchivePath(e.id);
-      if (planned !== url.slice('local://'.length)) push({ kind: 'local', path: planned });
+      if (exportStore === 'supabase') {
+        push({ kind: 'supabase', bucket: DATA_EXPORT_BUCKET, key: archiveObjectKey(e.id) });
+      } else {
+        push({ kind: 'local', path: exportArchivePath(e.id) });
+      }
     }
     return out;
   }

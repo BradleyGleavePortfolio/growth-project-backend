@@ -16,6 +16,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { DataExportStatus, Prisma } from '@prisma/client';
 import { DataExportService } from '../src/data-export/data-export.service';
+import { exportArchivePath } from '../src/data-export/data-export.paths';
 import { PrismaService } from '../src/prisma.service';
 
 function makeExportRecord(
@@ -62,9 +63,7 @@ function buildPrismaMock() {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: {
-      findUnique: jest
-        .fn()
-        .mockResolvedValue({ id: 'user-1', email: 'a@b.com', name: 'A' }),
+      findUnique: jest.fn().mockResolvedValue({ id: 'user-1', email: 'a@b.com', name: 'A' }),
     },
     userProfile: { findMany: noopFindMany },
     userPreferences: { findMany: noopFindMany },
@@ -106,10 +105,7 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
     prismaMock = buildPrismaMock();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DataExportService,
-        { provide: PrismaService, useValue: prismaMock },
-      ],
+      providers: [DataExportService, { provide: PrismaService, useValue: prismaMock }],
     }).compile();
 
     service = module.get<DataExportService>(DataExportService);
@@ -122,13 +118,11 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
   // ── Floor-raising regression: every non-terminal status MUST block ────────
 
   it('rejects a new request when a PENDING export exists in the window', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([
       makeExportRecord({ status: DataExportStatus.PENDING }),
-    );
+    ]);
 
-    await expect(service.requestExport('user-1')).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(service.requestExport('user-1')).rejects.toThrow(ConflictException);
     expect(prismaMock.dataExportRequest.create).not.toHaveBeenCalled();
   });
 
@@ -136,46 +130,49 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
     // Before the fix, RUNNING was excluded from the predicate. _runExport()
     // flips a fresh row to RUNNING immediately, so the original code allowed
     // a user to spam concurrent GDPR jobs while one was being assembled.
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([
       makeExportRecord({ status: DataExportStatus.RUNNING }),
-    );
+    ]);
 
-    await expect(service.requestExport('user-1')).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(service.requestExport('user-1')).rejects.toThrow(ConflictException);
     expect(prismaMock.dataExportRequest.create).not.toHaveBeenCalled();
   });
 
   it('rejects a new request when a READY export exists in the window', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(
-      makeExportRecord({ status: DataExportStatus.READY }),
-    );
+    // A READY export from the last 24 h whose archive is stored: the user
+    // downloads that one (DATA_EXPORT_RATE_LIMITED), nothing is superseded.
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([
+      makeExportRecord({
+        status: DataExportStatus.READY,
+        file_url: `local://${exportArchivePath('export-1')}`,
+        expires_at: new Date(Date.now() + 86_400_000),
+      }),
+    ]);
 
-    await expect(service.requestExport('user-1')).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(service.requestExport('user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'DATA_EXPORT_RATE_LIMITED' }),
+    });
+    expect(prismaMock.dataExportRequest.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.dataExportRequest.create).not.toHaveBeenCalled();
   });
 
   it('passes PENDING, RUNNING, and READY to the duplicate-check predicate (predicate-shape guard)', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([]);
     prismaMock.dataExportRequest.create.mockResolvedValue(
       makeExportRecord({ status: DataExportStatus.PENDING }),
     );
 
     await service.requestExport('user-1');
 
-    expect(prismaMock.dataExportRequest.findFirst).toHaveBeenCalledTimes(1);
-    const call = prismaMock.dataExportRequest.findFirst.mock.calls[0][0];
+    // The first findMany is the duplicate check (the background archive build
+    // may read the user's export history afterwards).
+    expect(prismaMock.dataExportRequest.findMany).toHaveBeenCalled();
+    const call = prismaMock.dataExportRequest.findMany.mock.calls[0][0];
     const statusFilter = call.where.status.in;
     // Must include every non-terminal status. We compare as sets so the
     // ordering inside the array is not a load-bearing detail of the test.
     expect(new Set(statusFilter)).toEqual(
-      new Set([
-        DataExportStatus.PENDING,
-        DataExportStatus.RUNNING,
-        DataExportStatus.READY,
-      ]),
+      new Set([DataExportStatus.PENDING, DataExportStatus.RUNNING, DataExportStatus.READY]),
     );
     // Must NOT block on terminal states — those represent finished work the
     // user should be able to follow up on.
@@ -184,7 +181,7 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
   });
 
   it('allows a new request when only a FAILED export exists (terminal status excluded)', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([]);
     prismaMock.dataExportRequest.create.mockResolvedValue(
       makeExportRecord({ status: DataExportStatus.PENDING }),
     );
@@ -207,7 +204,7 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
   it('converts a Prisma P2002 on create to ConflictException (TOCTOU race guard)', async () => {
     // Simulates the race: both concurrent requests passed findFirst (both saw
     // null), but the second one lost the DB unique-index race.
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([]);
 
     const p2002 = new Prisma.PrismaClientKnownRequestError(
       'Unique constraint failed on the fields: (`user_id`)',
@@ -215,15 +212,13 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
     );
     prismaMock.dataExportRequest.create.mockRejectedValue(p2002);
 
-    await expect(service.requestExport('user-1')).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(service.requestExport('user-1')).rejects.toThrow(ConflictException);
     // The create was attempted (fast-path findFirst passed)
     expect(prismaMock.dataExportRequest.create).toHaveBeenCalledTimes(1);
   });
 
-  it('P2002 ConflictException carries the structured EXPORT_ALREADY_IN_PROGRESS body', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+  it('P2002 ConflictException carries the structured DATA_EXPORT_IN_PROGRESS code', async () => {
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([]);
 
     const p2002 = new Prisma.PrismaClientKnownRequestError(
       'Unique constraint failed on the fields: (`user_id`)',
@@ -233,18 +228,19 @@ describe('DataExportService.requestExport — rate-limit predicate', () => {
 
     await expect(service.requestExport('user-1')).rejects.toMatchObject({
       response: expect.objectContaining({
-        error: 'EXPORT_ALREADY_IN_PROGRESS',
+        code: 'DATA_EXPORT_IN_PROGRESS',
       }),
     });
   });
 
   it('re-throws non-P2002 Prisma errors from create (unknown error path)', async () => {
-    prismaMock.dataExportRequest.findFirst.mockResolvedValue(null);
+    prismaMock.dataExportRequest.findMany.mockResolvedValue([]);
 
-    const p2025 = new Prisma.PrismaClientKnownRequestError(
-      'Record to update not found.',
-      { code: 'P2025', clientVersion: '5.0.0', meta: {} },
-    );
+    const p2025 = new Prisma.PrismaClientKnownRequestError('Record to update not found.', {
+      code: 'P2025',
+      clientVersion: '5.0.0',
+      meta: {},
+    });
     prismaMock.dataExportRequest.create.mockRejectedValue(p2025);
 
     // Must propagate — not silently converted to ConflictException
