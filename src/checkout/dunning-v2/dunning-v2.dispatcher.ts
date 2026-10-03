@@ -42,7 +42,8 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
  * per channel.
  *
  * Channel transports reuse v1 infrastructure (NO new deps):
- *   - push  → NotificationsService.pushToUser / pushToCoach (Expo).
+ *   - push  → NotificationsService.pushToUser / pushToCoach (Expo; no
+ *     idempotency key, so at-least-once after an expired claim, C-628-12).
  *   - email → EmailService.send (Resend pipeline; idempotency-keyed).
  *   - inapp → NotificationsService.createNotification (the durable feed row).
  *   - coach → CoachNotifierService fans out in-app + push + email at Step 3.

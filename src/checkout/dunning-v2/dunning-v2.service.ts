@@ -60,6 +60,21 @@ import {
  * cycle's entered_at in ms) so a second cycle is never deduplicated
  * against the first.
  *
+ * DELIVERY GUARANTEE (C-628-12, stated per transport): the per-row claim
+ * (DUNNING_NOTICE_CLAIM_MS) makes the DATABASE the authority: two live
+ * workers never send the same row, and a stale worker never overwrites a
+ * newer receipt. That is not exactly-once at a transport. After a claim
+ * expires (the worker crashed, or stalled past 10 minutes, possibly after
+ * its send reached the provider) the row is taken over and sent again:
+ *   - client / coach email: deduplicated at the provider by the stable
+ *     idempotency key the takeover reuses (`key_attempt`);
+ *   - client push (Expo) and the in-app blocker row: AT-LEAST-ONCE. Expo
+ *     takes no idempotency key, so a takeover after a lost reply can show
+ *     the same notice twice (at most once more per expired claim). A
+ *     duplicate payment reminder is the accepted failure mode; a missed
+ *     one is not. Composition with a queued push outbox (#648) is audited
+ *     there, not assumed here.
+ *
  * LOCK TIMING: the Day-10 lock is applied by the hourly sweep, so it lands
  * up to 1 hour after the Day-10 instant (never before it).
  *

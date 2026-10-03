@@ -1021,6 +1021,205 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
     });
   });
 
+  describe('S-DUNNING-R7 (B-628-11 + 24 h key residual): a failed recovery read never erases collected money', () => {
+    const unavailable = () =>
+      new StripeConnectApiError('Stripe API unavailable', 503, null, 'api_error');
+
+    /** The pay collects 15000 cents, then its receipt write fails: a `paying` intent stays journaled. */
+    async function payThenLoseReceipt(
+      n: number,
+    ): Promise<{ approved: ApprovedInvoice[]; setupId: string }> {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      const approved = await approveAll(w);
+      failJournalWriteOnce(() => w.stripe.charges.length > 0);
+      const first = await cardUpdate(w, 'pm_new_ok', n, approved);
+      expect(w.stripe.charges).toHaveLength(1);
+      expect(cardOp(first.setupId)?.lines).toEqual([
+        expect.objectContaining({ invoice_id: 'in_dv2_renewal_1', result: 'paying' }),
+      ]);
+      return { approved, setupId: first.setupId };
+    }
+
+    it("still delinquent: the retry's invoice re-read fails once while the list succeeds -> uncertain, the intent stays open; the next replay reports the 15000 cents (Sol probe 1)", async () => {
+      const { approved, setupId } = await payThenLoseReceipt(71);
+      expect(purchaseRow(w)?.status).toBe('past_due');
+      w.stripe.failInvoiceReads = 1;
+      const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(retry.outcome).toBe('payment_uncertain');
+      expect(retry.plans).toEqual([
+        expect.objectContaining({
+          purchase_id: 'purchase-1',
+          outcome: 'uncertain',
+          error_code: 'PAYMENT_RESULT_UNKNOWN',
+          invoices: [
+            expect.objectContaining({
+              invoice_id: 'in_dv2_renewal_1',
+              result: 'uncertain',
+              amount_due_cents: 15000,
+            }),
+          ],
+        }),
+      ]);
+      expect(retry.message).toContain('The payment of $150.00 is not confirmed yet.');
+      expect(retry.message).not.toMatch(/nothing was charged|next payment will use it/);
+      // The journal is neither closed nor emptied.
+      const op = cardOp(setupId)!;
+      expect(op.completed_at ?? null).toBeNull();
+      expect(op.lines).toEqual([
+        expect.objectContaining({
+          invoice_id: 'in_dv2_renewal_1',
+          result: 'paying',
+          amount_due_cents: 15000,
+          idempotency_key: `tgp-1a-pay-in_dv2_renewal_1-${setupId}`,
+        }),
+      ]);
+      const later = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(later).toMatchObject({ outcome: 'paid', amount_paid_cents: 15000 });
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('already restored by the webhook: a failed re-read answers uncertain, never saved with 0 cents; the next replay reports the 15000 cents (Sol probe 2)', async () => {
+      const { approved, setupId } = await payThenLoseReceipt(72);
+      await w.handler.handle(fixture('invoice.paid'));
+      await flush();
+      expect(purchaseRow(w)?.status).not.toBe('past_due');
+      w.stripe.failInvoiceReads = 1;
+      const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(retry.outcome).toBe('payment_uncertain');
+      expect(retry.plans).toEqual([
+        expect.objectContaining({
+          purchase_id: 'purchase-1',
+          outcome: 'uncertain',
+          error_code: 'PAYMENT_RESULT_UNKNOWN',
+        }),
+      ]);
+      expect(retry.message).toContain('is not confirmed yet');
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      const later = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(later).toMatchObject({ outcome: 'paid', amount_paid_cents: 15000 });
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('the re-read and the open-invoice list both fail: uncertain, never "nothing was charged", the journal stays open and the reconciler settles 15000 cents', async () => {
+      const { approved, setupId } = await payThenLoseReceipt(73);
+      w.stripe.failInvoiceReads = 1;
+      w.stripe.listFailures.add('sub_dv2_client');
+      const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(retry.outcome).toBe('payment_uncertain');
+      expect(retry.plans[0]).toMatchObject({
+        outcome: 'uncertain',
+        error_code: 'PAYMENT_RESULT_UNKNOWN',
+      });
+      expect(retry.message).not.toMatch(/nothing was charged/);
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(setupId)?.lines).toEqual([expect.objectContaining({ result: 'paying' })]);
+      w.stripe.listFailures.delete('sub_dv2_client');
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      expect(cardOp(setupId)?.completed_at).toBeInstanceOf(Date);
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('background reconciliation: a failed re-read keeps the intent open, the next run records the 15000 cents', async () => {
+      const { setupId } = await payThenLoseReceipt(77);
+      w.stripe.failInvoiceReads = 1;
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(setupId)?.lines).toEqual([expect.objectContaining({ result: 'paying' })]);
+      jest.setSystemTime(at(2 * DAY + 80 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 80 * MIN));
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+    });
+
+    it('a replay answered 409 (key still in use) is unknown, never already_paid: the 15000 cents are not erased', async () => {
+      const { setupId } = await payThenLoseReceipt(74);
+      w.stripe.payErrors.push(
+        new StripeConnectApiError(
+          'There is currently another in-progress request using this idempotency key.',
+          409,
+          'idempotency_key_in_use',
+          'invalid_request_error',
+        ),
+      );
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(setupId)?.lines).toEqual([expect.objectContaining({ result: 'paying' })]);
+      jest.setSystemTime(at(2 * DAY + 80 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 80 * MIN));
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it("an unknown-result pay that never reached Stripe, then Stripe's own retry pays: the key replay proves it was not this update (already_paid, 0 cents credited)", async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      w.stripe.payErrors.push(unavailable());
+      const first = await cardUpdate(w, 'pm_new_ok', 75);
+      expect(first.res.outcome).toBe('payment_uncertain');
+      expect(w.stripe.charges).toHaveLength(0);
+      // Stripe's retry charges the subscription default (the new card).
+      jest.setSystemTime(at(2 * DAY + 2 * HOUR));
+      expect(w.stripe.stripeRetry('in_dv2_renewal_1')).toBe('paid');
+      await w.billing.reconcile(at(2 * DAY + 2 * HOUR));
+      expect(cardOp(first.setupId)?.completed_at).toBeInstanceOf(Date);
+      expect(cardOp(first.setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+      ]);
+      expect(w.stripe.charges).toEqual([expect.objectContaining({ by: 'stripe_retry' })]);
+    });
+
+    it('past the 24 h key window an unrecorded pay intent is never re-asked and never credited (Stripe may have pruned the key)', async () => {
+      const { setupId } = await payThenLoseReceipt(76);
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ intent_at: at(2 * DAY).toISOString() }),
+      ]);
+      // The reconciler was down for a day and Stripe pruned the key: a
+      // replay would be a NEW request (here its transport fails, which the
+      // old path read as "paid").
+      jest.setSystemTime(at(3 * DAY + HOUR));
+      w.stripe.pruneIdempotencyKeys();
+      w.stripe.payErrors.push(unavailable());
+      const paysBefore = w.stripe.callsOf('payInvoice').length;
+      await w.billing.reconcile(at(3 * DAY + HOUR));
+      expect(w.stripe.callsOf('payInvoice')).toHaveLength(paysBefore);
+      expect(cardOp(setupId)?.completed_at).toBeInstanceOf(Date);
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('inside the window the same-key replay still credits the update that paid (23 h boundary, control)', async () => {
+      const { setupId } = await payThenLoseReceipt(78);
+      jest.setSystemTime(at(2 * DAY + 22 * HOUR));
+      await w.billing.reconcile(at(2 * DAY + 22 * HOUR));
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('the journal intent time and key never reach the client reply', async () => {
+      const { approved, setupId } = await payThenLoseReceipt(79);
+      w.stripe.failInvoiceReads = 1;
+      const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(JSON.stringify(retry)).not.toMatch(/intent_at|idempotency_key/);
+    });
+  });
+
   describe('B-628-8: a won dispute settles only its own obligation', () => {
     function lockedDisputeCycle(): void {
       const state = stateRow(w)!;
@@ -1169,6 +1368,40 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
         status: 'sent',
         attempts: 3,
       });
+    });
+
+    it('C-628-12 (documented guarantee): push is at-least-once after an expired claim, exactly one send while the claim is live', async () => {
+      const row = await failedDay1Push();
+      let releaseSlow: () => void = () => undefined;
+      const slowGate = new Promise<void>((resolve) => {
+        releaseSlow = resolve;
+      });
+      w.push.mockReset();
+      // The slow worker's push reached Expo; only its reply is late.
+      w.push.mockImplementationOnce(async () => {
+        await slowGate;
+        return { delivered: true };
+      });
+      w.push.mockImplementation(async () => ({ delivered: true }));
+      jest.setSystemTime(at(DAY + 2 * HOUR));
+      const slow = w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      await flush();
+      // A second worker inside the claim window sends nothing.
+      jest.setSystemTime(at(DAY + 2 * HOUR + 5 * MIN));
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR + 5 * MIN));
+      expect(w.push).toHaveBeenCalledTimes(1);
+      // After the claim expires, the takeover sends again (no Expo key).
+      jest.setSystemTime(at(DAY + 2 * HOUR + 11 * MIN));
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR + 11 * MIN));
+      expect(w.push).toHaveBeenCalledTimes(2);
+      releaseSlow();
+      await slow;
+      expect(w.fake.find('dunningNoticeDelivery', { id: row.id as string })?.status).toBe('sent');
+      const doc = readFileSync(
+        join(__dirname, '..', 'src', 'checkout', 'dunning-v2', 'dunning-v2.service.ts'),
+        'utf8',
+      );
+      expect(doc).toMatch(/client push \(Expo\) and the in-app blocker row: AT-LEAST-ONCE/);
     });
 
     it('a crashed worker (claim expired, outcome unknown): the email takeover reuses the same idempotency key', async () => {

@@ -83,6 +83,22 @@ export class FakeStripeBilling {
   readonly listFailures = new Set<string>();
   /** S-DUNNING-R3: upcoming pays that SETTLE, then lose the reply (timeout). */
   loseNextPayReply = 0;
+  /** S-DUNNING-R7: upcoming invoice GETs that answer 503 (a failed re-read). */
+  failInvoiceReads = 0;
+  /**
+   * S-DUNNING-R7: errors the next pay calls fail with BEFORE Stripe executes
+   * them (nothing is charged, nothing is stored under the key), e.g. a 503
+   * from the edge or a 409 `idempotency_key_in_use`.
+   */
+  readonly payErrors: StripeConnectApiError[] = [];
+
+  /**
+   * S-DUNNING-R7: Stripe prunes idempotency keys that are at least 24 hours
+   * old; a later request with a pruned key is executed as a NEW request.
+   */
+  pruneIdempotencyKeys(prefix = 'pay:'): void {
+    for (const k of [...this.idem.keys()]) if (k.startsWith(prefix)) this.idem.delete(k);
+  }
 
   addCard(id: string, behavior: CardBehavior, last4: string, brand = 'visa'): void {
     this.cards.set(id, { behavior, brand, last4, exp_month: 12, exp_year: 2030 });
@@ -221,6 +237,10 @@ export class FakeStripeBilling {
 
   async retrieveInvoice(id: string): Promise<FakeInvoice> {
     this.calls.push({ op: 'retrieveInvoice', args: id });
+    if (this.failInvoiceReads > 0) {
+      this.failInvoiceReads -= 1;
+      throw new StripeConnectApiError('Stripe API unavailable', 503, null, 'api_error');
+    }
     const inv = this.invoices.get(id);
     if (!inv) {
       throw new StripeConnectApiError(
@@ -239,6 +259,8 @@ export class FakeStripeBilling {
     idempotencyKey: string;
   }): Promise<FakeInvoice> {
     this.calls.push({ op: 'payInvoice', key: args.idempotencyKey, args });
+    const early = this.payErrors.shift();
+    if (early) throw early;
     if (this.beforePay) await this.beforePay(args.invoiceId);
     const paid = this.once(`pay:${args.idempotencyKey}`, () => {
       const inv = this.invoices.get(args.invoiceId);

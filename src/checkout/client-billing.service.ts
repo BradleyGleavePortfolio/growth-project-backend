@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ClientPurchase, DunningState } from '@prisma/client';
+import * as Sentry from '@sentry/node';
 import { createHash, randomUUID } from 'crypto';
 import {
   StripeConnectApiError,
@@ -73,6 +74,18 @@ export const BILLING_ACTION_LEASE_MS = 120_000;
 
 /** An open operation older than this is resumed by the reconciler. */
 const OPERATION_SETTLE_MS = 5 * 60_000;
+
+/**
+ * S-DUNNING-R7 (24 h idempotency residual): Stripe keeps an idempotency key
+ * for at least 24 hours and may prune it after that. A replay of a pruned
+ * key is a NEW request, so its answer says nothing about the original call.
+ * A journaled pay intent whose answer was never recorded is therefore
+ * replayed only while its key is provably live: 23 hours after the intent
+ * (one hour of margin for clock skew). Past that, the line is settled from
+ * Stripe's invoice state alone and is never credited to the card update
+ * (`already_paid`, 0 cents collected by it).
+ */
+export const PAY_KEY_REPLAY_WINDOW_MS = 23 * 60 * 60_000;
 
 /** Page size for the client's own purchases. */
 const PURCHASE_PAGE = 100;
@@ -142,7 +155,24 @@ export interface InvoiceLine {
   decline_code?: string | null;
   /** The Stripe idempotency key of the pay / void call (journaled before it). */
   idempotency_key?: string | null;
+  /**
+   * S-DUNNING-R7: ISO instant the pay intent was journaled, i.e. the latest
+   * possible first use of its key. Server-side only (stripped from replies).
+   */
+  intent_at?: string | null;
 }
+
+/**
+ * B-628-11 (R7): what Stripe's canonical state says about a journaled line
+ * whose answer was never recorded. `unknown` (the re-read or the key replay
+ * failed) is never the same as `open` (conclusively unpaid): an unknown line
+ * stays in the journal and keeps the operation open.
+ */
+type SettleResult =
+  | { kind: 'settled'; line: InvoiceLine }
+  | { kind: 'open' }
+  | { kind: 'closed' }
+  | { kind: 'unknown' };
 
 export type PlanAccess = 'restored' | 'updating' | 'unchanged';
 
@@ -564,6 +594,10 @@ export class ClientBillingService {
       throw err;
     }
     let attemptedPay = false;
+    // B-628-11 (R7): a journaled line Stripe could not settle (re-read or
+    // key replay failed). It stays in the journal as it was, the operation
+    // stays open, and the plan answers `uncertain`, never "nothing due".
+    let unresolved = false;
     let clientSecret: string | null = null;
     let opId: string | null = null;
     const lines: InvoiceLine[] = [];
@@ -583,19 +617,40 @@ export class ClientBillingService {
         // B-628-11: a `paying` intent whose receipt never committed is
         // settled from Stripe, so collected money is never reported as 0.
         if (UNSETTLED_RESULTS.has(prior.result)) {
-          const settled = await this.settledLine(prior, paymentMethodId, setupIntentId);
-          if (settled) lines.push(settled);
+          const settled = await this.settledLine(
+            prior,
+            paymentMethodId,
+            setupIntentId,
+            op.createdAt,
+          );
+          if (settled.kind === 'settled') {
+            lines.push(settled.line);
+          } else if (settled.kind === 'unknown') {
+            // Kept verbatim (result, key, intent time); the open-invoice
+            // loop below skips it, so it is never paid a second time here.
+            lines.push(prior);
+            unresolved = true;
+          }
+          // `open`: conclusively unpaid, re-decided by the loop below.
+          // `closed`: void / uncollectible, nothing was collected.
         }
       }
       let invoices: StripeInvoiceObject[];
       try {
         invoices = await this.stripe.listOpenInvoices(purchase.stripe_subscription_id as string);
       } catch (err) {
-        plan.outcome = 'failed';
-        plan.error_code = errorCodeOf(this.stripeFailure(err, 'invoice_list'));
-        await this.saveOperation(lease, op.id, 'failed', lines, plan.error_code, true);
+        const listCode = errorCodeOf(this.stripeFailure(err, 'invoice_list'));
+        plan.error_code = unresolved ? 'PAYMENT_RESULT_UNKNOWN' : listCode;
+        await this.saveOperation(
+          lease,
+          op.id,
+          unresolved ? 'paying' : 'failed',
+          lines,
+          plan.error_code,
+          !unresolved,
+        );
         this.fillPlan(plan, lines);
-        plan.outcome = 'failed';
+        plan.outcome = unresolved ? 'uncertain' : 'failed';
         return { plan };
       }
       invoices.sort((a, b) => (a.created ?? 0) - (b.created ?? 0));
@@ -630,6 +685,7 @@ export class ClientBillingService {
           ...base,
           result: 'paying',
           idempotency_key: payIdempotencyKey(inv.id, setupIntentId),
+          intent_at: new Date().toISOString(),
         };
         lines.push(intent);
         await this.saveOperation(lease, op.id, 'paying', lines, null, false);
@@ -655,6 +711,12 @@ export class ClientBillingService {
         }
       }
       this.fillPlan(plan, lines);
+      // B-628-11 (R7): money of an unresolved line may have moved, so the
+      // plan is `uncertain` (a pending bank step keeps its own outcome).
+      if (unresolved && stop !== 'requires_action') {
+        stop = 'uncertain';
+        plan.error_code = 'PAYMENT_RESULT_UNKNOWN';
+      }
       if (stop) {
         plan.outcome = stop;
       } else {
@@ -693,8 +755,9 @@ export class ClientBillingService {
       this.logger.error(
         `card update: plan failed purchase=${purchase.id} op=${opId ?? 'none'}: ${(err as Error).message}`,
       );
-      plan.outcome = attemptedPay ? 'uncertain' : 'failed';
-      plan.error_code = attemptedPay
+      const moneyUnknown = attemptedPay || unresolved;
+      plan.outcome = moneyUnknown ? 'uncertain' : 'failed';
+      plan.error_code = moneyUnknown
         ? 'PAYMENT_RESULT_UNKNOWN'
         : err instanceof HttpException
           ? errorCodeOf(err)
@@ -705,6 +768,12 @@ export class ClientBillingService {
     }
   }
 
+  /**
+   * Plans that are no longer delinquent (a webhook restored them) but carry
+   * a journal row of THIS SetupIntent: the replay reports what that confirm
+   * collected and (B-628-11, R7) every line Stripe could not settle yet, as
+   * `uncertain`. Read-only: the operation stays open for the reconciler.
+   */
   private async replayedPlans(
     candidates: PurchaseWithDunning[],
     setupIntentId: string,
@@ -721,18 +790,22 @@ export class ClientBillingService {
     const out: Array<{ purchase: PurchaseWithDunning; lines: InvoiceLine[] }> = [];
     for (const p of candidates) {
       const lines: InvoiceLine[] = [];
-      for (const l of ops
-        .filter((o) => o.purchase_id === p.id)
-        .flatMap((o) => this.linesOf(o.lines))) {
-        if (l.amount_paid_cents > 0) {
-          lines.push(l);
-          continue;
-        }
-        // B-628-11: the pay landed but its receipt never committed (and the
-        // webhook has since restored the plan): Stripe says what was paid.
-        if (UNSETTLED_RESULTS.has(l.result)) {
-          const settled = await this.settledLine(l, paymentMethodId, setupIntentId);
-          if (settled && settled.amount_paid_cents > 0) lines.push(settled);
+      for (const o of ops.filter((x) => x.purchase_id === p.id)) {
+        for (const l of this.linesOf(o.lines)) {
+          if (l.amount_paid_cents > 0) {
+            lines.push({ ...l, result: 'paid' });
+            continue;
+          }
+          // B-628-11: the pay landed but its receipt never committed (and the
+          // webhook has since restored the plan): Stripe says what was paid.
+          if (UNSETTLED_RESULTS.has(l.result)) {
+            const settled = await this.settledLine(l, paymentMethodId, setupIntentId, o.created_at);
+            if (settled.kind === 'settled' && settled.line.amount_paid_cents > 0) {
+              lines.push({ ...settled.line, result: 'paid' });
+            } else if (settled.kind === 'unknown') {
+              lines.push({ ...l, result: 'uncertain' });
+            }
+          }
         }
       }
       if (lines.length > 0) out.push({ purchase: p, lines });
@@ -745,22 +818,20 @@ export class ClientBillingService {
     lines: InvoiceLine[],
     coachName: string | null,
   ): PlanPayResult {
+    const unknown = lines.some((l) => l.result === 'uncertain');
     const plan: PlanPayResult = {
       purchase_id: purchase.id,
       coach_name: coachName,
       currency: normalizeCurrency(purchase.currency),
-      outcome: 'paid',
+      outcome: unknown ? 'uncertain' : 'paid',
       amount_paid_cents: 0,
       amount_due_cents: 0,
       access: 'unchanged',
       dispute_open: isDisputeCycle(purchase.dunning),
-      error_code: null,
+      error_code: unknown ? 'PAYMENT_RESULT_UNKNOWN' : null,
       invoices: [],
     };
-    this.fillPlan(
-      plan,
-      lines.map((l) => ({ ...l, result: 'paid' })),
-    );
+    this.fillPlan(plan, lines);
     const cycleOpen = purchase.dunning?.status === 'active';
     plan.access = purchase.entitlement_active && !cycleOpen ? 'restored' : 'updating';
     return plan;
@@ -768,42 +839,140 @@ export class ClientBillingService {
 
   /**
    * B-628-11: settle a journaled line whose answer was never recorded, from
-   * Stripe's canonical state. Returns null while the invoice is not paid. A
-   * `paying` intent on an invoice that is paid now is re-asked with the SAME
-   * idempotency key: Stripe replays the original answer, so a payment this
-   * update made is reported as paid and one Stripe (or another update) made
-   * as already_paid. A paid invoice cannot be charged again, so the replay
-   * never moves money.
+   * Stripe's canonical state.
+   *
+   *   - the invoice re-read fails            -> `unknown` (never "unpaid");
+   *   - open / draft                         -> `open` (conclusively unpaid);
+   *   - void / uncollectible                 -> `closed`;
+   *   - paid, line `paying` / `uncertain` (the answer of OUR call is not
+   *     known): within PAY_KEY_REPLAY_WINDOW_MS of the intent the call is
+   *     re-asked with the SAME idempotency key. Stripe replays the original
+   *     answer: a success means this update paid it; a definitive refusal
+   *     means someone else did (`already_paid`); anything else (5xx, 429,
+   *     409 key in use, lost reply) is `unknown`. A paid invoice cannot be
+   *     charged again, so the replay never moves money. Past the window the
+   *     key may be pruned and a replay would be a new request, so it is
+   *     never sent and the line is `already_paid` (not credited);
+   *   - paid, line `requires_action` / `processing` (Stripe told OUR call
+   *     its PaymentIntent was waiting on the bank / settling): this update's
+   *     payment.
+   *
+   * `fallbackIntentAt` (the operation's creation, never later than the
+   * intent) dates lines journaled before `intent_at` existed.
    */
   private async settledLine(
     prior: InvoiceLine,
     paymentMethodId: string | null,
     setupIntentId: string,
-  ): Promise<InvoiceLine | null> {
+    fallbackIntentAt: Date,
+  ): Promise<SettleResult> {
     const fresh = await this.safeRetrieveInvoice(prior.invoice_id);
-    if (fresh?.status !== 'paid') return null;
-    if (prior.result === 'paying' && paymentMethodId) {
-      const out = await this.payOne(fresh, paymentMethodId, setupIntentId);
-      if (out.kind === 'already_paid')
-        return { ...prior, amount_paid_cents: 0, result: 'already_paid' };
-      if (out.kind === 'paid') {
+    if (!fresh) return { kind: 'unknown' };
+    if (fresh.status === 'void' || fresh.status === 'uncollectible') return { kind: 'closed' };
+    if (fresh.status !== 'paid') return { kind: 'open' };
+    if (prior.result === 'paying' || prior.result === 'uncertain') {
+      if (!this.keyReplayable(prior, fallbackIntentAt)) {
+        // The reconciler settles intents within the hour, so this means it
+        // was down for most of a day: the journal may now under-credit this
+        // update (never over-credit it). Ids only; support checks Stripe.
+        this.logEvent('billing.card_pay_settled_without_replay', {
+          invoice_id: prior.invoice_id,
+        });
+        Sentry.captureMessage('billing card pay intent settled past its key window', {
+          level: 'warning',
+          tags: { code: 'CARD_PAY_SETTLED_WITHOUT_REPLAY' },
+          extra: { invoice_id: prior.invoice_id },
+        });
         return {
+          kind: 'settled',
+          line: { ...prior, amount_paid_cents: 0, result: 'already_paid' },
+        };
+      }
+      if (!paymentMethodId) return { kind: 'unknown' };
+      const out = await this.replayPay(
+        fresh,
+        paymentMethodId,
+        prior.idempotency_key ?? payIdempotencyKey(prior.invoice_id, setupIntentId),
+      );
+      if (out.kind === 'unknown') return { kind: 'unknown' };
+      if (out.kind === 'already_paid') {
+        return {
+          kind: 'settled',
+          line: { ...prior, amount_paid_cents: 0, result: 'already_paid' },
+        };
+      }
+      return {
+        kind: 'settled',
+        line: {
           ...prior,
           amount_paid_cents: out.amountPaidCents || prior.amount_due_cents,
           result: 'paid',
-        };
-      }
-      return null;
+        },
+      };
     }
     return {
-      ...prior,
-      amount_paid_cents: this.paidCents(fresh, null) || prior.amount_due_cents,
-      result: 'paid',
+      kind: 'settled',
+      line: {
+        ...prior,
+        amount_paid_cents: this.paidCents(fresh, null) || prior.amount_due_cents,
+        result: 'paid',
+      },
     };
   }
 
+  /** True while the line's idempotency key is provably still kept by Stripe. */
+  private keyReplayable(line: InvoiceLine, fallbackIntentAt: Date): boolean {
+    const parsed = line.intent_at ? Date.parse(line.intent_at) : Number.NaN;
+    const intentAt = Number.isFinite(parsed) ? parsed : fallbackIntentAt.getTime();
+    return Date.now() - intentAt < PAY_KEY_REPLAY_WINDOW_MS;
+  }
+
+  /**
+   * Re-ask an unrecorded pay call with its own key. Only a successful paid
+   * answer credits this update; only a definitive refusal (4xx other than
+   * 409 "key in use" / 429, or an idempotency error) proves our call did not
+   * pay; everything else is unknown.
+   */
+  private async replayPay(
+    inv: StripeInvoiceObject,
+    paymentMethodId: string,
+    idempotencyKey: string,
+  ): Promise<
+    { kind: 'paid'; amountPaidCents: number } | { kind: 'already_paid' } | { kind: 'unknown' }
+  > {
+    try {
+      const res = await this.stripe.payInvoice({
+        invoiceId: inv.id,
+        paymentMethodId,
+        idempotencyKey,
+      });
+      return res.status === 'paid'
+        ? { kind: 'paid', amountPaidCents: this.paidCents(res, inv) }
+        : { kind: 'unknown' };
+    } catch (err) {
+      const definitive =
+        err instanceof StripeConnectApiError &&
+        err.httpStatus >= 400 &&
+        err.httpStatus < 500 &&
+        err.httpStatus !== 409 &&
+        err.httpStatus !== 429 &&
+        err.stripeType !== 'idempotency_error';
+      if (!definitive) {
+        this.logger.warn(
+          `card update: pay replay not definitive invoice=${inv.id}: ${
+            err instanceof StripeConnectApiError ? err.httpStatus : 'transport'
+          }`,
+        );
+      }
+      return definitive ? { kind: 'already_paid' } : { kind: 'unknown' };
+    }
+  }
+
+  /** Reply lines: an intent whose answer is not recorded reads `uncertain`. */
   private fillPlan(plan: PlanPayResult, lines: InvoiceLine[]): void {
-    plan.invoices = lines;
+    plan.invoices = lines.map((l) =>
+      l.result === 'paying' ? { ...l, result: 'uncertain' as const } : l,
+    );
     plan.amount_paid_cents = lines.reduce((s, l) => s + l.amount_paid_cents, 0);
     plan.amount_due_cents = lines
       .filter((l) => l.result !== 'paid' && l.result !== 'already_paid')
@@ -1038,7 +1207,9 @@ export class ClientBillingService {
       // The journal's Stripe idempotency keys stay server-side.
       plans: plans.map((p) => ({
         ...p,
-        invoices: p.invoices.map(({ idempotency_key: _key, ...line }) => line),
+        invoices: p.invoices.map(
+          ({ idempotency_key: _key, intent_at: _intentAt, ...line }) => line,
+        ),
       })),
       quote,
       payment_intent_client_secret:
@@ -1695,10 +1866,14 @@ export class ClientBillingService {
       if (!op || op.completed_at) return true;
       const lines = this.linesOf(op.lines);
       let unsettled = false;
-      // B-628-11: a `paying` intent is settled with the update's own card
-      // (same idempotency key), never charged anew in the background.
+      // B-628-11: a `paying` / `uncertain` intent is settled with the
+      // update's own card (same idempotency key, inside the key's replay
+      // window), never charged anew in the background.
       let paymentMethodId: string | null = null;
-      if (op.setup_intent_id && lines.some((l) => l.result === 'paying')) {
+      if (
+        op.setup_intent_id &&
+        lines.some((l) => l.result === 'paying' || l.result === 'uncertain')
+      ) {
         try {
           const si = await this.stripe.retrieveSetupIntent(op.setup_intent_id);
           const pm = si.payment_method;
@@ -1711,22 +1886,19 @@ export class ClientBillingService {
       }
       for (const l of lines) {
         if (!UNSETTLED_RESULTS.has(l.result)) continue;
-        if (l.result === 'paying' && !paymentMethodId) {
-          unsettled = true;
-          continue;
-        }
-        const fresh = await this.safeRetrieveInvoice(l.invoice_id);
-        if (fresh?.status === 'paid') {
-          const settled = await this.settledLine(l, paymentMethodId, op.setup_intent_id ?? '');
-          if (!settled) {
-            unsettled = true;
-            continue;
-          }
-          l.result = settled.result;
-          l.amount_paid_cents = settled.amount_paid_cents;
-        } else if (fresh?.status === 'void' || fresh?.status === 'uncollectible') {
+        const settled = await this.settledLine(
+          l,
+          paymentMethodId,
+          op.setup_intent_id ?? '',
+          op.created_at,
+        );
+        if (settled.kind === 'settled') {
+          l.result = settled.line.result;
+          l.amount_paid_cents = settled.line.amount_paid_cents;
+        } else if (settled.kind === 'closed') {
           l.result = 'failed';
         } else {
+          // `open` (still unpaid) or `unknown` (Stripe could not say): kept.
           unsettled = true;
         }
       }
@@ -1765,6 +1937,7 @@ export class ClientBillingService {
       result: l.result,
       decline_code: l.decline_code ?? null,
       idempotency_key: l.idempotency_key ?? null,
+      intent_at: l.intent_at ?? null,
     }));
   }
 
@@ -1785,6 +1958,7 @@ export class ClientBillingService {
         result: (typeof r.result === 'string' ? r.result : 'uncertain') as InvoiceLineResult,
         decline_code: typeof r.decline_code === 'string' ? r.decline_code : null,
         idempotency_key: typeof r.idempotency_key === 'string' ? r.idempotency_key : null,
+        intent_at: typeof r.intent_at === 'string' ? r.intent_at : null,
       });
     }
     return out;
@@ -1795,13 +1969,20 @@ export class ClientBillingService {
     lease: Lease,
     purchaseId: string,
     setupIntentId: string,
-  ): Promise<{ id: string; lines: InvoiceLine[] }> {
+  ): Promise<{ id: string; lines: InvoiceLine[]; createdAt: Date }> {
     const existing = await this.prisma.clientBillingOperation.findFirst({
       where: { purchase_id: purchaseId, kind: 'card_pay', setup_intent_id: setupIntentId },
       orderBy: { created_at: 'asc' },
     });
-    if (existing) return { id: existing.id, lines: this.linesOf(existing.lines) };
+    if (existing) {
+      return {
+        id: existing.id,
+        lines: this.linesOf(existing.lines),
+        createdAt: existing.created_at,
+      };
+    }
     const id = randomUUID();
+    const createdAt = new Date();
     await this.fencedTx(lease, async (tx) => {
       await tx.clientBillingOperation.create({
         data: {
@@ -1815,7 +1996,7 @@ export class ClientBillingService {
         },
       });
     });
-    return { id, lines: [] };
+    return { id, lines: [], createdAt };
   }
 
   private async openCancelOperation(
