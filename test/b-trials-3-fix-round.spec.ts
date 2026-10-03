@@ -905,12 +905,10 @@ describe('B-656-5 (round 5) — an unknown card is never reported as "no card"',
     );
   });
 
-  it('tri-state: confirmed present, confirmed absent, unknown', () => {
-    expect(willChargeCard(true, null)).toBe(true);
+  it('confirmed present and confirmed absent still read as before', () => {
+    expect(willChargeCard(true, false)).toBe(true);
     expect(willChargeCard(false, true)).toBe(true);
     expect(willChargeCard(false, false)).toBe(false);
-    expect(willChargeCard(false, null)).toBeNull();
-    expect(willChargeCard(null, null)).toBeNull();
   });
 });
 

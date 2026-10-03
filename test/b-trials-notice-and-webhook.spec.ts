@@ -69,6 +69,9 @@ function world(opts: { tz?: string | null; email?: string | null; pushCode?: str
   const prisma = {
     packageTrialNotice: notices,
     packageTrialUsage: usage,
+    // B-TRIALS-3 (B-656-5) — a completed read: this client has no customer
+    // default card (an unreadable one is "unknown" and defers delivery).
+    connectCustomer: { findUnique: jest.fn(async () => null) },
     notificationPreferences: {
       findUnique: jest.fn(async () =>
         opts.tz === null ? null : { timezone: opts.tz ?? 'America/Los_Angeles' },
