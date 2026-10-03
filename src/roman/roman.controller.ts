@@ -104,9 +104,11 @@ export class RomanController {
   ): Promise<void> {
     const caller = await this.callerOf(req);
     // An emergency / self-harm message is answered by the deterministic
-    // SafetyRouter template (911 / 988): no model call and no spend. Neither
-    // the per-user turn limit nor the daily spend cap may stand between the
-    // client and that answer. Box-2 consent below applies unchanged.
+    // SafetyRouter template (911 / 988): no model call, no spend, and none of
+    // the client's data leaves the app. Neither the per-user turn limit, the
+    // daily spend cap, nor the box-2 AI gate (which governs sending data to
+    // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
+    // that answer. Every other turn keeps all three checks.
     const crisis = this.roman.isSafetyShortCircuit(dto.content);
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
@@ -129,7 +131,9 @@ export class RomanController {
     // R2b — a client without a live box-2 grant gets a plain 403
     // ai_consent_required (Settings > Privacy) before the turn is stored or
     // the stream opens.
-    await this.roman.assertMayUseAi(caller);
+    // A crisis turn skips it: the template involves no AI processing, and
+    // streamAssistantTurn answers it before its own egress check.
+    if (!crisis) await this.roman.assertMayUseAi(caller);
     // OR-113-2 — daily spend cap, checked before the turn is stored (coded
     // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
     if (!crisis) await this.roman.assertDailyCapacity(caller);

@@ -20,8 +20,10 @@ then gives the physician line. 911 and 988 routing is unchanged.
 
 These two templates cost nothing (no model call, no spend), so a crisis
 message is answered even when the caller has used every Roman turn (429) or
-the daily spend cap is reached (503 `ROMAN_CAPACITY_REACHED`). Box-2 AI
-consent is checked before them unchanged.
+the daily spend cap is reached (503 `ROMAN_CAPACITY_REACHED`), when the
+client has not granted box 2 (no client data is sent to the AI processor for
+a template), and when no AI provider is configured. Every other turn keeps
+the box-2 gate (403 `ai_consent_required`), the turn limit and the cap.
 
 ## Router hints (appended to SESSION STATE; the model composes the reply)
 

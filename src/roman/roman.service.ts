@@ -932,17 +932,6 @@ export class RomanService {
         message: romanFailureMessage('switched_off', caller.role),
       });
     }
-    if (!this.anthropic) {
-      Sentry.captureMessage('roman.provider_not_configured', {
-        level: 'error',
-        tags: { feature: 'roman', op: 'roman.turn' },
-      });
-      throw new ServiceUnavailableException({
-        code: ROMAN_ERROR_UNAVAILABLE,
-        message: romanFailureMessage('not_configured', caller.role),
-      });
-    }
-
     const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
     const route = classifySafety(userMessage);
 
@@ -967,6 +956,18 @@ export class RomanService {
       yield { type: 'delta', text };
       yield { type: 'done', text, messageId: persisted.id, interrupted: false };
       return;
+    }
+
+    // The crisis templates above need no model; every other turn does.
+    if (!this.anthropic) {
+      Sentry.captureMessage('roman.provider_not_configured', {
+        level: 'error',
+        tags: { feature: 'roman', op: 'roman.turn' },
+      });
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_UNAVAILABLE,
+        message: romanFailureMessage('not_configured', caller.role),
+      });
     }
 
     const subject = this.dataSubjectFor(caller);

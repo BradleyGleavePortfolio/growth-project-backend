@@ -638,3 +638,57 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
     expect(err).toMatchObject({ response: { code: ROMAN_ERROR_RATE_LIMIT } });
   });
 });
+
+// FIX ROUND 1 (S-B1, #651) FR1-651-7: the PR's design answers the 911 / 988
+// templates before the box-2 gate (no model, no client data leaves the app;
+// CONSENT_D2_CONTRACT gates only data sent to the AI processor). The
+// controller gate ran first and answered a crisis message from a client
+// without box 2 with a 403 consent error instead of the crisis line.
+describe('Roman — a crisis message is answered without box 2; nothing else is', () => {
+  function setup(granted: string[], withModel = true) {
+    const { prisma, messages } = makePrisma();
+    const anthropic = makeAnthropic(['Hi', '.']);
+    const { egress } = egressWithGrants(granted);
+    const service = new RomanService(
+      fakeOf(prisma),
+      egress,
+      withModel ? AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)) : undefined,
+    );
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    return { ctrl, messages, anthropic };
+  }
+
+  it('no grant + self-harm message: the 988 template, zero model calls; an ordinary message is still 403', async () => {
+    const { ctrl, anthropic, messages } = setup([]);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I want to kill myself',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(2);
+  });
+
+  it('no AI provider configured: an emergency message still gets the 911 template', async () => {
+    const { ctrl, messages } = setup(['user-A'], false);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I have crushing chest pain right now',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+  });
+});
