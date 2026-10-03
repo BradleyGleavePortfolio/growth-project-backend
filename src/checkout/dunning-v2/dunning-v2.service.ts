@@ -1528,11 +1528,13 @@ export class DunningV2Service {
       // charge -> invoice -> subscription -> purchase.
       if (chargeId && this.stripe) {
         const charge = await this.stripe.retrieveCharge(chargeId);
-        const invoiceRef = charge['invoice'];
+        // `unknown` on purpose: the charge type differs between main and
+        // #627 (string id vs. expanded object); both shapes are read safely.
+        const invoiceRef: unknown = charge['invoice'];
         const invoiceId =
           typeof invoiceRef === 'string'
             ? invoiceRef
-            : invoiceRef && typeof invoiceRef === 'object' && 'id' in invoiceRef
+            : typeof invoiceRef === 'object' && invoiceRef !== null && 'id' in invoiceRef
               ? String(invoiceRef.id)
               : null;
         if (invoiceId) {
