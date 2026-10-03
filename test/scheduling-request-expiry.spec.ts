@@ -401,7 +401,9 @@ describe('S-SCHED-5 expiry sweep', () => {
     const logs = db.deliveryLogs.filter((l) => l.kind === NotificationKind.BOOKING_REQUEST_EXPIRED);
     expect(logs.map((l) => l.status)).toEqual(['gave_up', 'gave_up']);
     expect(logs.every((l) => (l.attempts as number) === 3)).toBe(true);
-    expect(notifications.pushes.filter((p) => p.title === 'Session request closed')).toHaveLength(6);
+    expect(notifications.pushes.filter((p) => p.title === 'Session request closed')).toHaveLength(
+      6,
+    );
   });
 });
 
