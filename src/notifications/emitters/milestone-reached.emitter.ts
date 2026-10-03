@@ -40,13 +40,13 @@ export class MilestoneReachedEmitter {
       });
 
       // Also queue a push notification.
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: userId,
         kind: NotificationKind.MILESTONE_REACHED,
         body: `Milestone reached: ${label}`.slice(0, 160),
-        payload: { milestoneType: payload.milestoneType, value: payload.value },
         deep_link: 'tgp://timeline',
-        channel: 'push',
       });
     } catch (err) {
       // Swallow — milestone notification failure must not surface to the client.

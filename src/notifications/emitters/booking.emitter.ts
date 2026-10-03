@@ -253,6 +253,31 @@ export class BookingEmitter {
         deep_link: args.deepLink,
         channel: 'inapp',
       });
+      // C-643-2: and one device push (quiet lock-screen copy, booking_push
+      // preference, at most once). Reminders reach this once per claim in
+      // NotificationDeliveryLog, so each reminder is pushed once.
+      // B-NOTIF-5: the push carries the booking context (re-rendered and
+      // re-checked if quiet hours defer it) and an exactly-once identity per
+      // session and time, so two sessions never collapse into one push.
+      const p = args.payload;
+      const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+      const when =
+        str(p.newScheduledAt) ?? str(p.scheduledAt) ?? str(p.requestedAt) ?? '';
+      await this.notifications.sendPush({
+        user_id: args.userId,
+        kind: args.kind,
+        body: args.body,
+        deep_link: args.deepLink,
+        context: {
+          sessionId: str(p.sessionId),
+          scheduledAt: str(p.scheduledAt),
+          newScheduledAt: str(p.newScheduledAt),
+          oldScheduledAt: str(p.oldScheduledAt),
+          timeZone: str(p.timeZone) ?? null,
+          otherPartyDisplayName: str(p.otherPartyDisplayName),
+        },
+        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${when}`,
+      });
     } catch (err) {
       // Emitters never propagate errors — booking lifecycle must not
       // fail because the notification path hiccupped.

@@ -54,13 +54,13 @@ export class WeightTrendAlertEmitter {
       });
 
       // Push body omits the numeric delta for lock-screen privacy.
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: userId,
         kind: NotificationKind.WEIGHT_TREND_ALERT,
         body: body.slice(0, 160),
-        payload: notifPayload,
         deep_link: 'tgp://weight',
-        channel: 'push',
       });
     } catch (err) {
       this.logger.warn(
