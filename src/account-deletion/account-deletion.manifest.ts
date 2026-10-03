@@ -149,6 +149,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // ── Workout and meal programming
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
+  // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk
+  // assign, package delivery, consultation clones). Masters are coach content
+  // (is_template = true, client_id null) and never match. The copy's plans,
+  // exercises, revisions, delivery snapshots and remaining assignments cascade
+  // from the program row.
+  { model: 'WorkoutProgram', field: 'client_id', action: del, where: { is_template: false } },
   { model: 'WorkoutPlan', field: 'coach_id', action: del, where: { assignments: { none: {} } } },
   { model: 'WorkoutPlan', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'WorkoutProgram', field: 'coach_id', action: retain(FROZEN_PLAN) },

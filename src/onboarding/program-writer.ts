@@ -18,6 +18,12 @@ export interface ProgramTreeInput {
   goalTag: string | null;
   isTemplate: boolean;
   clonedFromId: string | null;
+  /**
+   * The client a non-template copy was made for (S-MWB-3). Recorded on
+   * WorkoutProgram.client_id so account deletion erases the consultation copy
+   * with the client's other program copies. Masters leave it null.
+   */
+  clientId?: string | null;
   plans: PlanContent[];
   /** Extra metadata recorded on the program revision (audit only). */
   revisionMeta: Record<string, unknown>;
@@ -42,6 +48,7 @@ export async function writeProgramTree(
       days_per_week: input.daysPerWeek,
       is_template: input.isTemplate,
       cloned_from_id: input.clonedFromId,
+      client_id: input.isTemplate ? null : (input.clientId ?? null),
       goal_tag: input.goalTag,
       version: 1,
     },

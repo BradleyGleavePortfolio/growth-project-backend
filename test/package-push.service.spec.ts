@@ -256,6 +256,8 @@ function makeResolverStub() {
       n += 1;
       return { materialisedRef: `ref-${n}` };
     }),
+    // S-MWB (B-640-4): none of these fixtures is a whole-program asset.
+    shouldDeferInline: jest.fn<Promise<boolean>, [string, unknown?]>(async () => false),
   };
 }
 
@@ -820,6 +822,38 @@ describe('PackagePushService', () => {
       expect(input.clientPurchaseId).toBeNull();
       expect(input.contentId).toBeNull();
       expect(input.scheduledDropId).toBeTruthy();
+    });
+
+    it('S-MWB B-640-4: a due-now push of a whole program to many buyers copies NOTHING inside the push transaction; every drop stays pending for the dispatcher (own transaction per buyer) and no inline alert fires', async () => {
+      seedContent(prisma, { id: 'content-prog', package_id: 'pkg-1', asset_type: 'workout_program' });
+      for (let i = 0; i < 40; i += 1) {
+        seedPurchase(prisma, {
+          id: `pp${i}`,
+          package_id: 'pkg-1',
+          client_user_id: `cl${i}`,
+          coach_user_id: 'coach-1',
+        });
+      }
+      resolvers.shouldDeferInline.mockImplementation(async (assetType: string) =>
+        assetType === 'workout_program',
+      );
+      const res = await svc.pushContentToExistingBuyers(
+        'coach-1',
+        'pkg-1',
+        'content-prog',
+        { audience: 'all', fireAt: new Date(), mode: 'push_existing', notify: true },
+      );
+      expect(res.scheduled).toBe(40);
+      // C-640-13: decided once per asset for the whole push, not per buyer.
+      expect(resolvers.shouldDeferInline).toHaveBeenCalledTimes(1);
+      expect(resolvers.materialise).not.toHaveBeenCalled();
+      const rows = prisma._drops.filter((d: any) => d.content_id === 'content-prog');
+      expect(rows).toHaveLength(40);
+      for (const row of rows) {
+        expect(row.status).toBe('pending');
+        expect(row.materialised_ref).toBeNull();
+      }
+      expect(notifications.createNotification).not.toHaveBeenCalled();
     });
 
     it('forward-dated push does NOT materialise inline (cron handles it)', async () => {
