@@ -7,9 +7,11 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { SKIP_CLIENT_ENTITLEMENT_KEY } from '../decorators/skip-client-entitlement.decorator';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+import { isDunningV2Enabled } from '../../checkout/dunning-v2/dunning-v2.feature';
 
 @Injectable()
 export class ClientEntitlementGuard implements CanActivate {
@@ -41,16 +43,33 @@ export class ClientEntitlementGuard implements CanActivate {
     if (!user || user.role !== 'student') return true;
 
     const now = new Date();
+    const paidWindow: Prisma.ClientPurchaseWhereInput = {
+      status: { in: ['paid', 'active', 'trialing'] },
+      OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }],
+    };
+    // S-DUNNING F7: under Smart Dunning v2 a client keeps full access on
+    // Days 0-9 of a failed payment (the owner's sequence; Day 10 locks via
+    // DunningLockoutGuard). A past_due purchase with an ACTIVE, UNLOCKED
+    // dunning cycle therefore still entitles. Flag off: unchanged query.
+    const where: Prisma.ClientPurchaseWhereInput = isDunningV2Enabled()
+      ? {
+          client_user_id: user.id,
+          entitlement_active: true,
+          OR: [
+            paidWindow,
+            {
+              status: 'past_due',
+              dunning: { is: { status: 'active', locked_out_at: null } },
+            },
+          ],
+        }
+      : {
+          client_user_id: user.id,
+          entitlement_active: true,
+          ...paidWindow,
+        };
     const entitlement = await this.prisma.clientPurchase.findFirst({
-      where: {
-        client_user_id: user.id,
-        entitlement_active: true,
-        status: { in: ['paid', 'active', 'trialing'] },
-        OR: [
-          { access_expires_at: null },
-          { access_expires_at: { gt: now } },
-        ],
-      },
+      where,
       select: { id: true, status: true, access_expires_at: true },
     });
 

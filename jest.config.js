@@ -139,4 +139,12 @@ module.exports = {
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testTimeout: 10000,
+  // S-DUNNING-R6: recycle a worker whose heap stays above 2 GB after a test
+  // file. The build-and-test lane runs every suite in a few long-lived
+  // workers under a 4 GB heap (ci.yml NODE_OPTIONS); retained module
+  // registries accumulate across files until one worker OOM-aborts ("Jest
+  // worker ran out of memory") on whichever suite it happens to hold. A fresh
+  // worker per threshold crossing keeps every suite under the heap limit
+  // without changing what runs or how.
+  workerIdleMemoryLimit: '2GB',
 };
