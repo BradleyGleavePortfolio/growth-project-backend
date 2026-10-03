@@ -9,6 +9,8 @@ import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
 import { GoogleOAuthService } from './google-oauth/google-oauth.service';
 import { CalendarSyncJob } from './jobs/calendar-sync.job';
 import { SessionReminderJob } from './jobs/reminder.job';
+import { BookingRequestExpiryJob } from './jobs/request-expiry.job';
+import { SchedulingJobLeaseService } from './jobs/scheduling-job-lease.service';
 import { GoogleCalendarAdapter } from './providers/google-calendar.adapter';
 import { GoogleMeetAdapter } from './providers/google-meet.adapter';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
@@ -58,6 +60,9 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     GoogleMeetAdapter,
     ZoomVideoAdapter,
     SessionReminderJob,
+    // S-SCHED-5: request auto-expiry sweep (single runner via SchedulingJobLease).
+    BookingRequestExpiryJob,
+    SchedulingJobLeaseService,
     CalendarSyncJob,
     GoogleOAuthService,
     // Real Google Calendar REST client. Stubbed adapter

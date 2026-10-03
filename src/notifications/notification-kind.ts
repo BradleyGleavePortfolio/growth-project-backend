@@ -52,6 +52,9 @@ export const NotificationKind = {
   // Same booking_* preference cluster.
   BOOKING_LINK_NEEDED: 'booking_link_needed',
   BOOKING_LINK_READY: 'booking_link_ready',
+  // S-SCHED-5: a request reached its clear time without an answer (to both
+  // sides; the slot is open again). Same booking_* preference cluster.
+  BOOKING_REQUEST_EXPIRED: 'booking_request_expired',
 
   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
   // each independently opt-out-able via NotificationPreferences.

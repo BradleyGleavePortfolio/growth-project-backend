@@ -116,6 +116,18 @@ export interface BookingLinkReadyPayload extends BaseBookingPayload {
   scheduledAt: Date;
 }
 
+export interface BookingRequestExpiredPayload extends BaseBookingPayload {
+  recipientUserId: string;
+  recipientRole: BookingRecipientRole;
+  /** The client's name for the coach's notice, the coach's for the client's. */
+  otherPartyDisplayName: string;
+  scheduledAt: Date;
+  /** S-SCHED-5 retry of a partly delivered notice (same rule as reminders). */
+  skipInApp?: boolean;
+  skipPush?: boolean;
+  notificationId?: string | null;
+}
+
 export interface BookingDeliveryOutcome {
   inapp: 'written' | 'suppressed' | 'failed' | 'skipped';
   push: PushDeliveryCode | 'disabled' | 'failed' | 'skipped';
@@ -353,6 +365,37 @@ export class BookingEmitter {
         scheduledAt: p.scheduledAt.toISOString(),
         sessionTypeName: p.sessionTypeName ?? null,
       },
+    });
+  }
+
+  // (k) booking_request_expired -> BOTH sides, once each (S-SCHED-5). Calm,
+  // no blame: what happened, that the time is open again, and the next step.
+  async emitRequestExpired(p: BookingRequestExpiredPayload): Promise<BookingDeliveryOutcome> {
+    const when = await this.whenFor(p.recipientUserId, p.scheduledAt);
+    const what = typeLabel(p.sessionTypeName, 'session');
+    const body =
+      p.recipientRole === 'client'
+        ? `Your ${what} request for ${when} was not confirmed in time, so it has closed. Pick another time in Calendar.`
+        : `${p.otherPartyDisplayName}'s ${what} request for ${when} closed without an answer, and the time is open again.`;
+    return this.deliver({
+      userId: p.recipientUserId,
+      role: p.recipientRole,
+      kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
+      title: 'Session request closed',
+      body,
+      sessionId: p.sessionId,
+      deepLink:
+        p.recipientRole === 'client'
+          ? `tgp://client/sessions/${p.sessionId}`
+          : `tgp://coach/sessions/${p.sessionId}`,
+      payload: {
+        otherPartyDisplayName: p.otherPartyDisplayName,
+        scheduledAt: p.scheduledAt.toISOString(),
+        sessionTypeName: p.sessionTypeName ?? null,
+      },
+      skipInApp: p.skipInApp === true,
+      skipPush: p.skipPush === true,
+      notificationId: p.notificationId ?? null,
     });
   }
 

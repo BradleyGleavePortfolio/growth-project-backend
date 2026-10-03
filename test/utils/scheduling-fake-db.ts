@@ -132,6 +132,8 @@ export class SchedulingFakeDb {
   subAssignments: Row[] = [];
   teamAssignments: Row[] = [];
   deliveryLogs: Row[] = [];
+  /** S-SCHED-5: SchedulingJobLease rows (name is the primary key). */
+  leases: Row[] = [];
 
   enforceLock = true;
   enforceExclusion = true;
@@ -270,6 +272,7 @@ export class SchedulingFakeDb {
       approved_at: null,
       ended_at: null,
       end_reason: null,
+      request_expires_at: null,
       created_at: new Date(),
       updated_at: new Date(),
       ...data,
@@ -553,6 +556,34 @@ export class SchedulingFakeDb {
       const before = this.deliveryLogs.length;
       this.deliveryLogs = this.deliveryLogs.filter((l) => !this.matches(l, args.where, 'other'));
       return { count: before - this.deliveryLogs.length };
+    },
+  };
+
+  // S-SCHED-5: SchedulingJobLease (primary key on name, like the table).
+  schedulingJobLease = {
+    create: async (args: { data: Row }) => {
+      await this.tick();
+      if (this.leases.some((l) => l.name === args.data.name)) {
+        throw Object.assign(new TypeError('Unique constraint failed'), { code: 'P2002' });
+      }
+      const row = { updated_at: new Date(), ...args.data };
+      this.leases.push(row);
+      return { ...row };
+    },
+    updateMany: async (args: { where?: Row; data: Row }) => {
+      await this.tick();
+      let count = 0;
+      this.leases.forEach((l, i) => {
+        if (!this.matches(l, args.where, 'other')) return;
+        this.leases[i] = { ...l, ...args.data, updated_at: new Date() };
+        count += 1;
+      });
+      return { count };
+    },
+    findUnique: async (args: { where: { name: string } }) => {
+      await this.tick();
+      const row = this.leases.find((l) => l.name === args.where.name);
+      return row ? { ...row } : null;
     },
   };
 

@@ -60,7 +60,7 @@ export interface ReminderSweepResult {
  * errors (which can embed query arguments) collapse to their safe code;
  * anything else keeps its message.
  */
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
   const safe = safeDiagnostic(err);
   if (safe instanceof Error) return `${safe.name}: ${safe.message}`.slice(0, 200);
   return 'unknown error';

@@ -40,8 +40,16 @@ import {
   OCCUPYING_SESSION_STATUSES,
   SchedulingErrorCode,
   hasUsableLink,
+  requestExpiresAt,
   schedulingError,
 } from './scheduling.types';
+import {
+  auditExpired,
+  expireLapsedForCoach,
+  isExpiredOrLapsed,
+  requestExpiredError,
+  type LapsedRow,
+} from './request-expiry';
 import type { ActorContext } from './scheduling.types';
 
 // State machine: which SessionStatus transitions the service accepts.
@@ -57,6 +65,9 @@ const ALLOWED_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   canceled: [],
   no_show: [],
   completed: [],
+  // S-SCHED-5: closed by the expiry sweep (or the booking transaction) at the
+  // request's clear time. Terminal.
+  expired: [],
 };
 
 // pg_advisory_xact_lock(int4, int4): first key is a namespace so this lock
@@ -159,6 +170,9 @@ export class SchedulingSessionLifecycleService {
 
     const sessionTypeId = dto.session_type_id;
     const session = await this.runBookingTx(dto.coach_id, async (tx) => {
+      // S-SCHED-5: close this coach's requests that reached their clear time
+      // first, so their slots (and the client's pending count) are free now.
+      const lapsed = await expireLapsedForCoach(tx, dto.coach_id, now);
       const type = await this.openSlots.resolveBookableType(dto.coach_id, sessionTypeId, tx);
       assertTypeDuration(type, start, end);
 
@@ -221,13 +235,15 @@ export class SchedulingSessionLifecycleService {
           video_provider: type.default_video_provider ?? 'stub',
           calendar_provider: 'stub',
           approved_at: status === 'scheduled' ? now : null,
+          request_expires_at: status === 'requested' ? requestExpiresAt(now, start) : null,
         },
       });
-      return { created, type };
+      return { created, type, lapsed };
     });
 
     const { created, type } = session;
     this.openSlots.invalidateCoach(dto.coach_id);
+    await this.afterLazyExpiry(session.lapsed);
     await this.audit.write({
       action: AuditAction.SESSION_REQUESTED,
       actorId: actor.id,
@@ -298,14 +314,15 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'scheduled');
     assertExpectedStart(existing, opts.expectedStartAt);
     if (existing.start_at.getTime() <= Date.now()) throw approvalTooLate();
     const updated = await this.compareAndSet(
       existing,
       'scheduled',
-      { approved_at: new Date() },
-      { start: 'future', onStarted: approvalTooLate },
+      { approved_at: new Date(), request_expires_at: null },
+      { start: 'future', onStarted: approvalTooLate, requestOpenFor: viewerOf(actor) },
     );
     this.openSlots.invalidateCoach(existing.coach_id);
     await this.writeTransitionAudit(AuditAction.SESSION_APPROVED, actor, existing, 'scheduled');
@@ -341,12 +358,15 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'declined');
     assertExpectedStart(existing, opts.expectedStartAt);
-    const updated = await this.compareAndSet(existing, 'declined', {
-      ended_at: new Date(),
-      end_reason: reason ?? null,
-    });
+    const updated = await this.compareAndSet(
+      existing,
+      'declined',
+      { ended_at: new Date(), end_reason: reason ?? null },
+      { requestOpenFor: viewerOf(actor) },
+    );
     this.openSlots.invalidateCoach(existing.coach_id);
     await this.writeTransitionAudit(AuditAction.SESSION_DECLINED, actor, existing, 'declined', {
       reason: reason ?? null,
@@ -374,6 +394,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
+    this.assertRequestOpen(existing, actor);
     if (existing.status !== 'requested' && existing.status !== 'scheduled') {
       throw new ConflictException(
         schedulingError(
@@ -403,8 +424,13 @@ export class SchedulingSessionLifecycleService {
         current.start_at.getTime() !== existing.start_at.getTime() ||
         current.end_at.getTime() !== existing.end_at.getTime()
       ) {
+        if (current && isExpiredOrLapsed(current, now))
+          throw requestExpiredError(current, viewerOf(actor));
         throw stateChanged();
       }
+      if (isExpiredOrLapsed(current, now)) throw requestExpiredError(current, viewerOf(actor));
+      // S-SCHED-5: free the coach's other lapsed requests before validating.
+      const lapsed = await expireLapsedForCoach(tx, current.coach_id, now);
       const type = current.session_type_id
         ? await tx.sessionType.findUnique({ where: { id: current.session_type_id } })
         : null;
@@ -445,6 +471,8 @@ export class SchedulingSessionLifecycleService {
           status: current.status,
           start_at: current.start_at,
           end_at: current.end_at,
+          // A request moved at its clear time loses to the expiry.
+          ...(current.status === 'requested' ? requestStillOpen(now) : {}),
         },
         data: {
           start_at: start,
@@ -453,9 +481,18 @@ export class SchedulingSessionLifecycleService {
           ...(nextStatus === 'requested' && current.status === 'scheduled'
             ? { approved_at: null }
             : {}),
+          // A move that asks the coach again starts a fresh answer window.
+          ...(nextStatus === 'requested'
+            ? { request_expires_at: requestExpiresAt(now, start) }
+            : {}),
         },
       });
-      if (moved.count !== 1) throw stateChanged();
+      if (moved.count !== 1) {
+        const after = await tx.coachingSession.findUnique({ where: { id: current.id } });
+        if (after && isExpiredOrLapsed(after, now))
+          throw requestExpiredError(after, viewerOf(actor));
+        throw stateChanged();
+      }
       // Reminder claims are per (session, user, kind); a moved session must
       // be reminded again for its new time.
       await tx.notificationDeliveryLog.deleteMany({
@@ -467,10 +504,11 @@ export class SchedulingSessionLifecycleService {
         },
       });
       const row = await tx.coachingSession.findUniqueOrThrow({ where: { id: current.id } });
-      return { row, typeName: type?.name ?? null, previousStatus: current.status };
+      return { row, typeName: type?.name ?? null, previousStatus: current.status, lapsed };
     });
 
     this.openSlots.invalidateCoach(existing.coach_id);
+    await this.afterLazyExpiry(result.lapsed);
     await this.audit.write({
       action: AuditAction.SESSION_RESCHEDULED,
       actorId: actor.id,
@@ -538,6 +576,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
+    this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'canceled');
     assertExpectedStart(existing, dto.expected_start_at);
     const clientCancel = actor.role === 'student';
@@ -546,7 +585,10 @@ export class SchedulingSessionLifecycleService {
       existing,
       'canceled',
       { ended_at: new Date(), end_reason: dto.reason ?? null },
-      clientCancel ? { start: 'future', onStarted: clientCancelTooLate } : {},
+      {
+        ...(clientCancel ? { start: 'future' as const, onStarted: clientCancelTooLate } : {}),
+        requestOpenFor: viewerOf(actor),
+      },
     );
     this.openSlots.invalidateCoach(existing.coach_id);
     await this.writeTransitionAudit(AuditAction.SESSION_CANCELED, actor, existing, 'canceled', {
@@ -788,28 +830,55 @@ export class SchedulingSessionLifecycleService {
     existing: CoachingSession,
     to: SessionStatus,
     data: Prisma.CoachingSessionUpdateManyMutationInput,
-    fence: { start?: 'future' | 'started'; onStarted?: () => HttpException } = {},
+    fence: {
+      start?: 'future' | 'started';
+      onStarted?: () => HttpException;
+      /** S-SCHED-5: a request transition must land before its clear time. */
+      requestOpenFor?: 'client' | 'coach';
+    } = {},
   ): Promise<CoachingSession> {
     const now = new Date();
     const startFilter: Prisma.DateTimeFilter = { equals: existing.start_at };
     if (fence.start === 'future') startFilter.gt = now;
     if (fence.start === 'started') startFilter.lte = now;
+    const guardRequest = fence.requestOpenFor !== undefined && existing.status === 'requested';
     const res = await this.prisma.coachingSession.updateMany({
       where: {
         id: existing.id,
         status: existing.status,
         start_at: startFilter,
         end_at: existing.end_at,
+        ...(guardRequest ? requestStillOpen(now) : {}),
       },
       data: { ...data, status: to },
     });
     if (res.count === 1) return this.loadSessionOrThrow(existing.id);
     const current = await this.prisma.coachingSession.findUnique({ where: { id: existing.id } });
+    if (guardRequest && fence.requestOpenFor && current && isExpiredOrLapsed(current, now)) {
+      throw requestExpiredError(current, fence.requestOpenFor);
+    }
     if (current && current.status === existing.status) {
       if (!sameInterval(current, existing)) throw sessionMoved();
       if (fence.onStarted) throw fence.onStarted();
     }
     throw stateChanged();
+  }
+
+  // S-SCHED-5: a request that is closed by expiry, or has reached its clear
+  // time, cannot be confirmed, declined, cancelled or moved.
+  private assertRequestOpen(existing: CoachingSession, actor: ActorContext): void {
+    if (isExpiredOrLapsed(existing)) throw requestExpiredError(existing, viewerOf(actor));
+  }
+
+  // Requests the booking transaction closed: audited now; the sweep sends
+  // both notices from the committed rows on its next tick.
+  private async afterLazyExpiry(rows: LapsedRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    try {
+      await auditExpired(this.audit, rows, 'booking');
+    } catch (err) {
+      this.logger.warn(`expiry audit failed: ${(err as Error).name}`);
+    }
   }
 
   private async writeTransitionAudit(
@@ -1287,6 +1356,8 @@ function statusWord(s: SessionStatus): string {
       return 'completed';
     case 'no_show':
       return 'marked as a no-show';
+    case 'expired':
+      return 'closed because it was not confirmed in time';
     default:
       return 'closed';
   }
@@ -1307,4 +1378,14 @@ function actionWord(to: SessionStatus): string {
     default:
       return 'changed';
   }
+}
+
+// S-SCHED-5: the person acting, for REQUEST_EXPIRED copy.
+function viewerOf(actor: ActorContext): 'client' | 'coach' {
+  return actor.role === 'student' ? 'client' : 'coach';
+}
+
+// S-SCHED-5: where-fragment for "this request has not reached its clear time".
+function requestStillOpen(now: Date): Prisma.CoachingSessionWhereInput {
+  return { OR: [{ request_expires_at: null }, { request_expires_at: { gt: now } }] };
 }

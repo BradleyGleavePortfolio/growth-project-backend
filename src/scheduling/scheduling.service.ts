@@ -149,6 +149,13 @@ export class SchedulingService {
           status: { in: [...OCCUPYING_SESSION_STATUSES] },
           end_at: { gt: now },
           session_type: { is: { is_welcome: true } },
+          // S-SCHED-5: a welcome request past its clear time is not active;
+          // the client can book the welcome call again.
+          OR: [
+            { status: { not: 'requested' } },
+            { request_expires_at: null },
+            { request_expires_at: { gt: now } },
+          ],
         },
         select: { id: true, coach_id: true, status: true, start_at: true },
         orderBy: { start_at: 'asc' },
