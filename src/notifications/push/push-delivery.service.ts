@@ -438,7 +438,6 @@ export class PushDeliveryService {
   }
 
   async sendOne(row: OutboxRow): Promise<SendOutcome> {
-    const now = this.now();
     const context = asContext(row.context);
     let handedOff = false;
     try {
@@ -454,7 +453,7 @@ export class PushDeliveryService {
           !session ||
           session.status !== 'scheduled' ||
           session.start_at.getTime() !== at ||
-          at <= now.getTime()
+          at <= this.now().getTime()
         ) {
           return await this.finish(row, 'dropped', 'obsolete');
         }
@@ -469,17 +468,14 @@ export class PushDeliveryService {
       }
 
       // B-648-10: quiet hours at the moment of sending, in the recipient's
-      // CURRENT zone (falling back to the zone known at enqueue).
+      // CURRENT zone (falling back to the zone known at enqueue), on a clock
+      // read after the awaited reads above (and again at the handoff below).
       const timeZone =
         (await resolveRecipientTimeZone(this.prisma, row.user_id, context?.sessionId)) ??
         usableTimeZone(row.time_zone);
-      const quiet = quietHoursFor({
-        kind: row.kind,
-        timeZone,
-        context,
-        urgent: row.urgent,
-        now,
-      });
+      const quietAt = (now: Date) =>
+        quietHoursFor({ kind: row.kind, timeZone, context, urgent: row.urgent, now });
+      const quiet = quietAt(this.now());
       if (quiet.deferred) {
         return await this.later(row, quiet.deliverAt, 'quiet_hours', 'quiet-deferred');
       }
@@ -488,7 +484,7 @@ export class PushDeliveryService {
       // and every booking event (time-critical, never more than a few).
       const capExempt = row.urgent || quiet.reason === 'urgent' || row.kind.startsWith('booking_');
       if (!capExempt) {
-        const windowStart = new Date(now.getTime() - USER_WINDOW_MS);
+        const windowStart = new Date(this.now().getTime() - USER_WINDOW_MS);
         const recent = await this.prisma.pushOutbox.findMany({
           where: { user_id: row.user_id, status: 'sent', sent_at: { gt: windowStart } },
           orderBy: { sent_at: 'asc' },
@@ -514,12 +510,25 @@ export class PushDeliveryService {
         return await this.finish(row, 'dropped', 'invalid-token');
       }
 
+      // B-648-8: prove and renew authority right before the handoff.
+      if (!(await this.handOff(row))) return this.lost(row, 'handoff');
+
+      // B-648-10 (round 4): the clock at the Expo handoff. If the window
+      // opened during the reads or the handoff write, nothing has reached
+      // Expo yet: back to pending for the morning, attempt refunded.
+      const sendAt = this.now();
+      const atSend = quietAt(sendAt);
+      if (atSend.deferred) {
+        return await this.later(row, atSend.deliverAt, 'quiet_hours', 'quiet-deferred');
+      }
+      handedOff = true;
+
       const copy = context
         ? lockScreenCopy(
             row.kind,
             row.body,
             { ...context, timeZone: timeZone ?? context.timeZone },
-            now,
+            sendAt,
           )
         : { title: row.title, body: row.body };
       const message: ExpoPushMessage = {
@@ -531,10 +540,6 @@ export class PushDeliveryService {
         channelId: 'default',
         priority: 'high',
       };
-
-      // B-648-8: prove and renew authority right before the handoff.
-      if (!(await this.handOff(row))) return this.lost(row, 'handoff');
-      handedOff = true;
 
       let ticket: ExpoPushTicket | undefined;
       const deadline = deadlineSignal(this.sendDeadlineMs);
@@ -554,7 +559,7 @@ export class PushDeliveryService {
         return await this.finish(row, 'sent', 'sent', {
           ticket_id: ticket.id,
           token,
-          sent_at: now,
+          sent_at: sendAt,
         });
       }
       const error = ticket.details?.error;
