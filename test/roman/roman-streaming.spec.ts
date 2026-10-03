@@ -32,6 +32,12 @@ import {
 } from '../../src/ai-egress/ai-consent-required.exception';
 import { SUPPORT_EMAIL } from '../../src/public-pages/trust-pages.html';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
+import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
+import {
+  ROMAN_ERROR_CAPACITY_REACHED,
+  ROMAN_ERROR_RATE_LIMIT,
+} from '../../src/roman/roman.constants';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
@@ -144,14 +150,34 @@ function makePrisma(sessionOwner = 'user-A') {
     }),
   };
 
+  // OR-113-2: the content-free spend ledger (reserve, then settle).
+  const audits: Array<Record<string, unknown>> = [];
+  const aiRequestAudit = {
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      audits.push({ ...data });
+      return data;
+    }),
+    aggregate: jest.fn(async () => ({
+      _sum: { prompt_token_estimate: 0, response_token_estimate: 0 },
+    })),
+    update: jest.fn(
+      async ({ where, data }: { where: { request_id: string }; data: Record<string, unknown> }) => {
+        const row = audits.find((a) => a.request_id === where.request_id);
+        if (row) Object.assign(row, data);
+        return row;
+      },
+    ),
+  };
+
   const prisma = {
     romanSession,
     romanMessage,
+    aiRequestAudit,
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ romanMessage, romanSession }),
     ),
   };
-  return { prisma, session, messages, romanMessage };
+  return { prisma, session, messages, romanMessage, audits };
 }
 
 // ─── fake Anthropic client ────────────────────────────────────────────────────
@@ -203,6 +229,7 @@ function makeRes() {
   let ended = false;
   const res = {
     writeHead: jest.fn((): void => {}),
+    setHeader: jest.fn((): void => {}),
     flushHeaders: jest.fn(),
     write: jest.fn((c: string): boolean => {
       writes.push(c);
@@ -247,7 +274,8 @@ describe('Roman SSE streaming — happy path', () => {
     const deltas = (frames as Array<{ type: string; text?: string }>).filter(
       (f) => f.type === 'delta',
     );
-    expect(deltas.map((d) => d.text)).toEqual(['Push ', 'harder', '.']);
+    // A-R4-4: the reply is buffered, post-checked, then emitted ONCE.
+    expect(deltas.map((d) => d.text)).toEqual(['Push harder.']);
 
     const done = (frames as Array<{ type: string; interrupted?: boolean; messageId?: string }>).find(
       (f) => f.type === 'done',
@@ -263,7 +291,8 @@ describe('Roman SSE streaming — happy path', () => {
     expect(assistant?.interrupted).toBe(false);
     expect(assistant?.prompt_tokens).toBe(42);
     expect(assistant?.completion_tokens).toBe(7);
-    expect(assistant?.model_id).toBe('claude-3-7-sonnet-20250219');
+    // OR-113-2: the retired claude-3-7-sonnet-20250219 id was replaced.
+    expect(assistant?.model_id).toBe(ROMAN_MODEL_PHASE_1);
   });
 
   it('writes correctly-framed SSE through the controller (data: …\\n\\n + done)', async () => {
@@ -285,7 +314,7 @@ describe('Roman SSE streaming — happy path', () => {
     const deltaTexts = frames
       .filter((f) => f.event === 'message' && f.data?.type === 'delta')
       .map((f) => f.data.text);
-    expect(deltaTexts).toEqual(['Let', "'s go"]);
+    expect(deltaTexts).toEqual(["Let's go"]);
     const done = frames.find((f) => f.data?.type === 'done');
     expect(done?.data.interrupted).toBe(false);
     expect(isEnded()).toBe(true);
@@ -545,5 +574,121 @@ describe('Roman — R2b box-2 consent', () => {
     const { service, reader } = setup([]);
     await expect(service.assertMayUseAi({ id: 'coach-1', role: 'coach', tier: 'free' })).resolves.toBeUndefined();
     expect(reader.calls).toHaveLength(0);
+  });
+});
+
+// FIX ROUND 1 (S-B1, #651) FR1-651-4: the SafetyRouter's 911 / 988 templates
+// cost nothing (no model call, no spend), so a crisis message is answered even
+// when the caller has used every Roman turn or the daily spend cap is reached.
+describe('Roman — crisis messages are never blocked by the turn limit or the spend cap', () => {
+  function setup() {
+    const made = makePrisma();
+    const anthropic = makeAnthropic(['Hi', '.']);
+    const service = new RomanService(
+      fakeOf(made.prisma),
+      grantAllEgress(),
+      AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
+    );
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    return { ...made, anthropic, ctrl };
+  }
+  afterEach(() => {
+    delete process.env.ROMAN_DAILY_COST_CAP_USD;
+  });
+
+  it('daily cap reached: a self-harm message still gets the 988 template; an ordinary one gets the coded 503', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
+    const { ctrl, anthropic, messages } = setup();
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I don\u2019t want to be here anymore',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ response: { code: ROMAN_ERROR_CAPACITY_REACHED } });
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+  });
+
+  it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
+    const { ctrl, anthropic, romanMessage } = setup();
+    romanMessage.count.mockResolvedValue(10_000);
+    romanMessage.findFirst.mockResolvedValue(null);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I have crushing chest pain right now',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ response: { code: ROMAN_ERROR_RATE_LIMIT } });
+  });
+});
+
+// FIX ROUND 1 (S-B1, #651) FR1-651-7: the PR's design answers the 911 / 988
+// templates before the box-2 gate (no model, no client data leaves the app;
+// CONSENT_D2_CONTRACT gates only data sent to the AI processor). The
+// controller gate ran first and answered a crisis message from a client
+// without box 2 with a 403 consent error instead of the crisis line.
+describe('Roman — a crisis message is answered without box 2; nothing else is', () => {
+  function setup(granted: string[], withModel = true) {
+    const { prisma, messages } = makePrisma();
+    const anthropic = makeAnthropic(['Hi', '.']);
+    const { egress } = egressWithGrants(granted);
+    const service = new RomanService(
+      fakeOf(prisma),
+      egress,
+      withModel ? AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)) : undefined,
+    );
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    return { ctrl, messages, anthropic };
+  }
+
+  it('no grant + self-harm message: the 988 template, zero model calls; an ordinary message is still 403', async () => {
+    const { ctrl, anthropic, messages } = setup([]);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I want to kill myself',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(2);
+  });
+
+  it('no AI provider configured: an emergency message still gets the 911 template', async () => {
+    const { ctrl, messages } = setup(['user-A'], false);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
+      content: 'I have crushing chest pain right now',
+    });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
   });
 });

@@ -335,6 +335,18 @@ function makeFakePrisma() {
         },
       ),
     },
+    // #651 daily spend ledger: every model turn reserves a content-free
+    // AiRequestAudit row before the call and settles it after.
+    aiRequestAudit: {
+      aggregate: jest.fn(async () => ({
+        _sum: { prompt_token_estimate: 0, response_token_estimate: 0 },
+      })),
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'ledger_1',
+        ...data,
+      })),
+      update: jest.fn(async () => ({})),
+    },
     $transaction: undefined as unknown,
     _state: { sessions, messages },
     // Opt-in rollback for sequential tests: a callback that throws restores
@@ -1431,29 +1443,44 @@ describe('RomanService — streaming', () => {
     expect(stored?.completion_tokens).toBe(7);
     expect(stored?.prompt_tokens).toBe(11);
     expect(stored?.interrupted).toBe(false);
+    // one spend reservation, settled once, and the ledger never carries text
+    expect(prisma.aiRequestAudit.create).toHaveBeenCalledTimes(1);
+    expect(prisma.aiRequestAudit.update).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(prisma.aiRequestAudit.create.mock.calls)).not.toContain('Good');
   });
 
   it('persists a partial turn with interrupted=true on client disconnect', async () => {
     const prisma = makeFakePrisma();
-    const fake = makeFakeStream(['Part', 'ial', ' text']);
+    // #651 buffers the reply for the post-check (nothing is emitted until the
+    // model finishes), so the disconnect has to land while the model is still
+    // streaming: the client goes away after the first upstream delta.
+    const abort = new AbortController();
+    const fake = {
+      messages: {
+        stream: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield { type: 'message_start', message: { usage: { input_tokens: 11 } } };
+            yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Part' } };
+            abort.abort();
+            yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'ial text' } };
+            yield { type: 'message_delta', usage: { output_tokens: 7 } };
+          },
+        }),
+      },
+    };
     const svc = new RomanService(asPrisma(prisma), grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(fake)));
     const s = await svc.openOrResumeSession(CALLER, 'client');
 
-    const abort = new AbortController();
     let interrupted: boolean | undefined;
-    let count = 0;
     for await (const c of svc.streamAssistantTurn(CALLER, s, {
       signal: abort.signal,
     })) {
-      if (c.type === 'delta') {
-        count++;
-        if (count === 1) abort.abort(); // disconnect after first delta
-      }
       if (c.type === 'done') interrupted = c.interrupted;
     }
     expect(interrupted).toBe(true);
     const stored = prisma._state.messages.find((m) => m.role === 'roman');
     expect(stored?.interrupted).toBe(true);
+    expect(stored?.content).toBe('Part');
   });
 
   it('refuses to call the model when the feature flag is OFF', async () => {

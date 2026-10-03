@@ -2088,7 +2088,15 @@ export const ENV_RULES: EnvRule[] = [
     name: 'FEATURE_ROMAN_CHAT_ENABLED',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
-    reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
+    reason:
+      'Live free-form Roman chat. ON in v1.0 (owner decision OR-113-2, 2026-10-02) once the grounding + guardrails PR is audited and deployed; box-2 AI consent is enforced on every turn by the AI egress gate.',
+  },
+  {
+    name: 'ROMAN_DAILY_COST_CAP_USD',
+    tier: 'optional',
+    default: 'unset → 25 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 25, never no cap',
+    reason:
+      'Daily spend cap for all Roman turns together (UTC day, US dollars). Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 25.',
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',

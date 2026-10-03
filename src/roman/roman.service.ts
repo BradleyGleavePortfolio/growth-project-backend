@@ -64,6 +64,30 @@ import {
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
 import { isRomanChatEnabled } from './roman.feature';
+import { randomUUID } from 'node:crypto';
+import {
+  ROMAN_DAILY_COST_CAP_USD_DEFAULT,
+  ROMAN_ERROR_CAPACITY_REACHED,
+  ROMAN_ERROR_MODEL_UNAVAILABLE,
+  ROMAN_LEDGER_CAPABILITY,
+  ROMAN_PRICE_PER_MTOK,
+  romanFailureMessage,
+  romanRateLimitMessage,
+} from './roman.constants';
+import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
+import {
+  classifySafety,
+  routerHintFor,
+  ROMAN_SAFETY_ROUTER_MODEL_ID,
+  ROMAN_SAFETY_TEMPLATES,
+} from './guardrails/safety-router';
+import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
+import { RomanClientContextService } from './context/roman-client-context.service';
+import { AuditService } from '../audit/audit.service';
+import type {
+  RomanClientContext,
+  RomanClientContextBundle,
+} from './context/roman-client-context.types';
 import {
   buildRomanSystemPrompt,
   RomanSessionVoiceState,
@@ -167,6 +191,14 @@ export class RomanService {
     @Optional()
     @Inject(ROMAN_ANTHROPIC_CLIENT)
     private readonly anthropic: AnthropicHandle | null = null,
+    // Per-turn grounding (client surface). RomanModule always provides it; a
+    // missing builder means degraded mode (no personal facts), never silence.
+    @Optional()
+    private readonly clientContext: RomanClientContextService | null = null,
+    // Content-free audit row for every emergency / self-harm short-circuit
+    // (ids and the route class only, never the message text).
+    @Optional()
+    private readonly audit: AuditService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -704,6 +736,8 @@ export class RomanService {
       modelId?: string | null;
       interrupted?: boolean;
       parentMessageId?: string | null;
+      /** This Roman turn spends the session's single exclamation mark. */
+      spendsExclamation?: boolean;
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
@@ -712,6 +746,7 @@ export class RomanService {
         data: {
           message_count: { increment: 1 },
           last_activity_at: new Date(),
+          ...(data.spendsExclamation ? { exclamation_used: true } : {}),
         },
       });
       if (live.count === 0) {
@@ -805,8 +840,7 @@ export class RomanService {
         {
           code: ROMAN_ERROR_RATE_LIMIT,
           retryAfterSeconds,
-          message:
-            'You have reached the Roman conversation limit for now. It will reset shortly.',
+          message: romanRateLimitMessage(retryAfterSeconds, caller.role),
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );
@@ -868,50 +902,107 @@ export class RomanService {
   }
 
   /**
-   * Stream an assistant turn for a freshly-appended user turn. Yields text
-   * deltas, then persists the assistant turn (full on clean completion, partial
-   * with `interrupted=true` if the caller aborts mid-stream).
+   * One Roman reply to the freshly stored user turn (OR-113-2 launch path).
    *
-   * `signal` lets the controller signal client-disconnect: when aborted, we
-   * stop reading, persist what we have with interrupted=true, and emit `done`.
+   *  1. Feature flag + provider key (coded 503s, never a raw SDK error).
+   *  2. Deterministic SafetyRouter on the normalised user text (A-R4-1).
+   *     Emergency / self-harm answer with fixed templates: no model call, no
+   *     client data loaded, nothing sent anywhere.
+   *  3. Box-2 consent via the single egress gate BEFORE any client data is
+   *     read (B-R8-1); the gate re-reads the grant again inside the send.
+   *  4. Daily spend cap: reserve the worst-case cost first, fail closed.
+   *  5. ONE immutable grounding bundle for the turn (B-R8-2): the same object
+   *     feeds the prompt, the post-check and the ledger's context hash. A
+   *     build failure is logged by class/code only and the turn runs in the
+   *     explicit degraded mode (A-R3-1).
+   *  6. The model reply is BUFFERED, post-checked, and only then persisted,
+   *     once, and emitted (A-R4-4): no unvalidated text is ever stored,
+   *     streamed, or readable through GET messages, on success, abort or
+   *     error alike.
    */
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal } = {},
+    opts: { signal?: AbortSignal; userMessage?: string } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
       throw new ServiceUnavailableException({
         code: ROMAN_ERROR_UNAVAILABLE,
-        message: 'Roman is not available right now.',
+        message: romanFailureMessage('switched_off', caller.role),
       });
     }
+    const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
+    const route = classifySafety(userMessage);
+
+    if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
+      const text = ROMAN_SAFETY_TEMPLATES[route.class];
+      const persisted = await this.appendMessage(caller, session.id, {
+        role: 'roman',
+        content: text,
+        modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
+        interrupted: false,
+      });
+      this.logger.warn(
+        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=false`,
+      );
+      await this.audit?.write({
+        action: route.class === 'emergency' ? 'roman.safety_emergency' : 'roman.safety_self_harm',
+        actorId: caller.id,
+        actorRole: caller.role,
+        targetType: 'RomanSession',
+        targetId: session.id,
+      });
+      yield { type: 'delta', text };
+      yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+      return;
+    }
+
+    // The crisis templates above need no model; every other turn does.
     if (!this.anthropic) {
+      Sentry.captureMessage('roman.provider_not_configured', {
+        level: 'error',
+        tags: { feature: 'roman', op: 'roman.turn' },
+      });
       throw new ServiceUnavailableException({
         code: ROMAN_ERROR_UNAVAILABLE,
-        message: 'Roman is not available right now.',
+        message: romanFailureMessage('not_configured', caller.role),
       });
+    }
+
+    const subject = this.dataSubjectFor(caller);
+    // B-R8-1: refuse before any client data is read or any spend reserved.
+    await this.egress.assertMaySend(subject, 'anthropic', 'roman.chat');
+
+    const grounded = session.surface === 'client' && caller.role === 'student';
+    const reservation = await this.reserveDailySpend(caller);
+
+    let bundle: RomanClientContextBundle | null = null;
+    let contextUnavailable = false;
+    if (grounded) {
+      bundle = await this.loadTurnBundle(caller);
+      contextUnavailable = bundle === null;
     }
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
       voice: this.voiceStateOf(session),
       subjectContext:
-        typeof session.subject_context_json === 'string'
-          ? session.subject_context_json
-          : null,
+        typeof session.subject_context_json === 'string' ? session.subject_context_json : null,
+      routerHint: routerHintFor(route.class),
+      clientData: bundle?.rendered ?? null,
+      clientDataUnavailable: contextUnavailable,
     });
     const messages = await this.buildContextTurns(session.id);
 
     let acc = '';
     let interrupted = false;
+    let failed = false;
     let promptTokens: number | null = null;
     let completionTokens: number | null = null;
 
     // Own AbortController forwarded to the SDK so a client disconnect actively
-    // cancels the upstream Anthropic request — otherwise the provider keeps
-    // generating tokens after we stop reading (brief §7: no orphan upstream).
+    // cancels the upstream request (no orphan generation).
     const upstream = new AbortController();
     const forwardAbort = () => upstream.abort();
     if (opts.signal) {
@@ -920,10 +1011,9 @@ export class RomanService {
     }
 
     try {
-      // R2b — the grant is read live inside the egress call.
       const stream = await this.egress.anthropicMessagesStream(
         this.anthropic,
-        this.dataSubjectFor(caller),
+        subject,
         'roman.chat',
         {
           model: ROMAN_MODEL_PHASE_1,
@@ -933,63 +1023,288 @@ export class RomanService {
         },
         { signal: upstream.signal },
       );
-
       for await (const event of stream) {
         if (opts.signal?.aborted) {
           interrupted = true;
           break;
         }
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta?.type === 'text_delta'
-        ) {
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           acc += event.delta.text;
-          yield { type: 'delta', text: event.delta.text };
         } else if (event.type === 'message_delta') {
-          completionTokens =
-            event.usage?.output_tokens ?? completionTokens;
+          completionTokens = event.usage?.output_tokens ?? completionTokens;
         } else if (event.type === 'message_start') {
-          promptTokens =
-            event.message?.usage?.input_tokens ?? promptTokens;
+          promptTokens = event.message?.usage?.input_tokens ?? promptTokens;
         }
       }
     } catch (err) {
-      // R2b — refused before anything was sent: no Roman turn is stored;
-      // the controller turns this into a structured error event.
-      if (isAiEgressRefusal(err)) throw err;
-      // Mark interrupted, persist whatever we accumulated, and surface a
-      // structured error chunk (never a raw SDK string — AGENT_RULES #9).
+      if (isAiEgressRefusal(err)) {
+        await this.settleSpend(reservation, 0, 0, { outcome: 'refused' });
+        throw err;
+      }
       interrupted = true;
+      failed = !opts.signal?.aborted;
       this.logger.warn(
-        `Roman stream error for session ${session.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `roman.stream_error session=${session.id}: ${romanErrorTag(err)}`,
       );
     } finally {
-      // Cancel the upstream HTTP request and drop the listener regardless of
-      // how the loop exited (clean finish, client abort, or SDK error).
       opts.signal?.removeEventListener('abort', forwardAbort);
       upstream.abort();
     }
 
-    // Persist the assistant turn (full or partial). An empty partial (client
-    // aborted before any token) still records the interrupted attempt so the
-    // transcript is honest.
-    const persisted = await this.appendMessage(caller, session.id, {
-      role: 'roman',
-      content: acc,
-      promptTokens,
-      completionTokens,
-      modelId: ROMAN_MODEL_PHASE_1,
-      interrupted,
+    // Model failure before any text: honest, specific, coded. The user turn
+    // stays stored; nothing is invented for Roman.
+    if (failed && acc.trim().length === 0) {
+      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+        outcome: 'model_error',
+      });
+      Sentry.captureMessage('roman.model_unavailable', {
+        level: 'warning',
+        tags: { feature: 'roman', op: 'roman.turn' },
+      });
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_MODEL_UNAVAILABLE,
+        message: romanFailureMessage('model_unavailable', caller.role),
+      });
+    }
+
+    const checked = postCheckRomanReply(acc, {
+      routerClass: route.class,
+      context: bundle ? postCheckContextOf(bundle.context) : null,
+      contextUnavailable: grounded && contextUnavailable,
+      exclamationAllowed: !session.exclamation_used,
     });
 
-    yield {
-      type: 'done',
-      text: acc,
-      messageId: persisted.id,
-      interrupted,
-    };
+    // Persisted ONCE, already checked: what is stored is what the client sees.
+    let persisted: RomanMessage;
+    try {
+      persisted = await this.appendMessage(caller, session.id, {
+        role: 'roman',
+        content: checked.text,
+        promptTokens,
+        completionTokens,
+        modelId: ROMAN_MODEL_PHASE_1,
+        interrupted,
+        // The voice contract allows ONE exclamation per session: once a stored
+        // reply carries it, the session records it so the next turn's prompt
+        // and post-check allow none.
+        spendsExclamation: !session.exclamation_used && checked.text.includes('!'),
+      });
+    } catch (err) {
+      // The chat was deleted (or the write failed) while the model answered:
+      // nothing is stored, but the tokens were spent, so the ledger settles
+      // with the real usage instead of keeping the reservation estimate.
+      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+        outcome: err instanceof NotFoundException ? 'session_gone' : 'persist_failed',
+        router_class: route.class,
+      });
+      throw err;
+    }
+    await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+      outcome: interrupted ? 'interrupted' : 'ok',
+      router_class: route.class,
+      guardrails_applied: checked.guardrails_applied,
+      prompt_version: PROMPT_VERSION,
+      context_version: bundle?.context.version ?? null,
+      context_hash: bundle?.hash ?? null,
+      context_unavailable: grounded && contextUnavailable,
+    });
+    this.logger.log(
+      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=true rewritten=${checked.rewritten} guardrails_applied=${JSON.stringify(checked.guardrails_applied)} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
+    );
+
+    if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
+    yield { type: 'done', text: checked.text, messageId: persisted.id, interrupted };
+  }
+
+  /**
+   * True when the SafetyRouter answers this message with a fixed emergency /
+   * self-harm template (no model call, no spend). The controller uses it so a
+   * crisis message is never blocked by the turn limit or the spend cap.
+   */
+  isSafetyShortCircuit(message: string): boolean {
+    const route = classifySafety(message);
+    return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
+  }
+
+  /** Newest user turn of the caller's session (the controller stores it first). */
+  private async latestUserMessage(caller: RomanCaller, sessionId: string): Promise<string> {
+    const row = await this.prisma.romanMessage.findFirst({
+      where: { session_id: sessionId, user_id: caller.id, role: 'user' },
+      orderBy: { created_at: 'desc' },
+      select: { content: true },
+    });
+    return row?.content ?? '';
+  }
+
+  /**
+   * B-R8-2 / A-R3-1: build the turn's grounding bundle exactly once. A failure
+   * is logged with the sanitised diagnostic only (never err.message, which can
+   * carry query arguments) and reported to Sentry; the caller then runs the
+   * turn in degraded mode.
+   */
+  private async loadTurnBundle(caller: RomanCaller): Promise<RomanClientContextBundle | null> {
+    if (!this.clientContext) {
+      this.logger.error('roman.context_builder_missing');
+      return null;
+    }
+    try {
+      return await this.clientContext.getBundle({ id: caller.id, role: caller.role });
+    } catch (err) {
+      this.logger.error(`roman.context_failed: ${romanErrorTag(err)}`);
+      Sentry.captureException(romanSanitizedError('roman.context_failed', err), {
+        tags: { feature: 'roman', op: 'roman.context' },
+      });
+      return null;
+    }
+  }
+
+  // ─── Daily spend cap (OR-113-2) ──────────────────────────────────────────
+
+  /** The configured cap; an invalid value falls back to the default (never "no cap"). */
+  dailyCostCapUsd(env: NodeJS.ProcessEnv = process.env): number {
+    const raw = env.ROMAN_DAILY_COST_CAP_USD;
+    if (raw === undefined || raw.trim() === '') return ROMAN_DAILY_COST_CAP_USD_DEFAULT;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : ROMAN_DAILY_COST_CAP_USD_DEFAULT;
+  }
+
+  static costUsd(inputTokens: number, outputTokens: number): number {
+    return (
+      (inputTokens * ROMAN_PRICE_PER_MTOK.input + outputTokens * ROMAN_PRICE_PER_MTOK.output) /
+      1_000_000
+    );
+  }
+
+  /**
+   * Read-only capacity check the controller runs BEFORE storing the user
+   * turn, so a client who hits the daily cap is told so without leaving an
+   * unanswered message behind. Same fail-closed rule as the reservation.
+   */
+  async assertDailyCapacity(caller?: RomanCaller): Promise<void> {
+    const now = new Date();
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    let used: number;
+    try {
+      const agg = await this.prisma.aiRequestAudit.aggregate({
+        where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
+        _sum: { prompt_token_estimate: true, response_token_estimate: true },
+      });
+      used = RomanService.costUsd(
+        agg._sum.prompt_token_estimate ?? 0,
+        agg._sum.response_token_estimate ?? 0,
+      );
+    } catch (err) {
+      this.logger.error(`roman.spend_ledger_failed: ${romanErrorTag(err)}`);
+      Sentry.captureException(romanSanitizedError('roman.spend_ledger_failed', err), {
+        tags: { feature: 'roman', op: 'roman.spend' },
+      });
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_UNAVAILABLE,
+        message: romanFailureMessage('capacity_unknown', caller?.role),
+      });
+    }
+    if (used >= this.dailyCostCapUsd()) {
+      const tomorrow = dayStart.getTime() + 24 * 60 * 60 * 1000;
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_CAPACITY_REACHED,
+        message: romanFailureMessage('capacity_reached', caller?.role),
+        retryAfterSeconds: Math.max(60, Math.ceil((tomorrow - now.getTime()) / 1000)),
+      });
+    }
+  }
+
+  /**
+   * Reserve this turn's worst-case cost in the content-free ledger, then
+   * check today's total INCLUDING the reservation. Over the cap: the
+   * reservation is released and the turn is a coded 503 with a specific
+   * message. Any ledger failure: coded 503, no provider call (fail closed).
+   */
+  async reserveDailySpend(caller: RomanCaller): Promise<string> {
+    const requestId = `roman:${randomUUID()}`;
+    const cap = this.dailyCostCapUsd();
+    const now = new Date();
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const promptReserve = ROMAN_MAX_CONTEXT_TURNS * 600 + 6000;
+    let used: number;
+    try {
+      await this.prisma.aiRequestAudit.create({
+        data: {
+          request_id: requestId,
+          capability: ROMAN_LEDGER_CAPABILITY,
+          requester_id: caller.id,
+          requester_role: caller.role,
+          subject_user_id: caller.role === 'student' ? caller.id : null,
+          provider: 'anthropic',
+          model: ROMAN_MODEL_PHASE_1,
+          enabled: true,
+          prompt_token_estimate: promptReserve,
+          response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
+          metadata: { state: 'reserved' },
+        },
+      });
+      const agg = await this.prisma.aiRequestAudit.aggregate({
+        where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
+        _sum: { prompt_token_estimate: true, response_token_estimate: true },
+      });
+      used = RomanService.costUsd(
+        agg._sum.prompt_token_estimate ?? 0,
+        agg._sum.response_token_estimate ?? 0,
+      );
+    } catch (err) {
+      this.logger.error(`roman.spend_ledger_failed: ${romanErrorTag(err)}`);
+      Sentry.captureException(romanSanitizedError('roman.spend_ledger_failed', err), {
+        tags: { feature: 'roman', op: 'roman.spend' },
+      });
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_UNAVAILABLE,
+        message: romanFailureMessage('capacity_unknown', caller?.role),
+      });
+    }
+    if (used > cap) {
+      await this.settleSpend(requestId, 0, 0, { outcome: 'over_cap' });
+      this.logger.warn(`roman.capacity_reached cap_usd=${cap}`);
+      Sentry.captureMessage('roman.capacity_reached', {
+        level: 'warning',
+        tags: { feature: 'roman', op: 'roman.spend' },
+      });
+      const tomorrow = dayStart.getTime() + 24 * 60 * 60 * 1000;
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_CAPACITY_REACHED,
+        message: romanFailureMessage('capacity_reached', caller?.role),
+        retryAfterSeconds: Math.max(60, Math.ceil((tomorrow - now.getTime()) / 1000)),
+      });
+    }
+    return requestId;
+  }
+
+  /**
+   * Replace the reservation with the actual tokens and content-free
+   * provenance (router class, guardrails applied, prompt / context version,
+   * context hash; never message text). A failed settle leaves the
+   * worst-case reservation in place, which only over-counts.
+   */
+  async settleSpend(
+    requestId: string,
+    inputTokens: number,
+    outputTokens: number,
+    metadata: Record<string, string | number | boolean | string[] | null>,
+  ): Promise<void> {
+    try {
+      await this.prisma.aiRequestAudit.update({
+        where: { request_id: requestId },
+        data: {
+          prompt_token_estimate: inputTokens,
+          response_token_estimate: outputTokens,
+          metadata: { state: 'settled', ...metadata },
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`roman.spend_settle_failed: ${romanErrorTag(err)}`);
+    }
   }
 
   // ─── helpers ─────────────────────────────────────────────────────────────
@@ -1002,4 +1317,92 @@ export class RomanService {
       (err as { code?: string }).code === 'P2002'
     );
   }
+}
+
+/**
+ * The typed facts the post-check may compare against, from the SAME bundle
+ * the model saw (B-R8-2). Extra kcal facts: today's food entries, wearable
+ * active energy and the meal-plan slot numbers.
+ */
+export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
+  const extra: number[] = [
+    ...ctx.today.entries.map((e) => e.kcal),
+    ...ctx.wearables.days.map((d) => d.active_kcal).filter((n): n is number => n !== null),
+    ...(ctx.wearables.avg_7d.active_kcal !== null ? [ctx.wearables.avg_7d.active_kcal] : []),
+    ...(ctx.meal_plan?.items ?? []).flatMap((item) =>
+      [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
+    ),
+    ...ctx.last_7_days.days.map((d) => d.kcal),
+  ];
+  return {
+    targets: ctx.targets,
+    today: ctx.today,
+    last_7_days: ctx.last_7_days,
+    macro_method: { floor_kcal: ctx.macro_method.floor_kcal },
+    coach: { has_coach: ctx.coach.has_coach, coach_first_name: ctx.coach.coach_first_name },
+    extra_kcal_facts: extra,
+  };
+}
+
+/**
+ * Content-free error tag for Roman's logs and Sentry events: the error class
+ * plus, when present, a Prisma code or an HTTP status. Never `err.message`:
+ * a context read, a provider error or a ledger write can carry query
+ * arguments, client facts or transcript text, and `safeDiagnostic` only
+ * redacts ORM errors.
+ */
+/** Error class names that may appear in Roman logs and Sentry; anything else is `OtherError`. */
+export const ROMAN_LOGGABLE_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'AbortError',
+  'TimeoutError',
+  'DatabaseRequestError',
+  'PrismaClientKnownRequestError',
+  'PrismaClientUnknownRequestError',
+  'PrismaClientInitializationError',
+  'PrismaClientValidationError',
+  'PrismaClientRustPanicError',
+  'APIError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'APIUserAbortError',
+  'BadRequestError',
+  'AuthenticationError',
+  'PermissionDeniedError',
+  'NotFoundError',
+  'ConflictError',
+  'UnprocessableEntityError',
+  'RateLimitError',
+  'InternalServerError',
+  'OverloadedError',
+  'HttpException',
+  'ServiceUnavailableException',
+  'NotFoundException',
+  'ForbiddenException',
+]);
+
+export function romanErrorTag(err: unknown): string {
+  const d = safeDiagnostic(err);
+  if (!(d instanceof Error)) return 'NonError';
+  // Closed allowlist (pre-push checklist (a)): an error's `name` is set by
+  // code, but a thrown object can carry any string there.
+  const name = ROMAN_LOGGABLE_ERROR_NAMES.has(d.name) ? d.name : 'OtherError';
+  const prismaCode = name === 'DatabaseRequestError' ? /\((P\d{4})\)/.exec(d.message)?.[1] : undefined;
+  const status = (err as { status?: unknown } | null)?.status;
+  return [
+    name,
+    ...(prismaCode ? [`code=${prismaCode}`] : []),
+    ...(typeof status === 'number' && Number.isInteger(status) ? [`status=${status}`] : []),
+  ].join(' ');
+}
+
+/** A Sentry-safe stand-in for a Roman failure: the op and the content-free tag only. */
+export function romanSanitizedError(op: string, err: unknown): Error {
+  const e = new Error(`${op}: ${romanErrorTag(err)}`);
+  e.name = 'RomanSanitizedError';
+  return e;
 }
