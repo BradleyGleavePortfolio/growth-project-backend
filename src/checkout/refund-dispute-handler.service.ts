@@ -373,7 +373,13 @@ export class RefundDisputeHandlerService {
             note: args.note ?? existing.note,
             initiated_by_user_id:
               args.initiated_by_user_id ?? existing.initiated_by_user_id,
-            posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
+            // B-641-6 (S-COACH-3): posted_at is the FIRST time the refund
+            // succeeded. A Stripe redelivery days later must not move the
+            // refund into a later Money window or tax export.
+            posted_at:
+              args.status === 'succeeded'
+                ? existing.posted_at ?? new Date()
+                : existing.posted_at,
           },
         })
       : await this.prisma.chargeRefund.create({

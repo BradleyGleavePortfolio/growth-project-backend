@@ -94,7 +94,7 @@ export class CoachMoneyController {
     });
   }
 
-  // GET /v1/coach/money/export.csv?from&to — C-641-4 "Export CSV for taxes".
+  // GET /v1/coach/money/export.csv?from&to[&currency] — C-641-4 "Export CSV for taxes".
   // Same window rules as /summary (max 400 days, so a tax year fits); the
   // net_to_you column sums to the summary's net for the same window.
   @Roles('coach', 'owner')
@@ -103,19 +103,26 @@ export class CoachMoneyController {
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Sales, refunds and chargebacks in a window as CSV, for taxes' })
   @ApiResponse({ status: 200, description: 'text/csv attachment' })
-  @ApiResponse({ status: 400, description: 'MONEY_WINDOW_INVALID | MONEY_EXPORT_TOO_LARGE' })
+  @ApiResponse({
+    status: 400,
+    description: 'MONEY_WINDOW_INVALID | MONEY_EXPORT_TOO_LARGE | MONEY_CURRENCY_INVALID',
+  })
   async exportCsv(
     @Request() req: AuthedRequest,
     @Res({ passthrough: true }) res: Response,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('currency') currencyRaw?: string,
   ): Promise<string> {
     const window = parseWindow(from, to, 'window');
-    const csv = await this.money.exportCsv(req.user.id, window);
+    const currency = parseCurrency(currencyRaw);
+    const csv = await this.money.exportCsv(req.user.id, window, currency);
     const day = (d: Date) => d.toISOString().slice(0, 10);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="tgp-money-${day(window.from)}-to-${day(window.to)}.csv"`,
+      `attachment; filename="tgp-money-${day(window.from)}-to-${day(window.to)}${
+        currency ? `-${currency}` : ''
+      }.csv"`,
     );
     return csv;
   }

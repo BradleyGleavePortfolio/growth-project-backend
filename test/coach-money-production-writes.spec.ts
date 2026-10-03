@@ -353,3 +353,68 @@ describe('C-641-1 — a refund lands in the window it happened in', () => {
     expect(cols[12]).toBe('-48.02');
   });
 });
+
+describe('B-641-6 — a refund is booked when it succeeds, not when it was requested', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('pending last month, succeeded today: last month is unchanged, today carries the refund', async () => {
+    const db = store();
+    const now = new Date();
+    const saleAt = new Date(now.getTime() - 50 * DAY);
+    seedPaidPurchase(db, 'p-pend', 'client-1', 'ch_pend', saleAt);
+    const svc = money(db);
+    const lastMonth = {
+      from: new Date(now.getTime() - 60 * DAY),
+      to: new Date(now.getTime() - 30 * DAY),
+    };
+    const refundEvent = (status: string, id: string) => ({
+      id,
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_pend',
+          amount: 4900,
+          amount_refunded: status === 'succeeded' ? 4900 : 0,
+          refunded: status === 'succeeded',
+          refunds: { data: [{ id: 're_pend', amount: 4900, status }] },
+        },
+      },
+    });
+    jest.useFakeTimers({
+      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+    });
+
+    // Requested 40 days ago (inside last month's window), still pending.
+    jest.setSystemTime(new Date(now.getTime() - 40 * DAY));
+    await handler(db).handle(refundEvent('pending', 'evt_pending'));
+    const pending = db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!;
+    expect(pending.status).toBe('pending');
+    expect(pending.posted_at).toBeNull();
+
+    // Succeeds today, through the same real writer.
+    jest.setSystemTime(now);
+    await handler(db).handle(refundEvent('succeeded', 'evt_succeeded'));
+    const done = db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!;
+    expect(done.posted_at).toEqual(now);
+
+    // A Stripe redelivery two days later does not move it.
+    jest.setSystemTime(new Date(now.getTime() + 2 * DAY));
+    await handler(db).handle(refundEvent('succeeded', 'evt_redelivered'));
+    expect(db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!.posted_at).toEqual(
+      now,
+    );
+    jest.useRealTimers();
+
+    const after = await svc.getSummary(COACH, last30(now), lastMonth, now);
+    // Last month keeps the sale and none of the refund.
+    expect(after.compare_totals?.net_cents).toBe(4802);
+    expect(after.compare_totals?.refunded_cents).toBe(0);
+    // This window carries the completed refund.
+    expect(after.totals).toMatchObject({ net_cents: -4802, refunded_cents: 4802 });
+    // The tax export for last month has only the sale; this window has the refund.
+    const lastCsv = (await svc.exportCsv(COACH, lastMonth)).trim().split('\r\n');
+    expect(lastCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['sale']);
+    const nowCsv = (await svc.exportCsv(COACH, last30(now))).trim().split('\r\n');
+    expect(nowCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['refund']);
+  });
+});

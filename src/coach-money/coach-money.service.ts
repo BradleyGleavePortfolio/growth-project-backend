@@ -140,6 +140,14 @@ export interface MoneyChargeDto {
   currency: string;
   billing_type: 'one_time' | 'recurring';
   /**
+   * B-332-2 (S-COACH-3): the cadence a recurring charge bills at, so the app
+   * never guesses "Monthly". From the package (recurring price, or the
+   * recurring companion of a combo package); the B1 pricing lock keeps it
+   * fixed while any subscriber is active. Null for one-time charges.
+   */
+  billing_interval: 'week' | 'month' | 'year' | null;
+  billing_interval_count: number | null;
+  /**
    * Coach-facing state. `canceled` = the checkout never completed.
    * `charged_back` = the client's bank took the payment back (lost dispute);
    * it is never `paid`.
@@ -680,6 +688,46 @@ export function payeeRecoveryReader(prisma: object): PayeeRecoveryReader | null 
   return isPayeeRecoveryReader(delegate) ? delegate : null;
 }
 
+const CADENCE_UNITS = ['week', 'month', 'year'] as const;
+type CadenceUnit = (typeof CADENCE_UNITS)[number];
+
+/**
+ * B-332-2 (S-COACH-3): the cadence one charge bills at, from the same rule
+ * MRR uses (recurringCadenceOf: a combo package bills its recurring part at
+ * the companion interval). An interval this build does not know is null
+ * (the app then says "Recurring"), never a guess. Exported for tests.
+ */
+export function chargeCadence(
+  purchaseBillingType: string,
+  pkg: {
+    interval?: string | null;
+    interval_count?: number | null;
+    recurring_amount_cents?: number | null;
+    recurring_interval?: string | null;
+    recurring_interval_count?: number | null;
+  } | null,
+): { billing_interval: CadenceUnit | null; billing_interval_count: number | null } {
+  const none = { billing_interval: null, billing_interval_count: null };
+  if (purchaseBillingType !== 'recurring' || !pkg) return none;
+  const c = recurringCadenceOf({
+    amount_cents: 0,
+    package: {
+      interval: pkg.interval ?? null,
+      interval_count: pkg.interval_count ?? 1,
+      recurring_amount_cents: pkg.recurring_amount_cents ?? null,
+      recurring_interval: pkg.recurring_interval ?? null,
+      recurring_interval_count: pkg.recurring_interval_count ?? null,
+    },
+  });
+  const unit = CADENCE_UNITS.find((u) => u === c.interval);
+  if (!unit) return none;
+  return {
+    billing_interval: unit,
+    billing_interval_count:
+      typeof c.interval_count === 'number' && c.interval_count >= 1 ? c.interval_count : 1,
+  };
+}
+
 function displayName(u: { name?: string | null } | null | undefined): string {
   const n = (u?.name ?? '').trim();
   return n.length > 0 ? n : 'Client';
@@ -915,7 +963,20 @@ export class CoachMoneyService {
         { reversed_at: range },
         { reversed_at: null, posted_at: range },
         { reversed_at: null, posted_at: null, created_at: range },
-        { purchase: { refunds: { some: { status: 'succeeded', created_at: range } } } },
+        // B-641-6 (S-COACH-3): a refund is booked when it SUCCEEDED
+        // (posted_at, stamped by the refund pipeline on the pending ->
+        // succeeded transition), not when it was requested. Legacy succeeded
+        // rows written before posted_at existed fall back to created_at.
+        {
+          purchase: {
+            refunds: {
+              some: {
+                status: 'succeeded',
+                OR: [{ posted_at: range }, { posted_at: null, created_at: range }],
+              },
+            },
+          },
+        },
         {
           purchase: {
             disputes: { some: { status: { in: [...LOST_DISPUTE_STATUSES] }, closed_at: range } },
@@ -944,7 +1005,12 @@ export class CoachMoneyService {
           package: { select: { name: true } },
           refunds: {
             where: { status: 'succeeded' },
-            select: { amount_cents: true, created_at: true, stripe_charge_id: true },
+            select: {
+              amount_cents: true,
+              posted_at: true,
+              created_at: true,
+              stripe_charge_id: true,
+            },
           },
           disputes: {
             where: { status: { in: LOST_DISPUTE_STATUS_LIST } },
@@ -976,7 +1042,12 @@ export class CoachMoneyService {
       purchase: {
         client: { name: string | null } | null;
         package: { name: string } | null;
-        refunds: Array<{ amount_cents: number; created_at: Date; stripe_charge_id: string }>;
+        refunds: Array<{
+          amount_cents: number;
+          posted_at?: Date | null;
+          created_at: Date;
+          stripe_charge_id: string;
+        }>;
         disputes: Array<{
           amount_cents: number;
           closed_at: Date | null;
@@ -990,7 +1061,8 @@ export class CoachMoneyService {
     const events: ReversalEvent[] = [
       ...(r.purchase?.refunds ?? []).map((x): ReversalEvent => ({
         kind: 'refund',
-        at: x.created_at,
+        // B-641-6: completion time; created_at only for legacy rows.
+        at: x.posted_at ?? x.created_at,
         amount_cents: x.amount_cents,
         stripe_charge_id: x.stripe_charge_id ?? null,
       })),
@@ -1099,8 +1171,17 @@ export class CoachMoneyService {
    * same window and currency. Every row names its currency (B-641-3); the
    * file never adds amounts across currencies.
    */
-  async exportCsv(coachId: string, window: MoneyWindow): Promise<string> {
-    const slices = await this.loadWindow(coachId, window, { limit: MONEY_EXPORT_MAX_ROWS });
+  async exportCsv(
+    coachId: string,
+    window: MoneyWindow,
+    currency: string | null = null,
+  ): Promise<string> {
+    // C-641-6 (S-COACH-3): `?currency=` limits the file to one currency, so
+    // a spreadsheet sum of net_to_you is one meaningful number.
+    const slices = await this.loadWindow(coachId, window, {
+      limit: MONEY_EXPORT_MAX_ROWS,
+      ...(currency ? { currency } : {}),
+    });
     return buildMoneyCsv(coachId, window, slices);
   }
 
@@ -1300,7 +1381,17 @@ export class CoachMoneyService {
       status: true,
       created_at: true,
       client: { select: { id: true, name: true } },
-      package: { select: { id: true, name: true } },
+      package: {
+        select: {
+          id: true,
+          name: true,
+          interval: true,
+          interval_count: true,
+          recurring_amount_cents: true,
+          recurring_interval: true,
+          recurring_interval_count: true,
+        },
+      },
       refunds: { where: { status: 'succeeded' }, select: { amount_cents: true } },
       disputes: { select: { status: true, amount_cents: true } },
       splits: {
@@ -1319,7 +1410,15 @@ export class CoachMoneyService {
     status: string;
     created_at: Date;
     client: { id: string; name: string | null } | null;
-    package: { id: string; name: string } | null;
+    package: {
+      id: string;
+      name: string;
+      interval?: string | null;
+      interval_count?: number | null;
+      recurring_amount_cents?: number | null;
+      recurring_interval?: string | null;
+      recurring_interval_count?: number | null;
+    } | null;
     refunds: Array<{ amount_cents: number }>;
     disputes: Array<{ status: string; amount_cents: number }>;
     splits: Array<{ id: string }>;
@@ -1355,6 +1454,7 @@ export class CoachMoneyService {
       amount_cents: r.amount_cents,
       currency: r.currency,
       billing_type: r.billing_type === 'recurring' ? 'recurring' : 'one_time',
+      ...chargeCadence(r.billing_type, r.package),
       state,
       refunded_cents: refunded,
       charged_back_cents: chargedBackCents,

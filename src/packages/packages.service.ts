@@ -1,11 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
-import type { CoachPackage, Prisma } from '@prisma/client';
+import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
+import type { CoachPackage } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
@@ -57,6 +61,48 @@ export interface CreatePackageInput {
   recurring_amount_cents?: number | null;
   recurring_interval?: 'week' | 'month' | 'year' | null;
   recurring_interval_count?: number | null;
+}
+
+/**
+ * OR-112-16 (S-COACH-3) — package create is idempotent per coach and
+ * `Idempotency-Key`. The claim lives in the generic WorkoutBuilderIdempotencyKey
+ * ledger (unique on user_id + route_key + idempotency_key; no schema change)
+ * under this route key.
+ */
+export const PACKAGE_CREATE_ROUTE_KEY = 'packages:create';
+/** UUIDs and other opaque client tokens; nothing that could carry PII. */
+export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+/** What the ledger stores for a package-create key (never the body itself). */
+interface PackageCreateClaim {
+  request_hash: string;
+  package_id?: string;
+}
+
+function readClaim(json: unknown): PackageCreateClaim | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const j = json as Record<string, unknown>;
+  if (typeof j.request_hash !== 'string') return null;
+  return {
+    request_hash: j.request_hash,
+    package_id: typeof j.package_id === 'string' ? j.package_id : undefined,
+  };
+}
+
+/** SHA-256 of the canonical (normalised, key-sorted) create data. */
+export function packageCreateHash(data: Record<string, unknown>): string {
+  const canonical = JSON.stringify(
+    Object.keys(data)
+      .sort()
+      .map((k) => [k, data[k] === undefined ? null : data[k]]),
+  );
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
 }
 
 export interface UpdatePackageInput {
@@ -151,8 +197,128 @@ export class PackagesService {
 
   async create(coachUserId: string, input: CreatePackageInput): Promise<CoachPackage> {
     this.assertValidPricing(input);
-    return this.prisma.coachPackage.create({
-      data: {
+    return this.prisma.coachPackage.create({ data: this.createData(coachUserId, input) });
+  }
+
+  /**
+   * OR-112-16: create with an optional `Idempotency-Key`. Without a key this
+   * is `create()` (older clients). With a key, the claim row, the package
+   * and the stored result are written in ONE transaction:
+   *   - a retry after the first request committed hits the unique claim and
+   *     gets the SAME package back (replay; no second row);
+   *   - a retry that arrives while the first request is still running blocks
+   *     on the claim's unique index until the first commits, then replays
+   *     (if the first rolls back, the retry creates it);
+   *   - a crash mid-request rolls everything back, so no key is ever stuck;
+   *   - the same key with different details is 422 IDEMPOTENCY_KEY_REUSED
+   *     naming the package that key made, so the app can adopt it.
+   * Validation runs before the claim: a definitive 4xx never burns a key.
+   */
+  async createIdempotent(
+    coachUserId: string,
+    input: CreatePackageInput,
+    idempotencyKey: string | null | undefined,
+    // The authenticated caller. Keys are scoped to WHO sent them (a
+    // sub-coach creating on the head coach's catalog has their own key
+    // space); the package itself belongs to `coachUserId`.
+    actorUserId: string = coachUserId,
+  ): Promise<{ pkg: CoachPackage; replayed: boolean }> {
+    const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    if (!key) return { pkg: await this.create(coachUserId, input), replayed: false };
+    if (!IDEMPOTENCY_KEY_PATTERN.test(key)) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_INVALID',
+        message:
+          'The Idempotency-Key header must be 8 to 128 letters, digits, dots, colons, dashes or underscores.',
+      });
+    }
+    this.assertValidPricing(input);
+    const data = this.createData(coachUserId, input);
+    const requestHash = packageCreateHash(data);
+    try {
+      const pkg = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.workoutBuilderIdempotencyKey.create({
+          data: {
+            user_id: actorUserId,
+            route_key: PACKAGE_CREATE_ROUTE_KEY,
+            idempotency_key: key,
+            status: 'in_progress',
+            response_json: { request_hash: requestHash },
+          },
+        });
+        const created = await tx.coachPackage.create({ data });
+        await tx.workoutBuilderIdempotencyKey.update({
+          where: { id: claim.id },
+          data: {
+            status: 'completed',
+            status_code: 201,
+            response_json: { request_hash: requestHash, package_id: created.id },
+          },
+        });
+        return created;
+      });
+      return { pkg, replayed: false };
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      return {
+        pkg: await this.replayCreate(coachUserId, actorUserId, key, requestHash),
+        replayed: true,
+      };
+    }
+  }
+
+  private async replayCreate(
+    coachUserId: string,
+    actorUserId: string,
+    key: string,
+    requestHash: string,
+  ): Promise<CoachPackage> {
+    const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
+      where: {
+        WorkoutBuilderIdempotencyKey_user_route_key_key: {
+          user_id: actorUserId,
+          route_key: PACKAGE_CREATE_ROUTE_KEY,
+          idempotency_key: key,
+        },
+      },
+    });
+    const claim = existing ? readClaim(existing.response_json) : null;
+    if (!existing || existing.status !== 'completed' || !claim?.package_id) {
+      // Not reachable with the single-transaction claim (an uncommitted
+      // claim is invisible and blocks the retry's insert), kept so a
+      // future change can never fall through to a second create.
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_IN_PROGRESS',
+        message:
+          'This package is still being saved. Wait a few seconds, then send the same request again.',
+      });
+    }
+    if (claim.request_hash !== requestHash) {
+      throw new UnprocessableEntityException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message:
+          'This Idempotency-Key already created a package with different details. Update that package, or send a new key to create another.',
+        package_id: claim.package_id,
+      });
+    }
+    const pkg = await this.prisma.coachPackage.findFirst({
+      where: { id: claim.package_id, coach_id: coachUserId },
+    });
+    if (!pkg) {
+      throw new GoneException({
+        code: 'IDEMPOTENT_PACKAGE_REMOVED',
+        message:
+          'The package this request created has since been removed. Send a new request to create it again.',
+      });
+    }
+    return pkg;
+  }
+
+  private createData(
+    coachUserId: string,
+    input: CreatePackageInput,
+  ): Prisma.CoachPackageUncheckedCreateInput {
+    return {
         coach_id: coachUserId,
         name: input.name,
         description: input.description ?? null,
@@ -170,8 +336,7 @@ export class PackagesService {
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
-      },
-    });
+    };
   }
 
   async update(

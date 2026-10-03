@@ -26,6 +26,7 @@ import {
   allocateReversal,
   buildMoneyCsv,
   centsToDecimal,
+  chargeCadence,
   changePct,
   csvText,
   defaultCurrency,
@@ -692,7 +693,10 @@ describe('C-641-1 — reversals land in the window they happened in', () => {
     const reversal = wheres.filter((w) => w.reversed_cents);
     expect(reversal).toHaveLength(2);
     const json = JSON.stringify(reversal[0]);
-    expect(json).toContain('"refunds":{"some":{"status":"succeeded","created_at"');
+    // B-641-6: a refund is windowed by when it succeeded (posted_at), with
+    // created_at only for legacy succeeded rows that have no posted_at.
+    expect(json).toContain('"refunds":{"some":{"status":"succeeded","OR":[{"posted_at"');
+    expect(json).toContain('{"posted_at":null,"created_at"');
     expect(json).toContain('"disputes":{"some":{"status":{"in":["lost"]},"closed_at"');
   });
 });
@@ -1167,5 +1171,74 @@ describe('AUD-SOL-5 probes (failing before at 563e3f80)', () => {
     );
     const out = await svc(p).getSummary(COACH, window, null);
     expect(out.recurring.mrr_cents).toBe(4000);
+  });
+});
+
+describe('B-332-2 — every charge names the cadence it bills at (S-COACH-3)', () => {
+  it.each([
+    ['monthly', { interval: 'month', interval_count: 1 }, 'month', 1],
+    ['every 3 months', { interval: 'month', interval_count: 3 }, 'month', 3],
+    ['weekly', { interval: 'week', interval_count: 1 }, 'week', 1],
+    ['yearly', { interval: 'year', interval_count: 1 }, 'year', 1],
+    [
+      'combo package bills at the companion interval',
+      { interval: null, recurring_amount_cents: 2900, recurring_interval: 'week', recurring_interval_count: 2 },
+      'week',
+      2,
+    ],
+  ])('%s', async (_label, pkg, unit, count) => {
+    const p = buildPrisma();
+    p.clientPurchase.findMany.mockResolvedValueOnce([
+      chargeRow({ package: { id: 'pkg-1', name: 'Coaching', ...pkgCadence(pkg) } }),
+    ]);
+    const out = await svc(p).listCharges(COACH, { status: 'all' });
+    expect(out.charges[0]).toMatchObject({ billing_interval: unit, billing_interval_count: count });
+  });
+
+  it('one-time charges and unknown intervals carry null, never a guessed Monthly', () => {
+    expect(chargeCadence('one_time', pkgCadence())).toEqual({
+      billing_interval: null,
+      billing_interval_count: null,
+    });
+    expect(chargeCadence('recurring', pkgCadence({ interval: 'fortnight' }))).toEqual({
+      billing_interval: null,
+      billing_interval_count: null,
+    });
+    expect(chargeCadence('recurring', null)).toEqual({
+      billing_interval: null,
+      billing_interval_count: null,
+    });
+  });
+
+  it('the charge select reads the package cadence columns', async () => {
+    const p = buildPrisma();
+    await svc(p).listCharges(COACH, { status: 'all' });
+    const sel = JSON.stringify(p.clientPurchase.findMany.mock.calls[0][0]);
+    for (const col of ['interval', 'interval_count', 'recurring_interval', 'recurring_interval_count']) {
+      expect(sel).toContain(`"${col}":true`);
+    }
+  });
+});
+
+describe('C-641-6 — the tax export can be limited to one currency (S-COACH-3)', () => {
+  const sep = { from: new Date('2026-09-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z') };
+
+  it('?currency= scopes every query to that currency', async () => {
+    const p = buildPrisma();
+    await svc(p).exportCsv(COACH, sep, 'gbp');
+    const calls = p.splitLedgerEntry.findMany.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [args] of calls) expect(JSON.stringify(args)).toContain('"currency":"gbp"');
+  });
+
+  it('no currency keeps every currency (each row names its own)', async () => {
+    const p = buildPrisma();
+    await svc(p).exportCsv(COACH, sep);
+    for (const [args] of p.splitLedgerEntry.findMany.mock.calls)
+      expect(JSON.stringify(args)).not.toContain('"currency":"');
+  });
+
+  it('an unsupported currency is the specific MONEY_CURRENCY_INVALID', () => {
+    expect(() => parseCurrency('xyz')).toThrow(BadRequestException);
   });
 });
