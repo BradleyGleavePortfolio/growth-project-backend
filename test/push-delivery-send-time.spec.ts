@@ -13,6 +13,9 @@
  *     retry or a changed zone could put a push on the lock screen at night.
  *   - Opus/Sol C-648-3: a booking push opened the notification list, not the
  *     session.
+ * Round 4 (fails on ab607b34), Sol B-648-10 partial: the window was judged
+ * on the clock read when the send began; a slow read or the handoff write
+ * could carry a non-urgent push past 21:00 onto the lock screen.
  * Verification (passes before and after): a coach message, the welcome
  * included, reaches the client's lock screen with quiet copy.
  */
@@ -323,6 +326,92 @@ describe('B-648-10: quiet hours are decided again at the moment of sending', () 
     w.clock.at = NY_2300;
     expect(await a.svc.drain()).toBe(0);
     expect(w.rows[0].deferred_reason).toBe('quiet_hours');
+  });
+});
+
+describe('B-648-10 (round 4): the window is checked on the clock at the Expo handoff', () => {
+  // 20:59:00 EDT; a read or write that takes 70 s ends at 21:00:10, inside
+  // the 120 s lease and before any provider call.
+  const CROSSED = new Date('2026-06-03T01:00:10Z');
+
+  /** Advance the shared clock while one awaited database call is in flight. */
+  function slowTokenRead(w: ReturnType<typeof world>, to: Date) {
+    const original = w.db.user.findUnique.getMockImplementation();
+    w.db.user.findUnique.mockImplementation(async (args) => {
+      w.clock.at = to;
+      return original ? original(args) : { expo_push_token: TOKEN };
+    });
+  }
+
+  it("Sol's probe: the token read ends at 21:00:10, so nothing is sent; it waits for 08:00 without spending an attempt", async () => {
+    const w = world({ clock: NY_2059 });
+    const a = w.worker();
+    await a.svc.enqueue(message());
+    slowTokenRead(w, CROSSED);
+    expect(await a.svc.drain()).toBe(0);
+    expect(a.client.send).not.toHaveBeenCalled();
+    expect(w.rows[0]).toMatchObject({
+      status: 'pending',
+      deferred_reason: 'quiet_hours',
+      result_code: 'quiet-deferred',
+      attempts: 0,
+      handed_off_at: null,
+    });
+    expect(w.rows[0].not_before.toISOString()).toBe(NY_0800.toISOString());
+  });
+
+  it('the handoff write itself ends after 21:00: the row never reached Expo, so it goes back for 08:00', async () => {
+    const w = world({ clock: NY_2059 });
+    const a = w.worker();
+    await a.svc.enqueue(message());
+    const original = w.db.pushOutbox.updateMany.getMockImplementation();
+    w.db.pushOutbox.updateMany.mockImplementation(async (args) => {
+      const out = original ? await original(args) : { count: 0 };
+      if (args.data && args.data.handed_off_at instanceof Date) w.clock.at = CROSSED;
+      return out;
+    });
+    expect(await a.svc.drain()).toBe(0);
+    expect(a.client.send).not.toHaveBeenCalled();
+    expect(w.rows[0]).toMatchObject({
+      status: 'pending',
+      deferred_reason: 'quiet_hours',
+      attempts: 0,
+      handed_off_at: null,
+      lease_token: null,
+    });
+    w.clock.at = NY_0800;
+    expect(await a.svc.drain()).toBe(1);
+    expect(a.client.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('urgent control: a 1 h reminder whose reads cross 21:00 is still sent', async () => {
+    const w = world({ clock: NY_2059 });
+    const a = w.worker();
+    const startsAt = at(NY_2059, 50 * 60_000);
+    w.sessions['sess-4'] = { status: 'scheduled', start_at: startsAt };
+    await a.svc.enqueue(
+      message({
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        dedupeKey: `booking_reminder_1h:sess-4:${startsAt.toISOString()}`,
+        collapseKey: 'booking_reminder_1h:tgp://sessions/sess-4',
+        context: { sessionId: 'sess-4', scheduledAt: startsAt.toISOString(), timeZone: NY },
+      }),
+    );
+    slowTokenRead(w, CROSSED);
+    expect(await a.svc.drain()).toBe(1);
+    expect(a.client.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('daytime control: a 70 s read at 14:00 still sends, and the row records the handoff time', async () => {
+    const w = world({ clock: NY_AFTERNOON });
+    const a = w.worker();
+    await a.svc.enqueue(message());
+    const later = at(NY_AFTERNOON, 70_000);
+    slowTokenRead(w, later);
+    expect(await a.svc.drain()).toBe(1);
+    expect(a.client.send).toHaveBeenCalledTimes(1);
+    expect(w.rows[0].status).toBe('sent');
+    expect(w.rows[0].sent_at?.toISOString()).toBe(later.toISOString());
   });
 });
 
