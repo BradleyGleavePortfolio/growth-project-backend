@@ -93,7 +93,13 @@ const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_pro
 // NotificationDeliveryLog_status_check (migration 20270222000000) must allow
 // exactly this set; test/scheduling-delivery-status-contract.spec.ts pins it
 // and the in-memory test DB enforces the migration's own list.
-export const REMINDER_DELIVERY_STATUSES = ['sending', 'retry', 'sent', 'gave_up', 'parked'] as const;
+export const REMINDER_DELIVERY_STATUSES = [
+  'sending',
+  'retry',
+  'sent',
+  'gave_up',
+  'parked',
+] as const;
 export type ReminderDeliveryStatus = (typeof REMINDER_DELIVERY_STATUSES)[number];
 
 interface ReminderClaim {

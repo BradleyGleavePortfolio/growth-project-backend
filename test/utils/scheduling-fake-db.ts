@@ -38,8 +38,10 @@ export function migrationDeliveryStatuses(): string[] {
     ),
     'utf8',
   );
-  const m = /"NotificationDeliveryLog_status_check"\s*CHECK\s*\(\s*"status"\s+IN\s*\(([^)]*)\)/.exec(sql);
-  if (!m) throw new Error('NotificationDeliveryLog_status_check not found in migration 20270222000000');
+  const m =
+    /"NotificationDeliveryLog_status_check"\s*CHECK\s*\(\s*"status"\s+IN\s*\(([^)]*)\)/.exec(sql);
+  if (!m)
+    throw new Error('NotificationDeliveryLog_status_check not found in migration 20270222000000');
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
 }
 const DELIVERY_STATUSES = new Set(migrationDeliveryStatuses());

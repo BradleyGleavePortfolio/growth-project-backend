@@ -481,14 +481,26 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
       // 1. Recovery sees the retry for an earlier start of a session that is
       //    now 120 minutes out: it is parked, and Postgres accepts the write.
       await tick();
-      const parked = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
-      expect(parked).toMatchObject({ status: 'parked', last_error: 'parked:moved_later', lease_until: null });
+      const parked = await prisma.notificationDeliveryLog.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      expect(parked).toMatchObject({
+        status: 'parked',
+        last_error: 'parked:moved_later',
+        lease_until: null,
+      });
       expect(parked.inapp_done_at).not.toBeNull();
       // 2. A parked row is out of the recovery page: the next tick neither
       //    parks nor sends it again.
       await tick();
-      const still = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
-      expect(still).toMatchObject({ status: 'parked', attempts: parked.attempts, claim_token: parked.claim_token });
+      const still = await prisma.notificationDeliveryLog.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      expect(still).toMatchObject({
+        status: 'parked',
+        attempts: parked.attempts,
+        claim_token: parked.claim_token,
+      });
       expect(liveNotifications.pushToUser.mock.calls.length).toBe(pushesBefore);
       // 3. The session's new start reaches the 1h band: the band pass re-arms
       //    the parked row for the new revision and delivers it once.
@@ -498,7 +510,9 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         data: { start_at: inBand, end_at: new Date(inBand.getTime() + 30 * MIN) },
       });
       await tick();
-      const rearmed = await prisma.notificationDeliveryLog.findUniqueOrThrow({ where: { id: row.id } });
+      const rearmed = await prisma.notificationDeliveryLog.findUniqueOrThrow({
+        where: { id: row.id },
+      });
       expect(rearmed.status).toBe('sent');
       expect(rearmed.session_start_at?.getTime()).toBe(inBand.getTime());
       const clientPushes = liveNotifications.pushToUser.mock.calls

@@ -2204,7 +2204,13 @@ describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the 
       created_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
     });
   }
-  function settled(db: SchedulingFakeDb, sessionId: string, userId: string, kind: string, start: Date) {
+  function settled(
+    db: SchedulingFakeDb,
+    sessionId: string,
+    userId: string,
+    kind: string,
+    start: Date,
+  ) {
     db.deliveryLogs.push({
       id: `sent-${sessionId}-${userId}`,
       session_id: sessionId,
@@ -2277,9 +2283,19 @@ describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the 
       await withReminders(() => run(reminder));
       expect(db.deliveryLogs.filter((l) => l.session_id === 'trailing')).toHaveLength(0);
       restore();
-      // Advance real cadence through the catch-up interval; the trailing
-      // session must be claimed and delivered exactly once on the way.
-      for (let t = 1; t * cadence <= 30; t++) {
+      // The very next real tick reaches it, while all 250 settled sessions are
+      // still ahead of it in the catch-up interval (the first 200-row page
+      // alone would never contain it).
+      jest.setSystemTime(new Date(NOW.getTime() + cadence * MIN));
+      await withReminders(() => run(reminder));
+      expect(
+        db.deliveryLogs
+          .filter((l) => l.session_id === 'trailing')
+          .map((l) => l.status)
+          .sort(),
+      ).toEqual(['sent', 'sent']);
+      // Keep ticking through the catch-up interval: still exactly once.
+      for (let t = 2; t * cadence <= 30; t++) {
         jest.setSystemTime(new Date(NOW.getTime() + t * cadence * MIN));
         await withReminders(() => run(reminder));
       }

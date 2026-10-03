@@ -9,6 +9,7 @@
  * The in-memory test DB enforces (2), so a new status fails unit tests too.
  * Fails on 4d987916 ('parked' written, CHECK without it).
  */
+import { SessionStatus } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 import { REMINDER_DELIVERY_STATUSES } from '../src/scheduling/jobs/reminder.job';
@@ -38,7 +39,12 @@ describe('S-SCHED-5 B-634-7: delivery status contract (job <-> database CHECK)',
 
   it('every status literal the job writes is in the declared set', () => {
     const written = new Set<string>();
-    for (const m of JOB_SRC.matchAll(/\bstatus:\s*'([a-z_]+)'/g)) written.add(m[1]);
+    // `status:` literals on CoachingSession reads (SessionStatus values) are
+    // not delivery-log writes; everything else must be in the CHECK.
+    const sessionStatuses = new Set<string>(Object.values(SessionStatus));
+    for (const m of JOB_SRC.matchAll(/\bstatus:\s*'([a-z_]+)'/g)) {
+      if (!sessionStatuses.has(m[1])) written.add(m[1]);
+    }
     for (const m of JOB_SRC.matchAll(/'(sent|retry|gave_up|sending|parked)'\s*(?:\||:|;|\))/g))
       written.add(m[1]);
     const allowed = new Set<string>(REMINDER_DELIVERY_STATUSES);
