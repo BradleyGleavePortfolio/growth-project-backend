@@ -174,3 +174,165 @@ Reference: https://www.prisma.io/docs/orm/prisma-migrate/workflows/squashing-mig
 - Any further work on the 114-item Part 2 drift in `chore/migration-chain-full-repair`. Superseded by this rebaseline.
 - Migrating user data. By construction, there is no user data to migrate at execution time.
 - Changing `scripts/release.sh`. The release pipeline continues to run `prisma migrate deploy` and the new baseline migration applies as a no-op on prod (via `migrate resolve --applied`).
+
+---
+
+## BL-DATA-CAPTURE — Top-3 must-do of 2026: event-first data capture foundation (data capture NEED TO DO)
+
+**Status:** OPEN — owner-declared top-3 must-do of 2026. **Multi-PR program (26-42 operators across 2026).** No automatic trigger; promoted into a wave when operator explicitly says so.
+
+**Aliases for locator lookup (operator may search for any of these):** `data capture NEED TO DO`, `pull up the to-do work for data capture`, `data-capture to-do`, `BL-DATA-CAPTURE`, `event-first data capture`, `ZION data capture checklist`.
+
+**Opened by:** Operator (Bradley Gleave) on 2026-06-26 during Op 50 (post PR #486/#488 burn-down, mid H6 dispatch).
+**Priority:** P0-strategic. Not a launch-gate per se (launch can ship without it), but every operator that lands without event capture creates training-data debt that compounds.
+**Owning doctrine:** R83 (event-first design), R125 (RLS tiers on every new table), §12 (idempotency + tenant isolation).
+
+### Background
+
+Operator authored a 254-line program-of-work checklist describing the event-first data foundation that unblocks behavioral personalization (A20), predictive churn (A16), AI training corpora (A14, A15), longevity / biomed evidence (A22+), and franchise benchmarking when Stage 4 lands. The checklist is the canonical source-of-truth for this BL item and is committed in-repo at `docs/data-capture/ZION_DATA_CAPTURE_CHECKLIST.md` so it survives independent of any external upload location.
+
+**The rule that overrides everything else in the checklist:** if a datapoint can help answer one of these six questions, store it.
+
+1. What happened?
+2. Why did it happen?
+3. What changed?
+4. Who approved it?
+5. Did it work?
+6. What should happen next?
+
+**Strategic frame (verbatim from operator):** "All this data is MASSIVE for future AI training in a memory-driven world. Storing every event, every coach decision, every client outcome creates a defensible training corpus." Storage cost is rounding error; cost of NOT storing is catastrophic.
+
+### Operator ruling (D-H6-3 cross-reference, 2026-06-26)
+
+When H6 D-H6-3 (`withAuditLog()` wrap on the 12 PII-touching services) was being locked, operator said: "I want every message saved on our DataBase for future AI training - attached document talking more what future data routing I plan to expand upon!" The attached document is this checklist. **Effect:** D-H6-3's withAuditLog wrapping is the first concrete delivery toward BL-DATA-CAPTURE; the audit_log H6 schema decided in D-H6-1 (13 columns with `reason text null`, REVOKE UPDATE/DELETE, 7-year retention with S3 Object Lock archive) is the substrate that subsequent BL-DATA-CAPTURE PRs extend.
+
+### Scope summary (full detail in checklist)
+
+The checklist organizes capture into 14 sections. Highlights:
+
+- **§1 Core Identity** — user, account type, tenant, role, coach/client/team hierarchy, membership, consent flags, privacy tier, access scope.
+- **§2 Coaching and Product** — programs, workouts, exercises, set/rep targets, program version history, AI recommendations + coach accept/edit/reject, check-ins, milestones, streaks, churn risk events.
+- **§3 Wearable and Recovery** — HRV, RHR, sleep, recovery score, active energy, strain, step count, device source, sync time, missing-data flags, daily/weekly rollups.
+- **§4 Support and Troubleshooting** — Crisp tickets, category, platform area, resolution, response time, attachments, repro steps, bug/doc/feature-gap mapping.
+- **§5 Operational Memory** — feature flags per tenant/coach/user, audit logs for permission checks, package deliverables, billing events, onboarding/migration state.
+- **§6 AI Training** — prompt, retrieved context, final answer, user rating, coach override, approved/rejected drafts, code-fix runs, outcome labels.
+- **§7 Longevity / Biomed** — baseline biomarker panels, interventions (type/dose/timing/duration), telomere/inflammation/metabolic markers, longitudinal outcomes.
+- **§8 Gym / Franchise (Stage 4)** — check-in patterns, class demand, membership lifecycle, staff performance, facility utilization; multi-location benchmarking is the category-defining moat vs Mindbody/Daxko/Glofox.
+- **§9 Event-first design** — `client_created`, `program_assigned`, `workout_completed`, `checkin_submitted`, `support_ticket_opened`, `feature_flag_changed`, `package_delivered`, `payment_failed`, `biomarker_collected`, `protocol_applied`, `code_fix_proposed`, `test_passed`. Plus money-flow events (A13 dependency), gym events (Stage 4), and AI/behavioral events.
+- **§10 Minimum tables** — 24 starter tables enumerated, including `users`, `coaches`, `clients`, `programs`, `program_versions`, `workout_logs`, `checkins`, `wearable_readings`, `support_tickets`, `feature_flags`, `audit_logs`, `packages`, `package_items`, `ai_actions`, `biomarker_events`, `code_fix_runs`, `team_hierarchy`, `money_flow_rules`, `money_flow_events`, `member_events`, `staff_events`, `location_events`, `behavioral_profiles`, `intervention_events`, `exercise_demos`, `demo_usage_events`.
+- **§11 Strategic frame** — defensible training corpus enabling A20/A16/A14/A15/A22+ AND a sellable anonymized data asset to research institutions.
+- **§12 Doctrine flags** — RLS tier 1 on `audit_logs`, `money_flow_events`, `biomarker_events`; idempotency keys on every event row; consent/privacy-tier enforcement via `users.privacy_tier` join; per-table retention policy; `tenant_id` on every event row, no cross-tenant query path at data layer.
+- **§13 Sequencing** — 6 PRs proposed, 26-42 operators total across 2026.
+- **§14 Open operator questions** — 4 questions still requiring operator ruling before PR1 (retention windows per table, PII scrubbing timing, real-time vs batch streaming, coach data-export rights on departure).
+
+### Suggested PR sequencing (from §13, not yet operator-locked)
+
+1. **PR1 — Event scaffolding:** `ai_actions`, `audit_logs` (expanded — overlaps with H6 D-H6-1 schema), `money_flow_events`. **5-8 operators.** *Operator-locked schema for `audit_logs` already decided in D-H6-1; PR1 must reuse that exact 13-column shape, not re-design it.*
+2. **PR2 — Identity + team hierarchy expansion:** `team_hierarchy` self-referential N-level (HC/SC/JC/etc). **3-5 operators.**
+3. **PR3 — Behavioral profile capture:** `behavioral_profiles`, `intervention_events`. **5-8 operators.**
+4. **PR4 — Biomed scaffold:** `biomarker_events`, longevity protocol tracking. **5-8 operators.**
+5. **PR5 — Crowdsourced demos:** `exercise_demos`, `demo_usage_events`. Lands with A19. **3-5 operators.**
+6. **PR6 — Gym event scaffold:** `member_events`, `staff_events`, `location_events`. Lands with Stage 4. **5-8 operators.**
+
+### Dependencies and ordering
+
+- **Blocks (soft):** A14 (AI program gen refinement), A15 (AI response drafting in coach voice), A16 (predictive churn), A20 (behavioral personalization), A22+ (biomed/longevity), Stage 4 (gym/franchise). Each of these is degraded — not blocked outright — by the absence of historical event data.
+- **Blocked by:** nothing strictly, but PR1 should land AFTER H6 (D-H6-1 through D-H6-5) merges so the `audit_log` table is built once with the locked schema rather than retrofitted.
+- **Conflicts with:** none currently. The H6 wave intentionally lands the audit_log substrate; BL-DATA-CAPTURE PR1 extends it rather than competing with it.
+- **Trigger:** explicit operator command only. The doctrine line operator gave is "pull up the to-do work for data capture" — at that point this BL item is the entry point and the checklist at `docs/data-capture/ZION_DATA_CAPTURE_CHECKLIST.md` is the spec.
+
+### Acceptance criteria (per-PR; the BL item itself completes only when all 6 PRs ship)
+
+- Every new table has RLS policy applied at creation (R125).
+- Every event-insertion endpoint is idempotent on a `(tenant_id, idempotency_key)` unique index (§12).
+- Every event row carries `tenant_id` and a no-cross-tenant-read RLS policy (§12).
+- Retention policy is documented in-table-comment AND in `docs/data-capture/retention-matrix.md` (to be authored in PR1).
+- Per-PR test coverage meets R3/R8 norms (no test-LOC exemption requested without a TEST-EXEMPT rider).
+- ADR committed per PR at `docs/decisions/<date>-data-capture-pr<N>-<topic>.md`.
+
+### Reference evidence (preserved for future operator)
+
+- Source document: `docs/data-capture/ZION_DATA_CAPTURE_CHECKLIST.md` (254 lines, owner-authored 2026-06-26).
+- Cross-reference: OPERATOR_DECISIONS_LOG.md entry `2026-06-26 · LOCK · D-H6-3` ties withAuditLog() wrapping to this BL.
+- Cross-reference: OPERATOR_DECISIONS_LOG.md entry `2026-06-26 · LOCK · D-H6-1` defines the canonical `audit_log` schema that PR1 must reuse.
+- Hyperscaler precedent for event-first design: Stripe's payment-mutation RFC (https://hackmd.io/xHyDSe73TjOj4x3V3BIyHg), AWS CloudTrail event-record schema, Segment's event-spec doctrine.
+
+### Open operator questions (from §14 — must be resolved before PR1)
+
+1. **Per-table retention windows** — defaults proposed in checklist (raw wearable 5y, rollups indefinite, support tickets 7y, AI prompt/response indefinite); owner final ruling required.
+2. **PII scrubbing for training corpus** — at insert time (loses fidelity) or at training-prep time (more storage, more flexibility). Checklist recommends training-prep time; operator to confirm.
+3. **Real-time event streaming vs nightly batch** — checklist recommends real-time for money + support + intervention, batch for analytics rollups. Operator to confirm.
+4. **Coach data-export rights on departure** — likely yes within consent boundaries, but format and limits must be spec'd.
+
+### Out of scope for this item
+
+- Implementing any individual PR. This BL is the index entry; each PR opens its own scoped operator.
+- Migrating historical data. By construction, TGP is pre-launch with zero live users at file time — there is no historical event data to backfill, and the foundation lands clean.
+- Any data-export API for end-clients. Tracked separately if/when needed.
+
+## BL-CI-REVERSIBILITY-PSQL — Strip `?schema=` from `DATABASE_URL` before psql calls in `ci.yml` (parity with migration-dry-run.yml)
+
+**Filed:** 2026-06-26 by operator (Bradley Gleave), Op 50.5 dispatch (Option A).
+**Severity:** P2 — latent landmine. Currently accidentally-safe because `ci.yml`'s `DATABASE_URL` has no `?schema=` query param, but ANY future PR that adds `?schema=` to that URL (e.g., to satisfy a Prisma test that wants explicit schema scoping) will silently break every `psql "$DATABASE_URL"` call in the workflow — `psql` does NOT accept `?schema=` as a libpq URI parameter and fails with an opaque connection error.
+
+### Gap (verified 2026-06-26)
+
+- **`.github/workflows/migration-dry-run.yml`** ALREADY strips `?schema=` before every `psql` call:
+  ```yaml
+  # Lines 168-173 and 301-306 (both occurrences)
+  # Strip the ?schema= query param because psql does not accept it as a libpq URI
+  PSQL_URL="${DATABASE_URL%%\?*}"
+  psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+  ```
+- **`.github/workflows/ci.yml`** does NOT strip — psql calls at lines 264, 267, 272, 279 (and 367) call `psql "$DATABASE_URL"` directly. Currently safe because `ci.yml`'s `DATABASE_URL` (lines 233, 337) is `postgresql://postgres:postgres@localhost:5432/postgres` with no query string. The day any future PR appends `?schema=public` (or any other libpq-incompatible param), all five psql invocations break.
+
+### The fix (Option A — codified for builder)
+
+Apply the same strip pattern to every `psql "$DATABASE_URL"` call in `ci.yml`. Single-PR scope:
+
+```yaml
+# Before:
+- name: bootstrap supabase shim
+  run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+
+# After:
+- name: bootstrap supabase shim
+  run: |
+    # Strip ?schema= because psql does not accept it as a libpq URI
+    PSQL_URL="${DATABASE_URL%%\?*}"
+    psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+```
+
+Apply to each of:
+- Line 264 (`scripts/ci/supabase-shim.sql`)
+- Line 267 (`scripts/ci/rls01-live-bootstrap.sql`)
+- Line 272 (`prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql`)
+- Line 279 (inline `-c` GRANT statement)
+- Line 367 (MWB3 RLS bootstrap, identical pattern)
+
+### Why this is filed as a backlog item, not a hot fix
+
+- No PR is currently being blocked by this gap (every existing CI run uses the no-`?schema=` `DATABASE_URL`).
+- The H6 wave (H6A/B/C) does NOT introduce a `?schema=` query param to `ci.yml`'s `DATABASE_URL`, so the H6 sequence is not at risk.
+- The fix is mechanical (5 identical 2-line wrappers) and can be batched with any other CI workflow touch.
+- Option A (codify the gap + planned fix as a backlog item) was operator-chosen on 2026-06-26 over Option B (hot-fix on its own PR right now) for sequencing reasons: keep PR #491 focused on the data-capture checklist + this backlog amendment, dispatch the actual `ci.yml` patch as a separate small PR when convenient.
+
+### Acceptance criteria
+
+- All 5 `psql "$DATABASE_URL"` call sites in `.github/workflows/ci.yml` strip `?schema=` (and any future query params) via the `${DATABASE_URL%%\?*}` pattern.
+- The CI test matrix passes unchanged on the existing no-query-string `DATABASE_URL`.
+- A regression test (`scripts/ci/verify-psql-url-strip.sh` or equivalent — optional, low-priority) asserts the strip pattern is present in any new psql call sites added in future PRs.
+- The fix lands as a single small PR titled `ci(reversibility): strip ?schema= before psql in ci.yml (BL-CI-REVERSIBILITY-PSQL)` with the per-line diff in the PR body.
+
+### Cross-references
+
+- Source: `.github/workflows/migration-dry-run.yml` lines 168-173, 301-306 (the canonical strip pattern, already shipped via #488).
+- Affected: `.github/workflows/ci.yml` lines 264, 267, 272, 279, 367.
+- Doctrine: R82 (migration reversibility) — every `psql` invocation in CI must be portable across Prisma's `?schema=` URL convention and psql's libpq URI requirements; failure to strip is a latent reversibility breakage.
+- Operator decision: 2026-06-26, Op 50.5 dispatch, Option A chosen verbatim ("amend BL-CI-REVERSIBILITY-PSQL onto PR #491 (Option A) — workflow YAML patch stripping ?schema= before psql, second commit on existing branch").
+
+### Out of scope for this item
+
+- Refactoring `ci.yml` to consolidate the 5 psql calls into a single helper script — separate cleanup, lower priority.
+- Changing the `DATABASE_URL` shape used by Prisma elsewhere in the workflow.
+- Migrating away from psql to a Prisma-native bootstrap path — orthogonal architectural decision, not in this BL's scope.
