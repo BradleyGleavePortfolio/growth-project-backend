@@ -32,6 +32,12 @@ import { WorkoutBuilderAutosaveController } from './workout-builder-autosave.con
 import { WorkoutBuilderAutosaveService } from './workout-builder-autosave.service';
 import { MwbAutosaveUndoFeatureGuard } from './workout-builder-autosave-feature.guard';
 import { WorkoutBuilderRevisionPruneCron } from './workout-builder-revision-prune.cron';
+import { ProgramDeliveryService } from './program-delivery.service';
+import { ProgramLibraryService } from './program-library.service';
+import {
+  ProgramLibraryController,
+  ProgramLibraryFeatureGuard,
+} from './program-library.controller';
 
 // PR-11 — PackagesModule is imported with forwardRef so DripTriggerService
 // is reachable from WorkoutBuilderService.completeAssignment to fire
@@ -59,6 +65,7 @@ import { WorkoutBuilderRevisionPruneCron } from './workout-builder-revision-prun
     // MWB-3 (§5/§6) — autosave + real-undo surface. Stays mounted at all times;
     // MwbAutosaveUndoFeatureGuard 404s the handlers while the flag is off.
     WorkoutBuilderAutosaveController,
+    ProgramLibraryController,
   ],
   providers: [
     WorkoutBuilderService,
@@ -70,7 +77,10 @@ import { WorkoutBuilderRevisionPruneCron } from './workout-builder-revision-prun
     WorkoutBuilderAutosaveService,
     MwbAutosaveUndoFeatureGuard,
     WorkoutBuilderRevisionPruneCron,
+    ProgramDeliveryService,
+    ProgramLibraryService,
+    ProgramLibraryFeatureGuard,
   ],
-  exports: [WorkoutBuilderService, WorkoutBuilderAutosaveService],
+  exports: [WorkoutBuilderService, WorkoutBuilderAutosaveService, ProgramDeliveryService],
 })
 export class WorkoutBuilderModule {}
