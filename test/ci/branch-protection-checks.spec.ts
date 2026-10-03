@@ -1,11 +1,13 @@
 // scripts/setup-branch-protection.sh — the required-check list is exactly the
-// 10 contexts live branch protection on main requires.
+// 11 contexts live branch protection on main requires.
 //
 // EXPECTED_REQUIRED_CHECKS was read back from
 //   gh api repos/BradleyGleavePortfolio/growth-project-backend/branches/main/protection
-// on 2026-10-02 (required_status_checks.checks, all app_id 15368 = GitHub
-// Actions), in the order GitHub returns them. "Schema parity (migrations
-// match schema.prisma)" is the 10th (operator ruling OR-110-3).
+// on 2026-10-02 after 16:41 PDT (required_status_checks.checks, all app_id
+// 15368 = GitHub Actions), in the order GitHub returns them. "Schema parity
+// (migrations match schema.prisma)" is the 10th (operator ruling OR-110-3);
+// "community-live-tests" is the 11th (owner 2026-10-02 16:38: "Add
+// community-live-tests as a required check on backend main").
 //
 // The payload (strict, admins, reviews, linear history OFF, conversation
 // resolution OFF, ...) is pinned to the live read-back of 2026-10-02 13:27 PDT.
@@ -36,6 +38,7 @@ const EXPECTED_REQUIRED_CHECKS = [
   'build-sbom',
   'danger',
   'Schema parity (migrations match schema.prisma)',
+  'community-live-tests',
 ];
 
 function arrayBlock(script: string): string {
@@ -49,10 +52,19 @@ function arrayBlock(script: string): string {
 /** Evaluate ONLY the array block with bash and return its elements. */
 function scriptRequiredChecks(script: string): string[] {
   const block = arrayBlock(script);
-  const r = spawnSync('bash', ['--noprofile', '--norc', '-c', `set -euo pipefail\n${block}\nprintf '%s\\n' "\${REQUIRED_CHECKS[@]}"`], {
-    encoding: 'utf8',
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
-  });
+  const r = spawnSync(
+    'bash',
+    [
+      '--noprofile',
+      '--norc',
+      '-c',
+      `set -euo pipefail\n${block}\nprintf '%s\\n' "\${REQUIRED_CHECKS[@]}"`,
+    ],
+    {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+    },
+  );
   if (r.status !== 0) throw new Error(`bash failed: ${r.stderr}`);
   return r.stdout.split('\n').filter((l) => l.length > 0);
 }
@@ -70,17 +82,26 @@ function scriptPayload(script: string, reviewCount: string): Record<string, unkn
   if (start < 0 || end < 0) throw new Error('payload block not found');
   const block = script.slice(start + 1, end + marker.length);
   expect(block).not.toMatch(/curl|GH_TOKEN|PROTECTION_URL/);
-  const r = spawnSync('bash', ['--noprofile', '--norc', '-c', `set -euo pipefail\n${block}\nprintf '%s' "$PAYLOAD"`], {
-    encoding: 'utf8',
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', REQUIRED_APPROVING_REVIEW_COUNT: reviewCount, CHECKS_APP_ID: '15368' },
-  });
+  const r = spawnSync(
+    'bash',
+    ['--noprofile', '--norc', '-c', `set -euo pipefail\n${block}\nprintf '%s' "$PAYLOAD"`],
+    {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        REQUIRED_APPROVING_REVIEW_COUNT: reviewCount,
+        CHECKS_APP_ID: '15368',
+      },
+    },
+  );
   if (r.status !== 0) throw new Error(`bash failed: ${r.stderr}`);
   return JSON.parse(r.stdout) as Record<string, unknown>;
 }
 
-// Live protection on main, read back 2026-10-02 13:35 PDT (linear history and
-// conversation resolution both off; the 13:27 linear-history change was
-// reverted because it lacked the owner's explicit words).
+// Live protection on main, read back 2026-10-02 13:35 PDT and again after the
+// 16:41 PDT check addition (linear history and conversation resolution both
+// off; the 13:27 linear-history change was reverted because it lacked the
+// owner's explicit words; only the checks list changed at 16:41).
 const LIVE_MIRROR_PAYLOAD = {
   required_status_checks: {
     strict: true,
@@ -106,18 +127,29 @@ const LIVE_MIRROR_PAYLOAD = {
 type Workflow = {
   on?: unknown;
   true?: unknown; // js-yaml (YAML 1.1) may read a bare `on:` key as boolean true
-  jobs?: Record<string, { name?: string; strategy?: { matrix?: Record<string, unknown> } }>;
+  jobs?: Record<
+    string,
+    { name?: string; if?: unknown; strategy?: { matrix?: Record<string, unknown> } }
+  >;
 };
 
 /** The check-run names a workflow's jobs report (name, or job id; plus matrix values). */
 function reportedNames(wf: Workflow): string[] {
+  return reportingJobs(wf).map(([name]) => name);
+}
+
+/** [reported check-run name, job] pairs for every job of a workflow. */
+function reportingJobs(wf: Workflow): Array<[string, NonNullable<Workflow['jobs']>[string]]> {
   return Object.entries(wf.jobs ?? {}).flatMap(([id, job]) => {
     const base = job.name ?? id;
     const matrix = job.strategy?.matrix;
-    if (!matrix || /\$\{\{/.test(base)) return [base];
+    if (!matrix || /\$\{\{/.test(base)) return [[base, job]];
     const dims = Object.entries(matrix).filter(([k]) => k !== 'include' && k !== 'exclude');
-    if (dims.length !== 1 || !Array.isArray(dims[0][1])) return [base];
-    return (dims[0][1] as unknown[]).map((v) => `${base} (${String(v)})`);
+    if (dims.length !== 1 || !Array.isArray(dims[0][1])) return [[base, job]];
+    return (dims[0][1] as unknown[]).map((v): [string, typeof job] => [
+      `${base} (${String(v)})`,
+      job,
+    ]);
   });
 }
 
@@ -139,9 +171,9 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
   const script = read(SCRIPT);
   const checks = scriptRequiredChecks(script);
 
-  it('lists exactly the 10 live required checks, in the live order', () => {
+  it('lists exactly the 11 live required checks, in the live order', () => {
     expect(checks).toEqual(EXPECTED_REQUIRED_CHECKS);
-    expect(checks).toHaveLength(10);
+    expect(checks).toHaveLength(11);
     expect(new Set(checks).size).toBe(checks.length);
   });
 
@@ -150,6 +182,15 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
     const wf = parseYaml(read('.github/workflows/schema-parity.yml')) as Workflow;
     expect(reportedNames(wf)).toContain('Schema parity (migrations match schema.prisma)');
     expect(runsOnEveryPrToMain(wf)).toBe(true);
+  });
+
+  it('includes community-live-tests as the ci.yml job that runs on every pull request, unconditionally', () => {
+    expect(checks[checks.length - 1]).toBe('community-live-tests');
+    const wf = parseYaml(read('.github/workflows/ci.yml')) as Workflow;
+    expect(runsOnEveryPrToMain(wf)).toBe(true);
+    const job = reportingJobs(wf).find(([name]) => name === 'community-live-tests');
+    expect(job).toBeDefined();
+    expect(job?.[1].if).toBeUndefined();
   });
 
   it('does not list checks that are informational, never run on a PR, retired, or path-filtered', () => {
@@ -177,18 +218,57 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
     expect(missing).toEqual([]);
   });
 
+  it('every listed check is reported by a job with no job-level if: (a skipped job would satisfy the requirement)', () => {
+    const dir = join(ROOT, '.github', 'workflows');
+    const workflows = readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => parseYaml(readFileSync(join(dir, f), 'utf8')) as Workflow);
+    const conditional = (wfs: Workflow[]) => {
+      const jobs = wfs.filter((wf) => runsOnEveryPrToMain(wf)).flatMap((wf) => reportingJobs(wf));
+      return checks.filter((c) => jobs.some(([name, job]) => name === c && job.if !== undefined));
+    };
+    expect(conditional(workflows)).toEqual([]);
+    // Negative control: a job-level if: on community-live-tests is detected.
+    const ci = parseYaml(read('.github/workflows/ci.yml')) as Workflow;
+    const gated: Workflow = {
+      ...ci,
+      jobs: {
+        ...ci.jobs,
+        'community-live-tests': {
+          ...ci.jobs?.['community-live-tests'],
+          if: "github.event_name == 'push'",
+        },
+      },
+    };
+    expect(conditional([gated])).toEqual(['community-live-tests']);
+  });
+
   it('the evaluated block is the one the script uses (count echo and app-bound payload read the same array)', () => {
-    expect(script).toMatch(/printf '%s\\n' "\$\{REQUIRED_CHECKS\[@\]\}" \| jq -R \. \| jq -s --argjson app "\$CHECKS_APP_ID"/);
+    expect(script).toMatch(
+      /printf '%s\\n' "\$\{REQUIRED_CHECKS\[@\]\}" \| jq -R \. \| jq -s --argjson app "\$CHECKS_APP_ID"/,
+    );
     expect(script).toContain('echo "Required checks (${#REQUIRED_CHECKS[@]}):"');
     expect(script.match(/^REQUIRED_CHECKS=\(/gm)).toHaveLength(1);
     expect(script).not.toMatch(/REQUIRED_CHECKS\+=/);
   });
 
   it('negative control: the evaluator sees a removed or added check', () => {
-    const minusParity = script.replace(/^\s*"Schema parity \(migrations match schema\.prisma\)"\n/m, '');
-    expect(scriptRequiredChecks(minusParity)).not.toContain('Schema parity (migrations match schema.prisma)');
-    const plusExtra = script.replace('\nREQUIRED_CHECKS=(\n', '\nREQUIRED_CHECKS=(\n  "test-deploy-readiness"\n');
-    expect(scriptRequiredChecks(plusExtra)).toHaveLength(11);
+    const minusParity = script.replace(
+      /^\s*"Schema parity \(migrations match schema\.prisma\)"\n/m,
+      '',
+    );
+    expect(scriptRequiredChecks(minusParity)).not.toContain(
+      'Schema parity (migrations match schema.prisma)',
+    );
+    const plusExtra = script.replace(
+      '\nREQUIRED_CHECKS=(\n',
+      '\nREQUIRED_CHECKS=(\n  "test-deploy-readiness"\n',
+    );
+    expect(scriptRequiredChecks(plusExtra)).toHaveLength(12);
+    const minusCommunity = script.replace(/^\s*"community-live-tests"\n/m, '');
+    expect(scriptRequiredChecks(minusCommunity)).not.toContain('community-live-tests');
+    expect(scriptRequiredChecks(minusCommunity)).toHaveLength(10);
+    expect(scriptRequiredChecks(minusCommunity)).not.toEqual(EXPECTED_REQUIRED_CHECKS);
     // A commented-out line is not a check.
     const commented = script.replace(/^(\s*)"danger"$/m, '$1# "danger"');
     expect(scriptRequiredChecks(commented)).not.toContain('danger');
@@ -215,9 +295,15 @@ describe('setup-branch-protection.sh — required checks and payload equal live 
   });
 
   it('negative control: the payload evaluator sees a flipped linear-history or conversation-resolution flag', () => {
-    const linear = script.replace('required_linear_history: false,', 'required_linear_history: true,');
+    const linear = script.replace(
+      'required_linear_history: false,',
+      'required_linear_history: true,',
+    );
     expect(scriptPayload(linear, '0').required_linear_history).toBe(true);
-    const conv = script.replace('required_conversation_resolution: false,', 'required_conversation_resolution: true,');
+    const conv = script.replace(
+      'required_conversation_resolution: false,',
+      'required_conversation_resolution: true,',
+    );
     expect(scriptPayload(conv, '0').required_conversation_resolution).toBe(true);
   });
 });

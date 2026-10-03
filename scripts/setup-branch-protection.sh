@@ -20,8 +20,9 @@
 # protection on main exactly. required_linear_history=false: live is off, and a
 # change to it needs the owner's explicit words for that exact change.
 # required_conversation_resolution=false: audits are posted as issue comments,
-# so resolution gating would stall merges without adding a control. test/ci/branch-protection-checks.spec.ts evaluates the payload (jq
-# only, no network) and pins every field.
+# so resolution gating would stall merges without adding a control.
+# test/ci/branch-protection-checks.spec.ts evaluates the payload (jq only, no
+# network) and pins every field.
 #
 # Q4 decision: enforce_admins=true. Owner is included; admins cannot bypass the
 # protection itself. The required review still needs a second approver — see the
@@ -92,7 +93,8 @@ fi
 #
 # ALWAYS-RUN (no paths filter) — eligible to be REQUIRED:
 #   ci.yml              (pull_request, no paths): build-and-test,
-#                        rls-floor-guard, rls-live-tests, mwb-3-live-tests
+#                        rls-floor-guard, rls-live-tests, mwb-3-live-tests,
+#                        community-live-tests
 #   danger.yml          (pull_request: branches:[main], no paths): danger
 #   r100-quality-gate.yml (pull_request: branches:[main], no paths):
 #                        Banned cast tokens (LOC budget / Test density retired
@@ -106,11 +108,16 @@ fi
 #                        "Schema parity (migrations match schema.prisma)"
 #                        (mandatory merge gate per operator ruling OR-110-3;
 #                        the 10th required check on live main since 2026-10-01)
+#   ci.yml              community-live-tests: the DB-backed community
+#                        moderation/safety suites (C-610-4); the 11th required
+#                        check on live main since 2026-10-02 16:41 PDT (owner
+#                        16:38: "Add community-live-tests as a required check
+#                        on backend main")
 #
-# The list below is EXACTLY the 10 contexts live branch protection on main
+# The list below is EXACTLY the 11 contexts live branch protection on main
 # requires (read back with
 #   gh api repos/BradleyGleavePortfolio/growth-project-backend/branches/main/protection
-# on 2026-10-02), in the order GitHub returns them.
+# on 2026-10-02 after 16:41 PDT), in the order GitHub returns them.
 # test/ci/branch-protection-checks.spec.ts pins it to that list; change both
 # together, and only after the live protection itself has changed.
 #
@@ -165,6 +172,9 @@ REQUIRED_CHECKS=(
   # schema-parity.yml — runs on every PR and push to main (no paths filter);
   # migrations must build the database schema.prisma declares (OR-110-3).
   "Schema parity (migrations match schema.prisma)"
+  # ci.yml — runs on every PR (no paths filter); the community live suites
+  # against the full migration chain (owner 2026-10-02 16:38).
+  "community-live-tests"
 )
 
 : "${REQUIRED_APPROVING_REVIEW_COUNT:?set to 0 (recorded single-maintainer decision) or 1+ (second human maintainer); see header}"
