@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -11,6 +12,7 @@ import {
   Post,
   Query,
   Request,
+  Res,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
@@ -93,11 +95,20 @@ export class CoachPackagesController {
 
   // Coach mints a new offer on their own catalog; mutation scoped to req.user.id.
   // Students cannot create packages — this is a seller-side write.
+  // OR-112-16: an `Idempotency-Key` makes create idempotent per coach: a
+  // retry with the same key and body returns the SAME package (header
+  // `Idempotent-Replayed: true`), never a second one. The key is optional so
+  // older clients keep working; every current mobile create path sends one.
   @Roles('coach', 'owner')
   @Post()
-  async create(@Request() req: AuthedRequest, @Body() body: CreatePackageDto) {
+  async create(
+    @Request() req: AuthedRequest,
+    @Body() body: CreatePackageDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) res: { setHeader(name: string, value: string): void },
+  ) {
     const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
-    return this.packages.create(coachId, {
+    const { pkg, replayed } = await this.packages.createIdempotent(coachId, {
       name: body.name,
       description: body.description,
       amount_cents: body.amount_cents,
@@ -109,7 +120,9 @@ export class CoachPackagesController {
       recurring_amount_cents: body.recurring_amount_cents,
       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
-    });
+    }, idempotencyKey, req.user.id);
+    if (replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return pkg;
   }
 
   // Coach edits an offer on their own catalog; service re-checks ownership by
