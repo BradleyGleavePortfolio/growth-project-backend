@@ -117,6 +117,47 @@ export interface StripeSubscriptionObject {
   [k: string]: unknown;
 }
 
+// B-RECUR — a subscription as the native checkout reads it (Stripe-Version
+// 2024-09-30.acacia: `latest_invoice.payment_intent` and the subscription's
+// own `current_period_end` exist on this version). `latest_invoice` and
+// `pending_setup_intent` are present only when expanded.
+export interface StripeSubscriptionCheckoutObject extends StripeSubscriptionObject {
+  trial_end?: number | null;
+  default_payment_method?: string | null;
+  latest_invoice?: {
+    id?: string;
+    amount_due?: number;
+    status?: string;
+    payment_intent?:
+      | {
+          id?: string;
+          client_secret?: string;
+          status?: string;
+        }
+      | string
+      | null;
+  } | string | null;
+  pending_setup_intent?:
+    | {
+        id?: string;
+        client_secret?: string;
+        status?: string;
+        payment_method?: string | null;
+      }
+    | string
+    | null;
+}
+
+// B-RECUR — a SetupIntent as the trial-card path reads it. `payment_method`
+// is the id when not expanded.
+export interface StripeSetupIntentObject {
+  id: string;
+  status?: string;
+  payment_method?: string | null;
+  customer?: string | null;
+  [k: string]: unknown;
+}
+
 // Stripe BalanceTransaction (subset). `amount` / `fee` / `net` are in the
 // settlement `currency`; `fee` is Stripe's ACTUAL processing fee for the charge.
 export interface StripeBalanceTransactionObject {
@@ -422,22 +463,13 @@ export class StripeConnectApiService {
     oneTimePriceId?: string;
     onBehalfOf: string;
     metadata?: Record<string, string>;
+    // B-RECUR (OR-113-2) — free trial: Stripe starts the subscription in
+    // `trialing`, the first invoice is $0, and the card is collected up front
+    // through `pending_setup_intent` (PaymentSheet setup mode). A trial that
+    // ends without a saved card cancels instead of trying to charge.
+    trialPeriodDays?: number;
     idempotencyKey: string;
-  }): Promise<
-    StripeSubscriptionObject & {
-      latest_invoice?: {
-        id?: string;
-        payment_intent?:
-          | {
-              id?: string;
-              client_secret?: string;
-              status?: string;
-            }
-          | string
-          | null;
-      } | null;
-    }
-  > {
+  }): Promise<StripeSubscriptionCheckoutObject> {
     const form: Record<string, string> = {
       customer: args.customer,
       'items[0][price]': args.recurringPriceId,
@@ -452,6 +484,11 @@ export class StripeConnectApiService {
     };
     if (args.oneTimePriceId) {
       form['add_invoice_items[0][price]'] = args.oneTimePriceId;
+    }
+    if (args.trialPeriodDays && args.trialPeriodDays > 0) {
+      form.trial_period_days = String(args.trialPeriodDays);
+      form['trial_settings[end_behavior][missing_payment_method]'] = 'cancel';
+      form['expand[1]'] = 'pending_setup_intent';
     }
     if (args.metadata) {
       for (const [k, v] of Object.entries(args.metadata)) {
@@ -828,6 +865,73 @@ export class StripeConnectApiService {
     params.set('limit', String(Math.min(Math.max(args.limit ?? 100, 1), 100)));
     if (args.starting_after) params.set('starting_after', args.starting_after);
     return this.get(`/transfers/${encodeURIComponent(transferId)}/reversals?${params.toString()}`);
+  }
+
+  // B-RECUR — read a subscription with its first invoice's PaymentIntent and
+  // its pending SetupIntent expanded, so an abandoned native checkout can be
+  // reused (same subscription, same PaymentIntent) instead of minting another.
+  async retrieveSubscriptionForCheckout(
+    subscriptionId: string,
+  ): Promise<StripeSubscriptionCheckoutObject> {
+    const params = new URLSearchParams();
+    params.append('expand[]', 'latest_invoice.payment_intent');
+    params.append('expand[]', 'pending_setup_intent');
+    return this.get<StripeSubscriptionCheckoutObject>(
+      `/subscriptions/${encodeURIComponent(subscriptionId)}?${params.toString()}`,
+    );
+  }
+
+  // B-RECUR-3 (B-654-5) — every subscription of one platform customer, any
+  // status, newest first. The native checkout uses it to find the
+  // subscription an uncertain create may have made (matched by
+  // metadata.tgp_purchase_id) instead of creating a second one. List reads
+  // are consistent (unlike Search), so a miss means Stripe has none.
+  async listSubscriptionsForCustomer(
+    customerId: string,
+  ): Promise<{ data: StripeSubscriptionObject[]; has_more?: boolean }> {
+    const params = new URLSearchParams();
+    params.set('customer', customerId);
+    params.set('status', 'all');
+    params.set('limit', '100');
+    return this.get(`/subscriptions?${params.toString()}`);
+  }
+
+  // B-RECUR — the client keeps a plan they scheduled to cancel (undo
+  // cancel_at_period_end before the period ends). The idempotency key is per
+  // client request, so a later cancel -> keep -> cancel cycle is never
+  // collapsed onto an earlier response.
+  async resumeSubscription(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { cancel_at_period_end: 'false' },
+      args.idempotencyKey,
+    );
+  }
+
+  // B-RECUR — read a SetupIntent by id. A subscription's
+  // `pending_setup_intent` is null once the SetupIntent succeeded, so the
+  // trial-card path reads the SetupIntent itself (id from the stored secret).
+  async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
+    return this.get<StripeSetupIntentObject>(
+      `/setup_intents/${encodeURIComponent(setupIntentId)}`,
+    );
+  }
+
+  // B-RECUR — make the card a trial's SetupIntent saved the subscription's
+  // default, so the first real invoice after the trial charges it.
+  async setSubscriptionDefaultPaymentMethod(args: {
+    subscriptionId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { default_payment_method: args.paymentMethodId },
+      args.idempotencyKey,
+    );
   }
 
   // Phase 5: cancel a subscription (used by the dunning sweeper when
