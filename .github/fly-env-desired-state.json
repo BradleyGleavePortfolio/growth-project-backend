@@ -37,7 +37,7 @@
     "FEATURE_DUNNING_V2": "unset"
   },
   "secrets": {
-    "GOOGLE_CLIENT_IDS": "unset",
+    "GOOGLE_CLIENT_IDS": "github-secret",
     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "unset",
     "GOOGLE_OAUTH_CLIENT_ID": "present",
     "GOOGLE_OAUTH_CLIENT_SECRET": "present",
