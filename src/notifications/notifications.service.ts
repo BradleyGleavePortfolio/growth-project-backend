@@ -548,7 +548,17 @@ export class NotificationsService implements OnModuleInit {
           kind: input.kind,
           title: copy.title,
           body: copy.body,
-          data: pushTapData(input.kind, input.deep_link, input.context?.sessionId),
+          data: pushTapData(
+            input.kind,
+            input.deep_link,
+            input.context?.sessionId,
+            await this.bookingRole(
+              tx ?? this.prisma,
+              input.kind,
+              input.user_id,
+              input.context?.sessionId,
+            ),
+          ),
           context: input.context ?? null,
           dedupeKey: input.dedupe_key ?? null,
           collapseKey: `${input.kind}:${input.deep_link ?? ''}`,
@@ -947,6 +957,32 @@ export class NotificationsService implements OnModuleInit {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   /**
+   * C-648-3: which side of a booking the recipient is on, so the tap opens
+   * that side's session screen. Null for non-booking kinds, a missing
+   * session or a failed read (the tap then opens the notification center).
+   */
+  private async bookingRole(
+    db: Pick<PrismaService, 'coachingSession'> | Prisma.TransactionClient,
+    kind: string,
+    userId: string,
+    sessionId: string | undefined,
+  ): Promise<'client' | 'coach' | null> {
+    if (!sessionId || notificationPrefsPrefix(kind) !== 'booking') return null;
+    try {
+      const session = await db.coachingSession.findUnique({
+        where: { id: sessionId },
+        select: { coach_id: true, client_id: true },
+      });
+      if (!session) return null;
+      if (session.coach_id === userId) return 'coach';
+      if (session.client_id === userId) return 'client';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Maps a NotificationKind value to the base preferences key prefix.
    * E.g. 'milestone_reached' → 'milestone'
    */
@@ -957,22 +993,36 @@ export class NotificationsService implements OnModuleInit {
 }
 
 /**
+ * The booking tap targets, the same contract as the S-SCHED booking
+ * emitter (#634) and the mobile push router (#325): a client opens the
+ * session in their calendar, a coach opens the booking inbox, both with
+ * `actionParams.sessionId`.
+ */
+export const BOOKING_PUSH_SCREEN = { client: 'CalendarSession', coach: 'CoachBookingInbox' } as const;
+
+/**
  * Tap routing a device push carries (ids and enums only, never user text).
- * C-648-3: a booking push opens that session (`SessionDetail` with
- * `actionParams.sessionId`); a build without that route falls back to the
- * notification center (the mobile tap router's unknown-screen rule). A
- * message opens Messages; everything else opens the notification center.
- * `deepLink` and the top-level `sessionId` stay for builds that read them.
+ * C-648-3: a booking push opens that session (BOOKING_PUSH_SCREEN for the
+ * recipient's side, with `actionParams.sessionId`); a build without that
+ * route falls back to the notification center (the mobile tap router's
+ * unknown-screen rule). A message opens Messages; everything else opens the
+ * notification center. `deepLink` and the top-level `sessionId` stay for
+ * builds that read them.
  */
 export function pushTapData(
   kind: string,
   deepLink: string | undefined,
   sessionId: string | undefined,
+  bookingRole: 'client' | 'coach' | null = null,
 ): Record<string, unknown> {
   const prefix = notificationPrefsPrefix(kind);
-  const booking = prefix === 'booking' && typeof sessionId === 'string' && sessionId.length > 0;
+  const booking =
+    prefix === 'booking' &&
+    bookingRole !== null &&
+    typeof sessionId === 'string' &&
+    sessionId.length > 0;
   const actionScreen = booking
-    ? 'SessionDetail'
+    ? BOOKING_PUSH_SCREEN[bookingRole]
     : prefix === 'message'
       ? 'Messages'
       : 'NotificationCenter';
