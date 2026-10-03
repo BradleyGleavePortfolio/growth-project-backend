@@ -22,7 +22,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpException, UnauthorizedException } from '@nestjs/common';
 import { DataExportStatus, Prisma } from '@prisma/client';
 import { SignJWT } from 'jose';
-import type { Request, Response } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import {
   ArchiveStorageError,
   DATA_EXPORT_BUCKET,
@@ -1602,7 +1602,7 @@ describe('GET /v1/me/data-export/download (controller)', () => {
     const ctrl = new DataExportController(svc);
     const token = tokenFrom((await svc.createDownloadLink(A)).download_path);
     const res = new FakeRes();
-    await ctrl.download(token, stub<Request>({ headers: {} }), stub<Response>(res));
+    await ctrl.download(token, stub<ExpressRequest>({ headers: {} }), stub<ExpressResponse>(res));
     expect(res.statusCode).toBe(200);
     expect(res.body.equals(ARCHIVE)).toBe(true);
     expect(res.headers['content-disposition']).toMatch(
@@ -1620,11 +1620,11 @@ describe('GET /v1/me/data-export/download (controller)', () => {
     const res = new FakeRes();
     await ctrl.download(
       'not-a-token',
-      stub<Request>({
+      stub<ExpressRequest>({
         headers: { accept: 'text/html,application/xhtml+xml' },
         requestId: 'req-123',
       }),
-      stub<Response>(res),
+      stub<ExpressResponse>(res),
     );
     expect(res.statusCode).toBe(401);
     expect(res.headers['content-type']).toBe('html');
@@ -1632,12 +1632,16 @@ describe('GET /v1/me/data-export/download (controller)', () => {
     expect(res.sent).toContain('This download link is not valid');
     expect(res.sent).toContain('tap Download file');
     expect(res.sent).toContain('Reference: req-123');
-    expect(res.sent.replace(/<[^>]*>/g, '')).not.toMatch(/!/);
+    // Copy rule: no exclamation marks anywhere in the page. The doctype is
+    // the only markup that legitimately carries one, so assert on the whole
+    // document after it instead of stripping tags with a regex.
+    expect(res.sent.startsWith('<!doctype html>')).toBe(true);
+    expect(res.sent.slice('<!doctype html>'.length)).not.toContain('!');
     await expect(
       ctrl.download(
         'not-a-token',
-        stub<Request>({ headers: { accept: 'application/json' } }),
-        stub<Response>(new FakeRes()),
+        stub<ExpressRequest>({ headers: { accept: 'application/json' } }),
+        stub<ExpressResponse>(new FakeRes()),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -1680,7 +1684,7 @@ describe('GET /v1/me/data-export/download (controller)', () => {
       }
     }
     const res = new ClosingRes();
-    await ctrl.download('t', stub<Request>({ headers: {} }), stub<Response>(res));
+    await ctrl.download('t', stub<ExpressRequest>({ headers: {} }), stub<ExpressResponse>(res));
     expect(ended).toBe(true);
     expect(mockCaptureMessage).not.toHaveBeenCalledWith(
       'data export download stream failed',

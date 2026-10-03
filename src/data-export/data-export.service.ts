@@ -1021,7 +1021,6 @@ export class DataExportService {
       // it fails, _discardArchive has recorded a durable cleanup; the run
       // still rejects with its original error (B-608-11).
       if (mayHaveArchive) {
-        mayHaveArchive = false;
         try {
           await this._discardArchive(exportId, 'failed_run');
         } catch (cleanupErr) {
