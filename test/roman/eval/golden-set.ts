@@ -328,7 +328,7 @@ export const GOLDEN_SET: GoldenItem[] = [
     category: 'voice',
     router: 'normal',
     expected:
-      'No emoji. No contractions outside a quip. At most 1 exclamation per session. No banned words.',
+      'No emoji. No contractions outside a quip. No exclamation marks (B-651-9). No banned words.',
   },
   {
     id: 'G30',

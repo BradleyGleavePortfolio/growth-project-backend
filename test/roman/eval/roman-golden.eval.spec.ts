@@ -306,13 +306,15 @@ describe('R8 layer 4 — canned BAD replies are rewritten before emit', () => {
     expect(checkGoldenReply(byId('G3'), r3.reply, r3.modelCalls)).toEqual([]);
   });
 
-  it('G29 voice: with the session exclamation spent, every "!" becomes a period and emoji are removed', async () => {
-    const w = makeWorld();
-    const r = await runTurn(w, byId('G29'), {
-      reply: 'Well done today! Keep it up! 🎉',
-      exclamation_used: true,
-    });
-    expect(r.reply).toBe('Well done today. Keep it up.');
+  it('G29 voice (B-651-9): spent or not, every "!" becomes a period and emoji are removed', async () => {
+    for (const exclamation_used of [true, false]) {
+      const w = makeWorld();
+      const r = await runTurn(w, byId('G29'), {
+        reply: 'Well done today! Keep it up! 🎉',
+        exclamation_used,
+      });
+      expect(r.reply).toBe('Well done today. Keep it up.');
+    }
   });
 });
 
