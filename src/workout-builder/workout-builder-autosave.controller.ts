@@ -106,7 +106,10 @@ export class WorkoutBuilderAutosaveController {
   })
   @ApiResponse({
     status: 409,
-    description: 'autosave_conflict_retry — serialization conflict.',
+    description:
+      'autosave_conflict_retry — serialization conflict; undo_head_moved — the ' +
+      'optional expected_head_index no longer matches the head (body carries ' +
+      'the current head_revision_index and a fresh lock_token).',
   })
   undo(
     @Req() req: AuthedRequest,
