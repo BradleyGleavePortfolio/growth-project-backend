@@ -1,37 +1,105 @@
 {
-  "_note": "SYNTHETIC fake-npm process outcomes used to prove the dependency-audit workflow's shell body fails closed. These strings are invented harness data, NOT evidence of any real advisory, CVE, or audit run against this repository's lockfile. The fake npm echoes stdout/stderr, so no trailing newline is stored here.",
+  "_note": "Fake-npm process outcomes used to prove the dependency-audit workflow's shell body (npm audit --json captured, then scripts/ci/audit-gate.mjs) fails closed. auditFixture names a file in fixtures/audit-gate/ that the fake npm prints as its stdout; audit-braces-dev.json is the real report for this lockfile on 2026-10-02, every other fixture and string here is SYNTHETIC harness data, NOT evidence of any real advisory or audit run. exceptions: none = an empty exception file, braces = a valid OR-114-2 braces entry dated relative to the test clock.",
   "cases": [
     {
       "id": "native-success",
-      "description": "npm audit finds nothing at high or critical and exits 0",
+      "description": "npm audit finds nothing and exits 0; the gate passes with an empty exception file",
       "npmExitCode": 0,
-      "stdout": "found 0 vulnerabilities",
+      "auditFixture": "audit-clean.json",
       "stderr": "",
-      "expectShellExit": "zero"
+      "exceptions": "none",
+      "expectShellExit": "zero",
+      "expectMessage": "[audit-gate] PASS"
     },
     {
       "id": "simulated-vulnerable",
-      "description": "SYNTHETIC vulnerable graph: npm audit's documented exit 1 for advisories at or above the audit level",
+      "description": "SYNTHETIC unexcepted high advisory: npm exits 1 and the gate blocks",
       "npmExitCode": 1,
-      "stdout": "2 high severity vulnerabilities (SYNTHETIC FIXTURE, not a real advisory)",
+      "auditFixture": "audit-other-high.json",
       "stderr": "",
-      "expectShellExit": "nonzero"
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_UNEXCEPTED"
+    },
+    {
+      "id": "simulated-vulnerable-with-exception-present",
+      "description": "SYNTHETIC unexcepted high advisory while the braces exception exists: still blocks",
+      "npmExitCode": 1,
+      "auditFixture": "audit-other-high.json",
+      "stderr": "",
+      "exceptions": "braces",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_UNEXCEPTED"
+    },
+    {
+      "id": "excepted-braces-dev-only",
+      "description": "The real braces/micromatch/danger report with the valid dev-only exception passes and is printed",
+      "npmExitCode": 1,
+      "auditFixture": "audit-braces-dev.json",
+      "stderr": "",
+      "exceptions": "braces",
+      "expectShellExit": "zero",
+      "expectMessage": "[audit-gate] APPLIED EXCEPTION advisory=GHSA-vfj7-8cjw-p6xm package=braces"
+    },
+    {
+      "id": "braces-without-exception",
+      "description": "The real braces report with no exception still blocks",
+      "npmExitCode": 1,
+      "auditFixture": "audit-braces-dev.json",
+      "stderr": "",
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_UNEXCEPTED"
     },
     {
       "id": "infrastructure-failure",
       "description": "Arbitrary non-vulnerability infrastructure failure (registry unreachable / npm internal error)",
       "npmExitCode": 42,
-      "stdout": "",
+      "auditFixture": "",
       "stderr": "npm error code ENETUNREACH (SYNTHETIC FIXTURE)",
-      "expectShellExit": "nonzero"
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_AUDIT_EXIT"
+    },
+    {
+      "id": "infrastructure-failure-with-clean-json",
+      "description": "npm exits with a non-verdict code even though it printed a clean report: the exit code wins",
+      "npmExitCode": 42,
+      "auditFixture": "audit-clean.json",
+      "stderr": "",
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_AUDIT_EXIT"
     },
     {
       "id": "empty-output-nonzero",
       "description": "Silent non-zero exit: no output at all must still fail, never be read as success",
       "npmExitCode": 7,
-      "stdout": "",
+      "auditFixture": "",
       "stderr": "",
-      "expectShellExit": "nonzero"
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_AUDIT_EXIT"
+    },
+    {
+      "id": "npm-error-json",
+      "description": "npm audit --json reports an error object instead of a report",
+      "npmExitCode": 1,
+      "auditFixture": "audit-npm-error.json",
+      "stderr": "",
+      "exceptions": "none",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_AUDIT_UNREADABLE"
+    },
+    {
+      "id": "exit-zero-with-high-findings",
+      "description": "npm exits 0 but the report lists high findings: inconsistent, fails closed",
+      "npmExitCode": 0,
+      "auditFixture": "audit-braces-dev.json",
+      "stderr": "",
+      "exceptions": "braces",
+      "expectShellExit": "nonzero",
+      "expectMessage": "[audit-gate] FAIL E_AUDIT_INCONSISTENT"
     }
   ]
 }
