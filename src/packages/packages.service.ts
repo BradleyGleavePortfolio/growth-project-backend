@@ -156,8 +156,6 @@ export class PackagesService {
 
   async create(coachUserId: string, input: CreatePackageInput): Promise<CoachPackage> {
     this.assertValidPricing(input);
-    const trialDays = input.trial_days ?? TRIAL_DAYS_NONE;
-    assertValidTrial({ ...input, trial_days: trialDays });
     return this.prisma.coachPackage.create({
       data: {
         coach_id: coachUserId,
@@ -174,7 +172,7 @@ export class PackagesService {
           input.recurring_amount_cents != null ? (input.recurring_interval ?? 'month') : null,
         recurring_interval_count:
           input.recurring_amount_cents != null ? (input.recurring_interval_count ?? 1) : null,
-        trial_days: trialDays,
+        trial_days: input.trial_days ?? TRIAL_DAYS_NONE,
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
@@ -645,6 +643,11 @@ export class PackagesService {
       recurring_amount_cents?: number | null;
       recurring_interval?: string | null;
       recurring_interval_count?: number | null;
+      // B-TRIALS: present on create input only. Validated here, after the
+      // price, so every create path (create, and an Idempotency-Key create
+      // that builds its own data) applies the trial rules. update and
+      // publish check the merged trial separately.
+      trial_days?: number | null;
     },
     opts: PricingFloorOptions = ENFORCE_ALL_FLOORS,
   ) {
@@ -806,6 +809,9 @@ export class PackagesService {
           message: 'recurring_interval_count must be an integer ≥ 1',
         });
       }
+    }
+    if (input.trial_days != null) {
+      assertValidTrial({ ...input, trial_days: input.trial_days });
     }
   }
 }

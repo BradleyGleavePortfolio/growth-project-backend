@@ -103,6 +103,7 @@ export class CoachPackagesController {
       description: body.description,
       amount_cents: body.amount_cents,
       currency: body.currency,
+      trial_days: body.trial_days,
       billing_type: body.billing_type as 'one_time' | 'recurring',
       interval: body.billing_interval as 'week' | 'month' | 'year' | null | undefined,
       interval_count: body.billing_interval_count,
@@ -110,7 +111,6 @@ export class CoachPackagesController {
       recurring_amount_cents: body.recurring_amount_cents,
       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
-      trial_days: body.trial_days,
     });
   }
 
