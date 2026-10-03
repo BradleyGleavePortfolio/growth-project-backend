@@ -523,6 +523,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunitySearchEntry', field: 'authorId', action: del, uuid: true },
   { model: 'CommunityModerationAction', field: 'reported_by_id', action: detach('reported_by_id') },
   { model: 'CommunityModerationAction', field: 'actor_id', action: detach('actor_id') },
+  // Workspace bans (#610). A ban ON the deleted user goes with the account
+  // (its FK cascade never fires on a tombstone). A ban the user imposed or
+  // lifted on someone else stays in force; only the moderator's id is dropped.
+  { model: 'CommunityWorkspaceBan', field: 'user_id', action: del },
+  { model: 'CommunityWorkspaceBan', field: 'banned_by_id', action: detach('banned_by_id') },
+  { model: 'CommunityWorkspaceBan', field: 'lifted_by_id', action: detach('lifted_by_id') },
   // Media rows go with their bytes (storage service, C-608-1); the post is scrubbed.
   { model: 'CommunityClassroomMediaAsset', field: 'post.coach_id', action: del },
   {

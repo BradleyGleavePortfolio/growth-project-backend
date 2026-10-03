@@ -57,7 +57,7 @@ function parseSchema(): Schema {
 }
 
 const ID_LIKE =
-  /^((user|client|coach|author|sender|actor|owner|recipient|member|reporter|reported_by|creator|created_by|blocker|blocked|uploader|invited_by|assigned_by|sub_coach|labelled_by|approved_by|reviewer|reviewed_by|target_user|participant|host|buyer|requester|moderator|deleted_by|updated_by|subject_user|tenant_coach|converted_user|hirer|applicant_user|head_coach|decided_by_coach_user|[a-z_]+_by_user|[a-z_]+_user)(_user)?_?id)$|^(userId|clientId|coachId|authorId|ownerId|actorId|senderId|memberId|createdById|reporterId)$/i;
+  /^((user|client|coach|author|sender|actor|owner|recipient|member|reporter|reported_by|creator|created_by|blocker|blocked|uploader|invited_by|assigned_by|sub_coach|labelled_by|approved_by|reviewer|reviewed_by|target_user|participant|host|buyer|requester|moderator|deleted_by|updated_by|subject_user|tenant_coach|converted_user|hirer|applicant_user|head_coach|decided_by_coach_user|banned_by|lifted_by|[a-z_]+_by_user|[a-z_]+_user)(_user)?_?id)$|^(userId|clientId|coachId|authorId|ownerId|actorId|senderId|memberId|createdById|reporterId)$/i;
 
 // Columns the patterns flag that do not hold a user id or a person's email.
 const NOT_PERSONAL: Record<string, string> = {

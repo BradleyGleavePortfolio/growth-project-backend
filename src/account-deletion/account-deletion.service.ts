@@ -26,6 +26,13 @@ import {
 } from './deletion-receipt';
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
+import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
+import {
+  VoiceErasureRow,
+  attemptVoiceErasures,
+  objectTargets,
+  recordVoiceErasures,
+} from '../community/voice/voice-erasure';
 
 // ─── State machine ────────────────────────────────────────────────────────────
 //
@@ -56,7 +63,9 @@ import { AccountDeletionBillingService } from './account-deletion.billing';
 //     transition, so an event exists if and only if the transition committed.
 //
 // Finalization order inside the locked transaction: collect storage keys and
-// Stripe subscription ids from the rows, tombstone the User row, run the
+// Stripe subscription ids from the rows, record the durable voice-recording
+// erasure work (B-610-5; verified after commit, retried by
+// VoiceErasureService until verified), tombstone the User row, run the
 // erasure manifest (account-deletion.manifest.ts), delete the lifecycle audit
 // rows, THEN remove the bytes and cancel the subscriptions (only after every
 // DB statement succeeded; both idempotent, any failure throws and rolls the
@@ -678,7 +687,11 @@ export class AccountDeletionService {
     },
   ): Promise<FinalizeResult> {
     const committed = await this.prisma.$transaction(
-      async (tx): Promise<{ skipped: FinalizeSkipReason } | { supabaseId: string | null }> => {
+      async (
+        tx,
+      ): Promise<
+        { skipped: FinalizeSkipReason } | { supabaseId: string | null; voiceWork: VoiceErasureRow[] }
+      > => {
         const user = await this.lockUser(tx, userId, 'skip');
         if (!user) {
           const exists = await this.userExists(tx, userId);
@@ -705,6 +718,42 @@ export class AccountDeletionService {
         //    that hold them still exist. Nothing external happens yet.
         const objects = await this.storage.collect(tx, userId);
         const subscriptionIds = await this.billing.collectSubscriptionIds(tx, userId);
+
+        // 1b. Community voice recordings (B-610-5, OR-110-1, Apple 5.1.1(v)).
+        //     The verified-erasure work (every exact key on the user's notes
+        //     plus their `<uid>/` owner folder) is recorded in
+        //     community_voice_erasures inside THIS transaction, before the
+        //     manifest deletes the note rows: it commits if and only if the
+        //     deletion commits, and a failed record rolls the whole deletion
+        //     back for the next run. The bytes are removed by storage.purge
+        //     below (in the transaction); after commit the work is verified
+        //     (object reads back missing, folder lists empty) and anything not
+        //     verified stays open for VoiceErasureService to retry. The table
+        //     has no FK to User, so the work survives the tombstone.
+        const voiceNotes = await tx.communityVoiceNote.findMany({
+          where: { author_id: userId },
+          select: { id: true, storage_key: true },
+        });
+        const voiceWork = await recordVoiceErasures(
+          tx,
+          [
+            ...objectTargets(voiceNotes.map((n) => n.storage_key)),
+            { kind: 'owner_folder', target: userId },
+          ],
+          'account_deletion',
+          now,
+        );
+        // Transcript search rows point at the note (targetId); the manifest
+        // removes the user's search rows by authorId, and this also catches a
+        // transcript row indexed without an author.
+        if (voiceNotes.length > 0) {
+          await tx.communitySearchEntry.deleteMany({
+            where: {
+              kind: 'voice_note_transcript',
+              targetId: { in: voiceNotes.map((n) => n.id) },
+            },
+          });
+        }
 
         // 2. Tombstone. Runs before the manifest because it clears User-row
         //    FKs (default payout method) to rows the manifest deletes.
@@ -773,14 +822,42 @@ export class AccountDeletionService {
         this.logger.log(
           `account deletion finalized user=${userId} rows=${rowsChanged} objects=${storage.removed} subscriptions=${billing.canceled}`,
         );
-        return { supabaseId: user.supabase_id };
+        return { supabaseId: user.supabase_id, voiceWork };
       },
       { timeout: FINALIZE_TX_TIMEOUT_MS, maxWait: 10_000 },
     );
 
     if ('skipped' in committed) return { outcome: 'skipped', reason: committed.skipped };
+    await this.verifyVoiceErasures(userId, committed.voiceWork);
     const authIdentity = await this.removeAuthIdentity(userId, committed.supabaseId);
     return { outcome: 'finalized', authIdentity };
+  }
+
+  /**
+   * B-610-5: verify the voice-recording erasure recorded in the committed
+   * finalization. Never fails the deletion (it already committed): any
+   * removal not verified stays open in community_voice_erasures and
+   * VoiceErasureService retries it until verified.
+   */
+  private async verifyVoiceErasures(userId: string, work: VoiceErasureRow[]): Promise<void> {
+    if (work.length === 0) return;
+    try {
+      const outcome = await attemptVoiceErasures(
+        this.prisma,
+        new VoiceUploadProvider(this.supabase),
+        work,
+        this.logger,
+      );
+      if (outcome.pending > 0) {
+        this.logger.warn(
+          `account deletion: ${outcome.pending} voice erasure(s) for user=${userId} not yet verified; retried by VoiceErasureService`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `account deletion: voice erasure verification failed after commit for user=${userId} (${(err as Error).message}); VoiceErasureService retries it`,
+      );
+    }
   }
 
   /**
