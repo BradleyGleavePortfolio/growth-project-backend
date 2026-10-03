@@ -457,13 +457,14 @@ describe('R4 post-check — rewrite, never append', () => {
     ).toEqual([]);
   });
 
-  it('7. voice scrub: emoji removed; exclamations beyond the session allowance become periods', () => {
+  it('7. voice scrub: emoji removed; B-651-9: every exclamation becomes a period', () => {
     const r = postCheckRomanReply('Great work today 💪🔥! You crushed it! Keep going!', {
       ...base,
       exclamationAllowed: true,
     });
     expect(r.guardrails_applied).toEqual(['voice_scrub']);
-    expect(r.text).toBe('Great work today ! You crushed it. Keep going.'.replace(' !', '!'));
+    // B-651-9: the old one-per-session allowance is gone, even when granted.
+    expect(r.text).toBe('Great work today. You crushed it. Keep going.');
     const none = postCheckRomanReply('Great work today! Keep going!', {
       ...base,
       exclamationAllowed: false,
