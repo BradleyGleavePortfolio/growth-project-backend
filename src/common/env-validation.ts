@@ -2028,11 +2028,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → 25 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 25, never no cap',
     reason:
-      'Daily spend cap for all Roman turns together (UTC day, US dollars). Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed.',
-    validate: (v) =>
-      Number.isFinite(Number(v)) && Number(v) >= 0
-        ? null
-        : 'ROMAN_DAILY_COST_CAP_USD must be a non-negative number of US dollars (the default 25 is used instead).',
+      'Daily spend cap for all Roman turns together (UTC day, US dollars). Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 25.',
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
