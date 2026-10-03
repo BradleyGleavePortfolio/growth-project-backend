@@ -29,6 +29,7 @@ import type {
   UpdateAttachmentScanDto,
   UpdateBloodworkPanelDto,
 } from './bloodwork.dto';
+import { SUPABASE_BACKEND, bloodworkBucket, ownedBloodworkKey } from './bloodwork-storage-ref';
 
 interface ActorContext {
   actorId: string;
@@ -657,11 +658,24 @@ export class BloodworkService {
       throw new ForbiddenException('Cannot attach to this panel');
     }
 
+    // B-608-8: a Supabase reference must point into the bloodwork bucket
+    // under this client's own prefix; the server later deletes it with the
+    // service-role key, so a foreign key is refused here.
+    let storageBackend = dto.storage_backend ?? null;
+    if (storageBackend && storageBackend.toLowerCase() === SUPABASE_BACKEND) {
+      storageBackend = SUPABASE_BACKEND;
+      if (!ownedBloodworkKey(dto.storage_ref, panel.client_id)) {
+        throw new BadRequestException(
+          `storage_ref must be ${bloodworkBucket()}/<your user id>/<file> for the supabase backend`,
+        );
+      }
+    }
+
     const attachment = await this.prisma.bloodworkAttachment.create({
       data: {
         panel_id: panelId,
         storage_ref: dto.storage_ref ?? null,
-        storage_backend: dto.storage_backend ?? null,
+        storage_backend: storageBackend,
         content_type: dto.content_type ?? null,
         byte_size: dto.byte_size ?? null,
         scan_status: BloodworkScanStatus.PENDING,

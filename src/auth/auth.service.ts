@@ -1813,7 +1813,11 @@ export class AuthService {
    */
   async issueRecentAuthToken(
     userId: string,
-    body: { password?: string; provider_token?: string; provider?: 'google' | 'apple' },
+    body: {
+      password?: string;
+      provider_token?: string;
+      provider?: 'google' | 'apple' | 'google_session';
+    },
   ): Promise<{ token: string; expires_in_ms: number }> {
     const secret = process.env.RECENT_AUTH_SECRET;
     if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
@@ -1876,6 +1880,75 @@ export class AuthService {
   }
 
   /**
+   * Google re-auth through the Supabase-brokered OAuth flow (mobile #313
+   * B-313-1). The mobile build ships no Google client id (auth is
+   * Supabase-brokered), so it cannot obtain a Google-issued ID token. It
+   * instead runs the same Supabase Google OAuth browser flow again and sends
+   * the access token of that brand-new session. Proof requirements:
+   *   1. Supabase accepts the token (getUser validates it server-side);
+   *   2. it belongs to this user (sub == supabase_id) and the identity has a
+   *      google provider;
+   *   3. its `amr` claim records an `oauth` authentication within
+   *      RECENT_AUTH_TTL_MS. Supabase keeps the original amr timestamp across
+   *      refreshes, so the app's existing session token (the replay the old
+   *      getUser-only path allowed) does not qualify unless the user really
+   *      signed in with Google moments ago.
+   */
+  private async verifyGoogleSessionRecentAuth(
+    user: { id: string; email: string; supabase_id: string | null },
+    sessionToken: string,
+    nowSec: number,
+    ttlSec: number,
+  ): Promise<void> {
+    const claims = decodeJwtClaims(sessionToken);
+    if (!claims) throw new UnauthorizedException('Provider token is invalid');
+    let supaUser: { id: string; app_metadata?: Record<string, unknown> } | null = null;
+    try {
+      const resp = await this.withAuthTimeout<{
+        data: { user: { id: string; app_metadata?: Record<string, unknown> } | null };
+        error: { message: string } | null;
+      }>(this.supabaseAdmin.auth.getUser(sessionToken), 'getUser');
+      supaUser = resp.error ? null : resp.data.user;
+    } catch (err) {
+      const m = (err as Error)?.message ?? '';
+      if (m.startsWith('AUTH_TIMEOUT:')) {
+        this.logger.warn(`recent-auth supabase timeout: ${m}`);
+        throw new ServiceUnavailableException('Authentication service temporarily unavailable');
+      }
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    if (!supaUser || claims.sub !== supaUser.id) {
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    if (!user.supabase_id || supaUser.id !== user.supabase_id) {
+      throw new UnauthorizedException('Provider token does not belong to this user');
+    }
+    const providers = supaUser.app_metadata?.['providers'];
+    const hasGoogle =
+      (Array.isArray(providers) && providers.includes('google')) ||
+      supaUser.app_metadata?.['provider'] === 'google';
+    if (!hasGoogle) {
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    const amr: unknown = Reflect.get(claims, 'amr');
+    const oauthAt = Array.isArray(amr)
+      ? amr
+          .map((entry: unknown) =>
+            typeof entry === 'object' && entry !== null && Reflect.get(entry, 'method') === 'oauth'
+              ? Reflect.get(entry, 'timestamp')
+              : null,
+          )
+          .filter((t): t is number => typeof t === 'number')
+      : [];
+    const freshest = oauthAt.length > 0 ? Math.max(...oauthAt) : null;
+    if (freshest === null || nowSec - freshest > ttlSec) {
+      throw new UnauthorizedException(
+        'Provider token is stale — request a fresh provider token and retry',
+      );
+    }
+  }
+
+  /**
    * Re-verify a fresh Google/Apple identity token as a proof of recent auth.
    *
    * For OAuth-only users (no password on file) this is the only way to obtain
@@ -1891,12 +1964,17 @@ export class AuthService {
    */
   private async verifyOAuthRecentAuthProof(
     user: { id: string; email: string; supabase_id: string | null },
-    provider: 'google' | 'apple',
+    provider: 'google' | 'apple' | 'google_session',
     providerToken: string,
   ): Promise<void> {
     const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
     const nowSec = Math.floor(Date.now() / 1000);
     const ttlSec = Math.ceil(ttl / 1000);
+
+    if (provider === 'google_session') {
+      await this.verifyGoogleSessionRecentAuth(user, providerToken, nowSec, ttlSec);
+      return;
+    }
 
     if (provider === 'apple') {
       // Apple — defense-in-depth verify the JWT with our pinned audience list,
@@ -2041,5 +2119,22 @@ export class AuthService {
     if (!matchesByEmail && !matchesBySub) {
       throw new UnauthorizedException('Provider token does not belong to this user');
     }
+  }
+}
+
+/**
+ * Unverified JWT claims (base64url payload). Only used after/alongside a
+ * server-side validation of the same token (Supabase getUser), never alone.
+ */
+function decodeJwtClaims(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? Object.fromEntries(Object.entries(parsed))
+      : null;
+  } catch {
+    return null;
   }
 }

@@ -192,7 +192,7 @@ The following controllers had only `@UseGuards(JwtAuthGuard)` before Phase 10. T
 | Already correctly gated | ~45 |
 | Gaps fixed (added @Roles) | 23 controllers (~65 routes) |
 | Intentionally public routes documented | 27 |
-| RecentAuthGuard applied | 1 (account deletion, more can be added) |
+| RecentAuthGuard applied | 3 (self account deletion: `POST /me/delete-account`, `DELETE /users/me/account`; admin force-delete `POST /admin/users/:id/delete`) |
 | Routes in legacy-guard allowlist | ~35 |
 
 ## Gaps fixed
@@ -204,6 +204,6 @@ The following controllers had only `@UseGuards(JwtAuthGuard)` before Phase 10. T
 ## Known follow-ups
 
 - Apply `RecentAuthGuard` to `POST /admin/users/:id/promote` (role change) once admin controller is confirmed clear of CI conflicts.
-- Apply `RecentAuthGuard` to GDPR force-delete endpoint when Phase 10 GDPR track lands.
+- Done (B-608-13): `RecentAuthGuard` guards the admin force-delete `POST /admin/users/:id/delete` (after `RolesGuard`).
 - Migrate `CoachGuard` / `CoachOrOwnerGuard` / `OwnerGuard` to `@Roles(...)` in a future cleanup PR to eliminate the legacy allowlist.
 - Consider `@Roles('coach')` on `/auth/become-coach` endpoint to document intent explicitly (currently just `@UseGuards(JwtAuthGuard)`).
