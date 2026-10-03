@@ -676,9 +676,25 @@ export class SessionReminderJob {
         if (candidates.length > 0) {
           const logs = await this.prisma.notificationDeliveryLog.findMany({
             where: { kind: args.kind, session_id: { in: candidates.map((c) => c.id) } },
-            select: { session_id: true, user_id: true },
+            select: { session_id: true, user_id: true, status: true, session_start_at: true },
           });
-          const have = new Set(logs.map((l) => `${l.session_id}|${l.user_id}`));
+          // C-634-6: a row covers a participant only for the start time it
+          // was claimed for. A row for an earlier start of a moved session,
+          // or a parked row, is not this time's reminder: if its re-arm
+          // write failed at the band's last tick, recovery never reads it
+          // (not retry/sending), so catch-up claims it here and claimDelivery
+          // re-arms it (stale revision reset, or parked retry). Rows written
+          // before the delivery-state columns (null start) read as covered.
+          const startById = new Map(candidates.map((c) => [c.id, c.start_at.getTime()]));
+          const have = new Set(
+            logs
+              .filter((l) => {
+                if (l.status === 'parked') return false;
+                const forStart = l.session_start_at ?? null;
+                return forStart === null || forStart.getTime() === startById.get(l.session_id);
+              })
+              .map((l) => `${l.session_id}|${l.user_id}`),
+          );
           for (const session of candidates) {
             const onlyUsers = new Set<string>();
             for (const userId of [session.client_id, session.coach_id]) {

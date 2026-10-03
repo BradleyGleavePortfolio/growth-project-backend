@@ -19,6 +19,8 @@
  * The database-level floor itself is proven against real Postgres in
  * test/scheduling-booking-concurrency.live.spec.ts.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { HttpException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
@@ -2341,5 +2343,194 @@ describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the 
     await withReminders(() => reminder.runOneHourReminderSweep());
     expect(db.deliveryLogs.filter((l) => l.session_id === 'late-booked')).toHaveLength(0);
     expect(notifications.rows).toHaveLength(0);
+  });
+});
+
+// B-634-9 (Sol @ bb6f3ea8): client-facing scheduling error copy speaks to the
+// reader directly (no "we"/"us"/"our") and names a working next step, while
+// status, machine code and existence hiding stay exactly as they were.
+describe('B-634-9: scheduling error envelopes are direct and actionable', () => {
+  const COLLECTIVE_VOICE = /\b(we|us|our|we're|we've|we'll|let's)\b/i;
+  const NEXT_STEP = /\b(Open|Refresh|Pick|Message|Reload|Fix|Use|Decline|Mark|add)\b/;
+
+  function expectDirect(f: Failure): void {
+    expect(f.message).not.toMatch(COLLECTIVE_VOICE);
+    expect(f.message).toMatch(NEXT_STEP);
+  }
+
+  it('404 SESSION_NOT_FOUND: same direct copy for a missing and a foreign session', async () => {
+    const { svc } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const foreign = await failure(svc.getSession(CLIENT_2, s.id));
+    const missing = await failure(svc.getSession(CLIENT, 'no-such-session'));
+    const lifecycleMissing = await failure(svc.approveSession(COACH, 'no-such-session'));
+    for (const f of [foreign, missing, lifecycleMissing]) {
+      expect(f).toEqual({
+        status: 404,
+        code: 'SESSION_NOT_FOUND',
+        message: 'That session is no longer available. Open Calendar to see your sessions.',
+      });
+      expectDirect(f);
+    }
+  });
+
+  it('404 SESSION_TYPE_UNAVAILABLE on edit: missing and foreign types read the same', async () => {
+    const { svc } = harness();
+    const missing = await failure(svc.updateSessionType(COACH, 'no-such-type', { name: 'x' }));
+    const foreign = await failure(svc.updateSessionType(OTHER_COACH, 'st-q', { name: 'x' }));
+    for (const f of [missing, foreign]) {
+      expect(f).toEqual({
+        status: 404,
+        code: 'SESSION_TYPE_UNAVAILABLE',
+        message:
+          'That appointment type is no longer available. Refresh your appointment types and try the change again.',
+      });
+      expectDirect(f);
+    }
+  });
+
+  it('404 COACH_NOT_FOUND and 403 COACH_NOT_BOOKABLE keep status and code with direct copy', async () => {
+    const { svc } = harness();
+    const noCoach = await failure(
+      svc.getOpenSlots(OWNER, 'no-such-coach', {
+        from: TUE_1000,
+        to: '2026-10-07T17:00:00.000Z',
+        session_type_id: null,
+        duration_minutes: 30,
+      }),
+    );
+    expect(noCoach).toMatchObject({ status: 404, code: 'COACH_NOT_FOUND' });
+    expectDirect(noCoach);
+    const otherCalendar = await failure(svc.listSessionTypes(OTHER_COACH, 'coach-1'));
+    expect(otherCalendar).toMatchObject({ status: 403, code: 'COACH_NOT_BOOKABLE' });
+    expectDirect(otherCalendar);
+    const notAssigned = await failure(svc.listSessionTypes(FOREIGN_CLIENT, 'coach-1'));
+    expect(notAssigned).toMatchObject({ status: 403, code: 'COACH_NOT_BOOKABLE' });
+    expectDirect(notAssigned);
+  });
+
+  it('every schedulingError message in src/scheduling is free of we/us, and SESSION_NOT_FOUND uses one constant', () => {
+    const dir = path.join(__dirname, '..', 'src', 'scheduling');
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => path.join(dir, f));
+    const messages: string[] = [];
+    let inlineNotFound = 0;
+    for (const file of files) {
+      const src = fs.readFileSync(file, 'utf8');
+      for (const m of src.matchAll(
+        /schedulingError\(\s*SchedulingErrorCode\.\w+,\s*(?:'([^']*)'|`([^`]*)`|"([^"]*)")/g,
+      )) {
+        messages.push(m[1] ?? m[2] ?? m[3] ?? '');
+      }
+      for (const m of src.matchAll(/new \w+Exception\(\s*'([^']*)'/g)) messages.push(m[1]);
+      inlineNotFound += [...src.matchAll(/SchedulingErrorCode\.SESSION_NOT_FOUND,\s*['`"]/g)]
+        .length;
+    }
+    expect(messages.length).toBeGreaterThan(30);
+    expect(messages.filter((m) => COLLECTIVE_VOICE.test(m))).toEqual([]);
+    expect(inlineNotFound).toBe(0);
+  });
+});
+
+// C-634-6 (Opus @ bb6f3ea8): catch-up counts a participant as covered only by
+// a row for the session's CURRENT start. A stale row (an earlier start of a
+// moved session) or a parked row whose re-arm write failed at the band's last
+// tick is otherwise invisible to both recovery and catch-up.
+describe('C-634-6: catch-up coverage is keyed on the current start time', () => {
+  const MIN = 60_000;
+  afterEach(() => jest.setSystemTime(NOW));
+  function addConfirmed(db: SchedulingFakeDb, id: string, start: Date): void {
+    db.addSession({
+      id,
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * MIN),
+      video_url: 'https://meet.example.com/c6',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+    });
+  }
+  function logRow(sessionId: string, userId: string, status: string, forStart: Date) {
+    return {
+      id: `c6-${sessionId}-${userId}`,
+      session_id: sessionId,
+      user_id: userId,
+      kind: NotificationKind.BOOKING_REMINDER_1H,
+      status,
+      attempts: 1,
+      lease_until: null,
+      claim_token: null,
+      session_start_at: forStart,
+      inapp_done_at: status === 'sent' ? NOW : null,
+      push_done_at: status === 'sent' ? NOW : null,
+      notification_id: null,
+      last_error: null,
+      created_at: NOW,
+    };
+  }
+  function failTakeovers(db: SchedulingFakeDb) {
+    const updateMany = db.notificationDeliveryLog.updateMany;
+    db.notificationDeliveryLog.updateMany = async () => {
+      throw new Prisma.PrismaClientKnownRequestError('synthetic pool timeout on re-arm', {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    };
+    return () => {
+      db.notificationDeliveryLog.updateMany = updateMany;
+    };
+  }
+
+  it.each([
+    { label: 'a stale sent row for an earlier start', status: 'sent', stale: true },
+    { label: 'a parked row', status: 'parked', stale: false },
+  ])(
+    '1h: $label whose re-arm fails at the final due tick is delivered by the next tick',
+    async ({ status, stale }) => {
+      const { db, notifications, reminder } = harness();
+      const start = new Date(NOW.getTime() + 55 * MIN);
+      const forStart = stale ? new Date(start.getTime() - 3 * 60 * MIN) : start;
+      addConfirmed(db, 'moved', start);
+      db.deliveryLogs.push(logRow('moved', 'client-1', status, forStart));
+      db.deliveryLogs.push(logRow('moved', 'coach-1', status, forStart));
+      const restore = failTakeovers(db);
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      restore();
+      expect(notifications.rows).toHaveLength(0);
+      // Next real tick: 50 minutes out, below the band.
+      jest.setSystemTime(new Date(NOW.getTime() + 5 * MIN));
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      expect(notifications.rows.map((r) => r.user_id).sort()).toEqual(['client-1', 'coach-1']);
+      expect(notifications.pushes).toHaveLength(2);
+      for (const l of db.deliveryLogs) {
+        expect(l).toMatchObject({ status: 'sent' });
+        expect(l.session_start_at).toEqual(start);
+      }
+      // And never twice.
+      jest.setSystemTime(new Date(NOW.getTime() + 10 * MIN));
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      expect(notifications.rows).toHaveLength(2);
+    },
+  );
+
+  it('rows for the current start (sent, gave_up) and legacy rows (no start) still count as covered', async () => {
+    const { db, notifications, reminder } = harness();
+    const a = new Date(NOW.getTime() + 50 * MIN);
+    const b = new Date(NOW.getTime() + 45 * MIN);
+    addConfirmed(db, 'settled-now', a);
+    addConfirmed(db, 'legacy', b);
+    db.deliveryLogs.push(logRow('settled-now', 'client-1', 'sent', a));
+    db.deliveryLogs.push(logRow('settled-now', 'coach-1', 'gave_up', a));
+    const legacy = logRow('legacy', 'client-1', 'sent', b);
+    db.deliveryLogs.push({ ...legacy, session_start_at: null });
+    db.deliveryLogs.push({ ...logRow('legacy', 'coach-1', 'sent', b), session_start_at: null });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    expect(notifications.rows).toHaveLength(0);
+    expect(notifications.pushes).toHaveLength(0);
   });
 });
