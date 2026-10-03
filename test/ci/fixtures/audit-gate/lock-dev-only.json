@@ -1,0 +1,46 @@
+{
+  "name": "growth-project-backend",
+  "version": "0.0.0-fixture",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "growth-project-backend",
+      "version": "0.0.0-fixture",
+      "dependencies": {
+        "multer": "2.3.0"
+      },
+      "devDependencies": {
+        "danger": "13.0.8"
+      }
+    },
+    "node_modules/braces": {
+      "version": "3.0.3",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fill-range": "^7.1.1"
+      }
+    },
+    "node_modules/danger": {
+      "version": "13.0.8",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "micromatch": "^4.0.4"
+      }
+    },
+    "node_modules/micromatch": {
+      "version": "4.0.8",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "braces": "^3.0.3"
+      }
+    },
+    "node_modules/multer": {
+      "version": "2.3.0",
+      "license": "MIT"
+    }
+  }
+}
