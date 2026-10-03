@@ -29,6 +29,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
 
 import { CommunityModerationController } from '../../src/community/moderation/community-moderation.controller';
 import { CommunityModerationService } from '../../src/community/moderation/community-moderation.service';
@@ -36,6 +37,8 @@ import { CommunityModerationRepository } from '../../src/community/moderation/co
 import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+import { PlanContextRepository } from '../../src/community/plan-context/plan-context.repository';
 import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
@@ -49,14 +52,15 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { liveDbUrl } from './_support/community-db';
+import { insertLiveUsers } from './_support/community-live-seed';
+import { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
 if (!liveDbUrl()) {
   // eslint-disable-next-line no-console
-  console.warn(
-    '[community-moderation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.',
-  );
+  console.warn('[community-moderation] COMMUNITY_TEST_DATABASE_URL not set — e2e spec skipped.');
 }
 
 const H_USER = 'x-test-user-id';
@@ -86,10 +90,8 @@ itLive('community v1-3 moderation (live DB)', () => {
       const req = ctx.switchToHttp().getRequest();
       const userId = req.headers[H_USER] as string | undefined;
       if (!userId) throw new UnauthorizedException();
-      const rows = await this.p.$queryRaw<
-        Array<{ id: string; role: string; coach_id: string | null }>
-      >`SELECT id, role, coach_id FROM "User" WHERE id = ${userId} LIMIT 1`;
-      const user = rows[0];
+      // The real guard attaches the full Prisma User row; so does the stub.
+      const user = await this.p.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedException();
       req.user = user;
       return true;
@@ -141,17 +143,18 @@ itLive('community v1-3 moderation (live DB)', () => {
     await prismaForStub.$connect();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [
-        CommunityModerationController,
-        CommunityMessagesController,
-      ],
+      controllers: [CommunityModerationController, CommunityMessagesController],
       providers: [
         CommunityModerationService,
         CommunityModerationRepository,
         CommunityMessagesService,
         CommunityMessagesRepository,
         CommunityPostsRepository,
+        // CommunityMessagesService validates plan-context tags on send.
+        PlanContextService,
+        PlanContextRepository,
         CommunityAccessService,
+        CommunitySafetyService,
         CommunityFeatureFlagGuard,
         CommunityMessagesEnabledGuard,
         CommunityRealtimeService,
@@ -159,6 +162,8 @@ itLive('community v1-3 moderation (live DB)', () => {
         SupabaseService,
         AnalyticsService,
         NotificationsService,
+        // Signs short-lived playback links for reported voice notes.
+        VoiceUploadProvider,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
@@ -199,17 +204,12 @@ itLive('community v1-3 moderation (live DB)', () => {
     ids.studentA = randomUUID();
     ids.studentA2 = randomUUID();
 
-    const users: Array<[string, string, string, string | null]> = [
+    const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentA2, 'student', 'Student A2', ids.coachA],
     ];
-    for (const [id, role, name, coachId] of users) {
-      await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name, coach_id)
-        VALUES (${id}, ${role}, ${name}, ${coachId})
-      `;
-    }
+    await insertLiveUsers(prisma, users);
 
     const wsA = await prisma.communityWorkspace.create({
       data: { coach_id: ids.coachA, name: 'WS A', slug: `ws-a-${tag}` },
@@ -249,6 +249,10 @@ itLive('community v1-3 moderation (live DB)', () => {
 
   async function cleanup() {
     const userIds = [ids.coachA, ids.studentA, ids.studentA2].filter(Boolean);
+    await prisma.notification.deleteMany({ where: { user_id: { in: userIds } } });
+    await prisma.communityWorkspaceBan.deleteMany({
+      where: { workspace_id: { in: [ids.wsA].filter(Boolean) } },
+    });
     await prisma.communityModerationAction.deleteMany({
       where: { workspace_id: { in: [ids.wsA].filter(Boolean) } },
     });
@@ -268,16 +272,11 @@ itLive('community v1-3 moderation (live DB)', () => {
     let itemId = '';
 
     it('1. member files a report → 201 with item id', async () => {
-      const res = await call(
-        'POST',
-        `/api/community/moderation/reports`,
-        asUser(ids.studentA),
-        {
-          target_type: 'message',
-          target_id: ids.messageId,
-          reason: 'spam',
-        },
-      );
+      const res = await call('POST', `/api/community/moderation/reports`, asUser(ids.studentA), {
+        target_type: 'message',
+        target_id: ids.messageId,
+        reason: 'spam',
+      });
       expect(res.status).toBe(201);
       expect(res.body.item.id).toBeTruthy();
       expect(res.body.item.target_id).toBe(ids.messageId);
@@ -315,11 +314,7 @@ itLive('community v1-3 moderation (live DB)', () => {
       expect(act.status).toBe(200);
       expect(act.body.item.status).toBe('actioned');
 
-      const get = await call(
-        'GET',
-        `/api/community/messages/${ids.messageId}`,
-        asUser(ids.coachA),
-      );
+      const get = await call('GET', `/api/community/messages/${ids.messageId}`, asUser(ids.coachA));
       // Soft-hidden content: body is nulled (deleted) and still reachable, OR
       // the row is filtered — either way it is no longer live content.
       if (get.status === 200) {
@@ -328,6 +323,113 @@ itLive('community v1-3 moderation (live DB)', () => {
       } else {
         expect(get.status).toBe(404);
       }
+    });
+  });
+
+  // B-610-13 (#610 fix round 6, GPT-6.1 Sol): on real Postgres, a Ban whose
+  // member-notice insert fails inside the action transaction leaves NOTHING
+  // behind: no ban row, memberships still active, the content visible, the
+  // report open, no notice. The failure is a real database error (a probe
+  // trigger on "Notification" for this member only), not a mocked client,
+  // so the rollback is Postgres's own. The retry then applies all of it.
+  describe('B-610-13: Ban + member notice are one transaction (live DB)', () => {
+    it('5. a notice insert that fails in Postgres rolls back the ban; the retry applies everything once', async () => {
+      const message = await prisma.communityMessage.create({
+        data: {
+          workspace_id: ids.wsA,
+          cohort_id: ids.cohortA,
+          scope: 'cohort',
+          kind: 'text',
+          sender_id: ids.studentA2,
+          body: 'second reportable message',
+          visibility: 'active',
+        },
+      });
+      const report = await call('POST', `/api/community/moderation/reports`, asUser(ids.studentA), {
+        target_type: 'message',
+        target_id: message.id,
+        reason: 'spam',
+      });
+      expect(report.status).toBe(201);
+      const reportId: string = report.body.item.id;
+
+      const banCount = () =>
+        prisma.communityWorkspaceBan.count({
+          where: { workspace_id: ids.wsA, user_id: ids.studentA2, lifted_at: null },
+        });
+      const memberStatuses = async () =>
+        (
+          await prisma.communityMembership.findMany({
+            where: { workspace_id: ids.wsA, user_id: ids.studentA2 },
+            select: { status: true },
+          })
+        ).map((m) => m.status);
+      // Notices for THIS report only: case 4's Hide already stored one for
+      // this member on another report.
+      const noticeCount = async () =>
+        (
+          await prisma.notification.findMany({
+            where: { user_id: ids.studentA2 },
+            select: { payload: true },
+          })
+        ).filter((n) => {
+          const payload = n.payload;
+          return (
+            typeof payload === 'object' &&
+            payload !== null &&
+            !Array.isArray(payload) &&
+            payload.moderation_action_id === reportId
+          );
+        }).length;
+      const messageRow = () =>
+        prisma.communityMessage.findFirst({
+          where: { id: message.id },
+          select: { deleted_at: true },
+        });
+      const reportRow = () =>
+        prisma.communityModerationAction.findUnique({
+          where: { id: reportId },
+          select: { status: true, action: true },
+        });
+
+      const probe = `b610_13_notice_probe_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+      await prisma.$executeRawUnsafe(
+        `CREATE FUNCTION ${probe}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'B-610-13 probe: notice insert refused'; END $$`,
+      );
+      try {
+        await prisma.$executeRawUnsafe(
+          `CREATE TRIGGER ${probe} BEFORE INSERT ON "Notification" FOR EACH ROW WHEN (NEW.user_id = '${ids.studentA2}') EXECUTE FUNCTION ${probe}()`,
+        );
+        const failed = await call(
+          'PATCH',
+          `/api/community/moderation/items/${reportId}`,
+          asUser(ids.coachA),
+          { action: 'ban' },
+        );
+        expect(failed.status).toBe(500);
+        expect(await banCount()).toBe(0);
+        expect(await memberStatuses()).toEqual(['active']);
+        expect((await messageRow())?.deleted_at).toBeNull();
+        expect(await reportRow()).toEqual({ status: 'open', action: null });
+        expect(await noticeCount()).toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${probe} ON "Notification"`);
+        await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS ${probe}()`);
+      }
+
+      const retried = await call(
+        'PATCH',
+        `/api/community/moderation/items/${reportId}`,
+        asUser(ids.coachA),
+        { action: 'ban' },
+      );
+      expect(retried.status).toBe(200);
+      expect(retried.body.item).toMatchObject({ status: 'actioned', action: 'ban' });
+      expect(retried.body.member_notice.stored).toBe(true);
+      expect(await banCount()).toBe(1);
+      expect(await memberStatuses()).toEqual(['removed']);
+      expect((await messageRow())?.deleted_at).toBeInstanceOf(Date);
+      expect(await noticeCount()).toBe(1);
     });
   });
 });
