@@ -79,6 +79,10 @@ export interface CheckoutWebhookResult {
   // because the caller held an outer $transaction. BillingService runs these
   // after the outer tx commits (see runDeferredSplit below).
   deferredSplit?: DeferredSplitTask;
+  // S-FEE round 6 (#627 C-627-7) — present when a refund / dispute recorded
+  // payout notices for this charge inside the caller's $transaction.
+  // BillingService delivers them after the tx commits (deliverPayoutNotices).
+  deferredPayoutNoticeChargeId?: string;
 }
 
 // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
@@ -686,9 +690,26 @@ export class CheckoutWebhookHandlerService {
     }
   }
 
-  private async applyCheckoutExpired(
-    event: StripeEvent,
-  ): Promise<CheckoutWebhookResult> {
+  /**
+   * S-FEE round 6 (C-627-7) — deliver a charge's payout notices after
+   * BillingService committed its webhook transaction. Never throws; the
+   * notice sweeper is the backstop.
+   */
+  async deliverPayoutNotices(chargeId: string): Promise<void> {
+    if (!this.refundDispute) return;
+    await this.refundDispute.deliverPayoutNotices(chargeId);
+  }
+
+  /**
+   * S-FEE — settle a guest-storefront purchase after BillingService committed
+   * its conversion. Never throws; the settlement sweeper is the backstop.
+   */
+  async settleGuestPurchase(paymentIntentId: string): Promise<void> {
+    if (!this.splits) return;
+    await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
+  }
+
+  private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {
     const session = event.data.object as { id?: string };
     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
     const purchase = await this.prisma.clientPurchase.findUnique({
