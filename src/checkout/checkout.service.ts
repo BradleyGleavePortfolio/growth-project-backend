@@ -760,8 +760,40 @@ export class CheckoutService {
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
     // B-TRIALS (OR-113-2) — derived trial status for Home / Your plan.
+    // B-TRIALS-3 (B-656-5) — the trial view also needs the customer's default
+    // card and whether a purchase lost the one-trial race; both are read only
+    // when the page holds a trial.
     const now = new Date();
-    return { items: page.map((row) => ({ ...row, trial: purchaseTrialView(row, now) })), hasMore };
+    const trialRows = page.filter((r) => r.trial_ends_at || (r.trial_days ?? 0) > 0);
+    let customerDefaultCard = false;
+    let conflicts = new Set<string>();
+    if (trialRows.length > 0) {
+      const [customer, conflictRows] = await Promise.all([
+        this.prisma.connectCustomer.findUnique({
+          where: { client_user_id: clientUserId },
+          select: { default_payment_method_id: true },
+        }),
+        this.prisma.packageTrialConflict.findMany({
+          where: {
+            purchase_id: { in: trialRows.map((r) => r.id) },
+            status: { in: ['owed', 'cancelled'] },
+          },
+          select: { purchase_id: true },
+        }),
+      ]);
+      customerDefaultCard = !!customer?.default_payment_method_id;
+      conflicts = new Set(conflictRows.map((c) => c.purchase_id));
+    }
+    return {
+      items: page.map((row) => ({
+        ...row,
+        trial: purchaseTrialView(row, now, {
+          customerDefaultCard,
+          trialConflict: conflicts.has(row.id),
+        }),
+      })),
+      hasMore,
+    };
   }
 
   // PR-15A — Buyer-visible drops feed.

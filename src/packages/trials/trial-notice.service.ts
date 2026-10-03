@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { ClientPurchase, PackageTrialNotice, Prisma } from '@prisma/client';
@@ -6,7 +7,15 @@ import { EmailTemplateKey } from '../../email/email.types';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma.service';
-import { formatTrialAmount, formatTrialDate, trialEndingCopy } from './trial-copy';
+import {
+  formatTrialAmount,
+  formatTrialDate,
+  trialEndingCopy,
+  trialNoChargeReason,
+  willChargeCard,
+} from './trial-copy';
+
+export { willChargeCard } from './trial-copy';
 
 // B-TRIALS (OR-113-2) — "your free trial ends soon" notice.
 //
@@ -21,7 +30,37 @@ import { formatTrialAmount, formatTrialDate, trialEndingCopy } from './trial-cop
 // (deliver()), and sweep() retries anything undelivered every 10 minutes
 // until it is delivered, hits the attempt cap, or the trial has ended.
 
+//
+// B-TRIALS-3 (agent 115) — fix round for Sol B-656-2/3/4/5:
+//   * the notice no longer depends on the trial_will_end event alone: it is
+//     also recorded when a trial starts inside the warning window
+//     (recordIfDue, from the webhook) and by the reconciler in sweep()
+//     (started trials ending within TRIAL_NOTICE_LEAD_MS without a notice).
+//     A one-day trial whose only trial_will_end event arrived before the card
+//     was saved is noticed once the card is saved (B-656-3);
+//   * every channel claim is an exclusive lease (fresh token + expiry) and the
+//     outcome is written only by the token holder, so a stale or slow caller
+//     can never send twice in parallel or overwrite a delivered state; the
+//     transport is bounded below the lease (B-656-2). Delivery is honestly
+//     at-least-once: a process that dies after the provider accepted the
+//     message but before the outcome write is retried after the lease
+//     expires (email retries use a new per-attempt idempotency key only
+//     after a definite failure);
+//   * push re-reads the client's notification preferences at delivery: a
+//     global mute records push_status 'suppressed' and sends nothing. The
+//     email is a billing notice about an upcoming card charge and is sent
+//     regardless of the push mute (B-656-4);
+//   * the copy says what will really happen: a card is charged only when the
+//     subscription or the customer still holds a payment method; a client who
+//     removed the card mid-trial is told nothing will be charged (B-656-5).
+
 export const TRIAL_NOTICE_MAX_ATTEMPTS = 5;
+/** Stripe's default trial_will_end lead: three days before the trial end. */
+export const TRIAL_NOTICE_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
+/** A channel claim expires after this; the transport is bounded below it. */
+export const TRIAL_NOTICE_LEASE_MS = 2 * 60 * 1000;
+export const TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS = 30 * 1000;
+const RECONCILE_BATCH = 100;
 /** Mobile route the notice opens (Your plan: trial end date + cancel). */
 export const TRIAL_ACTION_SCREEN = 'ClientPackages';
 /** Give the post-commit delivery a head start before the sweeper retries. */
@@ -30,13 +69,45 @@ const SWEEP_BATCH = 50;
 
 type Tx = Prisma.TransactionClient | PrismaService;
 
+export type TrialNoticeSource = 'trial_will_end' | 'trial_start' | 'sweep';
+
+type NoticePurchase = Pick<
+  ClientPurchase,
+  'id' | 'client_user_id' | 'package_id' | 'amount_cents' | 'currency'
+>;
+
+export interface RecordTrialNoticeArgs {
+  purchase: NoticePurchase;
+  trialEndsAt: Date;
+  amountCents: number;
+  currency: string;
+  cancelAtPeriodEnd: boolean;
+  /** A payment method will really be charged at the trial end. */
+  cardOnFile: boolean;
+  source: TrialNoticeSource;
+  eventId?: string | null;
+  now?: Date;
+}
+
+/** True when the subscription itself holds a payment method. */
+export function subscriptionHasPaymentMethod(sub: {
+  default_payment_method?: unknown;
+  default_source?: unknown;
+}): boolean {
+  if (hasSavedPaymentMethod(sub)) return true;
+  const src = sub?.default_source;
+  if (typeof src === 'string') return src.length > 0;
+  return !!(src && typeof src === 'object' && typeof (src as { id?: unknown }).id === 'string');
+}
+
 /** The Stripe subscription fields the notice reads (2024-09-30.acacia). */
 export interface TrialWillEndSubscription {
   id?: string;
   status?: string;
   trial_end?: number | null;
   cancel_at_period_end?: boolean;
-  default_payment_method?: string | { id?: string } | null;
+  default_payment_method?: unknown;
+  default_source?: unknown;
   items?: {
     data?: Array<{
       quantity?: number | null;
@@ -78,14 +149,19 @@ export class TrialNoticeService {
   ) {}
 
   /**
-   * Record the trial-ending notice inside the webhook transaction. Returns the
-   * notice id to deliver after commit, or null when nothing should be sent
-   * (already noticed for this trial end, trial over, no card saved, not
-   * trialing).
+   * customer.subscription.trial_will_end, inside the webhook transaction.
+   * Returns the notice id to deliver after commit, or null when nothing is
+   * recorded now (already noticed for this trial end, trial over, not
+   * trialing, or the trial has not started yet).
    */
   async recordTrialWillEnd(
     tx: Tx,
-    args: { purchase: ClientPurchase; sub: TrialWillEndSubscription; eventId: string; now?: Date },
+    args: {
+      purchase: NoticePurchase & Pick<ClientPurchase, 'entitlement_active'>;
+      sub: TrialWillEndSubscription;
+      eventId: string;
+      now?: Date;
+    },
   ): Promise<string | null> {
     const now = args.now ?? new Date();
     const { purchase, sub } = args;
@@ -96,26 +172,80 @@ export class TrialNoticeService {
     if (sub.status !== 'trialing' || !trialEndsAt || trialEndsAt.getTime() <= now.getTime()) {
       return null;
     }
-    // No card saved = the trial never started; Stripe cancels the subscription
-    // at the trial end (missing_payment_method=cancel) and nobody is charged,
-    // so "your card will be charged" would be untrue.
-    if (!hasSavedPaymentMethod(sub)) return null;
+    // B-656-3 — the trial has not started (card not saved yet, or this
+    // purchase lost the one-trial race): no access, nothing to warn about
+    // yet. The notice is not lost: the trial start (recordIfDue) or the
+    // reconciler records it as soon as the trial really starts.
+    if (!purchase.entitlement_active) return null;
+    const customerDefault = await this.customerHasDefaultCard(purchase.client_user_id, tx);
+    return this.recordNotice(tx, {
+      purchase,
+      trialEndsAt,
+      amountCents: upcomingChargeCents(sub, purchase.amount_cents),
+      currency: (sub.items?.data?.[0]?.price?.currency ?? purchase.currency ?? 'usd').toLowerCase(),
+      cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+      cardOnFile: willChargeCard(subscriptionHasPaymentMethod(sub), customerDefault),
+      source: 'trial_will_end',
+      eventId: args.eventId,
+      now,
+    });
+  }
 
-    const amountCents = upcomingChargeCents(sub, purchase.amount_cents);
-    const currency = (
-      sub.items?.data?.[0]?.price?.currency ??
-      purchase.currency ??
-      'usd'
-    ).toLowerCase();
+  /**
+   * B-656-3 — the trial just started (card saved, access granted) inside the
+   * warning window: record the notice now, on the webhook transaction, rather
+   * than waiting for a trial_will_end event that may already have been sent.
+   */
+  async recordIfDue(
+    tx: Tx,
+    args: {
+      purchase: NoticePurchase;
+      sub: TrialWillEndSubscription;
+      trialEndsAt: Date | null;
+      eventId?: string | null;
+      now?: Date;
+    },
+  ): Promise<string | null> {
+    const now = args.now ?? new Date();
+    const end = args.trialEndsAt;
+    if (!end) return null;
+    const left = end.getTime() - now.getTime();
+    if (left <= 0 || left > TRIAL_NOTICE_LEAD_MS) return null;
+    const customerDefault = await this.customerHasDefaultCard(args.purchase.client_user_id, tx);
+    return this.recordNotice(tx, {
+      purchase: args.purchase,
+      trialEndsAt: end,
+      amountCents: upcomingChargeCents(args.sub, args.purchase.amount_cents),
+      currency: (
+        args.sub.items?.data?.[0]?.price?.currency ??
+        args.purchase.currency ??
+        'usd'
+      ).toLowerCase(),
+      cancelAtPeriodEnd: !!args.sub.cancel_at_period_end,
+      cardOnFile: willChargeCard(subscriptionHasPaymentMethod(args.sub), customerDefault),
+      source: 'trial_start',
+      eventId: args.eventId ?? null,
+      now,
+    });
+  }
+
+  /**
+   * One notice per (purchase, trial end): the ledger row and the in-app row,
+   * on the caller's transaction. Returns the notice id when this call wrote
+   * it, else null (already recorded).
+   */
+  async recordNotice(tx: Tx, args: RecordTrialNoticeArgs): Promise<string | null> {
+    const { purchase, trialEndsAt } = args;
     const created = await tx.packageTrialNotice.createMany({
       data: [
         {
           purchase_id: purchase.id,
           client_user_id: purchase.client_user_id,
           trial_ends_at: trialEndsAt,
-          amount_cents: amountCents,
-          currency,
-          stripe_event_id: args.eventId,
+          amount_cents: args.amountCents,
+          currency: args.currency,
+          stripe_event_id: args.eventId ?? null,
+          source: args.source,
         },
       ],
       skipDuplicates: true,
@@ -132,11 +262,13 @@ export class TrialNoticeService {
     const timeZone = await this.clientTimeZone(purchase.client_user_id, tx);
     const copy = trialEndingCopy({
       trialEndsAt,
-      amountCents,
-      currency,
+      amountCents: args.amountCents,
+      currency: args.currency,
       timeZone,
-      cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+      cardOnFile: args.cardOnFile,
     });
+    // Global mute / per-kind prefs are enforced inside createNotification.
     await this.notifications.createNotification(
       {
         user_id: purchase.client_user_id,
@@ -149,9 +281,10 @@ export class TrialNoticeService {
           purchase_id: purchase.id,
           package_id: purchase.package_id,
           trial_ends_at: trialEndsAt.toISOString(),
-          amount_cents: amountCents,
-          currency,
-          will_charge: !sub.cancel_at_period_end,
+          amount_cents: args.amountCents,
+          currency: args.currency,
+          will_charge: trialNoChargeReason(args) === null,
+          card_on_file: args.cardOnFile,
         },
       },
       tx,
@@ -170,6 +303,7 @@ export class TrialNoticeService {
         select: {
           id: true,
           cancel_at_period_end: true,
+          card_on_file: true,
           status: true,
           package: { select: { name: true, interval: true, interval_count: true } },
           coach: { select: { name: true } },
@@ -178,23 +312,35 @@ export class TrialNoticeService {
       });
       if (!purchase || purchase.status === 'canceled') return;
       const timeZone = await this.clientTimeZone(notice.client_user_id);
+      // B-656-5 — the truth at delivery time (the card may have been removed
+      // or replaced since the notice was recorded).
+      const cardOnFile = willChargeCard(
+        purchase.card_on_file,
+        await this.customerHasDefaultCard(notice.client_user_id),
+      );
       const copy = trialEndingCopy({
         trialEndsAt: notice.trial_ends_at,
         amountCents: notice.amount_cents,
         currency: notice.currency,
         timeZone,
         cancelAtPeriodEnd: purchase.cancel_at_period_end,
+        cardOnFile,
       });
-      await this.deliverPush(notice, copy.title, copy.body);
-      await this.deliverEmail(notice, {
-        recipient: purchase.client,
-        planName: purchase.package?.name ?? 'your plan',
-        coachName: purchase.coach?.name ?? null,
-        dateLabel: formatTrialDate(notice.trial_ends_at, timeZone),
-        amountLabel: formatTrialAmount(notice.amount_cents, notice.currency),
-        cancelAtPeriodEnd: purchase.cancel_at_period_end,
-        cadence: cadenceLabel(purchase.package?.interval, purchase.package?.interval_count),
-      });
+      await this.deliverPush(notice, copy.title, copy.body, now);
+      await this.deliverEmail(
+        notice,
+        {
+          recipient: purchase.client,
+          planName: purchase.package?.name ?? 'your plan',
+          coachName: purchase.coach?.name ?? null,
+          dateLabel: formatTrialDate(notice.trial_ends_at, timeZone),
+          amountLabel: formatTrialAmount(notice.amount_cents, notice.currency),
+          cancelAtPeriodEnd: purchase.cancel_at_period_end,
+          cardOnFile,
+          cadence: cadenceLabel(purchase.package?.interval, purchase.package?.interval_count),
+        },
+        now,
+      );
     } catch (err) {
       this.logger.error(
         `trial notice delivery failed notice=${noticeId}: ${(err as Error)?.name ?? 'error'}`,
@@ -202,9 +348,20 @@ export class TrialNoticeService {
     }
   }
 
-  /** Retry undelivered notices. Multi-replica safe (per-channel CAS claims). */
+  /**
+   * Every 10 minutes: record notices that are due but missing (B-656-3), then
+   * retry undelivered channels. Multi-replica safe (unique notice key and
+   * per-channel leases).
+   */
   @Cron('*/10 * * * *', { name: 'trial-notice-sweep', timeZone: 'UTC' })
   async sweep(now: Date = new Date()): Promise<number> {
+    let reconciled = 0;
+    try {
+      reconciled = await this.reconcileDue(now);
+    } catch (err) {
+      // A reconcile failure never blocks the delivery retries below.
+      this.logger.error(`trial notice reconcile errored: ${(err as Error)?.name ?? 'error'}`);
+    }
     const due = await this.prisma.packageTrialNotice.findMany({
       where: {
         trial_ends_at: { gt: now },
@@ -219,39 +376,126 @@ export class TrialNoticeService {
       select: { id: true },
     });
     for (const row of due) await this.deliver(row.id, now);
-    return due.length;
+    return reconciled + due.length;
   }
 
-  private async deliverPush(notice: PackageTrialNotice, title: string, body: string) {
+  /**
+   * B-656-3 — started trials (trialing with access) that end within the
+   * warning window and have no notice for that trial end yet. Covers a
+   * trial_will_end event that arrived before the card was saved, a trial
+   * that started on a code path without the start hook, and a webhook
+   * endpoint that is missing the event. Returns how many it recorded.
+   */
+  async reconcileDue(now: Date = new Date()): Promise<number> {
+    const candidates = await this.prisma.clientPurchase.findMany({
+      where: {
+        status: 'trialing',
+        entitlement_active: true,
+        trial_ends_at: { gt: now, lte: new Date(now.getTime() + TRIAL_NOTICE_LEAD_MS) },
+      },
+      orderBy: { trial_ends_at: 'asc' },
+      take: RECONCILE_BATCH,
+      select: {
+        id: true,
+        client_user_id: true,
+        package_id: true,
+        amount_cents: true,
+        currency: true,
+        cancel_at_period_end: true,
+        card_on_file: true,
+        trial_ends_at: true,
+      },
+    });
+    if (candidates.length === 0) return 0;
+    const existing = await this.prisma.packageTrialNotice.findMany({
+      where: { purchase_id: { in: candidates.map((c) => c.id) } },
+      select: { purchase_id: true, trial_ends_at: true },
+    });
+    const have = new Set(existing.map((n) => `${n.purchase_id}:${n.trial_ends_at.getTime()}`));
+    let recorded = 0;
+    for (const p of candidates) {
+      const end = p.trial_ends_at;
+      if (!end || have.has(`${p.id}:${end.getTime()}`)) continue;
+      try {
+        const customerDefault = await this.customerHasDefaultCard(p.client_user_id);
+        const id = await this.prisma.$transaction((tx) =>
+          this.recordNotice(tx, {
+            purchase: p,
+            trialEndsAt: end,
+            amountCents: p.amount_cents,
+            currency: (p.currency || 'usd').toLowerCase(),
+            cancelAtPeriodEnd: p.cancel_at_period_end,
+            cardOnFile: willChargeCard(p.card_on_file, customerDefault),
+            source: 'sweep',
+            now,
+          }),
+        );
+        if (id) {
+          recorded += 1;
+          await this.deliver(id, now);
+        }
+      } catch (err) {
+        this.logger.error(
+          `trial notice reconcile failed purchase=${p.id}: ${(err as Error)?.name ?? 'error'}`,
+        );
+      }
+    }
+    return recorded;
+  }
+
+  private async deliverPush(
+    notice: PackageTrialNotice,
+    title: string,
+    body: string,
+    now: Date,
+  ): Promise<void> {
     if (notice.push_status !== 'pending' || notice.push_attempts >= TRIAL_NOTICE_MAX_ATTEMPTS)
       return;
-    const claimed = await this.prisma.packageTrialNotice.updateMany({
-      where: { id: notice.id, push_status: 'pending', push_attempts: notice.push_attempts },
-      data: { push_attempts: { increment: 1 } },
-    });
-    if (claimed.count !== 1) return;
-    const attempt = notice.push_attempts + 1;
-    const result = await this.notifications.pushToUser(notice.client_user_id, title, body, {
-      kind: NotificationKind.TRIAL_ENDING,
-      purchase_id: notice.purchase_id,
-      deep_link: 'tgp://plan',
-      // The app's push-tap router (pushTapRouter CLIENT_PUSH_ROUTES) opens
-      // Your plan, where the trial end date and the cancel path live.
-      actionScreen: TRIAL_ACTION_SCREEN,
-    });
-    const status = result.delivered
-      ? 'delivered'
-      : result.code === 'no-token' || result.code === 'invalid-token'
-        ? 'no_token'
-        : attempt >= TRIAL_NOTICE_MAX_ATTEMPTS
-          ? 'failed'
-          : 'pending';
-    await this.prisma.packageTrialNotice.update({
-      where: { id: notice.id },
-      data: {
-        push_status: status,
-        last_error: result.delivered ? notice.last_error : `push:${result.code}`,
-      },
+    const lease = await this.claim(notice.id, 'push', now);
+    if (!lease) return;
+    let status: 'delivered' | 'no_token' | 'suppressed' | 'pending' | 'failed';
+    let error: string | null = null;
+    // B-656-4 — the client's preferences at delivery time (a mute set after
+    // the notice was recorded still applies).
+    const prefs = await this.notifications.getPreferences(notice.client_user_id);
+    if ((prefs as Record<string, unknown>).muted === true) {
+      status = 'suppressed';
+    } else {
+      const controller = new AbortController();
+      const result = await withTimeout(
+        this.notifications.pushToUser(
+          notice.client_user_id,
+          title,
+          body,
+          {
+            kind: NotificationKind.TRIAL_ENDING,
+            purchase_id: notice.purchase_id,
+            deep_link: 'tgp://plan',
+            // The app's push-tap router (pushTapRouter CLIENT_PUSH_ROUTES) opens
+            // Your plan, where the trial end date and the cancel path live.
+            actionScreen: TRIAL_ACTION_SCREEN,
+          },
+          controller.signal,
+        ),
+        TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS,
+        () => controller.abort(),
+      );
+      if (result === TIMED_OUT) {
+        status = lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS ? 'failed' : 'pending';
+        error = 'push:timeout';
+      } else if (result.delivered) {
+        status = 'delivered';
+      } else if (result.code === 'no-token' || result.code === 'invalid-token') {
+        status = 'no_token';
+        error = `push:${result.code}`;
+      } else {
+        status = lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS ? 'failed' : 'pending';
+        error = `push:${result.code}`;
+      }
+    }
+    await this.complete(notice.id, 'push', lease.token, {
+      push_status: status,
+      ...(error ? { last_error: error } : {}),
     });
   }
 
@@ -264,53 +508,141 @@ export class TrialNoticeService {
       dateLabel: string;
       amountLabel: string;
       cancelAtPeriodEnd: boolean;
+      cardOnFile: boolean;
       cadence: string;
     },
-  ) {
+    now: Date,
+  ): Promise<void> {
     if (notice.email_status !== 'pending' || notice.email_attempts >= TRIAL_NOTICE_MAX_ATTEMPTS) {
       return;
     }
     if (!this.email) return;
-    const claimed = await this.prisma.packageTrialNotice.updateMany({
-      where: { id: notice.id, email_status: 'pending', email_attempts: notice.email_attempts },
-      data: { email_attempts: { increment: 1 } },
-    });
-    if (claimed.count !== 1) return;
-    const attempt = notice.email_attempts + 1;
+    const lease = await this.claim(notice.id, 'email', now);
+    if (!lease) return;
     if (!ctx.recipient?.email) {
-      await this.prisma.packageTrialNotice.update({
-        where: { id: notice.id },
-        data: { email_status: 'no_email' },
-      });
+      await this.complete(notice.id, 'email', lease.token, { email_status: 'no_email' });
       return;
     }
+    const reason = trialNoChargeReason(ctx);
+    // Attempt 1 keeps the original key; a retry after a definite failure gets
+    // its own key (EmailService treats a reused key as already sent).
+    const baseKey = `trial-ending:${notice.purchase_id}:${notice.trial_ends_at.getTime()}`;
+    const idempotencyKey = lease.attempt === 1 ? baseKey : `${baseKey}:a${lease.attempt}`;
     let status: 'sent' | 'pending' | 'failed' = 'pending';
     let error: string | null = null;
     try {
-      const res = await this.email.send({
-        to: ctx.recipient.email,
-        template: EmailTemplateKey.TRIAL_ENDING,
-        idempotencyKey: `trial-ending:${notice.purchase_id}:${notice.trial_ends_at.getTime()}`,
-        data: {
-          recipient_name: firstName(ctx.recipient.name),
-          plan_name: ctx.planName,
-          coach_name: ctx.coachName,
-          trial_end_date: ctx.dateLabel,
-          amount_display: ctx.amountLabel,
-          cadence: ctx.cadence,
-          will_charge: !ctx.cancelAtPeriodEnd,
-        },
-      });
-      if (res.status === 'failed') error = `email:${res.error ? 'provider_failed' : 'failed'}`;
+      const res = await withTimeout(
+        this.email.send({
+          to: ctx.recipient.email,
+          template: EmailTemplateKey.TRIAL_ENDING,
+          idempotencyKey,
+          data: {
+            recipient_name: firstName(ctx.recipient.name),
+            plan_name: ctx.planName,
+            coach_name: ctx.coachName,
+            trial_end_date: ctx.dateLabel,
+            amount_display: ctx.amountLabel,
+            cadence: ctx.cadence,
+            will_charge: reason === null,
+            no_card: reason === 'no_card',
+          },
+        }),
+        TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS,
+      );
+      if (res === TIMED_OUT) error = 'email:timeout';
+      else if (res.status === 'failed') error = `email:${res.error ? 'provider_failed' : 'failed'}`;
       else status = 'sent';
     } catch (err) {
       error = `email:${(err as Error)?.name ?? 'error'}`;
     }
-    if (status !== 'sent' && attempt >= TRIAL_NOTICE_MAX_ATTEMPTS) status = 'failed';
-    await this.prisma.packageTrialNotice.update({
-      where: { id: notice.id },
-      data: { email_status: status, ...(error ? { last_error: error } : {}) },
+    if (status !== 'sent' && lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS) status = 'failed';
+    await this.complete(notice.id, 'email', lease.token, {
+      email_status: status,
+      ...(error ? { last_error: error } : {}),
     });
+  }
+
+  /**
+   * B-656-2 — exclusive claim on one channel: pending, under the attempt cap,
+   * and no live lease. Returns the lease token and this attempt's number.
+   */
+  private async claim(
+    noticeId: string,
+    channel: 'push' | 'email',
+    now: Date,
+  ): Promise<{ token: string; attempt: number } | null> {
+    const token = randomUUID();
+    const until = new Date(now.getTime() + TRIAL_NOTICE_LEASE_MS);
+    const where: Prisma.PackageTrialNoticeWhereInput =
+      channel === 'push'
+        ? {
+            id: noticeId,
+            push_status: 'pending',
+            push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS },
+            OR: [{ push_lease_until: null }, { push_lease_until: { lt: now } }],
+          }
+        : {
+            id: noticeId,
+            email_status: 'pending',
+            email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS },
+            OR: [{ email_lease_until: null }, { email_lease_until: { lt: now } }],
+          };
+    const data: Prisma.PackageTrialNoticeUpdateManyMutationInput =
+      channel === 'push'
+        ? { push_attempts: { increment: 1 }, push_lease_token: token, push_lease_until: until }
+        : { email_attempts: { increment: 1 }, email_lease_token: token, email_lease_until: until };
+    const claimed = await this.prisma.packageTrialNotice.updateMany({ where, data });
+    if (claimed.count !== 1) return null;
+    const row = await this.prisma.packageTrialNotice.findUnique({
+      where: { id: noticeId },
+      select: {
+        push_attempts: true,
+        email_attempts: true,
+        push_lease_token: true,
+        email_lease_token: true,
+      },
+    });
+    const held = channel === 'push' ? row?.push_lease_token : row?.email_lease_token;
+    if (!row || held !== token) return null;
+    return { token, attempt: channel === 'push' ? row.push_attempts : row.email_attempts };
+  }
+
+  /** Fenced outcome: only the current lease holder may write it. */
+  private async complete(
+    noticeId: string,
+    channel: 'push' | 'email',
+    token: string,
+    data: Prisma.PackageTrialNoticeUpdateManyMutationInput,
+  ): Promise<boolean> {
+    const res = await this.prisma.packageTrialNotice.updateMany({
+      where:
+        channel === 'push'
+          ? { id: noticeId, push_lease_token: token }
+          : { id: noticeId, email_lease_token: token },
+      data:
+        channel === 'push'
+          ? { ...data, push_lease_token: null, push_lease_until: null }
+          : { ...data, email_lease_token: null, email_lease_until: null },
+    });
+    if (res.count !== 1) {
+      this.logger.warn(`trial notice ${channel} outcome dropped (lease lost) notice=${noticeId}`);
+      return false;
+    }
+    return true;
+  }
+
+  /** The client's customer-level default card (Stripe invoice default). */
+  private async customerHasDefaultCard(userId: string, tx?: Tx): Promise<boolean> {
+    const db = tx ?? this.prisma;
+    try {
+      const row = await db.connectCustomer.findUnique({
+        where: { client_user_id: userId },
+        select: { default_payment_method_id: true },
+      });
+      return !!row?.default_payment_method_id;
+    } catch {
+      return false;
+    }
   }
 
   private async clientTimeZone(userId: string, tx?: Tx): Promise<string | null> {
@@ -338,4 +670,28 @@ export function cadenceLabel(interval?: string | null, count?: number | null): s
   const unit = interval === 'week' || interval === 'year' ? interval : 'month';
   if (n === 1) return unit === 'week' ? 'weekly' : unit === 'year' ? 'yearly' : 'monthly';
   return `every ${n} ${unit}s`;
+}
+
+const TIMED_OUT = Symbol('trial-notice-timeout');
+
+/** Resolve the promise, or TIMED_OUT after ms (calling onTimeout once). */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout?: () => void,
+): Promise<T | typeof TIMED_OUT> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => {
+          onTimeout?.();
+          resolve(TIMED_OUT);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

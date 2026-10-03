@@ -38,6 +38,8 @@ export const CLIENT_PURCHASE_SELECT = {
   // also derives purchases[].trial (see src/packages/trials/trial-view.ts).
   trial_days: true,
   trial_ends_at: true,
+  // B-TRIALS-3 (B-656-5) — card state behind purchases[].trial.will_charge.
+  card_on_file: true,
   created_at: true,
   updated_at: true,
 } as const satisfies Prisma.ClientPurchaseSelect;

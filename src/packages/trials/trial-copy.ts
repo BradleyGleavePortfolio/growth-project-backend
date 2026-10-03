@@ -35,6 +35,24 @@ export interface TrialEndingCopyInput {
   timeZone?: string | null;
   /** The client already cancelled: the plan ends with the trial, no charge. */
   cancelAtPeriodEnd: boolean;
+  /**
+   * B-TRIALS-3 (B-656-5) — false when no card is saved any more (removed
+   * during the trial): Stripe cancels at the trial end and charges nothing.
+   * Omitted / true = a card will be charged.
+   */
+  cardOnFile?: boolean;
+}
+
+/** Why a trial end charges nothing (null = a card will be charged). */
+export type TrialNoChargeReason = 'cancelled' | 'no_card' | null;
+
+export function trialNoChargeReason(input: {
+  cancelAtPeriodEnd: boolean;
+  cardOnFile?: boolean;
+}): TrialNoChargeReason {
+  if (input.cancelAtPeriodEnd) return 'cancelled';
+  if (input.cardOnFile === false) return 'no_card';
+  return null;
 }
 
 export interface TrialEndingCopy {
@@ -50,13 +68,22 @@ export interface TrialEndingCopy {
  *   "Your free trial ends on Oct 12. Your card will be charged $49 then.
  *    Cancel anytime before."
  *
- * When the client already cancelled during the trial the notice confirms
- * nothing will be charged instead.
+ * When the client already cancelled during the trial, or removed the card
+ * (B-TRIALS-3), the notice says truthfully that nothing will be charged.
  */
 export function trialEndingCopy(input: TrialEndingCopyInput): TrialEndingCopy {
   const dateLabel = formatTrialDate(input.trialEndsAt, input.timeZone);
   const amountLabel = formatTrialAmount(input.amountCents, input.currency);
-  if (input.cancelAtPeriodEnd) {
+  const reason = trialNoChargeReason(input);
+  if (reason === 'no_card') {
+    return {
+      title: 'Your free trial',
+      body: `Your free trial ends on ${dateLabel}. No card is saved, so nothing will be charged and your plan ends then.`,
+      dateLabel,
+      amountLabel,
+    };
+  }
+  if (reason === 'cancelled') {
     return {
       title: 'Your free trial',
       body: `Your free trial ends on ${dateLabel}. Your card will not be charged, and your plan ends then.`,
@@ -70,4 +97,18 @@ export function trialEndingCopy(input: TrialEndingCopyInput): TrialEndingCopy {
     dateLabel,
     amountLabel,
   };
+}
+
+/**
+ * B-TRIALS-3 (B-656-5) — will the trial end really charge a card? The
+ * subscription's own payment method (as last observed) or the customer's
+ * invoice default. Unknown (never observed, no customer default) counts as a
+ * card: the app never says "nothing will be charged" without evidence.
+ */
+export function willChargeCard(
+  subscriptionCard: boolean | null | undefined,
+  customerDefault: boolean,
+): boolean {
+  if (subscriptionCard === true || customerDefault) return true;
+  return subscriptionCard !== false;
 }

@@ -18,8 +18,15 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
     if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
       const c = cond as Record<string, unknown>;
       if ('in' in c) return (c.in as unknown[]).includes(value);
-      if ('lt' in c) return compare(value, c.lt) < 0;
-      if ('gt' in c) return compare(value, c.gt) > 0;
+      // B-TRIALS-3 — SQL semantics: NULL never satisfies a range bound.
+      if ('lt' in c || 'gt' in c || 'lte' in c || 'gte' in c) {
+        if (value === null || value === undefined) return false;
+        if ('lt' in c && !(compare(value, c.lt) < 0)) return false;
+        if ('gt' in c && !(compare(value, c.gt) > 0)) return false;
+        if ('lte' in c && !(compare(value, c.lte) <= 0)) return false;
+        if ('gte' in c && !(compare(value, c.gte) >= 0)) return false;
+        return true;
+      }
       if ('not' in c) return value !== c.not;
       // compound unique key, e.g. { client_user_id_coach_user_id: {...} }
       return matches(row, c);
@@ -46,7 +53,7 @@ function applyData(row: Row, data: Record<string, unknown>) {
   row.updated_at = new Date();
 }
 
-function makeTable(uniques: string[][], defaults: () => Record<string, unknown>) {
+export function makeTable(uniques: string[][], defaults: () => Record<string, unknown>) {
   const rows: Row[] = [];
   let seq = 0;
   const violates = (candidate: Row, except?: Row) =>
@@ -147,11 +154,31 @@ export function makeTrialUsageTable() {
 
 export function makeTrialNoticeTable() {
   return makeTable([['purchase_id', 'trial_ends_at']], () => ({
+    source: 'trial_will_end',
+    stripe_event_id: null,
     push_status: 'pending',
     push_attempts: 0,
+    push_lease_token: null,
+    push_lease_until: null,
     email_status: 'pending',
     email_attempts: 0,
+    email_lease_token: null,
+    email_lease_until: null,
     last_error: null,
+  }));
+}
+
+/** B-TRIALS-3 — PackageTrialConflict (unique purchase_id). */
+export function makeTrialConflictTable() {
+  return makeTable([['purchase_id']], () => ({
+    status: 'owed',
+    attempts: 0,
+    next_attempt_at: new Date(),
+    lease_token: null,
+    lease_until: null,
+    last_error: null,
+    alerted_at: null,
+    settled_at: null,
   }));
 }
 

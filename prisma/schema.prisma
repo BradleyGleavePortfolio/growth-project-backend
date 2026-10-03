@@ -3801,6 +3801,13 @@ model ClientPurchase {
   // app's "Trial ends Oct 12" line and the trial-ending notice.
   trial_days    Int?
   trial_ends_at DateTime?
+  // B-TRIALS-3 (B-656-5) — does the Stripe subscription itself hold a payment
+  // method (default_payment_method / default_source) as of its latest event.
+  // NULL = never observed. With the customer default
+  // (ConnectCustomer.default_payment_method_id) it decides whether the trial
+  // end really charges a card; access is decided separately (a started trial
+  // keeps access after the card is removed).
+  card_on_file  Boolean?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
@@ -3810,6 +3817,8 @@ model ClientPurchase {
   @@index([landing_page_id])
   @@index([contract_envelope_id])
   @@index([source])
+  // B-TRIALS-3 — the trial-notice reconciler (started trials ending soon).
+  @@index([status, trial_ends_at])
 }
 
 // B-TRIALS (OR-113-2) — one free trial per client per coach (anti-abuse).
@@ -3862,13 +3871,24 @@ model PackageTrialNotice {
   trial_ends_at   DateTime
   amount_cents    Int
   currency        String
-  stripe_event_id String
-  // pending | delivered | no_token | failed
+  // The Stripe event that recorded it (null when recorded at trial start or
+  // by the reconciler; see source).
+  stripe_event_id String?
+  // trial_will_end | trial_start | sweep (B-TRIALS-3, B-656-3)
+  source          String    @default("trial_will_end")
+  // pending | delivered | no_token | suppressed | failed
   push_status     String    @default("pending")
   push_attempts   Int       @default(0)
+  // B-TRIALS-3 (B-656-2) — exclusive per-channel delivery lease. A claim sets
+  // a fresh token and expiry; only the holder of that token may record the
+  // outcome, so a stale caller can never overwrite a delivered state.
+  push_lease_token  String?
+  push_lease_until  DateTime?
   // pending | sent | no_email | failed
   email_status    String    @default("pending")
   email_attempts  Int       @default(0)
+  email_lease_token String?
+  email_lease_until DateTime?
   last_error      String?
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
@@ -3876,6 +3896,34 @@ model PackageTrialNotice {
   @@unique([purchase_id, trial_ends_at])
   @@index([client_user_id])
   @@index([push_status, email_status, trial_ends_at])
+}
+
+// B-TRIALS-3 (B-656-1) — a subscription that tried to start a second free
+// trial with the same coach owes a cancellation. The row is written in the
+// webhook transaction (so it can never be lost once the event is marked
+// processed), settled right after commit, and retried by
+// TrialConflictService.sweep with backoff until Stripe confirms the cancel.
+// While a row exists the purchase never gets trial access.
+// status: owed | cancelled | superseded (the trial ended before any cancel
+// succeeded and Stripe started billing; support is alerted).
+// No user id: purchase and subscription ids only (server-only table).
+model PackageTrialConflict {
+  id                     String    @id @default(uuid())
+  purchase_id            String    @unique
+  stripe_subscription_id String
+  status                 String    @default("owed")
+  attempts               Int       @default(0)
+  next_attempt_at        DateTime  @default(now())
+  lease_token            String?
+  lease_until            DateTime?
+  last_error             String?
+  alerted_at             DateTime?
+  settled_at             DateTime?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  @@index([stripe_subscription_id])
+  @@index([status, next_attempt_at])
 }
 
 // Phase 4 Connect — Per-coach fee policy override.

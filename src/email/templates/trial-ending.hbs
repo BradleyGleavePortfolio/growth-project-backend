@@ -15,6 +15,13 @@
       <p>Nothing to do if you would like to keep going. If not, cancel anytime before
         {{trial_end_date}}
         in the app under Your plan, and your card will not be charged.</p>
+    {{else if no_card}}
+      <p>Your free trial of
+        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
+        ends on
+        <strong>{{trial_end_date}}</strong>. No card is saved on the plan, so nothing will be
+        charged and your plan ends then.</p>
+      <p>You can start the plan again anytime from the app.</p>
     {{else}}
       <p>Your free trial of
         <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}

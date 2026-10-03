@@ -114,6 +114,8 @@ function world(opts: { tz?: string | null; email?: string | null; pushCode?: str
       ...input,
       _tx,
     })),
+    // B-TRIALS-3 (B-656-4) — delivery re-reads the client's preferences.
+    getPreferences: jest.fn(async () => ({ muted: false })),
     pushToUser: jest.fn(async () =>
       opts.pushCode
         ? { delivered: false, code: opts.pushCode }
@@ -325,20 +327,24 @@ describe('B-TRIALS — recordTrialWillEnd timing and idempotency', () => {
     expect(w.notices.rows).toHaveLength(2);
   });
 
-  it('skips a trial that already ended (trial_end=now), a non-trialing sub, and a sub with no saved card', async () => {
+  it('skips a trial that already ended (trial_end=now), a non-trialing sub, and a trial that has not started (no card saved yet)', async () => {
     const w = world();
     const purchase =
       stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
+    const notStarted = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(
+      purchaseRow({ entitlement_active: false }),
+    );
     const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
     const cases = [
-      trialSub({ trial_end: epoch(NOW) }),
-      trialSub({ status: 'active' }),
-      trialSub({ default_payment_method: null }),
+      { purchase, sub: trialSub({ trial_end: epoch(NOW) }) },
+      { purchase, sub: trialSub({ status: 'active' }) },
+      // B-TRIALS-3: a started trial whose card was removed IS noticed (with
+      // the no-card copy, see b-trials-3-fix-round); one that never started
+      // is noticed once the card is saved.
+      { purchase: notStarted, sub: trialSub({ default_payment_method: null }) },
     ];
-    for (const sub of cases) {
-      expect(
-        await w.noticeSvc.recordTrialWillEnd(tx, { purchase, sub, eventId: 'e', now: NOW }),
-      ).toBeNull();
+    for (const c of cases) {
+      expect(await w.noticeSvc.recordTrialWillEnd(tx, { ...c, eventId: 'e', now: NOW })).toBeNull();
     }
     expect(w.notices.rows).toHaveLength(0);
     expect(w.notifications.createNotification).not.toHaveBeenCalled();
@@ -572,6 +578,7 @@ describe('B-TRIALS — purchase trial view (Home / Your plan)', () => {
       trial_days: 7,
       ends_at: TRIAL_END.toISOString(),
       will_charge: true,
+      no_charge_reason: null,
       charge_amount_cents: 4900,
       currency: 'usd',
     });
@@ -580,6 +587,7 @@ describe('B-TRIALS — purchase trial view (Home / Your plan)', () => {
     expect(purchaseTrialView({ ...row, cancel_at_period_end: true }, NOW)).toMatchObject({
       state: 'trialing',
       will_charge: false,
+      no_charge_reason: 'cancelled',
     });
   });
   it('no card yet, trial over, and no trial', () => {
