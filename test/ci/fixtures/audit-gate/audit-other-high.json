@@ -1,0 +1,48 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "multer": {
+      "name": "multer",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        {
+          "source": 9000001,
+          "name": "multer",
+          "dependency": "multer",
+          "title": "SYNTHETIC FIXTURE high advisory (not real)",
+          "url": "https://github.com/advisories/GHSA-2222-3333-4444",
+          "severity": "high",
+          "cwe": [],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": null
+          },
+          "range": "<=2.3.0"
+        }
+      ],
+      "effects": [],
+      "range": "<=2.3.0",
+      "nodes": ["node_modules/multer"],
+      "fixAvailable": false
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0,
+      "total": 1
+    },
+    "dependencies": {
+      "prod": 358,
+      "dev": 791,
+      "optional": 38,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 1149
+    }
+  }
+}

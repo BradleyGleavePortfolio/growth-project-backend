@@ -41,6 +41,13 @@ export interface CurrentMacrosForSelf {
   notes: string | null;
   effective_from: Date | null;
   source: Exclude<TargetsSource, 'unset'>;
+  /**
+   * C05 item 8: 'simple' (calories + protein only) for the first 7 days
+   * after onboarding when the client had never tracked food (N4 = never).
+   * Carbs and fat are still computed and returned; only display changes.
+   */
+  macro_display_mode: 'simple' | 'full';
+  simple_until: string | null;
 }
 
 export interface PresetOutput {
@@ -116,7 +123,35 @@ export class MacrosService {
   // Client-side read: a client always reads their *own* current target.
   // Falls back to the profile's computed targets (C06) so Home, Log and
   // Macros read the same numbers whether or not a coach row exists yet.
-  async getCurrentForSelf(userId: string): Promise<CurrentMacrosForSelf | null> {
+  async getCurrentForSelf(
+    userId: string,
+    now: Date = new Date(),
+  ): Promise<CurrentMacrosForSelf | null> {
+    const base = await this.currentTargetsForSelf(userId);
+    if (!base) return null;
+    return { ...base, ...(await this.macroDisplay(userId, now)) };
+  }
+
+  private async macroDisplay(
+    userId: string,
+    now: Date,
+  ): Promise<{ macro_display_mode: 'simple' | 'full'; simple_until: string | null }> {
+    const intake = await this.prisma.clientOnboardingIntake.findUnique({
+      where: { client_id: userId },
+      select: { completion_result: true },
+    });
+    const r = intake?.completion_result;
+    const until =
+      r && typeof r === 'object' && !Array.isArray(r) && typeof r.simple_until === 'string'
+        ? r.simple_until
+        : null;
+    if (!until) return { macro_display_mode: 'full', simple_until: null };
+    return { macro_display_mode: now < new Date(until) ? 'simple' : 'full', simple_until: until };
+  }
+
+  private async currentTargetsForSelf(
+    userId: string,
+  ): Promise<Omit<CurrentMacrosForSelf, 'macro_display_mode' | 'simple_until'> | null> {
     const target = await this.getCurrentForClient(userId);
     if (target) {
       return {

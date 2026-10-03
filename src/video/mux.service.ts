@@ -103,6 +103,27 @@ export class MuxService {
     return { uploadId: json.data.id, url: json.data.url };
   }
 
+  /**
+   * Delete a Mux asset (account deletion). Idempotent: a 404 means the asset
+   * is already gone. Throws on any other failure so the caller can retry.
+   */
+  async deleteAsset(assetId: string): Promise<void> {
+    if (!this.isConfigured()) {
+      throw new MuxDisabledError(
+        'Set MUX_TOKEN_ID and MUX_TOKEN_SECRET to delete Mux assets.',
+      );
+    }
+    const auth = Buffer.from(`${this.tokenId}:${this.tokenSecret}`).toString(
+      'base64',
+    );
+    const res = await fetch(
+      `${MUX_API_BASE}/video/v1/assets/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE', headers: { Authorization: `Basic ${auth}` } },
+    );
+    if (res.ok || res.status === 404) return;
+    throw new MuxApiError(res.status, `Mux API error ${res.status} deleting asset`);
+  }
+
   /** Fetch the full asset record. Used by the webhook handler. */
   async getAsset(assetId: string): Promise<MuxAsset> {
     if (!this.isConfigured()) {

@@ -309,6 +309,15 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
             'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
 
+      - name: Bootstrap + apply the clinic onboarding intake migration (B607-3)
+        # Minimal extra relations the intake audience helper reads, then the
+        # onboarding migration VERBATIM (tables, helper, policies), then the
+        # Supabase-default table grants so RLS (not a missing GRANT) decides.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-bootstrap.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
+
       - name: Run live RLS regression suite
         # Use the dedicated rls-live jest config (jest.rls.config.js), which
         # selects the DB-requiring RLS specs the default build-and-test job now
@@ -320,7 +329,7 @@ jobs:
         # across workers on one connection. NODE_OPTIONS raises the heap: even
         # this single spec under --runInBand overruns Node's ~2GB default and
         # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
-        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts --runInBand --testTimeout=60000
+        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts test/rls/onboarding-intake-rls.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
@@ -333,6 +342,103 @@ jobs:
         # spec refuses to skip under CI=true (Sol B-R2-1 on #601: the consent
         # RLS suite must actually execute in a required job).
         run: npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run data-exports bucket fence + verifier live suite (A-636-1)
+        # Builds a Supabase-like storage schema (RLS on, broad API-role grants),
+        # applies prisma/migrations/20270221000000_data_export_storage_bucket
+        # {migration,verify,down}.sql verbatim and proves anon/authenticated/
+        # custom roles see zero data-exports objects even under `OR true`
+        # policies, and that the release verifier fails on every exposing
+        # state (fence dropped/altered, RLS off, public bucket, RLS-escaping
+        # roles or views, service_role without BYPASSRLS). Refuses to skip
+        # under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/data-export-storage-bucket-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  community-live-tests:
+    # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
+    # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL
+    # and never ran in CI (green-by-skip). Voice notes launch ON, so the
+    # report -> review -> action loop, the wins RLS proof (A-610-2) and the
+    # community e2e suites must execute against a real database.
+    #
+    # Same Postgres 15 service as rls-live-tests. Unlike that job's scoped
+    # bootstrap, this one applies the Supabase-equivalent bootstrap and then
+    # the WHOLE migration chain with `prisma migrate deploy` (the same command
+    # the Fly release runs, as migration-dry-run does), so the suites assert
+    # against the real migration output, including 20270211000000.
+    # The pg-driver scratch-schema suites (test/community/rls/community-rls,
+    # schema, test/rls/community-*) need the optional `pg` driver and their own
+    # migration replay, so they are not part of this job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # The var every community live suite connects with AND gates on.
+      COMMUNITY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # SupabaseService builds a client at construction; nothing here reaches
+      # it (storage calls fail closed and are best-effort in these paths).
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # auth schema + anon/authenticated/service_role roles, idempotent;
+        # the same script migration-dry-run uses. Never run against Supabase.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply all migrations (prisma migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Run community live suites
+        # --runInBand: the suites share one database. 4GB heap as in
+        # rls-live-tests (Nest + ts-jest under --runInBand overruns 2GB).
+        run: >-
+          npx jest
+          test/community/rls/community-wins-rls.live.spec.ts
+          test/community/rls/community-message-shape.live.spec.ts
+          test/community/community-moderation.e2e.spec.ts
+          test/community/community-reactions.e2e.spec.ts
+          test/community/community-dms.e2e.spec.ts
+          test/community/community-foundation.e2e.spec.ts
+          test/community/community-plan-context.e2e.spec.ts
+          test/community/community-posts.e2e.spec.ts
+          test/community/community-messages.e2e.spec.ts
+          test/community/events/community-events.e2e.spec.ts
+          --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
@@ -413,6 +519,9 @@ jobs:
         # Also runs test/profile-put-concurrency.live.spec.ts (#606 B606-3): the
         # PUT /profile per-user row-lock proof on real Postgres. It uses the same
         # MWB3_TEST_DATABASE_URL gate and the same reset + full-schema bootstrap.
+        # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
+        # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
+        # transfer on real Postgres; same gate and bootstrap.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -427,6 +536,7 @@ jobs:
             test/mwb-3-undo.spec.ts \
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
+            test/onboarding-tenancy-fence.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
@@ -438,5 +548,17 @@ jobs:
         # Supabase-convention roles defensively, so it needs only a reachable DB
         # via MWB3_TEST_DATABASE_URL. Run it via the RLS config so it is matched.
         run: npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)
+        # test/roman/roman-session-erase.live.spec.ts: on real Postgres, a
+        # deleted Roman chat frees the (user, surface, day) unique key so a
+        # fresh session opens the same day, concurrent opens converge, a late
+        # append to the deleted session is refused, the daily cap survives
+        # delete + reopen, and pre-upgrade soft-deleted rows are erased. Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap; its own
+        # step so it never edits the shared default-lane spec list.
+        run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096

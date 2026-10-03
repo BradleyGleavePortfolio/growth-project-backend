@@ -532,6 +532,21 @@ export const ENV_RULES: EnvRule[] = [
     },
   },
   {
+    name: 'DELETION_RECEIPT_SECRET',
+    tier: 'optional',
+    default:
+      'derived from RECENT_AUTH_SECRET (HMAC with a fixed label); neither usable -> no completion receipt is written (the tombstone forgets the auth id)',
+    reason:
+      'C-608-7 (#608) — HMAC key for account-deletion completion receipts (deleted-r2:, src/account-deletion/deletion-receipt.ts). Without it a database snapshot plus a list of known auth ids cannot be joined to a receipt. 32+ random characters; shorter values are ignored. To rotate, move the old value to DELETION_RECEIPT_SECRET_PREVIOUS for 30 days.',
+  },
+  {
+    name: 'DELETION_RECEIPT_SECRET_PREVIOUS',
+    tier: 'optional',
+    default: 'unset (lookups use the current key and legacy r1 only)',
+    reason:
+      'C-608-7 (#608) — previous receipt HMAC key, used for lookups only while receipts written with it are inside their 30-day window (rotation). 32+ characters; shorter values are ignored. Remove it 30 days after a rotation.',
+  },
+  {
     name: 'RECENT_AUTH_TTL_MS',
     tier: 'prod',
     reason:
@@ -706,6 +721,29 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'feature',
     reason:
       'R43 / Universal Links — Apple Developer Team ID (10-char alphanumeric). When set, /.well-known/apple-app-site-association serves a valid AASA mapping /join/* + /invite/* to the iOS app; when unset, the route returns a syntactically-valid stub and Universal Links do not activate (warning logged).',
+  },
+  {
+    name: 'APPLE_SIGNIN_KEY_ID',
+    tier: 'feature',
+    default:
+      'unset → Sign in with Apple token revocation on account deletion is skipped (outcome not_configured, recorded in deletion_audit)',
+    reason:
+      'Account deletion (apple-token-revocation.service.ts): key id of the Sign in with Apple .p8 key, used with APPLE_TEAM_ID and APPLE_SIGNIN_PRIVATE_KEY to revoke the app\'s Apple tokens. Deletion never blocks on it.',
+  },
+  {
+    name: 'APPLE_SIGNIN_PRIVATE_KEY',
+    tier: 'feature',
+    default:
+      'unset → Sign in with Apple token revocation on account deletion is skipped (outcome not_configured, recorded in deletion_audit)',
+    reason:
+      'Account deletion (apple-token-revocation.service.ts): the Sign in with Apple .p8 private key (PEM; literal \\n allowed) that signs the ES256 client secret. Never logged.',
+  },
+  {
+    name: 'APPLE_SIGNIN_CLIENT_ID',
+    tier: 'optional',
+    default: "'com.growthproject.app' (DEFAULT_APPLE_SIGNIN_CLIENT_ID, the iOS bundle id)",
+    reason:
+      'Account deletion (apple-token-revocation.service.ts): client id the device authorization code was issued to. Set only if the iOS bundle id changes.',
   },
   {
     name: 'ANDROID_SHA256_FINGERPRINT',
@@ -1204,7 +1242,30 @@ export const ENV_RULES: EnvRule[] = [
     name: 'DATA_EXPORT_FS_DIR',
     tier: 'optional',
     default: "'/tmp/exports'",
-    reason: 'Local directory export files are written to (ephemeral, per machine).',
+    reason:
+      'Local directory for data-export archives in development and tests only (DATA_EXPORT_STORAGE=local). Production stores archives in the private Supabase bucket data-exports and never reads this for new archives.',
+  },
+  {
+    name: 'DATA_EXPORT_STORAGE',
+    tier: 'optional',
+    default:
+      "unset → 'supabase' (private bucket data-exports) in production, 'local' (DATA_EXPORT_FS_DIR) elsewhere; 'local' in production is a boot error",
+    reason:
+      'Where data-export archives are stored (data-export-archive.store.ts). Keep unset in production; any value other than supabase or local is a boot error.',
+  },
+  {
+    name: 'DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS',
+    tier: 'optional',
+    default: '300 (clamped to 60..900; unparseable falls back to 300)',
+    reason:
+      'Lifetime of the user-bound data-export download token minted by POST /v1/me/data-export/download-link and GET /status.',
+  },
+  {
+    name: 'DATA_EXPORT_STALE_RUN_MINUTES',
+    tier: 'optional',
+    default: '30 (values under 5 or unparseable fall back to 30)',
+    reason:
+      'A PENDING/RUNNING data export older than this is a crashed run: it is marked FAILED, its planned archive removed, and a new request is allowed.',
   },
   {
     name: 'DATA_EXPORT_TOKEN_SECRET',
@@ -1225,7 +1286,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → contract PDFs stay on local disk',
     reason:
-      'Read only as the CONTRACT_PDF_BUCKET fallback. Contracts are not used in v1 and the data-export cloud storage path is not built, so setting it changes nothing for "download my data".',
+      'Read only as the CONTRACT_PDF_BUCKET fallback. Contracts are not used in v1. Data export does not read it: its archives always go to the private bucket data-exports created by migration 20270221000000.',
   },
   {
     name: 'DELETION_GRACE_DAYS',
@@ -1279,6 +1340,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Base of the dunning email-send retry backoff (base * 4^n), in milliseconds.',
   },
   {
+    name: 'CONSULT_CONSENT_COPY_VERSIONS',
+    tier: 'optional',
+    default: "consult-consent-v3 (unset, empty, or no known name -> ['consult-consent-v3'])",
+    reason:
+      "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
+  },
+  {
     name: 'FEATURE_AI_CONSENT_LEDGER_ENABLED',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -1298,6 +1366,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: '600 (VOICE_UPLOAD_TTL_SEC, clamped 60..86400)',
     reason: 'Signed upload URL lifetime for community voice notes.',
+  },
+  {
+    name: 'VOICE_KEY_SIGNING_SECRET',
+    tier: 'optional',
+    default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
+    reason:
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
   },
   {
     name: 'VOICE_NOTE_MAX_BYTES',
@@ -1654,6 +1729,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → signed playback unavailable',
     reason: 'Mux signed-playback private key (PEM or base64 PEM).',
+  },
+  {
+    name: 'SUPABASE_BLOODWORK_BUCKET',
+    tier: 'optional',
+    default: "'bloodwork' (DEFAULT_BLOODWORK_BUCKET)",
+    reason:
+      'Supabase storage bucket for bloodwork attachments (bloodwork-storage-ref.ts). A supabase storage_ref must be <bucket>/<client id>/<file>; account deletion purges only refs inside it.',
   },
   {
     name: 'SUPABASE_MEDIA_BUCKET',
