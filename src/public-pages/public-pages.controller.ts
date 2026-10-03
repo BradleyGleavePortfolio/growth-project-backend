@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import {
+  renderBillingUpdateCardPage,
   renderDownloadPage,
   renderSignupPage,
   sanitizeInviteCode,
@@ -48,6 +49,19 @@ export class PublicPagesController {
   @Throttle({ default: { ttl: 60000, limit: 60 } })
   androidDownload(@Res() res: Response) {
     return this.send(res, renderDownloadPage('android'));
+  }
+
+  // S-DUNNING-R2 (OR-110-2) — target of the "Update card" button in every
+  // dunning email. With the app installed the OS opens the native card
+  // screen (AASA / assetlinks list this path); otherwise this calm page asks
+  // the client to open the app. Static and identical for everyone.
+  @Public()
+  @Get('billing/update-card')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  billingUpdateCard(@Res() res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
   }
 
   // Canonical /signup. An invite code may arrive as ?code=… (the form
