@@ -1,5 +1,6 @@
 // Durable, server-rendered self-serve help surface: /help, /help/setup,
-// /help/first-client, /help/tour, /help/faq, /help/support, /help/contact.
+// /help/first-client, /help/tour, /help/faq, /help/support, /help/contact,
+// /help/delete-account (public account-deletion page for Google Play).
 //
 // These pages are the public, no-vendor coach-facing help destination.
 // Content is sourced from docs/help/*.md (PR #101) and rendered as static
@@ -22,7 +23,14 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare paths
 // under the public hostname.
 
-import { SUPPORT_EMAIL } from './trust-pages.html';
+import {
+  CONSUMER_HEALTH_POLICY_PATH,
+  DELETE_ACCOUNT_HELP_PATH,
+  PRIVACY_POLICY_PATH,
+  SUPPORT_EMAIL,
+  policyFooterLinks,
+  safeHref,
+} from './trust-pages.html';
 
 // Re-export for tests and any future caller that expects to find the
 // support address on the help module.
@@ -41,18 +49,26 @@ const INVITE_BASE_URL = 'https://app.trygrowthproject.com/join';
 const STATUS_URL = 'https://app.trygrowthproject.com/status';
 
 export type HelpPage =
-  | 'index'
-  | 'setup'
-  | 'first-client'
-  | 'tour'
-  | 'faq'
-  | 'support'
-  | 'contact';
+  'index' | 'setup' | 'first-client' | 'tour' | 'faq' | 'support' | 'contact' | 'delete-account';
+
+// App name (operator, 2026-10-01) and developer name for the Google Play
+// listing; the account-deletion page must name both (Play "Data deletion").
+// The developer name is the company name the policies use; the owner must
+// confirm it matches the Play Console developer name exactly.
+export const PLAY_APP_NAME = 'TGP Fitness';
+export const PLAY_DEVELOPER_NAME = 'The Growth Project';
+
+// Subject line we ask people to use for an emailed deletion request.
+export const DELETION_EMAIL_SUBJECT = 'Delete my account';
 
 interface RenderedSection {
   heading: string;
   paragraphs: string[];
   bullets?: string[];
+  // Optional paragraphs rendered after the bullets.
+  closing?: string[];
+  // Optional links rendered last (site-relative, mailto: or https: only).
+  links?: ReadonlyArray<{ label: string; href: string }>;
 }
 
 interface QAndA {
@@ -94,6 +110,7 @@ const NAV_ENTRIES: ReadonlyArray<{ slug: HelpPage; label: string; path: string }
   { slug: 'faq', label: 'FAQ', path: '/help/faq' },
   { slug: 'support', label: 'Support', path: '/help/support' },
   { slug: 'contact', label: 'Contact', path: '/help/contact' },
+  { slug: 'delete-account', label: 'Delete account', path: DELETE_ACCOUNT_HELP_PATH },
 ];
 
 function indexContent(): HelpPageContent {
@@ -128,6 +145,13 @@ function indexContent(): HelpPageContent {
         ],
       },
       {
+        heading: 'Your account',
+        paragraphs: [
+          'Delete account explains how to delete your account and data, in the app or by email without the app, what we delete, what we keep and how long it takes.',
+        ],
+        links: [{ label: 'Delete your account', href: DELETE_ACCOUNT_HELP_PATH }],
+      },
+      {
         heading: 'How this content is maintained',
         paragraphs: [
           'These pages are versioned alongside the application. The last-reviewed date at the top of each page reflects when the copy was last edited. We update them when product behaviour changes; we do not write speculative documentation for features that do not yet exist.',
@@ -153,9 +177,7 @@ function setupContent(): HelpPageContent {
       },
       {
         heading: '2. Complete your coach profile',
-        paragraphs: [
-          'In the console, open Settings → Profile and fill in:',
-        ],
+        paragraphs: ['In the console, open Settings → Profile and fill in:'],
         bullets: [
           'Display name (this is what clients see).',
           'A one-paragraph bio (two to four sentences is enough).',
@@ -337,8 +359,7 @@ function faqContent(): HelpPageContent {
               'Promotion to coach is manual at sign-up. Reply to your welcome email and we will promote it within one business day.',
           },
           {
-            question:
-              'I signed in with the wrong provider — can I switch from Google to Apple?',
+            question: 'I signed in with the wrong provider — can I switch from Google to Apple?',
             answer:
               'The provider is part of your identity in our system, so the two sign-ins map to two separate accounts. If you signed up with the wrong one, write in via the Contact page and we will merge the accounts.',
           },
@@ -383,8 +404,7 @@ function faqContent(): HelpPageContent {
           },
           {
             question: 'Can I schedule a message to send later?',
-            answer:
-              'Not yet. You can save a draft and send it manually when ready.',
+            answer: 'Not yet. You can save a draft and send it manually when ready.',
           },
           {
             question: 'Are messages encrypted?',
@@ -429,7 +449,7 @@ function faqContent(): HelpPageContent {
           {
             question: 'A client deleted their account. Where did they go?',
             answer:
-              'They are gone from your roster and their data is in a thirty-day soft-delete window before permanent removal. Within that window the deletion can be reversed if the client requests it. After thirty days, recovery is not possible.',
+              'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
           },
         ],
       },
@@ -469,7 +489,7 @@ function supportContent(): HelpPageContent {
           'A billing charge failed and Stripe is showing a state that does not match what your console shows.',
           'Data we hold is wrong (a client appears in the wrong roster, a message is missing, a profile field will not save).',
           'A security or privacy concern of any kind. These get same-day attention.',
-          'Account merge requests (you signed up with the wrong provider) and account-deletion reversals within the thirty-day soft-delete window.',
+          'Account merge requests (you signed up with the wrong provider) and questions about a pending account deletion. A deletion can be cancelled in the app during its 14-day grace period; once it is complete it cannot be reversed.',
         ],
       },
       {
@@ -540,8 +560,7 @@ function contactContent(): HelpPageContent {
           name: 'category',
           type: 'enum',
           required: 'yes',
-          notes:
-            'One of: outage, billing, client_signup, data, security, account_merge, other.',
+          notes: 'One of: outage, billing, client_signup, data, security, account_merge, other.',
         },
         {
           name: 'subject',
@@ -565,8 +584,7 @@ function contactContent(): HelpPageContent {
           name: 'attachments',
           type: 'file[]',
           required: 'no',
-          notes:
-            'Up to 5 files, 10 MB each. Images, PDFs, plain text only.',
+          notes: 'Up to 5 files, 10 MB each. Images, PDFs, plain text only.',
         },
         {
           name: 'console_url',
@@ -578,8 +596,7 @@ function contactContent(): HelpPageContent {
           name: 'user_agent',
           type: 'string',
           required: 'no',
-          notes:
-            'Auto-filled by the form, useful for browser-specific issues.',
+          notes: 'Auto-filled by the form, useful for browser-specific issues.',
         },
         {
           name: 'ts_iso',
@@ -611,6 +628,115 @@ function contactContent(): HelpPageContent {
   };
 }
 
+// ---------------------------------------------------------------------------
+// /help/delete-account — Google Play account-deletion page.
+//
+// Public, no login. Every fact here comes from code or the published policy:
+//  - In-app path: growth-project-mobile #313 (client: profile tab > Settings >
+//    Data & Privacy > Delete my account; coach: Settings tab > Privacy & Data >
+//    Delete my account; DeleteAccountScreen re-auth and "Keep my account").
+//  - 14-day grace + nightly finalization within a day: backend #608
+//    src/account-deletion/account-deletion.service.ts (graceDays default 14,
+//    FINALIZE_WINDOW_MS one day); admin force-delete has no grace period.
+//  - Deleted vs kept: #608 account-deletion.manifest.ts / README "Operator
+//    policy" and #313 PERMANENTLY_DELETED / KEPT_RECORDS / BILLING_NOTE.
+//  - Roman kept until deleted (owner OR-110-1), backups six months, 30-day reply, 45 days for consumer
+//    health data: the Privacy Policy and Consumer Health Data Privacy Policy
+//    (./trust-pages.html.ts).
+// Ships with #608/#313: do not publish before that behaviour is live.
+// ---------------------------------------------------------------------------
+function deleteAccountContent(): HelpPageContent {
+  return {
+    title: `Delete your ${PLAY_APP_NAME} account — ${PLAY_DEVELOPER_NAME}`,
+    headline: 'Delete your account',
+    intro:
+      `How to delete your ${PLAY_APP_NAME} account and the data linked to it, ` +
+      'in the app or by email if you no longer have the app. ' +
+      `${PLAY_APP_NAME} is made by ${PLAY_DEVELOPER_NAME}.`,
+    sections: [
+      {
+        heading: 'Delete your account in the app',
+        paragraphs: [
+          'You can delete your account yourself in the app. You do not need to email us.',
+        ],
+        bullets: [
+          'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Data & Privacy tap Delete my account.',
+          'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
+          'Read what will be deleted and what we keep, type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google, whichever you use to sign in.',
+          'Your deletion is scheduled straight away and the app shows the date it becomes permanent. Until then you can open the same screen and tap Keep my account to cancel it.',
+        ],
+        closing: [
+          'If you used Sign in with Apple, you can also remove the app from your Apple ID: on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID.',
+        ],
+      },
+      {
+        heading: 'Ask us by email if you do not have the app',
+        paragraphs: [
+          `Email ${SUPPORT_EMAIL} with the subject line “${DELETION_EMAIL_SUBJECT}”. So we can confirm the account is yours:`,
+        ],
+        bullets: [
+          'Send it from the email address you use to sign in to the app.',
+          'Include the name on the account and say whether you are a client or a coach.',
+          'If you can no longer send from that address, tell us which address the account uses. We will email that address and delete nothing until you reply from it to confirm.',
+          'We will never ask for your password, a card number or a sign-in code. Do not send them.',
+        ],
+        closing: [
+          'You can also ask us to delete only some of your health data instead of your whole account. Say which data in the same email.',
+          'Once we have confirmed the account is yours, we delete it straight away. There is no 14-day grace period for a deletion we carry out at your request, so it cannot be cancelled.',
+        ],
+        links: [
+          {
+            label: `Email ${SUPPORT_EMAIL}`,
+            href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(DELETION_EMAIL_SUBJECT)}`,
+          },
+        ],
+      },
+      {
+        heading: 'What we delete',
+        paragraphs: ['When the deletion completes, we permanently delete or irreversibly scrub:'],
+        bullets: [
+          'Your sign-in account, name, email address and phone number',
+          'Your profile, body measurements and consultation answers',
+          'Food, water, fasting, weight and workout logs, check-ins and habits',
+          'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
+          'Your conversations with Roman, the AI assistant',
+          'Your messages, community posts, comments, direct messages, voice notes and reactions',
+          'Coach media, notes and briefs, if you coach',
+          'Your targets, recipes, lists and preferences',
+          'Notification settings and push notification tokens',
+        ],
+        closing: [
+          'Any subscription or payment plan you have, as a client or as a coach, is cancelled when the deletion completes, and scheduled reminders and emails stop. Until then it stays active.',
+        ],
+      },
+      {
+        heading: 'What we keep, and for how long',
+        paragraphs: [],
+        bullets: [
+          'Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details.',
+          'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
+          'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
+          'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
+          'Security and audit logs: as long as needed to protect the service and meet legal duties.',
+        ],
+      },
+      {
+        heading: 'How long it takes',
+        paragraphs: [],
+        bullets: [
+          'In the app: a 14-day grace period starts when you confirm. When it ends, your data is deleted within one day, and the app shows the date.',
+          'By email: we reply within 30 days of receiving your request. Requests about consumer health data under Washington law are answered within 45 days, as our Consumer Health Data Privacy Policy explains.',
+          'Roman conversations: kept until you delete them or your account. When your account is deleted, they are deleted with it.',
+        ],
+        links: [
+          { label: 'Privacy Policy', href: PRIVACY_POLICY_PATH },
+          { label: 'Consumer Health Data Privacy Policy', href: CONSUMER_HEALTH_POLICY_PATH },
+        ],
+      },
+    ],
+  };
+}
+
 export function renderHelpPage(page: HelpPage): string {
   const content =
     page === 'index'
@@ -625,7 +751,9 @@ export function renderHelpPage(page: HelpPage): string {
               ? faqContent()
               : page === 'support'
                 ? supportContent()
-                : contactContent();
+                : page === 'contact'
+                  ? contactContent()
+                  : deleteAccountContent();
   return baseDocument(page, content);
 }
 
@@ -641,9 +769,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   const qaSections = (c.qaSections ?? []).map(renderQASection).join('\n');
   const checklist = c.checklist ? renderChecklist(c.checklist) : '';
   const intakeTable = c.intakeTable ? renderIntakeTable(c.intakeTable) : '';
-  const footnote = c.footnote
-    ? `\n  <p class="footnote">${escapeHtml(c.footnote)}</p>`
-    : '';
+  const footnote = c.footnote ? `\n  <p class="footnote">${escapeHtml(c.footnote)}</p>` : '';
 
   const nav = NAV_ENTRIES.map((entry) => {
     const cls = entry.slug === active ? 'nav-link active' : 'nav-link';
@@ -681,6 +807,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #3A332B; }
   section ul { margin: 0 0 12px 0; padding: 0 0 0 20px; }
   section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #3A332B; }
+  section p.links a { color: #1F1B16; text-decoration: underline; }
   table.intake { border-collapse: collapse; width: 100%; margin: 0 0 12px 0; font-size: 14px; }
   table.intake th, table.intake td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #E8E1D4; vertical-align: top; color: #3A332B; }
   table.intake th { font-weight: 600; color: #1F1B16; background: #F4EFE6; }
@@ -701,6 +828,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
 ${body}${footnote}
   <footer class="brand-footer">
     <span>The Growth Project</span>
+    <span>${policyFooterLinks()}</span>
     <span><a href="${supportEmailHref}">${supportEmail}</a></span>
   </footer>
 </main>
@@ -710,28 +838,32 @@ ${body}${footnote}
 
 function renderSection(s: RenderedSection): string {
   const heading = escapeHtml(s.heading);
-  const paragraphs = s.paragraphs
-    .map((p) => `    <p>${escapeHtml(p)}</p>`)
-    .join('\n');
+  const paragraphs = s.paragraphs.map((p) => `    <p>${escapeHtml(p)}</p>`).join('\n');
   const bullets =
     s.bullets && s.bullets.length > 0
       ? '\n    <ul>\n' +
         s.bullets.map((b) => `      <li>${escapeHtml(b)}</li>`).join('\n') +
         '\n    </ul>'
       : '';
+  const closing = (s.closing ?? []).map((p) => `\n    <p>${escapeHtml(p)}</p>`).join('');
+  const links =
+    s.links && s.links.length > 0
+      ? '\n    <p class="links">' +
+        s.links
+          .map((l) => `<a href="${escapeAttr(safeHref(l.href))}">${escapeHtml(l.label)}</a>`)
+          .join(' · ') +
+        '</p>'
+      : '';
   return `  <section>
     <h2>${heading}</h2>
-${paragraphs}${bullets}
+${paragraphs}${bullets}${closing}${links}
   </section>`;
 }
 
 function renderQASection(s: RenderedQASection): string {
   const heading = escapeHtml(s.heading);
   const items = s.items
-    .map(
-      (qa) =>
-        `    <h3>${escapeHtml(qa.question)}</h3>\n    <p>${escapeHtml(qa.answer)}</p>`,
-    )
+    .map((qa) => `    <h3>${escapeHtml(qa.question)}</h3>\n    <p>${escapeHtml(qa.answer)}</p>`)
     .join('\n');
   return `  <section>
     <h2>${heading}</h2>
@@ -741,9 +873,7 @@ ${items}
 
 function renderChecklist(c: { heading: string; bullets: string[] }): string {
   const heading = escapeHtml(c.heading);
-  const bullets = c.bullets
-    .map((b) => `      <li>${escapeHtml(b)}</li>`)
-    .join('\n');
+  const bullets = c.bullets.map((b) => `      <li>${escapeHtml(b)}</li>`).join('\n');
   return `  <section>
     <h2>${heading}</h2>
     <ul>
@@ -752,11 +882,7 @@ ${bullets}
   </section>`;
 }
 
-function renderIntakeTable(t: {
-  heading: string;
-  intro: string;
-  fields: ContactField[];
-}): string {
+function renderIntakeTable(t: { heading: string; intro: string; fields: ContactField[] }): string {
   const heading = escapeHtml(t.heading);
   const intro = escapeHtml(t.intro);
   const rows = t.fields
