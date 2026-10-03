@@ -22,6 +22,8 @@ import { formatTrialAmount, formatTrialDate, trialEndingCopy } from './trial-cop
 // until it is delivered, hits the attempt cap, or the trial has ended.
 
 export const TRIAL_NOTICE_MAX_ATTEMPTS = 5;
+/** Mobile route the notice opens (Your plan: trial end date + cancel). */
+export const TRIAL_ACTION_SCREEN = 'ClientPackages';
 /** Give the post-commit delivery a head start before the sweeper retries. */
 const SWEEP_MIN_AGE_MS = 2 * 60 * 1000;
 const SWEEP_BATCH = 50;
@@ -143,6 +145,7 @@ export class TrialNoticeService {
         deep_link: 'tgp://plan',
         channel: 'inapp',
         payload: {
+          actionScreen: TRIAL_ACTION_SCREEN,
           purchase_id: purchase.id,
           package_id: purchase.package_id,
           trial_ends_at: trialEndsAt.toISOString(),
@@ -232,6 +235,9 @@ export class TrialNoticeService {
       kind: NotificationKind.TRIAL_ENDING,
       purchase_id: notice.purchase_id,
       deep_link: 'tgp://plan',
+      // The app's push-tap router (pushTapRouter CLIENT_PUSH_ROUTES) opens
+      // Your plan, where the trial end date and the cancel path live.
+      actionScreen: TRIAL_ACTION_SCREEN,
     });
     const status = result.delivered
       ? 'delivered'

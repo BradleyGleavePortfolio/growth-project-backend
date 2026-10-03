@@ -375,7 +375,11 @@ describe('B-TRIALS — delivery (push + email after commit, retried by the sweep
       'client-1',
       'Your free trial',
       'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
-      expect.objectContaining({ kind: 'trial_ending', purchase_id: 'pur-1' }),
+      expect.objectContaining({
+        kind: 'trial_ending',
+        purchase_id: 'pur-1',
+        actionScreen: 'ClientPackages',
+      }),
     );
     expect(w.email.send).toHaveBeenCalledTimes(1);
     expect(w.email.send.mock.calls[0][0]).toMatchObject({
