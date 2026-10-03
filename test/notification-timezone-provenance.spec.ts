@@ -150,8 +150,8 @@ describe('PATCH /notifications/preferences and the zone', () => {
     expect(w.current()?.timezone).toBe('America/Chicago');
     expect(w.current()?.timezone_source).toBe('settings');
     expect(w.current()?.timezone_updated_at).toBeInstanceOf(Date);
-    await expect(w.service.updatePreferences('u1', { timezone: 'Not/AZone' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      w.service.updatePreferences('u1', { timezone: 'Not/AZone' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

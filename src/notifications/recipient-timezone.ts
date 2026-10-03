@@ -24,10 +24,7 @@ type TimeZoneReader = Pick<
 >;
 
 export type RecipientTimeZoneSource =
-  | 'recipient'
-  | 'own_coach_profile'
-  | 'booking_coach'
-  | 'assigned_coach';
+  'recipient' | 'own_coach_profile' | 'booking_coach' | 'assigned_coach';
 
 export interface RecipientTimeZone {
   timeZone: string;

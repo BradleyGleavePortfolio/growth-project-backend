@@ -81,7 +81,8 @@ describe('resolveRecipientTimeZone', () => {
           if (over.prefs === undefined) return null;
           return {
             timezone: over.prefs,
-            timezone_updated_at: over.prefsStamped === false ? null : new Date('2026-05-01T00:00:00Z'),
+            timezone_updated_at:
+              over.prefsStamped === false ? null : new Date('2026-05-01T00:00:00Z'),
           };
         }),
       },
