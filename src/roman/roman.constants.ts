@@ -102,3 +102,93 @@ export const ROMAN_ERASE_ALL_INCOMPLETE_MESSAGE =
   'Roman could not finish deleting your conversations. The ones already deleted stay deleted. Try again in a moment to delete the rest.';
 export const ROMAN_CURSOR_INVALID_MESSAGE =
   'This list of conversations is out of date. Refresh it to load your conversations again.';
+
+// ─── OR-113-2: live chat launch hardening ───────────────────────────────────
+
+/**
+ * Daily spend cap for all Roman turns together (UTC day), in US dollars.
+ * Env ROMAN_DAILY_COST_CAP_USD (registered in ENV_RULES); default 25. A turn
+ * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
+ * capability `roman.chat`) before the provider call and settles the actual
+ * tokens after it, so concurrent turns see each other. Fail closed: when
+ * today's spend cannot be read, no paid call is made.
+ */
+export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
+export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 25;
+/** claude-sonnet-4-6 list price per million tokens (input / output), USD. */
+export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
+/** The content-free ledger capability for one Roman turn. */
+export const ROMAN_LEDGER_CAPABILITY = 'roman.chat';
+
+/**
+ * Who a Roman failure message is written for. Roman serves clients
+ * (`student`) AND coaches / the owner on the coach surface: a client is
+ * pointed to their coach, a coach is never told to message "your coach".
+ */
+export type RomanAudience = 'client' | 'coach';
+export function romanAudienceOf(role: string | null | undefined): RomanAudience {
+  return role === 'coach' || role === 'owner' ? 'coach' : 'client';
+}
+/** The working next step that closes every coach-audience failure message. */
+const ROMAN_COACH_NEXT_STEP = 'Your clients, messages and the rest of the app work as usual.';
+
+/** 429: the caller used their rolling 24 h Roman turns. */
+export function romanRateLimitMessage(retryAfterSeconds: number, role: string = 'student'): string {
+  const hours = Math.max(1, Math.round(retryAfterSeconds / 3600));
+  const when = retryAfterSeconds < 3600 ? 'within the hour' : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const next =
+    romanAudienceOf(role) === 'client'
+      ? 'Your coach is in Messages any time, and your plan and logs work as usual.'
+      : ROMAN_COACH_NEXT_STEP;
+  return `You have used your Roman conversations for today. Roman can talk again ${when}. ${next}`;
+}
+
+/** 503: today's Roman capacity (the daily spend cap) is used up. */
+export const ROMAN_ERROR_CAPACITY_REACHED = 'ROMAN_CAPACITY_REACHED';
+export const ROMAN_CAPACITY_REACHED_MESSAGE =
+  'Roman has reached his limit of conversations for today and will be back tomorrow. Your coach is in Messages any time, and your plan and logs work as usual.';
+/** 503: the spend ledger could not be read, so Roman does not answer (fail closed). */
+export const ROMAN_CAPACITY_UNKNOWN_MESSAGE =
+  'Roman cannot check his daily limit at this moment, so he is not answering yet. Send your message again in a few minutes. Your coach is in Messages any time.';
+/** 503: the language model did not answer (outage, timeout, overload). */
+export const ROMAN_ERROR_MODEL_UNAVAILABLE = 'ROMAN_MODEL_UNAVAILABLE';
+export const ROMAN_MODEL_UNAVAILABLE_MESSAGE =
+  'Roman could not reach his language service just now, so this message has no reply yet. Your message is saved. Send it again in a minute; if it keeps happening, your coach is in Messages.';
+/** 503: Roman is switched on but the provider key is not configured. */
+export const ROMAN_NOT_CONFIGURED_MESSAGE =
+  'Roman is not set up on this server yet. Your coach is in Messages any time, and the support team has been told.';
+
+/** 503: the chat flag is off (defence-in-depth re-check inside the turn). */
+export const ROMAN_SWITCHED_OFF_MESSAGE =
+  'Roman is switched off at the moment. Your coach is in Messages any time.';
+
+// Coach-audience variants (coach surface; the owner reads the same copy).
+export const ROMAN_CAPACITY_REACHED_MESSAGE_COACH =
+  `Roman has reached his limit of conversations for today and will be back tomorrow. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH =
+  `Roman cannot check his daily limit at this moment, so he is not answering yet. Send your message again in a few minutes. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH =
+  `Roman could not reach his language service just now, so this message has no reply yet. Your message is saved. Send it again in a minute. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_NOT_CONFIGURED_MESSAGE_COACH =
+  `Roman is not set up on this server yet, and the support team has been told. ${ROMAN_COACH_NEXT_STEP}`;
+export const ROMAN_SWITCHED_OFF_MESSAGE_COACH = `Roman is switched off at the moment. ${ROMAN_COACH_NEXT_STEP}`;
+
+/** The failure copy for one machine code, written for the caller's audience. */
+export function romanFailureMessage(
+  kind: 'capacity_reached' | 'capacity_unknown' | 'model_unavailable' | 'not_configured' | 'switched_off',
+  role: string | null | undefined,
+): string {
+  const client = romanAudienceOf(role) === 'client';
+  switch (kind) {
+    case 'capacity_reached':
+      return client ? ROMAN_CAPACITY_REACHED_MESSAGE : ROMAN_CAPACITY_REACHED_MESSAGE_COACH;
+    case 'capacity_unknown':
+      return client ? ROMAN_CAPACITY_UNKNOWN_MESSAGE : ROMAN_CAPACITY_UNKNOWN_MESSAGE_COACH;
+    case 'model_unavailable':
+      return client ? ROMAN_MODEL_UNAVAILABLE_MESSAGE : ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH;
+    case 'not_configured':
+      return client ? ROMAN_NOT_CONFIGURED_MESSAGE : ROMAN_NOT_CONFIGURED_MESSAGE_COACH;
+    case 'switched_off':
+      return client ? ROMAN_SWITCHED_OFF_MESSAGE : ROMAN_SWITCHED_OFF_MESSAGE_COACH;
+  }
+}
