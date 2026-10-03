@@ -736,6 +736,83 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
       expect(r.opened).toBe(true);
     }
 
+    // B-628-13 (Opus @ 33e0696a): the dispute cycle is never erased by the
+    // v1 failure path, in either order.
+    it('B-628-13 order 1: a renewal decline during an open dispute keeps the dispute cycle; paying that renewal does not settle the dispute', async () => {
+      await openDispute();
+      expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+      jest.setSystemTime(at(14 * DAY));
+      w.stripe.subs.get('sub_dv2_client')!.default_payment_method = 'pm_old';
+      w.stripe.addInvoice({
+        id: 'in_dv2_renewal_2',
+        subscription: 'sub_dv2_client',
+        amount_due: 15000,
+        created: sec(at(14 * DAY)),
+      });
+      await w.handler.handle(
+        fixture('invoice.payment_failed', { id: 'in_dv2_renewal_2', attempt_count: 1 }),
+      );
+      await flush();
+      expect(stateRow(w)).toMatchObject({
+        status: 'active',
+        last_failure_reason: 'charge_disputed',
+      });
+      expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+      // The client pays that renewal; dispute dp_1 is still open.
+      w.stripe.subs.get('sub_dv2_client')!.default_payment_method = 'pm_new_ok';
+      w.stripe.stripeRetry('in_dv2_renewal_2');
+      await w.handler.handle(fixture('invoice.paid', { id: 'in_dv2_renewal_2' }));
+      await flush();
+      expect(stateRow(w)).toMatchObject({
+        status: 'active',
+        last_failure_reason: 'charge_disputed',
+      });
+      expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+    });
+
+    it('B-628-13 order 2: a dispute during a payment cycle, then the renewal is paid: the cycle stays as the dispute cycle until the dispute is won', async () => {
+      await failRenewal(w);
+      expect(stateRow(w)?.status).toBe('active');
+      expect(stateRow(w)?.last_failure_reason).not.toBe('charge_disputed');
+      jest.setSystemTime(at(2 * DAY));
+      w.fake.seed('chargeDispute', {
+        id: 'dp-9',
+        purchase_id: 'purchase-1',
+        stripe_dispute_id: 'dp_9',
+        stripe_charge_id: 'ch_0',
+        amount_cents: 15000,
+        currency: 'usd',
+        status: 'needs_response',
+        created_at: at(2 * DAY),
+      });
+      const r = await w.v2.handleLateReversal({
+        purchaseId: 'purchase-1',
+        reversedChargeAt: at(2 * DAY),
+        disputeId: 'dp_9',
+        chargeId: 'ch_0',
+      });
+      expect(r).toMatchObject({ opened: false, reason: 'cycle_already_active' });
+      expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+      // The renewal is paid while dispute dp_9 is open.
+      w.stripe.subs.get('sub_dv2_client')!.default_payment_method = 'pm_new_ok';
+      w.stripe.stripeRetry('in_dv2_renewal_1');
+      await w.handler.handle(fixture('invoice.paid'));
+      await flush();
+      expect(stateRow(w)).toMatchObject({
+        status: 'active',
+        last_failure_reason: 'charge_disputed',
+      });
+      expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+      // Only the dispute closing in the client's favour ends it.
+      const closed = await w.v2.onDisputeClosed({
+        chargeId: 'ch_0',
+        disputeId: 'dp_9',
+        status: 'won',
+      });
+      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
+      expect(stateRow(w)?.status).toBe('resolved');
+    });
+
     it('locks on its Day 10 although the subscription is active; a renewal payment and a card update do not settle it; a won dispute does', async () => {
       await openDispute();
       // A renewal invoice.paid while the dispute is open keeps the cycle.
@@ -1238,12 +1315,122 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       // Stripe's retry charges the subscription default (the new card).
       jest.setSystemTime(at(2 * DAY + 2 * HOUR));
       expect(w.stripe.stripeRetry('in_dv2_renewal_1')).toBe('paid');
+      // R9 (B-628-11): the key's first execution happens now and is refused
+      // (400, not a replay): not yet the original's result, so it waits.
       await w.billing.reconcile(at(2 * DAY + 2 * HOUR));
+      expect(cardOp(first.setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(first.setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'uncertain', amount_paid_cents: 0 }),
+      ]);
+      // The next ask gets that refusal back as `Idempotent-Replayed: true`:
+      // the key's first execution did not pay, so it was not this update.
+      jest.setSystemTime(at(2 * DAY + 3 * HOUR));
+      await w.billing.reconcile(at(2 * DAY + 3 * HOUR));
       expect(cardOp(first.setupId)?.completed_at).toBeInstanceOf(Date);
       expect(cardOp(first.setupId)?.lines).toEqual([
         expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
       ]);
       expect(w.stripe.charges).toEqual([expect.objectContaining({ by: 'stripe_retry' })]);
+    });
+
+    // B-628-11 (R9, Sol @ 33e0696a): a 400 that is not a replay (e.g. a
+    // pre-execution validation failure, never cached by Stripe) is not the
+    // original operation's result.
+    it('foreground: an unreplayed 400 validation refusal keeps the paid intent open (uncertain); the later replay reports the 15000 cents', async () => {
+      const { approved, setupId } = await payThenLoseReceipt(85);
+      w.stripe.payErrors.push(
+        new StripeConnectApiError(
+          'Received unknown parameter: off_session_x',
+          400,
+          'parameter_unknown',
+          'invalid_request_error',
+        ),
+      );
+      const retry = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(retry.outcome).toBe('payment_uncertain');
+      expect(retry.plans[0]).toMatchObject({
+        outcome: 'uncertain',
+        error_code: 'PAYMENT_RESULT_UNKNOWN',
+      });
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({
+          result: 'paying',
+          amount_paid_cents: 0,
+          amount_due_cents: 15000,
+        }),
+      ]);
+      const later = await w.billing.confirmCardUpdate('client-1', setupId, approved);
+      expect(later).toMatchObject({ outcome: 'paid', amount_paid_cents: 15000 });
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('background: an unreplayed 400 validation refusal keeps the paid intent open; the next run records the 15000 cents', async () => {
+      const { setupId } = await payThenLoseReceipt(95);
+      w.stripe.payErrors.push(
+        new StripeConnectApiError(
+          'Received unknown parameter: off_session_x',
+          400,
+          'parameter_unknown',
+          'invalid_request_error',
+        ),
+      );
+      jest.setSystemTime(at(2 * DAY + 10 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 10 * MIN));
+      expect(cardOp(setupId)?.completed_at ?? null).toBeNull();
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paying', amount_paid_cents: 0 }),
+      ]);
+      jest.setSystemTime(at(2 * DAY + 80 * MIN));
+      await w.billing.reconcile(at(2 * DAY + 80 * MIN));
+      expect(cardOp(setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+      ]);
+      expect(w.stripe.charges).toHaveLength(1);
+    });
+
+    it('C-628-14: a first-call 429 (never executed) on an invoice another collector paid meanwhile is already_paid, never credited to this update', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      w.stripe.beforePay = (id) => {
+        w.stripe.beforePay = undefined;
+        expect(w.stripe.stripeRetry(id)).toBe('paid');
+        throw new StripeConnectApiError(
+          'Too many requests.',
+          429,
+          'rate_limit',
+          'invalid_request_error',
+        );
+      };
+      const first = await cardUpdate(w, 'pm_new_ok', 87);
+      expect(first.res.plans[0].invoices).toEqual([
+        expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+      ]);
+      expect(cardOp(first.setupId)?.lines).toEqual([
+        expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+      ]);
+      expect(w.stripe.charges).toEqual([expect.objectContaining({ by: 'stripe_retry' })]);
+    });
+
+    it('C-628-15: a first-call 409 (a request with this key still running) is uncertain, never "nothing was charged"', async () => {
+      await failRenewal(w);
+      jest.setSystemTime(at(2 * DAY));
+      w.stripe.payErrors.push(
+        new StripeConnectApiError(
+          'There is currently another in-progress request using this idempotency key.',
+          409,
+          'idempotency_key_in_use',
+          'invalid_request_error',
+        ),
+      );
+      const first = await cardUpdate(w, 'pm_new_ok', 88);
+      expect(first.res.outcome).toBe('payment_uncertain');
+      expect(first.res.plans[0]).toMatchObject({
+        outcome: 'uncertain',
+        error_code: 'PAYMENT_RESULT_UNKNOWN',
+      });
+      expect(first.res.message).not.toMatch(/nothing was charged/i);
+      expect(cardOp(first.setupId)?.completed_at ?? null).toBeNull();
     });
 
     it('past the 24 h key window an unrecorded pay intent is never re-asked and never credited (Stripe may have pruned the key)', async () => {

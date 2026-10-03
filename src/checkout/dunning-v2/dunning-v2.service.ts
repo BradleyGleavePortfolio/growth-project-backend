@@ -928,10 +928,12 @@ export class DunningV2Service {
     if (!state) return { liftedLockout: false };
     // B-628-8: a renewal payment or card update does not settle a disputed
     // payment; only the dispute closing in the client's favour ends it.
+    // B-628-13: decided from the open obligation too, not the marker alone.
     if (
       via !== 'manual' &&
       state.status === 'active' &&
-      state.last_failure_reason === DUNNING_V2_REVERSAL_REASON
+      (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON ||
+        (await this.hasOpenDisputeObligation(client, purchaseId)))
     ) {
       return { liftedLockout: false };
     }
@@ -1135,7 +1137,13 @@ export class DunningV2Service {
     return { opened: res.opened, reason: res.reason };
   }
 
-  /** True while a dispute cycle is open on this purchase (B-628-8). */
+  /**
+   * True while a dispute cycle is open on this purchase (B-628-8). B-628-13:
+   * also true for an active cycle while any dispute this path recorded is
+   * still open, so a later decline (whose message replaces the marker on
+   * the v1 path) or a dispute that arrived during a payment cycle can never
+   * let a renewal payment settle a disputed payment.
+   */
   async isDisputeCycleOpen(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
     if (!this.enabled()) return false;
     const client: DunningV2Db = db ?? this.prisma;
@@ -1143,7 +1151,53 @@ export class DunningV2Service {
       where: { purchase_id: purchaseId },
       select: { status: true, last_failure_reason: true },
     });
-    return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+    if (state?.status !== 'active') return false;
+    if (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return true;
+    return this.hasOpenDisputeObligation(client, purchaseId);
+  }
+
+  /**
+   * B-628-13: a renewal payment settled the payment part of an active cycle
+   * while a dispute is still open: the cycle continues as the dispute cycle
+   * (marker restored or set; its lock timeline is unchanged). CAS on the
+   * active row, so a cycle resolved meanwhile is never reopened here.
+   */
+  async keepAsDisputeCycle(purchaseId: string, db?: DunningV2Db): Promise<void> {
+    if (!this.enabled()) return;
+    const client: DunningV2Db = db ?? this.prisma;
+    await client.dunningState.updateMany({
+      where: {
+        purchase_id: purchaseId,
+        status: 'active',
+        OR: [
+          { last_failure_reason: null },
+          { last_failure_reason: { not: DUNNING_V2_REVERSAL_REASON } },
+        ],
+      },
+      data: { last_failure_reason: DUNNING_V2_REVERSAL_REASON },
+    });
+  }
+
+  /**
+   * B-628-13: an obligation recorded by the dunning dispute path whose
+   * merged status (ledger + record; a final status wins) is not final.
+   * Ledger-only disputes do not count, so a stale ledger row never blocks
+   * an unrelated payment cycle.
+   */
+  private async hasOpenDisputeObligation(db: DunningV2Db, purchaseId: string): Promise<boolean> {
+    const recorded = await db.dunningDisputeObligation.findMany({
+      where: { purchase_id: purchaseId },
+      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+    });
+    if (recorded.length === 0) return false;
+    const ledger = await db.chargeDispute.findMany({
+      where: { purchase_id: purchaseId },
+      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+    });
+    const ids = new Set(recorded.map((r) => r.stripe_dispute_id));
+    return mergeDisputeObligations(ledger, recorded).some(
+      (d) => ids.has(d.stripe_dispute_id) && !DISPUTE_TERMINAL_STATUSES.has(d.status),
+    );
   }
 
   /**

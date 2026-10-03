@@ -929,16 +929,18 @@ export class ClientBillingService {
 
   /**
    * Re-ask an unrecorded pay call with its own key. Only a successful paid
-   * answer credits this update. Only an answer produced by executing the pay
-   * proves our call did not pay: Stripe caches the result of every request
-   * that began executing, so inside the key window a 402 (the original's
-   * cached decline / bank step) or a 400 invalid_request_error (a new
-   * execution refused because the invoice is already settled, i.e. the
-   * original never executed) is definitive. Everything else is unknown
-   * (B-628-11 R8): 401 / 403 are refused before execution and say nothing
-   * about the original; 404, 409 "key in use", 429, an idempotency error,
-   * 5xx and transport errors likewise. An unknown line keeps its intent and
-   * the operation stays open until an authoritative answer arrives.
+   * answer credits this update. Only an answer that IS the original
+   * operation's result proves our call did not pay (B-628-11 R9): a 402 or a
+   * 400 invalid_request_error carrying Stripe's `Idempotent-Replayed: true`,
+   * i.e. the cached result of this key's first execution. Stripe caches
+   * every request that began executing, so a first execution refused
+   * because the invoice is already settled is replayed as such on the next
+   * ask. Everything else is unknown: a 400 / 402 that is not a replay (a
+   * pre-execution validation failure, or this key's first execution
+   * happening now), 401 / 403 (refused before execution), 404, 409 "key in
+   * use", 429, an idempotency error, 5xx and transport errors. An unknown
+   * line keeps its intent and the operation stays open until an
+   * authoritative answer arrives (or the 23 h window settles it).
    */
   private async replayPay(
     inv: StripeInvoiceObject,
@@ -959,6 +961,7 @@ export class ClientBillingService {
     } catch (err) {
       const definitive =
         err instanceof StripeConnectApiError &&
+        err.idempotentReplayed &&
         (err.httpStatus === 402 ||
           (err.httpStatus === 400 && err.stripeType === 'invalid_request_error'));
       if (!definitive) {
@@ -1006,11 +1009,14 @@ export class ClientBillingService {
         // A lost / non-definitive answer to OUR pay call and the invoice is
         // paid now: that is this card update's payment (the new card is the
         // default every collector uses), reported in integer cents. A
-        // definitive 4xx means Stripe had it paid before our call.
-        const lostReply =
-          !(err instanceof StripeConnectApiError) ||
-          err.httpStatus >= 500 ||
-          err.httpStatus === 429;
+        // definitive 4xx means Stripe had it paid before our call. C-628-14:
+        // a 429 never ran, so whatever paid the invoice was not this call.
+        // C-628-15: a 409 means a request with this key is still running;
+        // it may be the one that paid, so the answer waits for the replay.
+        if (err instanceof StripeConnectApiError && err.httpStatus === 409) {
+          return { kind: 'uncertain', amountPaidCents: 0, errorCode: 'PAYMENT_RESULT_UNKNOWN' };
+        }
+        const lostReply = !(err instanceof StripeConnectApiError) || err.httpStatus >= 500;
         return lostReply
           ? { kind: 'paid', amountPaidCents: this.paidCents(fresh, inv) }
           : { kind: 'already_paid', amountPaidCents: 0 };
@@ -1034,7 +1040,12 @@ export class ClientBillingService {
           declineCode: err.declineCode ?? err.stripeCode ?? null,
         };
       }
-      if (err.httpStatus >= 500 || err.httpStatus === 429 || fresh == null) {
+      if (
+        err.httpStatus >= 500 ||
+        err.httpStatus === 429 ||
+        err.httpStatus === 409 ||
+        fresh == null
+      ) {
         // Stripe did not answer definitively and we could not re-read it.
         return { kind: 'uncertain', amountPaidCents: 0, errorCode: 'PAYMENT_RESULT_UNKNOWN' };
       }

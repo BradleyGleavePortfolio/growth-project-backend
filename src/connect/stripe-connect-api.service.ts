@@ -27,6 +27,9 @@ export class StripeConnectApiError extends Error {
     // S-DUNNING-R2: the issuer's decline reason on a card_error
     // (e.g. insufficient_funds), so a failed in-app payment is truthful.
     public readonly declineCode: string | null = null,
+    // B-628-11 (R9): Stripe's `Idempotent-Replayed: true` header. Only a
+    // replayed answer is the cached result of the key's first execution.
+    public readonly idempotentReplayed: boolean = false,
   ) {
     super(message);
     this.name = 'StripeConnectApiError';
@@ -1159,7 +1162,8 @@ export class StripeConnectApiService {
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
       const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;
-      throw new StripeConnectApiError(message, res.status, code, type, declineCode);
+      const replayed = res.headers?.get?.('idempotent-replayed') === 'true';
+      throw new StripeConnectApiError(message, res.status, code, type, declineCode, replayed);
     }
     return parsed as T;
   }

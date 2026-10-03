@@ -1204,6 +1204,16 @@ export class CheckoutWebhookHandlerService {
     if (this.dunningV2) {
       try {
         if (await this.dunningV2.isDisputeCycleOpen(purchaseId, tx)) {
+          // B-628-13: the payment part is settled; the cycle stays (or
+          // becomes) the dispute cycle until the dispute closes. A failed
+          // marker write still keeps the cycle (never resolves it here).
+          try {
+            await this.dunningV2.keepAsDisputeCycle(purchaseId, tx);
+          } catch (err) {
+            this.logger.warn(
+              `dunningV2.keepAsDisputeCycle failed purchase=${purchaseId}: ${(err as Error).name}`,
+            );
+          }
           this.logger.log(
             JSON.stringify({
               event: 'checkout_webhook.dispute_cycle_kept_on_paid',

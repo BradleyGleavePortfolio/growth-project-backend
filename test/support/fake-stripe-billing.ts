@@ -430,7 +430,22 @@ export class FakeStripeBilling {
   private once<T>(key: string, fn: () => T): T {
     const hit = this.idem.get(key);
     if (hit) {
-      if ('err' in hit) throw hit.err;
+      // Stripe marks a cached answer with `Idempotent-Replayed: true`.
+      if ('err' in hit) {
+        const e = hit.err;
+        throw e instanceof StripeConnectApiError
+          ? Object.assign(
+              new StripeConnectApiError(
+                e.message,
+                e.httpStatus,
+                e.stripeCode,
+                e.stripeType,
+                e.declineCode,
+              ),
+              { idempotentReplayed: true },
+            )
+          : e;
+      }
       return hit.ok as T;
     }
     try {
