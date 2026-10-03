@@ -165,18 +165,34 @@ describe('BookingEmitter', () => {
     // C-643-2: each reminder is also pushed to the device exactly once,
     // with the same local-time copy (lock-screen safe for booking kinds).
     expect(sendPushMock.mock.calls.map((c) => c[0])).toEqual([
-      {
+      expect.objectContaining({
         user_id: 'client-1',
         kind: NotificationKind.BOOKING_REMINDER_24H,
         body: written[0].body,
         deep_link: 'tgp://sessions/sess-6',
-      },
-      {
+        // B-NOTIF-5: an exactly-once identity per session and start time,
+        // and the booking context the worker re-renders and re-checks.
+        dedupe_key: `${NotificationKind.BOOKING_REMINDER_24H}:sess-6:${FIXED_SCHEDULED_AT.toISOString()}`,
+        context: expect.objectContaining({
+          sessionId: 'sess-6',
+          scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+          otherPartyDisplayName: 'Coach K',
+        }),
+      }),
+      expect.objectContaining({
         user_id: 'client-1',
         kind: NotificationKind.BOOKING_REMINDER_1H,
         body: written[1].body,
         deep_link: 'tgp://sessions/sess-6',
-      },
+        // B-NOTIF-5: an exactly-once identity per session and start time,
+        // and the booking context the worker re-renders and re-checks.
+        dedupe_key: `${NotificationKind.BOOKING_REMINDER_1H}:sess-6:${FIXED_SCHEDULED_AT.toISOString()}`,
+        context: expect.objectContaining({
+          sessionId: 'sess-6',
+          scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+          otherPartyDisplayName: 'Coach K',
+        }),
+      }),
     ]);
   });
 

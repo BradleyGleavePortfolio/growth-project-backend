@@ -1,4 +1,5 @@
 import { NotificationKind } from '../notification-kind';
+import { dayLabel, formatClock, usableTimeZone } from '../local-time';
 
 // What a push shows on the lock screen (C-643-2 / push delivery).
 //
@@ -84,7 +85,58 @@ const DEFAULT_COPY: LockScreenCopy = {
   body: `You have a new notification. ${OPEN}`,
 };
 
-export function lockScreenCopy(kind: string, inboxBody: string): LockScreenCopy {
+/**
+ * Booking context stored with a push (B-NOTIF-5), so the lock-screen line is
+ * rendered at the moment it is sent: a 24 h reminder deferred by quiet hours
+ * still says "today" or "tomorrow" correctly, and the stored inbox row keeps
+ * the absolute date (C-647-3).
+ */
+export interface PushContext {
+  sessionId?: string;
+  scheduledAt?: string;
+  newScheduledAt?: string;
+  oldScheduledAt?: string;
+  timeZone?: string | null;
+  otherPartyDisplayName?: string;
+}
+
+function contextTime(context: PushContext | null | undefined): {
+  at: Date;
+  tz: string;
+  name: string;
+} | null {
+  if (!context?.scheduledAt || !context.otherPartyDisplayName) return null;
+  const tz = usableTimeZone(context.timeZone);
+  const at = new Date(context.scheduledAt);
+  if (!tz || Number.isNaN(at.getTime())) return null;
+  return { at, tz, name: context.otherPartyDisplayName };
+}
+
+export function lockScreenCopy(
+  kind: string,
+  inboxBody: string,
+  context?: PushContext | null,
+  now: Date = new Date(),
+): LockScreenCopy {
+  const timed = contextTime(context);
+  if (timed && kind === NotificationKind.BOOKING_REMINDER_24H) {
+    return {
+      title: TITLES[kind],
+      body: `Your session with ${timed.name} is ${dayLabel(timed.at, timed.tz, now)} at ${formatClock(timed.at, timed.tz)}.`.slice(
+        0,
+        160,
+      ),
+    };
+  }
+  if (timed && kind === NotificationKind.BOOKING_REMINDER_1H) {
+    return {
+      title: TITLES[kind],
+      body: `Your session with ${timed.name} starts at ${formatClock(timed.at, timed.tz)}.`.slice(
+        0,
+        160,
+      ),
+    };
+  }
   if (SAFE_BODY_KINDS.has(kind)) {
     const body = inboxBody.trim().slice(0, 160);
     return {

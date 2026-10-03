@@ -507,6 +507,8 @@ export class DripDispatcherCron {
           payload,
           deep_link: 'tgp://client/library',
           channel: 'push',
+          // B-648-7: the inapp row above is the inbox item; this twin is hidden.
+          push_twin: true,
         });
       } catch (err) {
         this.logger.warn(

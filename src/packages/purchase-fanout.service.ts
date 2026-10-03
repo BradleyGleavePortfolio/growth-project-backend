@@ -686,6 +686,8 @@ export class PurchaseFanoutService {
           payload,
           deep_link,
           channel: 'push',
+          // B-648-7: the inapp row above is the inbox item; this twin is hidden.
+          push_twin: true,
         });
       } catch (err) {
         this.logger.warn(

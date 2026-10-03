@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -31,8 +32,9 @@ import {
   PushDeliveryResult,
 } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
-import { DeviceDeliveryResult, PushDeliveryService } from './push/push-delivery.service';
-import { lockScreenCopy } from './push/lock-screen-copy';
+import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
+import { PushContext, lockScreenCopy } from './push/lock-screen-copy';
+import { resolveRecipientTimeZone } from './recipient-timezone';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
@@ -61,6 +63,12 @@ export interface CreateNotificationInput {
   payload?: Record<string, unknown>;
   deep_link?: string;
   channel?: 'push' | 'email' | 'inapp';
+  /**
+   * B-648-7: true when this `push` row duplicates an `inapp` row the same
+   * writer stored for the same event. The row is kept (history) but hidden
+   * from the inbox and the unread counts.
+   */
+  push_twin?: boolean;
 }
 
 // Rate-limit guard: at most 1 push per user per kind per minute.
@@ -69,38 +77,20 @@ export interface CreateNotificationInput {
 const recentPushes = new Map<string, number>();
 
 /**
- * Sol B-643-2: one inbox item per notification. These kinds were written as
- * an `inapp` row plus a `push` twin with the same text, and the inbox and
- * unread count showed both. Emitters now write only the `inapp` row (device
- * delivery goes through sendPush / pushToUser). Hiding the `push` twins also
- * covers rows already stored, and installed builds pick it up because the
- * API response changes, not the app. Kinds whose only row is `push`
- * (community, workout and meal-plan assignment, coach-AI notifications)
- * are not listed and stay visible.
+ * Sol B-643-2 / B-648-7: one inbox item per notification. Several writers
+ * stored an `inapp` row plus a `push` twin with the same text. Only a
+ * PROVEN twin is hidden: `inbox_hidden` is set when the writer marks its
+ * `push` row as a twin (createNotification `push_twin`), and the
+ * 20270307000000 migration backfilled stored twins (a `push` row within 10 s
+ * of an `inapp` row for the same user, kind, deep link and text, never a
+ * coach-AI row). A sole `push` row of any kind (coach-AI,
+ * community, assignments) stays visible. Installed builds get this because
+ * only the API response changes.
  */
-export const PUSH_TWIN_KINDS: readonly string[] = [
-  NotificationKind.MILESTONE_REACHED,
-  NotificationKind.MESSAGE_RECEIVED,
-  NotificationKind.MISSED_CHECKIN,
-  NotificationKind.WEIGHT_TREND_ALERT,
-  NotificationKind.CHECKIN_SUBMITTED,
-  NotificationKind.BUILD_WEEK_DAY_UNLOCKED,
-  NotificationKind.COACH_ALERT,
-  NotificationKind.BOOKING_REQUESTED,
-  NotificationKind.BOOKING_CONFIRMED,
-  NotificationKind.BOOKING_DECLINED,
-  NotificationKind.BOOKING_CANCELLED,
-  NotificationKind.BOOKING_RESCHEDULED,
-  NotificationKind.BOOKING_REMINDER_24H,
-  NotificationKind.BOOKING_REMINDER_1H,
-  NotificationKind.FIRST_PAYMENT,
-  NotificationKind.DRIP_RELEASED,
-  NotificationKind.COACH_NEW_PURCHASE,
-];
-const INBOX_HIDES_PUSH_TWINS = { NOT: { channel: 'push', kind: { in: [...PUSH_TWIN_KINDS] } } };
+const INBOX_HIDES_PUSH_TWINS = { inbox_hidden: false };
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
   private readonly expo = new Expo();
 
@@ -118,6 +108,20 @@ export class NotificationsService {
     // unit tests without DI keep working (sendPush is then a no-op).
     @Optional() private pushDelivery?: PushDeliveryService,
   ) {}
+
+  /**
+   * C-648-2: NotificationsModule provides PushDeliveryService. If that wiring
+   * is ever lost, every device push would silently stop, so a production
+   * boot fails here instead. (Thin unit tests construct the service without
+   * DI and never run this hook.)
+   */
+  onModuleInit(): void {
+    if (this.pushDelivery) return;
+    const message =
+      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
+    if (process.env.NODE_ENV === 'production') throw new Error(message);
+    this.logger.error(message);
+  }
 
   // ── Preferences ───────────────────────────────────────────────────────────
 
@@ -479,14 +483,22 @@ export class NotificationsService {
       recentPushes.set(key, now);
     }
 
+    const body = input.body.slice(0, 160);
+    // B-648-7: a writer that stores a `push` twin next to the `inapp` row of
+    // the same event says so, and the twin stays out of the inbox and the
+    // unread counts. Only that writer knows it is a twin; nothing is hidden
+    // by kind.
+    const inboxHidden = channel === 'push' && input.push_twin === true;
+
     return db.notification.create({
       data: {
         user_id: input.user_id,
         kind: input.kind,
-        body: input.body.slice(0, 160),
+        body,
         payload: (input.payload ?? undefined) as Prisma.InputJsonValue | undefined,
         deep_link: input.deep_link,
         channel,
+        ...(inboxHidden ? { inbox_hidden: true } : {}),
       },
     });
   }
@@ -495,37 +507,63 @@ export class NotificationsService {
    * Send an inbox notification to the recipient's phone (C-643-2).
    *
    * The inbox row is written separately with `createNotification({ channel:
-   * 'inapp' })`; this call writes NO row, so each event is one inbox item.
-   * Gated by the same preferences as the row (`muted`, `<kind>_push`). The
-   * lock screen gets quiet copy (lock-screen-copy.ts: no health details, no
-   * message text); `data` carries only tap routing (the screen and the
-   * deep link, which holds ids only). Never throws; delivery is at most
-   * once (PushDeliveryService). Returns null when suppressed or unwired.
+   * 'inapp' })`; this call writes NO inbox row, so each event is one inbox
+   * item. It queues one PushOutbox row (B-NOTIF-5) and returns at once: the
+   * request never waits on Expo (B-648-6). Gated by the same preferences as
+   * the row (`muted`, `<kind>_push`). Quiet hours (OR-113-5) are applied in
+   * the recipient's zone. The lock screen gets quiet copy
+   * (lock-screen-copy.ts: no health details, no message text); `data`
+   * carries only tap routing (the screen, the deep link and ids).
+   *
+   * `dedupe_key` makes an event exactly once (booking events); without it,
+   * repeats in the same conversation (same kind and deep link) collapse.
+   * With `tx` the push commits or rolls back with the caller's write.
+   * Never throws without `tx`; returns null when suppressed or unwired.
    */
-  async sendPush(input: {
-    user_id: string;
-    kind: NotificationKindValue;
-    body: string;
-    deep_link?: string;
-  }): Promise<DeviceDeliveryResult | null> {
+  async sendPush(
+    input: {
+      user_id: string;
+      kind: NotificationKindValue;
+      body: string;
+      deep_link?: string;
+      context?: PushContext | null;
+      dedupe_key?: string | null;
+      urgent?: boolean;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<EnqueueResult | null> {
     if (!this.pushDelivery) return null;
     try {
-      const prefs = await this.getPreferences(input.user_id);
+      const prefs = await this.getPreferences(input.user_id, tx);
       if ((prefs as Record<string, unknown>).muted) return null;
       const key = `${this._kindToPrefsPrefix(input.kind)}_push` as keyof typeof prefs;
       if (prefs[key] === false) return null;
-      const copy = lockScreenCopy(input.kind, input.body);
-      return await this.pushDelivery.deliver({
-        userId: input.user_id,
-        kind: input.kind,
-        title: copy.title,
-        body: copy.body,
-        data: {
-          actionScreen: input.kind.startsWith('message') ? 'Messages' : 'NotificationCenter',
-          ...(input.deep_link ? { deepLink: input.deep_link } : {}),
+      const copy = lockScreenCopy(input.kind, input.body, input.context);
+      const timeZone =
+        input.context?.timeZone ??
+        (await resolveRecipientTimeZone(tx ?? this.prisma, input.user_id, input.context?.sessionId));
+      const sessionId = input.context?.sessionId;
+      return await this.pushDelivery.enqueue(
+        {
+          userId: input.user_id,
+          kind: input.kind,
+          title: copy.title,
+          body: copy.body,
+          data: {
+            actionScreen: input.kind.startsWith('message') ? 'Messages' : 'NotificationCenter',
+            ...(input.deep_link ? { deepLink: input.deep_link } : {}),
+            ...(sessionId ? { sessionId } : {}),
+          },
+          context: input.context ?? null,
+          dedupeKey: input.dedupe_key ?? null,
+          collapseKey: `${input.kind}:${input.deep_link ?? ''}`,
+          urgent: input.urgent,
+          timeZone,
         },
-      });
+        tx,
+      );
     } catch (err) {
+      if (tx) throw err;
       this.logger.warn(
         `sendPush skipped: user=${input.user_id} kind=${input.kind} error=${err instanceof Error ? err.name : 'unknown'}`,
       );
