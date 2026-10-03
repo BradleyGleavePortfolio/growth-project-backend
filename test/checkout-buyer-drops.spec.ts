@@ -152,7 +152,7 @@ describe('CheckoutService.listDropsForBuyer (PR-15A A1)', () => {
     expect(prisma._findManyDrops).toHaveBeenCalledTimes(1);
     // Verify status filter pushed to SQL.
     const whereArg = (prisma._findManyDrops.mock.calls[0][0] as any).where;
-    expect(whereArg.status.in).toEqual(['pending', 'due', 'fired']);
+    expect(whereArg.status.in).toEqual(['pending', 'due', 'dispatching', 'fired', 'delivered']);
     expect(whereArg.client_purchase_id).toBe(PURCHASE);
     void now;
   });
@@ -210,6 +210,31 @@ describe('CheckoutService.listDropsForBuyer (PR-15A A1)', () => {
     const fired = result.drops.find((d) => d.id === 'd_fired');
     expect(pending?.materialised_ref).toBeNull();
     expect(fired?.materialised_ref).toBe('workout-assignment-99');
+  });
+
+  it('S-MWB-3 B-640-12: a dispatcher-delivered program stays on the list as fired, with its materialised_ref', async () => {
+    const state = baseState();
+    state.drops = [
+      {
+        ...mkDrop('d_delivered', PURCHASE, 'delivered'),
+        fired_at: new Date('2026-01-06T00:00:00Z'),
+        materialised_ref: 'workout_program:copy-1',
+      },
+      mkDrop('d_dispatching', PURCHASE, 'dispatching'),
+      mkDrop('d_fired', PURCHASE, 'fired'),
+    ];
+    const { svc } = makeService(state);
+    const result = await svc.listDropsForBuyer(BUYER, PURCHASE);
+    const byId = new Map(result.drops.map((d) => [d.id, d]));
+    expect(byId.get('d_delivered')).toMatchObject({
+      status: 'fired',
+      materialised_ref: 'workout_program:copy-1',
+    });
+    // In flight right now: shown as due (upcoming), never hidden.
+    expect(byId.get('d_dispatching')?.status).toBe('due');
+    expect(byId.get('d_fired')?.status).toBe('fired');
+    // The buyer contract never carries the internal statuses.
+    expect(result.drops.every((d) => ['pending', 'due', 'fired'].includes(d.status))).toBe(true);
   });
 
   it('response shape matches the frozen typed contract (PR13_BUILD_REPORT §c)', async () => {
