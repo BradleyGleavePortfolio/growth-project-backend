@@ -694,7 +694,7 @@ export class RefundDisputeHandlerService {
     // retries the same row twice.
     let after: { created_at: Date; id: string } | null = null;
     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
-      const keyset = after
+      const keyset: Prisma.ChargeRefundWhereInput[] = after
         ? [
             {
               OR: [
@@ -732,7 +732,7 @@ export class RefundDisputeHandlerService {
         if (outcome === 'needs_review') needsReview++;
       }
       if (rows.length < limit) break;
-      const last = rows[rows.length - 1];
+      const last: { created_at: Date; id: string } = rows[rows.length - 1];
       after = { created_at: last.created_at, id: last.id };
     }
 
