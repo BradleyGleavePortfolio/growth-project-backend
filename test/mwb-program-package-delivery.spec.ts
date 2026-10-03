@@ -205,3 +205,79 @@ describe('PackageContentsService authoring check for workout_program', () => {
     });
   });
 });
+
+describe('S-MWB-3 C-640-5: attach re-counts the program days under the master row lock', () => {
+  function attachHarness(daysUnderLock: number) {
+    const order: string[] = [];
+    const tx = {
+      $queryRaw: jest.fn(async () => {
+        order.push('row_lock');
+        return [{ archived_at: null }];
+      }),
+      workoutPlan: {
+        count: jest.fn(async () => {
+          order.push('count');
+          return daysUnderLock;
+        }),
+      },
+      coachPackageContent: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: 'pc-1',
+          ...data,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const svc = new PackageContentsService(
+      fake(prisma),
+      fake({ requireOwnedPackage: jest.fn(async () => ({ id: 'pkg-1' })) }),
+      fake({}),
+      fake({ write: jest.fn() }),
+    );
+    const input = {
+      asset_type: 'workout_program',
+      asset_id: 'master-1',
+      asset_revision_id: null,
+      display_order: 0,
+      cadence_kind: 'immediate',
+      cadence_payload: {},
+      display_title: null,
+      display_caption: null,
+    };
+    Reflect.set(svc, 'parseCreate', () => input);
+    Reflect.set(
+      svc,
+      'assertActorCanAttachAsset',
+      jest.fn(async () => undefined),
+    );
+    Reflect.set(
+      svc,
+      'assertAssetOwnedByCoach',
+      jest.fn(async () => undefined),
+    );
+    Reflect.set(
+      svc,
+      'acquirePackageOrderLock',
+      jest.fn(async () => undefined),
+    );
+    return { svc, tx, order };
+  }
+
+  it('refuses with program_empty when the last day was removed after the authoring check', async () => {
+    const { svc, tx, order } = attachHarness(0);
+    await expect(svc.attach('coach-1', 'coach-1', 'pkg-1', {})).rejects.toMatchObject({
+      response: { code: 'program_empty' },
+    });
+    expect(order).toEqual(['row_lock', 'count']);
+    expect(tx.coachPackageContent.create).not.toHaveBeenCalled();
+  });
+
+  it('attaches when the program still has a day under the lock', async () => {
+    const { svc, tx, order } = attachHarness(2);
+    await svc.attach('coach-1', 'coach-1', 'pkg-1', {});
+    expect(order).toEqual(['row_lock', 'count']);
+    expect(tx.coachPackageContent.create).toHaveBeenCalledTimes(1);
+  });
+});

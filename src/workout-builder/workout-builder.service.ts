@@ -52,6 +52,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
+import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -435,7 +436,8 @@ export class WorkoutBuilderService {
         if (programId) {
           // S-MWB-2 C-640-5: a program day archived through the legacy plan
           // route takes the same grid lock as the library clear-day route and
-          // obeys the same rule, so a master a package delivers never empties.
+          // obeys the same rule, so a master a package delivers (or an active
+          // clinic consultation set uses, B-640-11) never empties.
           await this.prisma.$transaction(async (tx) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_PROGRAM_GRID}::int4, hashtext(${programId}))`;
             await this.assertPackagedProgramKeepsADay(tx, programId, planId);
@@ -465,32 +467,21 @@ export class WorkoutBuilderService {
 
   /**
    * Refuse to archive the last live day of a program that a live package
-   * delivers (typed 409, same code and copy as the library clear-day route).
+   * delivers or an active clinic consultation set uses (typed 409, same codes
+   * and copy as the library clear-day route). Takes the master's row lock
+   * first (C-640-5), the lock "Add to package" re-counts days under.
    */
   private async assertPackagedProgramKeepsADay(
     tx: Prisma.TransactionClient,
     programId: string,
     planId: string,
   ): Promise<void> {
+    const master = await lockProgramMaster(tx, programId);
     const others = await tx.workoutPlan.count({
       where: { program_id: programId, archived_at: null, id: { not: planId } },
     });
-    if (others > 0) return;
-    const inPackage = await tx.coachPackageContent.count({
-      where: {
-        asset_type: 'workout_program',
-        asset_id: programId,
-        removed_at: null,
-        package: { archived_at: null },
-      },
-    });
-    if (inPackage > 0) {
-      throw new ConflictException({
-        code: 'program_in_package_needs_a_day',
-        message:
-          'This is the last workout in a program that a package delivers. Add another day first, or remove the program from the package.',
-      });
-    }
+    if (others > 0 || !master) return;
+    await assertLastDayMayGo(tx, master);
   }
 
   // ─── WorkoutPlanExercise rows ─────────────────────────────────────────────

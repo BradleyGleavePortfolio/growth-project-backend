@@ -63,6 +63,7 @@ function makePrisma(over: Record<string, unknown> = {}) {
     workoutPlanRevision: { create: mk({}) },
     workoutProgramRevision: { findFirst: mk({ revision_index: 4 }), create: mk({}) },
     coachPackageContent: { count: mk(0), findMany: mk([]) },
+    clinicProgramSet: { findMany: mk([]) },
     clientWorkoutAssignment: { deleteMany: mk({ count: 0 }), count: mk(0) },
   };
   const prisma = {
@@ -309,6 +310,119 @@ describe('ProgramLibraryService edits', () => {
     const lockSql = fake<string[]>(tx.$queryRaw.mock.calls[0][0]).join('?');
     expect(lockSql).toMatch(/FOR UPDATE/);
     expect(prisma.workoutProgram.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day', () => {
+  const CLINIC_SET = {
+    programs: {
+      strength_foundations: {
+        program_id: 'master-1',
+        cohort_id: 'cohort-1',
+        name: 'Intro package',
+      },
+      mobility_reset: { program_id: 'master-2', cohort_id: 'cohort-2', name: 'Mobility' },
+    },
+  };
+
+  it('archiveProgram: refused with program_in_clinic_set while an active consultation set uses the master', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CLINIC_SET]);
+    const { svc } = makeService(prisma);
+    await expect(svc.archiveProgram('coach-1', 'master-1')).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'program_in_clinic_set',
+        message: expect.stringContaining('contact support'),
+      },
+    });
+    expect(tx.workoutProgram.updateMany).not.toHaveBeenCalled();
+    expect(tx.clinicProgramSet.findMany).toHaveBeenCalledWith({
+      where: { coach_id: { in: ['coach-1'] }, active: true },
+      select: { programs: true },
+    });
+  });
+
+  it('archiveProgram: the set check runs under the master row lock, before the archive write', async () => {
+    const { prisma, tx } = makePrisma();
+    const order: string[] = [];
+    tx.$queryRaw.mockImplementationOnce(async () => {
+      order.push('lock');
+      return [{ id: 'master-1', coach_id: 'coach-1', owner_user_id: 'coach-1' }];
+    });
+    tx.clinicProgramSet.findMany.mockImplementationOnce(async () => {
+      order.push('clinic_sets');
+      return [{ programs: { other: { program_id: 'master-9' } } }];
+    });
+    tx.workoutProgram.updateMany.mockImplementationOnce(async () => {
+      order.push('archive');
+      return { count: 1 };
+    });
+    const { svc } = makeService(prisma);
+    await svc.archiveProgram('coach-1', 'master-1');
+    expect(order).toEqual(['lock', 'clinic_sets', 'archive']);
+  });
+
+  it('archiveProgram: an inactive (superseded) set does not block, and a malformed programs value is ignored', async () => {
+    const { prisma, tx } = makePrisma();
+    // The query asks for active sets only; a set returned with junk JSON never matches.
+    tx.clinicProgramSet.findMany.mockResolvedValueOnce([
+      { programs: null },
+      { programs: ['master-1'] },
+    ]);
+    const { svc } = makeService(prisma);
+    await svc.archiveProgram('coach-1', 'master-1');
+    expect(tx.workoutProgram.updateMany).toHaveBeenCalled();
+  });
+
+  it('clearDay: the last workout of a consultation master cannot be cleared (program_in_clinic_set_needs_a_day)', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutPlan.findFirst.mockResolvedValueOnce({ id: 'plan-1' });
+    tx.workoutPlan.count.mockResolvedValueOnce(1);
+    tx.coachPackageContent.count.mockResolvedValueOnce(0);
+    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CLINIC_SET]);
+    const { svc } = makeService(prisma);
+    await expect(svc.clearDay('coach-1', 'master-1', 0, 0)).rejects.toMatchObject({
+      status: 409,
+      response: { code: 'program_in_clinic_set_needs_a_day' },
+    });
+    expect(tx.workoutPlan.update).not.toHaveBeenCalled();
+  });
+
+  it('clearDay: a consultation master with other days left can lose one', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutPlan.findFirst.mockResolvedValueOnce({ id: 'plan-1' });
+    tx.workoutPlan.count.mockResolvedValueOnce(3);
+    tx.clinicProgramSet.findMany.mockResolvedValue([CLINIC_SET]);
+    const { svc } = makeService(prisma);
+    await svc.clearDay('coach-1', 'master-1', 0, 0);
+    expect(tx.workoutPlan.update).toHaveBeenCalledWith({
+      where: { id: 'plan-1' },
+      data: { archived_at: expect.any(Date) },
+    });
+  });
+
+  it('C-640-5: clearDay takes the grid lock, then the master row lock, BEFORE counting the remaining days', async () => {
+    const { prisma, tx } = makePrisma();
+    const order: string[] = [];
+    tx.$executeRaw.mockImplementationOnce(async () => {
+      order.push('grid_lock');
+      return 1;
+    });
+    tx.workoutPlan.findFirst.mockResolvedValueOnce({ id: 'plan-1' });
+    tx.$queryRaw.mockImplementationOnce(async () => {
+      order.push('row_lock');
+      return [{ id: 'master-1', coach_id: 'coach-1', owner_user_id: 'coach-1' }];
+    });
+    tx.workoutPlan.count.mockImplementationOnce(async () => {
+      order.push('count');
+      return 2;
+    });
+    const { svc } = makeService(prisma);
+    await svc.clearDay('coach-1', 'master-1', 0, 0);
+    expect(order).toEqual(['grid_lock', 'row_lock', 'count']);
+    const rowLockSql = fake<string[]>(tx.$queryRaw.mock.calls[0][0]).join('?');
+    expect(rowLockSql).toMatch(/FROM "WorkoutProgram"[\s\S]*FOR UPDATE/);
   });
 });
 

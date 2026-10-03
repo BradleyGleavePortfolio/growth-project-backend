@@ -119,14 +119,20 @@ describe('WorkoutBuilderService.assertCanAccessClient: deleted accounts (B-640-3
 });
 
 describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640-5)', () => {
-  function build(others: number, inPackage: number) {
+  function build(others: number, inPackage: number, clinicPrograms: unknown[] = []) {
     const tx = {
       $executeRaw: jest.fn(async () => 1),
+      $queryRaw: jest.fn(async () => [
+        { id: 'master-1', coach_id: 'coach-1', owner_user_id: 'coach-1' },
+      ]),
       workoutPlan: {
         count: jest.fn(async () => others),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       coachPackageContent: { count: jest.fn(async () => inPackage) },
+      clinicProgramSet: {
+        findMany: jest.fn(async () => clinicPrograms.map((programs) => ({ programs }))),
+      },
     };
     const prisma = {
       user: { findUnique: jest.fn(async () => ({ role: 'coach' })) },
@@ -153,6 +159,28 @@ describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640
     expect(prisma.workoutPlan.updateMany).not.toHaveBeenCalled();
     const lockSql = fake<string[]>(fake<unknown[][]>(tx.$executeRaw.mock.calls)[0][0]).join('?');
     expect(lockSql).toMatch(/pg_advisory_xact_lock/);
+  });
+
+  it('S-MWB-3 B-640-11: refuses the last day of a master an active clinic consultation set uses', async () => {
+    const { svc, tx, prisma } = build(0, 0, [{ strength: { program_id: 'master-1' } }]);
+    await expect(svc.archivePlan('coach-1', 'plan-day')).rejects.toMatchObject({
+      status: 409,
+      response: { code: 'program_in_clinic_set_needs_a_day' },
+    });
+    expect(tx.workoutPlan.updateMany).not.toHaveBeenCalled();
+    expect(prisma.workoutPlan.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('C-640-5: takes the master row lock (the lock package attach re-counts under) before counting days', async () => {
+    const { svc, tx } = build(0, 0);
+    await svc.archivePlan('coach-1', 'plan-day');
+    const rowLockSql = fake<string[]>(fake<unknown[][]>(tx.$queryRaw.mock.calls)[0][0]).join('?');
+    expect(rowLockSql).toMatch(/FROM "WorkoutProgram"[\s\S]*FOR UPDATE/);
+    const lockOrder = tx.$queryRaw.mock.invocationCallOrder[0];
+    const countOrder = tx.workoutPlan.count.mock.invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(countOrder);
+    // Not packaged, not in a consultation: the last day may go.
+    expect(tx.workoutPlan.updateMany).toHaveBeenCalled();
   });
 
   it('archives a day when other days remain, inside the locked transaction', async () => {

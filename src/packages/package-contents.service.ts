@@ -166,6 +166,23 @@ export class PackageContentsService {
             message: 'This program is archived. Restore it in Programs before adding it to a package.',
           });
         }
+        // C-640-5: re-count the live days under the same row lock that the
+        // library clear-day route and the legacy plan archive take before
+        // removing a last day, so the program a package now delivers can never
+        // be emptied between the authoring check above and this insert.
+        if (locked.length > 0) {
+          const days = await tx.workoutPlan.count({
+            where: { program_id: input.asset_id, archived_at: null },
+          });
+          if (days === 0) {
+            throw new UnprocessableEntityException({
+              error: 'PROGRAM_EMPTY',
+              code: 'program_empty',
+              message:
+                'This program has no workouts yet. Add at least one day before adding it to a package.',
+            });
+          }
+        }
       }
 
       const display_order =

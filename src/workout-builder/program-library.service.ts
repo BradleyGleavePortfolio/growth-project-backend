@@ -43,6 +43,11 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { ProgramDeliveryService, ProgramEmptyError } from './program-delivery.service';
 import {
+  assertLastDayMayGo,
+  assertNotInActiveClinicSet,
+  lockProgramMaster,
+} from './program-guards';
+import {
   BulkAssignProgramDto,
   CreateProgramDto,
   DuplicateProgramDto,
@@ -865,26 +870,18 @@ export class ProgramLibraryService {
         select: { id: true },
       });
       if (!plan) return; // already empty: idempotent
+      // C-640-5: the master's row lock is the one serialisation point shared
+      // with "Add to package" (which re-counts days under it), archive and the
+      // legacy plan archive, so an attach can never validate a master whose
+      // last day is being removed at the same time.
+      await lockProgramMaster(tx, programId);
       const remaining = await tx.workoutPlan.count({
         where: { program_id: programId, archived_at: null },
       });
       if (remaining <= 1) {
-        const inPackage = await tx.coachPackageContent.count({
-          where: {
-            asset_type: 'workout_program',
-            asset_id: programId,
-            removed_at: null,
-            package: { archived_at: null },
-          },
-        });
-        if (inPackage > 0) {
-          throw new ConflictException(
-            err(
-              'program_in_package_needs_a_day',
-              'This is the last workout in a program that a package delivers. Add another day first, or remove the program from the package.',
-            ),
-          );
-        }
+        // B-640-11: a packaged master, or one an active clinic consultation
+        // set uses, keeps at least one day.
+        await assertLastDayMayGo(tx, program);
       }
       await tx.workoutPlan.update({ where: { id: plan.id }, data: { archived_at: new Date() } });
       await this.bumpRevision(tx, actor, programId, 'manual_edit');
@@ -968,7 +965,7 @@ export class ProgramLibraryService {
     // attach commits first and is seen here, or it waits and then sees the
     // archive.
     await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "WorkoutProgram" WHERE "id" = ${programId} FOR UPDATE`;
+      await lockProgramMaster(tx, programId);
       const contents = await tx.coachPackageContent.findMany({
         where: {
           asset_type: 'workout_program',
@@ -987,6 +984,10 @@ export class ProgramLibraryService {
           ),
         );
       }
+      // B-640-11: onboarding completion matches new clients to the masters of
+      // the coach's active clinic consultation set and refuses an archived
+      // one, so a set master stays live.
+      await assertNotInActiveClinicSet(tx, program);
       await tx.workoutProgram.updateMany({
         where: { id: programId, owner_user_id: actor.id, archived_at: null },
         data: { archived_at: new Date() },

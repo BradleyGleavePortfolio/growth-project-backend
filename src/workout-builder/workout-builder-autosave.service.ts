@@ -287,6 +287,30 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
           }
           const locked = await this.lockPlanAndHead(tx, planId);
 
+          // (a.0) S-MWB-3 B-328-6 head fence: an undo that names the head it
+          // was requested against applies only to that head. A retry after a
+          // lost response (the first attempt already moved the head) or an
+          // undo racing another save is refused with the current head and a
+          // fresh lock token, before any row changes, so the client reconciles
+          // from server truth instead of restoring twice.
+          if (
+            body.expected_head_index !== undefined &&
+            body.expected_head_index !== locked.headIndex
+          ) {
+            throw new ConflictException({
+              error: 'undo_head_moved',
+              code: 'undo_head_moved',
+              message:
+                'This workout changed after the undo was requested. Showing the latest saved version.',
+              head_revision_index: locked.headIndex,
+              lock_token: computeLockToken(
+                planId,
+                locked.version,
+                locked.headRevisionId,
+              ),
+            });
+          }
+
           // (a) The target must be strictly earlier than the current head — you
           // can only restore a state that already exists in history.
           if (body.to_revision_index >= locked.headIndex) {

@@ -13,6 +13,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import type { PushAudience, PushMode } from './package-contents.dto';
+import { SHIPPED_STATUSES } from './drop-status';
 
 // PR-17 B2 — package PUSH / BACKFILL service (decision-set in
 // PR17_EXPANSION_PLAN.md §2.2). Pushes ONE authored CoachPackageContent
@@ -86,8 +87,8 @@ import type { PushAudience, PushMode } from './package-contents.dto';
 // stamps 'fired'; the cron stamps 'delivered'. BOTH mean the buyer already
 // received this content, so the skip / resend logic must treat them
 // identically. Centralised here as the single source of truth.
-export const SHIPPED_STATUSES = ['fired', 'delivered'] as const;
-export type ShippedStatus = (typeof SHIPPED_STATUSES)[number];
+// The constant now lives in ./drop-status (shared with the buyer read model).
+export { SHIPPED_STATUSES, type ShippedStatus } from './drop-status';
 
 function isShipped(status: string): boolean {
   return (SHIPPED_STATUSES as readonly string[]).includes(status);
@@ -393,6 +394,10 @@ export class PackagePushService {
           d.status !== 'canceled',
       );
 
+      // C-640-13: every drop of one push carries the same asset, so whether it
+      // defers to the dispatcher is decided once per asset, not once per buyer
+      // (up to MAX_PUSH_AUDIENCE lookups inside this transaction).
+      const deferByAsset = new Map<string, boolean>();
       for (const drop of dueNow) {
         const purchase = purchaseById.get(drop.client_purchase_id);
         if (!purchase) continue;
@@ -424,9 +429,13 @@ export class PackagePushService {
         // dispatcher delivers each buyer in its own transaction with retries;
         // the inline alert below skips it (it re-reads status 'fired'), and the
         // dispatcher alerts the buyer when the program lands.
-        if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
-          continue;
+        const assetKey = `${drop.asset_type}:${drop.asset_id}`;
+        let defer = deferByAsset.get(assetKey);
+        if (defer === undefined) {
+          defer = await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput);
+          deferByAsset.set(assetKey, defer);
         }
+        if (defer) continue;
         const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
 
         await tx.scheduledDrop.update({

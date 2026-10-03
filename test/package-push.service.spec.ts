@@ -844,7 +844,8 @@ describe('PackagePushService', () => {
         { audience: 'all', fireAt: new Date(), mode: 'push_existing', notify: true },
       );
       expect(res.scheduled).toBe(40);
-      expect(resolvers.shouldDeferInline).toHaveBeenCalledTimes(40);
+      // C-640-13: decided once per asset for the whole push, not per buyer.
+      expect(resolvers.shouldDeferInline).toHaveBeenCalledTimes(1);
       expect(resolvers.materialise).not.toHaveBeenCalled();
       const rows = prisma._drops.filter((d: any) => d.content_id === 'content-prog');
       expect(rows).toHaveLength(40);
