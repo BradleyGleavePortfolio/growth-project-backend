@@ -137,6 +137,20 @@ function codeOfHttp(err: unknown): string | null {
   return typeof code === 'string' ? code : null;
 }
 
+/**
+ * A log-safe label for a caught error: its machine code or class name, never
+ * its message (a message can echo request values).
+ */
+function errorLabel(err: unknown): string {
+  if (err && typeof err === 'object') {
+    for (const field of ['stripeCode', 'code', 'stripeType', 'type']) {
+      const v: unknown = Reflect.get(err, field);
+      if (typeof v === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(v)) return v;
+    }
+  }
+  return err instanceof Error ? err.name : 'unknown';
+}
+
 /** Stripe kept this Idempotency-Key for a request with other parameters. */
 function isIdempotencyMismatch(err: unknown): boolean {
   return (
@@ -600,7 +614,7 @@ export class SubscriptionCheckoutService {
         return 'awaiting_payment';
       return 'unknown';
     } catch (err) {
-      this.logger.warn(`checkout state read skipped purchase=${row.id}: ${(err as Error).message}`);
+      this.logger.warn(`checkout state read skipped purchase=${row.id} error=${errorLabel(err)}`);
       return 'unknown';
     }
   }
@@ -897,7 +911,7 @@ export class SubscriptionCheckoutService {
     } catch (err) {
       // Stripe has the subscription; the pinned retry returns it again.
       this.logger.error(
-        `subscription ${sub.id} could not be bound to purchase=${reservation.id}: ${(err as Error).message}`,
+        `subscription ${sub.id} could not be bound to purchase=${reservation.id} error=${errorLabel(err)}`,
       );
       await this.markRetryable(reservation);
       throw this.inProgress(true);
@@ -1122,7 +1136,7 @@ export class SubscriptionCheckoutService {
       });
     } catch (err) {
       // The in-flight marker turns stale after STALE_RESERVATION_MS anyway.
-      this.logger.error(`could not mark purchase=${row.id} for retry: ${(err as Error).message}`);
+      this.logger.error(`could not mark purchase=${row.id} for retry error=${errorLabel(err)}`);
     }
   }
 
@@ -1150,7 +1164,7 @@ export class SubscriptionCheckoutService {
       return await this.stripe.retrieveSubscriptionForCheckout(hit.id);
     } catch (err) {
       this.logger.warn(
-        `attempt subscription lookup failed purchase=${row.id}: ${(err as Error).message}`,
+        `attempt subscription lookup failed purchase=${row.id} error=${errorLabel(err)}`,
       );
       return 'unreadable';
     }
