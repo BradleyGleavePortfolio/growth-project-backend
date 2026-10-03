@@ -242,8 +242,9 @@ describe('B-TRIALS — trial-ending copy', () => {
       will_charge: true,
     });
     expect(subject).toBe('Your free trial ends on Oct 12');
-    expect(html).toContain('Your card will be charged <strong>$49</strong> then');
-    expect(html).toContain('cancel anytime before Oct 12');
+    const flat = html.replace(/\s+/g, ' ');
+    expect(flat).toContain('Your card will be charged <strong>$49</strong> then');
+    expect(flat).toContain('cancel anytime before Oct 12');
     expect(html.replace(/<[^>]+>/g, '')).not.toMatch(/!/);
   });
 });
@@ -565,15 +566,13 @@ describe('B-TRIALS — TRIAL_ENDING is never dropped by notification preferences
     const svc = new NotificationsService(
       stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma),
     );
-    jest
-      .spyOn(svc, 'getPreferences')
-      .mockResolvedValue(
-        stub<Awaited<ReturnType<NotificationsService['getPreferences']>>>({
-          muted: false,
-          digest_inapp: false,
-          digest_push: false,
-        }),
-      );
+    jest.spyOn(svc, 'getPreferences').mockResolvedValue(
+      stub<Awaited<ReturnType<NotificationsService['getPreferences']>>>({
+        muted: false,
+        digest_inapp: false,
+        digest_push: false,
+      }),
+    );
     const row = await svc.createNotification({
       user_id: 'client-1',
       kind: 'trial_ending',
