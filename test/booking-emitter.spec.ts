@@ -414,7 +414,97 @@ describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
     expect(outcome).toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
     const text = loggedText();
     expect(text).toContain('Database request failed (P2024)');
-    expect(text).toContain('push failed for user=coach-1: TypeError (ERR_X)');
+    // B-634-10: ERR_X is not in the reviewed code catalog, so it is dropped.
+    expect(text).toContain('push failed for user=coach-1: TypeError');
+    expect(text).not.toContain('ERR_X');
     expect(text).not.toContain(CANARY);
+  });
+});
+
+// B-634-10 (Sol @ 9e6c62c9): identifier-shaped names and codes are still
+// arbitrary data. At the real emitter logger boundary only closed-enum class
+// names and catalogued codes may appear; unknown names log as OtherError.
+describe('B-634-10: emitter logs carry only closed-enum error classes and codes', () => {
+  const NAME_CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
+  const CODE_CANARY = 'SYNTHETIC_PRIVATE_CODE_456';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+  });
+  function loggedText(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function canaryError(): Error {
+    const err = Object.assign(new Error('provider text'), { code: CODE_CANARY });
+    err.name = NAME_CANARY;
+    return err;
+  }
+  const requested = {
+    coachUserId: 'coach-1',
+    clientDisplayName: 'Jamie',
+    sessionId: 'sess-1',
+    sessionTypeName: 'Quick Q/A Call',
+    requestedAt: REQUESTED_AT,
+    scheduledAt: SCHEDULED_AT,
+    notes: null,
+  };
+
+  it('in-app write: unknown name and code log as OtherError; push still delivered', async () => {
+    const { fake, emitter } = build();
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw canaryError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    const text = loggedText();
+    expect(text).toContain('booking_requested in-app write failed for user=coach-1: OtherError');
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('push: a known class with an unknown code logs the class only', async () => {
+    const { fake, emitter } = build();
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw Object.assign(new TypeError('x'), { code: CODE_CANARY });
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    const text = loggedText();
+    expect(text).toMatch(/push failed for user=coach-1: TypeError"/);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('zone lookup: a wrapped canary cause and a non-Error throw never surface', async () => {
+    const { fake, emitter } = build();
+    fake.getPreferences.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('outer'), { cause: canaryError() });
+    });
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw { name: NAME_CANARY, code: CODE_CANARY };
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    const text = loggedText();
+    expect(text).toContain('zone lookup failed for user=coach-1: Error');
+    expect(text).toContain('push failed for user=coach-1: OtherError');
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('a catalogued transport code on a cause is kept for operators', async () => {
+    const { fake, emitter } = build();
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw Object.assign(new TypeError('fetch failed'), {
+        cause: Object.assign(new Error('socket'), { code: 'ECONNRESET' }),
+      });
+    });
+    await emitter.emitRequested(requested);
+    expect(loggedText()).toContain('push failed for user=coach-1: TypeError (ECONNRESET)');
   });
 });

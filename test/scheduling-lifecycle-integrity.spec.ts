@@ -2631,3 +2631,104 @@ describe('checklist (a): scheduling error logs carry no free-form error text', (
     expect(text).not.toContain(CANARY);
   });
 });
+
+// B-634-10 (Sol @ 9e6c62c9): the lifecycle provider catches and the reminder
+// job log only closed-enum class names and catalogued codes. An identifier-
+// shaped name or code (still arbitrary data) logs as OtherError / is dropped.
+describe('B-634-10: lifecycle and reminder logs carry only closed-enum classes and codes', () => {
+  const NAME_CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
+  const CODE_CANARY = 'SYNTHETIC_PRIVATE_CODE_456';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    jest.setSystemTime(NOW);
+  });
+  function logged(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function canaryError(): Error {
+    const err = Object.assign(new Error('provider text'), { code: CODE_CANARY });
+    err.name = NAME_CANARY;
+    return err;
+  }
+
+  it('provisioning failure with an unknown name and code: booking stands, log says OtherError', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    providers.resolveCalendar('stub').createEvent = async () => {
+      throw canaryError();
+    };
+    const final = await svc.approveSession(COACH, s.id);
+    expect(final.status).toBe('scheduled');
+    const text = logged();
+    expect(text).toContain(`provider provisioning failed for session=${s.id}: OtherError`);
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('provider cancellation failure wrapping a canary cause logs the outer class only', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const adapter = providers.resolveCalendar('stub');
+    const original = adapter.createEvent.bind(adapter);
+    const gate = pausePoint();
+    adapter.createEvent = async (input) => {
+      await gate.hit();
+      await original(input);
+      return { externalEventId: 'gcal-evt-9', resolvedProvider: 'google_calendar' };
+    };
+    providers.resolveCalendar('google_calendar').cancelEvent = async () => {
+      throw Object.assign(new TypeError('x'), { cause: canaryError(), code: CODE_CANARY });
+    };
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.cancelSession(CLIENT, s.id, { reason: 'plans changed' });
+    gate.release();
+    expect((await approving).status).toBe('canceled');
+    const text = logged();
+    expect(text).toMatch(
+      /(superseded artifact cleanup|Provider cancellation) failed for session=[^:]+: TypeError"/,
+    );
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it.each([
+    { label: 'an unknown-named error', make: (): unknown => canaryError(), expected: 'OtherError' },
+    {
+      label: 'a non-Error throw',
+      make: (): unknown => ({ name: NAME_CANARY, code: CODE_CANARY }),
+      expected: 'OtherError',
+    },
+  ])('a reminder dispatch that throws $label logs $expected only', async ({ make, expected }) => {
+    const { db, reminder, emitter } = harness();
+    const start = new Date(NOW.getTime() + 57 * 60_000);
+    db.addSession({
+      id: 'enum-reminder',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * 60_000),
+      video_url: 'https://meet.example.com/a',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+    });
+    jest.spyOn(emitter, 'emitReminder1h').mockImplementation(async () => {
+      throw make();
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    const text = logged();
+    expect(text).toContain('session=enum-reminder');
+    expect(text).toContain(`err=${expected}`);
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+});
