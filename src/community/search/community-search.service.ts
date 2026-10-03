@@ -11,6 +11,7 @@ import {
   SearchResponseSchema,
   resolveConfiguredPageSize,
 } from './community-search.dto';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -48,6 +49,7 @@ export class CommunitySearchService {
     private readonly repo: CommunitySearchRepository,
     private readonly access: CommunityAccessService,
     private readonly analytics: AnalyticsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   async search(
@@ -67,8 +69,7 @@ export class CommunitySearchService {
     }
 
     const isCoach =
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id));
+      user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
 
     // A non-coach's visible cohorts (plus the workspace hall, cohort_id NULL)
     // are resolved here and pushed DB-side — never post-filtered.
@@ -80,11 +81,7 @@ export class CommunitySearchService {
 
     // If the caller asked to filter by a specific cohort they cannot see,
     // short-circuit to empty rather than leak that the cohort exists.
-    if (
-      query.cohortId &&
-      !isCoach &&
-      !accessibleCohortIds.includes(query.cohortId)
-    ) {
+    if (query.cohortId && !isCoach && !accessibleCohortIds.includes(query.cohortId)) {
       return this.emptyResponse(query.q, startedAt);
     }
 
@@ -92,9 +89,7 @@ export class CommunitySearchService {
     // when supplied, else the configured default (also clamped to the max).
     const pageSize = query.limit ?? resolveConfiguredPageSize();
 
-    const cursor = query.cursor
-      ? this.decodeCursor(query.cursor)
-      : undefined;
+    const cursor = query.cursor ? this.decodeCursor(query.cursor) : undefined;
 
     const rows = await this.repo.search({
       workspaceId,
@@ -111,7 +106,11 @@ export class CommunitySearchService {
     const hasMore = rows.length > pageSize;
     const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
 
-    const results: SearchResultRow[] = pageRows.map((r) => ({
+    // Apple 1.2: hide rows authored by anyone in a block relation with the
+    // caller, either direction (two-way). Filtered
+    // after the cursor page is cut (the cursor stays on the unfiltered page).
+    const visibleRows = await this.safety.filterBlocked(user.id, pageRows, (r) => r.author_id);
+    const results: SearchResultRow[] = visibleRows.map((r) => ({
       id: r.id,
       kind: r.kind,
       targetId: r.target_id,
