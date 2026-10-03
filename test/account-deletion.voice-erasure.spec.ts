@@ -39,9 +39,22 @@ const USER_ID = '66666666-6666-4666-8666-666666666666';
 const KEY_A = `${USER_ID}/1700000000000-0123456789abcdef.m4a`;
 const KEY_B = `${USER_ID}/1700000000001-0123456789abcdef-0123456789abcdef0123456789abcdef.m4a`;
 
-type Call = { delegate: string; method: string; args: unknown };
+/**
+ * One recorded call. `tx` is the id of the interactive transaction it ran in
+ * (undefined = outside any transaction); `rolledBack` marks a call whose
+ * transaction threw, so it never committed. Storage calls are logged as
+ * delegate 'storage' so their order against the database writes can be
+ * asserted (C-610-10, ported from #652 17606f6c).
+ */
+type Call = { delegate: string; method: string; args: unknown; tx?: number; rolledBack?: boolean };
+type TxState = { current: number | undefined };
 
-function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } = {}) {
+function recordingPrisma(
+  calls: Call[],
+  opts: { failErasureRecord?: boolean; failNoteDelete?: boolean; txState?: TxState } = {},
+) {
+  let txSeq = 0;
+  const txState = opts.txState ?? { current: undefined };
   const locked = {
     id: USER_ID,
     role: 'student',
@@ -58,7 +71,10 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } = 
         get: (_t, method: string) => {
           if (method === 'then') return undefined;
           return jest.fn(async (args: unknown) => {
-            calls.push({ delegate: name, method, args });
+            calls.push({ delegate: name, method, args, tx: txState.current });
+            if (opts.failNoteDelete && name === 'communityVoiceNote' && method === 'deleteMany') {
+              throw new Error('voice note table locked');
+            }
             if (name === 'communityVoiceErasure' && method === 'upsert') {
               if (opts.failErasureRecord) throw new Error('erasure table unavailable');
               const create = (args as { create: { kind: string; target: string } }).create;
@@ -84,7 +100,18 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } = 
       get: (_t, prop: string) => {
         if (prop === 'then') return undefined;
         if (prop === '$transaction') {
-          return async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma);
+          return async (fn: (tx: unknown) => Promise<unknown>) => {
+            const id = ++txSeq;
+            txState.current = id;
+            try {
+              return await fn(prisma);
+            } catch (error) {
+              for (const c of calls) if (c.tx === id) c.rolledBack = true;
+              throw error;
+            } finally {
+              txState.current = undefined;
+            }
+          };
         }
         if (prop === '$queryRaw') {
           return jest.fn(async (strings: TemplateStringsArray) => {
@@ -102,12 +129,20 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } = 
   return prisma;
 }
 
-function storageClient(opts: { failRemove?: boolean; keepObjects?: boolean } = {}) {
+function storageClient(
+  opts: { failRemove?: boolean; keepObjects?: boolean; log?: Call[]; txState?: TxState } = {},
+) {
   const removed: string[][] = [];
   const listed: string[] = [];
   let folder = ['orphan-upload.m4a', 'note-a.m4a'];
   const bucket = {
     remove: jest.fn(async (keys: string[]) => {
+      opts.log?.push({
+        delegate: 'storage',
+        method: 'remove',
+        args: keys,
+        tx: opts.txState?.current,
+      });
       removed.push(keys);
       if (opts.failRemove) return { data: null, error: { message: 'storage down' } };
       if (!opts.keepObjects) folder = folder.filter((n) => !keys.includes(`${USER_ID}/${n}`));
@@ -308,5 +343,84 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('VoiceErasureService retries it'),
     );
+  });
+
+  // ── C-610-10, account-deletion half (ported from #652 17606f6c) ─────────
+  // #652 moved the erasure work and the note soft deletes into one
+  // transaction so a failure between them could not leave LIVE notes with
+  // open erasure work (the retry cron would erase audio still in the feed).
+  // #608's single finalization transaction already gives that guarantee:
+  // these two cases (#652's tests, adapted to #608's hard deletes and its
+  // in-transaction storage purge) prove it on main's code.
+
+  it('C-610-10: the erasure work, the note + transcript deletes and the tombstone commit in ONE transaction; storage runs after them', async () => {
+    const calls: Call[] = [];
+    const txState: TxState = { current: undefined };
+    const { client } = storageClient({ log: calls, txState });
+    const service = build(recordingPrisma(calls, { txState }), client);
+    await expect(service.adminForceDelete(USER_ID, admin)).resolves.toEqual({
+      message: `User ${USER_ID} has been permanently deleted.`,
+    });
+
+    const upserts = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
+    );
+    expect(upserts).toHaveLength(3);
+    const tx = upserts[0].tx;
+    expect(tx).toEqual(expect.any(Number));
+    for (const u of upserts) expect(u.tx).toBe(tx);
+    const noteDelete = calls.find(
+      (c) => c.delegate === 'communityVoiceNote' && c.method === 'deleteMany',
+    );
+    const searchDeletes = calls.filter(
+      (c) => c.delegate === 'communitySearchEntry' && c.method === 'deleteMany',
+    );
+    const tombstone = calls.find(isTombstone);
+    expect(noteDelete?.tx).toBe(tx);
+    expect(searchDeletes.length).toBeGreaterThan(0);
+    for (const d of searchDeletes) expect(d.tx).toBe(tx);
+    expect(tombstone?.tx).toBe(tx);
+    expect(calls.some((c) => c.rolledBack)).toBe(false);
+
+    // Storage runs only after every erasure write above (inside the same
+    // transaction under #608, so a storage failure rolls them all back; see
+    // the storage-failure case above).
+    const firstStorage = calls.findIndex((c) => c.delegate === 'storage');
+    expect(firstStorage).toBeGreaterThan(-1);
+    expect(calls[firstStorage].tx).toBe(tx);
+    for (const c of [...upserts, noteDelete, ...searchDeletes, tombstone]) {
+      expect(calls.indexOf(c as Call)).toBeLessThan(firstStorage);
+    }
+  });
+
+  it('C-610-10: a failed note delete rolls the erasure work back and stops finalization (retried next run); storage is never called', async () => {
+    const calls: Call[] = [];
+    const txState: TxState = { current: undefined };
+    const { client, removed } = storageClient({ log: calls, txState });
+    const service = build(recordingPrisma(calls, { failNoteDelete: true, txState }), client);
+    await expect(service.adminForceDelete(USER_ID, admin)).rejects.toThrow(
+      'voice note table locked',
+    );
+
+    // No erasure work committed for notes that are still live.
+    const upserts = calls.filter(
+      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
+    );
+    expect(upserts.length).toBeGreaterThan(0);
+    for (const u of upserts) expect(u.rolledBack).toBe(true);
+    // Nothing was erased from storage and no tombstone committed, so the
+    // finalize cron picks the whole user up again.
+    expect(removed).toEqual([]);
+    expect(calls.some((c) => c.delegate === 'storage')).toBe(false);
+    expect(client.auth.admin.deleteUser).not.toHaveBeenCalled();
+    expect(calls.filter(isTombstone).every((c) => c.rolledBack === true)).toBe(true);
+    expect(
+      calls.some(
+        (c) =>
+          c.delegate === 'communityVoiceErasure' &&
+          c.method === 'updateMany' &&
+          (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
+      ),
+    ).toBe(false);
   });
 });
