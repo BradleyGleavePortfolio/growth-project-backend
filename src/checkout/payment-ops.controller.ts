@@ -32,6 +32,12 @@ import { DunningService } from './dunning.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import {
+  COACH_DUNNING_SELECT,
+  COACH_LEDGER_SELECT,
+  COACH_PURCHASE_SELECT,
+  COACH_TRANSFER_SELECT,
+} from './coach-payments.select';
+import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
   csvHeaderLine,
@@ -641,6 +647,8 @@ export class CoachPaymentOpsController {
     // ever sees their own purchases (RLS/IDOR). Fetch limit+1 to decide
     // whether there's a next page without a second count query.
     const limit = query.limit ?? PAYMENT_OPS_DEFAULT_LIMIT;
+    // C-641-2: explicit allow-list — the raw row carries the CLIENT's
+    // Stripe client_secret / ephemeral key, which a coach must never get.
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: req.user.id },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -648,6 +656,7 @@ export class CoachPaymentOpsController {
       ...(query.cursor
         ? { cursor: { id: query.cursor }, skip: 1 }
         : {}),
+      select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > limit;
     const purchases = hasMore ? rows.slice(0, limit) : rows;
@@ -672,21 +681,32 @@ export class CoachPaymentOpsController {
       req.user.role === 'owner'
         ? { id: purchaseId }
         : { id: purchaseId, coach_user_id: req.user.id };
-    const purchase = await this.prisma.clientPurchase.findFirst({ where });
+    const purchase = await this.prisma.clientPurchase.findFirst({
+      where,
+      select: COACH_PURCHASE_SELECT,
+    });
     if (!purchase) {
       throw new NotFoundException({
         error: 'PURCHASE_NOT_FOUND',
         message: `No purchase with id ${purchaseId}`,
       });
     }
+    // C-641-2: every nested read is allow-listed too (no idempotency keys,
+    // connected-account ids or other internal Stripe fields).
     const [splitEntries, transfers, dunningState] = await Promise.all([
-      this.ledger.findByPurchase(purchase.id),
+      this.prisma.splitLedgerEntry.findMany({
+        where: { purchase_id: purchase.id },
+        orderBy: [{ kind: 'asc' }, { created_at: 'asc' }],
+        select: COACH_LEDGER_SELECT,
+      }),
       this.prisma.connectTransfer.findMany({
         where: { purchase_id: purchase.id },
         orderBy: { created_at: 'desc' },
+        select: COACH_TRANSFER_SELECT,
       }),
       this.prisma.dunningState.findUnique({
         where: { purchase_id: purchase.id },
+        select: COACH_DUNNING_SELECT,
       }),
     ]);
     return {
@@ -727,6 +747,7 @@ export class CoachPaymentOpsController {
         ...(query.cursor
           ? { cursor: { id: query.cursor }, skip: 1 }
           : {}),
+        select: COACH_LEDGER_SELECT,
       }),
     ]);
     const hasMore = rows.length > limit;
@@ -865,7 +886,7 @@ export class CoachPaymentOpsController {
         coach_user_id: req.user.id,
         OR: [{ status: 'past_due' }, { status: 'payment_failed' }],
       },
-      include: { dunning: true },
+      select: { ...COACH_PURCHASE_SELECT, dunning: { select: COACH_DUNNING_SELECT } },
       orderBy: { updated_at: 'desc' },
       take: 100,
     });

@@ -1307,6 +1307,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Signed upload URL lifetime for community voice notes.',
   },
   {
+    name: 'VOICE_KEY_SIGNING_SECRET',
+    tier: 'optional',
+    default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
+    reason:
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
+  },
+  {
     name: 'VOICE_NOTE_MAX_BYTES',
     tier: 'optional',
     default: '25000000 (MAX_VOICE_BYTES)',
