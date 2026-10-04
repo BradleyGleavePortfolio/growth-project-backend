@@ -1187,7 +1187,8 @@ export class DunningV2Service {
         last_failure_at: now,
         entered_at: now,
         // Access ends now; a cycle already locked keeps its lock instant.
-        locked_out_at: state?.status === 'active' && state.locked_out_at ? state.locked_out_at : now,
+        locked_out_at:
+          state?.status === 'active' && state.locked_out_at ? state.locked_out_at : now,
         next_attempt_at: null,
         resolved_at: null,
         recovered_at: null,
