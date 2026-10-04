@@ -58,6 +58,8 @@ export const DISPUTE_TRANSFER_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 export const REFUND_TRANSFER_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 // B-641-8: pages per sweep run (x limit rows), so one run is bounded.
 export const REFUND_TRANSFER_SWEEP_MAX_PAGES = 20;
+// C-674-12: an attempt this close to the refund's success is its first pass.
+const REFUND_FIRST_PASS_MS = 60_000;
 // Operator alert (Sentry tag) and runbook for a reversal still owed past the
 // window. Machine code only; no free text reaches Sentry.
 export const REFUND_TRANSFER_REVERSAL_REVIEW_CODE = 'REFUND_TRANSFER_REVERSAL_REVIEW';
@@ -568,13 +570,17 @@ export class RefundDisputeHandlerService {
     // transaction. transfer_reversed = false after the ledger claim is the
     // durable "still owed" state; retryPendingTransferReversals picks it up.
     // B-676-3: reversed with the refund, the head-coach posting takes the
-    // refund's own time; a later recovery posts when it happens.
+    // refund's own time; a later recovery posts when it happens. C-674-12:
+    // an overlapping delivery of the same success counts as reversed with it.
+    const firstPass =
+      ledgerJustReversed ||
+      (!!row.posted_at && Date.now() - row.posted_at.getTime() <= REFUND_FIRST_PASS_MS);
     await this.applyRefundTransferReversalOnce(
       row.id,
       args.purchase.id,
       args.amount_cents,
       () => new Date(),
-      ledgerJustReversed ? (row.posted_at ?? undefined) : undefined,
+      firstPass ? (row.posted_at ?? undefined) : undefined,
     );
 
     const updated = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
