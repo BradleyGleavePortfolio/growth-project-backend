@@ -52,6 +52,9 @@ function makePrisma() {
           return false;
         }) ?? null,
       ),
+      findMany: jest.fn(async ({ where }: any) =>
+        purchases.filter((p) => Object.entries(where).every(([k, v]) => p[k] === v)),
+      ),
       // B-661-1: `{ in: [...] }` is the status match payment_intent.succeeded uses.
       findFirst: jest.fn(async ({ where }: any) =>
         purchases.find((p) =>

@@ -32,6 +32,7 @@ type Row = Record<string, any>;
 
 function matchesWhere(row: Row, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([k, v]) => {
+    if (k === 'OR') return (v as Row[]).some((branch) => matchesWhere(row, branch));
     if (v === null) return row[k] === null || row[k] === undefined;
     if (v instanceof Date) return row[k] instanceof Date && row[k].getTime() === v.getTime();
     if (v && typeof v === 'object' && 'in' in v)
@@ -88,6 +89,7 @@ function makeHarness() {
       findFirst: jest.fn(async ({ where }: any) =>
         snapshot(purchases.find((p) => matchesWhere(p, where))),
       ),
+      findMany: jest.fn(async ({ where }: any) => purchases.filter((p) => matchesWhere(p, where))),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => matchesWhere(p, where));
         if (!row) throw Object.assign(new Error('Record to update not found.'), { code: 'P2025' });
@@ -321,7 +323,7 @@ describe('B-661-3 round 5: a successful settlement is never revoked by an older 
     h.rawSql.length = 0;
     await deliver(h, decline('evt_r5_real'));
     expect(row).toMatchObject({ status: 'payment_failed', entitlement_active: false });
-    expect(h.rawSql).toContainEqual(expect.stringMatching(/xmin.*"ClientPurchase".*FOR UPDATE/s));
+    expect(h.rawSql).toContainEqual(expect.stringMatching(/xmin.*"ClientPurchase".*FOR NO KEY UPDATE/s));
   });
 
   it('an activated hosted purchase whose payment really failed is recovered when the same PaymentIntent then succeeds: access and drops come back, nothing runs twice', async () => {
@@ -496,7 +498,7 @@ describe('B-661-8 round 5: a successful retry never overwrites a state committed
     h.db.clientPurchase.findFirst.mockClear();
     await h.svc.handle(event, h.db, prefetched);
     const lockIndex = h.db.$queryRaw.mock.calls.findIndex(([strings]: [TemplateStringsArray]) =>
-      /"ClientPurchase" WHERE stripe_payment_intent_id = .*FOR UPDATE/s.test(strings.join('?')),
+      /"ClientPurchase" WHERE stripe_payment_intent_id = .*FOR NO KEY UPDATE/s.test(strings.join('?')),
     );
     expect(lockIndex).toBeGreaterThanOrEqual(0);
     expect(h.db.$queryRaw.mock.invocationCallOrder[lockIndex]).toBeLessThan(

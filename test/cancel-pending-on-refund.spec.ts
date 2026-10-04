@@ -32,8 +32,11 @@ function makeDropStore() {
   const api = {
     _rows: rows,
     scheduledDrop: {
-      updateMany: jest.fn(async ({ where, data }: any) => {
-        const matchStatus = (row: DropRow) => {
+      updateMany: jest.fn(async ({ where: query, data }: any) => {
+        // B-661-9 round 6: cancelPendingForPurchase matches an OR of branches.
+        const matchOne = (row: DropRow, where: any) => {
+          if (where.failure_reason !== undefined && row.failure_reason !== where.failure_reason)
+            return false;
           if (where.status === undefined) return true;
           if (typeof where.status === 'object' && where.status !== null) {
             if ('in' in where.status)
@@ -44,6 +47,8 @@ function makeDropStore() {
           }
           return row.status === where.status;
         };
+        const where = query;
+        const matchStatus = (row: DropRow) => (query.OR ?? [query]).some((b: any) => matchOne(row, b));
         const matched = rows.filter(
           (r) =>
             (where.client_purchase_id === undefined ||
@@ -597,7 +602,7 @@ describe('cancelPendingForPurchase atomicity (rollback with outer tx)', () => {
             const matched = scratch.filter(
               (r) =>
                 r.client_purchase_id === where.client_purchase_id &&
-                (where.status?.in as string[] | undefined)?.includes(r.status),
+                (where.OR ?? [where]).some((b: any) => b.status?.in?.includes(r.status)),
             );
             for (const r of matched) Object.assign(r, data);
             return { count: matched.length };
@@ -652,7 +657,7 @@ describe('cancelPendingForPurchase atomicity (rollback with outer tx)', () => {
             const matched = scratch.filter(
               (r) =>
                 r.client_purchase_id === where.client_purchase_id &&
-                (where.status?.in as string[] | undefined)?.includes(r.status),
+                (where.OR ?? [where]).some((b: any) => b.status?.in?.includes(r.status)),
             );
             for (const r of matched) Object.assign(r, data);
             return { count: matched.length };

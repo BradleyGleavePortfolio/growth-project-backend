@@ -93,6 +93,7 @@ function makePrisma() {
       findFirst: jest.fn(
         async ({ where }: any) => purchases.find((p) => matchesWhere(p, where)) ?? null,
       ),
+      findMany: jest.fn(async ({ where }: any) => purchases.filter((p) => matchesWhere(p, where))),
       // B-661-8 round 5: like Prisma, a where with more than the id is a
       // compare-and-set; no matching row is P2025.
       update: jest.fn(async ({ where, data }: any) => {

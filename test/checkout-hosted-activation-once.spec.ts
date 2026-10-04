@@ -57,6 +57,7 @@ function makeHarness() {
         if (orderBy?.created_at === 'desc') rows.sort((a, b) => b.created_at - a.created_at);
         return rows[0] ?? null;
       }),
+      findMany: jest.fn(async ({ where }: any) => purchases.filter((p) => matchesWhere(p, where))),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => matchesWhere(p, where));
         if (!row) throw Object.assign(new Error('Record to update not found'), { code: 'P2025' });
