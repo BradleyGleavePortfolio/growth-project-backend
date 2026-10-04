@@ -1,9 +1,12 @@
 -- S-DUNNING-R2/R3 (owner rulings 1A / 2A, 2026-10-01 16:30 PDT; fix round 3).
--- Additive only: one nullable column on "DunningState" and four new
+-- Additive only: two nullable columns on "DunningState" and four new
 -- server-only tables. No backfill, no shipped migration altered. Reverse:
 -- down.sql (drops only what this file creates).
 --   "DunningState"."client_canceled_at": the client ended the plan during the
 --     dunning cycle (2A); written with the durable intent before any void.
+--   "DunningState"."sweep_checked_at": when the v2 sweep last looked at a due
+--     cycle without acting on it; the sweep serves the least recently looked
+--     at first, so rows that keep skipping cannot starve a due one (B-688-2).
 --   "ClientBillingLease": per-purchase billing-action lease with a monotonic
 --     fence (CAS on holder before every Stripe money call and inside every
 --     money-write transaction). Works when no DunningState row exists.
@@ -25,6 +28,7 @@ SET lock_timeout = '5s';
 
 -- AlterTable
 ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "client_canceled_at" TIMESTAMP(3);
+ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "sweep_checked_at" TIMESTAMP(3);
 
 -- CreateTable
 CREATE TABLE "ClientBillingLease" (
