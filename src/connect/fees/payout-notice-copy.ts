@@ -1,7 +1,8 @@
 // S-FEE round 5 (owner decision OR-111-1) — the words a payee sees when a
 // refund, chargeback or dispute outcome changes what they are paid for a sale.
 // Pure functions: integer cents in, plain sentences out. Shipped copy rules:
-// no emojis, no exclamation marks, plain warm words, exact amounts.
+// no emojis, no exclamation marks, no first person (round 11, B-682-3),
+// plain warm words, exact amounts.
 
 export type PayoutNoticeEvent = 'refund' | 'chargeback' | 'dispute_won' | 'dispute_lost';
 export type PayoutNoticeRole = 'coach' | 'head_coach';
@@ -64,7 +65,7 @@ export function formatMoney(cents: number, currency: string): string {
 // Money page show the total, the part already taken and the part still open.
 function heldSentence(a: PayoutNoticeAmounts, cents: number): string {
   return cents > 0
-    ? `We will hold ${formatMoney(cents, a.currency)} from your next sale.`
+    ? `${formatMoney(cents, a.currency)} is held from your next sale.`
     : 'Nothing is held from your next sale.';
 }
 
@@ -76,7 +77,7 @@ export function payoutNoticeCopy(
 ): { title: string; body: string } {
   const m = (cents: number) => formatMoney(cents, a.currency);
   const from = role === 'coach' ? "that sale's payout" : 'your share of that sale';
-  const took = a.reversed_cents > 0 ? ` We took ${m(a.reversed_cents)} back from ${from}.` : '';
+  const took = a.reversed_cents > 0 ? ` ${m(a.reversed_cents)} was taken back from ${from}.` : '';
   let title: string;
   let body: string;
   switch (event) {
@@ -90,15 +91,15 @@ export function payoutNoticeCopy(
       break;
     case 'dispute_won': {
       title = 'Dispute won';
-      const paid = a.reinstated_cents > 0 ? `We paid ${m(a.reinstated_cents)} back to you` : '';
-      const freed = a.released_cents > 0 ? `released the ${m(a.released_cents)} hold` : '';
+      const paid = a.reinstated_cents > 0 ? `${m(a.reinstated_cents)} was paid back to you` : '';
+      const freed = a.released_cents > 0 ? `the ${m(a.released_cents)} hold was released` : '';
       const what =
         paid && freed
           ? ` ${paid} and ${freed}.`
           : paid
             ? ` ${paid}.`
             : freed
-              ? ` We ${freed}.`
+              ? ` The ${m(a.released_cents)} hold was released.`
               : '';
       body = `You won the dispute on a ${m(a.charge_gross_cents)} charge.${what} ${heldSentence(a, a.held_open_cents)}`;
       break;
