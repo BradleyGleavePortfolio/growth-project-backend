@@ -112,6 +112,17 @@ describe('Sol B-678-4 send authority fences both parties', () => {
     expect(f.row.stripe_subscription_id).toBe('sub_1');
   });
 
+  it('reciprocal identities: a coach id sorting first is still locked first (one global order)', async () => {
+    const f = setup({
+      client_user_id: COACH,
+      coach_user_id: CLIENT,
+      idempotency_key: `sub-${COACH}-key`,
+    });
+    await sendFenced(f.db, { ...f.row } as any, null, f.create);
+    expect(lockedIds(f.db)).toEqual([CLIENT, COACH]);
+    expect(f.create).toHaveBeenCalledTimes(1);
+  });
+
   it('(failed before) a coach finalized before the send gets nothing sent', async () => {
     const f = setup();
     f.db._users[1].deleted_at = new Date();
