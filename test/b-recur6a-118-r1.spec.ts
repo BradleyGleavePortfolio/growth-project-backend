@@ -163,7 +163,7 @@ describe('Sol B-679-7 account deletion finds an unbound checkout subscription', 
     await expect(collect(partial, tx([row()]))).rejects.toThrow(/incomplete/);
   });
 
-  it('control: no unbound attempt -> no Stripe read', async () => {
+  it('(failed before) no unbound attempt -> no Stripe read', async () => {
     const stripe = lister([]);
     const svc = billing(stripe);
     expect(await collect(svc, tx([]))).toEqual([]);
