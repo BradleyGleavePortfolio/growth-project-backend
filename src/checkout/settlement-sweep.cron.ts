@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
 import { CronLeaseService } from './cron-lease.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 
@@ -86,7 +87,7 @@ export class SettlementSweepCron {
       acquired = (await this.lease.tryAcquire(SWEEP_JOB_NAME, holder, LEASE_TTL_MS, now)).acquired;
     } catch (err) {
       this.logger.error(
-        `${SWEEP_LOG_CODES.lockError} alert=true could not read the sweep lease; this tick is skipped and the next one retries: ${(err as Error).message}`,
+        `${SWEEP_LOG_CODES.lockError} alert=true could not read the sweep lease; this tick is skipped and the next one retries: ${settlementFailureCode(err)}`,
       );
       return { ran: false, reason: 'lock_error' };
     }
@@ -122,13 +123,13 @@ export class SettlementSweepCron {
       };
     } catch (err) {
       this.logger.error(
-        `${SWEEP_LOG_CODES.failed} alert=true sweep run failed; due work stays pending for the next run: ${(err as Error).message}`,
+        `${SWEEP_LOG_CODES.failed} alert=true sweep run failed; due work stays pending for the next run: ${settlementFailureCode(err)}`,
       );
       return { ran: true, ok: false };
     } finally {
       await this.lease.release(SWEEP_JOB_NAME, holder, now).catch((err: unknown) => {
         this.logger.warn(
-          `${SWEEP_LOG_CODES.lockError} could not release the sweep lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes: ${(err as Error).message}`,
+          `${SWEEP_LOG_CODES.lockError} could not release the sweep lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes: ${settlementFailureCode(err)}`,
         );
       });
     }
