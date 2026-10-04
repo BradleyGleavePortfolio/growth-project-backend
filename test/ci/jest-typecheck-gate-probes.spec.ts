@@ -9,7 +9,7 @@
 // guard accepted. This file depends only on the guard's inputs, never on its
 // internals, so the same assertions run against any version of the guard.
 //
-// The guard's own negative self-tests (names starting with "rejects:") are
+// The guard's own self-tests (names starting with "rejects:" or "accepts:") are
 // skipped here: they run in the guard's suite, and repeating them under every
 // mutation would only multiply the cost.
 //
@@ -114,7 +114,7 @@ async function runGuard(m: Mutation): Promise<GuardRun> {
 
   const run: GuardRun = { executed: [], failures: [] };
   for (const t of tests) {
-    if (t.name.startsWith('rejects: ')) continue;
+    if (/^(rejects|accepts): /.test(t.name)) continue;
     run.executed.push(t.name);
     try {
       await t.body();
