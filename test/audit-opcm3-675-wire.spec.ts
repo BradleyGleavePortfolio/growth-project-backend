@@ -360,7 +360,7 @@ describe('AUD-OPUS-CM3-116 #675 @ e45b06f9: wire contract probe', () => {
     const r1 = await call(head.base, 'POST', PATH, {
       user: 'coach-lit',
       key: 'key-literal-02',
-      body: { name: 'Literal one-time', amount_cents: 2500 },
+      body: { name: 'Literal one-time', amount_cents: 2500, billing_type: 'one_time' },
     });
     expect([r0.status, r1.status]).toEqual([201, 201]);
     const hashes = dbHead.st.ledger.map((r) => (r.response_json as Row).request_hash);
