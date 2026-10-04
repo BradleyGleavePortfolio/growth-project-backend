@@ -5,6 +5,7 @@ import {
   formatMoney,
 } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DUNNING_V2_DAY_MS } from '../src/checkout/dunning-v2/dunning-v2.cadence';
+import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
 import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-escalation.classifier';
 import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
@@ -275,6 +276,37 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
       const svc = service(fake);
       expect(await svc.isDisputeCycleOpen('p1')).toBe(false);
       expect(await svc.isDisputeCycleOpen('p2')).toBe(false);
+    });
+  });
+
+  it('C-688-3 (Opus): a decline racing the dispute marker never replaces it', async () => {
+    const fake = new FakePrisma();
+    seed(fake, 'p1', 1, { last_failure_reason: 'card_declined', failure_count: 1 });
+    const db = fake.client();
+    const read = db.dunningState.findUnique;
+    db.dunningState.findUnique = jest.fn(async (a: unknown) => {
+      const row = await read(a);
+      // The dispute path marks the cycle right after the v1 read.
+      fake.find('dunningState', { id: 'ds-p1' })!.last_failure_reason = 'charge_disputed';
+      return row;
+    });
+    const write = db.dunningState.update;
+    db.dunningState.update = jest.fn(async (a: unknown) =>
+      write(a).catch((e: Error) => {
+        throw Object.assign(e, { code: 'P2025' }); // as Prisma reports a missed where
+      }),
+    );
+    const purchase = stub(fake.find('clientPurchase', { id: 'p1' }));
+    await new DunningService(db, stub({})).recordFailure({
+      purchase,
+      stripe_invoice_id: 'in_2',
+      amount_due_cents: 15000,
+      attempt_number: 2,
+      reason: 'insufficient_funds',
+    });
+    expect(fake.find('dunningState', { id: 'ds-p1' })).toMatchObject({
+      last_failure_reason: 'charge_disputed',
+      failure_count: 2,
     });
   });
 
