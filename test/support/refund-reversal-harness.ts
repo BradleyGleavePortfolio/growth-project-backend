@@ -85,6 +85,9 @@ export function seedPurchase(db: StatefulPrisma, purchaseId: string, at: Date): 
     reversed_amount_cents: 0,
     ledger_entry_id: null,
     reversed_at: null,
+    kind: 'head_coach_split',
+    settlement_id: null,
+    reversal_seq: 0,
   });
 }
 
@@ -112,6 +115,14 @@ export function harness() {
   db.model('splitLedgerEntry');
   db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
   db.model('connectTransfer');
+  db.model('transferReversalOp', [['id'], ['idempotency_key'], ['stripe_reversal_id']], () => ({
+    status: 'pending',
+    attempts: 0,
+    last_attempt_at: null,
+    last_error: null,
+    stripe_reversal_id: null,
+    resolved_at: null,
+  }));
   db.model('connectAccount', [['id'], ['coach_user_id']]);
   db.model('guestCheckout');
   db.model('notification');
@@ -142,8 +153,8 @@ export function harness() {
       return made;
     },
   );
-  const listTransferReversals = jest.fn(async (args: { transfer_id: string }) => ({
-    data: reversals.filter((r) => r.transfer === args.transfer_id),
+  const listTransferReversals = jest.fn(async (transferId: string) => ({
+    data: reversals.filter((r) => r.transfer === transferId),
     has_more: false,
   }));
   const createRefund = jest.fn(async () => ({
@@ -176,6 +187,7 @@ export function harness() {
     db,
     svc,
     restart,
+    transfers,
     reverseTransfer,
     reversals,
     expireKeys: () => retained.clear(),

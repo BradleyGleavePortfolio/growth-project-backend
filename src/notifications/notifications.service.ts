@@ -54,7 +54,17 @@ export interface CreateNotificationInput {
   payload?: Record<string, unknown>;
   deep_link?: string;
   channel?: 'push' | 'email' | 'inapp';
+  /**
+   * S-FEE round 6 (#627 B-627-6 / C-627-7): narrows the per-process 60 s push
+   * limiter to one logical alert (for example a payout notice id), so two
+   * different alerts of the same kind to the same user are never collapsed.
+   * Unset keeps the default (one push per user per kind per minute).
+   */
+  throttle_key?: string;
 }
+
+/** Whether a user receives a kind on a channel (createNotification's gate). */
+export type NotificationChannelGate = 'enabled' | 'muted' | 'off';
 
 // Rate-limit guard: at most 1 push per user per kind per minute.
 // Tracked in-process (per replica). At scale: move to Redis with a
@@ -399,20 +409,39 @@ export class NotificationsService {
    * behaviour is unchanged (autocommit on `this.prisma`), so every existing
    * callsite keeps working.
    */
+  /**
+   * The preference gate createNotification applies, without writing: lets a
+   * caller tell "the user turned this off" (done, nothing to retry) from a
+   * suppressed push (rate limit), which createNotification reports the same
+   * way (null).
+   */
+  async channelGate(
+    userId: string,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): Promise<NotificationChannelGate> {
+    return this.gateFrom(await this.getPreferences(userId), kind, channel);
+  }
+
+  private gateFrom(
+    prefs: Awaited<ReturnType<NotificationsService['getPreferences']>>,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): NotificationChannelGate {
+    // Global mute short-circuit.
+    if ((prefs as Record<string, unknown>).muted) return 'muted';
+    // Per-kind channel gate.
+    const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
+    return prefs[enabledKey] === false ? 'off' : 'enabled';
+  }
+
   async createNotification(input: CreateNotificationInput, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
 
-    // Global mute short-circuit.
-    if ((prefs as Record<string, unknown>).muted) {
-      return null;
-    }
-
-    // Per-kind channel gate.
-    const enabledKey = `${this._kindToPrefsPrefix(input.kind)}_${channel}` as keyof typeof prefs;
-    const enabled = prefs[enabledKey];
-    if (enabled === false) {
+    // Global mute and per-kind channel gate (shared with channelGate).
+    if (this.gateFrom(prefs, input.kind, channel) !== 'enabled') {
       return null;
     }
 
@@ -431,7 +460,9 @@ export class NotificationsService {
     // so generic per-process push throttling is both unnecessary and unsafe —
     // its state cannot roll back with the transaction.
     if (channel === 'push' && !tx) {
-      const key = `${input.user_id}:${input.kind}`;
+      const key = input.throttle_key
+        ? `${input.user_id}:${input.kind}:${input.throttle_key}`
+        : `${input.user_id}:${input.kind}`;
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
       if (now - last < 60_000) {
