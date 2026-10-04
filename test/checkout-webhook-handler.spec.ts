@@ -26,12 +26,16 @@ function makeSplitsStub() {
 }
 
 // Where-clause match of the in-memory stub: equality, `null`, and the
-// `{ in: [...] }` status match the handler uses (B-661-1, B-661-3).
+// `{ in: [...] }` / `{ notIn: [...] }` status matches the handler uses
+// (B-661-1, B-661-3, C-661-7).
 function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([k, v]) => {
     if (v === null) return row[k] === null;
     if (v && typeof v === 'object' && 'in' in v) {
       return (v as { in: unknown[] }).in.includes(row[k]);
+    }
+    if (v && typeof v === 'object' && 'notIn' in v) {
+      return !(v as { notIn: unknown[] }).notIn.includes(row[k]);
     }
     return row[k] === v;
   });
@@ -50,6 +54,18 @@ function makePrisma() {
     // activation paths serialize on the CoachPackage row.
     _lockedPackageIds: [] as string[],
     $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...vals: any[]) => {
+      const sql = strings.join('?');
+      // B-661-3 / B-661-8 round 5: purchase row locks and row versions. The
+      // stub's `_xmin` stands in for PostgreSQL's xmin: every write bumps it.
+      if (sql.includes('"ClientPurchase"')) {
+        if (sql.includes('stripe_payment_intent_id')) {
+          return purchases
+            .filter((p) => p.stripe_payment_intent_id === vals[0])
+            .map((p) => ({ id: p.id }));
+        }
+        const row = purchases.find((p) => p.id === vals[0]);
+        return row ? [{ status: row.status, row_version: String(row._xmin ?? 0) }] : [];
+      }
       // Mirror Prisma's tagged-template signature; capture the locked id.
       if (vals.length) prisma._lockedPackageIds.push(vals[0]);
       return [];
@@ -77,10 +93,12 @@ function makePrisma() {
       findFirst: jest.fn(
         async ({ where }: any) => purchases.find((p) => matchesWhere(p, where)) ?? null,
       ),
+      // B-661-8 round 5: like Prisma, a where with more than the id is a
+      // compare-and-set; no matching row is P2025.
       update: jest.fn(async ({ where, data }: any) => {
-        const row = purchases.find((p) => p.id === where.id);
-        if (!row) throw new Error('not found');
-        Object.assign(row, data, { updated_at: new Date() });
+        const row = purchases.find((p) => matchesWhere(p, where));
+        if (!row) throw Object.assign(new Error('Record to update not found.'), { code: 'P2025' });
+        Object.assign(row, data, { updated_at: new Date(), _xmin: (row._xmin ?? 0) + 1 });
         return { ...row };
       }),
       // B-661-3: a compare-and-set write. Like Postgres, it re-checks the
@@ -88,10 +106,14 @@ function makePrisma() {
       // rows it changed.
       updateMany: jest.fn(async ({ where, data }: any) => {
         const rows = purchases.filter((p) => matchesWhere(p, where));
-        for (const row of rows) Object.assign(row, data, { updated_at: new Date() });
+        for (const row of rows) {
+          Object.assign(row, data, { updated_at: new Date(), _xmin: (row._xmin ?? 0) + 1 });
+        }
         return { count: rows.length };
       }),
     },
+    // B-661-3 round 5: no purchase in this suite was activated by a fanout.
+    purchaseFanout: { findUnique: jest.fn(async () => null) },
     connectCustomer: {
       findUnique: jest.fn(async ({ where }: any) =>
         customers.find((c) => c.stripe_customer_id === where.stripe_customer_id) ?? null,
@@ -1362,9 +1384,9 @@ describe('B-661-3 a late-delivered earlier decline never revokes a successful re
     stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
     expect(await svc.prefetchForOuterTx(declined('evt_r3_pf_2'))).toEqual({
       paymentIntentStatusById: { pi_r3: 'succeeded' },
-      // Round 4: the purchase version that status was read against.
+      // Round 4/5: the purchase version (xmin) that status was read against.
       paymentIntentWitnessById: {
-        pi_r3: { purchase_id: 'cp-r3', status: 'paid', updated_at: null },
+        pi_r3: { purchase_id: 'cp-r3', status: 'paid', row_version: '0' },
       },
     });
     expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_r3');

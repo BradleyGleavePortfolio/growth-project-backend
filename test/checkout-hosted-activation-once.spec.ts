@@ -59,7 +59,7 @@ function makeHarness() {
       }),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => matchesWhere(p, where));
-        if (!row) throw new Error('Record to update not found');
+        if (!row) throw Object.assign(new Error('Record to update not found'), { code: 'P2025' });
         Object.assign(row, data);
         return { ...row };
       }),
@@ -70,6 +70,10 @@ function makeHarness() {
       }),
     },
     purchaseFanout: {
+      findUnique: jest.fn(
+        async ({ where }: any) =>
+          fanoutRows.find((r) => r.purchase_id === where.purchase_id) ?? null,
+      ),
       upsert: jest.fn(async ({ where, create }: any) => {
         const found = fanoutRows.find((r) => r.purchase_id === where.purchase_id);
         if (found) return found;

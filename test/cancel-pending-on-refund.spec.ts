@@ -219,6 +219,12 @@ function makeWebhookPrisma() {
   const purchases: any[] = [];
   return {
     _purchases: purchases,
+    // B-661-3 round 5: the purchase row version a decline of a settled
+    // purchase is checked against (PostgreSQL xmin; unchanged here).
+    $queryRaw: jest.fn(async (_sql: TemplateStringsArray, ...vals: unknown[]) => {
+      const row = purchases.find((p) => p.id === vals[0]);
+      return row ? [{ status: row.status, row_version: '0' }] : [];
+    }),
     clientPurchase: {
       findUnique: jest.fn(async ({ where }: any) =>
         purchases.find((p) =>
