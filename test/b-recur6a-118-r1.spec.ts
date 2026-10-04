@@ -5,9 +5,11 @@
 //   B-679-10      a trial attempt's own SetupIntent (Stripe made no pending one).
 //   Sol B-679-7   account deletion finds an unbound checkout subscription, fail closed.
 import { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';
+import { StripeApiService } from '../src/billing/stripe-api.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 import * as plan from '../src/checkout/subscription-plan';
 import * as trialCard from '../src/checkout/trial-card';
+import { partialDouble } from './support/typed-double';
 
 class Recording extends StripeConnectApiService {
   calls: Array<{ url: string; key: string; form: string }> = [];
@@ -131,7 +133,7 @@ describe('Sol B-679-7 account deletion finds an unbound checkout subscription', 
   const collect = (svc: AccountDeletionBillingService, t: unknown) =>
     any(svc).collectUnboundAttemptSubscriptionIds(t, USER);
   const billing = (stripe: unknown): AccountDeletionBillingService =>
-    new (AccountDeletionBillingService as any)({}, stripe);
+    new AccountDeletionBillingService(partialDouble<StripeApiService>(), any(stripe));
 
   it('(failed before) returns the attempt’s own live subscription found by metadata', async () => {
     const stripe = lister([

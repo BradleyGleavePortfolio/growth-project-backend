@@ -2,9 +2,12 @@
 // "(failed before)" cases failed at #678 77bce450 in the CI lane before the fix.
 //   Sol B-678-3  deleting the coach finds an old uncertain native create too.
 //   Sol B-678-4  send authority holds the coach as well as the client.
+import type { ClientPurchase } from '@prisma/client';
 import { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';
+import { StripeApiService } from '../src/billing/stripe-api.service';
 import { sendFenced } from '../src/checkout/subscription-attempt';
 import { makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
+import { partialDouble } from './support/typed-double';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const COACH = '22222222-2222-4222-8222-222222222222';
@@ -34,7 +37,7 @@ function setup(over: Record<string, unknown> = {}) {
     ...over,
   };
   db._purchases.push(row);
-  const billing = new AccountDeletionBillingService({} as any, stripe);
+  const billing = new AccountDeletionBillingService(partialDouble<StripeApiService>(), stripe);
   const create = jest.fn(async () =>
     stripe.createSubscription({
       customer: 'cus_client',
@@ -71,7 +74,7 @@ describe('Sol B-678-3 deletion collects unbound attempts of both parties', () =>
     partial.stripe.listSubscriptionsForCustomer.mockResolvedValueOnce({
       data: [],
       has_more: true,
-    } as any);
+    });
     await expect(
       partial.billing.collectUnboundAttemptSubscriptionIds(partial.db, COACH),
     ).rejects.toThrow(/incomplete/);
@@ -101,7 +104,7 @@ describe('Sol B-678-4 send authority fences both parties', () => {
         idempotencyKey: 'original',
       });
     });
-    const out = await sendFenced(f.db, { ...f.row } as any, null, f.create);
+    const out = await sendFenced(f.db, partialDouble<ClientPurchase>({ ...f.row }), null, f.create);
     expect(atCreate).toEqual([CLIENT, COACH].sort());
     const sql = f.db.$queryRaw.mock.calls.map((a: any[]) => a[0].join('?'));
     expect(sql.every((q: string) => /FOR KEY SHARE/.test(q))).toBe(true);
@@ -118,7 +121,7 @@ describe('Sol B-678-4 send authority fences both parties', () => {
       coach_user_id: CLIENT,
       idempotency_key: `sub-${COACH}-key`,
     });
-    await sendFenced(f.db, { ...f.row } as any, null, f.create);
+    await sendFenced(f.db, partialDouble<ClientPurchase>({ ...f.row }), null, f.create);
     expect(lockedIds(f.db)).toEqual([CLIENT, COACH]);
     expect(f.create).toHaveBeenCalledTimes(1);
   });
@@ -126,7 +129,7 @@ describe('Sol B-678-4 send authority fences both parties', () => {
   it('(failed before) a coach finalized before the send gets nothing sent', async () => {
     const f = setup();
     f.db._users[1].deleted_at = new Date();
-    const out = await sendFenced(f.db, { ...f.row } as any, null, f.create);
+    const out = await sendFenced(f.db, partialDouble<ClientPurchase>({ ...f.row }), null, f.create);
     expect(out).toBe('closed');
     expect(f.create).not.toHaveBeenCalled();
     expect(f.row.stripe_checkout_session_id).toBe(`sub-retry-sub-${CLIENT}-key`);
@@ -136,7 +139,7 @@ describe('Sol B-678-4 send authority fences both parties', () => {
     const f = setup();
     const stale = { ...f.row };
     f.row.coach_user_id = OTHER;
-    const out = await sendFenced(f.db, stale as any, null, f.create);
+    const out = await sendFenced(f.db, partialDouble<ClientPurchase>(stale), null, f.create);
     expect(out).toBe('closed');
     expect(f.create).not.toHaveBeenCalled();
   });
@@ -144,11 +147,18 @@ describe('Sol B-678-4 send authority fences both parties', () => {
   it('control: a deleted client still answers gone; a closed attempt still answers closed', async () => {
     const gone = setup();
     gone.db._users[0].deleted_at = new Date();
-    expect(await sendFenced(gone.db, { ...gone.row } as any, null, gone.create)).toBe('gone');
+    expect(
+      await sendFenced(gone.db, partialDouble<ClientPurchase>({ ...gone.row }), null, gone.create),
+    ).toBe('gone');
     const closed = setup({ status: 'canceled' });
-    expect(await sendFenced(closed.db, { ...closed.row } as any, null, closed.create)).toBe(
-      'closed',
-    );
+    expect(
+      await sendFenced(
+        closed.db,
+        partialDouble<ClientPurchase>({ ...closed.row }),
+        null,
+        closed.create,
+      ),
+    ).toBe('closed');
     expect(gone.create).not.toHaveBeenCalled();
     expect(closed.create).not.toHaveBeenCalled();
   });

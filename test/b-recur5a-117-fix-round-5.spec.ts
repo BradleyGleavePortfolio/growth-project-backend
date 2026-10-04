@@ -6,6 +6,7 @@
 // Synthetic stateful doubles only.
 import { HttpException } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
+import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
 
@@ -60,7 +61,7 @@ function setup(over: Record<string, unknown> = {}) {
     prisma,
     stripe,
     packages,
-    { ready: true } as any,
+    Object.assign(new ConnectModuleState(), { ready: true }),
     feePolicy,
     checkout,
   );

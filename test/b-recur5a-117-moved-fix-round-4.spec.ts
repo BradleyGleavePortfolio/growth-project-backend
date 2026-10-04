@@ -4,14 +4,17 @@
 // before this round. Synthetic stateful doubles only.
 import { HttpException } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
+import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
-import { PackagesService } from '../src/packages/packages.service';
+import { PackagesService, type UpdatePackageInput } from '../src/packages/packages.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import {
   makeCheckoutHelpers,
   makeFakePrisma,
   makeFakeStripe,
   matchWhere,
 } from './support/b-recur-fakes';
+import { partialDouble } from './support/typed-double';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const COACH = '22222222-2222-4222-8222-222222222222';
@@ -67,7 +70,7 @@ function setup(over: Record<string, unknown> = {}) {
     prisma,
     stripe,
     packages,
-    { ready: true } as any,
+    Object.assign(new ConnectModuleState(), { ready: true }),
     feePolicy,
     checkout,
   );
@@ -295,10 +298,12 @@ describe('B-679-4 / B-679-5 plan reads keep lifecycle order and the bought caden
     f.prisma.clientPurchase.count = jest.fn(
       async ({ where }: any) => f.prisma._purchases.filter((p: any) => matchWhere(p, where)).length,
     );
-    await new PackagesService(f.prisma, {} as any).update(COACH, PKG, {
-      interval: 'year',
-      amount_cents: 5900,
-    } as any);
+    const edit: UpdatePackageInput = { interval: 'year', amount_cents: 5900 };
+    await new PackagesService(f.prisma, partialDouble<SubCoachScopeService>()).update(
+      COACH,
+      PKG,
+      edit,
+    );
     expect(f.prisma._packages[0].interval).toBe('year');
     Object.assign(f.prisma._purchases[0], { status: 'active', entitlement_active: true });
     const view = await f.svc.getPlan(CLIENT, out.purchase_id);

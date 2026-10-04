@@ -5,6 +5,7 @@
 // failed at #679 6760ee6a in the CI lane. Synthetic stateful doubles only.
 import { HttpException } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
+import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
 
@@ -41,7 +42,7 @@ function setup(trialDays = 0) {
     prisma,
     stripe,
     packages,
-    { ready: true } as any,
+    Object.assign(new ConnectModuleState(), { ready: true }),
     fees,
     helpers,
   );

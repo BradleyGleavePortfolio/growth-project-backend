@@ -5,9 +5,12 @@
 //                 is never a settled trial (retire / terms changed).
 //   Sol B-679-11  abandoned history never hides an older billable plan.
 import { HttpException } from '@nestjs/common';
+import { CheckoutService } from '../src/checkout/checkout.service';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
+import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
+import { partialDouble } from './support/typed-double';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const COACH = '22222222-2222-4222-8222-222222222222';
@@ -42,9 +45,9 @@ function setup(trialDays = 7) {
     db,
     stripe,
     packages,
-    { ready: true } as any,
+    Object.assign(new ConnectModuleState(), { ready: true }),
     fees,
-    makeCheckoutHelpers(db) as any,
+    partialDouble<CheckoutService>(makeCheckoutHelpers(db)),
   );
   // Stripe set the trial up off-session on the customer's default card: no
   // pending SetupIntent, a subscription default, the enforced end still set.
