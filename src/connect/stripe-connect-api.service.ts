@@ -708,6 +708,14 @@ export class StripeConnectApiService {
     return this.get(`/invoices?${params.toString()}`);
   }
 
+  // B-680-2 — one invoice as Stripe shows it now (draft | open | paid | void |
+  // uncollectible). A late invoice.payment_failed is checked against it.
+  async retrieveInvoice(
+    invoiceId: string,
+  ): Promise<{ id: string; status?: string | null; [k: string]: unknown }> {
+    return this.get(`/invoices/${encodeURIComponent(invoiceId)}`);
+  }
+
   // S-FEE round 3 (B-627-1) — one page of the platform's PAID invoices created
   // at or after `created_gte` (unix seconds), newest first, continuing after
   // `starting_after`. The settlement sweeper walks these pages to find any
