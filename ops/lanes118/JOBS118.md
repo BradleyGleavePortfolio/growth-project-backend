@@ -394,3 +394,9 @@ C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first (#688 2368d5fa, notify/
 9. Lens pairs: trials #672 2690c07c + #673 5fdb5f5c; HC m#362 b3bc0ce4 + m#364 529ba345 (then m#363 2858bac5 restack delta); recurring R1+R2 #678 77bce450 + #679 8bbf4a41, R3 #680 216489ff + R4 #696 276610a3, R5 #701 72eb096b; dunning D1 #687 38d9b3ab + D2 #688 2368d5fa; lockout m#352+m#353 (B-LOCK READY) then m#354; wizard
    m#345+m#346 then #347 + W3 fix round; coach M4 #677; dunning D1-D4 + D5 (#691 + #642).
 10. Remainder: programs #355-#358, N1-N4.
+
+## QUEUE HEADS (operator, after B-FEES16 12:0x) — rewrite F3/F4/F56 lens entries with these
+fees: #682 dual APPROVE (head unchanged); #683 cc183e0ae05158290e5db77ef645578667133e0f; #684 6b13af56bf2d8a36ae5559a537ee565555a6c4c7;
+#697 88c722003c23634df69338e4ee6ceb2dd71068e6; #685 c5e282fbfa3e7fe6a5593949182e17c91a011738; #686 8cb7b2d4bee3bccb65596581f84bccf9227ffc4b (top).
+recurring READY: #680 216489ff5fa707147b50ef0e387aba5b3079e4b1, #696 276610a3a3cc7877b30a3a5f1214e24c7cbb7eae, #701 72eb096b8f20f6ab9d198bf4059250f99ffb53f8.
+HC READY: m#362 b3bc0ce4d7e62763671881e6babd60aa518203cc, m#363 2858bac5cdced8ba4941be50b471f4d53908eb42, m#364 529ba34524844403eb034dc1519ced21d208346c.
