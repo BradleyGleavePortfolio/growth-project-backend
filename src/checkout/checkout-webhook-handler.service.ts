@@ -1206,13 +1206,11 @@ export class CheckoutWebhookHandlerService {
     // stays payable; the client's in-sheet retry of the SAME PaymentIntent
     // then succeeds. That success is claimed too, so the client who paid is
     // entitled, the split is posted and the credentials are erased.
-    // B-661-3 (Sol, rounds 5-6): a one-time purchase that was activated and
-    // then ended by a real failure of this PaymentIntent (e.g. a hosted
-    // checkout that completed while an asynchronous payment was processing)
-    // is recovered by this success: access comes back, nothing runs twice.
-    // Looked up by its activation record before any other row of this
-    // PaymentIntent, so a never-activated purchase a decline adopted it onto
-    // (C-661-10) never hides it, whatever order rows are read in.
+    // B-661-3 (Sol, rounds 5-7): a one-time purchase that was activated and then ended by a real
+    // failure of this PaymentIntent (e.g. a hosted checkout that completed while an asynchronous
+    // payment was processing) is recovered by this success: access comes back, nothing runs twice.
+    // Selected by its activation record inside the query, so no number of never-activated
+    // purchases a decline adopted it onto (C-661-10) hides it.
     const owners = await this.activatedFailedPurchases(db, pi.id);
     if (owners.length > 0) return this.recoverAfterPaymentSucceeded(db, owners, pi.id, tx);
     const purchase = await db.clientPurchase.findFirst({
@@ -1299,25 +1297,25 @@ export class CheckoutWebhookHandlerService {
     return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
-  // B-661-3 (round 6): the one-time purchases of this PaymentIntent that it
-  // activated (activation record) and a real failure then ended. At most one
-  // in practice: an activation stamps its own session's PaymentIntent.
+  // B-661-3 (rounds 6-7): one-time purchases of this PaymentIntent that it activated and a real
+  // failure then ended, filtered in the query before its limit (at most one in practice).
   private async activatedFailedPurchases(
     db: WebhookTx | PrismaService,
     paymentIntentId: string,
   ): Promise<string[]> {
     if (!(db as { purchaseFanout?: unknown }).purchaseFanout) return [];
-    const failed = await db.clientPurchase.findMany({
-      where: { stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
-      select: { id: true, billing_type: true, stripe_subscription_id: true },
+    const owners = await db.clientPurchase.findMany({
+      where: {
+        stripe_payment_intent_id: paymentIntentId,
+        status: 'payment_failed',
+        fanout: { isNot: null },
+        billing_type: { notIn: ['recurring'] },
+        stripe_subscription_id: null,
+      },
+      select: { id: true },
       take: 10,
     });
-    const owners: string[] = [];
-    for (const row of failed) {
-      const oneTime = row.billing_type !== 'recurring' && !row.stripe_subscription_id;
-      if (oneTime && (await this.wasActivated(db, row.id))) owners.push(row.id);
-    }
-    return owners;
+    return owners.map((row) => row.id);
   }
 
   // B-661-3 (Sol, round 5): recovery of an activated purchase whose payment
