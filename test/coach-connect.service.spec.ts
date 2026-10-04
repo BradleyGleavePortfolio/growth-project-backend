@@ -59,6 +59,8 @@ function buildAnalytics() {
       pending_cents: 0,
       reversed_cents: 0,
       refunds_cents: 0,
+      recoveries_cents: 0,
+      net_cents: 0,
       purchases_count: 0,
     },
     as_head_coach: {
@@ -66,6 +68,8 @@ function buildAnalytics() {
       posted_cents: 0,
       pending_cents: 0,
       reversed_cents: 0,
+      recoveries_cents: 0,
+      net_cents: 0,
       sub_coaches_count: 0,
     },
     last_payout: null,
@@ -364,12 +368,17 @@ describe('CoachConnectService.getMetrics', () => {
 
   it('reflects ledger earnings + recurring MRR on the happy path', async () => {
     const earnings = {
+      // S-FEE: a $50 refund whose transfer reversal Stripe refused is owed
+      // back as a recovery; net_cents = posted - recoveries (the shared
+      // coachNetCents helper), so net_30d no longer re-subtracts refunds.
       as_seller: {
         gross_cents: 50_000,
         posted_cents: 50_000,
         pending_cents: 0,
         reversed_cents: 0,
         refunds_cents: 5_000,
+        recoveries_cents: 5_000,
+        net_cents: 45_000,
         purchases_count: 4,
       },
       as_head_coach: {
@@ -377,6 +386,8 @@ describe('CoachConnectService.getMetrics', () => {
         posted_cents: 10_000,
         pending_cents: 0,
         reversed_cents: 0,
+        recoveries_cents: 0,
+        net_cents: 10_000,
         sub_coaches_count: 2,
       },
     };
