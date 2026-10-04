@@ -283,7 +283,12 @@ async function deliverDeclineOfEntitledPurchase(piStatus: string) {
 
   const fanout = new PurchaseFanoutService();
   const handler = new CheckoutWebhookHandlerService(
-    prisma as any, new PaymentIntentStatusStub(piStatus), undefined, undefined, undefined, fanout,
+    prisma as any,
+    new PaymentIntentStatusStub(piStatus),
+    undefined,
+    undefined,
+    undefined,
+    fanout,
   );
   const tx = { ...prisma, ...dropStore } as any;
   const event = {
@@ -441,7 +446,8 @@ describe('CheckoutWebhookHandlerService.applyPaymentIntentFailed × cancelPendin
   it('DOES cancel drops when a previously-entitled purchase later fails (defensive)', async () => {
     // B-661-3: a settled purchase ends access only when Stripe says its
     // PaymentIntent did not complete (e.g. an asynchronous payment failed).
-    const { dropStore, purchase } = await deliverDeclineOfEntitledPurchase('requires_payment_method');
+    const { dropStore, purchase } =
+      await deliverDeclineOfEntitledPurchase('requires_payment_method');
     expect(purchase.status).toBe('payment_failed');
     expect(dropStore._rows[0].status).toBe('canceled');
   });

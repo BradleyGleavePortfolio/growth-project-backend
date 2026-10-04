@@ -71,8 +71,8 @@ function makePrisma() {
           return false;
         }) ?? null,
       ),
-      findFirst: jest.fn(async ({ where }: any) =>
-        purchases.find((p) => matchesWhere(p, where)) ?? null,
+      findFirst: jest.fn(
+        async ({ where }: any) => purchases.find((p) => matchesWhere(p, where)) ?? null,
       ),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => p.id === where.id);
@@ -1194,7 +1194,9 @@ describe('B-661-3 a late-delivered earlier decline never revokes a successful re
       const snapshot = { ...(await readPurchase(args)) };
       // ... then the success of the same PaymentIntent commits before the
       // decline writes.
-      await svc.handle(succeeded, txFixture(prisma), { chargeIdByPurchaseId: { 'cp-r3': 'ch_r3' } });
+      await svc.handle(succeeded, txFixture(prisma), {
+        chargeIdByPurchaseId: { 'cp-r3': 'ch_r3' },
+      });
       return snapshot;
     });
 
