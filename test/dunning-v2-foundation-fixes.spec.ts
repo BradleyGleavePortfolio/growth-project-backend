@@ -407,7 +407,8 @@ describe('B-688-7 (Opus): no surface shows a raw token', () => {
       for (const quip of [0, 1]) {
         jest.spyOn(Math, 'random').mockReturnValue(quip);
         const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
-        expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}|so far: *$/m);
+        expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}/);
+        expect(text).not.toMatch(/so far: *$/m);
       }
     }
   });
