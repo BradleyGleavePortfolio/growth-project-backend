@@ -177,33 +177,33 @@ export const EXPIRED_LINK: RomanVariantPair = {
 };
 
 // ── §C.8 Dispute (late-reversal) cycle copy ─────────────────────────────────
-// B-687-4 / B-687-5: a card update or cancel does not settle a reversed payment,
-// so no surface says so. One variant (no quip); no amount (not on the cycle).
+// R-DISPUTE-PAUSE (owner 10-04): a dispute ends access and pauses billing at
+// once; only the coach restarts it. One variant (no quip); no amount.
 const same = (text: string): RomanVariantPair => ({ straight: text, dryRoman: text });
 export const LR_DAY3_PUSH: RomanVariantPair = same(
-  "{firstName}, a recent payment was reversed by the bank after a dispute. Access pauses on {lockoutDate} unless the dispute closes in {coachName}'s favour first.",
+  '{firstName}, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
 );
 
 const LR_BLOCKER: BlockerVariant = {
   headline: 'A payment was reversed after a dispute.',
-  body: "The bank reversed a recent payment, {firstName}. Access pauses on {lockoutDate} unless the dispute closes in {coachName}'s favour.",
+  body: 'A recent payment was reversed after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
   primaryCta: 'See details',
   secondaryCta: 'Not now',
 };
 export const LR_DAY3_BLOCKER: BlockerCopy = { straight: LR_BLOCKER, dryRoman: LR_BLOCKER };
 
 export const LR_DAY7_ESCALATION: RomanVariantPair = same(
-  "Good day, {firstName}.\n\nA recent payment was reversed by the bank after a dispute. It was for your plan with {coachName}. Access continues until {lockoutDate}, then pauses until this is settled.\n\nIf the dispute was a mistake, ask the bank to withdraw it. Access continues, or comes back, once the bank closes the dispute in {coachName}'s favour. To settle it another way, reply to this email.\n\n— Roman, on behalf of {coachName}",
+  'Good day, {firstName}.\n\nA recent payment was reversed by the bank after a dispute. It was for your plan with {coachName}. Access has ended and billing for the plan is paused.\n\n{coachName} decides whether to restart it. The dispute closing does not restart it on its own.\n\n— Roman, on behalf of {coachName}',
 );
 
 export const LR_COACH_INAPP: RomanVariantPair = same(
-  "{clientName}'s bank reversed a payment after a dispute. Access locks in 3 days unless the dispute closes in your favour.",
+  "{clientName}'s bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision.",
 );
 export const LR_COACH_PUSH: RomanVariantPair = same(
-  '{clientName}: a payment was reversed after a dispute. Access locks in 3 days. Open to review.',
+  '{clientName}: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.',
 );
 export const LR_COACH_EMAIL: RomanVariantPair = same(
-  "Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, reversed a recent payment after a dispute. Unless the dispute closes in your favour, their access locks on {lockoutDate}.\n\nThey have been told that a card update does not settle it and that the dispute can be withdrawn with their bank. The full record is in the app: open Clients, then {clientName}.\n\n— Roman",
+  'Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.\n\nRestarting access and billing is your decision. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
 );
 
 // Late-reversal Day-10 lockout copy is IDENTICAL to the regular lockout
