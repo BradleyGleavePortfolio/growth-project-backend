@@ -161,17 +161,21 @@ export function harness() {
   const ledger = Reflect.construct(SplitLedgerService, [db]);
   const transfers = Reflect.construct(TransferOrchestratorService, [db, stripe, ledger]);
   const alerts = jest.fn(async () => undefined);
-  const svc: RefundDisputeHandlerService = Reflect.construct(RefundDisputeHandlerService, [
-    db,
-    stripe,
-    ledger,
-    transfers,
-    { recordPayoutEvent: jest.fn() },
-    { createNotification: alerts },
-  ]);
+  // `restart()`: a new service instance over the same rows (a process restart).
+  const restart = (): RefundDisputeHandlerService =>
+    Reflect.construct(RefundDisputeHandlerService, [
+      db,
+      stripe,
+      ledger,
+      transfers,
+      { recordPayoutEvent: jest.fn() },
+      { createNotification: alerts },
+    ]);
+  const svc = restart();
   return {
     db,
     svc,
+    restart,
     reverseTransfer,
     reversals,
     expireKeys: () => retained.clear(),
