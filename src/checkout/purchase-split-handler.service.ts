@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import {
   ChargeSettlementService,
+  settlementFailureCode,
   type SweepSummary,
 } from '../connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
@@ -235,7 +236,7 @@ export class PurchaseSplitHandlerService {
         noticesDelivered = await this.payoutNotices.dispatchPending(now);
       } catch (err) {
         this.logger.warn(
-          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${(err as Error).message}; the next run retries`,
+          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
         );
       }
     }
@@ -277,7 +278,7 @@ export class PurchaseSplitHandlerService {
       if (!purchase || !(purchase.amount_cents > 0)) return;
       await this.settlements.settlePurchase(purchase);
     } catch (err) {
-      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${(err as Error).message}`);
+      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`);
     }
   }
 }

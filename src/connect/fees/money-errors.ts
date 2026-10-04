@@ -8,6 +8,7 @@ import { isChargeLockBusy, isChargeLockLost } from './charge-lock';
 export const MONEY_RETRY_CODES = {
   reversalUncertain: 'SFEE_REVERSAL_UNCERTAIN',
   disputeUnavailable: 'SFEE_DISPUTE_STATE_UNAVAILABLE',
+  refundUnavailable: 'SFEE_REFUND_STATE_UNAVAILABLE',
 } as const;
 
 /**
@@ -56,6 +57,16 @@ export class DisputeStateUnavailableError extends Error {
   }
 }
 
+// Round 11 (B-683-1): a converted charge's refunds were unreadable in the settlement
+// currency (`reason`: a closed `kind=` diagnostic). Nothing moves; delivery and sweeper retry.
+export class RefundStateUnavailableError extends Error {
+  readonly code = MONEY_RETRY_CODES.refundUnavailable;
+  constructor(chargeId: string, reason: string) {
+    super(`${MONEY_RETRY_CODES.refundUnavailable} charge=${chargeId} ${reason}`);
+    this.name = 'RefundStateUnavailableError';
+  }
+}
+
 export function isReversalUncertain(err: unknown): err is ReversalUncertainError {
   return err instanceof ReversalUncertainError;
 }
@@ -66,6 +77,7 @@ export function isRetryableMoneyError(err: unknown): boolean {
     isChargeLockBusy(err) ||
     isChargeLockLost(err) ||
     err instanceof ReversalUncertainError ||
-    err instanceof DisputeStateUnavailableError
+    err instanceof DisputeStateUnavailableError ||
+    err instanceof RefundStateUnavailableError
   );
 }
