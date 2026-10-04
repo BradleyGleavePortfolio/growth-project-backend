@@ -84,5 +84,48 @@ export async function attachTrialCard(
     subscriptionId,
     paymentMethodId,
     idempotencyKey: `tgp-trial-card-${subscriptionId}-${paymentMethodId}`,
+    liftTrialEnd: true,
   });
+}
+
+/** SetupIntent statuses the native sheet can still complete. */
+const OPEN_SETUP_STATUSES = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action']);
+
+/**
+ * Sol/Opus B-679-10 — the setup-sheet secret of a trial attempt whose
+ * subscription has no pending SetupIntent (Stripe returns null when it could
+ * set the trial up off-session, e.g. on the customer's default card; that
+ * card is never this attempt's consent). The attempt's own stored SetupIntent
+ * is reused while the sheet can still complete it; otherwise one is created
+ * for the attempt (one per attempt: the key is the purchase id; same
+ * customer, the coach as on_behalf_of, metadata naming the attempt). Only
+ * its saved card lifts the trial end (attachTrialCard). null = no sheet
+ * (the stored one was canceled or is past the sheet). Throws on a Stripe error.
+ */
+export async function ownTrialSetupSecret(
+  stripe: Pick<StripeConnectApiService, 'createSetupIntent'>,
+  args: {
+    purchaseId: string;
+    subscriptionId: string;
+    customerId: string;
+    onBehalfOf: string;
+    storedSecret: string | null;
+    stored: TrialSetupState | null;
+  },
+): Promise<string | null> {
+  if (setupIntentIdOf(args.storedSecret)) {
+    return args.stored && OPEN_SETUP_STATUSES.has(args.stored.status) ? args.storedSecret : null;
+  }
+  const si = await stripe.createSetupIntent({
+    customer: args.customerId,
+    onBehalfOf: args.onBehalfOf,
+    metadata: {
+      tgp_purchase_id: args.purchaseId,
+      tgp_subscription_id: args.subscriptionId,
+      tgp_checkout: 'native_subscription_trial',
+    },
+    idempotencyKey: `tgp-trial-setup-${args.purchaseId}`,
+  });
+  const ok = typeof si.client_secret === 'string' && OPEN_SETUP_STATUSES.has(si.status ?? '');
+  return ok && setupIntentIdOf(si.client_secret) ? (si.client_secret as string) : null;
 }

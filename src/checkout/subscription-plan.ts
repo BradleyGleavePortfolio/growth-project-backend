@@ -280,6 +280,14 @@ export function expandedId(v: { id?: string } | string | null | undefined): stri
   return typeof v === 'string' ? v : (v.id ?? null);
 }
 
+/**
+ * B-679-8 / B-679-10 — a trial carries the attempt's own card once the
+ * trial-card attach set the default and lifted the create-time end.
+ */
+export function ownTrialCardOn(sub: StripeSubscriptionCheckoutObject): boolean {
+  return !!sub.default_payment_method && !sub.cancel_at_period_end;
+}
+
 /** B-654-6 — a subscription with no sheet secret: paid/processing, ended, or stuck. */
 export function classifyWithoutSheet(
   sub: StripeSubscriptionCheckoutObject,
@@ -288,7 +296,10 @@ export function classifyWithoutSheet(
   if (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid') {
     return 'complete';
   }
-  if (sub.status === 'trialing') return sub.default_payment_method ? 'complete' : 'unavailable';
+  // Sol/Opus B-679-10 — a trial is complete only on the attempt's own card
+  // (the attach lifted the create-time end); a default Stripe set itself
+  // (the customer's card) still needs the attempt's own setup sheet.
+  if (sub.status === 'trialing') return ownTrialCardOn(sub) ? 'complete' : 'unavailable';
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   if (inv?.status === 'paid') return 'complete';
@@ -301,7 +312,7 @@ export function classifyWithoutSheet(
 /** True while no payment of this subscription succeeded or is in flight. */
 export function subscriptionUnpaid(sub: StripeSubscriptionCheckoutObject): boolean {
   if (sub.status !== 'incomplete' && sub.status !== 'trialing') return false;
-  if (sub.status === 'trialing' && sub.default_payment_method) return false;
+  if (sub.status === 'trialing' && ownTrialCardOn(sub)) return false;
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;

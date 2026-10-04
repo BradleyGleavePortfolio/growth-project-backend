@@ -161,6 +161,7 @@ describe('C-608-7 in the deletion service', () => {
       }),
       stub<AccountDeletionBillingService>({
         collectSubscriptionIds: jest.fn().mockResolvedValue([]),
+        collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
         cancelAll: jest.fn().mockResolvedValue({ canceled: 0, alreadyInactive: 0 }),
       }),
     );
