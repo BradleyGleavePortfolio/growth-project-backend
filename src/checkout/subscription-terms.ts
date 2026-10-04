@@ -11,7 +11,7 @@
 //     back, never today's package terms relabelled onto an old intent.
 // The snapshot holds Stripe price ids, amounts and cadence only: no user id,
 // email, token or secret (nothing for the account-deletion manifest).
-import type { PlanPrice } from './subscription-checkout.service';
+import type { PlanPrice } from './subscription-plan';
 
 export type CheckoutInterval = 'week' | 'month' | 'year';
 

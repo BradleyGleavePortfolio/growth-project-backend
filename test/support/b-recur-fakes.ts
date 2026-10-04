@@ -182,6 +182,7 @@ export interface FakeSub {
   status: string;
   customer?: string;
   metadata?: Record<string, string>;
+  created?: number;
   current_period_end: number;
   default_payment_method: string | null;
   items: { data: Array<{ price: { id: string } }> };
@@ -239,6 +240,7 @@ export function makeFakeStripe() {
         status: trial ? 'trialing' : 'incomplete',
         customer: args.customer,
         metadata: { ...(args.metadata ?? {}) },
+        created: Math.floor(Date.now() / 1000),
         current_period_end:
           Math.floor(Date.now() / 1000) + (trial ? args.trialPeriodDays : 30) * 86400,
         default_payment_method: null,
@@ -274,10 +276,50 @@ export function makeFakeStripe() {
       if (!sub) throw new Error('no such subscription');
       return sub;
     }),
-    listSubscriptionsForCustomer: jest.fn(async (customer: string) => ({
-      data: [...subs.values()].filter((s) => s.customer === customer).reverse(),
-      has_more: false,
-    })),
+    // Newest first, 100 per page like Stripe; `createdGte` bounds by `created`.
+    listSubscriptionsForCustomer: jest.fn(
+      async (customer: string, opts?: { createdGte?: number }) => {
+        const all = [...subs.values()]
+          .filter((s) => s.customer === customer)
+          .filter((s) => opts?.createdGte === undefined || (s.created ?? 0) >= opts.createdGte)
+          .reverse();
+        return { data: all.slice(0, 100), has_more: all.length > 100 };
+      },
+    ),
+    // C-679-1 — Stripe voids only an open invoice (never a paid one); voiding
+    // the first invoice ends an incomplete subscription (incomplete_expired).
+    voidInvoice: jest.fn(async (invoiceId: string) => {
+      const sub = [...subs.values()].find(
+        (s) => s.latest_invoice && s.latest_invoice.id === invoiceId,
+      );
+      const inv = sub?.latest_invoice;
+      const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
+      if (!sub || !inv || inv.status === 'paid' || pi?.status === 'succeeded') {
+        throw new StripeConnectApiError(
+          'This invoice can no longer be voided.',
+          400,
+          null,
+          'invalid_request_error',
+        );
+      }
+      inv.status = 'void';
+      if (sub.status === 'incomplete') sub.status = 'incomplete_expired';
+      return { id: invoiceId, status: 'void' };
+    }),
+    // C-679-1 — Stripe cancels a SetupIntent only before it succeeded.
+    cancelSetupIntent: jest.fn(async (id: string) => {
+      const si = setups.get(id);
+      if (!si || si.status === 'succeeded' || si.status === 'processing') {
+        throw new StripeConnectApiError(
+          'This SetupIntent can no longer be canceled.',
+          400,
+          'setup_intent_unexpected_state',
+          'invalid_request_error',
+        );
+      }
+      si.status = 'canceled';
+      return si;
+    }),
     retrieveSetupIntent: jest.fn(async (id: string) => {
       const si = setups.get(id);
       if (!si) throw new Error('no such setup intent');
