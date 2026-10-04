@@ -679,10 +679,12 @@ describe('CheckoutWebhookHandlerService', () => {
       expect(prisma._purchases[0].entitlement_active).toBe(true);
     });
 
-    it('invoice.paid skips the resync (no in-tx Stripe HTTP) when an outer tx is held without a prefetch', async () => {
+    it('invoice.paid redelivers (no in-tx Stripe HTTP) when an outer tx is held without a prefetch', async () => {
       // PR-18 B1 R2 P1 — defensive: if an outer tx is somehow held but no
       // prefetch was supplied, the handler must NOT perform Stripe HTTP
-      // inside the transaction. It degrades by skipping the resync.
+      // inside the transaction. B-680-3 (B-RECUR5B-117) — nor is the paid
+      // invoice acknowledged without its effects: it throws so the outer tx
+      // rolls back and Stripe redelivers.
       const { svc, prisma, stripe } = makeHandler();
       prisma._packages.push({ id: 'pkg-8', billing_type: 'recurring' });
       prisma._purchases.push({
@@ -693,18 +695,20 @@ describe('CheckoutWebhookHandlerService', () => {
         entitlement_active: true,
         created_at: new Date(),
       });
-      const result = await svc.handle(
-        {
-          id: 'evt_inv_skip',
-          type: 'invoice.paid',
-          data: { object: { subscription: 'sub_inv_skip' } },
-        },
-        prisma as any,
-      );
-      expect(result.claimed).toBe(true);
+      await expect(
+        svc.handle(
+          {
+            id: 'evt_inv_skip',
+            type: 'invoice.paid',
+            data: { object: { subscription: 'sub_inv_skip' } },
+          },
+          prisma as any,
+        ),
+      ).rejects.toThrow(/redeliver|retry/);
       // No Stripe HTTP and no nested tx while the outer tx is held.
       expect(stripe.retrieveSubscription).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma._purchases[0].status).toBe('past_due');
     });
 
     it('prefetchForOuterTx resolves the subscription out-of-tx for invoice.paid', async () => {

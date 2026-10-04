@@ -185,6 +185,7 @@ function build(prisma: Record<string, unknown>, client: unknown) {
     storage,
     stub<AccountDeletionBillingService>({
       collectSubscriptionIds: jest.fn(async () => []),
+      collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
       cancelAll: jest.fn(async () => ({ canceled: 0, alreadyInactive: 0 })),
     }),
   );
