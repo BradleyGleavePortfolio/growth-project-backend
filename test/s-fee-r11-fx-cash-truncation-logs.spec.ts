@@ -294,14 +294,30 @@ describe('B-684-1: a refund list truncated to the latest ten still converges', (
   });
 });
 
-describe('C-684-1: payout copy has no first person', () => {
-  const FIRST_PERSON = /\b(we|our|us)\b/i;
+describe('C-684-2: the live held amount does not depend on the page size', () => {
+  it('an older notice on page 2 carries no live amount and needs no attention once read', async () => {
+    const ctx = setup();
+    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
+    await ctx.settlements.applyAdjustments({ purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 2_000 });
+    ctx.stripe.failReversals = true;
+    await ctx.settlements.applyAdjustments({ purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 4_900 });
+    const page1 = await ctx.notices.listForPayee('coach_1', { limit: 1 });
+    expect(page1.notices[0].held_now_open_cents).toBeGreaterThan(0);
+    const page2 = await ctx.notices.listForPayee('coach_1', { cursor: page1.next_cursor, limit: 1 });
+    await ctx.notices.acknowledge('coach_1', page2.notices[0].id);
+    const again = await ctx.notices.listForPayee('coach_1', { cursor: page1.next_cursor, limit: 1 });
+    expect(again.notices[0]).toMatchObject({ held_now_open_cents: 0, needs_attention: false });
+  });
+});
+
+describe('C-684-1: payout copy has no first person, exclamation mark or emoji', () => {
+  const BANNED = /\b(we|our|us)\b|!|\p{Extended_Pictographic}/iu;
   it('the payout adjustment email', () => {
     const hbs = readFileSync(
       join(__dirname, '../src/email/templates/coach-payout-adjustment.hbs'), 'utf8',
     );
     expect(hbs).toContain('It comes out of your next payout, and out of the ones after it');
-    expect(hbs.replace(/<[^>]*>/g, ' ')).not.toMatch(FIRST_PERSON);
+    expect(hbs.replace(/<[^>]*>/g, ' ')).not.toMatch(BANNED);
   });
 
   it('the unknown-notice answer', async () => {
@@ -311,5 +327,6 @@ describe('C-684-1: payout copy has no first person', () => {
       code: 'PAYOUT_NOTICE_NOT_FOUND',
       message: 'That payout notice is not on this account. Refresh Money to see the current notices.',
     });
+    expect(JSON.stringify(err.getResponse())).not.toMatch(BANNED);
   });
 });
