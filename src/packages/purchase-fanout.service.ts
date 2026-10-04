@@ -588,11 +588,18 @@ export class PurchaseFanoutService {
       );
       return 0;
     }
+    // B-661-9 (Sol, round 6): any other cancel (refund, dispute, cancel,
+    // coach decision, grant revoke) also takes over the drops a payment
+    // failure canceled, so recovering that payment never brings them back
+    // (restoreAfterPaymentRecovered). One statement: a restore that commits
+    // first left them pending (matched here); one that waits on these rows
+    // no longer matches them.
+    const cancelable: Prisma.ScheduledDropWhereInput[] = [{ status: { in: ['pending', 'due'] } }];
+    if (reason !== 'payment_failed') {
+      cancelable.push({ status: 'canceled', failure_reason: 'canceled:payment_failed' });
+    }
     const result = await db.scheduledDrop.updateMany({
-      where: {
-        client_purchase_id: clientPurchaseId,
-        status: { in: ['pending', 'due'] },
-      },
+      where: { client_purchase_id: clientPurchaseId, OR: cancelable },
       data: {
         status: 'canceled',
         failure_reason: `canceled:${reason}`,
@@ -617,7 +624,8 @@ export class PurchaseFanoutService {
   // failure canceled (`canceled:payment_failed`) are pending again; the drip
   // dispatcher delivers the ones already due on its next tick. Drops
   // canceled for any other reason (refund, dispute, cancel, coach decision,
-  // grant revoke) stay canceled. Idempotent: a replay finds none.
+  // grant revoke), also after the failure (B-661-9), stay canceled.
+  // Idempotent: a replay finds none.
   async restoreAfterPaymentRecovered(
     clientPurchaseId: string,
     tx?: TxOrPrisma | Prisma.TransactionClient,

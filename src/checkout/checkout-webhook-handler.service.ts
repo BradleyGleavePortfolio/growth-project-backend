@@ -683,8 +683,8 @@ export class CheckoutWebhookHandlerService {
 
   // B-661-3 (round 5): the version of one purchase row (see PurchaseVersion).
   // `lock` (inside a transaction) also holds the row until that transaction
-  // ends (SELECT ... FOR UPDATE, which returns the newest committed version),
-  // so no writer can change it between this check and the write after it.
+  // ends (FOR NO KEY UPDATE: returns the newest committed version and blocks
+  // every UPDATE/DELETE, never another connection's FK check, C-661-11).
   // A client without raw SQL (minimal test doubles) cannot prove a version:
   // null, and the caller retries instead of guessing.
   private async readPurchaseVersion(
@@ -696,7 +696,7 @@ export class CheckoutWebhookHandlerService {
     const rows = lock
       ? await db.$queryRaw<
           PurchaseVersionRow[]
-        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId} FOR UPDATE`
+        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId} FOR NO KEY UPDATE`
       : await db.$queryRaw<
           PurchaseVersionRow[]
         >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId}`;
@@ -714,7 +714,7 @@ export class CheckoutWebhookHandlerService {
     if (typeof (tx as { $queryRaw?: unknown }).$queryRaw !== 'function') return;
     await tx.$queryRaw<
       Array<{ id: string }>
-    >`SELECT id FROM "ClientPurchase" WHERE stripe_payment_intent_id = ${paymentIntentId} FOR UPDATE`;
+    >`SELECT id FROM "ClientPurchase" WHERE stripe_payment_intent_id = ${paymentIntentId} FOR NO KEY UPDATE`;
   }
 
   // B-661-3 (round 5): a purchase was activated once when its PurchaseFanout
@@ -1206,22 +1206,18 @@ export class CheckoutWebhookHandlerService {
     // stays payable; the client's in-sheet retry of the SAME PaymentIntent
     // then succeeds. That success is claimed too, so the client who paid is
     // entitled, the split is posted and the credentials are erased.
-    const purchase = await db.clientPurchase.findFirst({
-      where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
-    });
-    // B-661-3 (Sol, round 5): a one-time purchase that was activated and
+    // B-661-3 (Sol, rounds 5-6): a one-time purchase that was activated and
     // then ended by a real failure of this PaymentIntent (e.g. a hosted
     // checkout that completed while an asynchronous payment was processing)
     // is recovered by this success: access comes back, nothing runs twice.
-    if (
-      purchase &&
-      purchase.status === 'payment_failed' &&
-      purchase.billing_type !== 'recurring' &&
-      !purchase.stripe_subscription_id &&
-      (await this.wasActivated(db, purchase.id))
-    ) {
-      return this.recoverAfterPaymentSucceeded(db, purchase.id, pi.id, tx);
-    }
+    // Looked up by its activation record before any other row of this
+    // PaymentIntent, so a never-activated purchase a decline adopted it onto
+    // (C-661-10) never hides it, whatever order rows are read in.
+    const owners = await this.activatedFailedPurchases(db, pi.id);
+    if (owners.length > 0) return this.recoverAfterPaymentSucceeded(db, owners, pi.id, tx);
+    const purchase = await db.clientPurchase.findFirst({
+      where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
+    });
     if (!purchase || !activatesOnPaymentIntentSuccess(purchase, pi.id)) {
       // B-661-3 (Sol, round 4/5): record the settlement on every entitled
       // purchase this PaymentIntent paid (e.g. a hosted checkout that
@@ -1303,32 +1299,55 @@ export class CheckoutWebhookHandlerService {
     return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
+  // B-661-3 (round 6): the one-time purchases of this PaymentIntent that it
+  // activated (activation record) and a real failure then ended. At most one
+  // in practice: an activation stamps its own session's PaymentIntent.
+  private async activatedFailedPurchases(
+    db: WebhookTx | PrismaService,
+    paymentIntentId: string,
+  ): Promise<string[]> {
+    if (!(db as { purchaseFanout?: unknown }).purchaseFanout) return [];
+    const failed = await db.clientPurchase.findMany({
+      where: { stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
+      select: { id: true, billing_type: true, stripe_subscription_id: true },
+      take: 10,
+    });
+    const owners: string[] = [];
+    for (const row of failed) {
+      const oneTime = row.billing_type !== 'recurring' && !row.stripe_subscription_id;
+      if (oneTime && (await this.wasActivated(db, row.id))) owners.push(row.id);
+    }
+    return owners;
+  }
+
   // B-661-3 (Sol, round 5): recovery of an activated purchase whose payment
   // failed and then succeeded. Restores paid access and the drops that
   // failure canceled. The activation itself already ran once (first-payment
   // notice, fanout, head-coach split), so none of it runs again.
   private async recoverAfterPaymentSucceeded(
     db: WebhookTx | PrismaService,
-    purchaseId: string,
+    purchaseIds: string[],
     paymentIntentId: string,
     tx: WebhookTx | undefined,
   ): Promise<CheckoutWebhookResult> {
-    await this.writeIfUnchanged(paymentIntentId, () =>
-      db.clientPurchase.update({
-        where: { id: purchaseId, stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
-        data: {
-          status: 'paid',
-          entitlement_active: true,
-          last_error: null,
-          ...CLEARED_PAYMENT_SECRETS,
-        },
-      }),
-    );
-    if (this.fanout) await this.fanout.restoreAfterPaymentRecovered(purchaseId, tx);
-    this.logger.log(
-      `payment_intent.succeeded: purchase=${purchaseId} recovered after a failed payment of ${paymentIntentId}`,
-    );
-    return { claimed: true, purchase_id: purchaseId, reason: 'payment_recovered' };
+    for (const purchaseId of purchaseIds) {
+      await this.writeIfUnchanged(paymentIntentId, () =>
+        db.clientPurchase.update({
+          where: { id: purchaseId, stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
+          data: {
+            status: 'paid',
+            entitlement_active: true,
+            last_error: null,
+            ...CLEARED_PAYMENT_SECRETS,
+          },
+        }),
+      );
+      if (this.fanout) await this.fanout.restoreAfterPaymentRecovered(purchaseId, tx);
+      this.logger.log(
+        `payment_intent.succeeded: purchase=${purchaseId} recovered after a failed payment of ${paymentIntentId}`,
+      );
+    }
+    return { claimed: true, purchase_id: purchaseIds[0], reason: 'payment_recovered' };
   }
 
   private async applyPaymentIntentFailed(
