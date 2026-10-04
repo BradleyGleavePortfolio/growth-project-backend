@@ -4,6 +4,7 @@ import {
   ChargeSettlementService,
   disputeAmountsFrom,
   isLegacyDestinationCharge,
+  settlementFailureCode,
 } from '../connect/fees/charge-settlement.service';
 import { isRetryableMoneyError } from '../connect/fees/money-errors';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
@@ -156,7 +157,7 @@ export class RefundDisputeHandlerService {
       await this.payoutNotices.dispatchForCharge(chargeId);
     } catch (err) {
       this.logger.warn(
-        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${(err as Error).message}; the sweeper delivers it`,
+        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${settlementFailureCode(err)}; the sweeper delivers it`,
       );
     }
   }
@@ -372,6 +373,19 @@ export class RefundDisputeHandlerService {
         stripe_refund_id: r.id,
         stripe_charge_id: charge.id,
         reason: r.reason,
+      });
+    }
+
+    // B-684-1 (round 11): a Charge embeds only its latest ten refunds, so the settlement also
+    // converges once, under the charge lock, on Stripe's cumulative amount_refunded, even when
+    // every embedded row was applied before (an older refund missing from the page). It runs
+    // last, after the per-refund alerts, so a retried delivery loses none of them. A converted
+    // charge reads each refund's settlement-currency debit from Stripe instead (B-683-1).
+    if (this.settlements && refundedCents > 0) {
+      await this.settlements.applyAdjustments({
+        purchase,
+        charge_id: charge.id,
+        refunded_cents: refundedCents,
       });
     }
 
@@ -986,7 +1000,7 @@ export class RefundDisputeHandlerService {
       const level = isRetryableMoneyError(err) ? 'warn' : 'error';
       this.logger[level](
         `dispute settlement adjustment failed dispute=${dispute.id} charge=${dispute.charge}` +
-          `${level === 'error' ? ' alert=true' : ''}: ${(err as Error).message}; the delivery is retried`,
+          `${level === 'error' ? ' alert=true' : ''}: ${settlementFailureCode(err)}; the delivery is retried`,
       );
     }
 
@@ -1248,7 +1262,7 @@ export class RefundDisputeHandlerService {
       // re-reads the refunds) or by the charge.refunded webhook.
       if (!isRetryableMoneyError(err)) throw err;
       this.logger.warn(
-        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${(err as Error).message}`,
+        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${settlementFailureCode(err)}`,
       );
       const recorded = await this.prisma.chargeRefund.findUnique({
         where: { stripe_refund_id: stripe.id },
@@ -1294,7 +1308,7 @@ export class RefundDisputeHandlerService {
         const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
         if (latest) return latest;
       } catch (err) {
-        this.logger.warn(`retrievePaymentIntent failed: ${(err as Error).message}`);
+        this.logger.warn(`retrievePaymentIntent failed: ${settlementFailureCode(err)}`);
       }
     }
     const latestSettled = await this.settlements?.latestChargeIdForPurchase(purchase.id);
