@@ -2,7 +2,8 @@
 // slice or one head-coach transfer at once both count. A third transaction
 // holds the row lock until BOTH writers wait on it (pg_stat_activity); at
 // 9a512028 the second absolute write overwrote the first. mwb-3-live-tests.
-// B-674-12 (B-CM3-117): one database-elected chargeback first close.
+// B-674-12 (B-CM3-117): one database-elected chargeback first close; B-CM4-118:
+// one database-elected refund first success (posted_at).
 import 'reflect-metadata';
 import { PrismaService } from '../src/prisma.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
@@ -223,5 +224,37 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
       new Set([row.closed_at?.getTime()]),
     );
     expect(transfer.reversed_amount_cents).toBe(500);
+  }, 90_000);
+
+  // B-674-12 (B-CM4-118): the same for a refund stored pending whose success
+  // arrives twice at once: one posted_at change, used by every posting.
+  it('refund first success: overlapping deliveries elect one posted_at, used by every posting', async () => {
+    const { purchase } = await seedPurchase('pr');
+    const refund = (status: string) =>
+      svc.upsertAndApplyRefund({
+        ...{ purchase, stripe_refund_id: 're_pr', stripe_charge_id: 'ch_pr' },
+        ...{ amount_cents: 1_000, status, reason: null },
+      });
+    const { row: pending } = await refund('pending');
+    await prisma.$executeRawUnsafe(`CREATE TABLE posted_at_log (posted_at TIMESTAMP(3))`);
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION log_posted_at() RETURNS trigger AS $$
+      BEGIN INSERT INTO posted_at_log VALUES (NEW.posted_at); RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER log_posted_at AFTER UPDATE ON "ChargeRefund"
+      FOR EACH ROW WHEN (NEW.posted_at IS DISTINCT FROM OLD.posted_at) EXECUTE FUNCTION log_posted_at()`);
+    await raceBehindLock('ChargeRefund', [pending.id], () => [
+      refund('succeeded'),
+      lockWaiters('ChargeRefund', 1).then(() => refund('succeeded')),
+    ]);
+    const log = await prisma.$queryRawUnsafe<Array<{ posted_at: Date }>>(
+      `SELECT posted_at FROM posted_at_log`,
+    );
+    const row = await prisma.chargeRefund.findUniqueOrThrow({ where: { id: pending.id } });
+    const postings = await prisma.splitLedgerReversal.findMany({ where: { source_id: row.id } });
+    expect(log.map((r) => r.posted_at)).toEqual([row.posted_at]);
+    expect(row).toMatchObject({ ledger_reversed: true, transfer_reversed: true });
+    expect(postings.map((p) => p.cents).sort((x, y) => x - y)).toEqual([50, 100, 900]);
+    expect(new Set(postings.map((p) => p.posted_at.getTime()))).toEqual(
+      new Set([row.posted_at?.getTime()]),
+    );
   }, 90_000);
 });
