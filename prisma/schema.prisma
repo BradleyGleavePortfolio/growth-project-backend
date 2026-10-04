@@ -4261,6 +4261,11 @@ model PayoutAdjustmentNotice {
   currency                String           @default("usd")
   charge_gross_cents      Int
   customer_refunded_cents Int
+  // Round 13 (B-683-1): for a charge presented in another currency than it
+  // settled in, what the client got back in their own currency (the cents
+  // above are the settlement debit). Null when the two currencies match.
+  client_currency         String?
+  client_refunded_cents   Int?
   reversed_cents          Int
   reinstated_cents        Int              @default(0)
   held_cents              Int

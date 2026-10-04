@@ -110,8 +110,9 @@ describe('B-681-2 legacy ledger identity survives concurrent planners', () => {
     expect(rows.find((r) => r.kind === 'destination')).toMatchObject({
       amount_cents: 9_300,
       stripe_charge_id: null,
-      // The durable legacy identity (ids only, no user id).
-      idempotency_key: 'sfee-legacy-ledger:cp-legacy:destination:acct_coach',
+      // The durable legacy identity: purchase, slice and payee user, the
+      // same identity the lookup uses (round 13, Sol B-681-2).
+      idempotency_key: 'sfee-legacy-ledger:cp-legacy:destination:coach-1',
     });
     expect(a.map((r) => r.id).sort()).toEqual(b.map((r) => r.id).sort());
   });
@@ -154,6 +155,67 @@ describe('B-681-2 legacy ledger identity survives concurrent planners', () => {
     expect(rows.map((r) => [r.stripe_charge_id, r.idempotency_key])).toEqual([
       ['ch_r1', null],
       ['ch_r2', null],
+    ]);
+  });
+
+  // Round 13 (Sol B-681-2 = Opus C-681-7): the key and the lookup name the
+  // same identity, the payee user. A reconnected payee account changes the
+  // routing, never the identity, so two planners holding account snapshots
+  // from before and after a reconnection still race on one INSERT.
+  it('pre- and post-reconnection account snapshots of one payee keep one legacy row per slice', async () => {
+    const { rows, prisma } = makeLedgerDb();
+    const ledger = new SplitLedgerService(prisma);
+    const snapshot = (account: string, head: string) => ({
+      ...inputs(9_300, 500),
+      seller_stripe_account_id: account,
+      head_coach_stripe_account_id: head,
+    });
+    const [a, b] = await Promise.all([
+      ledger.ensurePendingEntries(snapshot('acct_original', 'acct_head_original')),
+      ledger.ensurePendingEntries(snapshot('acct_reconnected', 'acct_head_reconnected')),
+    ]);
+    const destinations = rows.filter((r) => r.kind === 'destination');
+    const heads = rows.filter((r) => r.kind === 'head_coach_split');
+    expect(destinations).toHaveLength(1);
+    expect(heads).toHaveLength(1);
+    expect(rows).toHaveLength(3);
+    expect(destinations[0]).toMatchObject({
+      payee_user_id: 'coach-1',
+      amount_cents: 9_300,
+      stripe_charge_id: null,
+      idempotency_key: 'sfee-legacy-ledger:cp-legacy:destination:coach-1',
+    });
+    expect(heads[0]).toMatchObject({
+      payee_user_id: 'head-1',
+      amount_cents: 500,
+      idempotency_key: 'sfee-legacy-ledger:cp-legacy:head_coach_split:head-1',
+    });
+    // Both planners return the one surviving row of each slice.
+    expect(a.map((r) => r.id).sort()).toEqual(b.map((r) => r.id).sort());
+    // A later renewal after the reconnection refreshes that row in place.
+    await ledger.ensurePendingEntries(snapshot('acct_reconnected', 'acct_head_reconnected'));
+    expect(rows).toHaveLength(3);
+    expect(rows.find((r) => r.kind === 'destination')).toMatchObject({
+      payee_stripe_account_id: 'acct_reconnected',
+    });
+  });
+
+  it('a new head coach on a renewal still gets its own legacy row (identity is the payee)', async () => {
+    const { rows, prisma } = makeLedgerDb();
+    const ledger = new SplitLedgerService(prisma);
+    await ledger.ensurePendingEntries(inputs(9_300, 500));
+    const nextHead = {
+      ...inputs(9_300, 500),
+      plan: { ...plan(9_300, 500), head_coach_id: 'head-2' } as SplitPlan,
+    };
+    await ledger.ensurePendingEntries(nextHead);
+    expect(
+      rows
+        .filter((r) => r.kind === 'head_coach_split')
+        .map((r) => [r.payee_user_id, r.idempotency_key]),
+    ).toEqual([
+      ['head-1', 'sfee-legacy-ledger:cp-legacy:head_coach_split:head-1'],
+      ['head-2', 'sfee-legacy-ledger:cp-legacy:head_coach_split:head-2'],
     ]);
   });
 

@@ -168,6 +168,10 @@ CREATE TABLE "PayoutAdjustmentNotice" (
     "currency" TEXT NOT NULL DEFAULT 'usd',
     "charge_gross_cents" INTEGER NOT NULL,
     "customer_refunded_cents" INTEGER NOT NULL,
+    -- Round 13 (B-683-1): the client's own currency and refunded amount when the
+    -- charge was presented in another currency than it settled in; else NULL.
+    "client_currency" TEXT,
+    "client_refunded_cents" INTEGER CHECK ("client_refunded_cents" >= 0),
     "reversed_cents" INTEGER NOT NULL,
     "reinstated_cents" INTEGER NOT NULL DEFAULT 0,
     "held_cents" INTEGER NOT NULL,
