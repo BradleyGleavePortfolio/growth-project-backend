@@ -809,12 +809,12 @@ export class CheckoutWebhookHandlerService {
     // When BillingService threads its outer tx through handle(event, tx) the
     // lock + activation run on that tx (no nested $transaction); otherwise
     // the helper opens its own short $transaction.
-    await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
+    await this.activateUnderPackageLock(tx, purchase.package_id, async (client) =>
       client.clientPurchase.update({
         where: { id: purchase.id },
         data: {
           status,
-          entitlement_active: entitlementActive,
+          entitlement_active: entitlementActive && !(await this.disputePaused(client, purchase.id)),
           cancel_at_period_end: !!sub.cancel_at_period_end,
           current_period_end: currentPeriodEnd,
           canceled_at: canceledAt,
@@ -1078,14 +1078,14 @@ export class CheckoutWebhookHandlerService {
       updated = await this.activateUnderPackageLock(
         tx,
         purchase.package_id,
-        (client) =>
+        async (client) =>
           client.clientPurchase.update({
             where: { id: purchase.id },
             data: {
               status,
-              entitlement_active: ['active', 'trialing', 'past_due'].includes(
-                status,
-              ),
+              entitlement_active:
+                ['active', 'trialing', 'past_due'].includes(status) &&
+                !(await this.disputePaused(client, purchase.id)),
               current_period_end: currentPeriodEnd,
               access_expires_at: this.computeAccessExpiry(
                 pkg,
@@ -1278,6 +1278,21 @@ export class CheckoutWebhookHandlerService {
    * `$transaction` so the FOR UPDATE lock is held across the activating
    * write. No Stripe HTTP is performed inside this transaction.
    */
+  /**
+   * R-DISPUTE-PAUSE: a plan a dispute paused is never re-entitled by a Stripe
+   * status (pause_collection leaves the subscription `active`). Decided under
+   * the cycle's row lock, the dunning lock order (DunningState first).
+   */
+  private async disputePaused(client: WebhookTx, purchaseId: string): Promise<boolean> {
+    // Legacy test stubs of DunningV2Service lack the read; production has it.
+    const v2 = this.dunningV2;
+    if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
+    if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
+      await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
+    }
+    return v2.isDisputePaused(purchaseId, client);
+  }
+
   private async activateUnderPackageLock<T>(
     tx: WebhookTx | undefined,
     packageId: string,

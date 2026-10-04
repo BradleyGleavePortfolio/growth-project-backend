@@ -906,6 +906,49 @@ export class StripeConnectApiService {
   }
 
   /**
+   * R-DISPUTE-PAUSE: pause collection on a subscription. `void` voids every
+   * invoice Stripe generates while paused, so nothing accrues or is charged
+   * for the paused time; the subscription keeps its price and card.
+   */
+  async pauseSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { 'pause_collection[behavior]': 'void' },
+      args.idempotencyKey,
+    );
+  }
+
+  /** R-DISPUTE-PAUSE coach restart: clear pause_collection (empty unsets). */
+  async resumeSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { pause_collection: '' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Stop collection on an open invoice without forgiving it: Stripe makes
+   * no further attempt; it can still be paid by hand.
+   */
+  async markInvoiceUncollectible(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/mark_uncollectible`,
+      {},
+      args.idempotencyKey,
+    );
+  }
+
+  /**
    * Voluntary cancel outside dunning (owner 13:43 option A): the client keeps
    * access through the period already paid, no refund, no proration.
    */

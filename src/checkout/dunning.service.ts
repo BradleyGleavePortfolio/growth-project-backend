@@ -330,6 +330,8 @@ export class DunningService {
       where: { purchase_id: purchaseId },
     });
     if (!existing || existing.status !== 'active') return existing;
+    // R-DISPUTE-PAUSE: a payment never ends a dispute pause (coach restart only).
+    if (existing.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return existing;
 
     // Cancel pending cadence attempts so the tick loop won't fire them.
     // PR #281 P1-1: the where clause is scoped to status='pending' only —
