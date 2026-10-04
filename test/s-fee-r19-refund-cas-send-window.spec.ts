@@ -95,7 +95,20 @@ function setup(opts: { email?: 'real' } = {}) {
   db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
   stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
   const list = (data: RefundFixture[]) => stripe.refundsByCharge.set('ch_1', data);
-  return { prisma, db, stripe, settlements, notices, refunds, router, fns, list, user, emailLog, transport };
+  return {
+    prisma,
+    db,
+    stripe,
+    settlements,
+    notices,
+    refunds,
+    router,
+    fns,
+    list,
+    user,
+    emailLog,
+    transport,
+  };
 }
 type Ctx = ReturnType<typeof setup>;
 
@@ -124,7 +137,10 @@ const update = (type: string, status: string) => ({
 });
 
 async function settledWithPending(c: Ctx) {
-  await c.settlements.settleCharge({ purchase: c.db.purchases[0] as ClientPurchase, charge_id: 'ch_1' });
+  await c.settlements.settleCharge({
+    purchase: c.db.purchases[0] as ClientPurchase,
+    charge_id: 'ch_1',
+  });
   expect(c.stripe.netTo('acct_1')).toBe(4_630);
   c.list([usd('re_1', 4_900, 'pending')]);
   await c.router.handle(refunded([usd('re_1', 4_900, 'pending')]));
@@ -132,7 +148,12 @@ async function settledWithPending(c: Ctx) {
 
 // Runs `between` once, right before the first refund-row write of `status` (the paused writer
 // has read the row and decided; its SQL has not run).
-function pauseWrite(c: Ctx, method: 'update' | 'create', status: string, between: () => Promise<unknown>) {
+function pauseWrite(
+  c: Ctx,
+  method: 'update' | 'create',
+  status: string,
+  between: () => Promise<unknown>,
+) {
   const tbl = c.prisma.chargeRefund as unknown as Table;
   const real = tbl[method].getMockImplementation() as (a: { data: Row }) => Promise<Row>;
   let fired = false;
@@ -159,18 +180,27 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
   it.each([
     ['refund.updated', 'failed'],
     ['charge.refund.updated', 'canceled'],
-  ])('a %s succeeded writer paused before its write; %s completes first: nothing moves', async (type, terminal) => {
-    const c = setup();
-    await settledWithPending(c);
-    c.list([usd('re_1', 4_900)]);
-    pauseWrite(c, 'update', 'succeeded', async () => {
-      c.list([usd('re_1', 4_900, terminal)]);
-      await c.router.handle(update('refund.updated', terminal));
-    });
-    await c.router.handle(update(type, 'succeeded'));
-    expect(outcome(c)).toEqual({ status: terminal, applied: false, net: 4_630, flagged: null, access: true });
-    expect(c.db.purchases[0].status).toBe('paid');
-  });
+  ])(
+    'a %s succeeded writer paused before its write; %s completes first: nothing moves',
+    async (type, terminal) => {
+      const c = setup();
+      await settledWithPending(c);
+      c.list([usd('re_1', 4_900)]);
+      pauseWrite(c, 'update', 'succeeded', async () => {
+        c.list([usd('re_1', 4_900, terminal)]);
+        await c.router.handle(update('refund.updated', terminal));
+      });
+      await c.router.handle(update(type, 'succeeded'));
+      expect(outcome(c)).toEqual({
+        status: terminal,
+        applied: false,
+        net: 4_630,
+        flagged: null,
+        access: true,
+      });
+      expect(c.db.purchases[0].status).toBe('paid');
+    },
+  );
 
   it('a charge.refunded snapshot (succeeded) paused; the failure completes first: refunded_cents stays 0', async () => {
     const c = setup();
@@ -178,7 +208,12 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
     c.list([usd('re_1', 4_900, 'failed')]);
     pauseWrite(c, 'update', 'succeeded', () => c.router.handle(update('refund.updated', 'failed')));
     await c.router.handle(refunded([usd('re_1', 4_900)]));
-    expect(outcome(c)).toMatchObject({ status: 'failed', applied: false, net: 4_630, flagged: null });
+    expect(outcome(c)).toMatchObject({
+      status: 'failed',
+      applied: false,
+      net: 4_630,
+      flagged: null,
+    });
     expect(c.db.settlements[0].refunded_cents).toBe(0);
   });
 
@@ -215,7 +250,10 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
 
   it('insert race: a succeeded insert loses to a failed insert (P2002) and records failed, moving nothing', async () => {
     const c = setup();
-    await c.settlements.settleCharge({ purchase: c.db.purchases[0] as ClientPurchase, charge_id: 'ch_1' });
+    await c.settlements.settleCharge({
+      purchase: c.db.purchases[0] as ClientPurchase,
+      charge_id: 'ch_1',
+    });
     const args = (status: string) => ({
       purchase: c.db.purchases[0] as ClientPurchase,
       stripe_refund_id: 're_1',
@@ -229,7 +267,12 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
     const res = await c.refunds.upsertAndApplyRefund(args('succeeded'));
     expect(res.ledger_just_reversed).toBe(false);
     expect(c.db.refunds).toHaveLength(1);
-    expect(outcome(c)).toMatchObject({ status: 'failed', applied: false, net: 4_630, flagged: null });
+    expect(outcome(c)).toMatchObject({
+      status: 'failed',
+      applied: false,
+      net: 4_630,
+      flagged: null,
+    });
   });
 
   it('a status that keeps changing under the writer fails closed after bounded retries; nothing moves', async () => {
@@ -256,13 +299,33 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
       asPrisma(c.prisma),
       c.stripe,
       new SplitLedgerService(asPrisma(c.prisma)),
-      new TransferOrchestratorService(asPrisma(c.prisma), c.stripe, new SplitLedgerService(asPrisma(c.prisma))),
+      new TransferOrchestratorService(
+        asPrisma(c.prisma),
+        c.stripe,
+        new SplitLedgerService(asPrisma(c.prisma)),
+      ),
       new PayoutReadinessService(asPrisma(c.prisma), c.stripe),
       c.fns as object as NotificationsService,
     );
-    c.db.refunds.push({ id: 'rf_1', stripe_refund_id: 're_1', stripe_charge_id: 'ch_1', purchase_id: 'cp_1', amount_cents: 4_900, status: 'failed', failure_reason: 'expired_or_canceled_card', ledger_reversed: false });
-    await legacy.handle({ type: 'refund.updated', data: { object: { id: 're_1', status: 'succeeded', failure_reason: null } } });
-    expect(c.db.refunds[0]).toMatchObject({ status: 'failed', failure_reason: 'expired_or_canceled_card' });
+    c.db.refunds.push({
+      id: 'rf_1',
+      stripe_refund_id: 're_1',
+      stripe_charge_id: 'ch_1',
+      purchase_id: 'cp_1',
+      amount_cents: 4_900,
+      status: 'failed',
+      failure_reason: 'expired_or_canceled_card',
+      ledger_reversed: false,
+    });
+    await legacy.handle({
+      id: 'evt_legacy',
+      type: 'refund.updated',
+      data: { object: { id: 're_1', status: 'succeeded', failure_reason: null } },
+    });
+    expect(c.db.refunds[0]).toMatchObject({
+      status: 'failed',
+      failure_reason: 'expired_or_canceled_card',
+    });
   });
 });
 
@@ -296,8 +359,11 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     const clock = clockAt(started);
     await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
     const tbl = c.prisma.payoutAdjustmentNotice as unknown as Table;
-    const real = tbl.updateMany.getMockImplementation() as (a: { data: Row }) => Promise<unknown>;
-    tbl.updateMany.mockImplementation(async (args: { data: Row }) => {
+    const real = tbl.updateMany.getMockImplementation() as (a: {
+      where: Row;
+      data: Row;
+    }) => Promise<{ count: number }>;
+    tbl.updateMany.mockImplementation(async (args: { where: Row; data: Row }) => {
       const out = await real(args);
       if (args.data.email_attempts === 1) clock.now = started + 660_000;
       return out;
@@ -323,8 +389,11 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     clockAt(started);
     await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
     const tbl = c.prisma.payoutAdjustmentNotice as unknown as Table;
-    const real = tbl.updateMany.getMockImplementation() as (a: { data: Row }) => Promise<unknown>;
-    tbl.updateMany.mockImplementation(async (args: { data: Row }) => {
+    const real = tbl.updateMany.getMockImplementation() as (a: {
+      where: Row;
+      data: Row;
+    }) => Promise<{ count: number }>;
+    tbl.updateMany.mockImplementation(async (args: { where: Row; data: Row }) => {
       if (args.data.email_attempts === 1) c.db.notices![0].email_attempts = 1;
       return real(args);
     });
@@ -340,30 +409,43 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
     const expoSend = jest.fn(async (..._a: unknown[]) => [{ status: 'ok', id: 'tk_1' }]);
     let slow = true;
-    const push: NotificationsService = Object.assign(Object.create(NotificationsService.prototype), {
-      prisma: {
-        user: {
-          findUnique: async () => {
-            if (slow) clock.now = started + 660_000;
-            return { expo_push_token: 'ExponentPushToken[synthetic-r19-token]' };
+    const push: NotificationsService = Object.assign(
+      Object.create(NotificationsService.prototype),
+      {
+        prisma: {
+          user: {
+            findUnique: async () => {
+              if (slow) clock.now = started + 660_000;
+              return { expo_push_token: 'ExponentPushToken[synthetic-r19-token]' };
+            },
           },
         },
+        expo: {
+          chunkPushNotifications: (m: unknown[]) => [m],
+          sendPushNotificationsAsync: expoSend,
+          chunkPushNotificationReceiptIds: (ids: unknown[]) => [ids],
+          getPushNotificationReceiptsAsync: async () => ({}),
+        },
+        logger: { error: jest.fn(), warn: jest.fn() },
       },
-      expo: {
-        chunkPushNotifications: (m: unknown[]) => [m],
-        sendPushNotificationsAsync: expoSend,
-        chunkPushNotificationReceiptIds: (ids: unknown[]) => [ids],
-        getPushNotificationReceiptsAsync: async () => ({}),
-      },
-      logger: { error: jest.fn(), warn: jest.fn() },
-    });
+    );
     c.fns.pushToUser.mockImplementation(async (...a: unknown[]) =>
-      push.pushToUser(String(a[0]), String(a[1]), String(a[2]), a[3] as Record<string, unknown>, a[4] as AbortSignal),
+      push.pushToUser(
+        String(a[0]),
+        String(a[1]),
+        String(a[2]),
+        a[3] as Record<string, unknown>,
+        a[4] as AbortSignal,
+      ),
     );
     await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
     expect(expoSend).not.toHaveBeenCalled();
     expect(c.fns.pushToUser.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
-    expect(c.db.notices?.[0]).toMatchObject({ push_status: 'pending', dispatch_attempts: 0, dispatch_claimed_at: null });
+    expect(c.db.notices?.[0]).toMatchObject({
+      push_status: 'pending',
+      dispatch_attempts: 0,
+      dispatch_claimed_at: null,
+    });
     slow = false;
     clock.now = started + 700_000;
     await c.notices.dispatchPending(new Date(clock.now), 25, clock.now + 480_000);
@@ -385,8 +467,16 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     });
     await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
     expect(c.transport.send).not.toHaveBeenCalled();
-    expect(c.emailLog.rows[0]).toMatchObject({ idempotency_key: 'pan_key_1', status: 'failed', error: 'aborted before send' });
-    expect(c.db.notices?.[0]).toMatchObject({ email_status: 'pending', email_attempts: 1, dispatch_attempts: 0 });
+    expect(c.emailLog.rows[0]).toMatchObject({
+      idempotency_key: 'pan_key_1',
+      status: 'failed',
+      error: 'aborted before send',
+    });
+    expect(c.db.notices?.[0]).toMatchObject({
+      email_status: 'pending',
+      email_attempts: 1,
+      dispatch_attempts: 0,
+    });
     slow = false;
     clock.now = started + 700_000;
     await c.notices.dispatchPending(new Date(clock.now), 25, clock.now + 480_000);
@@ -396,7 +486,10 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
       ['pan_key_1', 'failed'],
       ['pan_key_1:e2', 'sent'],
     ]);
-    expect(c.db.notices?.[0]).toMatchObject({ email_status: 'sent', dispatched_at: expect.any(Date) });
+    expect(c.db.notices?.[0]).toMatchObject({
+      email_status: 'sent',
+      dispatched_at: expect.any(Date),
+    });
   });
 
   it('the send signal aborts on its timer and on any read past its limit, with the given reason', () => {
