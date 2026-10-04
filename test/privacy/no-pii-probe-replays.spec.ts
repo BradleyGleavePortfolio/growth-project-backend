@@ -294,7 +294,10 @@ describe('Opus B-700-2 replay: addresses that arrive through upstream text or a 
     const logs = spyLogs();
     const anyMock = fake<never>({});
     const service = new AuthService(anyMock, anyMock, anyMock, anyMock, anyMock, anyMock);
-    await service.forgotPassword(RESET_ADDRESS).catch(() => undefined);
+    // The reply is the same whether or not the reset call failed.
+    await expect(service.forgotPassword(RESET_ADDRESS)).resolves.toEqual({
+      message: 'If an account exists with that email, a reset link has been sent.',
+    });
     const all = logs().join('\n');
     expect(all).toContain('resetPasswordForEmail failed: error=Object status=400 code=email_address_invalid');
     expectNone(all, '@', 'pat.client');
